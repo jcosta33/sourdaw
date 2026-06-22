@@ -23,12 +23,15 @@ type BezierLfoEditorProps = {
     tempoSync?: boolean;
 };
 
-const DEFAULT_POINTS: LfoPoint[] = [
-    { pos: { x: 0, y: 0.5 }, cp1: { x: -0.05, y: 0.5 }, cp2: { x: 0.1, y: 0.9 } },
+// Control-handle x positions stay inside [0,1]: fromCanvas() clamps any dragged
+// handle to that range, so a default outside it (e.g. x:-0.05 / x:1.05) can never
+// be restored once the user grabs it — keep defaults reachable.
+export const DEFAULT_POINTS: LfoPoint[] = [
+    { pos: { x: 0, y: 0.5 }, cp1: { x: 0, y: 0.5 }, cp2: { x: 0.1, y: 0.9 } },
     { pos: { x: 0.25, y: 1 }, cp1: { x: 0.15, y: 1 }, cp2: { x: 0.35, y: 1 } },
     { pos: { x: 0.5, y: 0.5 }, cp1: { x: 0.4, y: 0.1 }, cp2: { x: 0.6, y: 0.5 } },
     { pos: { x: 0.75, y: 0 }, cp1: { x: 0.65, y: 0 }, cp2: { x: 0.85, y: 0 } },
-    { pos: { x: 1, y: 0.5 }, cp1: { x: 0.9, y: 0.1 }, cp2: { x: 1.05, y: 0.5 } },
+    { pos: { x: 1, y: 0.5 }, cp1: { x: 0.9, y: 0.1 }, cp2: { x: 1, y: 0.5 } },
 ];
 
 export const BezierLfoEditor = ({
@@ -175,7 +178,7 @@ export const BezierLfoEditor = ({
                 const cp = toCanvas(p[part]);
                 if (Math.sqrt((cx - cp.x) ** 2 + (cy - cp.y) ** 2) < 8) {
                     dragRef.current = { pointIdx: i, part };
-                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    e.currentTarget.setPointerCapture(e.pointerId);
                     return;
                 }
             }
@@ -216,6 +219,10 @@ export const BezierLfoEditor = ({
         }
     };
 
+    const handlePointerCancel = (): void => {
+        dragRef.current = null;
+    };
+
     return (
         <div className="relative">
             <canvas
@@ -226,6 +233,7 @@ export const BezierLfoEditor = ({
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
             />
             <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
                 {tempoSync ? 'LFO (Tempo Sync)' : 'LFO Shape'}

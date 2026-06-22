@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 
 import { type BacteriaPatch } from '../../models/BacteriaPatch';
-import { setBacteriaBandParam } from '../../stores/bacteriaStore';
+import { getBacteriaState, setBacteriaBandParam } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
 import { createFindDeviceRef, createFlushParam, encodePatchValue, paramBatcher } from './helpers';
@@ -24,6 +24,14 @@ export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependenc
         value: BacteriaPatch['bands'][0][Key]
     ): void {
         setBacteriaBandParam(deviceId, bandIndex, key, value);
+
+        // Mirror the store's bounds guard before encoding/scheduling an engine
+        // write — an out-of-range bandIndex is a no-op in the store, so its
+        // band-prefixed param must never reach the audio engine either.
+        const bands = getBacteriaState(deviceId).patch.bands;
+        if (bandIndex < 0 || bandIndex >= bands.length) {
+            return;
+        }
 
         const prefixedKey = `band${bandIndex}_${key}`;
         const encodedValue = encodePatchValue(String(key), value);

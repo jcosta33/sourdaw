@@ -23,9 +23,15 @@ export const StepSequencerEditor = ({
 }: StepSequencerEditorProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [steps, setSteps] = useState<number[]>(
-        initialSteps.length >= numSteps ? initialSteps : Array.from({ length: 32 }, () => 0)
+        initialSteps.length >= numSteps ? initialSteps : Array.from({ length: numSteps }, () => 0)
     );
     const drawingRef = useRef(false);
+
+    // Re-sync local state when the controlled step count or values change; the
+    // buffer is sized to numSteps so every rendered/edited step has a slot.
+    useEffect(() => {
+        setSteps(initialSteps.length >= numSteps ? initialSteps : Array.from({ length: numSteps }, () => 0));
+    }, [initialSteps, numSteps]);
 
     const draw = (): void => {
         const canvas = canvasRef.current;
@@ -114,7 +120,7 @@ export const StepSequencerEditor = ({
 
     const handlePointerDown = (e: React.PointerEvent): void => {
         drawingRef.current = true;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
         updateStepFromPointer(e);
     };
 
@@ -132,6 +138,10 @@ export const StepSequencerEditor = ({
         }
     };
 
+    const handlePointerCancel = (): void => {
+        drawingRef.current = false;
+    };
+
     return (
         <div className="relative">
             <canvas
@@ -142,6 +152,7 @@ export const StepSequencerEditor = ({
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
             />
             <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
                 Step Sequencer ({numSteps} steps)

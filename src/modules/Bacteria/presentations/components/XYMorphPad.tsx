@@ -24,7 +24,7 @@ export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, heigh
 
     const handlePointerDown = (e: React.PointerEvent): void => {
         dragging.current = true;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
         updatePosition(e);
     };
 
@@ -36,6 +36,10 @@ export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, heigh
     };
 
     const handlePointerUp = (): void => {
+        dragging.current = false;
+    };
+
+    const handlePointerCancel = (): void => {
         dragging.current = false;
     };
 
@@ -64,6 +68,7 @@ export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, heigh
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
         >
             {/* Grid lines */}
             <div

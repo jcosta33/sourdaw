@@ -31,7 +31,6 @@ type NodeGraphEditorProps = {
     bands: BacteriaBand[];
     globalRouting: BacteriaRoutingMode;
     crossoverFreqs: number[];
-    onRoutingChange?: (bandIndex: number, mode: BacteriaRoutingMode) => void;
 };
 
 const BAND_COLORS = [
@@ -59,7 +58,7 @@ function buildNodes(
     bands: BacteriaBand[],
     width: number,
     height: number
-): { nodes: NodeDef[]; connections: Connection[] } {
+): { nodes: NodeDef[]; connections: Connection[]; nodeById: Map<string, NodeDef> } {
     const nodes: NodeDef[] = [];
     const connections: Connection[] = [];
 
@@ -141,7 +140,11 @@ function buildNodes(
     });
     connections.push({ from: 'sum', to: 'output' });
 
-    return { nodes, connections };
+    // Build the id->node lookup once here rather than O(N) Array.find per
+    // connection on every render.
+    const nodeById = new Map<string, NodeDef>(nodes.map((node) => [node.id, node]));
+
+    return { nodes, connections, nodeById };
 }
 
 export const NodeGraphEditor = ({
@@ -152,10 +155,13 @@ export const NodeGraphEditor = ({
     globalRouting,
     crossoverFreqs: _crossoverFreqs,
 }: NodeGraphEditorProps): ReactElement => {
-    const { nodes, connections } = buildNodes(bandCount, bands, width, height);
+    // React Compiler memoizes this pure computation; the node map below gives
+    // O(1) id lookups regardless of render count (the manual-memoization rule
+    // forbids useMemo here).
+    const { nodes, connections, nodeById } = buildNodes(bandCount, bands, width, height);
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
-    const getNode = (id: string): NodeDef | undefined => nodes.find((n) => n.id === id);
+    const getNode = (id: string): NodeDef | undefined => nodeById.get(id);
 
     return (
         <svg

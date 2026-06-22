@@ -1,12 +1,35 @@
 import { inject } from '#/infra/di/inject';
 
-import { type BacteriaPatch } from '../../models/BacteriaPatch';
-import { loadBacteriaPatch } from '../../stores/bacteriaStore';
+import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatch';
+import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
 import { createFindDeviceRef, encodePatchValue } from './helpers';
 
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
+
+/**
+ * Top-level `BacteriaPatch` keys that are NOT scalar audio parameters and so
+ * are never pushed to the engine as a single `(paramId, value)` message:
+ *   - `name`            — display label, no audio meaning
+ *   - `bands`           — array; pushed per-band below with a `band{i}_` prefix
+ *   - `modAssignments`  — UI/persistence-only routing metadata (see BacteriaPatch.ts)
+ *   - `snapshots`       — UI/persistence-only XY-morph metadata (see BacteriaPatch.ts)
+ *
+ * Every other key is a scalar (number / boolean / enum-string) the engine
+ * understands. Iterating the patch keys minus this set — instead of a parallel
+ * hand-maintained string list — guarantees new scalar params (e.g. lfo1Sync /
+ * lfo2Sync) are pushed without a second edit, and that the two lists can never
+ * silently drift apart.
+ */
+const NON_SCALAR_GLOBAL_KEYS = new Set<keyof BacteriaPatch>(['name', 'bands', 'modAssignments', 'snapshots']);
+
+/**
+ * Per-band keys that are not scalar audio parameters: `convolutionIr` is an IR
+ * identifier string with no numeric encoding (encodePatchValue returns null for
+ * it), so it is excluded explicitly rather than relying on the null guard.
+ */
+const NON_SCALAR_BAND_KEYS = new Set<keyof BacteriaBand>(['convolutionIr']);
 
 function createPushParamImmediately(
     updateDeviceParamFn: UpdateDeviceParamFn,
@@ -26,6 +49,12 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
     const findDeviceRef = createFindDeviceRef(getAllTracksFn);
     const pushParamImmediately = createPushParamImmediately(updateDeviceParamFn, persistDeviceParamFn);
     return function loadBacteriaPatchWithAudio(deviceId: string, patch: BacteriaPatch): void {
+        // Capture the engine's current view (the store mirrors it) *before*
+        // loadBacteriaPatch overwrites it, so we can diff and push only the
+        // params that actually changed — a preset switch otherwise re-sends
+        // every scalar (~330 messages) even when most are identical.
+        const previousPatch = getBacteriaState(deviceId).patch;
+
         loadBacteriaPatch(deviceId, patch);
 
         const ref = findDeviceRef(deviceId);
@@ -33,116 +62,51 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             return;
         }
 
-        const globalParams: Array<[string, unknown]> = [
-            ['mix', patch.mix],
-            ['outputGain', patch.outputGain],
-            ['inputGain', patch.inputGain],
-            ['bypass', patch.bypass],
-            ['crossoverMode', patch.crossoverMode],
-            ['bandCount', patch.bandCount],
-            ['crossoverFreq1', patch.crossoverFreq1],
-            ['crossoverFreq2', patch.crossoverFreq2],
-            ['crossoverFreq3', patch.crossoverFreq3],
-            ['crossoverFreq4', patch.crossoverFreq4],
-            ['crossoverFreq5', patch.crossoverFreq5],
-            ['crossoverSlope', patch.crossoverSlope],
-            ['globalRouting', patch.globalRouting],
-            ['macro1', patch.macro1],
-            ['macro2', patch.macro2],
-            ['macro3', patch.macro3],
-            ['macro4', patch.macro4],
-            ['macro5', patch.macro5],
-            ['macro6', patch.macro6],
-            ['macro7', patch.macro7],
-            ['macro8', patch.macro8],
-            ['morphX', patch.morphX],
-            ['morphY', patch.morphY],
-            ['lfo1Rate', patch.lfo1Rate],
-            ['lfo1Shape', patch.lfo1Shape],
-            ['lfo1Amount', patch.lfo1Amount],
-            ['lfo2Rate', patch.lfo2Rate],
-            ['lfo2Shape', patch.lfo2Shape],
-            ['lfo2Amount', patch.lfo2Amount],
-            ['envFollowerAttack', patch.envFollowerAttack],
-            ['envFollowerRelease', patch.envFollowerRelease],
-            ['stepSeqSteps', patch.stepSeqSteps],
-            ['stepSeqRate', patch.stepSeqRate],
-            ['lorenzSigma', patch.lorenzSigma],
-            ['lorenzRho', patch.lorenzRho],
-            ['lorenzBeta', patch.lorenzBeta],
-            ['lorenzSpeed', patch.lorenzSpeed],
-        ];
-
-        for (const [key, rawValue] of globalParams) {
-            const encodedValue = encodePatchValue(key, rawValue);
-            if (encodedValue !== null) {
-                pushParamImmediately(ref, key, encodedValue);
+        for (const key of Object.keys(patch) as Array<keyof BacteriaPatch>) {
+            if (NON_SCALAR_GLOBAL_KEYS.has(key)) {
+                continue;
             }
+            const rawValue = patch[key];
+            const encodedValue = encodePatchValue(key, rawValue);
+            if (encodedValue === null) {
+                continue;
+            }
+            const previousEncoded = encodePatchValue(key, previousPatch[key]);
+            if (previousEncoded === encodedValue) {
+                continue;
+            }
+            pushParamImmediately(ref, key, encodedValue);
         }
 
-        for (const [bandIndex, band] of patch.bands.entries()) {
-            const bandParams: Array<[string, unknown]> = [
-                ['enabled', band.enabled],
-                ['solo', band.solo],
-                ['mute', band.mute],
-                ['gain', band.gain],
-                ['oversampling', band.oversampling],
-                ['distortionEnabled', band.distortionEnabled],
-                ['filterEnabled', band.filterEnabled],
-                ['granularEnabled', band.granularEnabled],
-                ['spectralEnabled', band.spectralEnabled],
-                ['modulationEnabled', band.modulationEnabled],
-                ['convolutionEnabled', band.convolutionEnabled],
-                ['freqShiftEnabled', band.freqShiftEnabled],
-                ['chorusEnabled', band.chorusEnabled],
-                ['phaserEnabled', band.phaserEnabled],
-                ['lofiEnabled', band.lofiEnabled],
-                ['distortionMode', band.distortionMode],
-                ['drive', band.drive],
-                ['asymmetry', band.asymmetry],
-                ['foldbackThreshold', band.foldbackThreshold],
-                ['bitDepth', band.bitDepth],
-                ['sampleRateReduce', band.sampleRateReduce],
-                ['tubeBias', band.tubeBias],
-                ['breakdownDepth', band.breakdownDepth],
-                ['filterMode', band.filterMode],
-                ['filterCutoff', band.filterCutoff],
-                ['filterResonance', band.filterResonance],
-                ['filterEnvAmount', band.filterEnvAmount],
-                ['filterEnvAttack', band.filterEnvAttack],
-                ['filterEnvRelease', band.filterEnvRelease],
-                ['chorusRate', band.chorusRate],
-                ['chorusDepth', band.chorusDepth],
-                ['chorusFeedback', band.chorusFeedback],
-                ['chorusMix', band.chorusMix],
-                ['phaserRate', band.phaserRate],
-                ['phaserDepth', band.phaserDepth],
-                ['phaserFeedback', band.phaserFeedback],
-                ['phaserMix', band.phaserMix],
-                ['grainSize', band.grainSize],
-                ['grainDensity', band.grainDensity],
-                ['grainPosOffset', band.grainPosOffset],
-                ['grainPitch', band.grainPitch],
-                ['grainWindow', band.grainWindow],
-                ['grainFreeze', band.grainFreeze],
-                ['grainMix', band.grainMix],
-                ['spectralBlur', band.spectralBlur],
-                ['spectralFreeze', band.spectralFreeze],
-                ['spectralMix', band.spectralMix],
-                ['freqShiftHz', band.freqShiftHz],
-                ['freqShiftMix', band.freqShiftMix],
-                ['lofiAmount', band.lofiAmount],
-                ['codecArtifact', band.codecArtifact],
-                ['convolutionMix', band.convolutionMix],
-                ['convolutionSeparation', band.convolutionSeparation],
-                ['routingMode', band.routingMode],
-            ];
+        // Only iterate the bands the new patch actually activates. The patch
+        // array is always 6 entries (DEFAULT_PATCH never resizes it), so
+        // pushing all 6 would send ~250 messages for bands the engine ignores.
+        const activeBandCount = Math.max(0, Math.min(patch.bands.length, patch.bandCount));
+        const previousActiveBandCount = Math.max(0, Math.min(previousPatch.bands.length, previousPatch.bandCount));
+        for (let bandIndex = 0; bandIndex < activeBandCount; bandIndex += 1) {
+            const band = patch.bands[bandIndex];
+            if (!band) {
+                continue;
+            }
+            // A band that was previously inactive may hold stale engine state
+            // (prior loads only pushed the then-active bands), so the store
+            // mirror is not a trustworthy diff baseline for it — push every
+            // param to fully re-sync. Only diff bands that were already active.
+            const previousBand = bandIndex < previousActiveBandCount ? previousPatch.bands[bandIndex] : undefined;
 
-            for (const [key, rawValue] of bandParams) {
-                const encodedValue = encodePatchValue(key, rawValue);
-                if (encodedValue !== null) {
-                    pushParamImmediately(ref, `band${bandIndex}_${key}`, encodedValue);
+            for (const key of Object.keys(band) as Array<keyof BacteriaBand>) {
+                if (NON_SCALAR_BAND_KEYS.has(key)) {
+                    continue;
                 }
+                const encodedValue = encodePatchValue(key, band[key]);
+                if (encodedValue === null) {
+                    continue;
+                }
+                const previousEncoded = previousBand === undefined ? null : encodePatchValue(key, previousBand[key]);
+                if (previousEncoded === encodedValue) {
+                    continue;
+                }
+                pushParamImmediately(ref, `band${bandIndex}_${key}`, encodedValue);
             }
         }
     };

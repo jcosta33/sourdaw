@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type persistDeviceParam } from '#/modules/Arrangement/stores';
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
@@ -50,6 +51,12 @@ export const ROUTING_MODE_INDEX = {
     'mid-side': 2,
 } as const;
 
+// String-valued patch fields that are intentionally not audio params, so
+// encodePatchValue returning null for them is expected (not a misconfiguration).
+// `name` is the patch label; `convolutionIr` is an IR identifier resolved
+// out-of-band rather than encoded into a numeric engine param.
+const NON_AUDIO_STRING_KEYS = new Set<string>(['name', 'convolutionIr']);
+
 export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persistDeviceParamFn: PersistDeviceParamFn) {
     return function flushParam(_compositeKey: string, entry: BacteriaBatchEntry): void {
         updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
@@ -88,6 +95,17 @@ export function encodePatchValue(key: string, value: unknown): number | null {
 
     if (key === 'globalRouting' || key === 'routingMode') {
         return ROUTING_MODE_INDEX[value as keyof typeof ROUTING_MODE_INDEX] ?? 0;
+    }
+
+    // An unrecognized string-valued key silently never reaches the engine.
+    // Warn (DEV-only via the console writer) unless the key is a known
+    // non-audio field, so a newly added string param surfaces during dev
+    // instead of being dropped without a trace.
+    if (!NON_AUDIO_STRING_KEYS.has(key)) {
+        logger.warn(
+            `[bacteriaParamBridge] encodePatchValue: no encoding for string key "${key}" (value "${value}"); ` +
+                'engine write dropped. Add a known mode-index map or register it in NON_AUDIO_STRING_KEYS.'
+        );
     }
 
     return null;

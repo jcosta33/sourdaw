@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../../models/BacteriaPatch';
 import { NodeGraphEditor } from '../NodeGraphEditor';
@@ -14,7 +14,6 @@ describe('NodeGraphEditor', () => {
                 bands={DEFAULT_PATCH.bands.slice(0, 2)}
                 globalRouting="serial"
                 crossoverFreqs={[500, 2000]}
-                onRoutingChange={vi.fn()}
             />
         );
         expect(container.querySelector('svg')).toBeTruthy();

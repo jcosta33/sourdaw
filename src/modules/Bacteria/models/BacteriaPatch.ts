@@ -113,6 +113,17 @@ export type BacteriaBand = {
 
 // ── Modulation assignment ────────────────────────────────────────────────────
 
+/**
+ * A single mod-source → target-param routing.
+ *
+ * Deliberately UI/persistence-only metadata: it is stored in the patch and
+ * rendered by ModulationDock, but is NOT a scalar engine parameter. The engine
+ * bridge (`updateDeviceParam`) only carries `(paramId, value: number)` messages,
+ * which cannot express a structured assignment, so `loadBacteriaPatchWithAudio`
+ * intentionally excludes `modAssignments` from its engine push. (The DSP-side
+ * `add_mod_assignment` entry point exists but has no frontend message path yet;
+ * wiring it is a separate engine-bridge concern, not a patch-load concern.)
+ */
 export type BacteriaModAssignment = {
     sourceId: string;
     targetParam: string;
@@ -122,6 +133,14 @@ export type BacteriaModAssignment = {
 
 // ── Snapshot for XY morphing ─────────────────────────────────────────────────
 
+/**
+ * A stored corner of the XY morph pad.
+ *
+ * Like {@link BacteriaModAssignment}, this is deliberately UI/persistence-only
+ * metadata: morphing is resolved in the UI (XYMorphPad) and its results reach
+ * the engine through the ordinary scalar params it interpolates — `snapshots`
+ * itself is never pushed by `loadBacteriaPatchWithAudio`.
+ */
 export type BacteriaSnapshot = {
     id: 'A' | 'B' | 'C' | 'D';
     name: string;
@@ -169,10 +188,13 @@ export type BacteriaPatch = {
     morphX: number; // 0 – 1
     morphY: number; // 0 – 1
 
-    // Modulation assignments (stored as array)
+    // Modulation assignments (stored as array).
+    // Non-audio metadata — persisted and rendered, never pushed to the engine
+    // by loadBacteriaPatchWithAudio. See BacteriaModAssignment for the rationale.
     modAssignments: BacteriaModAssignment[];
 
-    // Snapshots for XY morphing
+    // Snapshots for XY morphing.
+    // Non-audio metadata — see BacteriaSnapshot for the rationale.
     snapshots: BacteriaSnapshot[];
 
     // Global modulation sources
@@ -338,334 +360,3 @@ export const DEFAULT_PATCH: BacteriaPatch = {
     lorenzBeta: 2.667,
     lorenzSpeed: 1,
 };
-
-// ── Parameter definitions (for descriptor and automation) ────────────────────
-
-export type BacteriaParamDef = {
-    id: string;
-    label: string;
-    min: number;
-    max: number;
-    default: number;
-    unit: string;
-    step?: number;
-    group?: string;
-    scaling?: 'log' | 'linear';
-};
-
-export const BACTERIA_PARAMS: readonly BacteriaParamDef[] = [
-    // Global
-    { id: 'mix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'global' },
-    { id: 'inputGain', label: 'Input', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'global' },
-    { id: 'outputGain', label: 'Output', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'global' },
-
-    // Crossover
-    { id: 'bandCount', label: 'Bands', min: 1, max: 6, default: 1, unit: '', step: 1, group: 'crossover' },
-    {
-        id: 'crossoverFreq1',
-        label: 'XOver 1',
-        min: 20,
-        max: 20000,
-        default: 200,
-        unit: 'Hz',
-        step: 1,
-        group: 'crossover',
-        scaling: 'log',
-    },
-    {
-        id: 'crossoverFreq2',
-        label: 'XOver 2',
-        min: 20,
-        max: 20000,
-        default: 800,
-        unit: 'Hz',
-        step: 1,
-        group: 'crossover',
-        scaling: 'log',
-    },
-    {
-        id: 'crossoverFreq3',
-        label: 'XOver 3',
-        min: 20,
-        max: 20000,
-        default: 2500,
-        unit: 'Hz',
-        step: 1,
-        group: 'crossover',
-        scaling: 'log',
-    },
-    {
-        id: 'crossoverFreq4',
-        label: 'XOver 4',
-        min: 20,
-        max: 20000,
-        default: 6000,
-        unit: 'Hz',
-        step: 1,
-        group: 'crossover',
-        scaling: 'log',
-    },
-    {
-        id: 'crossoverFreq5',
-        label: 'XOver 5',
-        min: 20,
-        max: 20000,
-        default: 12000,
-        unit: 'Hz',
-        step: 1,
-        group: 'crossover',
-        scaling: 'log',
-    },
-    { id: 'crossoverSlope', label: 'Slope', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'crossover' },
-    { id: 'crossoverMode', label: 'XOver Mode', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'crossover' },
-
-    // Per-band distortion (band 0 — UI maps active band)
-    { id: 'distortionMode', label: 'Dist Mode', min: 0, max: 8, default: 0, unit: '', step: 1, group: 'distortion' },
-    { id: 'drive', label: 'Drive', min: 0, max: 100, default: 25, unit: '%', step: 1, group: 'distortion' },
-    { id: 'asymmetry', label: 'Asymmetry', min: -1, max: 1, default: 0, unit: '', step: 0.01, group: 'distortion' },
-    {
-        id: 'foldbackThreshold',
-        label: 'Fold Thresh',
-        min: 0.1,
-        max: 1,
-        default: 0.7,
-        unit: '',
-        step: 0.01,
-        group: 'distortion',
-    },
-    { id: 'bitDepth', label: 'Bit Depth', min: 1, max: 24, default: 16, unit: 'bit', step: 1, group: 'distortion' },
-    {
-        id: 'sampleRateReduce',
-        label: 'SR Reduce',
-        min: 1,
-        max: 64,
-        default: 1,
-        unit: 'x',
-        step: 1,
-        group: 'distortion',
-    },
-    {
-        id: 'breakdownDepth',
-        label: 'Breakdown',
-        min: 0,
-        max: 4,
-        default: 1,
-        unit: 'oct',
-        step: 0.1,
-        group: 'distortion',
-    },
-
-    // Per-band filter
-    { id: 'filterMode', label: 'Filter Mode', min: 0, max: 5, default: 0, unit: '', step: 1, group: 'filter' },
-    {
-        id: 'filterCutoff',
-        label: 'Cutoff',
-        min: 20,
-        max: 20000,
-        default: 8000,
-        unit: 'Hz',
-        step: 1,
-        group: 'filter',
-        scaling: 'log',
-    },
-    { id: 'filterResonance', label: 'Resonance', min: 0, max: 1, default: 0.3, unit: '', step: 0.01, group: 'filter' },
-    { id: 'filterEnvAmount', label: 'Env Amount', min: -1, max: 1, default: 0, unit: '', step: 0.01, group: 'filter' },
-
-    // Modulation effects
-    {
-        id: 'chorusRate',
-        label: 'Chorus Rate',
-        min: 0.01,
-        max: 20,
-        default: 1.5,
-        unit: 'Hz',
-        group: 'modulation',
-        scaling: 'log',
-    },
-    {
-        id: 'chorusDepth',
-        label: 'Chorus Depth',
-        min: 0,
-        max: 1,
-        default: 0.4,
-        unit: '',
-        step: 0.01,
-        group: 'modulation',
-    },
-    {
-        id: 'chorusFeedback',
-        label: 'Chorus FB',
-        min: -1,
-        max: 1,
-        default: 0.2,
-        unit: '',
-        step: 0.01,
-        group: 'modulation',
-    },
-    { id: 'chorusMix', label: 'Chorus Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-
-    // Phaser
-    {
-        id: 'phaserRate',
-        label: 'Phaser Rate',
-        min: 0.01,
-        max: 10,
-        default: 0.5,
-        unit: 'Hz',
-        group: 'modulation',
-        scaling: 'log',
-    },
-    {
-        id: 'phaserDepth',
-        label: 'Phaser Depth',
-        min: 0,
-        max: 1,
-        default: 0.7,
-        unit: '',
-        step: 0.01,
-        group: 'modulation',
-    },
-    {
-        id: 'phaserFeedback',
-        label: 'Phaser FB',
-        min: -1,
-        max: 1,
-        default: 0.5,
-        unit: '',
-        step: 0.01,
-        group: 'modulation',
-    },
-    { id: 'phaserMix', label: 'Phaser Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-
-    // Granular
-    {
-        id: 'grainSize',
-        label: 'Grain Size',
-        min: 10,
-        max: 500,
-        default: 80,
-        unit: 'ms',
-        step: 1,
-        group: 'granular',
-        scaling: 'log',
-    },
-    { id: 'grainDensity', label: 'Density', min: 1, max: 100, default: 15, unit: 'g/s', step: 1, group: 'granular' },
-    {
-        id: 'grainPosOffset',
-        label: 'Position',
-        min: 0,
-        max: 2000,
-        default: 100,
-        unit: 'ms',
-        step: 1,
-        group: 'granular',
-    },
-    { id: 'grainPitch', label: 'Grain Pitch', min: -24, max: 24, default: 0, unit: 'st', step: 0.1, group: 'granular' },
-    { id: 'grainMix', label: 'Grain Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'granular' },
-
-    // Spectral
-    { id: 'spectralBlur', label: 'Spec Blur', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'spectral' },
-    { id: 'spectralMix', label: 'Spec Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'spectral' },
-
-    // Frequency shifter
-    {
-        id: 'freqShiftHz',
-        label: 'Freq Shift',
-        min: -1000,
-        max: 1000,
-        default: 0,
-        unit: 'Hz',
-        step: 0.1,
-        group: 'spectral',
-    },
-    { id: 'freqShiftMix', label: 'Shift Mix', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'spectral' },
-
-    // Lo-fi
-    { id: 'lofiAmount', label: 'Lo-Fi', min: 0, max: 100, default: 0, unit: '%', step: 1, group: 'lofi' },
-    { id: 'codecArtifact', label: 'Codec', min: 0, max: 1, default: 0, unit: '', step: 0.01, group: 'lofi' },
-
-    // Convolution
-    {
-        id: 'convolutionMix',
-        label: 'Body Mix',
-        min: 0,
-        max: 1,
-        default: 0.3,
-        unit: '',
-        step: 0.01,
-        group: 'convolution',
-    },
-    {
-        id: 'convolutionSeparation',
-        label: 'Separation',
-        min: 0,
-        max: 1,
-        default: 0.5,
-        unit: '',
-        step: 0.01,
-        group: 'convolution',
-    },
-
-    // Macros
-    { id: 'macro1', label: 'Macro 1', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro2', label: 'Macro 2', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro3', label: 'Macro 3', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro4', label: 'Macro 4', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro5', label: 'Macro 5', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro6', label: 'Macro 6', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro7', label: 'Macro 7', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-    { id: 'macro8', label: 'Macro 8', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'macro' },
-
-    // XY Morph
-    { id: 'morphX', label: 'Morph X', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'morph' },
-    { id: 'morphY', label: 'Morph Y', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'morph' },
-
-    // Global modulation
-    {
-        id: 'lfo1Rate',
-        label: 'LFO 1 Rate',
-        min: 0.01,
-        max: 40,
-        default: 2,
-        unit: 'Hz',
-        group: 'modulation',
-        scaling: 'log',
-    },
-    { id: 'lfo1Shape', label: 'LFO 1 Shape', min: 0, max: 4, default: 0, unit: '', step: 1, group: 'modulation' },
-    { id: 'lfo1Amount', label: 'LFO 1 Amt', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-    {
-        id: 'lfo2Rate',
-        label: 'LFO 2 Rate',
-        min: 0.01,
-        max: 40,
-        default: 0.5,
-        unit: 'Hz',
-        group: 'modulation',
-        scaling: 'log',
-    },
-    { id: 'lfo2Shape', label: 'LFO 2 Shape', min: 0, max: 4, default: 1, unit: '', step: 1, group: 'modulation' },
-    { id: 'lfo2Amount', label: 'LFO 2 Amt', min: 0, max: 1, default: 0.5, unit: '', step: 0.01, group: 'modulation' },
-    {
-        id: 'envFollowerAttack',
-        label: 'Env Atk',
-        min: 0.1,
-        max: 100,
-        default: 5,
-        unit: 'ms',
-        group: 'modulation',
-        scaling: 'log',
-    },
-    {
-        id: 'envFollowerRelease',
-        label: 'Env Rel',
-        min: 1,
-        max: 2000,
-        default: 200,
-        unit: 'ms',
-        group: 'modulation',
-        scaling: 'log',
-    },
-
-    // Per-band gain (exposed for automation)
-    { id: 'bandGain', label: 'Band Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'band' },
-];

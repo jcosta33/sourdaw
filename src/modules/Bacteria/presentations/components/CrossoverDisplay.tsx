@@ -3,7 +3,7 @@
  *
  * Shows band regions with color coding and crossover frequency handles.
  */
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useLayoutEffect, useRef, useState } from 'react';
 
 import { type BacteriaCrossoverMode } from '../../models/BacteriaPatch';
 
@@ -59,11 +59,35 @@ export const CrossoverDisplay = ({
 }: CrossoverDisplayProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const dragIndex = useRef<number | null>(null);
+    // Track the container width so layout x-positions are computed from the real
+    // measured width instead of reading clientWidth during render (which is 0 on
+    // first paint before layout, leaving every band/handle mispositioned).
+    const [containerWidth, setContainerWidth] = useState(0);
+
+    useLayoutEffect(() => {
+        const el = containerRef.current;
+        if (!el) {
+            return undefined;
+        }
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+        observer.observe(el);
+        setContainerWidth(el.clientWidth);
+        return () => observer.disconnect();
+    }, []);
+
+    // Until the container is measured, fall back to a nominal width so the first
+    // render still produces finite positions.
+    const layoutWidth = containerWidth > 0 ? containerWidth : 800;
 
     const handlePointerDown = (e: React.PointerEvent, index: number): void => {
         e.stopPropagation();
         dragIndex.current = index;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
     };
 
     const handlePointerMove = (e: React.PointerEvent): void => {
@@ -80,6 +104,10 @@ export const CrossoverDisplay = ({
     };
 
     const handlePointerUp = (): void => {
+        dragIndex.current = null;
+    };
+
+    const handlePointerCancel = (): void => {
         dragIndex.current = null;
     };
 
@@ -116,11 +144,12 @@ export const CrossoverDisplay = ({
             }}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
             onPointerDown={handleBandClick}
         >
             {/* Frequency grid */}
             {[100, 1000, 10000].map((freq) => {
-                const x = freqToX(freq, containerRef.current?.clientWidth ?? 800);
+                const x = freqToX(freq, layoutWidth);
                 return (
                     <div
                         key={freq}
@@ -136,9 +165,8 @@ export const CrossoverDisplay = ({
 
             {/* Band regions */}
             {Array.from({ length: bandCount }, (_, i) => {
-                const containerWidth = containerRef.current?.clientWidth ?? 800;
-                const lo = freqToX(i === 0 ? 20 : crossoverFreqs[i - 1]!, containerWidth);
-                const hi = freqToX(i === bandCount - 1 ? 20000 : crossoverFreqs[i]!, containerWidth);
+                const lo = freqToX(i === 0 ? 20 : crossoverFreqs[i - 1]!, layoutWidth);
+                const hi = freqToX(i === bandCount - 1 ? 20000 : crossoverFreqs[i]!, layoutWidth);
                 return (
                     <div
                         key={i}
@@ -165,8 +193,7 @@ export const CrossoverDisplay = ({
 
             {/* Crossover handles */}
             {Array.from({ length: Math.max(0, bandCount - 1) }, (_, i) => {
-                const containerWidth = containerRef.current?.clientWidth ?? 800;
-                const x = freqToX(crossoverFreqs[i]!, containerWidth);
+                const x = freqToX(crossoverFreqs[i]!, layoutWidth);
                 return (
                     <div
                         key={`handle-${i}`}

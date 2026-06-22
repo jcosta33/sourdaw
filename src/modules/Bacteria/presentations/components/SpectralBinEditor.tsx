@@ -132,7 +132,7 @@ export const SpectralBinEditor = ({
 
     const handlePointerDown = (e: React.PointerEvent): void => {
         drawingRef.current = true;
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        e.currentTarget.setPointerCapture(e.pointerId);
         updateBinsFromPointer(e);
     };
 
@@ -150,6 +150,10 @@ export const SpectralBinEditor = ({
         }
     };
 
+    const handlePointerCancel = (): void => {
+        drawingRef.current = false;
+    };
+
     return (
         <div className="relative">
             <canvas
@@ -160,6 +164,7 @@ export const SpectralBinEditor = ({
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
             />
             <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
                 Spectral {mode === 'gate' ? 'Gate' : 'Blur'}
