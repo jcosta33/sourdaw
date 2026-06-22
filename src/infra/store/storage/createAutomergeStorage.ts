@@ -65,14 +65,12 @@ export const createAutomergeStorage = <TData>(
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
-    const writeToCrdt = (value: TData | null): void => {
+    const writeToCrdt = (value: TData | null, message?: string): void => {
         if (!hasCrdtDoc(docId)) {
             return;
         }
 
         const crdtValue = value !== null && toCrdt ? toCrdt(value) : value;
-        const semanticCtx = getSemanticContext();
-        const message = semanticCtx?.message;
 
         mutateCrdtDoc<Record<string, unknown>>({
             id: docId,
@@ -96,10 +94,17 @@ export const createAutomergeStorage = <TData>(
             cachedValue = value;
 
             if (rafId === null) {
+                // Capture the semantic context now, while the caller's context
+                // is live. The actual write is deferred to the next animation
+                // frame; by the time it fires, `executeAppAction` has already
+                // cleared the context in its `finally`, so reading it inside the
+                // RAF would always see `null` and record `message: undefined`.
+                // The first `set()` of a frame owns the coalesced write's message.
+                const message = getSemanticContext()?.message;
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     try {
-                        writeToCrdt(cachedValue);
+                        writeToCrdt(cachedValue, message);
                     } catch (error) {
                         logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
                     }
@@ -109,13 +114,16 @@ export const createAutomergeStorage = <TData>(
 
         clear(): void {
             cachedValue = null;
-            // Flush immediately on clear rather than batching
+            // Flush immediately on clear rather than batching. The write is
+            // synchronous here, so the caller's semantic context (set by
+            // `executeAppAction`) is still live and can annotate the change.
+            const message = getSemanticContext()?.message;
             if (rafId !== null) {
                 cancelAnimationFrame(rafId);
                 rafId = null;
             }
             try {
-                writeToCrdt(null);
+                writeToCrdt(null, message);
             } catch {
                 // Best-effort
             }

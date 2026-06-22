@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import * as viewsBarrel from '../index';
 import { MergeResultDialog, type MergeResultData } from '../MergeResultDialog';
 
 describe('MergeResultDialog', () => {
@@ -89,6 +90,15 @@ describe('MergeResultDialog', () => {
         it('should display no changes message', () => {
             render(<MergeResultDialog result={noChangesResult} onClose={mockOnClose} />);
             expect(screen.getByText(/No changes detected/i)).toBeInTheDocument();
+        });
+    });
+
+    describe('public views barrel', () => {
+        // Regression: MergeResultDialog was tested but never re-exported from the
+        // module's public surface (presentations/views/index.ts), making it
+        // unreachable to any consumer. Keep it on the barrel.
+        it('re-exports MergeResultDialog from the views barrel', () => {
+            expect(viewsBarrel.MergeResultDialog).toBe(MergeResultDialog);
         });
     });
 });

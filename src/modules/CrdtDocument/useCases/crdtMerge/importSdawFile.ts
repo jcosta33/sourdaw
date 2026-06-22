@@ -4,20 +4,18 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { forkProjectBranch } from '../crdtBranching/forkProjectBranch';
 import { persistCrdtProject } from '../crdtProjectLifecycle';
 import { projectCrdtToStores } from '../projection/projectProjection';
 import { decodeSdawFile } from '../sdawFileFormat/decodeSdawFile';
 
 import { mergeDocumentBundleFromRepo } from './helpers';
 
-export type ImportDecision = 'merge' | 'branch' | 'separate';
+export type ImportDecision = 'merge' | 'separate';
 
 /**
  * Determine how to import a bundle based on shared lineage.
  *
- * - `merge`: same project lineage — merge directly
- * - `branch`: related but diverged — import as a branch
+ * - `merge`: shares history with the local project — merge directly
  * - `separate`: unrelated project — open separately
  */
 export function detectImportDecision(bundle: DocumentBundle): ImportDecision {
@@ -66,10 +64,6 @@ export async function importSdawFile(file: File): Promise<MergeResult | null> {
 
         if (decision === 'separate') {
             return null;
-        }
-
-        if (decision === 'branch') {
-            await forkProjectBranch(`Import ${file.name}`);
         }
 
         const result = await mergeDocumentBundleFromRepo(bundle);

@@ -44,7 +44,10 @@ function processLoad(bundle: Map<string, Uint8Array>): {
 
     for (const [id, bytes] of baseDocs) {
         docs.set(id, load<AnyDoc>(bytes));
-        if (id.startsWith(DOC_PREFIX_ROOT)) {
+        // Match the root id exactly. `startsWith` also matched sibling ids like
+        // `root-2`/`rootBackup`, so with several matches the last-iterated one
+        // won and root assignment depended on Map iteration order.
+        if (id === DOC_PREFIX_ROOT) {
             rootId = id;
         }
     }

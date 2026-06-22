@@ -15,7 +15,7 @@ import { FORMAT_VERSION, SDAW_MAGIC } from './helpers';
  *     4B Automerge binary length (little-endian)
  *     N  Automerge save() bytes
  */
-export function encodeSdawFile(bundle: DocumentBundle): Uint8Array {
+export function encodeSdawFile(bundle: DocumentBundle): Uint8Array<ArrayBuffer> {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
 
@@ -55,7 +55,10 @@ export function encodeSdawFile(bundle: DocumentBundle): Uint8Array {
 
     // Concatenate all chunks
     const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
+    // Allocate the backing `ArrayBuffer` explicitly (never a `SharedArrayBuffer`)
+    // so `result` is statically `Uint8Array<ArrayBuffer>` — a valid `BlobPart`
+    // without any cast at the call site (see exportSdawFile).
+    const result = new Uint8Array(new ArrayBuffer(totalLength));
     let offset = 0;
     for (const chunk of chunks) {
         result.set(chunk, offset);

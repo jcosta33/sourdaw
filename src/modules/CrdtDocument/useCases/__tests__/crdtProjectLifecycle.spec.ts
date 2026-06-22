@@ -7,11 +7,17 @@ const mocks = vi.hoisted(() => ({
     loadAll: vi.fn(),
     saveAll: vi.fn(() => new Map()),
     saveDocIncremental: vi.fn(),
+    getDoc: vi.fn(),
+    replaceDoc: vi.fn(),
     loadAllFromIdb: vi.fn(),
     saveAllToIdb: vi.fn(),
     saveIncrementalToIdb: vi.fn(),
     clearIncrementalsFromIdb: vi.fn(),
     hasCrdtDocsInIdb: vi.fn(),
+    branchStoreValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' } as {
+        branches: { branchId: string; rootDocId: string }[];
+        activeBranchId: string;
+    } | null,
 }));
 
 vi.mock('../../repositories/automergeRepository', () => ({
@@ -20,6 +26,14 @@ vi.mock('../../repositories/automergeRepository', () => ({
         loadAll: mocks.loadAll,
         saveAll: mocks.saveAll,
         saveDocIncremental: mocks.saveDocIncremental,
+        getDoc: mocks.getDoc,
+        replaceDoc: mocks.replaceDoc,
+    },
+}));
+
+vi.mock('../../stores/branchStore', () => ({
+    get branchStore() {
+        return { value: mocks.branchStoreValue };
     },
 }));
 
@@ -34,7 +48,13 @@ vi.mock('../../repositories/crdtPersistence/clearIncrementalsFromIdb', () => ({
 vi.mock('../../repositories/crdtPersistence/hasCrdtDocsInIdb', () => ({ hasCrdtDocsInIdb: mocks.hasCrdtDocsInIdb }));
 
 describe('crdtProjectLifecycle', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.branchStoreValue = {
+            branches: [{ branchId: 'main', rootDocId: 'root' }],
+            activeBranchId: 'main',
+        };
+    });
 
     it('createCrdtProject initializes repo and compacts', async () => {
         await createCrdtProject('New Project');
@@ -50,6 +70,54 @@ describe('crdtProjectLifecycle', () => {
 
         expect(result).toBe(true);
         expect(mocks.loadAll).toHaveBeenCalledWith(mockBundle);
+    });
+
+    it('loadCrdtProject restores the last-active branch into the root slot', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.branchStoreValue = {
+            branches: [
+                { branchId: 'main', rootDocId: 'root' },
+                { branchId: 'feat', rootDocId: 'branch_feat' },
+            ],
+            activeBranchId: 'feat',
+        };
+        const branchDoc = { tag: 'feat-doc' };
+        mocks.getDoc.mockImplementation((id: string) => (id === 'branch_feat' ? branchDoc : undefined));
+
+        await loadCrdtProject();
+
+        // Regression: reopening must land on the active branch, not whatever doc
+        // last occupied the root slot.
+        expect(mocks.replaceDoc).toHaveBeenCalledWith('root', branchDoc);
+    });
+
+    it('loadCrdtProject leaves the root slot untouched when the active branch is main', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.branchStoreValue = {
+            branches: [{ branchId: 'main', rootDocId: 'root' }],
+            activeBranchId: 'main',
+        };
+
+        await loadCrdtProject();
+
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
+    });
+
+    it('loadCrdtProject stays on the root slot when the active branch doc is absent', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.branchStoreValue = {
+            branches: [
+                { branchId: 'main', rootDocId: 'root' },
+                { branchId: 'feat', rootDocId: 'branch_feat' },
+            ],
+            activeBranchId: 'feat',
+        };
+        mocks.getDoc.mockReturnValue(undefined);
+
+        const result = await loadCrdtProject();
+
+        expect(result).toBe(true);
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
 
     it('persistCrdtProject saves incremental chunk to IDB', async () => {

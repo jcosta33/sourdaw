@@ -1,11 +1,78 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../mergeBranch';
+import { mergeBranch } from '../mergeBranch';
+
+const SOURCE_DOC = { tag: 'source' };
+const TARGET_DOC = { tag: 'target' };
+const MERGED_DOC = { tag: 'merged' };
+
+const docs: Record<string, unknown> = {};
+
+const mocks = vi.hoisted(() => ({
+    getDoc: vi.fn(),
+    replaceDoc: vi.fn(),
+    saveAll: vi.fn(() => new Map()),
+    storeValue: {
+        branches: [
+            { branchId: 'main', rootDocId: 'root' },
+            { branchId: 'feat', rootDocId: 'branch_feat' },
+            { branchId: 'src', rootDocId: 'branch_src' },
+        ],
+        activeBranchId: 'feat',
+    },
+    saveAllToIdb: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    merge: vi.fn(() => MERGED_DOC),
+    clone: vi.fn((d: unknown) => ({ tag: 'cloned', from: d })),
+}));
+
+vi.mock('@automerge/automerge', () => ({ merge: mocks.merge, clone: mocks.clone }));
+vi.mock('../../../repositories/automergeRepository', () => ({
+    automergeRepository: { getDoc: mocks.getDoc, replaceDoc: mocks.replaceDoc, saveAll: mocks.saveAll },
+}));
+vi.mock('../../../repositories/crdtPersistence/saveAllToIdb', () => ({ saveAllToIdb: mocks.saveAllToIdb }));
+vi.mock('../../../stores/branchStore', () => ({
+    get branchStore() {
+        return { value: mocks.storeValue };
+    },
+}));
+vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
 
 describe('mergeBranch', () => {
-    it('should export mergeBranch', () => {
-        expect(subject.mergeBranch).toBeDefined();
-        const time = typeof subject.mergeBranch;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+        docs.root = TARGET_DOC;
+        docs.branch_src = SOURCE_DOC;
+        mocks.getDoc.mockImplementation((id: string) => docs[id]);
+        mocks.merge.mockReturnValue(MERGED_DOC);
+        mocks.storeValue.activeBranchId = 'feat';
+    });
+
+    it('merges the source into the active branch (root slot) and refreshes its snapshot', async () => {
+        await mergeBranch('src');
+
+        // Regression: merge resolves the active branch (feat) and merges source
+        // into the root slot, then mirrors the result back to branch_feat so the
+        // merge survives a later switch away.
+        expect(mocks.merge).toHaveBeenCalledWith(TARGET_DOC, SOURCE_DOC);
+        expect(mocks.replaceDoc).toHaveBeenCalledWith('root', MERGED_DOC);
+        const snapshot = mocks.replaceDoc.mock.calls.find((c) => c[0] === 'branch_feat');
+        expect(snapshot).toBeDefined();
+        expect(mocks.saveAllToIdb).toHaveBeenCalled();
+    });
+
+    it('rejects merging a branch into itself', async () => {
+        mocks.storeValue.activeBranchId = 'src';
+        await expect(mergeBranch('src')).rejects.toThrow(/into itself/);
+        expect(mocks.merge).not.toHaveBeenCalled();
+    });
+
+    it('throws when the source branch is unknown', async () => {
+        await expect(mergeBranch('ghost')).rejects.toThrow(/Source branch not found/);
+    });
+
+    it('throws when a document is missing', async () => {
+        docs.branch_src = undefined;
+        await expect(mergeBranch('src')).rejects.toThrow(/missing documents/);
     });
 });

@@ -1,17 +1,10 @@
-/** Unique identifier for an Automerge document in the multi-document model. */
-export type DocId = string;
-
-/** A bundle of serialized Automerge documents keyed by DocId. */
-export type DocumentBundle = Map<DocId, Uint8Array>;
-
-/** Summary of a merge operation. */
-export type MergeResult = {
-    mergedDocIds: DocId[];
-    newDocIds: DocId[];
-};
-
-/** Document ID for the root project document. */
-export const DOC_PREFIX_ROOT = 'root';
-
-/** Document ID for the session-scoped branch metadata document (not persisted after session end). */
-export const DOC_BRANCHES = '__branches__';
+/**
+ * Re-export of the canonical CRDT document type module.
+ *
+ * The single source of truth lives in `../models/CrdtDocumentTypes` (types
+ * belong in `models/`, and the `repositories/` layer can import from there but
+ * not from `useCases/`). This barrel keeps the historical `useCases/`-relative
+ * import path working for use-case files and external callers without
+ * duplicating the definitions — change the types in one place.
+ */
+export * from '../models/CrdtDocumentTypes';

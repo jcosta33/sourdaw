@@ -89,6 +89,21 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
 type ChangeListener = (docId?: DocId) => void;
 
 /**
+ * Active snapshot transaction state. While one is open, every mutation method
+ * captures the pre-mutation clone of each doc it is about to replace — lazily,
+ * the first time that doc is touched. Automerge v3 mutates the WASM-backed doc
+ * in place (the pre-`change()` reference reads the *post*-change state, verified
+ * empirically), so the "before" snapshot must be cloned *before* the mutation
+ * lands, not read back from a retained reference afterwards.
+ */
+type SnapshotTransaction = {
+    /** Docs dirtied during the transaction, in first-touch order. */
+    readonly dirtied: Set<DocId>;
+    /** Pre-mutation clones, captured lazily on first touch per doc. */
+    readonly preDocs: Map<DocId, Doc<AnyDoc>>;
+};
+
+/**
  * Singleton repository managing all live Automerge documents for the current project.
  *
  * This is the central CRDT state holder. All mutations flow through `changeDoc()`,
@@ -98,6 +113,14 @@ class AutomergeRepository {
     private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private changeListeners = new Set<ChangeListener>();
+    /** The currently-open snapshot transaction, or null when none is in flight. */
+    private activeTransaction: SnapshotTransaction | null = null;
+    /**
+     * Tail of the serial transaction queue. `transactSnapshot` chains onto this
+     * so two racing callers never share a `dirtied`/`preDocs` set — the second
+     * waits for the first to finish before its own before-bundle is captured.
+     */
+    private transactionQueue: Promise<unknown> = Promise.resolve();
     // Automerge's actor ID must be a hex string with an even length; the
     // default shape it uses is a 16-byte (32-char) hex. `crypto.randomUUID()`
     // without hyphens gives us 32 hex chars for free and avoids allocating
@@ -175,6 +198,7 @@ class AutomergeRepository {
             throw new Error(`Document not found: ${id}`);
         }
 
+        this.captureBeforeMutation(id);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated as Doc<AnyDoc>);
         this.notifyListeners(id);
@@ -185,6 +209,7 @@ class AutomergeRepository {
      * Notifies listeners so response sync messages can be generated.
      */
     replaceDoc(id: DocId, doc: Doc<unknown>): void {
+        this.captureBeforeMutation(id);
         this.docs.set(id, doc as Doc<AnyDoc>);
         this.notifyListeners(id);
     }
@@ -196,6 +221,7 @@ class AutomergeRepository {
     mergeRemoteDoc(id: DocId, binary: Uint8Array): void {
         const incoming = load<AnyDoc>(binary);
 
+        this.captureBeforeMutation(id);
         if (this.docs.has(id)) {
             const local = this.docs.get(id)!;
             const merged = merge(local, incoming);
@@ -235,40 +261,84 @@ class AutomergeRepository {
     }
 
     /**
+     * Clone the pre-mutation state of `id` into the active transaction the
+     * first time that doc is touched within the transaction. Called by every
+     * mutation method *before* it replaces the doc, so the clone captures the
+     * genuine "before" state (Automerge v3 mutates the doc in place — a
+     * reference held from before `change()` reads the post-change state, so the
+     * snapshot cannot be reconstructed after the fact). No-op outside a
+     * transaction, and at most one clone per doc per transaction.
+     */
+    private captureBeforeMutation(id: DocId): void {
+        const txn = this.activeTransaction;
+        if (!txn) {
+            return;
+        }
+        txn.dirtied.add(id);
+        if (!txn.preDocs.has(id)) {
+            const current = this.docs.get(id);
+            if (current) {
+                txn.preDocs.set(id, clone(current));
+            }
+        }
+    }
+
+    /**
+     * Wait for any in-flight `requestAnimationFrame`-deferred work to drain.
+     *
+     * Store writes (`createAutomergeStorage.set`) update their in-memory cache
+     * synchronously but defer the actual `changeDoc()` to the next animation
+     * frame to coalesce burst updates. A `transactSnapshot` body that drives
+     * such stores therefore returns before any CRDT mutation has landed. This
+     * yields past the current frame's rAF queue (scheduling our own rAF after
+     * the store's, then a macrotask) so those deferred writes — and the
+     * `captureBeforeMutation` clones they trigger — complete before we read the
+     * dirtied set. Matches the flush idiom already used in sendChatMessage.
+     */
+    private flushPendingFrameWrites(): Promise<void> {
+        if (typeof requestAnimationFrame !== 'function') {
+            // Non-DOM environment (e.g. worker/test without rAF): nothing to drain.
+            return Promise.resolve();
+        }
+        return new Promise<void>((resolve) => {
+            requestAnimationFrame(() => setTimeout(resolve, 0));
+        });
+    }
+
+    /**
      * Run an async operation and capture before/after binary snapshots
      * ONLY for the documents that were modified.
+     *
+     * Transactions are serialised through an internal queue: a second call
+     * waits for the first to finish before opening, so two racing callers never
+     * interleave their dirtied sets nor capture each other's mutations.
      */
-    async transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
-        const dirtied = new Set<DocId>();
-        const preDocs = new Map<DocId, Doc<AnyDoc>>();
+    transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+        const run = this.transactionQueue.then(() => this.runTransaction(fn));
+        // Keep the queue tail alive even if this transaction rejects, so a
+        // failed transaction does not wedge every later one.
+        this.transactionQueue = run.catch(() => undefined);
+        return run;
+    }
 
-        // Cheaply clone all docs to retain "before" state in memory
-        for (const [id, doc] of this.docs) {
-            preDocs.set(id, clone(doc));
-        }
+    private async runTransaction(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+        const txn: SnapshotTransaction = { dirtied: new Set<DocId>(), preDocs: new Map<DocId, Doc<AnyDoc>>() };
 
-        const unsub = this.onChange((docId) => {
-            if (docId) {
-                dirtied.add(docId);
-            } else {
-                // Bulk change
-                for (const id of this.docs.keys()) {
-                    dirtied.add(id);
-                }
-            }
-        });
-
+        this.activeTransaction = txn;
         try {
             await fn();
+            // Drain rAF-deferred store writes so their mutations (and the
+            // pre-mutation clones they trigger) land before we read `dirtied`.
+            await this.flushPendingFrameWrites();
         } finally {
-            unsub();
+            this.activeTransaction = null;
         }
 
         const bundleBefore: DocumentBundle = new Map();
         const bundleAfter: DocumentBundle = new Map();
 
-        for (const id of dirtied) {
-            const preDoc = preDocs.get(id);
+        for (const id of txn.dirtied) {
+            const preDoc = txn.preDocs.get(id);
             if (preDoc) {
                 bundleBefore.set(id, save(preDoc));
             }
@@ -288,6 +358,7 @@ class AutomergeRepository {
      */
     restoreSnapshot(bundle: DocumentBundle): void {
         for (const [id, bytes] of bundle) {
+            this.captureBeforeMutation(id);
             this.docs.set(id, load<AnyDoc>(bytes));
         }
         this.notifyListeners();
@@ -346,7 +417,11 @@ class AutomergeRepository {
 
         for (const [id, bytes] of baseDocs) {
             this.docs.set(id, load<AnyDoc>(bytes));
-            if (id.startsWith(DOC_PREFIX_ROOT)) {
+            // Match the root id exactly. `startsWith` also matched sibling ids
+            // like `root-2`/`rootBackup`, so with several matches the
+            // last-iterated one won and root assignment depended on Map
+            // iteration order.
+            if (id === DOC_PREFIX_ROOT) {
                 this.rootId = id;
             }
         }
@@ -443,6 +518,9 @@ class AutomergeRepository {
     reset(): void {
         this.docs.clear();
         this.rootId = DOC_PREFIX_ROOT;
+        // Drop change listeners too: otherwise projection-bridge subscriptions
+        // from a previous session keep firing on the next session's edits.
+        this.changeListeners.clear();
     }
 
     /** Get the incremental changes since a given set of heads. */
