@@ -36,9 +36,11 @@ function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): num
         }
         default:
             // Audio-thread no-op fallback. setParam clamps `shape` to a valid
-            // LfoShape, so this is unreachable in practice — but throwing here
-            // would propagate through MidiRack.processBlock's chain loop (no
-            // try/catch) and abort the rest of the block. Return a neutral 0.
+            // LfoShape, so this is unreachable in practice. MidiRack.processBlock
+            // now wraps each processMidi call in try/catch and treats a throw as a
+            // transparent bypass for the block, so a throw here would no longer
+            // abort the chain — but it would silently drop this processor's output
+            // for the block. Returning a neutral 0 keeps the LFO emitting instead.
             return 0;
     }
 }

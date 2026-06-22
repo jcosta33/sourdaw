@@ -12,6 +12,7 @@
  *   ← { type: 'setBypass',    processorId, bypassed }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
  *   → { type: 'processed',    requestId, events }
+ *   → { type: 'notesOff',     events }   // hung-note offs from removeProcessor
  *   ← { type: 'allNotesOff',  nowSamples }
  */
 
@@ -47,9 +48,18 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 case 'addProcessor':
                     this._rack.addProcessor(createProcessor(data.processorType, data.processorId));
                     break;
-                case 'removeProcessor':
-                    this._rack.removeProcessor(data.processorId);
+                case 'removeProcessor': {
+                    // removeProcessor returns a Note Off for every note still
+                    // sounding through the worklet chain. The worklet has no
+                    // instrument downstream of its own, so post the offs back to
+                    // the main thread (its only channel) and let the node route
+                    // them to the live instrument — otherwise the note hangs.
+                    const offs = this._rack.removeProcessor(data.processorId, currentFrame);
+                    if (offs.length > 0) {
+                        this.port.postMessage({ type: 'notesOff', events: offs });
+                    }
                     break;
+                }
                 case 'reorder':
                     this._rack.reorder(data.fromIdx, data.toIdx);
                     break;

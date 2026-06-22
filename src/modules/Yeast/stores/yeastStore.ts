@@ -12,6 +12,7 @@
  *   - internal sync and registration helpers used by the use cases
  */
 
+import { eventBus } from '#/app/registerDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
@@ -60,15 +61,21 @@ export const yeastStore = createStore<YeastState>({ initialData: defaultState })
  * A worklet mutation issued before the worklet node finished initializing.
  *
  * `addProcessor`/`removeProcessor` are replayed from `processorTypeMap`, but
- * `setParam`/`setBypass`/`reorder` leave no trace in that map — they are
- * applied directly to processor instances or to chain order. Buffering them
- * here lets `getYeastWorkletNodeAsync` replay them (in issue order, after the
- * add-replay) so the worklet rack matches the main-thread rack on resolve.
+ * `setParam`/`setBypass` leave no trace in that map — they are applied directly
+ * to processor instances. Buffering them here lets `getYeastWorkletNodeAsync`
+ * replay them (in issue order, after the add-replay) so the worklet rack matches
+ * the main-thread rack on resolve.
+ *
+ * `reorder` is deliberately NOT buffered: a raw (fromIdx, toIdx) recorded
+ * against the rack's index at issue time diverges if a reorder and a
+ * removeProcessor interleave during init (the indices shift under it). Instead
+ * the resolve handler reconciles the worklet chain to the rack's authoritative
+ * processor-id order in one pass — the rack already applied every reorder and
+ * remove synchronously, so its id order is the single source of truth.
  */
 type PendingWorkletOp =
     | { kind: 'setParam'; id: string; name: string; value: number }
-    | { kind: 'setBypass'; id: string; bypassed: boolean }
-    | { kind: 'reorder'; fromIdx: number; toIdx: number };
+    | { kind: 'setBypass'; id: string; bypassed: boolean };
 
 type YeastSessionState = {
     rackInstance: MidiRack | null;
@@ -107,14 +114,31 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
     session._workletNodePromise = createYeastWorkletNode(ctx)
         .then((node) => {
             session._workletNode = node;
+            // Route the worklet rack's hung-note offs (from a mid-playback
+            // removeProcessor) to the live instrument via the same app event the
+            // main-thread use case emits, so the AudioEngine has a single sink.
+            // Without this the worklet posts the offs back but nothing forwards
+            // them and the note hangs.
+            node.onNotesOff((notes) => {
+                if (notes.length > 0) {
+                    void eventBus.emit('yeast.notesOff', { notes });
+                }
+            });
             // Sync any processors that were added before the worklet was ready.
             for (const [id, type] of session.processorTypeMap) {
                 node.addProcessor(type, id);
             }
-            // Replay param/bypass/reorder mutations issued during init — these
-            // are not recoverable from processorTypeMap, so without this they
-            // are silently lost on the worklet rack (the add-replay above only
-            // restores processor identity, not their tweaked state or order).
+            // Reconcile the worklet chain order to the rack's authoritative
+            // processor-id order. The add-replay above appended processors in
+            // `processorTypeMap` insertion order, which can differ from the rack's
+            // order after any reorder/remove issued during init. Reorder by id —
+            // not by buffered raw indices, which diverge when a reorder and a
+            // remove interleave (each shifts the indices under the other).
+            reconcileWorkletOrder(node, getYeastRack().getProcessorIds(), [...session.processorTypeMap.keys()]);
+            // Replay param/bypass mutations issued during init — these are not
+            // recoverable from processorTypeMap, so without this they are silently
+            // lost on the worklet rack (the add-replay above only restores
+            // processor identity, not their tweaked state).
             for (const op of session.pendingWorkletOps) {
                 switch (op.kind) {
                     case 'setParam':
@@ -122,9 +146,6 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
                         break;
                     case 'setBypass':
                         node.setBypass(op.id, op.bypassed);
-                        break;
-                    case 'reorder':
-                        node.reorder(op.fromIdx, op.toIdx);
                         break;
                 }
             }
@@ -144,6 +165,40 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
     return session._workletNodePromise;
 }
 
+/**
+ * Reorder the worklet chain to match `targetOrder` (the rack's authoritative
+ * processor-id order), given the worklet's current id order after the
+ * add-replay. Issues a selection-sort sequence of `reorder(from, to)` index
+ * moves — the same op the worklet protocol already supports — tracking a local
+ * mirror of the chain so each move's indices stay correct. Ids present in
+ * `currentOrder` but absent from `targetOrder` (or vice versa) are skipped; in
+ * practice both lists hold the same id set, since the add-replay adds exactly
+ * the registered processors.
+ */
+function reconcileWorkletOrder(
+    node: YeastWorkletNodeResult,
+    targetOrder: readonly string[],
+    currentOrder: readonly string[]
+): void {
+    const working = currentOrder.filter((id) => targetOrder.includes(id));
+    const target = targetOrder.filter((id) => working.includes(id));
+    for (let toIdx = 0; toIdx < target.length; toIdx++) {
+        const wantId = target[toIdx]!;
+        if (working[toIdx] === wantId) {
+            continue;
+        }
+        const fromIdx = working.indexOf(wantId, toIdx);
+        if (fromIdx === -1) {
+            continue;
+        }
+        node.reorder(fromIdx, toIdx);
+        // Mirror the move locally: splice out at fromIdx, insert at toIdx, so
+        // subsequent moves compute against the chain's real post-move order.
+        const [moved] = working.splice(fromIdx, 1);
+        working.splice(toIdx, 0, moved!);
+    }
+}
+
 export function getYeastRack(): MidiRack {
     if (!session.rackInstance) {
         session.rackInstance = new MidiRack();
@@ -154,8 +209,9 @@ export function getYeastRack(): MidiRack {
 /**
  * Recorder returned by `getWorkletNodeSync` while the real worklet node is
  * still initializing. It buffers the mutations that the resolve-time replay
- * cannot reconstruct from `processorTypeMap` (param/bypass/reorder) so they
- * are not lost, and no-ops add/remove (replayed from the type map) and
+ * cannot reconstruct from `processorTypeMap` (param/bypass) so they are not
+ * lost; no-ops add/remove (replayed from the type map), `reorder` (the resolve
+ * handler reconciles chain order from the rack's authoritative id order), and
  * `processBlock` (only ever driven through `getYeastWorkletNodeAsync`).
  */
 function createPendingWorkletRecorder(): YeastWorkletNodeResult {
@@ -171,8 +227,10 @@ function createPendingWorkletRecorder(): YeastWorkletNodeResult {
         removeProcessor: () => {
             /* replayed from processorTypeMap on resolve */
         },
-        reorder: (fromIdx, toIdx) => {
-            session.pendingWorkletOps.push({ kind: 'reorder', fromIdx, toIdx });
+        reorder: () => {
+            /* not buffered: the resolve handler reconciles the worklet chain to
+               the rack's authoritative id order in one pass, which already
+               reflects every reorder applied to the rack during init */
         },
         setParam: (id, name, value) => {
             session.pendingWorkletOps.push({ kind: 'setParam', id, name, value });
@@ -182,6 +240,10 @@ function createPendingWorkletRecorder(): YeastWorkletNodeResult {
         },
         allNotesOff: () => {
             /* transient panic state; nothing to replay on resolve */
+        },
+        onNotesOff: () => () => {
+            /* no real node yet; removeProcessor on the recorder is a no-op
+               (replayed from processorTypeMap), so it emits no hung-note offs */
         },
         destroy: () => {
             /* no real node to tear down */

@@ -43,6 +43,7 @@ import {
 import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { audioEngine } from '../createWebAudioEngine';
 
+import { routeYeastNoteOffToInstrument } from './routeYeastNoteOff';
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
 
 function getTrackStoreState(): TrackStoreState | null {
@@ -166,29 +167,14 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
                     ctx.sampleRate
                 );
                 const strip = audioEngine.getTrackStrip(instrumentTrack.id);
+                const emitGrandBouleOff = (deviceId: string, midiNote: number): void => {
+                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote });
+                };
                 for (const evt of processedEvents) {
                     if (evt.kind.type !== 'noteOff') {
                         continue;
                     }
-                    const evtNote = evt.kind.note;
-                    const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
-                    if (fDev) {
-                        const dn = strip?.deviceNodes.find((data) => data.type === 'fermenter');
-                        dn?.fermenterControls?.noteOff(evtNote);
-                        continue;
-                    }
-                    const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
-                    if (gbDev) {
-                        const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
-                        dn?.grandBouleControls?.noteOff(evtNote);
-                        void deps.eventBus.emit('midi.noteOff', { deviceId: gbDev.id, midiNote: evtNote });
-                        continue;
-                    }
-                    const lDev = instrumentTrack.devices.find((data) => data.type === 'levain');
-                    if (lDev) {
-                        const dn = strip?.deviceNodes.find((data) => data.type === 'levain');
-                        dn?.levainControls?.noteOff(evtNote);
-                    }
+                    routeYeastNoteOffToInstrument(instrumentTrack, strip, evt.kind.note, emitGrandBouleOff);
                 }
             }
         }

@@ -57,6 +57,14 @@ export type YeastWorkletNodeResult = {
     setParam: (processorId: string, name: string, value: number) => void;
     setBypass: (processorId: string, bypassed: boolean) => void;
     allNotesOff: (nowSamples: number) => void;
+    /**
+     * Register a listener for the Note Offs a `removeProcessor` left hanging in
+     * the worklet rack. The worklet computes them on the audio thread and posts
+     * them back here; without a listener routing them to the live instrument,
+     * the note hangs. Returns an unsubscribe function. Multiple listeners are
+     * supported (last-registered are all notified).
+     */
+    onNotesOff: (handler: (notes: number[]) => void) => () => void;
     destroy: () => void;
 };
 
@@ -85,10 +93,26 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         return entry;
     };
 
+    const notesOffHandlers = new Set<(notes: number[]) => void>();
+
     node.port.onmessage = (event: MessageEvent): void => {
         const msg = event.data as { type: string; requestId?: number; events?: MidiEvent[] };
         if (msg.type === 'processed' && msg.requestId !== undefined) {
             settle(msg.requestId)?.resolve(msg.events ?? []);
+            return;
+        }
+        if (msg.type === 'notesOff') {
+            const notes: number[] = [];
+            for (const evt of msg.events ?? []) {
+                if (evt.kind.type === 'noteOff') {
+                    notes.push(evt.kind.note);
+                }
+            }
+            if (notes.length > 0) {
+                for (const handler of notesOffHandlers) {
+                    handler(notes);
+                }
+            }
         }
     };
 
@@ -121,6 +145,12 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         setParam: (processorId, name, value) => node.port.postMessage({ type: 'setParam', processorId, name, value }),
         setBypass: (processorId, bypassed) => node.port.postMessage({ type: 'setBypass', processorId, bypassed }),
         allNotesOff: (nowSamples) => node.port.postMessage({ type: 'allNotesOff', nowSamples }),
+        onNotesOff: (handler) => {
+            notesOffHandlers.add(handler);
+            return () => {
+                notesOffHandlers.delete(handler);
+            };
+        },
         destroy: () => {
             node.port.close();
             // The port is closed; no 'processed' reply can ever arrive. Reject

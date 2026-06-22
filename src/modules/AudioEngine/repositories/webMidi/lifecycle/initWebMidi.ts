@@ -1,8 +1,10 @@
+import { eventBus } from '#/app/registerDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
+import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
 import {
     getMidiAccess,
     getActiveInput,
@@ -67,7 +69,23 @@ export async function initWebMidi(): Promise<boolean> {
     // whenever selectedTrackId changes — app launch, project load, addTrack,
     // user click — we automatically route MIDI to the correct MIDI track
     // without having to patch every write-site.
-    type InitWebMidiWithSub = typeof initWebMidi & { _trackStoreSub?: boolean };
+    type InitWebMidiWithSub = typeof initWebMidi & { _trackStoreSub?: boolean; _yeastNotesOffSub?: boolean };
+    // Route Yeast hung-note offs (mid-playback processor removal) to the live
+    // instrument. The Yeast rack emits this app event because it has no
+    // instrument downstream of its own; the AudioEngine owns instrument routing,
+    // so it subscribes here (once, for the MIDI-routing lifetime) and forwards
+    // each off to the current target track's instrument device node.
+    if (!(initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub) {
+        (initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub = true;
+        eventBus.on('yeast.notesOff', ({ notes }) => {
+            routeYeastNoteOffsForTargetTrack(notes, {
+                getTrackStoreState: () => trackStore.value,
+                emitGrandBouleEvent: (deviceId, midiNote) => {
+                    void eventBus.emit('midi.noteOff', { deviceId, midiNote });
+                },
+            });
+        });
+    }
     if (!(initWebMidi as InitWebMidiWithSub)._trackStoreSub) {
         (initWebMidi as InitWebMidiWithSub)._trackStoreSub = true;
         let prevSelectedId: string | null = null;

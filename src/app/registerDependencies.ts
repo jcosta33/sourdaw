@@ -20,6 +20,7 @@ import {
     type MidiNoteOffPayload,
     type MidiPedalCcPayload,
 } from '#/modules/Workspace/events';
+import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 
 export type AppEvents = {
     // Domain events
@@ -64,6 +65,9 @@ export type AppEvents = {
     'midi.noteOn': MidiNoteOnPayload;
     'midi.noteOff': MidiNoteOffPayload;
     'midi.pedalCc': MidiPedalCcPayload;
+    // Note Offs a Yeast rack mutation (mid-playback processor removal) left
+    // hanging; the AudioEngine routes them to the live instrument.
+    'yeast.notesOff': YeastNotesOffPayload;
 
     // Timeline / zoom
     'zoom.toFit': VoidPayload;

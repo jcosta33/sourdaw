@@ -66,12 +66,16 @@ export class NoteFilter extends BaseMidiProcessor {
     }
 
     reset(): void {
-        // Do NOT clear filteredNotes here: a Note On that was filtered (swallowed)
-        // before reset was never forwarded downstream, so its eventual Note Off must
-        // still be suppressed. Clearing the set would let that orphan Note Off match
-        // the pass-through branch and leak a stray Note Off for a note nobody played.
-        // The set drains naturally as those Note Offs arrive and is bounded by the
-        // number of physically held filtered keys.
+        // Clear the filtered-note tracking. A filtered Note On was never forwarded
+        // downstream, so dropping its key can never orphan a sounding note — the
+        // only thing the key does is suppress a *matching* Note Off. Keeping a stale
+        // key across a reset/panic is strictly worse: if the user later widens the
+        // range so that note number now passes, the next Note On is forwarded and
+        // sounding, but its Note Off matches the stale key and is swallowed — a hung
+        // note. Clearing on reset closes that window; legitimately filtered Note
+        // On/Off pairs within a single playback span still match because they arrive
+        // without an intervening reset.
+        this.filteredNotes.clear();
     }
     setParam(name: string, value: number): void {
         switch (name) {

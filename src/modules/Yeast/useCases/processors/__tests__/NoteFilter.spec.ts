@@ -41,12 +41,23 @@ describe('NoteFilter', () => {
         expect(offOut).toHaveLength(0); // matching Note Off suppressed
     });
 
-    it('does not leak a Note Off for a filtered Note On after reset()', () => {
-        // Regression: reset() used to clear filteredNotes, so a Note Off arriving
-        // after reset for a note whose Note On was filtered no longer matched the
-        // set and leaked downstream — a stray Note Off for a note never played.
+    it('clears filtered-note tracking on reset() so a later legitimate Note Off is not suppressed (no hung note)', () => {
+        // Regression (round 2): reset() was a no-op that deliberately KEPT
+        // filteredNotes, on the theory that an orphan Note Off for a filtered
+        // Note On had to stay suppressed. That theory is unfounded — a filtered
+        // Note On was never forwarded downstream, so dropping its key can never
+        // orphan a sounding note. Worse, a surviving stale key suppresses a
+        // LATER legitimate Note Off for the same note number, hanging it:
+        //
+        //   1. note 40 filtered (note_min=60) → key stored, never forwarded
+        //   2. reset()/panic
+        //   3. user WIDENS the range (note_min=0) so note 40 now passes
+        //   4. new Note On 40 forwarded to the instrument (sounding)
+        //   5. its Note Off matches the STALE key and is swallowed → hung note
+        //
+        // reset() must clear the set so step 5's Note Off flows through.
         const filter = new NoteFilter('test-filter');
-        filter.setParam('note_min', 60);
+        filter.setParam('note_min', 60); // note 40 is filtered
 
         const onOut: MidiEvent[] = [];
         filter.processMidi(
@@ -54,13 +65,24 @@ describe('NoteFilter', () => {
             onOut,
             transport
         );
-        expect(onOut).toHaveLength(0);
+        expect(onOut).toHaveLength(0); // filtered, never forwarded
 
         filter.reset();
 
+        // Widen the range so note 40 now passes the filter.
+        filter.setParam('note_min', 0);
+
+        const onOut2: MidiEvent[] = [];
+        filter.processMidi(
+            [{ timeSamples: 50, kind: { type: 'noteOn', channel: 0, note: 40, velocity: 100 } }],
+            onOut2,
+            transport
+        );
+        expect(onOut2).toHaveLength(1); // now passes → forwarded → sounding on the instrument
+
         const offOut: MidiEvent[] = [];
         filter.processMidi([{ timeSamples: 100, kind: { type: 'noteOff', channel: 0, note: 40 } }], offOut, transport);
-        expect(offOut).toHaveLength(0); // still suppressed after reset — no stray Note Off
+        expect(offOut).toHaveLength(1); // its Note Off MUST be forwarded, not suppressed by the stale key
     });
 
     it('still forwards a Note Off for a note that passed the filter', () => {

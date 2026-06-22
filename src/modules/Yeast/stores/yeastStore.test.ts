@@ -35,6 +35,7 @@ function makeFakeNode(ctx: BaseAudioContext): { node: YeastWorkletNodeResult; ca
             calls.push({ m: 'setBypass', args: [id, bypassed] });
         },
         allNotesOff: () => {},
+        onNotesOff: () => () => {},
         destroy: () => {},
     };
     return { node, calls };
@@ -81,7 +82,7 @@ describe('getWorkletNodeSync — buffering during init', () => {
         expect(store.getWorkletNodeSync()).toBeNull();
     });
 
-    it('replays setParam/setBypass/reorder issued during init onto the worklet on resolve', async () => {
+    it('replays setParam/setBypass issued during init onto the worklet on resolve', async () => {
         const store = await freshStore();
         const { node, calls } = makeFakeNode(fakeCtx);
 
@@ -95,7 +96,6 @@ describe('getWorkletNodeSync — buffering during init', () => {
         // Mutations applied during init — these are lost without buffering.
         sync!.setParam('arp-1', 'rate', 4);
         sync!.setBypass('arp-1', true);
-        sync!.reorder(1, 0);
 
         // Nothing should have reached the real node yet.
         expect(calls).toEqual([]);
@@ -104,11 +104,12 @@ describe('getWorkletNodeSync — buffering during init', () => {
         resolveCreate!(node);
         await pending;
 
-        // The buffered ops were replayed, in issue order.
+        // The buffered ops were replayed, in issue order. (reorder is NOT
+        // buffered — the resolve handler reconciles chain order from the rack's
+        // id order; with no processors in the rack here there is nothing to move.)
         expect(calls).toEqual([
             { m: 'setParam', args: ['arp-1', 'rate', 4] },
             { m: 'setBypass', args: ['arp-1', true] },
-            { m: 'reorder', args: [1, 0] },
         ]);
     });
 
@@ -187,6 +188,74 @@ describe('reorderYeastProcessor — worklet mirror', () => {
         resolveCreate!(node);
         await pending;
 
-        expect(calls).toContainEqual({ m: 'reorder', args: [0, 1] });
+        // The reorder is no longer mirrored verbatim during init; instead the
+        // resolve handler reconciles the worklet chain to the rack's id order.
+        // With no processors registered, that reconcile is a no-op — the
+        // post-fix contract is verified end-to-end by the reconcile test below.
+        expect(calls.filter((c) => c.m === 'reorder')).toEqual([]);
+    });
+});
+
+describe('worklet-init order reconcile — reorder/remove interleave (MINOR-4)', () => {
+    /** Minimal processor the rack accepts; only id/order matter for this test. */
+    function fakeProcessor(id: string) {
+        return {
+            id,
+            name: id,
+            processMidi: () => {},
+            reset: () => [],
+            setBypassed: () => {},
+            isBypassed: () => false,
+            setParam: () => {},
+            latencySamples: () => 0,
+        };
+    }
+
+    it('reconciles the worklet chain to the rack id order when a reorder and a remove interleave during init', async () => {
+        const store = await freshStore();
+        const { node, calls } = makeFakeNode(fakeCtx);
+
+        const rack = store.getYeastRack();
+        // Build a 4-processor chain: a b c d. Register each type so the
+        // add-replay (which iterates processorTypeMap) knows to add them.
+        for (const id of ['a', 'b', 'c', 'd']) {
+            rack.addProcessor(fakeProcessor(id) as unknown as Parameters<typeof rack.addProcessor>[0]);
+            store.registerProcessorType(id, 'arpeggiator');
+        }
+
+        // Begin init: the worklet is in flight, so the recorder buffers nothing
+        // useful for order — reorders/removes only touch the main-thread rack.
+        const pending = store.getYeastWorkletNodeAsync(fakeCtx);
+
+        // Interleave a reorder and a remove on the rack during init. After this:
+        //   start:        a b c d
+        //   reorder(0,3): b c d a
+        //   remove b:     c d a   (also unregister its type)
+        rack.reorder(0, 3);
+        store.getWorkletNodeSync()!.reorder(0, 3); // recorder no-op post-fix
+        rack.removeProcessor('b');
+        store.unregisterProcessorType('b');
+        store.getWorkletNodeSync()!.removeProcessor('b'); // recorder no-op
+
+        expect(rack.getProcessorIds()).toEqual(['c', 'd', 'a']);
+
+        resolveCreate!(node);
+        await pending;
+
+        // Reconstruct the worklet chain order from the replayed add + reorder
+        // calls and assert it matches the rack's authoritative id order. A raw
+        // (fromIdx,toIdx) replay would diverge here because the remove shifted
+        // the indices the reorder was recorded against.
+        const worklet: string[] = [];
+        for (const c of calls) {
+            if (c.m === 'addProcessor') {
+                worklet.push(c.args[1]);
+            } else if (c.m === 'reorder') {
+                const [from, to] = c.args;
+                const [moved] = worklet.splice(from, 1);
+                worklet.splice(to, 0, moved!);
+            }
+        }
+        expect(worklet).toEqual(['c', 'd', 'a']);
     });
 });
