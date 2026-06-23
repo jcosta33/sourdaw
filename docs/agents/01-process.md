@@ -1,6 +1,6 @@
 # Agent process — documentation-first workflow
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 ## Why this exists
 
@@ -19,7 +19,7 @@ This repo uses three distinct tiers. Understanding the distinction matters:
 **Canonical process and templates** — `docs/agents/`
 Written for humans. Defines the workflow, file types, standards, and templates. Shared across all agents and sessions. The authoritative reference for how the system works. Changes here are intentional and reviewed.
 
-**Durable work products** — Corpus workspace (`../sourdaw-hq`): specs co-locate their audit and research under `../sourdaw-hq/specs/<feature>/` (`spec.md`, `audit.md`, `research.md`); whole-module audits land in `../sourdaw-hq/inventory/<Module>.md`; multi-feature research sources go to `../sourdaw-hq/intake/`
+**Durable work products** — Corpus workspace (`../sourdaw-works`): specs co-locate their audit and research under `../sourdaw-works/specs/<feature>/` (`spec.md`, `audit.md`, `research.md`); whole-module audits land in `../sourdaw-works/inventory/<Module>.md`; multi-feature research sources go to `../sourdaw-works/intake/`
 Generated artifacts that accumulate over the life of the project. Specs, audits, and research are persistent, reviewable, and shared across worktrees. They outlive individual sessions.
 
 **Local execution scaffolding** — `.agents/tasks/`
@@ -29,13 +29,13 @@ Runtime-only working notes for an active agent session. Task files are local, gi
 
 ## The five document types
 
-Specs, audits, and research now live in the Corpus workspace (`../sourdaw-hq`); skills and tasks stay in this repo. Each has a specific role:
+Specs, audits, and research now live in the Corpus workspace (`../sourdaw-works`); skills and tasks stay in this repo. Each has a specific role:
 
 | Directory                                                                                                      | Type     | Tier                                               |
 | -------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------- |
-| `../sourdaw-hq/specs/<feature>/audit.md` (one feature) or `../sourdaw-hq/inventory/<Module>.md` (whole module) | Audit    | Durable work product                               |
-| `../sourdaw-hq/specs/<feature>/spec.md`                                                                        | Spec     | Durable work product                               |
-| `../sourdaw-hq/specs/<feature>/research.md` (one feature) or `../sourdaw-hq/intake/` (multi-feature)           | Research | Durable work product (agent or developer-authored) |
+| `../sourdaw-works/specs/<feature>/audit.md` (one feature) or `../sourdaw-works/inventory/<Module>.md` (whole module) | Audit    | Durable work product                               |
+| `../sourdaw-works/specs/<feature>/spec.md`                                                                        | Spec     | Durable work product                               |
+| `../sourdaw-works/specs/<feature>/research.md` (one feature) or `../sourdaw-works/intake/` (multi-feature)           | Research | Durable work product (agent or developer-authored) |
 | `.agents/skills/`                                                                                              | Skill    | Durable work product                               |
 | `.agents/tasks/`                                                                                               | Task     | Local execution scaffolding                        |
 
@@ -61,7 +61,7 @@ Documentation is proportionate to scope. A trivial bug fix — a single isolated
 
 When the task is non-trivial, skipping should be a deliberate decision, not a default.
 
-**Research ownership:** Agents are empowered and expected to perform research. If you need to understand an API, fix a complex bug, or evaluate a technical approach, you should aggressively search the codebase and the internet. Agents can and should create new research files in the Corpus workspace — co-located at `../sourdaw-hq/specs/<feature>/research.md` for a single feature, or `../sourdaw-hq/intake/` for multi-feature sources — to document durable domain knowledge discovered during a session. Do not endlessly ruminate; validate your assumptions with sources.
+**Research ownership:** Agents are empowered and expected to perform research. If you need to understand an API, fix a complex bug, or evaluate a technical approach, you should aggressively search the codebase and the internet. Agents can and should create new research files in the Corpus workspace — co-located at `../sourdaw-works/specs/<feature>/research.md` for a single feature, or `../sourdaw-works/intake/` for multi-feature sources — to document durable domain knowledge discovered during a session. Do not endlessly ruminate; validate your assumptions with sources.
 
 ---
 
@@ -83,6 +83,6 @@ These apply to all agents in all worktrees:
 
 > **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
 > worktrees and task delegation are now owned by the Corpus workspace
-> (`../sourdaw-hq`) + Claude Code. Start from the task packet you were given in
-> `../sourdaw-hq/tasks/` (see `../sourdaw-hq/AGENTS.md`); worktree-local task scratch
+> (`../sourdaw-works`) + Claude Code. Start from the task packet you were given in
+> `../sourdaw-works/tasks/` (see `../sourdaw-works/AGENTS.md`); worktree-local task scratch
 > still lives at `.agents/tasks/`.

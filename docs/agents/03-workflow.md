@@ -1,6 +1,6 @@
 # Agent workflow
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 Step-by-step execution flow for agent sessions in this repo.
 
@@ -10,8 +10,8 @@ Step-by-step execution flow for agent sessions in this repo.
 
 > **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
 > worktrees and task delegation are now owned by the Corpus workspace
-> (`../sourdaw-hq`) + Claude Code — start from the task packet you were given in
-> `../sourdaw-hq/tasks/` (see `../sourdaw-hq/AGENTS.md`). Worktree-local task scratch
+> (`../sourdaw-works`) + Claude Code — start from the task packet you were given in
+> `../sourdaw-works/tasks/` (see `../sourdaw-works/AGENTS.md`). Worktree-local task scratch
 > still lives at `.agents/tasks/`.
 
 ---
@@ -34,17 +34,17 @@ Read the objective. Ask:
 
 **Do I need research?**
 → Yes if the task involves an algorithm, API, standard, library, or technology you do not already have accurate findings for.
-→ Check `../sourdaw-hq/specs/<feature>/research.md` (co-located with the feature spec) — or `../sourdaw-hq/intake/` for multi-feature sources — for existing findings. If none exist and it is needed, you are empowered and expected to perform research yourself. Aggressively search the codebase and internet to validate your assumptions and document durable findings in a new research file.
+→ Check `../sourdaw-works/specs/<feature>/research.md` (co-located with the feature spec) — or `../sourdaw-works/intake/` for multi-feature sources — for existing findings. If none exist and it is needed, you are empowered and expected to perform research yourself. Aggressively search the codebase and internet to validate your assumptions and document durable findings in a new research file.
 
 **Do I need an audit?**
 → Yes if the task involves changing, migrating, or fixing an area you have not examined in this session.
-→ Yes if there is a known audit for this area — for one feature, `../sourdaw-hq/specs/<feature>/audit.md` (observation-only); for a whole module, the brownfield map at `../sourdaw-hq/inventory/<Module>.md` — read it first, update it if stale.
+→ Yes if there is a known audit for this area — for one feature, `../sourdaw-works/specs/<feature>/audit.md` (observation-only); for a whole module, the brownfield map at `../sourdaw-works/inventory/<Module>.md` — read it first, update it if stale.
 → Create or update the matching audit (single feature) or inventory (whole module).
 
 **Do I need a spec?**
 → Yes if the task is implementing a feature with non-trivial scope, involves design choices, or needs to be verified by someone else.
-→ Yes if there is already a spec in `../sourdaw-hq/specs/<feature>/spec.md` for this area — read it before writing any code.
-→ Create or update `../sourdaw-hq/specs/<feature>/spec.md` (per-feature folder; AC-NNN + `Verify with:`; canonical template `../sourdaw-hq/templates/spec.md`).
+→ Yes if there is already a spec in `../sourdaw-works/specs/<feature>/spec.md` for this area — read it before writing any code.
+→ Create or update `../sourdaw-works/specs/<feature>/spec.md` (per-feature folder; AC-NNN + `Verify with:`; canonical template `../sourdaw-works/templates/spec.md`).
 
 **Do I need to load skills?**
 → Check `.agents/skills/` for any skill whose description matches the domain you are about to work in.
@@ -59,11 +59,11 @@ When in doubt: document first.
 Before creating new documents, check whether relevant ones already exist:
 
 ```
-../sourdaw-hq/specs/<feature>/audit.md  — existing single-feature audits (observation-only)
-../sourdaw-hq/inventory/<Module>.md     — existing whole-module brownfield maps
-../sourdaw-hq/specs/<feature>/spec.md   — existing feature specs (AC-NNN + Verify with:)
-../sourdaw-hq/specs/<feature>/research.md — existing per-feature research findings
-../sourdaw-hq/intake/                   — multi-feature research sources
+../sourdaw-works/specs/<feature>/audit.md  — existing single-feature audits (observation-only)
+../sourdaw-works/inventory/<Module>.md     — existing whole-module brownfield maps
+../sourdaw-works/specs/<feature>/spec.md   — existing feature specs (AC-NNN + Verify with:)
+../sourdaw-works/specs/<feature>/research.md — existing per-feature research findings
+../sourdaw-works/intake/                   — multi-feature research sources
 .agents/skills/                         — domain knowledge distillations
 ```
 

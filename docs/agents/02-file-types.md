@@ -1,6 +1,6 @@
 # File types
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo. Skill and Task types are still authored in this repo; the Audit, Spec, and Research definitions below describe artifacts that now live in the workspace.
+> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo. Skill and Task types are still authored in this repo; the Audit, Spec, and Research definitions below describe artifacts that now live in the workspace.
 
 Definitions, placement rules, required sections, and completion criteria for each document type used in this repo.
 
@@ -18,7 +18,7 @@ An audit is not a to-do list. It is an honest description of reality. It may con
 - When a feature area has known UX, architecture, or quality problems that need to be made legible before work begins
 - When handing off an area to another agent or session
 
-**Where it lives:** For one feature, co-located at `../sourdaw-hq/specs/<feature>/audit.md` (observation-only). For a whole module (brownfield map), `../sourdaw-hq/inventory/<Module>.md`.
+**Where it lives:** For one feature, co-located at `../sourdaw-works/specs/<feature>/audit.md` (observation-only). For a whole module (brownfield map), `../sourdaw-works/inventory/<Module>.md`.
 
 **Required sections:**
 
@@ -79,7 +79,7 @@ A spec is the contract between intent and code. An agent implementing from a spe
 - When multiple agents or sessions need to work toward the same goal without diverging
 - When the implementation has real design choices that need to be made explicit before code is written
 
-**Where it lives:** `../sourdaw-hq/specs/<feature>/spec.md` (per-feature folder; requirements as AC-NNN with a `Verify with:` line each; canonical template `../sourdaw-hq/templates/spec.md`)
+**Where it lives:** `../sourdaw-works/specs/<feature>/spec.md` (per-feature folder; requirements as AC-NNN with a `Verify with:` line each; canonical template `../sourdaw-works/templates/spec.md`)
 
 **Required sections:**
 
@@ -145,7 +145,7 @@ Research files are not opinion pieces. They synthesise external information and 
 - When implementation depends on understanding a standard, protocol, or API
 - When the decision would benefit from documented precedent from other products
 
-**Where it lives:** Co-located at `../sourdaw-hq/specs/<feature>/research.md`, or `../sourdaw-hq/intake/` for multi-feature sources.
+**Where it lives:** Co-located at `../sourdaw-works/specs/<feature>/research.md`, or `../sourdaw-works/intake/` for multi-feature sources.
 
 **Required sections:**
 
@@ -241,7 +241,7 @@ Task files are the agent's working memory for one session. They record context, 
 
 **When to create one:**
 At the start of any non-trivial agent session. Task packets and worktrees are now
-owned by the Corpus workspace (`../sourdaw-hq`) + Claude Code (the pre-Corpus `agents:*`
+owned by the Corpus workspace (`../sourdaw-works`) + Claude Code (the pre-Corpus `agents:*`
 launcher has been retired); worktree-local task scratch lives at `.agents/tasks/`.
 
 **Where it lives:** `.agents/tasks/<slug>.md` — gitignored, local to the worktree

@@ -11,7 +11,7 @@
  * frontend engine-bridge message path (see models/BacteriaPatch.ts), so the
  * add path is gated on the same open product decision as the rest of the
  * Lab/dock UI. It is recorded as a deferred decision in
- * sourdaw-hq/findings/FINDING-inventory-decisions-backlog.md (### Bacteria).
+ * sourdaw-works/findings/FINDING-inventory-decisions-backlog.md (### Bacteria).
  * Until that decision lands, no inert add-path scaffolding is kept here.
  */
 import { type ReactElement } from 'react';
