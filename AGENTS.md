@@ -4,15 +4,15 @@ This document provides the canonical instructions and architectural rules that Y
 
 ---
 
-## Swarm workspace
+## Corpus workspace
 
-Swarm workspace: `../sourdaw-hq` — read the task packet you are given before coding. Specs, audits, research, tasks, reviews, findings, decisions, and the board live there, not in this repo. This repo keeps only its domain skills (`.agents/skills/`) and worktree-local task scratch (`.agents/tasks/`).
+Corpus workspace: `../sourdaw-hq` — read the task packet you are given before coding. Specs, audits, research, tasks, reviews, findings, decisions, and the board live there, not in this repo. This repo keeps only its domain skills (`.agents/skills/`) and worktree-local task scratch (`.agents/tasks/`).
 
 ---
 
 ## Documentation-first workflow
 
-**Canonical process is Swarm.** Work is driven by a task packet from
+**Canonical process is Corpus.** Work is driven by a task packet from
 `../sourdaw-hq/tasks/`, written against a spec in
 `../sourdaw-hq/specs/<feature>/spec.md`; the loop (Pull → Spec → Task → Run →
 Review → Close) and its guides live in the workspace (`../sourdaw-hq/AGENTS.md`
@@ -32,23 +32,23 @@ Before starting significant implementation work, read the shared process documen
 | `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
-| `../sourdaw-hq/templates/`     | Ready-to-use Swarm artifact templates (specs, tasks, reviews, etc.)                                                      |
+| `../sourdaw-hq/templates/`     | Ready-to-use Corpus artifact templates (specs, tasks, reviews, etc.)                                                      |
 
-Working artifacts live in the Swarm workspace (`../sourdaw-hq`), except the domain
+Working artifacts live in the Corpus workspace (`../sourdaw-hq`), except the domain
 skills and worktree task scratch that stay in this repo:
 
-| Directory                        | Contains                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| `../sourdaw-hq/status.md`        | The board — one state row per feature                                      |
-| `../sourdaw-hq/specs/<feature>/` | `spec.md` (AC-NNN + Verify with:), co-located `audit.md` / `research.md`   |
-| `../sourdaw-hq/inventory/`       | Brownfield module-state maps (observation-only)                           |
-| `../sourdaw-hq/intake/`          | Captured umbrella sources and deferred-gap items                          |
-| `../sourdaw-hq/tasks/`           | Task packets — the unit of agent work                                     |
-| `../sourdaw-hq/reviews/`         | Review packets — the durable record of each task                          |
-| `../sourdaw-hq/findings/`        | Lessons saved at Close                                                    |
-| `../sourdaw-hq/decisions/`       | ADRs — numbered, immutable                                                |
-| `.agents/skills/`                | Reusable domain knowledge — load before working in a domain               |
-| `.agents/tasks/`                 | Worktree-local task scratch (gitignored)                                  |
+| Directory                        | Contains                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `../sourdaw-hq/status.md`        | The board — one state row per feature                                    |
+| `../sourdaw-hq/specs/<feature>/` | `spec.md` (AC-NNN + Verify with:), co-located `audit.md` / `research.md` |
+| `../sourdaw-hq/inventory/`       | Brownfield module-state maps (observation-only)                          |
+| `../sourdaw-hq/intake/`          | Captured umbrella sources and deferred-gap items                         |
+| `../sourdaw-hq/tasks/`           | Task packets — the unit of agent work                                    |
+| `../sourdaw-hq/reviews/`         | Review packets — the durable record of each task                         |
+| `../sourdaw-hq/findings/`        | Lessons saved at Close                                                   |
+| `../sourdaw-hq/decisions/`       | ADRs — numbered, immutable                                               |
+| `.agents/skills/`                | Reusable domain knowledge — load before working in a domain              |
+| `.agents/tasks/`                 | Worktree-local task scratch (gitignored)                                 |
 
 **Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
@@ -61,15 +61,15 @@ skills and worktree task scratch that stay in this repo:
 
 **Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
 
-Agent sandboxes (isolated worktrees) and task delegation are owned by the Swarm
-workspace (`../sourdaw-hq`) + Claude Code. The pre-Swarm in-repo `agents:*` launcher
+Agent sandboxes (isolated worktrees) and task delegation are owned by the Corpus
+workspace (`../sourdaw-hq`) + Claude Code. The pre-Corpus in-repo `agents:*` launcher
 has been retired.
 
 ---
 
 ## 📋 Your task file (worktree sessions only)
 
-This section only applies in a Swarm worktree session (an isolated worktree spun up for parallel work). In a regular session, `.agents/tasks/` will be empty and you can ignore this entirely.
+This section only applies in a Corpus worktree session (an isolated worktree spun up for parallel work). In a regular session, `.agents/tasks/` will be empty and you can ignore this entirely.
 
 If `.agents/tasks/` contains a file, that is **your** task file for this session — its filename is the session slug. Read it before doing anything else. It contains your spec reference, objective, plan, and checklist.
 

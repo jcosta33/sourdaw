@@ -1,6 +1,6 @@
 # Agent workflow
 
-> **Superseded — this repo adopted Swarm.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Swarm workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 Step-by-step execution flow for agent sessions in this repo.
 
@@ -9,7 +9,7 @@ Step-by-step execution flow for agent sessions in this repo.
 ## 1. Start a sandbox
 
 > **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
-> worktrees and task delegation are now owned by the Swarm workspace
+> worktrees and task delegation are now owned by the Corpus workspace
 > (`../sourdaw-hq`) + Claude Code — start from the task packet you were given in
 > `../sourdaw-hq/tasks/` (see `../sourdaw-hq/AGENTS.md`). Worktree-local task scratch
 > still lives at `.agents/tasks/`.

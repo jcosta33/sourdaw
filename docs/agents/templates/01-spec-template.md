@@ -1,4 +1,4 @@
-> **Legacy template — superseded by the Swarm workspace.** Canonical templates now live in `../sourdaw-hq/templates/` (`spec.md`, `task.md`, `review.md`); audits map to `../sourdaw-hq/inventory/` or a co-located `../sourdaw-hq/specs/<feature>/audit.md`. Author new specs, audits, and research in the workspace, not here. This file is kept for reference only.
+> **Legacy template — superseded by the Corpus workspace.** Canonical templates now live in `../sourdaw-hq/templates/` (`spec.md`, `task.md`, `review.md`); audits map to `../sourdaw-hq/inventory/` or a co-located `../sourdaw-hq/specs/<feature>/audit.md`. Author new specs, audits, and research in the workspace, not here. This file is kept for reference only.
 
 # <Feature name>
 

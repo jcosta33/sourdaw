@@ -1,6 +1,6 @@
 # Standards
 
-> **Superseded — this repo adopted Swarm.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Swarm workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 Writing and execution standards for all agents working in this repo.
 

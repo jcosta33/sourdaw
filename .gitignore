@@ -32,7 +32,7 @@ test-results/
 # Agent UI Scripts
 .agents/ui-scripts/*.png
 
-# Swarm — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
+# Corpus — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
 .agents/tmp/
 tmp/
-.swarm/
+.corpus/
