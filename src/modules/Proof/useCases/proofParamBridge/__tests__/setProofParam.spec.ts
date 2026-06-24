@@ -27,14 +27,14 @@ describe('setProofParam', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
 
-        setProofParam('dev-1', 'lim_ceiling', -1.5);
+        setProofParam({ deviceId: 'dev-1', name: 'lim_ceiling', value: -1.5 });
 
         expect(bridge.setParam).toHaveBeenCalledWith('lim_ceiling', -1.5);
         expect(persistDeviceParam).toHaveBeenCalledWith('dev-1', 'lim_ceiling', -1.5);
     });
 
     it('still persists when no bridge is registered for the device', () => {
-        setProofParam('unregistered', 'input_gain', 3);
+        setProofParam({ deviceId: 'unregistered', name: 'input_gain', value: 3 });
 
         expect(persistDeviceParam).toHaveBeenCalledWith('unregistered', 'input_gain', 3);
     });

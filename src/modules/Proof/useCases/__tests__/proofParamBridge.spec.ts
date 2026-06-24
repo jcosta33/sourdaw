@@ -15,7 +15,7 @@ describe('setProofParam', () => {
     });
 
     it('persists the parameter value', () => {
-        setProofParam('device-1', 'gain', 0.5);
+        setProofParam({ deviceId: 'device-1', name: 'gain', value: 0.5 });
 
         expect(persistDeviceParam).toHaveBeenCalledWith('device-1', 'gain', 0.5);
     });

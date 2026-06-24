@@ -258,7 +258,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 title={entry.label}
                                                 detail={entry.detail}
-                                                onPress={() => setProofUiLevel(deviceId, entry.level)}
+                                                onPress={() => setProofUiLevel({ deviceId, level: entry.level })}
                                             />
                                         );
                                     })}
@@ -369,8 +369,8 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 size="sm"
                                 onClick={() => {
                                     const next = !state.abBypass;
-                                    setProofParam(deviceId, 'ab_bypass', next ? 1 : 0);
-                                    setProofAbBypass(deviceId, next);
+                                    setProofParam({ deviceId, name: 'ab_bypass', value: next ? 1 : 0 });
+                                    setProofAbBypass({ deviceId, abBypass: next });
                                 }}
                             >
                                 {state.abBypass ? 'A / dry' : 'B / wet'}
@@ -630,36 +630,36 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
                 <ProofEqSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
-                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
+                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofDynSection
                     patch={patch}
                     dynGr={state.dynGr}
-                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
-                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
+                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofImagerSection
                     patch={patch}
                     correlation={state.correlation}
-                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
-                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
+                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofExciterSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
-                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
+                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofLimiterSection
                     patch={patch}
                     limiterGrDb={state.limiterGrDb}
                     truePeakDb={state.truePeakDb}
-                    onPatchChange={(p) => updateProofPatch(deviceId, p)}
-                    onSendParam={(n, v) => setProofParam(deviceId, n, v)}
+                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
+                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
                 />
             </div>
 

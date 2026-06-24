@@ -60,7 +60,7 @@ describe('loadProofPatchWithAudio', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         // Seed an active A/B compare, then run a full sync as preset load would.
-        setProofAbBypass(DEVICE_ID, true);
+        setProofAbBypass({ deviceId: DEVICE_ID, abBypass: true });
 
         syncFullPatch(DEVICE_ID);
 
@@ -70,7 +70,7 @@ describe('loadProofPatchWithAudio', () => {
     it('forwards ab_bypass as 0 when compare is inactive', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
-        setProofAbBypass(DEVICE_ID, false);
+        setProofAbBypass({ deviceId: DEVICE_ID, abBypass: false });
 
         syncFullPatch(DEVICE_ID);
 

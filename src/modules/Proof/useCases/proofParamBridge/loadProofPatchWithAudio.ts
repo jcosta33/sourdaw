@@ -125,6 +125,6 @@ type LoadProofPatchWithAudioInput = {
 };
 
 export function loadProofPatchWithAudio({ deviceId, patch }: LoadProofPatchWithAudioInput): void {
-    loadProofPatch(deviceId, patch);
+    loadProofPatch({ deviceId, patch });
     syncFullPatch(deviceId);
 }

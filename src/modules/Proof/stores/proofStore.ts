@@ -86,13 +86,23 @@ export function getProofState(deviceId: string): ProofState {
     return proofStore.value?.[deviceId] ?? createDefaultProofState();
 }
 
-export function setProofUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): void {
+type SetProofUiLevelInput = {
+    deviceId: string;
+    level: 1 | 2 | 3 | 4 | 5;
+};
+
+export function setProofUiLevel({ deviceId, level }: SetProofUiLevelInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({ ...instances, [deviceId]: { ...state, uiLevel: level } });
 }
 
-export function updateProofPatch(deviceId: string, patch: Partial<ProofPatch>): void {
+type UpdateProofPatchInput = {
+    deviceId: string;
+    patch: Partial<ProofPatch>;
+};
+
+export function updateProofPatch({ deviceId, patch }: UpdateProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
     // A granular edit diverges the patch from its source preset, so the preset
@@ -103,23 +113,41 @@ export function updateProofPatch(deviceId: string, patch: Partial<ProofPatch>): 
     });
 }
 
+type SetProofAbBypassInput = {
+    deviceId: string;
+    abBypass: boolean;
+};
+
 /**
  * Toggle the A/B compare flag (dry/wet at the chain head). Runtime state only —
  * deliberately not part of `ProofPatch`, so it is never persisted with a saved
  * patch and resets when a device is re-created.
  */
-export function setProofAbBypass(deviceId: string, abBypass: boolean): void {
+export function setProofAbBypass({ deviceId, abBypass }: SetProofAbBypassInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({ ...instances, [deviceId]: { ...state, abBypass } });
 }
 
-export function loadProofPatch(deviceId: string, patch: ProofPatch): void {
+type LoadProofPatchInput = {
+    deviceId: string;
+    patch: ProofPatch;
+};
+
+export function loadProofPatch({ deviceId, patch }: LoadProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({ ...instances, [deviceId]: { ...state, patch } });
 }
 
+/**
+ * RT-no-alloc exception (AGENTS.md:203): kept as positional `(deviceId, meters)`
+ * rather than a single object param. This is the ~60Hz meter-update sink driven
+ * by ProofNode's 16ms SAB poll (ProofNode.ts:137) via wasmDeviceRegistry.ts:535;
+ * wrapping the args in a fresh `{ deviceId, meters }` object on every frame would
+ * allocate per meter frame on a hot path, which AGENTS.md's RT-no-alloc rule
+ * takes precedence over. The `meters` payload is already a single object.
+ */
 export function updateProofMeters(deviceId: string, meters: ProofMeterData): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();

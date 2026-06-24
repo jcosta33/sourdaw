@@ -49,17 +49,20 @@ describe('getProofState', () => {
 
 describe('updateProofPatch', () => {
     it('merges the partial patch into the stored patch', () => {
-        loadProofPatch('dev', { ...DEFAULT_PATCH, limCeiling: -1 });
-        updateProofPatch('dev', { limCeiling: -4 });
+        loadProofPatch({ deviceId: 'dev', patch: { ...DEFAULT_PATCH, limCeiling: -1 } });
+        updateProofPatch({ deviceId: 'dev', patch: { limCeiling: -4 } });
         expect(getProofState('dev').patch.limCeiling).toBe(-4);
     });
 
     // ── Fix 4: a granular edit drops the preset identity ──
     it('clears presetId when a patch field is edited', () => {
-        loadProofPatch('dev', { ...DEFAULT_PATCH, name: 'Streaming Master', presetId: 'streaming' });
+        loadProofPatch({
+            deviceId: 'dev',
+            patch: { ...DEFAULT_PATCH, name: 'Streaming Master', presetId: 'streaming' },
+        });
         expect(getProofState('dev').patch.presetId).toBe('streaming');
 
-        updateProofPatch('dev', { limCeiling: -2 });
+        updateProofPatch({ deviceId: 'dev', patch: { limCeiling: -2 } });
 
         expect(getProofState('dev').patch.presetId).toBeUndefined();
         // The display name is untouched — proving name is no longer the identity.
@@ -69,9 +72,9 @@ describe('updateProofPatch', () => {
 
 describe('setProofAbBypass', () => {
     it('toggles the runtime A/B flag without touching the patch', () => {
-        loadProofPatch('dev', { ...DEFAULT_PATCH, presetId: 'streaming' });
+        loadProofPatch({ deviceId: 'dev', patch: { ...DEFAULT_PATCH, presetId: 'streaming' } });
 
-        setProofAbBypass('dev', true);
+        setProofAbBypass({ deviceId: 'dev', abBypass: true });
 
         expect(getProofState('dev').abBypass).toBe(true);
         // Runtime-only: the patch (and its preset identity) is unchanged.

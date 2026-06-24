@@ -16,7 +16,7 @@ export function setProofParamWithPatch<Key extends keyof ProofPatch>({
     key,
     value,
 }: SetProofParamWithPatchInput<Key>): void {
-    updateProofPatch(deviceId, { [key]: value });
+    updateProofPatch({ deviceId, patch: { [key]: value } });
 
     const bridge = bridges.get(deviceId);
     if (!bridge) {

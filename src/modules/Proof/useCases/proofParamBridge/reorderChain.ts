@@ -8,6 +8,6 @@ type ReorderChainInput = {
 };
 
 export function reorderChain({ deviceId, order }: ReorderChainInput): void {
-    updateProofPatch(deviceId, { chainOrder: order });
+    updateProofPatch({ deviceId, patch: { chainOrder: order } });
     bridges.get(deviceId)?.reorderModules(order);
 }
