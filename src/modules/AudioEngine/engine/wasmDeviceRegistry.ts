@@ -534,10 +534,13 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 result.onMeterData((data) => {
                     updateProofMeters(deviceId, data);
                 });
-                registerProofDevice(deviceId, {
-                    setParam: result.setParam,
-                    reorderModules: result.reorderModules,
-                    resetIntegrated: result.resetIntegrated,
+                registerProofDevice({
+                    deviceId,
+                    bridge: {
+                        setParam: result.setParam,
+                        reorderModules: result.reorderModules,
+                        resetIntegrated: result.resetIntegrated,
+                    },
                 });
                 onLoaded({
                     deviceId,

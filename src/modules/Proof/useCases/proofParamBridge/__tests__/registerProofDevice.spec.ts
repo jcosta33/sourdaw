@@ -18,15 +18,15 @@ describe('registerProofDevice', () => {
 
     it('registers a bridge so the device can be resolved from the registry', () => {
         const bridge = makeBridge();
-        registerProofDevice('dev-1', bridge);
+        registerProofDevice({ deviceId: 'dev-1', bridge });
         expect(bridges.get('dev-1')).toBe(bridge);
     });
 
     it('replaces an existing registration for the same device id', () => {
         const first = makeBridge();
         const second = makeBridge();
-        registerProofDevice('dev-1', first);
-        registerProofDevice('dev-1', second);
+        registerProofDevice({ deviceId: 'dev-1', bridge: first });
+        registerProofDevice({ deviceId: 'dev-1', bridge: second });
         expect(bridges.get('dev-1')).toBe(second);
     });
 });

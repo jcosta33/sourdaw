@@ -2,6 +2,8 @@ import { bridges } from './helpers';
 
 import type { ProofAudioBridge } from './helpers';
 
-export function registerProofDevice(deviceId: string, bridge: ProofAudioBridge): void {
+type RegisterProofDeviceInput = { deviceId: string; bridge: ProofAudioBridge };
+
+export function registerProofDevice({ deviceId, bridge }: RegisterProofDeviceInput): void {
     bridges.set(deviceId, bridge);
 }
