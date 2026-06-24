@@ -11,7 +11,7 @@ export type ProofPreset = {
 };
 
 function preset(id: string, name: string, category: string, overrides: Partial<ProofPatch>): ProofPreset {
-    return { id, name, category, patch: { ...DEFAULT_PATCH, ...overrides, name } };
+    return { id, name, category, patch: { ...DEFAULT_PATCH, ...overrides, name, presetId: id } };
 }
 
 export const PROOF_PRESETS: readonly ProofPreset[] = [

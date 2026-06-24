@@ -3,6 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
+// The external-plugin path loads its native bridge asynchronously. Mock the
+// bridge factory so the spec can capture the param ids/values that actually
+// reach the native engine and control when the load resolves.
+const bridgeSetParam = vi.fn<(paramId: number, value: number) => void>();
+let resolveBridge: ((result: unknown) => void) | undefined;
+vi.mock('../NativePluginBridgeNode', () => ({
+    createNativePluginBridgeNode: vi.fn(
+        () =>
+            new Promise((resolve) => {
+                resolveBridge = resolve;
+            })
+    ),
+}));
+
 describe('TrackNode', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
     let deps: TrackNodeDeps;
@@ -26,6 +40,7 @@ describe('TrackNode', () => {
             pendingDevicePromises: new Set(),
         };
         vi.clearAllMocks();
+        resolveBridge = undefined;
     });
 
     it('should create and wire up nodes correctly on initialization', () => {
@@ -89,5 +104,41 @@ describe('TrackNode', () => {
 
         expect(deps.getBusGainNode).toHaveBeenCalledWith('bus-1');
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
+    });
+
+    // Regression: live reload (ensureTrackStrips) adds the external-plugin device
+    // then immediately replays saved Track.devices[*].parameterValues via
+    // updateParam — but the bridge loads asynchronously, so those values land on
+    // the loading placeholder. They must be flushed to the native bridge once it
+    // resolves, the way the offline NativeDspDeviceStrategy replays them. Before
+    // the fix the buffered params were dropped, leaving the live engine at
+    // defaults while offline render reflected saved knobs.
+    it('replays params buffered before the native plugin bridge loads', async () => {
+        const track = new TrackNode('track-1', deps);
+
+        // Live reload order: addDevice, then updateParam from saved values —
+        // while the async bridge load is still pending.
+        track.addDevice('dev-1', 'external-plugin', 'inst-1');
+        track.updateParam('dev-1', '3', 0.75);
+        track.updateParam('dev-1', '7', -2);
+
+        expect(resolveBridge).toBeDefined();
+        // Nothing should have reached the native bridge yet — it isn't loaded.
+        expect(bridgeSetParam).not.toHaveBeenCalled();
+
+        // Resolve the bridge load and let the .then swap-in run.
+        resolveBridge!({
+            workletNode: { disconnect: vi.fn(), connect: vi.fn() },
+            setParam: bridgeSetParam,
+            setBypass: vi.fn(),
+            destroy: vi.fn(),
+        });
+        await Promise.all([...deps.pendingDevicePromises]);
+
+        // The buffered params reach the native bridge with the external-plugin
+        // name->id translation (parseInt) applied.
+        expect(bridgeSetParam).toHaveBeenCalledWith(3, 0.75);
+        expect(bridgeSetParam).toHaveBeenCalledWith(7, -2);
+        expect(bridgeSetParam).toHaveBeenCalledTimes(2);
     });
 });

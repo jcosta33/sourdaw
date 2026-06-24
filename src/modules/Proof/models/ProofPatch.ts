@@ -17,6 +17,14 @@ export type EqBandChannel = 'stereo' | 'mid' | 'side';
 export type ProofPatch = {
     name: string;
 
+    /**
+     * Identity of the factory preset this patch was loaded from, or `undefined`
+     * once the patch has diverged through any granular edit. Used solely for
+     * "active preset" detection in the UI — `name` is a display label and is
+     * not a stable preset identity (multiple edits keep the same name).
+     */
+    presetId?: string;
+
     // Chain order (module IDs 0-4)
     chainOrder: [number, number, number, number, number];
 

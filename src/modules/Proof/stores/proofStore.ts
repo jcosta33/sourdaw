@@ -67,31 +67,62 @@ type ProofInstances = Record<string, ProofState>;
 
 export const proofStore = createStore<ProofInstances>({ initialData: {} });
 
+/**
+ * Build a fresh default state with its own mutable arrays. A shallow spread of
+ * `DEFAULT_PROOF_STATE` would alias the singleton's `tapPeaks`/`dynGr` arrays
+ * across every fallback caller, so a later in-place write to one instance would
+ * leak into the shared default and every other fallback.
+ */
+function createDefaultProofState(): ProofState {
+    return {
+        ...DEFAULT_PROOF_STATE,
+        patch: { ...DEFAULT_PATCH },
+        dynGr: [...DEFAULT_PROOF_STATE.dynGr],
+        tapPeaks: DEFAULT_PROOF_STATE.tapPeaks.map((peak) => ({ ...peak })),
+    };
+}
+
 export function getProofState(deviceId: string): ProofState {
-    return proofStore.value?.[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    return proofStore.value?.[deviceId] ?? createDefaultProofState();
 }
 
 export function setProofUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): void {
     const instances = proofStore.value ?? {};
-    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({ ...instances, [deviceId]: { ...state, uiLevel: level } });
 }
 
 export function updateProofPatch(deviceId: string, patch: Partial<ProofPatch>): void {
     const instances = proofStore.value ?? {};
-    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
-    proofStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, ...patch } } });
+    const state = instances[deviceId] ?? createDefaultProofState();
+    // A granular edit diverges the patch from its source preset, so the preset
+    // identity is dropped unless the caller explicitly carries a new one.
+    proofStore.set({
+        ...instances,
+        [deviceId]: { ...state, patch: { ...state.patch, presetId: undefined, ...patch } },
+    });
+}
+
+/**
+ * Toggle the A/B compare flag (dry/wet at the chain head). Runtime state only —
+ * deliberately not part of `ProofPatch`, so it is never persisted with a saved
+ * patch and resets when a device is re-created.
+ */
+export function setProofAbBypass(deviceId: string, abBypass: boolean): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? createDefaultProofState();
+    proofStore.set({ ...instances, [deviceId]: { ...state, abBypass } });
 }
 
 export function loadProofPatch(deviceId: string, patch: ProofPatch): void {
     const instances = proofStore.value ?? {};
-    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({ ...instances, [deviceId]: { ...state, patch } });
 }
 
 export function updateProofMeters(deviceId: string, meters: ProofMeterData): void {
     const instances = proofStore.value ?? {};
-    const state = instances[deviceId] ?? { ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } };
+    const state = instances[deviceId] ?? createDefaultProofState();
     proofStore.set({
         ...instances,
         [deviceId]: {

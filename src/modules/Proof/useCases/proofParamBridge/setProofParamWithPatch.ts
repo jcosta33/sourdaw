@@ -4,12 +4,18 @@ import { updateProofPatch } from '../../stores/proofStore';
 import { bridges } from './helpers';
 import { syncEqBands, syncDynBands, syncImager, syncExciter } from './loadProofPatchWithAudio';
 
+type SetProofParamWithPatchInput<Key extends keyof ProofPatch> = {
+    deviceId: string;
+    key: Key;
+    value: ProofPatch[Key];
+};
+
 /** Set a patch parameter and send to audio engine. */
-export function setProofParamWithPatch<Key extends keyof ProofPatch>(
-    deviceId: string,
-    key: Key,
-    value: ProofPatch[Key]
-): void {
+export function setProofParamWithPatch<Key extends keyof ProofPatch>({
+    deviceId,
+    key,
+    value,
+}: SetProofParamWithPatchInput<Key>): void {
     updateProofPatch(deviceId, { [key]: value });
 
     const bridge = bridges.get(deviceId);

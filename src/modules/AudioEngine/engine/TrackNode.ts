@@ -359,6 +359,16 @@ export class TrackNode {
                             setBypass: result.setBypass,
                             destroy: () => result.workletNode.disconnect(),
                         };
+                        // Replay parameter values buffered against the loading
+                        // placeholder (e.g. saved Track.devices[*].parameterValues
+                        // applied during live reload before the bridge resolved).
+                        // Mirrors the wasm descriptors and the offline
+                        // NativeDspDeviceStrategy, which both drain their pending
+                        // params on load — without this the bridge stays at engine
+                        // defaults while the offline render reflects saved knobs.
+                        for (const [name, value] of pendingParams) {
+                            controls.setParam(name, value);
+                        }
                         const bridgeDn: BuiltinDeviceNode = {
                             deviceId,
                             type: deviceType,

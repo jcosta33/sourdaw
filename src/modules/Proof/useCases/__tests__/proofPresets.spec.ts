@@ -21,4 +21,11 @@ describe('PROOF_PRESETS', () => {
         const ids = PROOF_PRESETS.map((p) => p.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
+
+    // ── Fix 4: each preset patch carries its preset id as a stable identity ──
+    it('stamps every preset patch with a presetId matching the preset id', () => {
+        for (const preset of PROOF_PRESETS) {
+            expect(preset.patch.presetId).toBe(preset.id);
+        }
+    });
 });

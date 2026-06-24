@@ -76,12 +76,17 @@ export function syncExciter(deviceId: string): void {
 
 /** Send full patch to engine (e.g., after preset load). */
 export function syncFullPatch(deviceId: string): void {
-    const patch = getProofState(deviceId).patch;
+    const state = getProofState(deviceId);
+    const patch = state.patch;
     const bridge = bridges.get(deviceId);
     if (!bridge) {
         return;
     }
 
+    // A/B compare (dry/wet at the chain head) is runtime state, not a saved
+    // patch field, but the engine head must be re-established on a full sync
+    // (e.g. preset load) or the chip and the audio fall out of agreement.
+    bridge.setParam('ab_bypass', state.abBypass ? 1 : 0);
     bridge.setParam('input_gain', patch.inputGain);
     bridge.setParam('output_gain', patch.outputGain);
     bridge.setParam('eq_bypass', patch.eqBypassed ? 1 : 0);
@@ -114,7 +119,12 @@ export function syncFullPatch(deviceId: string): void {
     bridge.reorderModules(patch.chainOrder);
 }
 
-export function loadProofPatchWithAudio(deviceId: string, patch: ProofPatch): void {
+type LoadProofPatchWithAudioInput = {
+    deviceId: string;
+    patch: ProofPatch;
+};
+
+export function loadProofPatchWithAudio({ deviceId, patch }: LoadProofPatchWithAudioInput): void {
     loadProofPatch(deviceId, patch);
     syncFullPatch(deviceId);
 }

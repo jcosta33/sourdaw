@@ -11,9 +11,17 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
+import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
-import { proofStore, setProofUiLevel, getProofState, updateProofPatch, type ProofState } from '../../stores/proofStore';
+import {
+    proofStore,
+    setProofUiLevel,
+    setProofAbBypass,
+    getProofState,
+    updateProofPatch,
+    type ProofState,
+} from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
@@ -190,7 +198,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 <div className="text-[10px] font-medium text-foreground">Presets</div>
                                 <div className="flex min-h-0 flex-col gap-1">
                                     {PROOF_PRESETS.map((preset) => {
-                                        const active = preset.patch.name === patch.name;
+                                        const active = patch.presetId === preset.id;
                                         return (
                                             <DawPluginChoiceRow
                                                 key={preset.id}
@@ -198,7 +206,9 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 title={preset.name}
                                                 subtitle={`${preset.patch.target} · ${formatLufs(preset.patch.targetLufs)} LUFS`}
-                                                onPress={() => loadProofPatchWithAudio(deviceId, preset.patch)}
+                                                onPress={() =>
+                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch })
+                                                }
                                             />
                                         );
                                     })}
@@ -217,8 +227,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 tone="mint"
                                                 size="sm"
                                                 onClick={() => {
-                                                    setProofParamWithPatch(deviceId, 'target', option.value);
-                                                    setProofParamWithPatch(deviceId, 'targetLufs', option.lufs);
+                                                    setProofParamWithPatch({
+                                                        deviceId,
+                                                        key: 'target',
+                                                        value: option.value,
+                                                    });
+                                                    setProofParamWithPatch({
+                                                        deviceId,
+                                                        key: 'targetLufs',
+                                                        value: option.lufs,
+                                                    });
                                                 }}
                                             >
                                                 {option.label}
@@ -352,9 +370,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 onClick={() => {
                                     const next = !state.abBypass;
                                     setProofParam(deviceId, 'ab_bypass', next ? 1 : 0);
-                                    const instances = proofStore.value ?? {};
-                                    const current = instances[deviceId] ?? getProofState(deviceId);
-                                    proofStore.set({ ...instances, [deviceId]: { ...current, abBypass: next } });
+                                    setProofAbBypass(deviceId, next);
                                 }}
                             >
                                 {state.abBypass ? 'A / dry' : 'B / wet'}
@@ -370,7 +386,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
-                                    onChange={(value) => setProofParamWithPatch(deviceId, 'limCeiling', value)}
+                                    onChange={(value) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value })}
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -414,8 +430,8 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofParamWithPatch(deviceId, 'target', opt.value);
-                                setProofParamWithPatch(deviceId, 'targetLufs', opt.lufs);
+                                setProofParamWithPatch({ deviceId, key: 'target', value: opt.value });
+                                setProofParamWithPatch({ deviceId, key: 'targetLufs', value: opt.lufs });
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)
@@ -451,7 +467,11 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
 
                 {/* Streaming warning */}
                 {state.integratedLufs > -100 && state.integratedLufs > (TARGET_LUFS[patch.target] ?? -14) + 1 ? (
-                    <div className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center">
+                    <div
+                        role="alert"
+                        aria-live="polite"
+                        className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
+                    >
                         Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by{' '}
                         {(state.integratedLufs - (TARGET_LUFS[patch.target] ?? -14)).toFixed(1)} dB on streaming
                         platforms.
@@ -464,7 +484,7 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch(deviceId, 'limCeiling', v)}
+                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
                     min={-12}
                     max={0}
                     step={0.1}
@@ -513,7 +533,9 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                                         : `border border-current/20`
                                 }`}
                                 style={{ color: bypassed ? undefined : color }}
-                                onClick={() => setProofParamWithPatch(deviceId, bypassKeys[moduleIdx]!, !bypassed)}
+                                onClick={() =>
+                                    setProofParamWithPatch({ deviceId, key: bypassKeys[moduleIdx]!, value: !bypassed })
+                                }
                             >
                                 {label}
                             </button>
@@ -530,29 +552,19 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
             {/* Primary knobs per module */}
             <div className="flex items-start justify-around flex-1 pt-2">
                 <KnobColumn
-                    label="EQ"
-                    sublabel="Output Gain"
-                    bypassed={patch.eqBypassed}
-                    value={0}
-                    onChange={() => {}}
-                    min={-12}
-                    max={12}
-                    unit="dB"
-                    color={MODULE_COLORS[0]}
-                />
-                <KnobColumn
                     label="Dynamics"
                     sublabel="Threshold"
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
                     onChange={(v) => {
                         const bands = patch.dynBands.map((b) => ({ ...b, threshold: v }));
-                        setProofParamWithPatch(deviceId, 'dynBands' as never, bands as never);
+                        setProofParamWithPatch({ deviceId, key: 'dynBands' as never, value: bands as never });
                     }}
                     min={-60}
                     max={0}
                     unit="dB"
                     color={MODULE_COLORS[1]}
+                    defaultValue={-20}
                 />
                 <KnobColumn
                     label="Imager"
@@ -563,12 +575,13 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
                         widths[2] = v;
                         widths[3] = v;
-                        setProofParamWithPatch(deviceId, 'imgBandWidth', widths);
+                        setProofParamWithPatch({ deviceId, key: 'imgBandWidth', value: widths });
                     }}
                     min={0}
                     max={2}
                     unit=""
                     color={MODULE_COLORS[2]}
+                    defaultValue={1}
                 />
                 <KnobColumn
                     label="Exciter"
@@ -581,23 +594,25 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                             drive: v,
                             enabled: v > 0.01,
                         }));
-                        setProofParamWithPatch(deviceId, 'excBands' as never, bands as never);
+                        setProofParamWithPatch({ deviceId, key: 'excBands' as never, value: bands as never });
                     }}
                     min={0}
                     max={1}
                     unit=""
                     color={MODULE_COLORS[3]}
+                    defaultValue={0}
                 />
                 <KnobColumn
                     label="Limiter"
                     sublabel="Ceiling"
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch(deviceId, 'limCeiling', v)}
+                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
                     min={-12}
                     max={0}
                     unit="dBTP"
                     color={MODULE_COLORS[4]}
+                    defaultValue={-1}
                 />
             </div>
         </div>
@@ -706,57 +721,70 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
         newOrder[toIdx] = temp;
-        reorderChain(deviceId, newOrder);
+        reorderChain({ deviceId, order: newOrder });
     };
 
     return (
         <div className="flex-1 flex flex-col px-4 py-3 gap-4">
             {/* Chain reorder */}
             <div>
-                <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-2 block">
+                <span
+                    id={`${deviceId}-chain-order-label`}
+                    className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-2 block"
+                >
                     Signal Chain Order
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" role="group" aria-labelledby={`${deviceId}-chain-order-label`}>
                     <span className="text-[7px] text-muted-foreground">IN</span>
                     <div className="w-4 h-px bg-border/30" />
-                    {patch.chainOrder.map((moduleIdx, slot) => (
-                        <div key={slot} className="flex items-center gap-1">
-                            <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded bg-surface-base/80 border border-border/30">
-                                <span className="text-[9px] font-bold" style={{ color: MODULE_COLORS[moduleIdx] }}>
-                                    {MODULE_LABELS[moduleIdx]}
-                                </span>
-                                <div className="flex gap-0.5">
-                                    <button
-                                        type="button"
-                                        className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
-                                        onClick={() => moveModule(slot, -1)}
-                                        disabled={slot === 0}
-                                    >
-                                        ←
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
-                                        onClick={() => moveModule(slot, 1)}
-                                        disabled={slot === 4}
-                                    >
-                                        →
-                                    </button>
+                    {patch.chainOrder.map((moduleIdx, slot) => {
+                        const moduleLabel = MODULE_LABELS[moduleIdx] ?? 'module';
+                        return (
+                            <div key={slot} className="flex items-center gap-1">
+                                <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded bg-surface-base/80 border border-border/30">
+                                    <span className="text-[9px] font-bold" style={{ color: MODULE_COLORS[moduleIdx] }}>
+                                        {moduleLabel}
+                                    </span>
+                                    <div className="flex gap-0.5">
+                                        <button
+                                            type="button"
+                                            className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
+                                            onClick={() => moveModule(slot, -1)}
+                                            disabled={slot === 0}
+                                            aria-label={`Move ${moduleLabel} earlier in the chain`}
+                                        >
+                                            ←
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="text-[8px] text-muted-foreground hover:text-foreground cursor-pointer px-1"
+                                            onClick={() => moveModule(slot, 1)}
+                                            disabled={slot === 4}
+                                            aria-label={`Move ${moduleLabel} later in the chain`}
+                                        >
+                                            →
+                                        </button>
+                                    </div>
                                 </div>
+                                {slot < 4 ? <div className="w-4 h-px bg-border/30" /> : null}
                             </div>
-                            {slot < 4 ? <div className="w-4 h-px bg-border/30" /> : null}
-                        </div>
-                    ))}
+                        );
+                    })}
                     <div className="w-4 h-px bg-border/30" />
                     <span className="text-[7px] text-muted-foreground">OUT</span>
                 </div>
+                <span className="sr-only" role="status" aria-live="polite">
+                    {`Signal chain order: ${patch.chainOrder
+                        .map((moduleIdx) => MODULE_LABELS[moduleIdx] ?? 'module')
+                        .join(', ')}`}
+                </span>
             </div>
 
             {/* Latency info */}
             <div className="flex items-center gap-4 text-[8px] text-muted-foreground">
                 <span>
                     Reported latency: <span className="text-foreground font-mono">{state.latency} samples</span>
-                    {state.latency > 0 ? ` (${((state.latency / 44100) * 1000).toFixed(1)}ms)` : ''}
+                    {state.latency > 0 ? ` (${((state.latency / getAudioSampleRate()) * 1000).toFixed(1)}ms)` : ''}
                 </span>
             </div>
 
@@ -766,7 +794,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
-                        onChange={(v) => setProofParamWithPatch(deviceId, 'inputGain', v)}
+                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'inputGain', value: v })}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -783,7 +811,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
-                        onChange={(v) => setProofParamWithPatch(deviceId, 'outputGain', v)}
+                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'outputGain', value: v })}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -871,13 +899,17 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                 </div>
 
                 {/* Platform normalization info */}
-                {delta > 1 && (
-                    <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
+                {delta > 1 ? (
+                    <div
+                        role="alert"
+                        aria-live="polite"
+                        className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]"
+                    >
                         Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by {delta.toFixed(1)}{' '}
                         dB on
                         {platformNormalizationTarget}. Consider targeting {targetLufs}LUFS.
                     </div>
-                )}
+                ) : null}
 
                 {/* Reset integrated button */}
                 <button
@@ -935,6 +967,9 @@ const MeterCard = ({
             border: alert ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(0,0,0,0.4)',
             borderBottom: alert ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(40,40,40,0.3)',
         }}
+        role={alert ? 'alert' : undefined}
+        aria-live={alert ? 'polite' : undefined}
+        aria-label={alert ? `${label} out of range: ${value} ${unit}`.trim() : undefined}
     >
         <span className="text-[7px] text-muted-foreground block">{label}</span>
         <span className={`text-sm font-mono ${alert ? 'text-[var(--color-state-danger)]' : 'text-foreground'}`}>
@@ -951,18 +986,38 @@ const MiniMeter = ({ peakL, peakR, label }: { peakL: number; peakR: number; labe
     const normalize = (db: number) => Math.max(0, Math.min(1, (db + 60) / 60));
     const hL = normalize(peakL) * height;
     const hR = normalize(peakR) * height;
+    const meterName = label ? `${label} peak` : 'Tap peak';
+    const clampDb = (db: number) => Math.round(Math.max(-60, Math.min(0, db)));
 
     return (
         <div className="flex flex-col items-center gap-0.5">
             {label ? <span className="text-[6px] text-muted-foreground/50">{label}</span> : null}
             <div className="flex gap-px">
-                <div className="w-1 bg-surface-inset rounded-sm overflow-hidden" style={{ height }}>
+                <div
+                    className="w-1 bg-surface-inset rounded-sm overflow-hidden"
+                    style={{ height }}
+                    role="meter"
+                    aria-label={`${meterName} left`}
+                    aria-valuemin={-60}
+                    aria-valuemax={0}
+                    aria-valuenow={clampDb(peakL)}
+                    aria-valuetext={`${clampDb(peakL)} dB`}
+                >
                     <div
                         className="w-full bg-[var(--color-accent-mint)] rounded-sm transition-all duration-75"
                         style={{ height: hL, marginTop: height - hL }}
                     />
                 </div>
-                <div className="w-1 bg-surface-inset rounded-sm overflow-hidden" style={{ height }}>
+                <div
+                    className="w-1 bg-surface-inset rounded-sm overflow-hidden"
+                    style={{ height }}
+                    role="meter"
+                    aria-label={`${meterName} right`}
+                    aria-valuemin={-60}
+                    aria-valuemax={0}
+                    aria-valuenow={clampDb(peakR)}
+                    aria-valuetext={`${clampDb(peakR)} dB`}
+                >
                     <div
                         className="w-full bg-[var(--color-accent-mint)] rounded-sm transition-all duration-75"
                         style={{ height: hR, marginTop: height - hR }}
@@ -983,6 +1038,7 @@ const KnobColumn = ({
     max,
     unit,
     color,
+    defaultValue,
 }: {
     label: string;
     sublabel: string;
@@ -993,6 +1049,7 @@ const KnobColumn = ({
     max: number;
     unit: string;
     color: string;
+    defaultValue: number;
 }): ReactElement => (
     <div className={`flex flex-col items-center gap-1 ${bypassed ? 'opacity-30' : ''}`}>
         <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color }}>
@@ -1004,7 +1061,7 @@ const KnobColumn = ({
             min={min}
             max={max}
             step={0.1}
-            defaultValue={value}
+            defaultValue={defaultValue}
             size="md"
             tone="cyan"
         />

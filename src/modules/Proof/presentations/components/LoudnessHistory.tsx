@@ -86,7 +86,7 @@ export const LoudnessHistory = ({
         ctx.lineWidth = 0.5;
         for (const db of [-6, -12, -18, -24, -36, -48]) {
             const y = ((db - MAX_DB) / (MIN_DB - MAX_DB)) * h;
-            ctx.strokeStyle = db === -14 || db === -24 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
+            ctx.strokeStyle = db === -24 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(w, y);
