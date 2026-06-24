@@ -399,7 +399,6 @@ pub struct FdnReverb {
     damping: f32,
     decay: f32,
     mix: f32,
-    sample_rate: f32,
 }
 
 // Prime-length delay times in samples at 44100Hz (avoid metallic modes)
@@ -421,7 +420,6 @@ impl FdnReverb {
             damping: 0.5,
             decay: 0.5,
             mix: 0.0,
-            sample_rate,
         }
     }
 

@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
+import { deleteUserPreset } from '../deleteUserPreset';
 import { FACTORY_PRESETS, getUserPresets } from '../helpers';
+import { saveUserPreset } from '../saveUserPreset';
 
 const STORAGE_KEY = 'proof-chamber-user-presets';
 
@@ -42,6 +44,34 @@ describe('getUserPresets', () => {
 
     it('should return an empty array when JSON is invalid', () => {
         localStorage.setItem(STORAGE_KEY, 'not-json');
+        expect(getUserPresets()).toEqual([]);
+    });
+
+    it('should return an empty array when stored JSON is a non-array object', () => {
+        // Regression: a non-array localStorage value must not be returned as-is,
+        // otherwise callers that .push / .filter on the result throw TypeError.
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }));
+        expect(getUserPresets()).toEqual([]);
+    });
+});
+
+describe('user preset callers tolerate a non-array stored value', () => {
+    beforeEach(() => {
+        localStorage.removeItem(STORAGE_KEY);
+    });
+
+    it('saveUserPreset should not throw when storage holds a non-array object', () => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }));
+        expect(() => saveUserPreset('Mine', DEFAULT_PARAMS)).not.toThrow();
+
+        const stored = getUserPresets();
+        expect(stored).toHaveLength(1);
+        expect(stored[0].name).toBe('Mine');
+    });
+
+    it('deleteUserPreset should not throw when storage holds a non-array object', () => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }));
+        expect(() => deleteUserPreset('user-1')).not.toThrow();
         expect(getUserPresets()).toEqual([]);
     });
 });

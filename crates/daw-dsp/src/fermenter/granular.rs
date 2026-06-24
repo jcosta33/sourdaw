@@ -15,7 +15,6 @@ struct Grain {
     pan: f32,            // -1 to 1
     amplitude: f32,      // 0 to 1
     waveform_idx: usize, // which wavetable to read
-    position: f32,       // position in wavetable (for scanning)
 }
 
 impl Default for Grain {
@@ -29,7 +28,6 @@ impl Default for Grain {
             pan: 0.0,
             amplitude: 1.0,
             waveform_idx: 0,
-            position: 0.0,
         }
     }
 }
@@ -105,7 +103,6 @@ impl GranularEngine {
             pan,
             amplitude: 0.8 + self.rand() * 0.2,
             waveform_idx: 1, // saw by default (rich harmonics for granular)
-            position: pos,
         };
     }
 

@@ -386,7 +386,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             setDecayEqMults(next);
                                             void executeAppAction({
                                                 type: 'setDeviceParameter',
-                                                payload: { deviceId, paramId: `decay_eq_${band}`, mult },
+                                                payload: { deviceId, paramId: `decay_eq_${band}`, value: mult },
                                             });
                                         }}
                                         width={600}

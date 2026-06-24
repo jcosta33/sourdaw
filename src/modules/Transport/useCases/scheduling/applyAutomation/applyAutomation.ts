@@ -7,6 +7,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
+import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 
 /**
  * Per-parameter exponential slew state for plugin automation.
@@ -78,16 +79,38 @@ export function applyAutomation(currentBeat: number): void {
             }
 
             // Audio Device Automation
+            //
+            // Device-param lanes carry a `${device.type}:${paramId}` parameterId
+            // (built in Workspace/presentations/helpers/automationViewHelpers.ts),
+            // but `device.parameterValues` is keyed by the bare paramId
+            // (Arrangement/useCases/device/addDevice.ts). Strip the device-type
+            // prefix before matching/forwarding, otherwise every device-param
+            // lane no-ops.
             for (const device of track.devices) {
-                if (device.parameterValues[lane.parameterId] !== undefined) {
-                    const prev = laneSlew.get(device.id) ?? value;
-                    const smoothed = prev + (value - prev) * SLEW_ALPHA;
-                    laneSlew.set(device.id, smoothed);
-                    if (Math.abs(smoothed - prev) > SLEW_EPSILON) {
-                        updateDeviceParam(lane.trackId, device.id, lane.parameterId, smoothed);
-                    }
-                    break;
+                const prefix = `${device.type}:`;
+                const paramId = lane.parameterId.startsWith(prefix)
+                    ? lane.parameterId.slice(prefix.length)
+                    : lane.parameterId;
+                if (device.parameterValues[paramId] === undefined) {
+                    continue;
                 }
+
+                const prev = laneSlew.get(device.id) ?? value;
+                const smoothed = prev + (value - prev) * SLEW_ALPHA;
+                laneSlew.set(device.id, smoothed);
+                if (Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                    if (device.type === 'fermenter') {
+                        // Fermenter params use camelCase ids that must be mapped to
+                        // their snake_case DSP ids before reaching the WASM node —
+                        // the same translation the UI bridge applies. Route through
+                        // the public mapped use-case so automation and the UI share
+                        // one mapping path instead of hitting Rust's silent no-op arm.
+                        setFermenterMappedParam({ deviceId: device.id, paramId, value: smoothed });
+                    } else {
+                        updateDeviceParam(lane.trackId, device.id, paramId, smoothed);
+                    }
+                }
+                break;
             }
 
             // MIDI FX Automation

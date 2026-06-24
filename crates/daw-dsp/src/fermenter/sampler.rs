@@ -92,6 +92,16 @@ impl SamplerEngine {
         self.active
     }
 
+    /// Linearly interpolate the buffer at a fractional position (wrapping).
+    #[inline]
+    fn read_interpolated(&self, pos: f32, buf_len: usize) -> f32 {
+        let pos_i = pos as usize;
+        let frac = pos - pos_i as f32;
+        let idx0 = pos_i % buf_len;
+        let idx1 = (pos_i + 1) % buf_len;
+        self.buffer[idx0] * (1.0 - frac) + self.buffer[idx1] * frac
+    }
+
     /// Process one sample. Returns the sample value.
     #[inline]
     pub fn tick(&mut self, _sample_rate: f32) -> f32 {
@@ -101,19 +111,36 @@ impl SamplerEngine {
 
         let buf_len = self.buffer.len();
         let pos_f = self.position;
-        let pos_i = pos_f as usize;
-        let frac = pos_f - pos_i as f32;
-
-        // Linear interpolation
-        let idx0 = pos_i % buf_len;
-        let idx1 = (pos_i + 1) % buf_len;
-        let sample = self.buffer[idx0] * (1.0 - frac) + self.buffer[idx1] * frac;
-
-        // Advance position
-        self.position += self.rate * self.direction;
 
         let start_sample = self.loop_start * buf_len as f32;
         let end_sample = self.loop_end * buf_len as f32;
+
+        // Read the sample at the current position (linear interpolation).
+        let mut sample = self.read_interpolated(pos_f, buf_len);
+
+        // Crossfade loop seams: in Loop mode, as the cursor enters the last
+        // `crossfade` samples before the loop end, blend in the sample that the
+        // wrapped cursor will read just after the start point. This removes the
+        // hard discontinuity at the loop boundary that would otherwise click.
+        // No allocation and a bounded number of reads — RT-safe.
+        if self.mode == PlaybackMode::Loop && self.crossfade > 0 {
+            let xf = self.crossfade as f32;
+            let dist_to_end = end_sample - pos_f;
+            if dist_to_end > 0.0 && dist_to_end < xf {
+                // 0.0 at the start of the fade region, 1.0 right at the end.
+                let t = 1.0 - (dist_to_end / xf);
+                // Position the wrapped cursor would land on after looping.
+                let wrap_pos = start_sample + (xf - dist_to_end);
+                let wrapped = self.read_interpolated(wrap_pos, buf_len);
+                // Equal-power crossfade keeps perceived loudness across the seam.
+                let angle = t * core::f32::consts::FRAC_PI_2;
+                let (sin_t, cos_t) = angle.sin_cos();
+                sample = sample * cos_t + wrapped * sin_t;
+            }
+        }
+
+        // Advance position
+        self.position += self.rate * self.direction;
 
         match self.mode {
             PlaybackMode::OneShot => {
@@ -138,5 +165,110 @@ impl SamplerEngine {
         }
 
         sample
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a sampler whose loop region is a hard step: every sample in the
+    /// first half holds `head`, every sample in the second half holds `tail`.
+    /// Looping over the whole buffer therefore produces a `tail -> head`
+    /// discontinuity at the seam — exactly what a loop crossfade must smooth.
+    fn stepped_sampler(head: f32, tail: f32, crossfade: usize) -> SamplerEngine {
+        let mut s = SamplerEngine::new();
+        let n = s.buffer.len();
+        for (i, v) in s.buffer.iter_mut().enumerate() {
+            *v = if i < n / 2 { head } else { tail };
+        }
+        s.crossfade = crossfade;
+        s.set_mode(1); // Loop
+        s.set_loop_points(0.0, 1.0);
+        s.trigger(1.0);
+        s
+    }
+
+    /// Regression: with a non-zero crossfade, the samples in the fade region
+    /// just before the loop end blend the tail toward the wrapped head instead
+    /// of holding the raw tail value. Before the fix `crossfade` was never read,
+    /// so every tick returned the raw buffer value and this blend never happened.
+    #[test]
+    fn loop_crossfade_blends_tail_toward_head() {
+        let head = 1.0f32;
+        let tail = -1.0f32;
+        let xf = 64usize;
+
+        // With crossfade active, run until the cursor is inside the fade region
+        // (last `xf` samples before the loop end) and capture an output sample.
+        let mut faded = stepped_sampler(head, tail, xf);
+        let n = faded.buffer.len();
+        let end = n as f32;
+        let mut faded_sample = tail;
+        let mut sampled_in_region = false;
+        for _ in 0..n {
+            let pos = faded.position;
+            let s = faded.tick(44100.0);
+            let dist = end - pos;
+            // Pick a sample roughly mid-fade so the blend is clearly partial.
+            if dist > 0.0 && dist < xf as f32 && dist <= (xf as f32) * 0.5 {
+                faded_sample = s;
+                sampled_in_region = true;
+                break;
+            }
+        }
+        assert!(sampled_in_region, "cursor never entered the fade region");
+
+        // The raw tail value is exactly `tail`; a correct crossfade pulls it
+        // toward `head`, so the output must sit strictly between them.
+        assert!(
+            faded_sample > tail + 1e-4,
+            "fade output {faded_sample} did not move off the raw tail {tail}"
+        );
+        assert!(
+            faded_sample < head,
+            "fade output {faded_sample} overshot the wrapped head {head}"
+        );
+
+        // Control: with crossfade disabled the same position reads the raw tail.
+        let mut plain = stepped_sampler(head, tail, 0);
+        let mut plain_sample = head;
+        for _ in 0..n {
+            let pos = plain.position;
+            let s = plain.tick(44100.0);
+            let dist = end - pos;
+            if dist > 0.0 && dist < xf as f32 && dist <= (xf as f32) * 0.5 {
+                plain_sample = s;
+                break;
+            }
+        }
+        assert!(
+            (plain_sample - tail).abs() < 1e-6,
+            "with crossfade off the tail must read raw {tail}, got {plain_sample}"
+        );
+    }
+
+    /// Outside the fade region the crossfade must not alter the signal: a sample
+    /// read well before the loop end equals the raw buffer value regardless of
+    /// the crossfade length. Guards against the blend leaking into the body.
+    #[test]
+    fn loop_crossfade_leaves_body_untouched() {
+        let head = 1.0f32;
+        let tail = -1.0f32;
+        let xf = 64usize;
+
+        let mut faded = stepped_sampler(head, tail, xf);
+        let n = faded.buffer.len();
+        let end = n as f32;
+
+        // The very first tick is at position start (head region), far from the
+        // seam, so the crossfade branch is inactive and the output is raw head.
+        let first = faded.tick(44100.0);
+        assert!(
+            (first - head).abs() < 1e-6,
+            "body sample altered by crossfade: expected {head}, got {first}"
+        );
+        // Sanity: that first read was indeed outside the fade region.
+        assert!(end - 0.0 >= xf as f32);
     }
 }

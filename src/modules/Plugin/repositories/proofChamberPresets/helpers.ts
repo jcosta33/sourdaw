@@ -204,7 +204,8 @@ export function getUserPresets(): ProofChamberPreset[] {
     try {
         const raw = window.localStorage.getItem(USER_PRESETS_KEY);
         if (raw) {
-            return JSON.parse(raw) as ProofChamberPreset[];
+            const parsed: unknown = JSON.parse(raw);
+            return Array.isArray(parsed) ? (parsed as ProofChamberPreset[]) : [];
         }
     } catch {
         /* ignore */
