@@ -8,6 +8,7 @@
  * Permissions below are declared but never enforced at runtime.
  */
 
+import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 
 export type ExtensionManifest = {
@@ -95,6 +96,7 @@ export type ExtensionMarketplaceState = {
 };
 
 export const extensionStore = createStore<ExtensionMarketplaceState>({
+    logger,
     initialData: {
         installed: [],
         commands: [],
