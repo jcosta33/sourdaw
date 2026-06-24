@@ -60,4 +60,25 @@ describe('importPresetJson', () => {
     it('should reject a non-boolean value for a boolean field', () => {
         expect(importPresetJson(JSON.stringify({ mix: 0.5, decay: 0.5, freeze: 'yes' }))).toBeNull();
     });
+
+    it('should round-trip a negative bipolar gravity value', () => {
+        // Regression: the Gravity knob is bipolar (min=-1, max=1), so a preset
+        // exported with a negative gravity is legitimate UI-settable input and
+        // must import successfully rather than being rejected as out-of-range.
+        const raw = JSON.stringify({ mix: 0.5, decay: 0.5, gravity: -0.5 });
+        const result = importPresetJson(raw);
+        expect(result).not.toBeNull();
+        expect(result!.gravity).toBe(-0.5);
+    });
+
+    it('should accept gravity at the bipolar lower bound', () => {
+        const raw = JSON.stringify({ mix: 0.5, decay: 0.5, gravity: -1 });
+        const result = importPresetJson(raw);
+        expect(result).not.toBeNull();
+        expect(result!.gravity).toBe(-1);
+    });
+
+    it('should reject a gravity value below the bipolar range', () => {
+        expect(importPresetJson(JSON.stringify({ mix: 0.5, decay: 0.5, gravity: -1.5 }))).toBeNull();
+    });
 });

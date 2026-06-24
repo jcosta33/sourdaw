@@ -33,7 +33,7 @@ const NUMERIC_RANGES: Record<string, readonly [number, number]> = {
     width: [0, 2],
     shimmerAmount: [0, 1],
     shimmerPitch: [0, 1],
-    gravity: [0, 1],
+    gravity: [-1, 1],
     earlyLateBalance: [0, 1],
     vintage: [0, 2],
 };
