@@ -114,23 +114,15 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     }
 
     const synthParams = getSynthParamsFromDevices(track?.devices ?? []);
-    const osc = scheduleNote(
-        audioEngine.context,
-        strip.gainNode,
-        pitch,
-        now,
-        60,
-        velocity,
-        synthParams
-    ) as OscillatorNode & { _env?: GainNode };
+    const osc = scheduleNote(audioEngine.context, strip.gainNode, pitch, now, 60, velocity, synthParams);
 
     return () => {
         const killTime = audioEngine.context.currentTime;
-        const releaseTime = synthParams?.release ?? 0.3;
-        if (osc._env) {
-            osc._env.gain.cancelScheduledValues(killTime);
-            osc._env.gain.setTargetAtTime(0, killTime, releaseTime / 3);
-        }
+        const releaseTime = synthParams.release;
+        // scheduleNote always attaches the amplitude envelope, so apply the
+        // exponential smooth release (no hard cutoff) before stopping.
+        osc._env.gain.cancelScheduledValues(killTime);
+        osc._env.gain.setTargetAtTime(0, killTime, releaseTime / 3);
         try {
             osc.stop(killTime + releaseTime + 0.05);
         } catch {

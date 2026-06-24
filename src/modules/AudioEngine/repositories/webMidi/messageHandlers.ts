@@ -515,7 +515,7 @@ export const handleNoteOn = inject({
                 return;
             }
 
-            let osc: OscillatorNode | null = null;
+            let osc: (OscillatorNode & { _env?: GainNode }) | null = null;
             const synthDevice = instrumentTrack?.devices.find(
                 (data) =>
                     data.type === 'builtin-drum-kit' ||
@@ -559,7 +559,7 @@ export const handleNoteOn = inject({
                     60,
                     velocity,
                     synthParams
-                ) as OscillatorNode & { _env?: GainNode };
+                );
             }
 
             if (osc) {

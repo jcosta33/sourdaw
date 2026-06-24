@@ -121,11 +121,16 @@ export function scheduleNote(
     params: SynthParams,
     mpe?: MpeParams,
     clipGain: number = 1.0
-): OscillatorNode {
+): OscillatorNode & { _env: GainNode } {
+    // Clamp velocity to MIDI range before it drives any timing/gain math. An
+    // out-of-range value would make velAttack negative (velocity > 190.5),
+    // scheduling envelope/filter events in the past. Mirrors the clamp in
+    // scheduleDrumKitNote / scheduleFaustNote.
+    const safeVelocity = Math.max(0, Math.min(127, velocity));
     const baseFrequency = 440 * 2 ** ((pitch - 69) / 12);
     // Velocity-sensitive attack: harder hits = faster attack (real instrument behavior)
-    const velAttack = params.attack * (1.5 - velocity / 127);
-    const peakGain = (velocity / 127) * params.gain * clipGain;
+    const velAttack = params.attack * (1.5 - safeVelocity / 127);
+    const peakGain = (safeVelocity / 127) * params.gain * clipGain;
     const sustainLevel = peakGain * params.sustain;
 
     let frequency = baseFrequency;
@@ -220,8 +225,8 @@ export function scheduleNote(
     const velSens = params.filterVelocitySensitivity ?? 0;
     const velocityScale =
         velSens > 0
-            ? 1 - velSens + velSens * (velocity / 127) // 0 sens = always full, 1 sens = full range
-            : 0.3 + 0.7 * (velocity / 127); // legacy default when param not set
+            ? 1 - velSens + velSens * (safeVelocity / 127) // 0 sens = always full, 1 sens = full range
+            : 0.3 + 0.7 * (safeVelocity / 127); // legacy default when param not set
     // Pitch tracking: higher notes are naturally brighter (scale by sqrt of freq ratio)
     const pitchScale = Math.sqrt(frequency / 440);
     let filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
@@ -329,7 +334,12 @@ export function scheduleNote(
         }
     };
 
-    return osc1;
+    // Expose the amplitude-envelope GainNode on the returned oscillator so
+    // note-off handlers (audition, live MIDI, MIDI reset) can apply the
+    // exponential smooth release instead of hard-stopping the oscillator.
+    const result = osc1 as OscillatorNode & { _env: GainNode };
+    result._env = env;
+    return result;
 }
 
 /**
@@ -382,9 +392,12 @@ export function scheduleNoteOffline(
     velocity: number,
     params: SynthParams
 ): void {
+    // Clamp velocity to MIDI range (see scheduleNote). Keeps velAttack >= 0 so
+    // offline-rendered envelopes never schedule events before startTime.
+    const safeVelocity = Math.max(0, Math.min(127, velocity));
     const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const velAttack = params.attack * (1.5 - velocity / 127);
-    const peakGain = (velocity / 127) * params.gain;
+    const velAttack = params.attack * (1.5 - safeVelocity / 127);
+    const peakGain = (safeVelocity / 127) * params.gain;
     const sustainLevel = peakGain * params.sustain;
 
     // Single oscillator
@@ -396,7 +409,7 @@ export function scheduleNoteOffline(
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
     const velSens = params.filterVelocitySensitivity ?? 0;
-    const velocityScale = velSens > 0 ? 1 - velSens + velSens * (velocity / 127) : 0.3 + 0.7 * (velocity / 127);
+    const velocityScale = velSens > 0 ? 1 - velSens + velSens * (safeVelocity / 127) : 0.3 + 0.7 * (safeVelocity / 127);
     const pitchScale = Math.sqrt(frequency / 440);
     const filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
 

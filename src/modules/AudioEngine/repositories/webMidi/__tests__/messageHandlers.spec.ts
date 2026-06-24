@@ -119,3 +119,44 @@ describe('handleNoteOff — Yeast-track Note Off through the rack (CRITICAL #62)
         expect(fermenterNoteOff).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('handleNoteOff — built-in synth smooth release via osc._env', () => {
+    // The active note must be a non-Yeast synth note, so use a plain track with
+    // no Yeast/instrument device; only the bottom oscillator-release branch runs.
+    function makeSynthDeps(): Deps {
+        const deps = makeDeps(() => []);
+        return {
+            ...deps,
+            getTrackStoreState: () => ({ tracks: [{ id: 'track-1', devices: [] }], selectedTrackId: 'track-1' }),
+            getSynthParamsForTrack: () => ({ release: 0.6 }),
+        } as unknown as Deps;
+    }
+
+    it('applies the exponential release through osc._env instead of hard-stopping', () => {
+        const setTargetAtTime = vi.fn();
+        const cancelScheduledValues = vi.fn();
+        const stop = vi.fn();
+        const fn = handleNoteOff._factory(makeSynthDeps());
+
+        // scheduleNote attaches the amplitude-envelope GainNode as `_env`; the
+        // live-MIDI Note Off must drive the smooth release through it. Before the
+        // fix `_env` was never set so this branch was dead and the note hard-stopped.
+        activeNotes.set(64, {
+            channel: 0,
+            startTime: 0,
+            startBeat: 0,
+            osc: {
+                _env: { gain: { setTargetAtTime, cancelScheduledValues } },
+                stop,
+            } as unknown as NonNullable<ReturnType<typeof activeNotes.get>>['osc'],
+        });
+
+        fn(0, 64);
+
+        expect(cancelScheduledValues).toHaveBeenCalledTimes(1);
+        expect(setTargetAtTime).toHaveBeenCalledTimes(1);
+        // setTargetAtTime(target=0, now, timeConstant=release/3) with release 0.6.
+        expect(setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.6 / 3);
+        expect(stop).toHaveBeenCalledTimes(1);
+    });
+});
