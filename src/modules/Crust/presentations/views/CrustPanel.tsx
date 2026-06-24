@@ -73,16 +73,16 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const [presetMenuOpen, setPresetMenuOpen] = useState(false);
     const [streamingMenuOpen, setStreamingMenuOpen] = useState(false);
 
-    const patch = state?.patch ?? defaultCrustState.patch;
-    const grDb = state?.grDb ?? 0;
-    const inputDb = state?.inputDb ?? -60;
-    const outputDb = state?.outputDb ?? -60;
-    const lufsIntegrated = state?.lufsIntegrated ?? -100;
-    const lufsShortTerm = state?.lufsShortTerm ?? -100;
-    const lufsMomentary = state?.lufsMomentary ?? -100;
-    const lra = state?.lra ?? 0;
-    const truepeakMax = state?.truepeakMax ?? -100;
-    const truepeakExceeded = state?.truepeakExceeded ?? false;
+    const patch = state.patch;
+    const grDb = state.grDb;
+    const inputDb = state.inputDb;
+    const outputDb = state.outputDb;
+    const lufsIntegrated = state.lufsIntegrated;
+    const lufsShortTerm = state.lufsShortTerm;
+    const lufsMomentary = state.lufsMomentary;
+    const lra = state.lra;
+    const truepeakMax = state.truepeakMax;
+    const truepeakExceeded = state.truepeakExceeded;
 
     const lufsTarget = getLufsTarget(patch.streamingPreset);
     const activeStreamingPreset = STREAMING_PRESETS.find((preset) => preset.id === patch.streamingPreset);

@@ -84,6 +84,14 @@ function drawCurve(ctx: CanvasRenderingContext2D, algo: CrustSatAlgorithm, drive
             case 'soft':
                 outSig = Math.tanh(inSig);
                 break;
+            default: {
+                // Compile-time exhaustiveness: a new CrustSatAlgorithm member makes
+                // this assignment a type error. At runtime (e.g. unexpected input)
+                // fall back to the linear identity curve rather than NaN.
+                const _exhaustive: never = algo;
+                void _exhaustive;
+                outSig = inSig;
+            }
         }
 
         const normalized = outSig / (gain * 1.2);

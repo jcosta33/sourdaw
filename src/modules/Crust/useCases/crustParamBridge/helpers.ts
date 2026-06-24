@@ -109,36 +109,40 @@ export function encodeCrustValue(key: string, value: unknown): number | null {
         return null;
     }
 
+    // Enum fallbacks return null (skip the write) on an unrecognised string
+    // rather than coercing to a valid index: a malformed/corrupt loaded patch
+    // must not silently send the engine a wrong value while the store keeps the
+    // bad string (UI↔engine divergence).
     if (key === 'style') {
-        return STYLE_INDEX[value as keyof typeof STYLE_INDEX] ?? 0;
+        return STYLE_INDEX[value as keyof typeof STYLE_INDEX] ?? null;
     }
 
     if (key === 'algorithm') {
-        return ALGORITHM_INDEX[value as keyof typeof ALGORITHM_INDEX] ?? 0;
+        return ALGORITHM_INDEX[value as keyof typeof ALGORITHM_INDEX] ?? null;
     }
 
     if (key === 'satAlgorithm') {
-        return SAT_ALGORITHM_INDEX[value as keyof typeof SAT_ALGORITHM_INDEX] ?? 0;
+        return SAT_ALGORITHM_INDEX[value as keyof typeof SAT_ALGORITHM_INDEX] ?? null;
     }
 
     if (key === 'multiBand') {
-        return MULTIBAND_INDEX[value as keyof typeof MULTIBAND_INDEX] ?? 0;
+        return MULTIBAND_INDEX[value as keyof typeof MULTIBAND_INDEX] ?? null;
     }
 
     if (key === 'stereoMode') {
-        return STEREO_MODE_INDEX[value as keyof typeof STEREO_MODE_INDEX] ?? 0;
+        return STEREO_MODE_INDEX[value as keyof typeof STEREO_MODE_INDEX] ?? null;
     }
 
     if (key === 'dither') {
-        return DITHER_INDEX[value as keyof typeof DITHER_INDEX] ?? 0;
+        return DITHER_INDEX[value as keyof typeof DITHER_INDEX] ?? null;
     }
 
     if (key === 'scrollSpeed') {
-        return SCROLL_SPEED_INDEX[value as keyof typeof SCROLL_SPEED_INDEX] ?? 1;
+        return SCROLL_SPEED_INDEX[value as keyof typeof SCROLL_SPEED_INDEX] ?? null;
     }
 
     if (key === 'abSlot') {
-        return AB_SLOT_INDEX[value as keyof typeof AB_SLOT_INDEX] ?? 0;
+        return AB_SLOT_INDEX[value as keyof typeof AB_SLOT_INDEX] ?? null;
     }
 
     return null;

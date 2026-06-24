@@ -18,11 +18,11 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 
-import { type CrustPatch } from '../../models/CrustPatch';
+import { type CrustDither, type CrustPatch } from '../../models/CrustPatch';
 
 import { CrustSatCurve } from './CrustSatCurve';
 
-type Setter = (key: keyof CrustPatch, value: number | boolean | string) => void;
+type Setter = <TKey extends keyof CrustPatch>(key: TKey, value: CrustPatch[TKey]) => void;
 
 type Props = {
     patch: CrustPatch;
@@ -138,14 +138,16 @@ const ALGORITHMS = [
 
 const SAT_ALGORITHMS = ['soft', 'hard', 'tape', 'tube', 'fold'] as const;
 
-const DITHER_OPTIONS = [
+const DITHER_OPTIONS: readonly { id: CrustDither; label: string }[] = [
     { id: 'off', label: 'Off' },
     { id: 'tpdf16', label: 'TPDF 16-bit' },
     { id: 'tpdf24', label: 'TPDF 24-bit' },
     { id: 'powr1', label: 'POW-R 1' },
     { id: 'powr2', label: 'POW-R 2' },
     { id: 'powr3', label: 'POW-R 3' },
-] as const;
+];
+
+const isCrustDither = (value: string): value is CrustDither => DITHER_OPTIONS.some((option) => option.id === value);
 
 // ── Level sub-panels ──────────────────────────────────────────────────────────
 
@@ -448,7 +450,11 @@ const Level4Extra = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter 
             <SectionLabel>Dithering</SectionLabel>
             <DawCompactSelect
                 value={patch.dither}
-                onChange={(e) => setParam('dither', e.target.value)}
+                onChange={(e) => {
+                    if (isCrustDither(e.target.value)) {
+                        setParam('dither', e.target.value);
+                    }
+                }}
                 size="micro"
                 tone="inset"
                 className="min-w-[7rem]"

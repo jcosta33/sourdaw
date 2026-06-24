@@ -1,7 +1,7 @@
 import { type CrustPatch } from '../../models/CrustPatch';
 import { loadCrustPatch } from '../../stores/crustStore';
 
-import { encodeCrustValue, findDeviceRefCrust, pushCrustParamImmediately } from './helpers';
+import { encodeCrustValue, findDeviceRefCrust, paramBatcher, pushCrustParamImmediately } from './helpers';
 
 export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
     loadCrustPatch(patch);
@@ -10,6 +10,11 @@ export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): vo
     if (!ref) {
         return;
     }
+
+    // Drop any rAF flush still pending from a prior knob drag so it can't fire
+    // after these immediate pushes and overwrite a preset value with the stale
+    // drag value (last-write-wins would otherwise favour the queued frame).
+    paramBatcher.cancelAll();
 
     const params: Array<[string, unknown]> = [
         ['gain', patch.gain],
@@ -40,7 +45,6 @@ export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): vo
         ['dither', patch.dither],
         ['outputBitDepth', patch.outputBitDepth],
         ['abSlot', patch.abSlot],
-        ['scrollSpeed', patch.scrollSpeed],
     ];
 
     for (const [key, rawValue] of params) {
