@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
@@ -7,6 +8,7 @@ import {
     startAudioRecording,
     getCompensationDelay,
 } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
@@ -98,7 +100,12 @@ export function toggleRecording(): void {
         const countInBeats = state.countInBars * beatsPerBar;
         const countInDurationSec = countInBeats / (state.tempo / 60);
 
-        void resumeEngine();
+        // Surface a failed resume rather than swallowing it: if the context stays
+        // suspended the count-in clicks are inaudible, so warn the user to re-arm.
+        Promise.resolve(resumeEngine()).catch((error: unknown) => {
+            logger.warn(new Error('Audio engine resume failed on count-in', { cause: error }));
+            notifyUser('Audio is still suspended — click anywhere to enable sound.', 'warning');
+        });
         ensureTrackStrips();
 
         const ctx = getAudioContext();

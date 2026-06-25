@@ -1,0 +1,85 @@
+import { renderHook } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { useAppInitialization } from '../useAppInitialization';
+
+// The hook fans out into the whole app boot sequence; every collaborator is
+// stubbed so the test can isolate the user-gesture effect (the fix-5 seam:
+// resumeEngine() must no longer be fire-and-forget). Async members resolve so
+// the mount effect's `await` chain settles without throwing.
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: { tracks: [] } } }));
+vi.mock('#/modules/AudioEngine/stores', () => ({
+    audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
+    getAudioContext: vi.fn(() => ({})),
+    initWebMidi: vi.fn().mockResolvedValue(undefined),
+    setMasterGainValue: vi.fn(),
+    resumeEngine: vi.fn(),
+    requestMicPermission: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ hasCrdtProject: vi.fn().mockResolvedValue(false) }));
+vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
+vi.mock('#/modules/Plugin/useCases', () => ({ registerProModulationEffects: vi.fn() }));
+vi.mock('#/modules/Project/stores', () => ({ projectStore: { value: null, set: vi.fn() } }));
+vi.mock('#/modules/Project/useCases', () => ({
+    verifyAudioBufferReferences: vi.fn().mockResolvedValue(undefined),
+    loadProject: vi.fn().mockResolvedValue(undefined),
+    saveProject: vi.fn(),
+}));
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
+    restoreLibrary: vi.fn().mockResolvedValue(undefined),
+    seedFactoryLibrary: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), getTransportState: vi.fn(() => null) }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('#/utils/tauriBridge', () => ({ isTauri: vi.fn(() => false) }));
+vi.mock('../../stores/preferencesStore', () => ({
+    preferencesStore: { value: { uiScale: 1 }, subscribe: vi.fn(() => () => {}) },
+}));
+
+describe('useAppInitialization — first-gesture engine resume', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('resumes the engine on the first user gesture', () => {
+        renderHook(() => useAppInitialization());
+
+        window.dispatchEvent(new MouseEvent('click'));
+
+        expect(resumeEngine).toHaveBeenCalledTimes(1);
+    });
+
+    it('warns the user when the first-gesture resume rejects instead of swallowing it', async () => {
+        vi.mocked(resumeEngine).mockRejectedValue(new Error('resume blocked'));
+
+        renderHook(() => useAppInitialization());
+        window.dispatchEvent(new MouseEvent('click'));
+
+        // A `void resumeEngine()` would discard the rejection; the fix attaches a
+        // catch that surfaces the failure to the user.
+        await vi.waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Audio'), 'warning');
+        });
+    });
+});

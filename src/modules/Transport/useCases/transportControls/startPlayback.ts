@@ -1,4 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
 import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -21,7 +23,15 @@ export function startPlayback(): void {
         return;
     }
 
-    void resumeEngine();
+    // The play gesture is the user activation that lets a suspended AudioContext
+    // resume. If resume rejects, the context stays suspended (no audio), so
+    // surface it instead of firing-and-forgetting; the rest of the transport
+    // still advances. (Wrapped in Promise.resolve so the chain is robust to a
+    // resume that returns synchronously.)
+    Promise.resolve(resumeEngine()).catch((error: unknown) => {
+        logger.warn(new Error('Audio engine resume failed on playback start', { cause: error }));
+        notifyUser('Audio is still suspended — click anywhere to enable sound.', 'warning');
+    });
     ensureTrackStrips();
 
     let startPosition = state.playheadPosition;

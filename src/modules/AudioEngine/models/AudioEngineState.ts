@@ -7,6 +7,21 @@ export type AudioEngineState = {
     baseLatency: number;
 };
 
+/**
+ * Liveness/error surface for the audio engine. Lets callers detect a poisoned
+ * worklet load (so {@link AudioEngine.initialize} can be retried) and a failed
+ * `AudioContext.resume()` (so a gesture handler can re-arm / warn the user)
+ * instead of those failures being swallowed.
+ */
+export type AudioEngineHealth = {
+    /** True once every worklet module has loaded successfully. */
+    workletReady: boolean;
+    /** The error from the last failed `initialize()`, or `null` if the last attempt succeeded / none ran. */
+    lastInitError: Error | null;
+    /** The error from the last failed `resume()`, or `null` if the last attempt succeeded / none ran. */
+    lastResumeError: Error | null;
+};
+
 export type DeviceController = {
     ready?: boolean;
     setParam(name: string, value: number, sampleFrame?: number): void;
@@ -156,7 +171,8 @@ export type AudioEngine = {
     setMasterGain(value: number): void;
     getMasterGain(): number;
     getState(): AudioEngineState;
-    dispose(): void;
+    getHealth(): AudioEngineHealth;
+    dispose(): Promise<void>;
     resetGraph(): void;
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
@@ -193,7 +209,6 @@ export type AudioEngine = {
     wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
     waitForDevices(): Promise<void>;
-    setMasterTrackId?(trackId: string): void;
     setTransportInfo(
         beat: number,
         bpm: number,

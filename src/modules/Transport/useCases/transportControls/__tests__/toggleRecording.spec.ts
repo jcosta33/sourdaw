@@ -7,7 +7,8 @@ import { toggleRecording } from '../toggleRecording';
 
 const mocks = vi.hoisted(() => ({
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
-    resumeEngine: vi.fn<() => void>(),
+    resumeEngine: vi.fn<() => Promise<void>>(),
+    notifyUser: vi.fn<(...args: unknown[]) => void>(),
     ensureTrackStrips: vi.fn<() => void>(),
     getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
     startPlayback: vi.fn<() => void>(),
@@ -46,11 +47,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startAudioRecording: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
 }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('toggleRecording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
+        // resumeEngine returns Promise<void>; default to resolved so the `.catch`
+        // chain in the count-in path has a thenable.
+        mocks.resumeEngine.mockResolvedValue(undefined);
         mocks.getAudioContext.mockReturnValue({ currentTime: 0, baseLatency: 0, outputLatency: 0 });
         mocks.timeSignatureMapStore.value = { changes: [] };
     });
@@ -89,6 +94,31 @@ describe('toggleRecording', () => {
 
         // 2 bars * 3 beats/bar (resolved at beat 12) = 6 clicks, not 8.
         expect(mocks.scheduleClick).toHaveBeenCalledTimes(6);
+    });
+
+    it('surfaces a failed engine resume during count-in instead of swallowing it', async () => {
+        // The microtask-based `.catch` needs real timers to flush.
+        vi.useRealTimers();
+        mocks.resumeEngine.mockRejectedValue(new Error('resume blocked'));
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: true,
+            countInBars: 1,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            playheadPosition: 0,
+        });
+
+        toggleRecording();
+
+        // Count-in clicks are still scheduled (resume is best-effort), but the
+        // rejection is no longer dropped — the user is warned to re-arm.
+        expect(mocks.scheduleClick).toHaveBeenCalled();
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('suspended'), 'warning');
+        });
     });
 
     it('should fall back to the flat numerator when there is no time-sig change at the playhead', () => {

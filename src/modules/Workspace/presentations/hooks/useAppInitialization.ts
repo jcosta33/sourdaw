@@ -68,7 +68,14 @@ export const useAppInitialization = (): void => {
 
     useEffect(() => {
         const onGesture = (): void => {
-            void resumeEngine();
+            // This is the user-activation gesture that unlocks a suspended
+            // AudioContext. If resume rejects, the context stays suspended and the
+            // app is silent, so surface it (re-arm prompt) rather than discarding
+            // the rejection with `void`.
+            Promise.resolve(resumeEngine()).catch((error: unknown) => {
+                logger.warn(new Error('Audio engine resume failed on first gesture', { cause: error }));
+                notifyUser('Audio could not start — click anywhere to try again.', 'warning');
+            });
             void requestMicPermission();
         };
         window.addEventListener('click', onGesture, { once: true });

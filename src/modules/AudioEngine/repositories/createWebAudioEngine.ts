@@ -10,6 +10,7 @@ import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url'
 import type {
     AdjustmentLayerTickInput,
     AudioEngine,
+    AudioEngineHealth,
     AudioEngineState,
     BusStrip,
     SendNode,
@@ -21,6 +22,37 @@ type NoopMeterNode = {
     disconnect(): void;
     port: { postMessage(message: unknown): void };
 };
+
+/**
+ * Builds a silent stand-in for {@link AudioContext} from an
+ * {@link OfflineAudioContext} (which never produces sound and shares the
+ * node-factory surface the fallback path uses). The handful of `AudioContext`
+ * members `OfflineAudioContext` lacks are stubbed so the result is a genuine,
+ * structurally-checked `AudioContext` — replacing the former
+ * `as BaseAudioContext as AudioContext` double-assertion, which silenced the
+ * type checker rather than satisfying it.
+ */
+function createNoopAudioContext(): AudioContext {
+    const offline = new OfflineAudioContext(2, 1, 44100);
+    function reject(): never {
+        throw new Error('AudioEngine is in fallback mode — no AudioContext is available.');
+    }
+    const shim: AudioContext = Object.assign(offline, {
+        baseLatency: 0,
+        outputLatency: 0,
+        close: () => Promise.resolve(),
+        // `OfflineAudioContext.suspend` requires a `suspendTime` argument, so its
+        // signature is wider than `AudioContext.suspend()`. Override both lifecycle
+        // methods with the no-op, no-arg forms the fallback path expects.
+        resume: () => Promise.resolve(),
+        suspend: () => Promise.resolve(),
+        createMediaElementSource: reject,
+        createMediaStreamSource: reject,
+        createMediaStreamDestination: reject,
+        getOutputTimestamp: () => ({ contextTime: 0, performanceTime: 0 }),
+    });
+    return shim;
+}
 
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
@@ -37,9 +69,11 @@ class AudioEngineImpl implements AudioEngine {
     private pendingDevicePromises = new Set<Promise<unknown>>();
     private workletReady = false;
     private fallbackMode = false;
-    private transportSAB: SharedArrayBuffer;
-    private transportView: Float64Array;
+    private transportSAB: SharedArrayBuffer | null;
+    private transportView: Float64Array | null;
     private initPromise: Promise<void> | null = null;
+    private lastInitError: Error | null = null;
+    private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
 
     constructor(providedContext?: AudioContext) {
@@ -79,7 +113,7 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private setupNoopContext() {
-        this.context = new OfflineAudioContext(2, 1, 44100) as BaseAudioContext as AudioContext;
+        this.context = createNoopAudioContext();
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
         this.masterMeterNode = {
@@ -92,7 +126,18 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public initialize(): Promise<void> {
-        this.initPromise ??= this.fallbackMode ? Promise.resolve() : this.loadWorklets();
+        if (this.fallbackMode) {
+            return Promise.resolve();
+        }
+        // Cache the in-flight/successful load so concurrent callers share it, but
+        // do NOT cache a rejection: a failed worklet load (e.g. one addModule
+        // 404s) must not poison the engine forever. On rejection we clear the
+        // cached promise so the next initialize() retries the load.
+        this.initPromise ??= this.loadWorklets().catch((error: unknown) => {
+            this.initPromise = null;
+            this.lastInitError = error instanceof Error ? error : new Error(String(error));
+            throw this.lastInitError;
+        });
         return this.initPromise;
     }
 
@@ -105,6 +150,15 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule(meteringProcessorUrl),
         ]);
         this.workletReady = true;
+        this.lastInitError = null;
+    }
+
+    public getHealth(): AudioEngineHealth {
+        return {
+            workletReady: this.workletReady,
+            lastInitError: this.lastInitError,
+            lastResumeError: this.lastResumeError,
+        };
     }
 
     public async resume(): Promise<void> {
@@ -115,8 +169,15 @@ class AudioEngineImpl implements AudioEngine {
             if (this.context.state === 'suspended') {
                 await this.context.resume();
             }
+            this.lastResumeError = null;
         } catch (error) {
+            // Surface the failure instead of swallowing it: a gesture handler can
+            // read getHealth().lastResumeError to re-arm / warn the user, and the
+            // rejection now propagates so a `void resume()` caller no longer
+            // silently leaves the context suspended (no audio).
+            this.lastResumeError = error instanceof Error ? error : new Error(String(error));
             logger.warn(`AudioContext resume failed: ${error}`);
+            throw this.lastResumeError;
         }
     }
 
@@ -191,7 +252,7 @@ class AudioEngineImpl implements AudioEngine {
                     getSendsForTrack: (tId) =>
                         Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
-                    transportSAB: this.transportSAB,
+                    transportSAB: this.transportSAB ?? undefined,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                 });
             }
@@ -202,10 +263,29 @@ class AudioEngineImpl implements AudioEngine {
 
     public removeTrackStrip(trackId: string): void {
         const node = this.trackNodes.get(trackId);
-        if (node) {
-            node.dispose();
-            this.trackNodes.delete(trackId);
+        if (!node) {
+            return;
         }
+        // Sweep dependent routing keyed on this track as the source, mirroring
+        // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
+        // for the removed track survive in the maps — still wired into their bus /
+        // target device, leaking nodes and (for sends) re-summing a ghost tap.
+        for (const [key, send] of this.sendNodes) {
+            if (send.sourceTrackId === trackId) {
+                send.gainNode.disconnect();
+                this.sendNodes.delete(key);
+            }
+        }
+        for (const [key, scGain] of this.sidechainConnections) {
+            // Keys are `${sourceTrackId}→${targetDeviceId}`; sweep where the
+            // removed track is the source.
+            if (key.slice(0, key.indexOf('→')) === trackId) {
+                scGain.disconnect();
+                this.sidechainConnections.delete(key);
+            }
+        }
+        node.dispose();
+        this.trackNodes.delete(trackId);
     }
 
     public getTrackStrip(trackId: string): TrackChannelStrip | undefined {
@@ -360,6 +440,10 @@ class AudioEngineImpl implements AudioEngine {
         isLooping = false
     ): void {
         const value = this.transportView;
+        if (!value) {
+            // Released by dispose(); nothing to write into.
+            return;
+        }
         value[0] = beat;
         value[1] = tempo;
         value[2] = this.context.sampleRate;
@@ -367,10 +451,6 @@ class AudioEngineImpl implements AudioEngine {
         value[4] = loopEnd;
         value[5] = isPlaying ? 1 : 0;
         value[6] = isLooping ? 1 : 0;
-    }
-
-    public getTransportSAB(): SharedArrayBuffer {
-        return this.transportSAB;
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
@@ -584,11 +664,47 @@ class AudioEngineImpl implements AudioEngine {
         return this.adjustmentRuntime.listLiveBusKeys();
     }
 
-    public dispose(): void {
+    public async dispose(): Promise<void> {
+        // Tell every live worklet processor to shut down before we tear down the
+        // graph and close the context, so processors stop their RT work cleanly.
+        this.postShutdownToWorklets();
+
+        // Tear down the per-project graph (tracks, buses, sends, sidechain,
+        // adjustment-layer runtime). This also closes per-track meter ports.
         this.resetGraph();
+
         this.masterGainNode.disconnect();
         this.masterAnalyser.disconnect();
-        void this.context.close();
+
+        // Release the transport SAB / its view so the buffer can be GC'd and a
+        // post-dispose setTransportInfo() no-ops instead of writing into a stale
+        // buffer.
+        this.transportSAB = null;
+        this.transportView = null;
+
+        // Reset the worklet-load latch so a re-initialize() after dispose() will
+        // reload the modules rather than resolve the stale cached promise.
+        this.initPromise = null;
+        this.workletReady = false;
+
+        // Await the close so callers can sequence teardown; the dropped promise
+        // previously hid close() failures and left the context not-yet-closed.
+        await this.context.close();
+    }
+
+    private postShutdownToWorklets(): void {
+        const shutdown = { type: 'shutdown' as const };
+        const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
+        for (const [, trackNode] of this.trackNodes) {
+            trackNode.strip.meterNode?.port.postMessage(shutdown);
+            for (const dn of trackNode.strip.deviceNodes) {
+                for (const node of dn.nodes) {
+                    if (hasWorkletNode && node instanceof AudioWorkletNode) {
+                        node.port.postMessage(shutdown);
+                    }
+                }
+            }
+        }
     }
 }
 
