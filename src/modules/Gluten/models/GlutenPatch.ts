@@ -6,6 +6,27 @@ export type GlutenTopology = 'vca' | 'opto' | 'fet' | 'diode';
 
 export type GlutenStyle = 'glue' | 'punch' | 'smooth' | 'pump';
 
+/** Oversampling is a power-of-two factor; the engine only implements 1×, 2×, 4×. */
+export type OversamplingFactor = 1 | 2 | 4;
+
+export const OVERSAMPLING_FACTORS: readonly OversamplingFactor[] = [1, 2, 4];
+
+/**
+ * Snap an arbitrary oversampling value to the nearest valid factor (1, 2, or 4).
+ * A step-1 control over 1..4 can produce 3, which the engine does not support;
+ * this rounds it down to 2. Values are clamped into the [1, 4] range first.
+ */
+export function clampOversampling(value: number): OversamplingFactor {
+    if (value <= 1) {
+        return 1;
+    }
+    if (value >= 4) {
+        return 4;
+    }
+    // 2 and 3 both resolve to 2 (3 snaps down to the supported 2× factor).
+    return 2;
+}
+
 export type GlutenPatch = {
     name: string;
 
@@ -37,7 +58,7 @@ export type GlutenPatch = {
     stereoLink: number; // 0 – 1
 
     // Advanced
-    oversampling: number; // 1, 2, or 4
+    oversampling: OversamplingFactor; // 1, 2, or 4
     lookahead: number; // ms (0 – 20)
     scLpfFreq: number; // Hz (1000 – 20000)
     scLpfEnabled: boolean;
@@ -121,101 +142,3 @@ export const DEFAULT_PATCH: GlutenPatch = {
     blendTopology: 'opto',
     blendAmount: 0,
 };
-
-export type GlutenParamDef = {
-    id: string;
-    label: string;
-    min: number;
-    max: number;
-    default: number;
-    unit: string;
-    step?: number;
-    group?: string;
-    scaling?: 'log' | 'linear';
-};
-
-export const GLUTEN_PARAMS: readonly GlutenParamDef[] = [
-    // Core
-    { id: 'topology', label: 'Topology', min: 0, max: 3, default: 0, unit: '', step: 1, group: 'core' },
-    { id: 'amount', label: 'Amount', min: 0, max: 100, default: 50, unit: '%', step: 1, group: 'core' },
-    { id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -18, unit: 'dB', step: 0.5, group: 'core' },
-    { id: 'ratio', label: 'Ratio', min: 1, max: 20, default: 4, unit: ':1', step: 0.5, group: 'core' },
-    {
-        id: 'attack',
-        label: 'Attack',
-        min: 0.02,
-        max: 250,
-        default: 10,
-        unit: 'ms',
-        step: 0.1,
-        group: 'core',
-        scaling: 'log',
-    },
-    {
-        id: 'release',
-        label: 'Release',
-        min: 25,
-        max: 5000,
-        default: 300,
-        unit: 'ms',
-        step: 1,
-        group: 'core',
-        scaling: 'log',
-    },
-    { id: 'knee', label: 'Knee', min: 0, max: 30, default: 6, unit: 'dB', step: 0.5, group: 'core' },
-    { id: 'makeup', label: 'Makeup', min: -12, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'core' },
-    { id: 'mix', label: 'Mix', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'core' },
-    { id: 'autoMakeup', label: 'Auto Makeup', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'core' },
-    { id: 'autoRelease', label: 'Auto Release', min: 0, max: 1, default: 1, unit: '', step: 1, group: 'core' },
-    // Advanced
-    { id: 'range', label: 'Range', min: 0, max: 60, default: 15, unit: 'dB', step: 1, group: 'advanced' },
-    { id: 'lookahead', label: 'Lookahead', min: 0, max: 20, default: 0, unit: 'ms', step: 0.5, group: 'advanced' },
-    { id: 'deltaListen', label: 'Delta Listen', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'advanced' },
-    // Sidechain
-    {
-        id: 'scHpfFreq',
-        label: 'SC HPF',
-        min: 20,
-        max: 500,
-        default: 80,
-        unit: 'Hz',
-        step: 1,
-        group: 'sidechain',
-        scaling: 'log',
-    },
-    { id: 'scHpfEnabled', label: 'SC HPF On', min: 0, max: 1, default: 1, unit: '', step: 1, group: 'sidechain' },
-    { id: 'thrust', label: 'Thrust', min: 0, max: 2, default: 0, unit: '', step: 1, group: 'sidechain' },
-    { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
-    {
-        id: 'scLpfFreq',
-        label: 'SC LPF',
-        min: 1000,
-        max: 20000,
-        default: 20000,
-        unit: 'Hz',
-        step: 100,
-        group: 'sidechain',
-        scaling: 'log',
-    },
-    { id: 'scLpfEnabled', label: 'SC LPF On', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'sidechain' },
-    // Stereo
-    { id: 'stereoLink', label: 'Stereo Link', min: 0, max: 1, default: 1, unit: '', step: 0.01, group: 'stereo' },
-    { id: 'stereoMode', label: 'Stereo Mode', min: 0, max: 3, default: 0, unit: '', step: 1, group: 'stereo' },
-    // FET-specific
-    { id: 'inputGain', label: 'Input Gain', min: -12, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'fet' },
-    { id: 'outputGain', label: 'Output Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5, group: 'fet' },
-    { id: 'xfmrDrive', label: 'Transformer', min: 0, max: 3, default: 1.2, unit: '', step: 0.01, group: 'fet' },
-    { id: 'allButtons', label: 'All Buttons', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'fet' },
-    // Opto-specific
-    { id: 'limitMode', label: 'Limit Mode', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'opto' },
-    // Diode-specific
-    { id: 'recovery', label: 'Recovery', min: 1, max: 5, default: 3, unit: '', step: 1, group: 'diode' },
-    // VCA-specific
-    { id: 'vcaCharacter', label: 'VCA Color', min: 0, max: 0.02, default: 0.003, unit: '', step: 0.001, group: 'vca' },
-    { id: 'feedForward', label: 'Feed-Forward', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'vca' },
-    // Dual-stage blend
-    { id: 'blendTopology', label: 'Blend Topo', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'route' },
-    { id: 'blendAmount', label: 'Blend', min: 0, max: 1, default: 0, unit: '', step: 0.01, group: 'route' },
-    // Bypass
-    { id: 'gainMatchBypass', label: 'Gain Match', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'advanced' },
-];

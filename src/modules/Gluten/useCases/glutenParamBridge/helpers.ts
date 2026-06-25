@@ -65,6 +65,18 @@ export const STEREO_MODE_INDEX = {
     'dual-mono': 3,
 } as const;
 
+/**
+ * Look an enum string up in an index map. Returns the index for a recognized
+ * member — including a legitimately-zero one such as `vca`/`glue`/`rms`/`stereo`
+ * — and `null` for any string that is not a member, rather than collapsing an
+ * unknown value to index 0 (which would silently desync the store from the
+ * engine). Typed against the runtime truth that arbitrary-string lookups may
+ * miss, so the miss branch is real rather than fallback-as-decoration.
+ */
+function lookupIndex(map: Readonly<Record<string, number>>, value: string): number | null {
+    return Object.hasOwn(map, value) ? map[value]! : null;
+}
+
 export function encodeGlutenValue(key: string, value: unknown): number | null {
     if (typeof value === 'number') {
         return value;
@@ -79,19 +91,19 @@ export function encodeGlutenValue(key: string, value: unknown): number | null {
     }
 
     if (key === 'topology' || key === 'blendTopology') {
-        return TOPOLOGY_INDEX[value as keyof typeof TOPOLOGY_INDEX] ?? 0;
+        return lookupIndex(TOPOLOGY_INDEX, value);
     }
 
     if (key === 'style') {
-        return STYLE_INDEX[value as keyof typeof STYLE_INDEX] ?? 0;
+        return lookupIndex(STYLE_INDEX, value);
     }
 
     if (key === 'detection') {
-        return DETECTION_INDEX[value as keyof typeof DETECTION_INDEX] ?? 0;
+        return lookupIndex(DETECTION_INDEX, value);
     }
 
     if (key === 'stereoMode') {
-        return STEREO_MODE_INDEX[value as keyof typeof STEREO_MODE_INDEX] ?? 0;
+        return lookupIndex(STEREO_MODE_INDEX, value);
     }
 
     return null;

@@ -12,6 +12,8 @@ type GrMeterProps = {
     width?: number;
     height?: number;
     accentColor?: string;
+    /** Accessible name for this meter instance — disambiguates multiple open panels. */
+    label?: string;
 };
 
 export const GrMeter = ({
@@ -21,6 +23,7 @@ export const GrMeter = ({
     width = 60,
     height = 160,
     accentColor,
+    label = 'Gain reduction meter',
 }: GrMeterProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const peakHoldRef = useRef(0);
@@ -127,8 +130,19 @@ export const GrMeter = ({
         ctx.fillText('GR', width / 2, height - 1);
     }, [grDb, inputDb, outputDb, width, height, accentColor]);
 
+    // Round to one decimal so the announced value matches the visible readout
+    // (the canvas prints `grDb.toFixed(1)`), instead of leaking the raw float.
+    const displayGrDb = Math.round(grDb * 10) / 10;
+
     return (
-        <div role="meter" aria-label="Gain reduction meter" aria-valuemin={-30} aria-valuemax={0} aria-valuenow={grDb}>
+        <div
+            role="meter"
+            aria-label={label}
+            aria-valuemin={-30}
+            aria-valuemax={0}
+            aria-valuenow={displayGrDb}
+            aria-valuetext={`${displayGrDb.toFixed(1)} dB of gain reduction`}
+        >
             <canvas
                 ref={canvasRef}
                 style={{ width, height }}

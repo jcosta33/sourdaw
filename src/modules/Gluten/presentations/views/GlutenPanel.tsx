@@ -16,7 +16,12 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Stack, Row, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
-import { type GlutenPatch, type GlutenStyle, type GlutenTopology } from '../../models/GlutenPatch';
+import {
+    OVERSAMPLING_FACTORS,
+    type GlutenPatch,
+    type GlutenStyle,
+    type GlutenTopology,
+} from '../../models/GlutenPatch';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
@@ -24,6 +29,7 @@ import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { GlutenCurve } from '../components/GlutenCurve';
 import { GrHistory } from '../components/GrHistory';
 import { GrMeter } from '../components/GrMeter';
+import { useGlutenMeters } from '../hooks/useGlutenMeters';
 
 const TOPOLOGY_META: Record<
     GlutenTopology,
@@ -315,10 +321,14 @@ const defaultGlutenInstances: Record<string, GlutenState> = {};
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(glutenStore, defaultGlutenInstances);
     const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
+    // Meters live in their own per-device store: a ~60 Hz tick on this device
+    // re-renders this panel's meter readouts without rebuilding the patch map,
+    // and a tick on another open panel leaves this one untouched.
+    const { grDb, inputDb, outputDb, crest, phaseCorr, latency } = useGlutenMeters(deviceId);
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
 
-    const { patch, grDb, inputDb, outputDb, crest, phaseCorr, latency } = state;
+    const { patch } = state;
     const currentPatch = patch;
 
     const searchTerm = search.trim().toLowerCase();
@@ -865,16 +875,27 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={0.1}
                                 defaultValue={1}
                             />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.oversampling}
-                                param="oversampling"
-                                label="OS"
-                                min={1}
-                                max={4}
-                                step={1}
-                                defaultValue={2}
-                            />
+                            <Stack gap={1} className="items-center">
+                                <Row gap={1}>
+                                    {OVERSAMPLING_FACTORS.map((factor) => {
+                                        const active = patch.oversampling === factor;
+                                        return (
+                                            <DawPluginChip
+                                                key={factor}
+                                                active={active}
+                                                tone="lavender"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(deviceId, 'oversampling', factor)
+                                                }
+                                            >
+                                                {`${factor}×`}
+                                            </DawPluginChip>
+                                        );
+                                    })}
+                                </Row>
+                                <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">OS</div>
+                            </Stack>
                         </Grid>
                         <Stack gap={2}>
                             <Row wrap gap={1.5}>

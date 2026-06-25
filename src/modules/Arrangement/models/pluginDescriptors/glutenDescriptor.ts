@@ -32,6 +32,13 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'detection', label: 'Detection', min: 0, max: 1, default: 0, unit: '', step: 1 },
     { id: 'scLpfFreq', label: 'SC LPF', min: 1000, max: 20000, default: 20000, unit: 'Hz', step: 100, scaling: 'log' },
     { id: 'scLpfEnabled', label: 'SC LPF On', min: 0, max: 1, default: 0, unit: '', step: 1 },
+    { id: 'scEqFreq', label: 'SC EQ', min: 20, max: 20000, default: 1000, unit: 'Hz', step: 10, scaling: 'log' },
+    { id: 'scEqGain', label: 'EQ Gain', min: -18, max: 18, default: 0, unit: 'dB', step: 0.5 },
+    { id: 'scEqQ', label: 'EQ Q', min: 0.1, max: 10, default: 1, unit: '', step: 0.1 },
+    { id: 'scEqEnabled', label: 'SC EQ On', min: 0, max: 1, default: 0, unit: '', step: 1 },
+    { id: 'extSidechain', label: 'Ext SC', min: 0, max: 1, default: 0, unit: '', step: 1 },
+    // Quality
+    { id: 'oversampling', label: 'OS', min: 1, max: 4, default: 2, unit: '', step: 1 },
     // Stereo
     { id: 'stereoLink', label: 'Stereo Link', min: 0, max: 1, default: 1, unit: '', step: 0.01 },
     { id: 'stereoMode', label: 'Stereo Mode', min: 0, max: 3, default: 0, unit: '', step: 1 },
@@ -39,6 +46,8 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'inputGain', label: 'Input Gain', min: -12, max: 24, default: 0, unit: 'dB', step: 0.5 },
     { id: 'outputGain', label: 'Output Gain', min: -24, max: 24, default: 0, unit: 'dB', step: 0.5 },
     { id: 'xfmrDrive', label: 'Transformer', min: 0, max: 3, default: 1.2, unit: '', step: 0.01 },
+    { id: 'jfetK3', label: 'Odd', min: 0, max: 0.5, default: 0.15, unit: '', step: 0.01 },
+    { id: 'xfmrK2', label: 'Even', min: 0, max: 0.3, default: 0, unit: '', step: 0.01 },
     { id: 'allButtons', label: 'All Buttons', min: 0, max: 1, default: 0, unit: '', step: 1 },
     // Opto-specific
     { id: 'limitMode', label: 'Limit Mode', min: 0, max: 1, default: 0, unit: '', step: 1 },
@@ -46,6 +55,7 @@ const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     { id: 'recovery', label: 'Recovery', min: 1, max: 5, default: 3, unit: '', step: 1 },
     // VCA-specific
     { id: 'vcaCharacter', label: 'VCA Color', min: 0, max: 0.02, default: 0.003, unit: '', step: 0.001 },
+    { id: 'vcaType', label: 'VCA Type', min: 0, max: 2, default: 1, unit: '', step: 1 },
     { id: 'feedForward', label: 'Feed-Forward', min: 0, max: 1, default: 0, unit: '', step: 1 },
     // Dual-stage blend
     { id: 'blendTopology', label: 'Blend Topo', min: 0, max: 3, default: 1, unit: '', step: 1 },

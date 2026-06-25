@@ -1,9 +1,17 @@
-import { type GlutenPatch } from '../../models/GlutenPatch';
+import { logger } from '#/infra/logger/appLogger';
+
+import { clampOversampling, type GlutenPatch } from '../../models/GlutenPatch';
 import { loadGlutenPatch } from '../../stores/glutenStore';
 
 import { encodeGlutenValue, findDeviceRefGluten, pushParamImmediately } from './helpers';
 
-export function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): void {
+export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch): void {
+    // Snap oversampling to a supported factor (1/2/4) before it reaches the store
+    // or the engine — a hand-built preset or stale persisted patch may carry an
+    // unsupported value such as 3.
+    const snapped = clampOversampling(rawPatch.oversampling);
+    const patch: GlutenPatch = snapped === rawPatch.oversampling ? rawPatch : { ...rawPatch, oversampling: snapped };
+
     loadGlutenPatch(deviceId, patch);
 
     const ref = findDeviceRefGluten(deviceId);
@@ -59,8 +67,16 @@ export function loadGlutenPatchWithAudio(deviceId: string, patch: GlutenPatch): 
 
     for (const [key, rawValue] of params) {
         const encodedValue = encodeGlutenValue(key, rawValue);
-        if (encodedValue !== null) {
-            pushParamImmediately(ref, key, encodedValue);
+        if (encodedValue === null) {
+            // An unencodable value never reaches the engine, so the store and the
+            // audio graph drift apart for this param. Log it so the desync is
+            // observable instead of silent.
+            logger.warn(
+                `loadGlutenPatchWithAudio: skipped param "${key}" for device "${deviceId}" — value did not encode`,
+                rawValue
+            );
+            continue;
         }
+        pushParamImmediately(ref, key, encodedValue);
     }
 }

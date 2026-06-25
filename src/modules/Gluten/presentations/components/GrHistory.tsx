@@ -21,12 +21,17 @@ const DB_RANGE = 30; // 0 to -30 dB
 
 export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHistoryProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const historyRef = useRef<Float32Array>(createCompactFloatBuffer({ length: HISTORY_LENGTH }));
+    // Lazy init: passing the buffer directly to useRef would reallocate-and-discard
+    // a fresh Float32Array on every render while the ref keeps only the first. The
+    // effect initializes the buffer on first run (see `historyRef.current ??= …`).
+    const historyRef = useRef<Float32Array | null>(null);
     const posRef = useRef(0);
 
     useEffect(() => {
+        const history = (historyRef.current ??= createCompactFloatBuffer({ length: HISTORY_LENGTH }));
+
         // Push new value
-        historyRef.current[posRef.current % HISTORY_LENGTH] = grDb;
+        history[posRef.current % HISTORY_LENGTH] = grDb;
         posRef.current++;
 
         const canvas = canvasRef.current;
@@ -68,7 +73,6 @@ export const GrHistory = ({ grDb, width = 400, height = 60, accentColor }: GrHis
         }
 
         // Draw GR history as filled area from top
-        const history = historyRef.current;
         const pos = posRef.current;
         const colW = width / HISTORY_LENGTH;
 
