@@ -1,9 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { triggerLiveNoteOff } from '#/modules/AudioEngine/useCases/triggerLiveNoteOff';
-import { triggerLiveNoteOn } from '#/modules/AudioEngine/useCases/triggerLiveNoteOn';
-import { setVirtualKeyboardOctave } from '#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
+import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/AudioEngine/useCases';
+import { setVirtualKeyboardOctave } from '#/modules/Workspace/useCases';
 
 import { VirtualKeyboard } from '../VirtualKeyboard';
 
@@ -18,20 +17,27 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => workspaceState),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/triggerLiveNoteOn', () => ({
+// Mock the SAME barrel module-ids the component imports from
+// (`#/modules/AudioEngine/useCases`, `#/modules/Workspace/useCases`) — not the deep
+// per-file paths. A deep-path mock only intercepts the call when the barrel happens to
+// resolve through the mocked file at load time, which is order-dependent: a sibling spec
+// that evaluated the real barrel first leaves the re-export pointing at the real function
+// and the mock never fires (intermittent green). Mocking the barrel module-id itself makes
+// the interception independent of load order.
+//
+// The factory provides only the four exports the component consumes and does NOT spread
+// importOriginal: evaluating the real AudioEngine/Workspace barrels drags in the audio
+// engine / WASM init, which never settles under jsdom and hangs the run. The component is
+// the only consumer of these barrels in this spec's module graph, so a minimal surface is
+// sufficient and keeps the test deterministic.
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     triggerLiveNoteOn: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/triggerLiveNoteOff', () => ({
     triggerLiveNoteOff: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity', () => ({
-    setVirtualKeyboardVelocity: vi.fn(),
-}));
-
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave', () => ({
+vi.mock('#/modules/Workspace/useCases', () => ({
     setVirtualKeyboardOctave: vi.fn(),
+    setVirtualKeyboardVelocity: vi.fn(),
 }));
 
 // Mock UI components
@@ -248,6 +254,77 @@ describe('VirtualKeyboard', () => {
 
             expect(onMock).not.toHaveBeenCalled();
             expect(offMock).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── Stuck-note prevention on teardown / tab hide / focus loss ───────────────────
+    //
+    // A note held when the component unmounts, the tab is hidden, or the window loses focus
+    // has no keyup/pointerup left to release it — without teardown cleanup it leaks a noteOn
+    // (an audible hung note). These assert every held note is released, deterministically.
+    describe('releases held notes on teardown', () => {
+        const offMock = vi.mocked(triggerLiveNoteOff);
+
+        const panel = () => screen.getByRole('application');
+
+        // Hold A (MIDI 60) and S (MIDI 62) at octave 4, then run the teardown action.
+        const holdTwoNotes = () => {
+            fireEvent.keyDown(panel(), { code: 'KeyA' }); // C4 = 60
+            fireEvent.keyDown(panel(), { code: 'KeyS' }); // D4 = 62
+        };
+
+        const releasedNotes = () => offMock.mock.calls.map(([, note]) => note).sort((a, b) => a - b);
+
+        it('fires noteOff for every held note when the component unmounts', () => {
+            const { unmount } = render(<VirtualKeyboard />);
+            holdTwoNotes();
+            offMock.mockClear();
+
+            unmount();
+
+            expect(releasedNotes()).toEqual([60, 62]);
+        });
+
+        it('fires noteOff for every held note when the tab becomes hidden', () => {
+            render(<VirtualKeyboard />);
+            holdTwoNotes();
+            offMock.mockClear();
+
+            // Drive visibilitychange → hidden the way the browser would.
+            const original = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+            Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+            try {
+                fireEvent(document, new Event('visibilitychange'));
+            } finally {
+                if (original) {
+                    Object.defineProperty(document, 'visibilityState', original);
+                } else {
+                    Reflect.deleteProperty(document, 'visibilityState');
+                }
+            }
+
+            expect(releasedNotes()).toEqual([60, 62]);
+        });
+
+        it('does not release notes on visibilitychange while the tab stays visible', () => {
+            render(<VirtualKeyboard />);
+            holdTwoNotes();
+            offMock.mockClear();
+
+            // visibilityState is 'visible' by default in jsdom — a spurious event must be a no-op.
+            fireEvent(document, new Event('visibilitychange'));
+
+            expect(offMock).not.toHaveBeenCalled();
+        });
+
+        it('fires noteOff for every held note when the window loses focus', () => {
+            render(<VirtualKeyboard />);
+            holdTwoNotes();
+            offMock.mockClear();
+
+            fireEvent(window, new Event('blur'));
+
+            expect(releasedNotes()).toEqual([60, 62]);
         });
     });
 });

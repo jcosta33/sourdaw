@@ -181,6 +181,15 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set());
+    /**
+     * Latest pressedNotes, mirrored into a ref so teardown handlers (unmount cleanup,
+     * visibilitychange→hidden, window.blur) release the notes that are actually held now
+     * instead of an empty set captured by a stale closure at effect-setup time.
+     */
+    const pressedNotesRef = useRef<Set<number>>(pressedNotes);
+    useEffect(() => {
+        pressedNotesRef.current = pressedNotes;
+    }, [pressedNotes]);
     const mouseNote = useRef<number | null>(null);
     const heldKeys = useRef<Set<string>>(new Set());
     /**
@@ -382,15 +391,50 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         }
     };
 
-    const onBlur = () => {
+    /**
+     * Release every sounding note and clear all held-key bookkeeping. Reads the live
+     * pressedNotes via the ref so it works from teardown handlers whose closures predate
+     * the current pressed set. Calling triggerLiveNoteOff directly (not triggerNoteOff)
+     * avoids one setState per note; the single setPressedNotes(new Set()) settles UI state.
+     */
+    const releaseAllHeldNotes = () => {
         heldKeys.current.clear();
         heldKeyNotes.current.clear();
-        for (const midiNote of pressedNotes) {
+        for (const midiNote of pressedNotesRef.current) {
             triggerLiveNoteOff(0, midiNote);
         }
-        setPressedNotes(new Set());
+        if (pressedNotesRef.current.size > 0) {
+            setPressedNotes(new Set());
+        }
         mouseNote.current = null;
     };
+
+    const onBlur = () => {
+        releaseAllHeldNotes();
+    };
+
+    // Release all held notes when the component unmounts, the tab is hidden, or the window
+    // loses focus — otherwise a note held at that moment leaks a noteOn the matching keyup
+    // never fires for (an audible hung note). visibilitychange + window blur cover tab
+    // switches and app focus loss; the cleanup covers unmount. Empty deps: the handler reads
+    // live state through pressedNotesRef, so it never needs to re-subscribe.
+    useEffect(() => {
+        const releaseOnHidden = () => {
+            if (document.visibilityState === 'hidden') {
+                releaseAllHeldNotes();
+            }
+        };
+        document.addEventListener('visibilitychange', releaseOnHidden);
+        window.addEventListener('blur', releaseAllHeldNotes);
+        return () => {
+            document.removeEventListener('visibilitychange', releaseOnHidden);
+            window.removeEventListener('blur', releaseAllHeldNotes);
+            // Final teardown: silence anything still sounding so unmount cannot leave a hung note.
+            for (const midiNote of pressedNotesRef.current) {
+                triggerLiveNoteOff(0, midiNote);
+            }
+        };
+    }, []);
 
     // ── Rendering ─────────────────────────────────────────────────────────────
 
