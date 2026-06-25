@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { sidechainStore } from '#/modules/Routing/stores';
 
 import { type TrackLatency } from '../../../models/LatencyCompensationTypes';
 import { getAudioContext } from '../../engineAccess/getAudioContext';
@@ -61,6 +62,19 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
     for (const send of track.sends) {
         const sendLatency = getTrackLatency(send.busId, visited);
         maxDownstreamMs = Math.max(maxDownstreamMs, sendLatency.totalLatencyMs);
+    }
+
+    // Sidechain routes feed this track's signal into a downstream target's
+    // sidechain input (source -> target, mirroring sends/output). The target's
+    // processing latency is therefore downstream of this track and must be
+    // folded in, or PDC drifts on sidechain pumping mixes.
+    const sidechainRoutes = sidechainStore.value?.routes ?? [];
+    for (const route of sidechainRoutes) {
+        if (route.sourceTrackId !== trackId) {
+            continue;
+        }
+        const targetLatency = getTrackLatency(route.targetTrackId, visited);
+        maxDownstreamMs = Math.max(maxDownstreamMs, targetLatency.totalLatencyMs);
     }
 
     visited.delete(trackId);

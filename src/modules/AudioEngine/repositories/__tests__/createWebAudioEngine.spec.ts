@@ -512,6 +512,167 @@ describe('AudioEngine', () => {
         });
     });
 
+    // ── Fix 2: sidechain wiring in fallback mode is queued, not dropped ──────────
+    //
+    // wireSidechainRoute used to early-return in fallback mode, silently dropping
+    // the route while the store kept it — diverging the live graph with no
+    // recovery. It now queues the route (without touching the noop graph) for
+    // replay on the next non-fallback wire, while unwire cancels a still-pending
+    // route. These tests guard the observable engine-side behavior: fallback
+    // wiring must not crash or corrupt the noop graph, and the ready path must
+    // keep wiring as before. The discriminating queue-vs-drop + recoverable-state
+    // contract is proven through the public caller in setSidechainRoutes.spec.ts.
+    describe('sidechain fallback queue and replay', () => {
+        function makeFallbackEngine(): AudioEngine {
+            class FailingAudioContext {
+                constructor() {
+                    throw new Error('no AudioContext in this environment');
+                }
+            }
+            const createGain = vi.fn(() => ({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
+            vi.stubGlobal('AudioContext', FailingAudioContext);
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                class {
+                    createGain = createGain;
+                    createAnalyser() {
+                        return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
+                    }
+                }
+            );
+            const fb = createAudioEngine();
+            // Expose the gain factory for assertions on the noop graph.
+            (fb as unknown as { __createGain: Mock }).__createGain = createGain;
+            return fb;
+        }
+
+        it('does not wire onto the noop graph and does not throw when requested in fallback mode', () => {
+            const fb = makeFallbackEngine();
+            const createGain = (fb as unknown as { __createGain: Mock }).__createGain;
+            // setupNoopContext builds one gain node (master). Wiring a sidechain
+            // must not build another — the route is queued, not applied.
+            const gainCallsAfterSetup = createGain.mock.calls.length;
+
+            expect(() => fb.wireSidechainRoute('src', 'dst', 'dev1')).not.toThrow();
+            expect(createGain.mock.calls.length).toBe(gainCallsAfterSetup);
+
+            // Unwire of a still-pending route is a clean no-op (cancels the queue).
+            expect(() => fb.unwireSidechainRoute('src', 'dev1')).not.toThrow();
+        });
+
+        it('still wires a valid route on a ready engine (replay-drain is harmless when empty)', () => {
+            const tgtStrip = engine.ensureTrackStrip('scTgt');
+            engine.ensureTrackStrip('scSrc');
+            tgtStrip.deviceNodes.push({
+                deviceId: 'dev1',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+
+            const createGainBefore = mockCtx.createGain.mock.calls.length;
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            // A new sidechain GainNode was built and wired (the path still runs).
+            expect(mockCtx.createGain.mock.calls.length).toBeGreaterThan(createGainBefore);
+
+            const scGain = mockCtx.createGain.mock.results.at(-1)!.value as { connect: Mock };
+            expect(scGain.connect).toHaveBeenCalled();
+        });
+    });
+
+    // ── Fix 3: pre/post-fader send-tap toggle crossfades (no silence gap) ────────
+    //
+    // Toggling a live send between the pre- and post-fader tap used to hard
+    // disconnect() the send gain and then connect() the new tap across two
+    // synchronous Web Audio calls — leaving the bus with no input for one render
+    // quantum (~2.7ms), an audible drop on a pumping bus. The toggle must now
+    // equal-time-crossfade: build a fresh gain on the new tap ramping 0→level
+    // while the old gain ramps level→0 over the same ~10ms window, so the bus is
+    // continuously fed, and only tear the old node down after the ramp.
+    describe('pre/post-fader send-tap crossfade', () => {
+        function setupSend(): { disconnect: Mock; gain: { linearRampToValueAtTime: Mock } } {
+            engine.ensureTrackStrip('t1');
+            engine.setSend('t1', 'busA', 0.5, /* preFader */ false);
+            return mockCtx.createGain.mock.results.at(-1)!.value as {
+                disconnect: Mock;
+                gain: { linearRampToValueAtTime: Mock };
+            };
+        }
+
+        it('does not hard-disconnect the old send gain synchronously on a tap toggle', () => {
+            vi.useFakeTimers();
+            try {
+                const firstSendGain = setupSend();
+                expect(firstSendGain.disconnect).not.toHaveBeenCalled();
+
+                // Toggle post → pre.
+                engine.setSend('t1', 'busA', 0.5, /* preFader */ true);
+
+                // The old gain must NOT be torn down in the same tick — it is
+                // ramped to silence and disconnected only after the crossfade.
+                expect(firstSendGain.disconnect).not.toHaveBeenCalled();
+                // It ramps down to 0 (the outgoing half of the crossfade).
+                expect(firstSendGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, expect.any(Number));
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('builds a new gain on the incoming tap that ramps up from 0 to the level', () => {
+            vi.useFakeTimers();
+            try {
+                setupSend();
+                const createGainCallsBefore = mockCtx.createGain.mock.calls.length;
+
+                engine.setSend('t1', 'busA', 0.5, /* preFader */ true);
+
+                // A fresh gain node was built for the incoming tap.
+                expect(mockCtx.createGain.mock.calls.length).toBe(createGainCallsBefore + 1);
+                const newGain = mockCtx.createGain.mock.results.at(-1)!.value as {
+                    connect: Mock;
+                    gain: { setValueAtTime: Mock; linearRampToValueAtTime: Mock };
+                };
+                // Incoming half of the crossfade: start at 0, ramp up to level.
+                expect(newGain.gain.setValueAtTime).toHaveBeenCalledWith(0, expect.any(Number));
+                expect(newGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.5, expect.any(Number));
+                // The new gain is wired into the bus, so the bus is fed during the fade.
+                expect(newGain.connect).toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('tears the old send gain down only after the crossfade window elapses', () => {
+            vi.useFakeTimers();
+            try {
+                const firstSendGain = setupSend();
+
+                engine.setSend('t1', 'busA', 0.5, /* preFader */ true);
+                expect(firstSendGain.disconnect).not.toHaveBeenCalled();
+
+                // Advance past the crossfade + teardown margin (10ms + 20ms).
+                vi.advanceTimersByTime(40);
+                expect(firstSendGain.disconnect).toHaveBeenCalledTimes(1);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('still ramps the level in place when the tap does not change (no crossfade)', () => {
+            engine.ensureTrackStrip('t2');
+            engine.setSend('t2', 'busB', 0.4, /* preFader */ false);
+            const sendGain = mockCtx.createGain.mock.results.at(-1)!.value as {
+                gain: { setTargetAtTime: Mock };
+            };
+            const createGainCallsBefore = mockCtx.createGain.mock.calls.length;
+
+            // Same preFader: a level change must NOT build a new node (no crossfade).
+            engine.setSend('t2', 'busB', 0.9, /* preFader */ false);
+
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainCallsBefore);
+            expect(sendGain.gain.setTargetAtTime).toHaveBeenCalledWith(0.9, expect.any(Number), 0.01);
+        });
+    });
+
     // ── Fix 6: dead interface members are gone ───────────────────────────────────
     describe('interface reconciliation', () => {
         it('no longer exposes the dead getTransportSAB method (it had zero callers)', () => {

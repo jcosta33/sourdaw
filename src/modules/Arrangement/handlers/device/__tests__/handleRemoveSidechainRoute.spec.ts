@@ -50,6 +50,22 @@ describe('handleRemoveSidechainRoute', () => {
         expect(desc.label).toBe('Remove sidechain route');
     });
 
+    // Regression: undo must re-derive engine wiring rather than rely on a CRDT store
+    // revert. The undo engine replays `describe().inverseAction`; without the inverse
+    // `addSidechainRoute`, undo is an inert no-op that leaves the route unwired and absent
+    // from the store. Asserting the inverse is the public seam that proves undo re-wires
+    // the route through the same use case that removed it.
+    it('describes the inverse addSidechainRoute so undo rewires the route', () => {
+        const desc = handleRemoveSidechainRoute.describe({
+            type: 'removeSidechainRoute',
+            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+        });
+        expect(desc.inverseAction).toEqual({
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+        });
+    });
+
     it('is undoable', () => {
         expect(handleRemoveSidechainRoute.undoable).toBe(true);
     });

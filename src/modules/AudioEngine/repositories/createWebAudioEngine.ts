@@ -55,6 +55,18 @@ const TRANSPORT_SAB_BYTES = 64;
 const TRANSPORT_SEQ_I32 = 14;
 
 /**
+ * Equal-time crossfade duration (seconds) for a live pre/post-fader send-tap
+ * handoff. The old tap's send gain ramps to 0 while a freshly-built gain on the
+ * new tap ramps up over the same window, so the bus never sees the block of
+ * silence a hard disconnect/reconnect produced. ~10ms is short enough to feel
+ * instant yet long enough to span a render quantum at any sample rate.
+ */
+const SEND_TAP_CROSSFADE_SECONDS = 0.01;
+
+/** Extra margin (seconds) before the faded-out old send node is disconnected. */
+const SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS = 0.02;
+
+/**
  * Builds a silent stand-in for {@link AudioContext} from an
  * {@link OfflineAudioContext} (which never produces sound and shares the
  * node-factory surface the fallback path uses). The handful of `AudioContext`
@@ -95,6 +107,19 @@ class AudioEngineImpl implements AudioEngine {
     private busNodes = new Map<string, BusNode>();
     private sendNodes = new Map<string, SendNode>();
     private sidechainConnections = new Map<string, GainNode>();
+    /**
+     * Sidechain routes requested while the engine could not wire them (fallback
+     * mode — no live AudioContext). Keyed by `${sourceTrackId}→${targetDeviceId}`
+     * so an unwire request can cancel a still-pending wire. These are replayed
+     * the next time wireSidechainRoute runs outside fallback mode, so a route
+     * requested before the engine was usable is not silently lost (the store
+     * keeps the route but the live graph would otherwise diverge with no
+     * recovery).
+     */
+    private pendingSidechainRoutes = new Map<
+        string,
+        { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }
+    >();
     private scheduledNodes: AudioScheduledSourceNode[] = [];
     private masterMeterBuffer!: Float32Array;
     private pendingDevicePromises = new Set<Promise<unknown>>();
@@ -545,19 +570,13 @@ class AudioEngineImpl implements AudioEngine {
         const busStrip = this.ensureBusStrip(busId);
         const key = `${sourceTrackId}→${busId}`;
 
+        const clampedLevel = Math.max(0, Math.min(1, level));
         const existing = this.sendNodes.get(key);
         if (existing) {
-            existing.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, level)), this.context.currentTime, 0.01);
             if (existing.preFader !== preFader) {
-                try {
-                    existing.gainNode.disconnect();
-                } catch {
-                    // ignore
-                }
-                const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
-                tap.connect(existing.gainNode);
-                existing.gainNode.connect(busStrip.gainNode);
-                existing.preFader = preFader;
+                this.crossfadeSendTap(existing, trackNode, busStrip, preFader, clampedLevel);
+            } else {
+                existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
             }
             return;
         }
@@ -568,6 +587,56 @@ class AudioEngineImpl implements AudioEngine {
         tap.connect(sendGain);
         sendGain.connect(busStrip.gainNode);
         this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, preFader });
+    }
+
+    /**
+     * Switch a live send between the pre- and post-fader tap without a gap of
+     * silence on the bus. A hard `disconnect()` then `connect()` left the bus with
+     * no input for one render quantum (~2.7ms at 48k) — audible on a pumping bus.
+     * Instead we build a fresh gain on the new tap and equal-time-crossfade: the
+     * new gain ramps 0→level while the old gain ramps level→0 over the same
+     * window, so the bus is continuously fed. After the ramp the old node is torn
+     * down. The teardown is deferred on the control thread (`setTimeout`), never
+     * on the audio thread, so the RT graph is untouched by the cleanup.
+     */
+    private crossfadeSendTap(
+        existing: SendNode,
+        trackNode: TrackNode,
+        busStrip: BusStrip,
+        preFader: boolean,
+        clampedLevel: number
+    ): void {
+        const now = this.context.currentTime;
+        const end = now + SEND_TAP_CROSSFADE_SECONDS;
+
+        const newTap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
+        const newGain = this.context.createGain();
+        newGain.gain.setValueAtTime(0, now);
+        newGain.gain.linearRampToValueAtTime(clampedLevel, end);
+        newTap.connect(newGain);
+        newGain.connect(busStrip.gainNode);
+
+        // Ramp the outgoing gain to silence over the same window. Pin its current
+        // value first so the ramp starts from where it is, not from a stale
+        // scheduled value.
+        const oldGain = existing.gainNode;
+        oldGain.gain.cancelScheduledValues(now);
+        oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+        oldGain.gain.linearRampToValueAtTime(0, end);
+
+        // Promote the new node to the live send and tear the old one down after
+        // the crossfade completes (plus a small margin) on the control thread.
+        existing.gainNode = newGain;
+        existing.preFader = preFader;
+        const teardownMs = (SEND_TAP_CROSSFADE_SECONDS + SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS) * 1000;
+        setTimeout(() => {
+            try {
+                oldGain.disconnect();
+            } catch {
+                // Already disconnected (e.g. removeSend / resetGraph ran during
+                // the crossfade) — nothing to tear down.
+            }
+        }, teardownMs);
     }
 
     public removeSend(sourceTrackId: string, busId: string): void {
@@ -596,9 +665,41 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
+        const key = `${sourceTrackId}→${targetDeviceId}`;
         if (this.fallbackMode) {
+            // No live AudioContext to wire into. Queue the route instead of
+            // dropping it, so the next time wiring runs outside fallback mode the
+            // route is replayed rather than lost (the store keeps the route, so
+            // silently no-op'ing here would diverge the live graph with no
+            // recovery path).
+            this.pendingSidechainRoutes.set(key, { sourceTrackId, targetTrackId, targetDeviceId });
             return;
         }
+        // Recovery: drain any routes queued while the engine was in fallback mode
+        // before honoring this request, so a route requested before the engine
+        // was usable is now wired up.
+        this.replayPendingSidechainRoutes();
+        this.applySidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+    }
+
+    /**
+     * Re-attempt every sidechain route queued during fallback mode. Routes that
+     * still cannot be wired (e.g. the target strip/device is not present yet) are
+     * dropped from the queue by applySidechainRoute's own guards — they are no
+     * longer recoverable through this path and the caller owns re-requesting.
+     */
+    private replayPendingSidechainRoutes(): void {
+        if (this.pendingSidechainRoutes.size === 0) {
+            return;
+        }
+        const queued = Array.from(this.pendingSidechainRoutes.values());
+        this.pendingSidechainRoutes.clear();
+        for (const route of queued) {
+            this.applySidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
+        }
+    }
+
+    private applySidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void {
         const sourceStrip = this.trackNodes.get(sourceTrackId)?.strip;
         const targetStrip = this.trackNodes.get(targetTrackId)?.strip;
         if (!sourceStrip || !targetStrip) {
@@ -624,6 +725,9 @@ class AudioEngineImpl implements AudioEngine {
 
     public unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
         const key = `${sourceTrackId}→${targetDeviceId}`;
+        // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
+        // before recovery does not get replayed back into the live graph.
+        this.pendingSidechainRoutes.delete(key);
         const scGain = this.sidechainConnections.get(key);
         if (scGain) {
             scGain.disconnect();
@@ -716,6 +820,9 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
         this.sidechainConnections.clear();
+        // Drop sidechain routes queued during fallback: they belong to the
+        // project being torn down and must not replay into the next one.
+        this.pendingSidechainRoutes.clear();
         for (const [, send] of this.sendNodes) {
             try {
                 send.gainNode.disconnect();

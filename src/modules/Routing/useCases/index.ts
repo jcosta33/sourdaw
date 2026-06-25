@@ -1,6 +1,7 @@
 export { ensureBusStrip } from './busControls/ensureBusStrip';
 export { setBusGain } from './busControls/setBusGain';
 export { setSend } from './busControls/setSend';
+export { removeSend } from './busControls/removeSend';
 export { hydrateSidechainRoutes } from './hydrateSidechainRoutes';
 export { addSidechainRoute } from './sidechain/addSidechainRoute';
 export { removeSidechainRoute } from './sidechain/removeSidechainRoute';
