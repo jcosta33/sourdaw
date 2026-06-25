@@ -29,6 +29,20 @@ type KneadMsg =
     | { type: 'param'; name: string; value: number }
     | { type: 'bypass'; bypassed: boolean };
 
+// Transport SAB layout — kept in lockstep with the writer in
+// repositories/createWebAudioEngine.ts (TRANSPORT_F64 / TRANSPORT_SEQ_I32).
+// The seven f64 data fields are guarded by a seqlock counter in the Int32 view;
+// the reader retries while the counter is odd (write in progress) or changes
+// across the read, so it never consumes a snapshot torn across the field writes.
+const TRANSPORT_BEAT_F64 = 0;
+const TRANSPORT_TEMPO_F64 = 1;
+const TRANSPORT_IS_PLAYING_F64 = 5;
+const TRANSPORT_SEQ_I32 = 14;
+// Bound the seqlock retry so a misbehaving writer can never hang the RT thread;
+// on exhaustion the reader falls back to the (possibly torn, but bounded) last
+// sample rather than spinning forever.
+const TRANSPORT_SEQ_MAX_RETRIES = 8;
+
 class KneadProcessor extends AudioWorkletProcessor {
     _instance: KneadInstanceWithShift | null = null;
     _memory: WebAssembly.Memory | null = null;
@@ -38,6 +52,7 @@ class KneadProcessor extends AudioWorkletProcessor {
 
     _transportSAB: SharedArrayBuffer | null = null;
     _transportView: Float64Array | null = null;
+    _transportSeqView: Int32Array | null = null;
 
     _clips: Record<string, KneadClip> = {};
 
@@ -71,6 +86,7 @@ class KneadProcessor extends AudioWorkletProcessor {
         this._transportSAB = transportSAB;
         if (transportSAB) {
             this._transportView = new Float64Array(transportSAB);
+            this._transportSeqView = new Int32Array(transportSAB);
         }
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
@@ -95,11 +111,27 @@ class KneadProcessor extends AudioWorkletProcessor {
 
         // Resolve current temporal position
         let currentShiftSemitones = 0;
-        if (this._transportView) {
+        if (this._transportView && this._transportSeqView) {
             const view = this._transportView;
-            const currentBeat = view[0] ?? 0;
-            const tempo = view[1] ?? 120;
-            const isPlaying = (view[5] ?? 0) > 0.5;
+            const seq = this._transportSeqView;
+
+            // Seqlock read: sample the three transport fields between two reads of
+            // the sequence counter. If the counter was odd (a write was mid-flight)
+            // or moved between the two reads, the snapshot is torn — retry. A bound
+            // keeps the RT thread from spinning if the writer misbehaves.
+            let currentBeat = 0;
+            let tempo = 120;
+            let isPlaying = false;
+            for (let attempt = 0; attempt <= TRANSPORT_SEQ_MAX_RETRIES; attempt++) {
+                const before = Atomics.load(seq, TRANSPORT_SEQ_I32);
+                currentBeat = view[TRANSPORT_BEAT_F64] ?? 0;
+                tempo = view[TRANSPORT_TEMPO_F64] ?? 120;
+                isPlaying = (view[TRANSPORT_IS_PLAYING_F64] ?? 0) > 0.5;
+                const after = Atomics.load(seq, TRANSPORT_SEQ_I32);
+                if (before === after && (before & 1) === 0) {
+                    break;
+                }
+            }
 
             if (isPlaying) {
                 let activeClip: KneadClip | null = null;

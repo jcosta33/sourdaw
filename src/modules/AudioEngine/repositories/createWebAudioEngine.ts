@@ -24,6 +24,37 @@ type NoopMeterNode = {
 };
 
 /**
+ * Transport SharedArrayBuffer layout (one 64-byte buffer shared with worklet
+ * readers, e.g. {@link kneadProcessor}).
+ *
+ * The seven transport fields are read as `Float64Array` slots 0–6 (bytes 0–55);
+ * a single 32-bit sequence counter lives at `Int32Array` index 14 (bytes 56–59,
+ * the otherwise-unused 8th f64 slot). The counter guards the seven fields with a
+ * seqlock: the writer makes it odd before the field writes and even after, and a
+ * reader retries while it is odd or changes across the read — so a worklet never
+ * observes a snapshot torn across the seven non-atomic field writes.
+ *
+ * `Atomics` requires an integer-typed view, hence the separate `Int32Array` for
+ * the counter; the data fields stay `Float64Array` (they carry fractional beats
+ * and tempo). Index/offset names are shared with the reader so both sides agree.
+ */
+const TRANSPORT_F64 = {
+    beat: 0,
+    tempo: 1,
+    sampleRate: 2,
+    loopStart: 3,
+    loopEnd: 4,
+    isPlaying: 5,
+    isLooping: 6,
+} as const;
+
+/** Byte length of the transport SAB: 8 f64 slots (7 data + 1 holding the seq counter). */
+const TRANSPORT_SAB_BYTES = 64;
+
+/** `Int32Array` index of the seqlock sequence counter (byte offset 56, the 8th f64 slot). */
+const TRANSPORT_SEQ_I32 = 14;
+
+/**
  * Builds a silent stand-in for {@link AudioContext} from an
  * {@link OfflineAudioContext} (which never produces sound and shares the
  * node-factory surface the fallback path uses). The handful of `AudioContext`
@@ -71,16 +102,20 @@ class AudioEngineImpl implements AudioEngine {
     private fallbackMode = false;
     private transportSAB: SharedArrayBuffer | null;
     private transportView: Float64Array | null;
+    private transportSeqView: Int32Array | null;
     private initPromise: Promise<void> | null = null;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
     private adjustmentRuntime: AdjustmentLayerRuntime;
 
     constructor(providedContext?: AudioContext) {
-        // Transport SAB Layout (Float64Array):
-        // 0: currentBeat, 1: tempo, 2: sampleRate, 3: loopStart, 4: loopEnd, 5: isPlaying, 6: isLooping
-        this.transportSAB = new SharedArrayBuffer(64);
+        // Transport SAB layout: see TRANSPORT_F64 / TRANSPORT_SEQ_I32 above. The
+        // seven f64 data fields (slots 0–6) are guarded by a seqlock counter in
+        // the Int32 view at TRANSPORT_SEQ_I32 so worklet readers never observe a
+        // torn snapshot.
+        this.transportSAB = new SharedArrayBuffer(TRANSPORT_SAB_BYTES);
         this.transportView = new Float64Array(this.transportSAB);
+        this.transportSeqView = new Int32Array(this.transportSAB);
 
         try {
             this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
@@ -351,23 +386,38 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public addDeviceToStrip(trackId: string, deviceId: string, deviceType: string, externalInstanceId?: string): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.ensureTrackStrip(trackId);
         this.trackNodes.get(trackId)?.addDevice(deviceId, deviceType, externalInstanceId);
     }
 
     public removeDeviceFromStrip(trackId: string, deviceId: string): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.removeDevice(deviceId);
     }
 
     public updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.updateParam(deviceId, paramId, value);
     }
 
     public updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.updatePatch(deviceId, patch);
     }
 
     public scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.scheduleParam(deviceId, paramId, value, time);
     }
 
@@ -378,6 +428,9 @@ class AudioEngineImpl implements AudioEngine {
         velocity: number,
         time?: number
     ): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.scheduleDeviceKeyOn(deviceId, pitch, velocity, time);
     }
 
@@ -388,26 +441,44 @@ class AudioEngineImpl implements AudioEngine {
         velocity: number,
         time?: number
     ): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.scheduleDeviceKeyOff(deviceId, pitch, velocity, time);
     }
 
     public updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed);
     }
 
     public addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.addMidiFx(fxId, fxType);
     }
 
     public removeMidiFxFromStrip(trackId: string, fxId: string): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.removeMidiFx(fxId);
     }
 
     public updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.updateMidiFxParam(fxId, paramId, value);
     }
 
     public updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void {
+        if (this.fallbackMode) {
+            return;
+        }
         this.trackNodes.get(trackId)?.updateMidiFxBypass(fxId, bypassed);
     }
 
@@ -440,17 +511,27 @@ class AudioEngineImpl implements AudioEngine {
         isLooping = false
     ): void {
         const value = this.transportView;
-        if (!value) {
+        const seq = this.transportSeqView;
+        if (!value || !seq) {
             // Released by dispose(); nothing to write into.
             return;
         }
-        value[0] = beat;
-        value[1] = tempo;
-        value[2] = this.context.sampleRate;
-        value[3] = loopStart;
-        value[4] = loopEnd;
-        value[5] = isPlaying ? 1 : 0;
-        value[6] = isLooping ? 1 : 0;
+        // Seqlock write: bump the counter to an odd value (write in progress),
+        // publish the seven fields, then bump it to the next even value (write
+        // complete). A worklet reader that samples an odd or changed counter
+        // around its read retries, so it never sees a snapshot torn across the
+        // seven plain f64 writes. The trailing Atomics.store also publishes the
+        // field writes to other agents (release semantics).
+        const odd = Atomics.load(seq, TRANSPORT_SEQ_I32) + 1;
+        Atomics.store(seq, TRANSPORT_SEQ_I32, odd);
+        value[TRANSPORT_F64.beat] = beat;
+        value[TRANSPORT_F64.tempo] = tempo;
+        value[TRANSPORT_F64.sampleRate] = this.context.sampleRate;
+        value[TRANSPORT_F64.loopStart] = loopStart;
+        value[TRANSPORT_F64.loopEnd] = loopEnd;
+        value[TRANSPORT_F64.isPlaying] = isPlaying ? 1 : 0;
+        value[TRANSPORT_F64.isLooping] = isLooping ? 1 : 0;
+        Atomics.store(seq, TRANSPORT_SEQ_I32, odd + 1);
     }
 
     public setSend(sourceTrackId: string, busId: string, level: number, preFader = false): void {
@@ -681,6 +762,7 @@ class AudioEngineImpl implements AudioEngine {
         // buffer.
         this.transportSAB = null;
         this.transportView = null;
+        this.transportSeqView = null;
 
         // Reset the worklet-load latch so a re-initialize() after dispose() will
         // reload the modules rather than resolve the stale cached promise.

@@ -268,6 +268,250 @@ describe('AudioEngine', () => {
         });
     });
 
+    // ── Round-2 #6: setTransportInfo publishes a seqlock-guarded snapshot ─────────
+    //
+    // The transport SAB is shared with a worklet reader (kneadProcessor). Writing
+    // the seven f64 fields with plain assignments lets a reader observe a snapshot
+    // torn across the writes. setTransportInfo must instead bracket the field
+    // writes with a sequence counter (Int32 view) bumped odd-before / even-after,
+    // so a reader retrying on odd/changed counters never consumes a torn snapshot.
+    describe('setTransportInfo seqlock (torn-read guard)', () => {
+        // Int32 index of the seqlock counter; mirrors TRANSPORT_SEQ_I32 in the impl
+        // and TRANSPORT_SEQ_I32 in services/kneadProcessor.ts.
+        const SEQ_I32 = 14;
+        const F64 = { beat: 0, tempo: 1, sampleRate: 2, loopStart: 3, loopEnd: 4, isPlaying: 5, isLooping: 6 };
+
+        // The engine allocates its own transport SAB internally. We recover it by
+        // spying on the Int32Array the constructor wraps over that buffer (the seq
+        // view), then read the data fields through a Float64Array over the same
+        // buffer — exactly the two views the writer and the worklet reader share.
+        let capturedBuffer: ArrayBufferLike | null = null;
+        function captureTransportBuffer(): ArrayBufferLike {
+            expect(capturedBuffer).not.toBeNull();
+            return capturedBuffer!;
+        }
+        let OriginalInt32Array: typeof Int32Array;
+
+        beforeEach(() => {
+            OriginalInt32Array = Int32Array;
+            capturedBuffer = null;
+            // Capture the buffer the engine wraps with its seq Int32Array. The
+            // engine constructs Float64Array first, then Int32Array, over the same
+            // SAB; we record the buffer from the Int32Array construction.
+            class SpyInt32Array extends OriginalInt32Array {
+                constructor(...args: unknown[]) {
+                    // @ts-expect-error spread into the typed-array constructor
+                    super(...args);
+                    // The transport SAB is the only 64-byte buffer the constructor
+                    // wraps with an Int32Array; ignore any other typed-array builds.
+                    if (args[0] instanceof ArrayBuffer && args[0].byteLength === 64) {
+                        capturedBuffer = args[0];
+                    }
+                }
+            }
+            vi.stubGlobal('Int32Array', SpyInt32Array);
+            engine = createAudioEngine(asAudioContext(mockCtx));
+            vi.stubGlobal('Int32Array', OriginalInt32Array);
+        });
+
+        it('leaves the sequence counter even after a completed write and advances it by 2', () => {
+            const buf = captureTransportBuffer();
+            expect(buf).not.toBeNull();
+            const seq = new Int32Array(buf);
+
+            const before = Atomics.load(seq, SEQ_I32);
+            engine.setTransportInfo(4, 130, true, 1, 5, true);
+            const after = Atomics.load(seq, SEQ_I32);
+
+            // Even after the write completes (write-in-progress is the odd state).
+            expect(after % 2).toBe(0);
+            // Advanced by exactly 2 (odd, then even) — one full seqlock cycle.
+            expect(after - before).toBe(2);
+        });
+
+        it('publishes every field value under the settled (even) counter', () => {
+            const buf = captureTransportBuffer();
+            const seq = new Int32Array(buf);
+            const data = new Float64Array(buf);
+
+            engine.setTransportInfo(2.5, 90, false, 8, 16, true);
+
+            // All seven fields carry the values passed, and the counter is settled
+            // even — the combination a reader requires for a trusted snapshot.
+            expect(data[F64.beat]).toBe(2.5);
+            expect(data[F64.tempo]).toBe(90);
+            expect(data[F64.sampleRate]).toBe(mockCtx.sampleRate);
+            expect(data[F64.loopStart]).toBe(8);
+            expect(data[F64.loopEnd]).toBe(16);
+            expect(data[F64.isPlaying]).toBe(0);
+            expect(data[F64.isLooping]).toBe(1);
+            expect(Atomics.load(seq, SEQ_I32) % 2).toBe(0);
+        });
+
+        it('the engine writer produces snapshots a seqlock reader accepts as clean', () => {
+            // Faithful re-implementation of the reader loop in
+            // services/kneadProcessor.ts (TRANSPORT_SEQ_MAX_RETRIES path): sample
+            // the fields between two Atomics.load of the counter; accept only when
+            // the counter is unchanged and even. After a completed engine write the
+            // reader must get the exact values on its first attempt — proving the
+            // writer's seqlock output is consumable, not torn.
+            const buf = captureTransportBuffer();
+            const seq = new Int32Array(buf);
+            const data = new Float64Array(buf);
+
+            function seqlockRead(): { beat: number; tempo: number; playing: boolean; cleanFirstTry: boolean } {
+                let beat = 0;
+                let tempo = 120;
+                let playing = false;
+                let cleanFirstTry = false;
+                for (let attempt = 0; attempt <= 8; attempt++) {
+                    const start = Atomics.load(seq, SEQ_I32);
+                    beat = data[F64.beat] ?? 0;
+                    tempo = data[F64.tempo] ?? 120;
+                    playing = (data[F64.isPlaying] ?? 0) > 0.5;
+                    const end = Atomics.load(seq, SEQ_I32);
+                    if (start === end && (start & 1) === 0) {
+                        cleanFirstTry = attempt === 0;
+                        break;
+                    }
+                }
+                return { beat, tempo, playing, cleanFirstTry };
+            }
+
+            const seqBeforeWrites = Atomics.load(seq, SEQ_I32);
+
+            engine.setTransportInfo(42, 128, true, 0, 0, false);
+            const r1 = seqlockRead();
+            expect(r1.cleanFirstTry).toBe(true);
+            expect(r1.beat).toBe(42);
+            expect(r1.tempo).toBe(128);
+            expect(r1.playing).toBe(true);
+
+            engine.setTransportInfo(7, 100, false, 0, 0, false);
+            const r2 = seqlockRead();
+            expect(r2.cleanFirstTry).toBe(true);
+            expect(r2.beat).toBe(7);
+            expect(r2.tempo).toBe(100);
+            expect(r2.playing).toBe(false);
+
+            // Each write must advance the seqlock counter by exactly 2 (odd→even):
+            // without the protocol the counter never moves and a concurrent reader
+            // has no way to detect a torn write. Two writes ⇒ +4.
+            expect(Atomics.load(seq, SEQ_I32) - seqBeforeWrites).toBe(4);
+        });
+
+        it('a seqlock reader rejects a mid-write (odd-counter) snapshot as torn', () => {
+            // The reader's torn-detection logic in isolation, on a buffer the test
+            // fully controls (so the engine's sole-writer parity invariant is not
+            // disturbed). When the counter is odd — the in-progress state the writer
+            // holds between its odd and even bumps — the reader must never break out
+            // accepting the snapshot, even after exhausting its retry bound.
+            const standalone = new ArrayBuffer(64);
+            const seq = new Int32Array(standalone);
+            const data = new Float64Array(standalone);
+
+            // Mid-write: odd counter, a torn/partial field value.
+            Atomics.store(seq, SEQ_I32, 1);
+            data[F64.beat] = 999;
+
+            let accepted = false;
+            for (let attempt = 0; attempt <= 8; attempt++) {
+                const start = Atomics.load(seq, SEQ_I32);
+                const _beat = data[F64.beat] ?? 0;
+                void _beat;
+                const end = Atomics.load(seq, SEQ_I32);
+                if (start === end && (start & 1) === 0) {
+                    accepted = true;
+                    break;
+                }
+            }
+            expect(accepted).toBe(false);
+
+            // Once the write completes (counter bumped to the next even value), the
+            // same reader accepts the now-consistent snapshot.
+            Atomics.store(seq, SEQ_I32, 2);
+            data[F64.beat] = 12;
+            let cleanBeat = 0;
+            for (let attempt = 0; attempt <= 8; attempt++) {
+                const start = Atomics.load(seq, SEQ_I32);
+                cleanBeat = data[F64.beat] ?? 0;
+                const end = Atomics.load(seq, SEQ_I32);
+                if (start === end && (start & 1) === 0) {
+                    break;
+                }
+            }
+            expect(cleanBeat).toBe(12);
+        });
+    });
+
+    // ── Round-2 #8: device/param methods no-op in fallback mode ───────────────────
+    //
+    // In fallbackMode the engine runs on an OfflineAudioContext/noop shim. The
+    // device + MIDI-FX methods previously built nodes on that shim instead of
+    // no-opping like the already-guarded methods. They must short-circuit on
+    // `if (this.fallbackMode) return` so no graph work happens on the shim.
+    describe('fallbackMode device-method guards', () => {
+        let fbEngine: AudioEngine;
+
+        beforeEach(() => {
+            // Force the constructor's AudioContext path to throw → fallbackMode.
+            // setupNoopContext then builds the engine on an OfflineAudioContext.
+            class FailingAudioContext {
+                constructor() {
+                    throw new Error('no AudioContext in this environment');
+                }
+            }
+            vi.stubGlobal('AudioContext', FailingAudioContext);
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                class {
+                    createGain() {
+                        return { gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() };
+                    }
+                    createAnalyser() {
+                        return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
+                    }
+                }
+            );
+            // No providedContext → ctor tries `new AudioContext(...)`, which throws.
+            fbEngine = createAudioEngine();
+        });
+
+        it('reports fallback state (engine did not get a live context)', () => {
+            expect(fbEngine.getState().isReady).toBe(false);
+            expect(fbEngine.getState().state).toBe('closed');
+        });
+
+        it('addDeviceToStrip does not build a track node on the shim in fallback mode', () => {
+            // A guarded no-op means no strip is ever materialized for the track.
+            fbEngine.addDeviceToStrip('t1', 'dev1', 'builtin-gain');
+            expect(fbEngine.getTrackStrip('t1')).toBeUndefined();
+        });
+
+        it('device + MIDI-FX param methods do not forward to a strip in fallback mode', () => {
+            // Materialize a strip on the shim (ensureTrackStrip is outside the
+            // guarded device-method scope, so it still creates one in fallback).
+            // The mock TrackNode deliberately lacks updateParam/addDevice/etc., so
+            // an UNGUARDED method that forwards to the strip throws a TypeError.
+            // A correctly guarded method returns before touching the strip → no
+            // throw. This is the regression signal: each method must short-circuit.
+            fbEngine.ensureTrackStrip('t1');
+            expect(fbEngine.getTrackStrip('t1')).toBeDefined();
+
+            expect(() => fbEngine.updateDeviceParam('t1', 'dev1', 'p', 0.5)).not.toThrow();
+            expect(() => fbEngine.updateDevicePatch('t1', 'dev1', { p: 1 })).not.toThrow();
+            expect(() => fbEngine.removeDeviceFromStrip('t1', 'dev1')).not.toThrow();
+            expect(() => fbEngine.scheduleDeviceParam('t1', 'dev1', 'p', 0.5, 0)).not.toThrow();
+            expect(() => fbEngine.scheduleDeviceKeyOn('t1', 'dev1', 60, 100)).not.toThrow();
+            expect(() => fbEngine.scheduleDeviceKeyOff('t1', 'dev1', 60, 100)).not.toThrow();
+            expect(() => fbEngine.updateDeviceBypass('t1', 'dev1', true)).not.toThrow();
+            expect(() => fbEngine.addMidiFxToStrip('t1', 'fx1', 'arp')).not.toThrow();
+            expect(() => fbEngine.removeMidiFxFromStrip('t1', 'fx1')).not.toThrow();
+            expect(() => fbEngine.updateMidiFxParam('t1', 'fx1', 'p', 0.5)).not.toThrow();
+            expect(() => fbEngine.updateMidiFxBypass('t1', 'fx1', true)).not.toThrow();
+        });
+    });
+
     // ── Fix 6: dead interface members are gone ───────────────────────────────────
     describe('interface reconciliation', () => {
         it('no longer exposes the dead getTransportSAB method (it had zero callers)', () => {
