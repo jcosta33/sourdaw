@@ -1,6 +1,6 @@
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+import { ensureTrackStrip, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
 import {
     createDisconnectedGrandBouleEngineHandle,
@@ -46,5 +46,6 @@ export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): Re
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
         getAnalyserNode: () => strip.analyserNode,
+        sampleRate: () => getAudioSampleRate(),
     };
 }

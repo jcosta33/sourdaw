@@ -36,6 +36,13 @@ export type GrandBouleEngineHandle = {
     isReady: () => boolean;
     /** The track's AnalyserNode for visualization (FFT, metering). */
     getAnalyserNode: () => AnalyserNode | null;
+    /**
+     * The engine AudioContext sample rate (Hz). Attack clips authored at a
+     * different rate must be resampled to this before being forwarded so they
+     * play back at the correct pitch (§3.3). Defaults to 44.1 kHz on the
+     * disconnected handle, which never forwards anything.
+     */
+    sampleRate: () => number;
 };
 
 /**
@@ -57,5 +64,6 @@ export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHand
         allNotesOff: () => {},
         isReady: () => false,
         getAnalyserNode: () => null,
+        sampleRate: () => 44100,
     };
 }

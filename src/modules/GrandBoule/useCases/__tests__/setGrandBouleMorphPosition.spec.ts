@@ -32,6 +32,7 @@ function fakeEngine(): { handle: GrandBouleEngineHandle; setParam: ReturnType<ty
             allNotesOff: vi.fn(),
             isReady: () => true,
             getAnalyserNode: () => null,
+            sampleRate: () => 48000,
         },
     };
 }

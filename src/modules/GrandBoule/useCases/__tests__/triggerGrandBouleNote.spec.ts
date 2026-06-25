@@ -30,6 +30,7 @@ function fakeEngine(overrides: Partial<GrandBouleEngineHandle> = {}): {
             allNotesOff: vi.fn(),
             isReady: () => true,
             getAnalyserNode: () => null,
+            sampleRate: () => 48000,
             ...overrides,
         },
     };
