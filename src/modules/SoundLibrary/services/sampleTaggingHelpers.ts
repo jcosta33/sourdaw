@@ -41,15 +41,25 @@ export const AUTO_TAG_RULES = [
 /**
  * Normalize a sample's name and path into a space-delimited token string:
  * lowercased, every run of non-alphanumeric characters (including `_`, `-`,
- * `.`, `/`, and whitespace) collapsed to a single space, and padded with a
- * leading and trailing space so the first and last tokens have boundaries.
+ * `.`, `/`, and whitespace) collapsed to a single space, every letter↔digit
+ * transition split into separate tokens, and padded with a leading and
+ * trailing space so the first and last tokens have boundaries.
  *
  * Treating `_` as a separator (unlike the `\b` word boundary, for which `_`
  * is a word character) is what lets a rule match `perc` in `perc_01.wav`
  * while still rejecting `superconductor`.
+ *
+ * Splitting on letter↔digit transitions (`kick808` → `kick 808`, `808kick` →
+ * `808 kick`) is what lets a whole-token rule match digit-glued real-world
+ * names — `Kick808`, `kick01`, `snare2`, `808kick` — that {@link ruleMatches}
+ * would otherwise miss, since a `\b` boundary does not exist between two word
+ * characters. It does NOT loosen the whole-token rule into a substring match:
+ * `bassline` keeps a single token and is still rejected by the `bass` rule.
  */
 function tokenize(name: string, path: string): string {
-    return ` ${`${name} ${path}`.toLowerCase().replaceAll(/[^a-z0-9]+/g, ' ')} `;
+    const collapsed = `${name} ${path}`.toLowerCase().replaceAll(/[^a-z0-9]+/g, ' ');
+    const digitSplit = collapsed.replaceAll(/([a-z])([0-9])/g, '$1 $2').replaceAll(/([0-9])([a-z])/g, '$1 $2');
+    return ` ${digitSplit} `;
 }
 
 /**

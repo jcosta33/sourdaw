@@ -75,6 +75,39 @@ describe('sampleTaggingHelpers', () => {
             expect(autoTagSample('bass-drum.wav', '/x/').category).toBe('kicks');
             expect(autoTagSample('bassdrum.wav', '/x/').category).toBe('kicks');
         });
+
+        // Regression (round 2): the whole-token anchoring fix matched on spaces
+        // only, but tokenize() collapsed non-alphanumerics without splitting
+        // letter↔digit transitions, so digits stayed glued to words and the
+        // dominant real-world naming style (Kick808, kick01, snare2, 808kick)
+        // got ZERO tags. tokenize() now also splits letter↔digit boundaries so a
+        // whole-token rule matches the word part.
+        describe('matches digit-glued names (letter↔digit split)', () => {
+            const mustTag: Array<{ name: string; tag: string; category: string }> = [
+                { name: 'Kick808.wav', tag: 'kick', category: 'kicks' },
+                { name: 'kick01.wav', tag: 'kick', category: 'kicks' },
+                { name: 'snare2.wav', tag: 'snare', category: 'snares' },
+                { name: '808kick.wav', tag: 'kick', category: 'kicks' },
+            ];
+
+            for (const { name, tag, category } of mustTag) {
+                it(`tags "${name}"`, () => {
+                    const result = autoTagSample(name, '/samples/drums/');
+                    expect(result.tags.map((t) => t.name)).toContain(tag);
+                    expect(result.category).toBe(category);
+                });
+            }
+        });
+
+        // The letter↔digit split must NOT reintroduce the substring over-match
+        // that whole-token anchoring was added to stop: `bass` is a genuine
+        // substring of `bassline` (no digit boundary), so it stays one token and
+        // must NOT tag — proving the original fix's guarantee still holds.
+        it('does not tag "bass" buried in "bassline" (no digit boundary)', () => {
+            const result = autoTagSample('bassline.wav', '/samples/misc/');
+            expect(result.tags.map((t) => t.name)).not.toContain('bass');
+            expect(result.category).not.toBe('bass');
+        });
     });
 
     describe('AUTO_TAG_RULES table', () => {
