@@ -13,7 +13,7 @@ export type GrinderTelemetry = {
     neuralWarmupProgress: number;
 };
 
-export const DEFAULT_GRINDER_TELEMETRY: GrinderTelemetry = {
+export const DEFAULT_GRINDER_TELEMETRY: GrinderTelemetry = Object.freeze({
     inputDb: -100,
     preampDb: -100,
     powerAmpDb: -100,
@@ -24,7 +24,7 @@ export const DEFAULT_GRINDER_TELEMETRY: GrinderTelemetry = {
     latency: 0,
     neuralCpuPercent: 0,
     neuralWarmupProgress: 0,
-};
+});
 
 type GrinderTelemetryInstances = Record<string, GrinderTelemetry>;
 
@@ -35,18 +35,14 @@ type GrinderTelemetryInstances = Record<string, GrinderTelemetry>;
 export const grinderTelemetryStore = createStore<GrinderTelemetryInstances>({ initialData: {} });
 
 export function getGrinderTelemetry(deviceId: string): GrinderTelemetry {
-    return grinderTelemetryStore.value?.[deviceId] ?? { ...DEFAULT_GRINDER_TELEMETRY };
+    return grinderTelemetryStore.value?.[deviceId] ?? DEFAULT_GRINDER_TELEMETRY;
 }
 
-export function updateGrinderTelemetry(deviceId: string, meters: Partial<GrinderTelemetry>): void {
+export function updateGrinderTelemetry(deviceId: string, meters: GrinderTelemetry): void {
     const instances = grinderTelemetryStore.value ?? {};
-    const current = instances[deviceId] ?? { ...DEFAULT_GRINDER_TELEMETRY };
 
     grinderTelemetryStore.set({
         ...instances,
-        [deviceId]: {
-            ...current,
-            ...meters,
-        },
+        [deviceId]: meters,
     });
 }

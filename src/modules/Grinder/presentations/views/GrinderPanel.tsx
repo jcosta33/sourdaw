@@ -37,6 +37,7 @@ import {
 } from '../../stores/grinderStore';
 import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
 import { exportGrinderNeuralModel } from '../../useCases/exportGrinderNeuralModel';
+import { DEFAULT_GRINDER_PEDAL_PARAMS } from '../../useCases/grinderParamBridge/helpers';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
 import { moveGrinderPedalInChainWithAudio } from '../../useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio';
 import { recallGrinderSnapshotWithAudio } from '../../useCases/grinderParamBridge/recallGrinderSnapshotWithAudio';
@@ -198,43 +199,147 @@ const DRIVE_CONTROLS: readonly SupportedPedalControl[] = [
             id: 'comp1',
             type: 'compressor',
             enabled: false,
-            params: { threshold: -24, ratio: 3, attack: 16, release: 220 },
+            params: { ...DEFAULT_GRINDER_PEDAL_PARAMS.compressor },
         },
         params: [
-            { key: 'threshold', label: 'Threshold', min: -40, max: 0, step: 1, defaultValue: -24, unit: 'dB' },
-            { key: 'ratio', label: 'Ratio', min: 1, max: 8, step: 0.5, defaultValue: 3 },
-            { key: 'attack', label: 'Attack', min: 1, max: 50, step: 1, defaultValue: 16, unit: 'ms' },
-            { key: 'release', label: 'Release', min: 50, max: 400, step: 5, defaultValue: 220, unit: 'ms' },
+            {
+                key: 'threshold',
+                label: 'Threshold',
+                min: -40,
+                max: 0,
+                step: 1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.compressor.threshold,
+                unit: 'dB',
+            },
+            {
+                key: 'ratio',
+                label: 'Ratio',
+                min: 1,
+                max: 8,
+                step: 0.5,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.compressor.ratio,
+            },
+            {
+                key: 'attack',
+                label: 'Attack',
+                min: 1,
+                max: 50,
+                step: 1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.compressor.attack,
+                unit: 'ms',
+            },
+            {
+                key: 'release',
+                label: 'Release',
+                min: 50,
+                max: 400,
+                step: 5,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.compressor.release,
+                unit: 'ms',
+            },
         ],
     },
     {
         label: 'Overdrive',
         type: 'overdrive',
-        defaults: { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 2.8, tone: 5.2, level: 5.4 } },
+        defaults: {
+            id: 'od1',
+            type: 'overdrive',
+            enabled: false,
+            params: { ...DEFAULT_GRINDER_PEDAL_PARAMS.overdrive },
+        },
         params: [
-            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 2.8 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5.2 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 5.4 },
+            {
+                key: 'drive',
+                label: 'Drive',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.drive,
+            },
+            {
+                key: 'tone',
+                label: 'Tone',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.tone,
+            },
+            {
+                key: 'level',
+                label: 'Level',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.level,
+            },
         ],
     },
     {
         label: 'Distortion',
         type: 'distortion',
-        defaults: { id: 'dist1', type: 'distortion', enabled: false, params: { drive: 5.2, tone: 4.4, level: 7.2 } },
+        defaults: {
+            id: 'dist1',
+            type: 'distortion',
+            enabled: false,
+            params: { ...DEFAULT_GRINDER_PEDAL_PARAMS.distortion },
+        },
         params: [
-            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 5.2 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 4.4 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 7.2 },
+            {
+                key: 'drive',
+                label: 'Drive',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.distortion.drive,
+            },
+            {
+                key: 'tone',
+                label: 'Tone',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.distortion.tone,
+            },
+            {
+                key: 'level',
+                label: 'Level',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.distortion.level,
+            },
         ],
     },
     {
         label: 'Fuzz',
         type: 'fuzz',
-        defaults: { id: 'fuzz1', type: 'fuzz', enabled: false, params: { fuzz: 6.8, tone: 4.8, level: 6.4 } },
+        defaults: { id: 'fuzz1', type: 'fuzz', enabled: false, params: { ...DEFAULT_GRINDER_PEDAL_PARAMS.fuzz } },
         params: [
-            { key: 'fuzz', label: 'Fuzz', min: 0, max: 10, step: 0.1, defaultValue: 6.8 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 4.8 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6.4 },
+            {
+                key: 'fuzz',
+                label: 'Fuzz',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.fuzz,
+            },
+            {
+                key: 'tone',
+                label: 'Tone',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.tone,
+            },
+            {
+                key: 'level',
+                label: 'Level',
+                min: 0,
+                max: 10,
+                step: 0.1,
+                defaultValue: DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.level,
+            },
         ],
     },
 ];
@@ -588,7 +693,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             />
                         </div>
                     </div>
-                    {patch.mic2.enabled && (
+                    {patch.mic2.enabled ? (
                         <div className="flex flex-col gap-1">
                             <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">
                                 Mic 2
@@ -623,7 +728,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                 />
                             </div>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
             <div className="grinder-window flex flex-col gap-3 p-3">
@@ -827,10 +932,11 @@ function BrowserRail({
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState('All');
     const categories = ['All', ...Array.from(new Set(GRINDER_PRESETS.map((preset) => preset.category)))];
+    const lowered_query = query.toLowerCase();
     const filteredPresets = GRINDER_PRESETS.filter((preset) => {
         const matchesCategory = category === 'All' || preset.category === category;
         const haystack = `${preset.name} ${preset.category}`.toLowerCase();
-        return matchesCategory && haystack.includes(query.toLowerCase());
+        return matchesCategory && haystack.includes(lowered_query);
     });
 
     return (

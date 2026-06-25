@@ -119,4 +119,28 @@ describe('grinderStore', () => {
         expect(clean_state.gain).toBe(3);
         expect(clean_state.prePedals[0]?.enabled).toBe(false);
     });
+
+    it('should apply numeric snapshot overrides without clobbering string-enum patch fields', () => {
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            engineMode: 'hybrid',
+            gain: 5,
+            snapshots: [
+                {
+                    id: 'scene',
+                    name: 'Scene',
+                    // engineMode is a string enum on the patch; a numeric override must not
+                    // overwrite it with a raw number. gain is numeric and must apply.
+                    paramOverrides: { gain: 8, engineMode: 2 as unknown as number },
+                    bypassStates: {},
+                },
+            ],
+        });
+
+        const next = recallGrinderSnapshot(device_id, 0);
+
+        expect(next?.gain).toBe(8);
+        expect(next?.engineMode).toBe('hybrid');
+        expect(typeof next?.engineMode).toBe('string');
+    });
 });

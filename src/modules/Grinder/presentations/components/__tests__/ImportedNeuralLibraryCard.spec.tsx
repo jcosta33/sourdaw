@@ -76,6 +76,35 @@ describe('ImportedNeuralLibraryCard', () => {
         expect(screen.getByText('Patch only')).toBeInTheDocument();
     });
 
+    it('should expose selection state to assistive tech via aria-pressed', () => {
+        // Regression for NEW-9: selection was conveyed only through
+        // background/border color, leaving SR users unable to tell which entry
+        // is active. The select button must report its pressed state.
+        const { rerender } = render(
+            <ImportedNeuralLibraryCard
+                entry={base_entry}
+                selected={false}
+                on_select={vi.fn()}
+                on_export={vi.fn()}
+                on_remove={vi.fn()}
+            />
+        );
+
+        expect(screen.getByRole('button', { name: /tight rhythm/i })).toHaveAttribute('aria-pressed', 'false');
+
+        rerender(
+            <ImportedNeuralLibraryCard
+                entry={base_entry}
+                selected={true}
+                on_select={vi.fn()}
+                on_export={vi.fn()}
+                on_remove={vi.fn()}
+            />
+        );
+
+        expect(screen.getByRole('button', { name: /tight rhythm/i })).toHaveAttribute('aria-pressed', 'true');
+    });
+
     it('should forward select, export, and remove actions', () => {
         const on_select = vi.fn();
         const on_export = vi.fn();

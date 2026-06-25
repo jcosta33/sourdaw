@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 
-import { type GrinderPatch, migrateGrinderPatch } from '../../models/GrinderPatch';
+import { type GrinderPatch } from '../../models/GrinderPatch';
 import { loadGrinderPatch } from '../../stores/grinderStore';
 
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
@@ -16,8 +16,9 @@ export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
     const find_device_ref = createFindDeviceRef(get_all_tracks_fn);
 
     return function loadGrinderPatchWithAudio(deviceId: string, patch: GrinderPatch): void {
-        const migrated_patch = migrateGrinderPatch(patch);
-        loadGrinderPatch(deviceId, migrated_patch);
+        // loadGrinderPatch migrates the incoming patch once and returns the stored,
+        // already-migrated result; reuse it so the audio sync path does not migrate again.
+        const migrated_patch = loadGrinderPatch(deviceId, patch);
 
         const ref = find_device_ref(deviceId);
         if (!ref) {

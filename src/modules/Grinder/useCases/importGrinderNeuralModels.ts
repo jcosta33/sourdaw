@@ -9,6 +9,8 @@ import {
     upsertGrinderNeuralLibraryEntries,
 } from '../stores/grinderNeuralLibraryStore';
 
+import { withGrinderNeuralLibraryWriteLock } from './removeGrinderNeuralModel';
+
 export async function importGrinderNeuralModels(): Promise<GrinderImportedNeuralModel[]> {
     setGrinderNeuralLibraryState({ loading: true, error: null });
 
@@ -38,11 +40,24 @@ export async function importGrinderNeuralModels(): Promise<GrinderImportedNeural
         return [];
     }
 
-    upsertGrinderNeuralLibraryEntries(successes);
-    const next_entries = grinderNeuralLibraryStore.value?.entries ?? DEFAULT_GRINDER_NEURAL_LIBRARY_STATE.entries;
-    await persistGrinderNeuralLibrary({ entries: next_entries });
+    // Serialize the store mutation and the disk write so a concurrent remove
+    // cannot persist a stale snapshot between them. Recompute the entries to
+    // persist from the store *after* upserting, inside the lock, so disk always
+    // reflects the post-import store.
+    const persisted = await withGrinderNeuralLibraryWriteLock(async () => {
+        upsertGrinderNeuralLibraryEntries(successes);
+        const next_entries = grinderNeuralLibraryStore.value?.entries ?? DEFAULT_GRINDER_NEURAL_LIBRARY_STATE.entries;
+        return persistGrinderNeuralLibrary({ entries: next_entries });
+    });
 
-    if (failures.length > 0) {
+    if (!persisted.ok) {
+        setGrinderNeuralLibraryState({
+            error:
+                persisted.error.code === 'quota_exceeded'
+                    ? 'Storage is full — the imported neural models could not be saved. Free up space and try again.'
+                    : 'Imported neural models could not be saved to the Neural library.',
+        });
+    } else if (failures.length > 0) {
         setGrinderNeuralLibraryState({
             error: failures[0] ?? 'Some neural model imports failed',
         });

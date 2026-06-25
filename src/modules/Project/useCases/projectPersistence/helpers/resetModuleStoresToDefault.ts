@@ -5,7 +5,7 @@ import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { glutenStore } from '#/modules/Gluten/stores';
 import { grandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
-import { grinderStore } from '#/modules/Grinder/stores';
+import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -32,6 +32,7 @@ export function resetModuleStoresToDefault(): void {
     glutenStore.set({});
     fermenterStore.set({});
     grinderStore.set({});
+    grinderTelemetryStore.set({});
     bacteriaStore.set({});
     proofStore.set({});
     scoringStore.set({});

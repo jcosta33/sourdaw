@@ -36,12 +36,35 @@ function slugify(value: string): string {
         .slice(0, 48);
 }
 
-function hash_string(value: string): string {
-    let hash = 5381;
+// Deterministic content hash with a collision-safe width. A single 32-bit
+// accumulator (the previous djb2) leaves only ~2^32 distinct ids, so two
+// different NAM files can collide and the Map-keyed library upsert silently
+// overwrites the first import. We instead fold four independent FNV-1a streams
+// (seeded differently) plus the content length into a 128-bit value rendered as
+// fixed-width base36. Same text always yields the same id (so re-importing one
+// file stays idempotent), while distinct text is astronomically unlikely to
+// collide.
+const FNV_PRIME = 0x0100_0193;
+const FNV_OFFSETS = [0x811c_9dc5, 0x1000_0193, 0x7fff_ffff, 0x2545_f491] as const;
+
+function fnv1a_stream(value: string, offset: number): number {
+    let hash = offset >>> 0;
     for (let index = 0; index < value.length; index++) {
-        hash = (hash * 33) ^ value.charCodeAt(index);
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, FNV_PRIME) >>> 0;
     }
-    return Math.abs(hash >>> 0).toString(36);
+    return hash >>> 0;
+}
+
+function to_base36_fixed(word: number, width: number): string {
+    return word.toString(36).padStart(width, '0').slice(-width);
+}
+
+function hash_string(value: string): string {
+    // Length-prefix guards against collisions between texts that only differ in
+    // trailing/leading content the per-stream mixing might otherwise align.
+    const seeded = `${value.length}:${value}`;
+    return FNV_OFFSETS.map((offset) => to_base36_fixed(fnv1a_stream(seeded, offset), 7)).join('');
 }
 
 function get_string(value: unknown): string | null {
@@ -170,10 +193,11 @@ export function parseGrinderNamFile(input: ParseGrinderNamFileInput): GrinderImp
 
     const nam_json = parsed as NamJson;
     const architecture = get_string(nam_json.architecture);
-    const version = get_string(nam_json.version);
+    // `version` is an optional NAM field — valid files frequently omit it. Only
+    // architecture and non-empty weights are required to derive a profile.
     const weights = collect_weights(nam_json.weights);
-    if (!architecture || !version || weights.length === 0) {
-        throw new Error(`Invalid NAM file: ${input.file_name} is missing documented architecture/version/weights data`);
+    if (!architecture || weights.length === 0) {
+        throw new Error(`Invalid NAM file: ${input.file_name} is missing documented architecture/weights data`);
     }
 
     const metadata = (

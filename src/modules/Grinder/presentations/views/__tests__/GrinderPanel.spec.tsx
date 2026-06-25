@@ -225,6 +225,53 @@ describe('GrinderPanel', () => {
         expect(screen.getByRole('button', { name: 'Parallel' })).toBeInTheDocument();
     });
 
+    it('should render mic 2 position controls only when mic 2 is enabled', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'cab',
+                    mic2: { ...DEFAULT_PATCH.mic2, enabled: true },
+                },
+            },
+        });
+
+        const enabled_view = render(<GrinderPanel deviceId={device_id} />);
+        expect(within(enabled_view.container).getByText('Mic 2')).toBeInTheDocument();
+        enabled_view.unmount();
+
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'cab',
+                    mic2: { ...DEFAULT_PATCH.mic2, enabled: false },
+                },
+            },
+        });
+
+        const disabled_view = render(<GrinderPanel deviceId={device_id} />);
+        expect(within(disabled_view.container).queryByText('Mic 2')).not.toBeInTheDocument();
+    });
+
+    it('should display the shared compressor threshold default in the drive section', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'drive',
+                    prePedals: [],
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        // The drive deck falls back to the shared default threshold (-24 dB), matching
+        // what the audio sync sends to the worklet.
+        expect(screen.getByText('-24.0 dB')).toBeInTheDocument();
+    });
+
     it('should show snapshot recall controls when the patch contains stored snapshots', () => {
         grinderStore.set({
             [device_id]: {

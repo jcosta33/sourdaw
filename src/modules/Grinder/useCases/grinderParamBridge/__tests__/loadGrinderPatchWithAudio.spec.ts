@@ -5,7 +5,9 @@ import { loadGrinderPatch } from '../../../stores/grinderStore';
 import { loadGrinderPatchWithAudio } from '../loadGrinderPatchWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({
-    loadGrinderPatch: vi.fn(),
+    // loadGrinderPatch migrates once and returns the stored patch; the bridge reuses
+    // that result for the audio sync, so the mock echoes its input back.
+    loadGrinderPatch: vi.fn((_deviceId: string, patch: unknown) => patch),
     migrateGrinderPatch: (param: any) => param,
     grinderStore: { value: {} },
 }));
@@ -162,6 +164,50 @@ describe('loadGrinderPatchWithAudio', () => {
                 }),
             })
         );
+    });
+
+    it('should send the shared pre-compressor default threshold when no compressor pedal exists', () => {
+        const deviceId = 'device-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const patch = { ...DEFAULT_PATCH, prePedals: [] };
+        const action = loadGrinderPatchWithAudio(deps as never);
+
+        action(deviceId, patch);
+
+        // The worklet must receive the same default the panel displays (-24 dB),
+        // not a third, disagreeing value.
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'preCompressorThreshold', -24);
+        expect(deps.updateDeviceParam).not.toHaveBeenCalledWith('track-1', deviceId, 'preCompressorThreshold', -20);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'preCompressorRatio', 3);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'preCompressorAttack', 16);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'preCompressorRelease', 220);
+    });
+
+    it('should migrate the patch exactly once by reusing the stored result for audio sync', () => {
+        const deviceId = 'device-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const patch = { ...DEFAULT_PATCH, gain: 6.25 };
+        const action = loadGrinderPatchWithAudio(deps as never);
+
+        action(deviceId, patch);
+
+        // A single load drives one store write; the audio path reuses its returned
+        // patch rather than re-running another migration.
+        expect(loadGrinderPatch).toHaveBeenCalledTimes(1);
+        expect(loadGrinderPatch).toHaveBeenCalledWith(deviceId, expect.objectContaining({ gain: 6.25 }));
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'gain', 6.25);
     });
 
     it('should sync cabinet mode, cabinet voice, and routing preset selections', () => {

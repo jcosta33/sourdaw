@@ -99,3 +99,16 @@ export type GrinderNeuralAudioPatch = {
     neuralModelMode: 'builtin' | 'imported';
     profile?: GrinderNeuralProfile;
 };
+
+/**
+ * Single source of truth for the parameter values a supported drive pedal carries
+ * when the patch does not already define it. Both the audio sync path
+ * (syncGrinderPatchToAudio) and the panel's DRIVE_CONTROLS read from here so the
+ * worklet and the visible UI agree on the same numbers.
+ */
+export const DEFAULT_GRINDER_PEDAL_PARAMS = {
+    compressor: { threshold: -24, ratio: 3, attack: 16, release: 220 },
+    overdrive: { drive: 2.8, tone: 5.2, level: 5.4 },
+    distortion: { drive: 5.2, tone: 4.4, level: 7.2 },
+    fuzz: { fuzz: 6.8, tone: 4.8, level: 6.4 },
+} as const satisfies Record<GrinderSupportedChainPedalType, Record<string, number>>;

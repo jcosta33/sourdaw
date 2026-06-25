@@ -1,4 +1,4 @@
-import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../../models/GrinderPatch';
+import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 
 import {
     AMP_MODELS,
@@ -13,6 +13,7 @@ import {
     ROUTING_MODES,
     TONE_STACK_TYPES,
     type DeviceRef,
+    DEFAULT_GRINDER_PEDAL_PARAMS,
     getCabIrSlot,
     getPedalOrderAudioEntries,
     getNeuralModelSlot,
@@ -149,7 +150,9 @@ function sendPatchToDevice(
 }
 
 export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): void {
-    const patch = migrateGrinderPatch(input.patch);
+    // Callers (loadGrinderPatchWithAudio, recallGrinderSnapshotWithAudio) always pass an
+    // already-migrated GrinderPatch, so this path does not migrate again.
+    const patch = input.patch;
     const cab_ir_slot = getCabIrSlot(patch.cabIrId);
 
     if (cab_ir_slot !== null) {
@@ -158,7 +161,7 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
 
     for (const key of AUDIO_SYNC_KEYS) {
         const value = toAudioValue(key, patch[key]);
-        if (value === null || !Number.isFinite(value)) {
+        if (value === null) {
             continue;
         }
 
@@ -170,44 +173,124 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
     const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
     const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
     sendNumericParamToDevice(input, 'preCompressorEnabled', preCompressor?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'preCompressorThreshold', preCompressor?.params.threshold ?? -20);
-    sendNumericParamToDevice(input, 'preCompressorRatio', preCompressor?.params.ratio ?? 4);
-    sendNumericParamToDevice(input, 'preCompressorAttack', preCompressor?.params.attack ?? 10);
-    sendNumericParamToDevice(input, 'preCompressorRelease', preCompressor?.params.release ?? 200);
+    sendNumericParamToDevice(
+        input,
+        'preCompressorThreshold',
+        preCompressor?.params.threshold ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.threshold
+    );
+    sendNumericParamToDevice(
+        input,
+        'preCompressorRatio',
+        preCompressor?.params.ratio ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.ratio
+    );
+    sendNumericParamToDevice(
+        input,
+        'preCompressorAttack',
+        preCompressor?.params.attack ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.attack
+    );
+    sendNumericParamToDevice(
+        input,
+        'preCompressorRelease',
+        preCompressor?.params.release ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.release
+    );
     sendNumericParamToDevice(input, 'preOverdriveEnabled', preOverdrive?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'preOverdriveDrive', preOverdrive?.params.drive ?? 0);
-    sendNumericParamToDevice(input, 'preOverdriveTone', preOverdrive?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'preOverdriveLevel', preOverdrive?.params.level ?? 5);
+    sendNumericParamToDevice(
+        input,
+        'preOverdriveDrive',
+        preOverdrive?.params.drive ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.drive
+    );
+    sendNumericParamToDevice(
+        input,
+        'preOverdriveTone',
+        preOverdrive?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.tone
+    );
+    sendNumericParamToDevice(
+        input,
+        'preOverdriveLevel',
+        preOverdrive?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.level
+    );
     sendNumericParamToDevice(input, 'preDistortionEnabled', preDistortion?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'preDistortionDrive', preDistortion?.params.drive ?? 0);
-    sendNumericParamToDevice(input, 'preDistortionTone', preDistortion?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'preDistortionLevel', preDistortion?.params.level ?? 5);
+    sendNumericParamToDevice(
+        input,
+        'preDistortionDrive',
+        preDistortion?.params.drive ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.drive
+    );
+    sendNumericParamToDevice(
+        input,
+        'preDistortionTone',
+        preDistortion?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.tone
+    );
+    sendNumericParamToDevice(
+        input,
+        'preDistortionLevel',
+        preDistortion?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.level
+    );
     sendNumericParamToDevice(input, 'preFuzzEnabled', preFuzz?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'preFuzzFuzz', preFuzz?.params.fuzz ?? 0);
-    sendNumericParamToDevice(input, 'preFuzzTone', preFuzz?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'preFuzzLevel', preFuzz?.params.level ?? 5);
+    sendNumericParamToDevice(input, 'preFuzzFuzz', preFuzz?.params.fuzz ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.fuzz);
+    sendNumericParamToDevice(input, 'preFuzzTone', preFuzz?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.tone);
+    sendNumericParamToDevice(input, 'preFuzzLevel', preFuzz?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.level);
 
     const postCompressor = findFirstPedal(patch.postPedals, ['compressor']);
     const postOverdrive = findFirstPedal(patch.postPedals, ['overdrive', 'boost']);
     const postDistortion = findFirstPedal(patch.postPedals, ['distortion']);
     const postFuzz = findFirstPedal(patch.postPedals, ['fuzz']);
     sendNumericParamToDevice(input, 'postCompressorEnabled', postCompressor?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'postCompressorThreshold', postCompressor?.params.threshold ?? -20);
-    sendNumericParamToDevice(input, 'postCompressorRatio', postCompressor?.params.ratio ?? 4);
-    sendNumericParamToDevice(input, 'postCompressorAttack', postCompressor?.params.attack ?? 10);
-    sendNumericParamToDevice(input, 'postCompressorRelease', postCompressor?.params.release ?? 200);
+    sendNumericParamToDevice(
+        input,
+        'postCompressorThreshold',
+        postCompressor?.params.threshold ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.threshold
+    );
+    sendNumericParamToDevice(
+        input,
+        'postCompressorRatio',
+        postCompressor?.params.ratio ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.ratio
+    );
+    sendNumericParamToDevice(
+        input,
+        'postCompressorAttack',
+        postCompressor?.params.attack ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.attack
+    );
+    sendNumericParamToDevice(
+        input,
+        'postCompressorRelease',
+        postCompressor?.params.release ?? DEFAULT_GRINDER_PEDAL_PARAMS.compressor.release
+    );
     sendNumericParamToDevice(input, 'postOverdriveEnabled', postOverdrive?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'postOverdriveDrive', postOverdrive?.params.drive ?? 0);
-    sendNumericParamToDevice(input, 'postOverdriveTone', postOverdrive?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'postOverdriveLevel', postOverdrive?.params.level ?? 5);
+    sendNumericParamToDevice(
+        input,
+        'postOverdriveDrive',
+        postOverdrive?.params.drive ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.drive
+    );
+    sendNumericParamToDevice(
+        input,
+        'postOverdriveTone',
+        postOverdrive?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.tone
+    );
+    sendNumericParamToDevice(
+        input,
+        'postOverdriveLevel',
+        postOverdrive?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.overdrive.level
+    );
     sendNumericParamToDevice(input, 'postDistortionEnabled', postDistortion?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'postDistortionDrive', postDistortion?.params.drive ?? 0);
-    sendNumericParamToDevice(input, 'postDistortionTone', postDistortion?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'postDistortionLevel', postDistortion?.params.level ?? 5);
+    sendNumericParamToDevice(
+        input,
+        'postDistortionDrive',
+        postDistortion?.params.drive ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.drive
+    );
+    sendNumericParamToDevice(
+        input,
+        'postDistortionTone',
+        postDistortion?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.tone
+    );
+    sendNumericParamToDevice(
+        input,
+        'postDistortionLevel',
+        postDistortion?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.distortion.level
+    );
     sendNumericParamToDevice(input, 'postFuzzEnabled', postFuzz?.enabled ? 1 : 0);
-    sendNumericParamToDevice(input, 'postFuzzFuzz', postFuzz?.params.fuzz ?? 0);
-    sendNumericParamToDevice(input, 'postFuzzTone', postFuzz?.params.tone ?? 5);
-    sendNumericParamToDevice(input, 'postFuzzLevel', postFuzz?.params.level ?? 5);
+    sendNumericParamToDevice(input, 'postFuzzFuzz', postFuzz?.params.fuzz ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.fuzz);
+    sendNumericParamToDevice(input, 'postFuzzTone', postFuzz?.params.tone ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.tone);
+    sendNumericParamToDevice(input, 'postFuzzLevel', postFuzz?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.level);
 
     for (const entry of getPedalOrderAudioEntries(false, patch.prePedals)) {
         sendNumericParamToDevice(input, entry.key, entry.value);

@@ -5,7 +5,7 @@ import { grinderNeuralLibraryStore } from '../../stores/grinderNeuralLibraryStor
 import { removeGrinderNeuralModel } from '../removeGrinderNeuralModel';
 
 vi.mock('../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary', () => ({
-    persistGrinderNeuralLibrary: vi.fn(async () => true),
+    persistGrinderNeuralLibrary: vi.fn(() => Promise.resolve({ ok: true })),
 }));
 
 describe('removeGrinderNeuralModel', () => {
@@ -96,7 +96,10 @@ describe('removeGrinderNeuralModel', () => {
     });
 
     it('should leave the reusable library intact when removal cannot be persisted', async () => {
-        vi.mocked(persistGrinderNeuralLibrary).mockResolvedValueOnce(false);
+        vi.mocked(persistGrinderNeuralLibrary).mockResolvedValueOnce({
+            ok: false,
+            error: { code: 'unknown', message: 'boom' },
+        });
 
         await removeGrinderNeuralModel({ model_id: 'imported-tight-rhythm' });
 
@@ -105,5 +108,35 @@ describe('removeGrinderNeuralModel', () => {
             'imported-cleans',
         ]);
         expect(grinderNeuralLibraryStore.value?.error).toMatch(/could not remove tight rhythm/i);
+    });
+
+    it('should serialize overlapping writes so the second snapshot reflects the first', async () => {
+        // Regression for the non-atomic remove/import race (NEW-6). Two removals
+        // are fired without awaiting the first. Each removal computes the entries
+        // to persist from the *current* store inside the lock, so the second
+        // must observe the first removal's store mutation rather than racing on a
+        // stale two-entry snapshot. The persist mock yields control on the
+        // microtask queue (await) to maximise the interleaving opportunity.
+        const persisted_snapshots: string[][] = [];
+        vi.mocked(persistGrinderNeuralLibrary).mockImplementation(async ({ entries }) => {
+            // Force a real async boundary so a non-serialized implementation
+            // would interleave the two removals here.
+            await Promise.resolve();
+            persisted_snapshots.push(entries.map((entry) => entry.id));
+            return { ok: true };
+        });
+
+        await Promise.all([
+            removeGrinderNeuralModel({ model_id: 'imported-tight-rhythm' }),
+            removeGrinderNeuralModel({ model_id: 'imported-cleans' }),
+        ]);
+
+        // First write removes tight-rhythm (cleans remains); the second runs only
+        // after the first's store mutation and removes cleans from the
+        // already-reduced set, leaving an empty library. Without the lock both
+        // would persist from the original two-entry store and the second snapshot
+        // would still contain a "removed" sibling.
+        expect(persisted_snapshots).toEqual([['imported-cleans'], []]);
+        expect(grinderNeuralLibraryStore.value?.entries).toEqual([]);
     });
 });

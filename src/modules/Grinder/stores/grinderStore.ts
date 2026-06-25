@@ -73,7 +73,7 @@ export function setGrinderParam<Key extends keyof GrinderPatch>(
     });
 }
 
-export function loadGrinderPatch(deviceId: string, patch: GrinderPatch): void {
+export function loadGrinderPatch(deviceId: string, patch: GrinderPatch): GrinderPatch {
     const instances = grinderStore.value ?? {};
     const state = normalizeGrinderState(instances[deviceId]);
     const migrated_patch = migrateGrinderPatch(patch);
@@ -85,6 +85,7 @@ export function loadGrinderPatch(deviceId: string, patch: GrinderPatch): void {
             basePatch: migrateGrinderPatch(migrated_patch),
         },
     });
+    return migrated_patch;
 }
 
 export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch): void {
@@ -102,7 +103,7 @@ export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch
     });
 }
 
-export function upsertPedal(
+function upsertPedal(
     pedals: readonly GrinderPedal[],
     type: GrinderPedalType,
     defaults: GrinderPedal,
@@ -182,11 +183,22 @@ function movePedalTypeInArray(
         return [...pedals];
     }
 
-    const range =
-        direction === 'left'
-            ? [...pedals.keys()].slice(0, current_index).reverse()
-            : [...pedals.keys()].slice(current_index + 1);
-    const swap_index = range.find((index) => isSupportedGrinderChainPedalType(pedals[index]!.type));
+    let swap_index: number | undefined;
+    if (direction === 'left') {
+        for (let index = current_index - 1; index >= 0; index -= 1) {
+            if (isSupportedGrinderChainPedalType(pedals[index]!.type)) {
+                swap_index = index;
+                break;
+            }
+        }
+    } else {
+        for (let index = current_index + 1; index < pedals.length; index += 1) {
+            if (isSupportedGrinderChainPedalType(pedals[index]!.type)) {
+                swap_index = index;
+                break;
+            }
+        }
+    }
 
     if (swap_index === undefined) {
         return [...pedals];
@@ -250,8 +262,10 @@ export function recallGrinderSnapshot(deviceId: string, snapshotIndex: number): 
     };
 
     for (const [key, value] of Object.entries(snapshot.paramOverrides)) {
-        if (key in nextPatch) {
-            nextPatch[key as keyof GrinderPatch] = value as never;
+        // paramOverrides only carries numbers, so only apply them to patch keys that
+        // currently hold a number — never clobber a string-enum or boolean field.
+        if (key in nextPatch && typeof nextPatch[key as keyof GrinderPatch] === 'number') {
+            (nextPatch as Record<string, unknown>)[key] = value;
         }
     }
 
@@ -270,6 +284,6 @@ export function recallGrinderSnapshot(deviceId: string, snapshotIndex: number): 
     return nextPatch;
 }
 
-export function updateGrinderMeters(deviceId: string, meters: Partial<GrinderTelemetry>): void {
+export function updateGrinderMeters(deviceId: string, meters: GrinderTelemetry): void {
     updateGrinderTelemetry(deviceId, meters);
 }

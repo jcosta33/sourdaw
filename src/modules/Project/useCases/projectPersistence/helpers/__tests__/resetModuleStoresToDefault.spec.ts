@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
     markerStoreSet: vi.fn(),
     takeLaneStoreSet: vi.fn(),
     setSidechainRoutes: vi.fn(),
+    grinderStoreSet: vi.fn(),
+    grinderTelemetryStoreSet: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -36,6 +38,14 @@ vi.mock('#/modules/MIDI/stores/midiStore', () => ({
 
 vi.mock('#/modules/Routing/useCases/sidechain/setSidechainRoutes', () => ({
     setSidechainRoutes: mocks.setSidechainRoutes,
+}));
+
+vi.mock('#/modules/Grinder/stores/grinderStore', () => ({
+    grinderStore: { set: mocks.grinderStoreSet },
+}));
+
+vi.mock('#/modules/Grinder/stores/grinderTelemetryStore', () => ({
+    grinderTelemetryStore: { set: mocks.grinderTelemetryStoreSet },
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
@@ -63,6 +73,8 @@ describe('resetModuleStoresToDefault', () => {
         mocks.markerStoreSet.mockClear();
         mocks.takeLaneStoreSet.mockClear();
         mocks.setSidechainRoutes.mockClear();
+        mocks.grinderStoreSet.mockClear();
+        mocks.grinderTelemetryStoreSet.mockClear();
     });
 
     it('should reset arrangement, transport, automation, MIDI, and routing stores', () => {
@@ -81,5 +93,15 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({ markers: [], sections: [] });
         expect(mocks.takeLaneStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+    });
+
+    it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {
+        resetModuleStoresToDefault();
+
+        // grinderStore (persistent patch state) is cleared alongside the volatile
+        // telemetry store — both are keyed per device instance and must not leak
+        // across a New Project / project load.
+        expect(mocks.grinderStoreSet).toHaveBeenCalledWith({});
+        expect(mocks.grinderTelemetryStoreSet).toHaveBeenCalledWith({});
     });
 });
