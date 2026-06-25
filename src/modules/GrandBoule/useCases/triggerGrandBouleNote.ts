@@ -6,11 +6,11 @@
  */
 
 import { type Store } from '#/infra/store/types';
+import { clamp } from '#/utils/Math/clamp';
 
+import { type GrandBouleMidiCalibration, createDefaultMidiCalibration } from '../models/GrandBouleMidiCalibration';
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../stores/grandBouleStore';
-
-import { applyVelocityCurve } from './calibrateGrandBouleMidi/applyVelocityCurve';
 
 type TriggerGrandBouleNoteInput = {
     engine: GrandBouleEngineHandle;
@@ -20,13 +20,32 @@ type TriggerGrandBouleNoteInput = {
     velocity: number;
 };
 
+/**
+ * Deterministic fallback applied before the store has hydrated its
+ * calibration. Computed once so an uninitialised-store note is shaped through
+ * the exact same curve as every later note (linear, full 0..1 range).
+ */
+const FALLBACK_CALIBRATION = createDefaultMidiCalibration();
+
+/**
+ * Shape an already-normalised 0..1 velocity through a calibration curve.
+ *
+ * Unlike `applyVelocityCurve` (which takes a raw 0..127 MIDI value), this
+ * operates directly on the normalised velocity, avoiding a precision-losing
+ * `*127` then `/127` round-trip.
+ */
+function shapeNormalisedVelocity(velocity: number, calibration: GrandBouleMidiCalibration): number {
+    const normalised = clamp(velocity, 0, 1);
+    const curved = normalised ** calibration.velocityCurveExponent;
+    const { velocityFloor, velocityCeiling } = calibration;
+    return velocityFloor + curved * (velocityCeiling - velocityFloor);
+}
+
 export function triggerGrandBouleNote(input: TriggerGrandBouleNoteInput): void {
     if (!input.engine.isReady()) {
         return;
     }
-    const state = input.store.value;
-    const calibration = state?.midiCalibration;
-    // Map normalized velocity back to 0-127 for applyVelocityCurve, then back to 0-1
-    const shaped = calibration ? applyVelocityCurve(input.velocity * 127, calibration) : input.velocity;
+    const calibration = input.store.value?.midiCalibration ?? FALLBACK_CALIBRATION;
+    const shaped = shapeNormalisedVelocity(input.velocity, calibration);
     input.engine.noteOn({ midiNote: input.midiNote, velocity: shaped });
 }

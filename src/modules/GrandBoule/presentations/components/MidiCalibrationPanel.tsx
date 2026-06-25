@@ -25,6 +25,61 @@ import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../m
 const HISTOGRAM_BINS = 16;
 const HISTOGRAM_MAX_SAMPLES = 128;
 
+/**
+ * Read-only view over the velocity ring buffer. Exposes only what the
+ * histogram needs (count + in-order iteration), so the histogram never sees
+ * the underlying fixed-size storage or the ring head. A fresh view object is
+ * produced on each push so React/effects see a changed reference, while the
+ * backing `Float64Array` is allocated once and never grows.
+ */
+type VelocitySampleView = {
+    readonly length: number;
+    /** Sample at logical index `i` (0 = oldest retained). */
+    at(i: number): number;
+};
+
+/** Empty view used as the initial render state before any input arrives. */
+const EMPTY_VELOCITY_VIEW: VelocitySampleView = {
+    length: 0,
+    at: () => 0,
+};
+
+/** Fixed-size velocity ring buffer — O(1) push, zero per-sample allocation. */
+class VelocityRing {
+    private readonly buffer = new Float64Array(HISTOGRAM_MAX_SAMPLES);
+    private start = 0;
+    private count = 0;
+
+    push(value: number): void {
+        const end = (this.start + this.count) % HISTOGRAM_MAX_SAMPLES;
+        this.buffer[end] = value;
+        if (this.count < HISTOGRAM_MAX_SAMPLES) {
+            this.count += 1;
+        } else {
+            // Buffer full: overwrite oldest by advancing the start cursor.
+            this.start = (this.start + 1) % HISTOGRAM_MAX_SAMPLES;
+        }
+    }
+
+    clear(): void {
+        this.start = 0;
+        this.count = 0;
+    }
+
+    /** Snapshot a stable, in-order read-only view of the current contents. */
+    view(): VelocitySampleView {
+        const buffer = this.buffer;
+        const start = this.start;
+        const count = this.count;
+        return {
+            length: count,
+            at(i: number): number {
+                return buffer[(start + i) % HISTOGRAM_MAX_SAMPLES]!;
+            },
+        };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Local helpers
 // ---------------------------------------------------------------------------
@@ -69,9 +124,47 @@ const Knob = ({
 // Velocity Histogram (canvas bar chart)
 // ---------------------------------------------------------------------------
 
-const VelocityHistogram = ({ samples }: { samples: ReadonlyArray<number> }): ReactElement => {
+const VelocityHistogram = ({ samples }: { samples: VelocitySampleView }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    // Backing-store size in device pixels. Kept in a ref so the data-draw
+    // effect can read the current CSS size without re-measuring the layout
+    // (getBoundingClientRect) on every note-on.
+    const cssSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
+    // Resize / DPR-scale effect: runs only when the element actually resizes,
+    // not on every sample. Splitting this off keeps getBoundingClientRect,
+    // canvas.width assignment (which clears the canvas), and ctx.scale out of
+    // the hot per-sample draw path.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (canvas === null) {
+            return undefined;
+        }
+        const applySize = (): void => {
+            const dpr = window.devicePixelRatio;
+            const rect = canvas.getBoundingClientRect();
+            cssSizeRef.current = { w: rect.width, h: rect.height };
+            const wDev = Math.round(rect.width * dpr);
+            const hDev = Math.round(rect.height * dpr);
+            if (canvas.width !== wDev) {
+                canvas.width = wDev;
+            }
+            if (canvas.height !== hDev) {
+                canvas.height = hDev;
+            }
+            const ctx = canvas.getContext('2d');
+            if (ctx !== null) {
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+        };
+        applySize();
+        const observer = new ResizeObserver(() => applySize());
+        observer.observe(canvas);
+        return () => observer.disconnect();
+    }, []);
+
+    // Data-draw effect: redraws bars only, reusing the cached CSS size. No
+    // layout measurement and no backing-store resize here.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (canvas === null) {
@@ -82,18 +175,12 @@ const VelocityHistogram = ({ samples }: { samples: ReadonlyArray<number> }): Rea
             return;
         }
 
-        const dpr = window.devicePixelRatio;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        ctx.scale(dpr, dpr);
-
-        const w = rect.width;
-        const h = rect.height;
+        const { w, h } = cssSizeRef.current;
 
         // Bucket velocities into bins (0..127 -> 0..HISTOGRAM_BINS-1)
         const bins = new Uint32Array(HISTOGRAM_BINS);
-        for (const v of samples) {
+        for (let s = 0; s < samples.length; s += 1) {
+            const v = samples.at(s);
             const idx = Math.min(HISTOGRAM_BINS - 1, Math.floor((v / 128) * HISTOGRAM_BINS));
             bins[idx] = (bins[idx] ?? 0) + 1;
         }
@@ -128,7 +215,15 @@ const VelocityHistogram = ({ samples }: { samples: ReadonlyArray<number> }): Rea
         ctx.stroke();
     }, [samples]);
 
-    return <canvas ref={canvasRef} className="h-full w-full" style={{ display: 'block' }} />;
+    return (
+        <canvas
+            ref={canvasRef}
+            className="h-full w-full"
+            style={{ display: 'block' }}
+            role="img"
+            aria-label={`Velocity histogram of the last ${samples.length} note${samples.length === 1 ? '' : 's'}`}
+        />
+    );
 };
 
 // ---------------------------------------------------------------------------
@@ -164,23 +259,24 @@ export const MidiCalibrationPanel = ({
     onReset,
     className,
 }: MidiCalibrationPanelProps): ReactElement => {
-    // Rolling velocity sample buffer for the histogram
-    const [velocitySamples, setVelocitySamples] = useState<ReadonlyArray<number>>([]);
+    // Rolling velocity samples backed by a fixed-size ring buffer. The ring
+    // is mutated in place (no per-note array spread/slice); a snapshot view is
+    // published to state so the histogram redraws.
+    const ringRef = useRef<VelocityRing>(new VelocityRing());
+    const [samplesView, setSamplesView] = useState<VelocitySampleView>(EMPTY_VELOCITY_VIEW);
 
     useEffect(() => {
         if (lastVelocity === null) {
             return;
         }
-        setVelocitySamples((prev) => {
-            const next = [...prev, lastVelocity];
-            return next.length > HISTOGRAM_MAX_SAMPLES ? next.slice(next.length - HISTOGRAM_MAX_SAMPLES) : next;
-        });
+        ringRef.current.push(lastVelocity);
+        setSamplesView(ringRef.current.view());
     }, [lastVelocity]);
 
     const midiCalibration = calibration;
     const r = MIDI_CALIBRATION_RANGES;
 
-    const hasRecentInput = velocitySamples.length > 0;
+    const hasRecentInput = samplesView.length > 0;
 
     let velocityCurveReadout = 'linear';
     if (midiCalibration.velocityCurveExponent < 0.95) {
@@ -200,7 +296,7 @@ export const MidiCalibrationPanel = ({
                 {/* Velocity histogram / prompt */}
                 <div className="grand-boule-window relative h-16 overflow-hidden rounded-sm p-1.5">
                     {hasRecentInput ? (
-                        <VelocityHistogram samples={velocitySamples} />
+                        <VelocityHistogram samples={samplesView} />
                     ) : (
                         <div className="flex h-full items-center justify-center">
                             <span className="text-[9px] italic text-muted-foreground/50">Play notes to calibrate</span>
@@ -291,7 +387,8 @@ export const MidiCalibrationPanel = ({
                         size="sm"
                         onClick={() => {
                             onReset();
-                            setVelocitySamples([]);
+                            ringRef.current.clear();
+                            setSamplesView(ringRef.current.view());
                         }}
                     >
                         <RotateCcw className="size-3" />

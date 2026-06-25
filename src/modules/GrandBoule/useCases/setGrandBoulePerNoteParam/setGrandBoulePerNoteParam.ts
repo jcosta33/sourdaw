@@ -9,6 +9,18 @@ import {
 import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 
+/**
+ * True when every field of `values` equals the neutral per-note default.
+ * Used to decide whether a key carries a real override or should drop out
+ * of the override map entirely.
+ */
+function isDefaultPerNoteValues(values: GrandBoulePerNoteValues): boolean {
+    const defaults = createDefaultPerNoteValues();
+    return (Object.keys(defaults) as (keyof GrandBoulePerNoteValues)[]).every(
+        (field) => values[field] === defaults[field]
+    );
+}
+
 type SetGrandBoulePerNoteParamInput = {
     engine: GrandBouleEngineHandle;
     /** Piano key number 1–88. */
@@ -42,7 +54,15 @@ export function setGrandBoulePerNoteParam(input: SetGrandBoulePerNoteParamInput)
     const updated: GrandBoulePerNoteValues = { ...existing, [input.param]: clamped };
 
     const next = new Map(input.perNoteMap);
-    next.set(input.key, updated);
+    // Only retain a map entry when at least one field actually deviates from
+    // the neutral defaults. Writing the whole default object on a single-knob
+    // edit (or knobbing a value back to its default) would otherwise leave a
+    // functionally-default entry in the map, falsely signalling an override.
+    if (isDefaultPerNoteValues(updated)) {
+        next.delete(input.key);
+    } else {
+        next.set(input.key, updated);
+    }
     input.setPerNoteMap(next);
 
     // Dispatch to engine with per-note naming convention

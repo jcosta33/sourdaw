@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useRef } from 'react';
 
+import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
 /**
@@ -19,6 +20,22 @@ const BLACK_KEY_CLASSES = new Set([1, 3, 6, 8, 10]);
 
 const isBlackKey = (midi: number): boolean => BLACK_KEY_CLASSES.has(midi % 12);
 
+/** Human-readable note name for a MIDI number, e.g. 60 -> "C4". */
+const midiToNoteName = (midi: number): string => {
+    // `midi % 12` is always 0..11 and NOTE_NAMES has 12 entries.
+    const name = NOTE_NAMES[midi % 12]!;
+    return `${name}${Math.floor(midi / 12) - 1}`;
+};
+
+/** Build the screen-reader announcement for the currently sounding notes. */
+const describeActiveNotes = (activeNotes: ReadonlyMap<number, number>): string => {
+    if (activeNotes.size === 0) {
+        return 'No notes playing';
+    }
+    const names = [...activeNotes.keys()].sort((a, b) => a - b).map(midiToNoteName);
+    return `Playing ${names.join(', ')}`;
+};
+
 // Count white keys for layout
 const NUM_WHITE_KEYS = (() => {
     let count = 0;
@@ -33,8 +50,6 @@ const NUM_WHITE_KEYS = (() => {
 type PianoModel3DProps = {
     activeNotes: ReadonlyMap<number, number>;
     sustainPedal: number;
-    unaCorda: boolean;
-    sostenuto: boolean;
     lidPosition: number;
     onNoteOn?: (midiNote: number, velocity: number) => void;
     onNoteOff?: (midiNote: number) => void;
@@ -237,15 +252,17 @@ function hitTestKey(canvasX: number, canvasY: number, canvasW: number, canvasH: 
 export const PianoModel3D = ({
     activeNotes,
     sustainPedal,
-    unaCorda: _unaCorda,
-    sostenuto: _sostenuto,
     lidPosition,
     onNoteOn,
     onNoteOff,
     className,
 }: PianoModel3DProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const pressedNoteRef = useRef<number | null>(null);
+    // Map of active pointerId -> MIDI note. A Map (not a single ref) lets
+    // multiple simultaneous pointers each hold their own note, so multi-touch
+    // chords release independently instead of one pointer-down stomping the
+    // prior note's pending release.
+    const pressedNotesRef = useRef<Map<number, number>>(new Map());
     const animRef = useRef<KeyAnim[]>(
         Array.from({ length: NUM_KEYS }, () => ({
             hammerT: 0,
@@ -258,6 +275,10 @@ export const PianoModel3D = ({
     const prevNotesRef = useRef<ReadonlyMap<number, number>>(new Map());
     const lidRef = useRef(lidPosition);
     lidRef.current = lidPosition;
+    // Keep the latest onNoteOff reachable from the window-level fallback
+    // listener without re-subscribing it on every render.
+    const onNoteOffRef = useRef(onNoteOff);
+    onNoteOffRef.current = onNoteOff;
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -509,6 +530,28 @@ export const PianoModel3D = ({
         };
     }, []);
 
+    // Fallback release path: if setPointerCapture silently no-ops, the canvas
+    // never sees pointerup and the note would hang. A window-level listener
+    // releases any pointer still recorded as held, guaranteeing every
+    // pointer-down is eventually matched by a release.
+    useEffect(() => {
+        const pressed = pressedNotesRef.current;
+        const releaseFromWindow = (e: PointerEvent): void => {
+            const note = pressed.get(e.pointerId);
+            if (note === undefined) {
+                return;
+            }
+            pressed.delete(e.pointerId);
+            onNoteOffRef.current?.(note);
+        };
+        window.addEventListener('pointerup', releaseFromWindow);
+        window.addEventListener('pointercancel', releaseFromWindow);
+        return () => {
+            window.removeEventListener('pointerup', releaseFromWindow);
+            window.removeEventListener('pointercancel', releaseFromWindow);
+        };
+    }, []);
+
     const canvasToPixel = (clientX: number, clientY: number): [number, number] => {
         const canvas = canvasRef.current;
         if (canvas === null) {
@@ -528,40 +571,56 @@ export const PianoModel3D = ({
         if (canvas === null) {
             return;
         }
-        (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+        // Capture is best-effort: if it silently no-ops the captured element
+        // never receives pointerup, so the window-level fallback listener
+        // installed in the effect below releases the note instead.
+        try {
+            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+        } catch {
+            // Capture unsupported/failed — fallback listener covers release.
+        }
         const [px, py] = canvasToPixel(e.clientX, e.clientY);
         const midi = hitTestKey(px, py, canvas.width, canvas.height);
         if (midi !== null) {
-            pressedNoteRef.current = midi;
+            pressedNotesRef.current.set(e.pointerId, midi);
             onNoteOn(midi, 0.8);
         }
     };
 
-    const handlePointerUp = (_e: React.PointerEvent<HTMLCanvasElement>): void => {
-        if (onNoteOff === undefined) {
+    const releasePointer = (pointerId: number): void => {
+        const note = pressedNotesRef.current.get(pointerId);
+        if (note === undefined) {
             return;
         }
-        const note = pressedNoteRef.current;
-        if (note !== null) {
-            onNoteOff(note);
-            pressedNoteRef.current = null;
-        }
+        pressedNotesRef.current.delete(pointerId);
+        onNoteOff?.(note);
+    };
+
+    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+        releasePointer(e.pointerId);
     };
 
     const handlePointerLeave = handlePointerUp;
 
     return (
-        <canvas
-            ref={canvasRef}
-            width={800}
-            height={480}
-            className={cn('rounded-lg select-none touch-none', className)}
-            aria-label="Grand Boule interactive piano"
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onPointerLeave={handlePointerLeave}
-        />
+        <>
+            <canvas
+                ref={canvasRef}
+                width={800}
+                height={480}
+                className={cn('rounded-lg select-none touch-none', className)}
+                aria-label="Grand Boule interactive piano"
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onPointerLeave={handlePointerLeave}
+            />
+            {/* The canvas itself is opaque to assistive tech; announce the
+                currently sounding notes through a polite live region. */}
+            <span className="sr-only" role="status" aria-live="polite">
+                {describeActiveNotes(activeNotes)}
+            </span>
+        </>
     );
 };
 

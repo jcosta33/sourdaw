@@ -426,6 +426,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
+                            {/* Announce the live voice count to assistive tech —
+                                the metric tile itself is purely visual. */}
+                            <span className="sr-only" role="status" aria-live="polite">
+                                {`${activeVoices} active ${activeVoices === 1 ? 'voice' : 'voices'}`}
+                            </span>
                             <DawPluginMetricTile
                                 className="grand-boule-window min-w-[94px]"
                                 label="Voices"
@@ -445,8 +450,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         <PianoModel3D
                             activeNotes={activeNotes}
                             sustainPedal={pedals.sustain}
-                            unaCorda={pedals.unaCorda}
-                            sostenuto={pedals.sostenuto}
                             lidPosition={lidPosition}
                             onNoteOn={handleNoteOn}
                             onNoteOff={handleNoteOff}

@@ -237,7 +237,10 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             if (dn?.grandBouleControls) {
                 dn.grandBouleControls.noteOff(note);
             }
-            void deps.eventBus.emit('midi.noteOff', { midiNote: note });
+            void deps.eventBus.emit('midi.noteOff', {
+                deviceId: noteData.grandBouleDeviceId,
+                midiNote: note,
+            });
         }
 
         if (noteData.levainDeviceId && getTargetTrackId()) {
@@ -411,7 +414,11 @@ export const handleNoteOn = inject({
                         if (gbDev) {
                             const dn = strip.deviceNodes.find((data) => data.type === 'grand-boule');
                             dn?.grandBouleControls?.noteOn(evtNote, evtVel / 127);
-                            void deps.eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
+                            void deps.eventBus.emit('midi.noteOn', {
+                                deviceId: gbDev.id,
+                                midiNote: evtNote,
+                                velocity: evtVel / 127,
+                            });
                             continue;
                         }
                         const lDev = instrumentTrack?.devices.find((data) => data.type === 'levain');

@@ -7,9 +7,10 @@
 
 import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
 import { appendTrack, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
+import { addDeviceToStrip, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 export const createGrandBouleTrack = inject({ eventBus })(
     ({ eventBus }) =>
@@ -33,6 +34,18 @@ export const createGrandBouleTrack = inject({ eventBus })(
             appendTrack(track);
 
             addDeviceToStrip(track.id, deviceId, 'grand-boule');
+
+            // `addDeviceToStrip` is fire-and-forget (it swallows the
+            // fallback-mode and missing-strip cases), so confirm the device
+            // actually landed on the strip before announcing a fully-wired
+            // track. A failed wiring must not emit `track.added`.
+            const wired = getTrackStrip(track.id)?.deviceNodes.some((node) => node.deviceId === deviceId) ?? false;
+            if (!wired) {
+                logger.warn(
+                    `createGrandBouleTrack: device "${deviceId}" was not wired into strip for track "${track.id}" — skipping track.added`
+                );
+                return track.id;
+            }
 
             void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
 

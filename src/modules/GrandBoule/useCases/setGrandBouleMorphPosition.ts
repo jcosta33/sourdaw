@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule morph position and dispatch interpolated
@@ -80,6 +81,7 @@ export function setGrandBouleMorphPosition(input: SetGrandBouleMorphPositionInpu
 
     const modelA = findPianoModelById(morph.modelA);
     if (modelA === undefined) {
+        logger.warn(`setGrandBouleMorphPosition: unknown morph model A id "${morph.modelA}" — ignoring move`);
         return;
     }
 
@@ -99,6 +101,7 @@ export function setGrandBouleMorphPosition(input: SetGrandBouleMorphPositionInpu
 
     const modelB = findPianoModelById(morph.modelB);
     if (modelB === undefined) {
+        logger.warn(`setGrandBouleMorphPosition: unknown morph model B id "${morph.modelB}" — ignoring move`);
         return;
     }
 

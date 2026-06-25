@@ -109,7 +109,11 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         if (offscreenCtx === null) {
             return undefined;
         }
-        const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
+        // Single-row scratch ImageData. Only the newest row is written each
+        // frame; the rest of the waterfall is scrolled down by one pixel via a
+        // canvas self-blit, so the per-frame cost is O(DISPLAY_COLS) instead of
+        // O(HISTORY_FRAMES × DISPLAY_COLS).
+        const rowImg = offscreenCtx.createImageData(DISPLAY_COLS, 1);
 
         let raf = 0;
         let dbBuffer: Float32Array<ArrayBuffer> | null = null;
@@ -130,6 +134,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
             }
 
             // Ingest new frame: resample from linear FFT bins to log-frequency columns.
+            let ingestedRow: Float32Array | null = null;
             if (currentAnalyser && dbBuffer && normBuffer) {
                 currentAnalyser.getFloatFrequencyData(dbBuffer);
                 const binCount = dbBuffer.length;
@@ -153,34 +158,36 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
                     slot[c] = sampleBin(normBuffer, lut[c]!);
                 }
                 headRef.current = (head + 1) % HISTORY_FRAMES;
+                ingestedRow = slot;
             }
 
-            // Draw the waterfall.
-            const history = historyRef.current;
-            const head = headRef.current;
-            const data = imgData.data;
-            data.fill(0);
+            // Scroll the waterfall by one row and paint only the newest row.
+            // Older rows are preserved by blitting the offscreen canvas onto
+            // itself shifted down one pixel; the bottom row falls off. We only
+            // scroll when a new frame was ingested so idle frames don't drain
+            // the history off-screen.
+            if (ingestedRow !== null) {
+                offscreenCtx.drawImage(offscreenCanvas, 0, 1);
 
-            for (let row = 0; row < HISTORY_FRAMES; row++) {
-                const frameIdx = (head - row - 1 + HISTORY_FRAMES) % HISTORY_FRAMES;
-                const rowData = history[frameIdx]!;
-                const yOffset = row * DISPLAY_COLS * 4;
-
+                const data = rowImg.data;
                 for (let c = 0; c < DISPLAY_COLS; c++) {
-                    const mag = rowData[c]!;
+                    const mag = ingestedRow[c]!;
+                    const idx = c * 4;
                     if (mag <= 0.01) {
+                        data[idx] = 0;
+                        data[idx + 1] = 0;
+                        data[idx + 2] = 0;
+                        data[idx + 3] = 0;
                         continue;
                     }
                     const [r, g, b, a] = colorMap(mag);
-                    const idx = yOffset + c * 4;
                     data[idx] = r;
                     data[idx + 1] = g;
                     data[idx + 2] = b;
                     data[idx + 3] = a;
                 }
+                offscreenCtx.putImageData(rowImg, 0, 0);
             }
-
-            offscreenCtx.putImageData(imgData, 0, 0);
 
             ctx.clearRect(0, 0, width, height);
             ctx.imageSmoothingEnabled = false;

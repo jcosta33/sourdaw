@@ -48,7 +48,13 @@ export const PerNoteEditor = ({
 
     const currentValues = perNoteOverrides.get(selectedKey) ?? createDefaultPerNoteValues();
     const defaults = createDefaultPerNoteValues();
-    const hasOverrides = perNoteOverrides.has(selectedKey);
+    // Enable Reset only when a value actually deviates from the neutral
+    // defaults, not merely because a (possibly all-default) entry exists in
+    // the map. A bare `perNoteOverrides.has(selectedKey)` false-positives when
+    // the map still holds a functionally-default object.
+    const hasOverrides = PER_NOTE_PARAM_DESCRIPTORS.some(
+        (descriptor) => currentValues[descriptor.key] !== defaults[descriptor.key]
+    );
 
     return (
         <div className={className}>
