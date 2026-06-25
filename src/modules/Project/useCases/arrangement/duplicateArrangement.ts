@@ -21,7 +21,7 @@ export function duplicateArrangement(id: string, newName?: string): void {
 
     // Deep clone to avoid mutating shared object references
     const clone = JSON.parse(JSON.stringify(sourceArrangement)) as ArrangementSnapshot;
-    clone.id = `arr-${crypto.randomUUID().slice(0, 8)}`;
+    clone.id = `arr-${crypto.randomUUID()}`;
     clone.name = newName || `${sourceArrangement.name} (Copy)`;
 
     arrangementStore.set({

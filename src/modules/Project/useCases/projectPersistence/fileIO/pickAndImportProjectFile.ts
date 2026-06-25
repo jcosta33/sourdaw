@@ -1,6 +1,6 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type ProjectData } from '../../../models/ProjectData';
+import { isSupportedProjectVersion, type ProjectData } from '../../../models/ProjectData';
 import { loadProjectFromFile } from '../../../repositories/nativeProjectFiles/loadProjectFromFile';
 import { pickFiles } from '../../fileDialog';
 
@@ -11,7 +11,7 @@ export async function importProjectFile(file: File): Promise<boolean> {
         const content = await file.text();
         const data = JSON.parse(content) as ProjectData;
 
-        if (data.version !== 1 || !data.arrangement?.tracks || !data.meta) {
+        if (!isSupportedProjectVersion(data.version) || !data.arrangement?.tracks || !data.meta) {
             notifyUser('Invalid project file format', 'error');
             return false;
         }
@@ -27,7 +27,7 @@ export async function importProjectFile(file: File): Promise<boolean> {
 export async function importProjectFromNativePath(path: string): Promise<boolean> {
     try {
         const data = await loadProjectFromFile(path);
-        if (data.version !== 1 || !data.arrangement?.tracks || !data.meta) {
+        if (!isSupportedProjectVersion(data.version) || !data.arrangement?.tracks || !data.meta) {
             notifyUser('Invalid project file format', 'error');
             return false;
         }
@@ -57,7 +57,7 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         const content = await file.text();
         const data = JSON.parse(content) as ProjectData;
 
-        if (data.version !== 1 || !data.arrangement?.tracks || !data.meta) {
+        if (!isSupportedProjectVersion(data.version) || !data.arrangement?.tracks || !data.meta) {
             notifyUser('Invalid project file format', 'error');
             return false;
         }

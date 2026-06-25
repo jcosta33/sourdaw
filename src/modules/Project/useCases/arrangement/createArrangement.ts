@@ -12,7 +12,7 @@ export function createArrangement(name: string): void {
         return;
     }
 
-    const id = `arr-${crypto.randomUUID().slice(0, 8)}`;
+    const id = `arr-${crypto.randomUUID()}`;
 
     syncCurrentArrangementToStore(); // Save current to its slot before switching
 

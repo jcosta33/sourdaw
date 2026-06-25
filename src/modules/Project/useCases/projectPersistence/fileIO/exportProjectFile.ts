@@ -12,7 +12,7 @@ import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type ProjectData } from '../../../models/ProjectData';
+import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
@@ -79,7 +79,7 @@ export async function exportProjectFile(): Promise<void> {
     }
 
     const data: ProjectData = {
-        version: 1,
+        version: CURRENT_PROJECT_VERSION,
         meta: {
             name: project.name,
             createdAt: project.createdAt,

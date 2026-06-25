@@ -1,11 +1,99 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as subject from '../saveProject';
+import { saveProject } from '../saveProject';
+
+import type { ProjectStoreState } from '../../../../stores/projectStore';
+
+const mocks = vi.hoisted(() => ({
+    projectStoreValue: { value: null as ProjectStoreState | null },
+    projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
+    persistCrdtProject: vi.fn<() => Promise<void>>(),
+    addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
+    loggerWarn: vi.fn<(...args: unknown[]) => void>(),
+}));
+
+vi.mock('../../../../stores/projectStore', () => ({
+    projectStore: {
+        get value() {
+            return mocks.projectStoreValue.value;
+        },
+        set: mocks.projectStoreSet,
+    },
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    persistCrdtProject: mocks.persistCrdtProject,
+}));
+
+vi.mock('../../../recentProjects/addToRecentProjects', () => ({
+    addToRecentProjects: mocks.addToRecentProjects,
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: mocks.loggerWarn },
+}));
+
+function makeProject(): ProjectStoreState {
+    return {
+        name: 'My Song',
+        createdAt: 1700000000000,
+        updatedAt: 1700000000000,
+        dirty: true,
+        loading: false,
+    } as unknown as ProjectStoreState;
+}
 
 describe('saveProject', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.projectStoreValue.value = makeProject();
+        mocks.persistCrdtProject.mockResolvedValue(undefined);
+    });
+
     it('should export saveProject', () => {
-        expect(subject.saveProject).toBeDefined();
-        const time = typeof subject.saveProject;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(saveProject).toBeDefined();
+    });
+
+    it('keys the recent-project entry by the stable project id, not the display name', async () => {
+        saveProject();
+
+        await vi.waitFor(() => {
+            expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
+        });
+        const [, key] = mocks.addToRecentProjects.mock.calls[0];
+        // A rename changes name but not createdAt; the key must be stable across it.
+        expect(key).toBe('sourdaw:project:1700000000000');
+        expect(key).not.toContain('My Song');
+    });
+
+    it('does not record a recent-project entry when CRDT persistence rejects', async () => {
+        mocks.persistCrdtProject.mockRejectedValue(new Error('disk full'));
+
+        saveProject();
+
+        await vi.waitFor(() => {
+            expect(mocks.loggerWarn).toHaveBeenCalled();
+        });
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+    });
+
+    it('records a recent-project entry only after CRDT persistence succeeds', async () => {
+        let resolvePersist: (() => void) | undefined;
+        mocks.persistCrdtProject.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolvePersist = resolve;
+            })
+        );
+
+        saveProject();
+
+        // Not recorded synchronously before persistence settles.
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+
+        resolvePersist?.();
+
+        await vi.waitFor(() => {
+            expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
+        });
     });
 });

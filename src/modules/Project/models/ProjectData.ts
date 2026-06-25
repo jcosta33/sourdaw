@@ -6,6 +6,38 @@
  * everything is a plain object with no class methods or engine refs.
  */
 
+/**
+ * The schema version written into every new `.sourdaw` file by the current
+ * build. Bump this whenever the serialized shape changes in a way that older
+ * builds cannot read, and add the corresponding migration so older files can
+ * still be loaded.
+ */
+export const CURRENT_PROJECT_VERSION = 1;
+
+/**
+ * The oldest schema version this build is still able to load. Files at a
+ * version below this (or above {@link CURRENT_PROJECT_VERSION}) are rejected by
+ * the import validators rather than silently misread. Today there is a single
+ * supported version, so this equals {@link CURRENT_PROJECT_VERSION}; when a
+ * migration table is introduced this becomes the floor of that table.
+ */
+export const MIN_SUPPORTED_PROJECT_VERSION = 1;
+
+/**
+ * True when `version` is one this build can load — i.e. within the inclusive
+ * range [{@link MIN_SUPPORTED_PROJECT_VERSION}, {@link CURRENT_PROJECT_VERSION}].
+ * The import validators gate on this instead of comparing against a bare literal
+ * so the supported range lives in one place.
+ */
+export function isSupportedProjectVersion(version: unknown): version is number {
+    return (
+        typeof version === 'number' &&
+        Number.isInteger(version) &&
+        version >= MIN_SUPPORTED_PROJECT_VERSION &&
+        version <= CURRENT_PROJECT_VERSION
+    );
+}
+
 export type ProjectData = {
     version: number;
     meta: ProjectMeta;

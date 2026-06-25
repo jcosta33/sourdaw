@@ -174,7 +174,7 @@ function parseClip(
     const startBeat = toBeats(rawStart, unit, context.tempo);
     const endBeat = startBeat + toBeats(Math.max(0, rawDuration), unit, context.tempo);
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
-    const id = `clip-${crypto.randomUUID().slice(0, 8)}`;
+    const id = `clip-${crypto.randomUUID()}`;
 
     const notesNode = clip.child('Notes');
     if (notesNode) {
@@ -224,7 +224,7 @@ function parseTrack(
     children: XmlQuery[];
 } {
     const xmlId = track.attr('id') ?? `track-${String(index)}`;
-    const stableId = `track-${crypto.randomUUID().slice(0, 8)}`;
+    const stableId = `track-${crypto.randomUUID()}`;
     context.trackIdMap.set(xmlId, stableId);
 
     const channel = track.child('Channel');

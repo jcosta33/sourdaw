@@ -15,14 +15,50 @@ describe('nativeProjectFiles repository', () => {
     });
 
     describe('getProjectDirectory', () => {
-        it('should return the documents path and attempt to create it', async () => {
-            vi.mocked(tauriInvoke).mockResolvedValue('/home/user');
+        it('should return the documents path and create the directory when it is absent', async () => {
+            vi.mocked(tauriInvoke).mockImplementation((cmd: string) => {
+                if (cmd === 'get_home_dir') {
+                    return Promise.resolve('/home/user');
+                }
+                if (cmd === 'list_directory') {
+                    // Directory does not exist yet.
+                    return Promise.reject(new Error('Not a directory'));
+                }
+                return Promise.resolve(undefined as never);
+            });
 
             const dir = await getProjectDirectory();
 
             expect(dir).toBe('/home/user/Documents/Sourdaw Projects');
             expect(tauriInvoke).toHaveBeenCalledWith('get_home_dir');
+            expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
+                path: '/home/user/Documents/Sourdaw Projects',
+            });
             expect(tauriInvoke).toHaveBeenCalledWith('write_audio_file', expect.anything());
+        });
+
+        it('should not write a marker when the directory already exists', async () => {
+            // Regression: a plain "get" must not write on every call. Previously
+            // getProjectDirectory unconditionally wrote a hidden .sourdaw-projects
+            // marker as a side effect, mutating read-only / CI temp dirs.
+            vi.mocked(tauriInvoke).mockImplementation((cmd: string) => {
+                if (cmd === 'get_home_dir') {
+                    return Promise.resolve('/home/user' as never);
+                }
+                if (cmd === 'list_directory') {
+                    // Directory already exists — resolve with an empty listing.
+                    return Promise.resolve([] as never);
+                }
+                return Promise.resolve(undefined as never);
+            });
+
+            const dir = await getProjectDirectory();
+
+            expect(dir).toBe('/home/user/Documents/Sourdaw Projects');
+            expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
+                path: '/home/user/Documents/Sourdaw Projects',
+            });
+            expect(tauriInvoke).not.toHaveBeenCalledWith('write_audio_file', expect.anything());
         });
 
         it('should fallback to /tmp if home dir fails', async () => {

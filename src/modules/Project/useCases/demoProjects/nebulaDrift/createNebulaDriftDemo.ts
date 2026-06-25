@@ -183,7 +183,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const toasterFolder = createTrack({ name: '⚡ Toaster Kit', kind: 'folder' });
     toasterFolder.color = 'oklch(0.39 0.024 255)';
     toasterFolder.collapsed = false;
-    const toasterDeviceId = `toaster-${crypto.randomUUID().slice(0, 8)}`;
+    const toasterDeviceId = `toaster-${crypto.randomUUID()}`;
     toasterFolder.devices = [
         {
             id: toasterDeviceId,
@@ -215,11 +215,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
     applyPreset(tSubDrone, 'fermenter-dark-drone');
     applyPreset(tDarkMist, 'fermenter-ambient-texture');
     applyPreset(tGrainHaze, 'fermenter-grain-cloud');
-    // Freeze demonstration — Grain Haze has 9 automation lanes (CPU-heavy),
-    // so it's a natural candidate. No baked buffer exists so playback may be
-    // silent; the UI state is what's being demonstrated.
-    tGrainHaze.frozen = true;
-    tGrainHaze.freezeState = { status: 'frozen', frozenBufferId: 'demo-grain-haze-frozen' };
+    // Grain Haze has 9 automation lanes (CPU-heavy), making it a natural freeze
+    // candidate — but a demo cannot bake a real rendered buffer, and pointing
+    // freezeState at a buffer id that was never written to audioBufferCache makes
+    // every export of this demo emit a "missing audio buffer" warning and drop the
+    // track to silence (renderOffline / offlineRender skip clip scheduling for a
+    // frozen track, then read the absent buffer). Ship it unfrozen so the track
+    // plays and exports from its live clips.
+    tGrainHaze.frozen = false;
+    tGrainHaze.freezeState = { status: 'unfrozen' };
     applyPreset(tEtherealVeil, 'fermenter-ethereal-pad');
     applyPreset(tSweepHorizon, 'fermenter-sem-sweep');
     applyPreset(tWarmHalo, 'fermenter-warm-pad');
@@ -248,7 +252,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     // Grand Boule — physical-modeling piano for sparse dreamy chord roots
     tGrandCrystal.devices = [
         {
-            id: `grand-boule-${crypto.randomUUID().slice(0, 8)}`,
+            id: `grand-boule-${crypto.randomUUID()}`,
             name: 'Grand Boule',
             type: 'grand-boule',
             bypassed: false,

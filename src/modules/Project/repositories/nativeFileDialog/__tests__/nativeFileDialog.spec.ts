@@ -88,5 +88,29 @@ describe('nativeFileDialog', () => {
             void pickFiles();
             expect(mockInput.click).toHaveBeenCalled();
         });
+
+        it('should resolve to null when focus returns without a change or cancel event', async () => {
+            // Regression: some environments (older Electron / Chromium) never fire
+            // the input `cancel` event, so a dismissed dialog left the Promise
+            // pending forever. A window-focus fallback must resolve it to null.
+            vi.useFakeTimers();
+            try {
+                vi.mocked(isTauri).mockReturnValue(false);
+                // Use a real <input> so the focus listener binds to the real window,
+                // and suppress the native picker.
+                vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
+
+                const pending = pickFiles();
+
+                // The dialog is dismissed: no change/cancel event ever fires, only
+                // focus returning to the window.
+                window.dispatchEvent(new Event('focus'));
+                await vi.advanceTimersByTimeAsync(300);
+
+                await expect(pending).resolves.toBeNull();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
     });
 });

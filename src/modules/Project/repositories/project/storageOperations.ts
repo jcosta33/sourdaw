@@ -167,11 +167,37 @@ export function writeNamedProjectJson(name: string, json: string): void {
     }
 }
 
-export function readNamedProjectJson(key: string): string | null {
-    // For named projects, try localStorage first (sync), then IndexedDB would need async
+/**
+ * Synchronous localStorage-only read for a named project. Returns `null` when
+ * the key is absent or localStorage is unavailable. This sees only projects
+ * whose `writeNamedProjectJson` localStorage write succeeded — large projects
+ * that overflowed the localStorage quota live only in IndexedDB and are not
+ * visible here. Prefer {@link readNamedProjectJson} unless a synchronous read
+ * is genuinely required.
+ */
+export function readNamedProjectJsonFromLocalStorage(key: string): string | null {
     try {
         return window.localStorage.getItem(key);
     } catch {
         return null;
     }
+}
+
+/**
+ * Read a named project, falling back to IndexedDB.
+ *
+ * `writeNamedProjectJson` dual-writes to IndexedDB and localStorage, but the
+ * localStorage write fails silently when the project exceeds the ~5–10 MB
+ * localStorage quota — leaving such projects reachable only from IndexedDB.
+ * This read returns the localStorage copy when present and otherwise falls back
+ * to IndexedDB, so large/quota-exceeded named projects remain loadable.
+ */
+export async function readNamedProjectJson(key: string): Promise<string | null> {
+    const local = readNamedProjectJsonFromLocalStorage(key);
+    if (local !== null) {
+        return local;
+    }
+
+    await initDB();
+    return idbGet(key);
 }

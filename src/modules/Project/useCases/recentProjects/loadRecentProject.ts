@@ -5,7 +5,7 @@ import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases
 import { clearUndoHistory } from '#/modules/Command/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { type ProjectData } from '../../models/ProjectData';
+import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
@@ -13,14 +13,16 @@ import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verif
 
 export async function loadRecentProject(key: string): Promise<boolean> {
     try {
-        const raw = readNamedProjectJson(key);
+        // Reads localStorage first, then falls back to IndexedDB so projects
+        // whose localStorage dual-write was dropped on quota stay loadable.
+        const raw = await readNamedProjectJson(key);
         if (!raw) {
             logger.warn(`No project data found for key: ${key}`);
             return false;
         }
 
         const data = JSON.parse(raw) as ProjectData;
-        if (data.version !== 1) {
+        if (!isSupportedProjectVersion(data.version)) {
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }

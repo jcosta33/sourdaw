@@ -22,21 +22,44 @@ function openViaBrowser(options: OpenFileOptions): Promise<string[] | null> {
             input.accept = options.filters.flatMap((freq) => freq.extensions.map((ext) => `.${ext}`)).join(',');
         }
 
+        let settled = false;
+        function settle(value: string[] | null): void {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            window.removeEventListener('focus', onFocus);
+            resolve(value);
+        }
+
+        // The `cancel` event is not fired by every environment (older Electron /
+        // Chromium builds never emit it), so a dismissed dialog would otherwise
+        // leave this Promise pending forever. When focus returns to the window
+        // without a `change` having fired, treat it as a cancel. The timeout
+        // gives a genuine `change` event time to land first.
+        function onFocus(): void {
+            setTimeout(() => {
+                settle(null);
+            }, 300);
+        }
+
         input.addEventListener('change', () => {
             if (!input.files || input.files.length === 0) {
-                resolve(null);
+                settle(null);
                 return;
             }
             const paths: string[] = [];
             for (let index = 0; index < input.files.length; index++) {
                 paths.push(input.files[index]!.name);
             }
-            resolve(paths);
+            settle(paths);
         });
 
         input.addEventListener('cancel', () => {
-            resolve(null);
+            settle(null);
         });
+
+        window.addEventListener('focus', onFocus);
 
         input.click();
     });

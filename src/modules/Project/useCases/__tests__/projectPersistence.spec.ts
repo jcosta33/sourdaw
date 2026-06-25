@@ -76,16 +76,28 @@ describe('Project Persistence Use Cases', () => {
 
     describe('saveProject', () => {
         it('persists CRDT and updates store metadata', async () => {
-            mocks.projectStoreValue.value = { name: 'My Song', dirty: true } as unknown as ProjectStoreState;
+            mocks.projectStoreValue.value = {
+                name: 'My Song',
+                createdAt: 1700000000000,
+                dirty: true,
+            } as unknown as ProjectStoreState;
 
             saveProject();
 
+            // persistCrdtProject() is kicked off synchronously...
             expect(mocks.persistCrdtProject).toHaveBeenCalled();
-            expect(mocks.addToRecentProjects).toHaveBeenCalledWith('My Song', 'sourdaw:project:My Song');
+            // ...but the recent-projects entry is only recorded once persistence
+            // resolves (inside the .then()), and is keyed by the stable per-project
+            // createdAt, not the mutable display name. So it has not happened yet.
+            expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
 
             await vi.waitFor(() => {
                 expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
             });
+
+            // After the persist promise flushes, the entry is recorded against the
+            // createdAt-keyed id (sourdaw:project:<createdAt>), not the name.
+            expect(mocks.addToRecentProjects).toHaveBeenCalledWith('My Song', 'sourdaw:project:1700000000000');
         });
     });
 
