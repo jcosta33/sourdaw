@@ -8,8 +8,11 @@ import {
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { type AutomationCurveType, type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
+import { hydrateProjectMidi } from '../fileIO/midiStateMapping';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
@@ -17,6 +20,38 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
             tracks: data.arrangement.tracks.map(normalizeTrack),
             selectedTrackId: null,
         });
+    }
+
+    // 1b. Transport — the exported transport block is a strict subset of the
+    // runtime transport state, so merge it over the defaults (runtime-only
+    // fields like isPlaying/playheadPosition stay at their default).
+    if (data.transport) {
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: data.transport.tempo,
+            timeSignatureNumerator: data.transport.timeSignatureNumerator,
+            timeSignatureDenominator: data.transport.timeSignatureDenominator,
+            loopStart: data.transport.loopStart,
+            loopEnd: data.transport.loopEnd,
+            isLooping: data.transport.isLooping,
+            metronomeEnabled: data.transport.metronomeEnabled,
+            metronomeVolume: data.transport.metronomeVolume,
+            punchInEnabled: data.transport.punchInEnabled,
+            punchInBeat: data.transport.punchInBeat,
+            punchOutBeat: data.transport.punchOutBeat,
+            countInEnabled: data.transport.countInEnabled,
+            countInBars: data.transport.countInBars,
+            preRollEnabled: data.transport.preRollEnabled,
+            preRollBars: data.transport.preRollBars,
+            masterGain: data.transport.masterGain,
+        });
+    }
+
+    // 1c. MIDI — hydrate the MIDI store from the exported top-level midi maps so
+    // notes/CC/pitch-bend survive the round-trip. (The per-clip notes folded into
+    // the arrangement are reconciled by applyImportedProjectData.)
+    if (data.midi) {
+        midiStore.set(hydrateProjectMidi(data.midi));
     }
 
     // 2. Automation

@@ -18,6 +18,9 @@ import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 
+import { serializeProjectMidi } from './midiStateMapping';
+import { serializeArrangementTracks } from './serializeArrangementTracks';
+
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
  * referenced by a TrackStoreState so the export can embed the raw PCM. */
 function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
@@ -107,18 +110,18 @@ export async function exportProjectFile(): Promise<void> {
             masterGain: transport.masterGain,
         },
         arrangement: {
-            tracks: tracks?.tracks || [],
+            // Map runtime arrangement clips (audioBufferId/audioOffsetBeats) onto
+            // the serialized clip shape (bufferId/sampleStartBeat) and fold each
+            // clip's MIDI notes inline from the MIDI store, so the import side's
+            // bufferId lookup resolves and notes survive the round-trip.
+            tracks: serializeArrangementTracks(tracks?.tracks ?? [], midi.notesByClipId),
         },
         automation,
         mixer: {
             master: { gain: 0.8, pan: 0 },
             buses: [],
         },
-        midi: {
-            notesByClipId: {},
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        },
+        midi: serializeProjectMidi(midi),
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
         markers: (markerStore.value?.markers || []).map((message) => ({

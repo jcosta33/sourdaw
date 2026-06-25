@@ -4,11 +4,13 @@ import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases
 import { clearUndoHistory } from '#/modules/Command/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { type ProjectData, type ProjectMidiNote } from '../../../models/ProjectData';
+import { type ProjectData } from '../../../models/ProjectData';
 import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
+
+import { hydrateProjectMidi } from './midiStateMapping';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
     // Validated — stop any in-flight playback and tear down the previous
@@ -33,8 +35,23 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     });
 
     // 3. Hydrate Arrangement Store
-    // Note: The current ProjectData schema is single-arrangement.
-    // We wrap it in a snapshot for the arrangementStore.
+    // Note: The current ProjectData schema collapses to a single arrangement on
+    // import (multi-arrangement reconstruction is deferred — see the inventory
+    // decisions backlog). We wrap the imported arrangement in one snapshot.
+    const arrangementMidi = data.midi
+        ? hydrateProjectMidi(data.midi)
+        : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+
+    // Older exports (and the inline copy alongside the top-level map) fold each
+    // clip's notes onto the clip itself; fill any clip the top-level map missed.
+    for (const track of data.arrangement.tracks) {
+        for (const clip of track.clips) {
+            if (!arrangementMidi.notesByClipId[clip.id] && clip.notes && clip.notes.length > 0) {
+                arrangementMidi.notesByClipId[clip.id] = clip.notes;
+            }
+        }
+    }
+
     arrangementStore.set({
         arrangements: [
             {
@@ -45,21 +62,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
                     selectedTrackId: null,
                 },
                 automation: data.automation || { lanes: [] },
-                midi: {
-                    notesByClipId: data.arrangement.tracks.reduce(
-                        (acc, time) => {
-                            for (const context of time.clips) {
-                                if (context.notes) {
-                                    acc[context.id] = context.notes;
-                                }
-                            }
-                            return acc;
-                        },
-                        {} as Record<string, ProjectMidiNote[]>
-                    ),
-                    ccByClipId: {},
-                    pitchBendByClipId: {},
-                },
+                midi: arrangementMidi,
             },
         ],
         activeArrangementId: defaultArrangementId,
