@@ -184,12 +184,28 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     /**
      * Latest pressedNotes, mirrored into a ref so teardown handlers (unmount cleanup,
      * visibilitychange→hidden, window.blur) release the notes that are actually held now
-     * instead of an empty set captured by a stale closure at effect-setup time.
+     * instead of an empty set.
+     *
+     * The ref is written SYNCHRONOUSLY in the same step as every setPressedNotes (see
+     * setPressed below), so it is never stale relative to the held-note set — even before
+     * React commits the state update or flushes effects. A teardown event that fires between
+     * a note-on and the next commit therefore still sees the held note. The passive effect
+     * below is a belt-and-suspenders mirror for any state path that bypasses setPressed.
      */
     const pressedNotesRef = useRef<Set<number>>(pressedNotes);
     useEffect(() => {
         pressedNotesRef.current = pressedNotes;
     }, [pressedNotes]);
+    /**
+     * Update the held-note set and its ref atomically. Writing the ref in the same
+     * synchronous tick as setPressedNotes keeps pressedNotesRef.current current the instant
+     * a note is added or removed, which is what makes teardown release deterministic.
+     */
+    const setPressed = (updater: (prev: Set<number>) => Set<number>) => {
+        const next = updater(pressedNotesRef.current);
+        pressedNotesRef.current = next;
+        setPressedNotes(next);
+    };
     const mouseNote = useRef<number | null>(null);
     const heldKeys = useRef<Set<string>>(new Set());
     /**
@@ -216,7 +232,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             return;
         }
         triggerLiveNoteOn(0, midiNote, velocity);
-        setPressedNotes((prev) => {
+        setPressed((prev) => {
             if (prev.has(midiNote)) {
                 return prev;
             }
@@ -228,7 +244,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     const triggerNoteOff = (midiNote: number) => {
         triggerLiveNoteOff(0, midiNote);
-        setPressedNotes((prev) => {
+        setPressed((prev) => {
             if (!prev.has(midiNote)) {
                 return prev;
             }
@@ -404,7 +420,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             triggerLiveNoteOff(0, midiNote);
         }
         if (pressedNotesRef.current.size > 0) {
-            setPressedNotes(new Set());
+            setPressed(() => new Set());
         }
         mouseNote.current = null;
     };
