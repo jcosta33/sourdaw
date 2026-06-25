@@ -1,11 +1,38 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import * as subject from '../toggleFavoritesOnly';
+import { sampleDatabaseStore } from '../../../stores/sampleDatabaseStore';
+import { toggleFavoritesOnly } from '../toggleFavoritesOnly';
+
+function seed(favoritesOnly = false): void {
+    sampleDatabaseStore.set({
+        samples: [],
+        searchQuery: '',
+        activeFilters: [],
+        categoryFilter: null,
+        sortBy: 'name',
+        sortDirection: 'asc',
+        favoritesOnly,
+    });
+}
 
 describe('toggleFavoritesOnly', () => {
-    it('should export toggleFavoritesOnly', () => {
-        expect(subject.toggleFavoritesOnly).toBeDefined();
-        const t = typeof subject.toggleFavoritesOnly;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => seed());
+    afterEach(() => sampleDatabaseStore.clear());
+
+    it('should turn the favourites-only flag on', () => {
+        toggleFavoritesOnly();
+        expect(sampleDatabaseStore.value?.favoritesOnly).toBe(true);
+    });
+
+    it('should turn the favourites-only flag back off', () => {
+        seed(true);
+        toggleFavoritesOnly();
+        expect(sampleDatabaseStore.value?.favoritesOnly).toBe(false);
+    });
+
+    it('should not mutate when the database is not initialised', () => {
+        sampleDatabaseStore.clear();
+        expect(() => toggleFavoritesOnly()).not.toThrow();
+        expect(sampleDatabaseStore.value).toBeNull();
     });
 });

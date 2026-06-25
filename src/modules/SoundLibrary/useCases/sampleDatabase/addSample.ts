@@ -1,23 +1,31 @@
-import { createSampleDatabaseError } from '#/modules/SoundLibrary/errors/SampleDatabaseError';
-import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
-import { autoTagSample, generatePathHash, getNextSampleId } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { createSampleDatabaseError } from '../../errors/SampleDatabaseError';
+import { type SampleEntry } from '../../models/SampleEntry';
+import { autoTagSample, generatePathHash, getNextSampleId } from '../../services/sampleTaggingHelpers';
+import { sampleDatabaseStore } from '../../stores/sampleDatabaseStore';
 
-export function addSample(
-    path: string,
-    name: string,
-    format: SampleEntry['format'],
-    durationSec: number,
-    sampleRate: number = 44100,
-    bitDepth: number = 16,
-    channels: number = 2,
-    fileSize: number = 0
-): SampleEntry {
+/**
+ * Required metadata to register a sample. All fields are explicit: callers must
+ * supply the real audio metadata rather than relying on silent positional
+ * defaults (44100/16/2/0), which previously masked missing decode data.
+ */
+export type AddSampleInput = {
+    path: string;
+    name: string;
+    format: SampleEntry['format'];
+    durationSec: number;
+    sampleRate: number;
+    bitDepth: number;
+    channels: number;
+    fileSize: number;
+};
+
+export function addSample(input: AddSampleInput): SampleEntry {
     const state = sampleDatabaseStore.value;
     if (!state) {
         throw createSampleDatabaseError('Sample database not initialized');
     }
 
+    const { path, name, format, durationSec, sampleRate, bitDepth, channels, fileSize } = input;
     const { tags } = autoTagSample(name, path);
 
     const sample: SampleEntry = {

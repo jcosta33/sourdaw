@@ -42,7 +42,13 @@ export type SampleEntry = {
     favorite: boolean;
     /** Color label */
     color: string | null;
-    /** Audio fingerprint hash for similarity detection */
+    /**
+     * Deterministic djb2-style path hash of `name:path` (see `generatePathHash`).
+     * Used as a stable cross-session identity for the record. This is NOT an audio
+     * perceptual fingerprint and cannot be used for content-based similarity search
+     * — similarity is computed from tag overlap (see `findSimilarSamples`), which
+     * does not read this field.
+     */
     fingerprint: string;
     /** When this was added to the database */
     addedAt: string;

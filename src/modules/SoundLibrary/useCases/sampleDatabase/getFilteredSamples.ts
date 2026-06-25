@@ -1,6 +1,24 @@
-import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
-import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleCategory, type SampleEntry } from '../../models/SampleEntry';
+import { AUTO_TAG_RULES } from '../../services/sampleTaggingHelpers';
+import { sampleDatabaseStore } from '../../stores/sampleDatabaseStore';
+
+/**
+ * Category → tag names, precomputed once from the module-constant
+ * AUTO_TAG_RULES. The previous per-call `.filter().flatMap()` rebuilt this list
+ * on every getFilteredSamples invocation even though the rules never change.
+ */
+const CATEGORY_TAGS: ReadonlyMap<SampleCategory, readonly string[]> = (() => {
+    const map = new Map<SampleCategory, string[]>();
+    for (const rule of AUTO_TAG_RULES) {
+        const existing = map.get(rule.category);
+        if (existing) {
+            existing.push(...rule.tags);
+        } else {
+            map.set(rule.category, [...rule.tags]);
+        }
+    }
+    return map;
+})();
 
 /**
  * §69.2 — Identity-keyed memo cache. The full filter+sort pipeline is
@@ -59,7 +77,7 @@ export function getFilteredSamples(): SampleEntry[] {
 
     // Category filter
     if (state.categoryFilter) {
-        const catTags = AUTO_TAG_RULES.filter((r) => r.category === state.categoryFilter).flatMap((r) => r.tags);
+        const catTags = CATEGORY_TAGS.get(state.categoryFilter) ?? [];
         results = results.filter((s) => s.tags.some((t) => catTags.includes(t.name)));
     }
 

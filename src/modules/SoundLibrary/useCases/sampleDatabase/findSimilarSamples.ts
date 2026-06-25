@@ -1,5 +1,18 @@
-import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleEntry } from '../../models/SampleEntry';
+import { sampleDatabaseStore } from '../../stores/sampleDatabaseStore';
+
+/**
+ * Identity-keyed memo. The similarity ranking is invariant while the underlying
+ * `samples` array reference and the (targetId, limit) query are unchanged, so
+ * the typed-array scoring pass and its allocations only run when one of those
+ * changes. Repeated render-time reads for the same selection short-circuit.
+ */
+let memo: {
+    samplesRef: readonly SampleEntry[];
+    sampleId: string;
+    limit: number;
+    result: SampleEntry[];
+} | null = null;
 
 /**
  * Find samples similar to a given sample by tag overlap (Jaccard similarity).
@@ -13,6 +26,10 @@ export function findSimilarSamples(sampleId: string, limit: number = 10): Sample
     const state = sampleDatabaseStore.value;
     if (!state) {
         return [];
+    }
+
+    if (memo !== null && memo.samplesRef === state.samples && memo.sampleId === sampleId && memo.limit === limit) {
+        return memo.result;
     }
 
     const target = state.samples.find((s) => s.id === sampleId);
@@ -62,5 +79,6 @@ export function findSimilarSamples(sampleId: string, limit: number = 10): Sample
     for (let i = 0; i < take; i++) {
         out[i] = samples[indexes[permutation[i]!]!]!;
     }
+    memo = { samplesRef: state.samples, sampleId, limit, result: out };
     return out;
 }

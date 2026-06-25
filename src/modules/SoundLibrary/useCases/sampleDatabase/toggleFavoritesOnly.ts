@@ -1,4 +1,4 @@
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { sampleDatabaseStore } from '../../stores/sampleDatabaseStore';
 
 export function toggleFavoritesOnly(): void {
     const state = sampleDatabaseStore.value;

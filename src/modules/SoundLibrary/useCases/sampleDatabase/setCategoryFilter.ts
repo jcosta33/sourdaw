@@ -1,5 +1,5 @@
-import { type SampleCategory } from '#/modules/SoundLibrary/models/SampleEntry';
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
+import { type SampleCategory } from '../../models/SampleEntry';
+import { sampleDatabaseStore } from '../../stores/sampleDatabaseStore';
 
 export function setCategoryFilter(category: SampleCategory | null): void {
     const state = sampleDatabaseStore.value;
