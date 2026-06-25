@@ -265,8 +265,11 @@ export async function scheduleTrackClips(
                         continue;
                     }
 
-                    const rawStartSec = beatToSeconds(noteAbsStart, defaultTempo, changes);
-                    const rawEndSec = beatToSeconds(noteEndBeat, defaultTempo, changes);
+                    // Apply plugin-delay compensation symmetrically with the audio
+                    // branch (see the `+ compensationDelay` on the audio iteration
+                    // below) so instrument notes stay aligned with audio clips.
+                    const rawStartSec = beatToSeconds(noteAbsStart, defaultTempo, changes) + compensationDelay;
+                    const rawEndSec = beatToSeconds(noteEndBeat, defaultTempo, changes) + compensationDelay;
                     const startTime = Math.max(0, rawStartSec - regionStartSec);
                     const endTime = rawEndSec - regionStartSec;
                     const duration = endTime - startTime;

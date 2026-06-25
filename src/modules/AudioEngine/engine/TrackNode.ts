@@ -60,9 +60,13 @@ export class TrackNode {
         let meterBuffer: Float32Array;
 
         if (hasSharedArrayBuffer()) {
+            // 4-byte SAB = one Float32: a single combined-peak meter. The
+            // metering-processor scans every input channel into this one slot
+            // (no `channels` field — that misleadingly implied per-channel peaks
+            // the 1-float buffer cannot hold). getPeakLevel reads-and-resets it.
             const meterSab = new SharedArrayBuffer(4);
             meterNode = new AudioWorkletNode(context, 'metering-processor');
-            meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
+            meterNode.port.postMessage({ type: 'init', sab: meterSab });
             meterBuffer = new Float32Array(meterSab);
         } else {
             meterBuffer = new Float32Array(1);
@@ -134,9 +138,12 @@ export class TrackNode {
 
     public registerTuningTable(frequencies: number[]): void {
         for (const dn of this.strip.deviceNodes) {
-            if (dn.kneadControls) {
-                dn.kneadControls.setParam('tuning-table', frequencies);
-            }
+            // Knead is a relative pitch-shift editor, not a tuned instrument: its
+            // WASM KneadInstance exposes only set_shift_semitones and has no
+            // tuning-table consumer (the kneadProcessor 'param' handler acts on
+            // 'shift_semitones' alone, so a posted 'tuning-table' was silently
+            // dropped in the worklet). Do not post a param Knead cannot consume —
+            // forward the table only to instruments that have a tuning input.
             if (dn.fermenterControls) {
                 dn.fermenterControls.setParam('tuning-table', frequencies);
             }
@@ -514,7 +521,26 @@ export class TrackNode {
 
     public updateBypass(deviceId: string, bypassed: boolean): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        dn?.controller?.setBypass?.(bypassed);
+        if (!dn) {
+            return;
+        }
+        dn.controller?.setBypass?.(bypassed);
+        // WASM instruments (Fermenter / Grand Boule / Levain) keep their worklet
+        // running on bypass — their setBypass only flips a JS flag that gates new
+        // noteOn, so any voices already held keep sounding. Releasing all voices
+        // when entering bypass stops the held audio at its source.
+        if (bypassed && dn.controller?.allNotesOff) {
+            dn.controller.allNotesOff();
+        }
+        // Drive the device in/out of the signal chain like an effect bypass: a
+        // bypassed generator is skipped by rebuildChain (its output is no longer
+        // summed into the strip), so even a synth whose controller cannot release
+        // voices is removed from the audible path. Idempotent for effects whose
+        // own setBypass already set dn.bypassed + scheduled a rebuild.
+        if (dn.bypassed !== bypassed) {
+            dn.bypassed = bypassed;
+            this.scheduleRebuildChain();
+        }
     }
 
     public dispose(): void {

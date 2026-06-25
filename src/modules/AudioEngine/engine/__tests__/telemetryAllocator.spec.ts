@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { FLOATS_PER_SLOT, telemetryAllocator, GRINDER_IDX } from '../telemetryAllocator';
+import { FLOATS_PER_SLOT, telemetryAllocator, GRINDER_IDX, PROOF_IDX, TELEMETRY_SEQ_IDX } from '../telemetryAllocator';
 
 describe('telemetryAllocator', () => {
     const allocatedOffsets: number[] = [];
@@ -57,6 +57,37 @@ describe('telemetryAllocator', () => {
         }
         allocatedOffsets.push(again.byteOffset);
         expect(again.byteOffset).toBe(off);
+    });
+
+    // ── Fix 7: each slot exposes an Int32 seqView aligned with its Float32 view
+    // so the telemetry seqlock counter can be read/written with Atomics. ──
+    describe('seqlock view', () => {
+        it('places the seq counter index past every telemetry field', () => {
+            // The counter must not overlap any data field; Proof has the highest.
+            const maxProofField = Math.max(...Object.values(PROOF_IDX));
+            expect(TELEMETRY_SEQ_IDX).toBeGreaterThan(maxProofField);
+            expect(TELEMETRY_SEQ_IDX).toBeLessThan(FLOATS_PER_SLOT);
+        });
+
+        it('exposes an Int32 seqView aligned 1:1 with the Float32 view over the same slot', () => {
+            const slot = telemetryAllocator.allocateSlot();
+            expect(slot).not.toBeNull();
+            if (!slot) {
+                return;
+            }
+            allocatedOffsets.push(slot.byteOffset);
+
+            // Atomics on the seq view must round-trip, and writing the counter must
+            // not corrupt the data fields (the counter lives in its own slot).
+            slot.view[PROOF_IDX.integratedLufs] = -16;
+            Atomics.store(slot.seqView, TELEMETRY_SEQ_IDX, 2);
+            expect(Atomics.load(slot.seqView, TELEMETRY_SEQ_IDX)).toBe(2);
+            expect(slot.view[PROOF_IDX.integratedLufs]).toBeCloseTo(-16, 5);
+
+            // The seqView spans the same slot bytes as the float view.
+            expect(slot.seqView.length).toBe(slot.view.length);
+            expect(slot.seqView.byteOffset).toBe(slot.view.byteOffset);
+        });
     });
 
     it('should return null and warn when no slots remain', () => {

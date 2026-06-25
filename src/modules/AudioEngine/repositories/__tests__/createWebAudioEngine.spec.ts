@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
@@ -684,6 +685,145 @@ describe('AudioEngine', () => {
             // caller), so it was never a real method at runtime. This asserts it
             // stays absent on the concrete engine.
             expect((engine as Record<string, unknown>).setMasterTrackId).toBeUndefined();
+        });
+    });
+
+    // ── Fix 1: master peak path is wired through a SAB-backed meter ───────────────
+    //
+    // Before, getMasterPeakLevel always returned 0: masterMeterBuffer was a plain
+    // Float32Array nothing wrote to, and no metering-processor sat in the master
+    // chain (masterGain → masterAnalyser → destination). initialize() must insert
+    // a SAB-backed metering-processor (masterGain → meter → analyser) and point
+    // masterMeterBuffer at that SAB, so getMasterPeakLevel reflects real level.
+    describe('master meter wiring', () => {
+        function masterMeterSab(eng: AudioEngine): ArrayBuffer {
+            const meterNode = (eng as unknown as { masterMeterNode: { port: { postMessage: Mock } } }).masterMeterNode;
+            const initCall = meterNode.port.postMessage.mock.calls.find(
+                (c) => (c[0] as { type?: string })?.type === 'init'
+            );
+            expect(initCall).toBeDefined();
+            return (initCall![0] as { sab: ArrayBuffer }).sab;
+        }
+
+        it('inserts a metering-processor into the master chain on initialize', async () => {
+            // Before init, no meter node is wired (master nodes are built in the
+            // constructor, before any worklet module is loaded).
+            const beforeInit = (engine as unknown as { masterMeterNode?: unknown }).masterMeterNode;
+            expect(beforeInit).toBeUndefined();
+
+            await engine.initialize();
+
+            const meterNode = (engine as unknown as { masterMeterNode: { connect: Mock } }).masterMeterNode;
+            expect(meterNode).toBeDefined();
+            // Master gain rerouted: disconnected from the analyser, then connected
+            // to the meter, which connects to the analyser.
+            expect(engine.masterGainNode.disconnect).toHaveBeenCalled();
+            expect(engine.masterGainNode.connect as Mock).toHaveBeenCalledWith(meterNode);
+            expect(meterNode.connect).toHaveBeenCalledWith(engine.masterAnalyser);
+        });
+
+        it('reports the peak the meter writes into the SAB, then resets it', async () => {
+            await engine.initialize();
+            const sab = masterMeterSab(engine);
+            // Exactly one Float32 (the single combined-peak slot).
+            expect(sab.byteLength).toBe(4);
+
+            // Simulate the worklet writing a peak the UI then reads.
+            new Float32Array(sab)[0] = 0.6;
+            expect(engine.getMasterPeakLevel()).toBeCloseTo(0.6, 5);
+            // Read-and-reset: a second read with no new write returns 0.
+            expect(engine.getMasterPeakLevel()).toBe(0);
+        });
+    });
+
+    // ── Fix 4: stopAllScheduled sends one allNotesOff per synth, not a fan-out ────
+    //
+    // It used to post 128 noteOff per Fermenter and 16 per Toaster in one
+    // synchronous loop. Both processors now honor a single allNotesOff worklet
+    // message, so stopAllScheduled must post exactly one {type:'allNotesOff'} to
+    // each device's worklet node port.
+    describe('stopAllScheduled all-notes-off', () => {
+        function pushSynth(eng: AudioEngine, trackId: string, controlsKey: string) {
+            const strip = eng.ensureTrackStrip(trackId);
+            const workletNode = new (globalThis.AudioWorkletNode as new () => {
+                port: { postMessage: Mock };
+            })();
+            strip.deviceNodes.push({
+                deviceId: `${controlsKey}-dev`,
+                type: controlsKey,
+                nodes: [workletNode],
+                [controlsKey]: { noteOff: vi.fn() },
+            } as never);
+            return workletNode;
+        }
+
+        it('posts a single allNotesOff to Fermenter and Toaster worklet ports', () => {
+            const fermNode = pushSynth(engine, 'tFerm', 'fermenterControls');
+            const toastNode = pushSynth(engine, 'tToast', 'toasterControls');
+
+            engine.stopAllScheduled();
+
+            const fermAllOff = fermNode.port.postMessage.mock.calls.filter(
+                (c) => (c[0] as { type?: string })?.type === 'allNotesOff'
+            );
+            const toastAllOff = toastNode.port.postMessage.mock.calls.filter(
+                (c) => (c[0] as { type?: string })?.type === 'allNotesOff'
+            );
+            expect(fermAllOff.length).toBe(1);
+            expect(toastAllOff.length).toBe(1);
+
+            // And NOT a fan-out of per-note noteOff messages.
+            const fermNoteOffs = fermNode.port.postMessage.mock.calls.filter(
+                (c) => (c[0] as { type?: string })?.type === 'noteOff'
+            );
+            expect(fermNoteOffs.length).toBe(0);
+        });
+    });
+
+    // ── Fix 5: resetGraph clears the external latency registry ───────────────────
+    //
+    // The registry is a module-level Map that grew unbounded across project
+    // switches because per-device clearReportedLatency only fires on a device's
+    // destroy(). resetGraph must drop every entry when a project is torn down.
+    describe('resetGraph clears reported latency', () => {
+        beforeEach(() => {
+            externalLatencyRegistry.clear();
+        });
+
+        it('empties externalLatencyRegistry on resetGraph', () => {
+            externalLatencyRegistry.set('dev-a', 5);
+            externalLatencyRegistry.set('dev-b', 12);
+            expect(externalLatencyRegistry.size).toBe(2);
+
+            engine.resetGraph();
+
+            expect(externalLatencyRegistry.size).toBe(0);
+        });
+    });
+
+    // ── Fix 6: the transport SAB allocation is guarded by hasSharedArrayBuffer ────
+    //
+    // The module-level singleton constructs the engine at import time. The
+    // transport SAB allocation sat outside the constructor try/catch with no
+    // capability guard, so `new SharedArrayBuffer(64)` threw at import on a page
+    // without COOP+COEP. Construction must not throw when SAB is unavailable, and
+    // setTransportInfo must no-op rather than write into a null view.
+    describe('transport SAB capability guard', () => {
+        it('constructs without throwing when SharedArrayBuffer is unavailable', () => {
+            const savedSAB = globalThis.SharedArrayBuffer;
+            // Remove the global the way a non-isolated page would.
+            // @ts-expect-error deleting a global for the duration of the test
+            delete (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+            try {
+                let noSabEngine: AudioEngine | undefined;
+                expect(() => {
+                    noSabEngine = createAudioEngine(asAudioContext(mockCtx));
+                }).not.toThrow();
+                // Transport writes are a safe no-op with no SAB backing.
+                expect(() => noSabEngine!.setTransportInfo(4, 120, true)).not.toThrow();
+            } finally {
+                vi.stubGlobal('SharedArrayBuffer', savedSAB);
+            }
         });
     });
 });

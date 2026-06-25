@@ -21,6 +21,57 @@ const READ_HEAD_IDX = 1;
 
 type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer };
 
+/**
+ * Acquire-read one block of stereo frames from the SPSC ring into `out0`/`out1`.
+ *
+ * `Atomics.load(controlInts, WRITE_HEAD_IDX)` is the acquire fence: it pairs
+ * with the engine worker's `Atomics.store(WRITE_HEAD_IDX, ...)` release, so any
+ * ring frame the published write head accounts for is visible to the bare
+ * `subarray` reads below. When fewer than `frames` are published the ring is
+ * left untouched (underrun) and `consumed` is 0 — no stale frames are copied.
+ *
+ * Returns the number of frames consumed and the advanced read head, so the
+ * caller publishes the read head with a release store. Hot-path safe: no
+ * allocation, no blocking.
+ */
+export function readBlockAcquire(
+    controlInts: Int32Array,
+    leftRing: Float32Array,
+    rightRing: Float32Array,
+    ringFrames: number,
+    out0: Float32Array,
+    out1: Float32Array | undefined,
+    frames: number
+): { consumed: number; nextReadHead: number } {
+    // Acquire fence — must precede the ring reads below.
+    const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
+    const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
+    const available = (writeHead - readHead) | 0;
+
+    if (available < frames) {
+        // Underrun — caller outputs silence. The engine worker will catch up.
+        return { consumed: 0, nextReadHead: readHead };
+    }
+
+    const offset = (readHead >>> 0) % ringFrames;
+    const firstChunk = Math.min(frames, ringFrames - offset);
+    const secondChunk = frames - firstChunk;
+
+    out0.set(leftRing.subarray(offset, offset + firstChunk));
+    if (secondChunk > 0) {
+        out0.set(leftRing.subarray(0, secondChunk), firstChunk);
+    }
+
+    if (out1) {
+        out1.set(rightRing.subarray(offset, offset + firstChunk));
+        if (secondChunk > 0) {
+            out1.set(rightRing.subarray(0, secondChunk), firstChunk);
+        }
+    }
+
+    return { consumed: frames, nextReadHead: (readHead + frames) | 0 };
+}
+
 class GrandBouleProcessor extends AudioWorkletProcessor {
     _controlInts: Int32Array | null = null;
     _leftRing: Float32Array | null = null;
@@ -68,36 +119,25 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             return true;
         }
         const frames = out0.length;
+        const out1 = output[1];
 
-        const writeHead = Atomics.load(this._controlInts, WRITE_HEAD_IDX);
-        const readHead = Atomics.load(this._controlInts, READ_HEAD_IDX);
-        const available = (writeHead - readHead) | 0;
+        const { consumed, nextReadHead } = readBlockAcquire(
+            this._controlInts,
+            this._leftRing,
+            this._rightRing,
+            this._ringFrames,
+            out0,
+            out1,
+            frames
+        );
 
-        if (available < frames) {
+        if (consumed === 0) {
             // Underrun — output silence. The engine worker will catch up.
             return true;
         }
 
-        const offset = (readHead >>> 0) % this._ringFrames;
-        const firstChunk = Math.min(frames, this._ringFrames - offset);
-        const secondChunk = frames - firstChunk;
-
-        // Copy left channel.
-        out0.set(this._leftRing.subarray(offset, offset + firstChunk));
-        if (secondChunk > 0) {
-            out0.set(this._leftRing.subarray(0, secondChunk), firstChunk);
-        }
-
-        // Copy right channel.
-        const out1 = output[1];
-        if (out1) {
-            out1.set(this._rightRing.subarray(offset, offset + firstChunk));
-            if (secondChunk > 0) {
-                out1.set(this._rightRing.subarray(0, secondChunk), firstChunk);
-            }
-        }
-
-        Atomics.store(this._controlInts, READ_HEAD_IDX, (readHead + frames) | 0);
+        // Release the read head only after the frames have been copied out.
+        Atomics.store(this._controlInts, READ_HEAD_IDX, nextReadHead);
 
         return true;
     }

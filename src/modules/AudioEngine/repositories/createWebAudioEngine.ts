@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
@@ -6,6 +7,7 @@ import { BusNode } from '../engine/BusNode';
 import { TrackNode } from '../engine/TrackNode';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
+import { clearAllReportedLatency } from '../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 
 import type {
     AdjustmentLayerTickInput,
@@ -138,9 +140,23 @@ class AudioEngineImpl implements AudioEngine {
         // seven f64 data fields (slots 0–6) are guarded by a seqlock counter in
         // the Int32 view at TRANSPORT_SEQ_I32 so worklet readers never observe a
         // torn snapshot.
-        this.transportSAB = new SharedArrayBuffer(TRANSPORT_SAB_BYTES);
-        this.transportView = new Float64Array(this.transportSAB);
-        this.transportSeqView = new Int32Array(this.transportSAB);
+        //
+        // Guard the allocation with hasSharedArrayBuffer(): without COOP+COEP the
+        // global is absent and `new SharedArrayBuffer(...)` throws. This runs at
+        // module load (`export const audioEngine = createAudioEngine()`), so an
+        // unguarded throw here aborts the whole module import on a non-isolated
+        // page. When SAB is unavailable the views stay null and setTransportInfo
+        // no-ops (it already guards on null), so the worklet readers just fall
+        // back to their default transport — no torn read, no import crash.
+        if (hasSharedArrayBuffer()) {
+            this.transportSAB = new SharedArrayBuffer(TRANSPORT_SAB_BYTES);
+            this.transportView = new Float64Array(this.transportSAB);
+            this.transportSeqView = new Int32Array(this.transportSAB);
+        } else {
+            this.transportSAB = null;
+            this.transportView = null;
+            this.transportSeqView = null;
+        }
 
         try {
             this.context = providedContext ?? new AudioContext({ latencyHint: 'interactive' });
@@ -209,8 +225,56 @@ class AudioEngineImpl implements AudioEngine {
             this.context.audioWorklet.addModule(recordingProcessorUrl),
             this.context.audioWorklet.addModule(meteringProcessorUrl),
         ]);
+        // The metering-processor module is now registered, so the master meter
+        // can be inserted into the master chain. This cannot happen in the
+        // constructor — the master nodes are built before any worklet module is
+        // loaded (initialize() runs later), exactly like the per-track meter
+        // which is built once metering-processor is available.
+        this.wireMasterMeter();
         this.workletReady = true;
         this.lastInitError = null;
+    }
+
+    /**
+     * Insert a SAB-backed metering-processor into the master chain so
+     * getMasterPeakLevel reflects real output level. Mirrors the per-track meter
+     * wiring in {@link TrackNode}: a 4-byte SharedArrayBuffer holds one peak the
+     * worklet writes (Math.max across the block) and the UI read-and-resets.
+     *
+     * Chain before: masterGainNode → masterAnalyser → destination.
+     * Chain after:  masterGainNode → masterMeterNode → masterAnalyser → destination.
+     * The metering-processor passes audio straight through, so the audible signal
+     * is unchanged — it only taps the peak. Idempotent: a second initialize()
+     * (e.g. after dispose()) replaces the existing meter node rather than
+     * stacking a second tap.
+     */
+    private wireMasterMeter(): void {
+        if (this.fallbackMode || typeof AudioWorkletNode === 'undefined' || !hasSharedArrayBuffer()) {
+            // No live graph, no worklet support, or no SAB: leave masterMeterBuffer
+            // as the inert buffer from the constructor so getMasterPeakLevel reads 0.
+            return;
+        }
+        // Tear down a previously-wired meter node so a re-initialize does not
+        // leave a stale tap summing into the analyser.
+        const previous = this.masterMeterNode;
+        if (previous && typeof AudioWorkletNode !== 'undefined' && previous instanceof AudioWorkletNode) {
+            try {
+                previous.disconnect();
+            } catch {
+                // already disconnected
+            }
+        }
+
+        const meterSab = new SharedArrayBuffer(4);
+        const meterNode = new AudioWorkletNode(this.context, 'metering-processor');
+        meterNode.port.postMessage({ type: 'init', sab: meterSab });
+        this.masterMeterNode = meterNode;
+        this.masterMeterBuffer = new Float32Array(meterSab);
+
+        // Re-route the master chain through the meter node.
+        this.masterGainNode.disconnect();
+        this.masterGainNode.connect(meterNode);
+        meterNode.connect(this.masterAnalyser);
     }
 
     public getHealth(): AudioEngineHealth {
@@ -781,24 +845,28 @@ class AudioEngineImpl implements AudioEngine {
         }
         this.scheduledNodes.length = 0;
 
-        // Send all-notes-off to Fermenter devices (MIDI notes 0-127)
+        // Release held notes on every synth device. Fermenter and Toaster now
+        // honor a single `allNotesOff` worklet message, so post that once per
+        // device instead of fanning out 128 Fermenter / 16 Toaster note-off
+        // structured clones (640 postMessages with five Fermenter tracks). The
+        // message goes to the device's worklet node port directly — mirroring
+        // postShutdownToWorklets — because the fermenterControls/toasterControls
+        // surfaces do not carry an allNotesOff method.
+        const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
         for (const [, trackNode] of this.trackNodes) {
             for (const dn of trackNode.strip.deviceNodes) {
-                if (dn.fermenterControls) {
-                    for (let note = 0; note < 128; note++) {
-                        dn.fermenterControls.noteOff(note);
-                    }
-                }
-                if (dn.toasterControls) {
-                    for (let pad = 0; pad < 16; pad++) {
-                        dn.toasterControls.noteOff(pad);
+                if (dn.fermenterControls || dn.toasterControls) {
+                    for (const node of dn.nodes) {
+                        if (hasWorkletNode && node instanceof AudioWorkletNode) {
+                            node.port.postMessage({ type: 'allNotesOff' });
+                        }
                     }
                 }
                 if (dn.levainControls) {
                     // Levain has a realism-layer release burst per noteOff
                     // (bow-lift noise on strings). A 128-note fan-out would
                     // retrigger that burst 128 times and produce an audible
-                    // \"ksshh\" on every stop. Route through the dedicated
+                    // "ksshh" on every stop. Route through the dedicated
                     // silent all-notes-off path instead.
                     dn.levainControls.allNotesOff();
                 }
@@ -838,6 +906,11 @@ class AudioEngineImpl implements AudioEngine {
             this.removeTrackStrip(id);
         }
         this.pendingDevicePromises.clear();
+        // Drop every reported-latency entry for the torn-down project. Per-device
+        // clearReportedLatency only fires from a device's destroy(), so devices
+        // without that path (and any whose teardown was skipped) would otherwise
+        // leak entries that accumulate across project switches without bound.
+        clearAllReportedLatency();
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
@@ -862,6 +935,15 @@ class AudioEngineImpl implements AudioEngine {
         this.resetGraph();
 
         this.masterGainNode.disconnect();
+        // Disconnect the master meter tap (inserted by wireMasterMeter into the
+        // master chain) so it is not left dangling on the closed context.
+        if (typeof AudioWorkletNode !== 'undefined' && this.masterMeterNode instanceof AudioWorkletNode) {
+            try {
+                this.masterMeterNode.disconnect();
+            } catch {
+                // already disconnected
+            }
+        }
         this.masterAnalyser.disconnect();
 
         // Release the transport SAB / its view so the buffer can be GC'd and a

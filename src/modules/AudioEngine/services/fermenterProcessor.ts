@@ -43,6 +43,7 @@ type FermenterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
@@ -131,6 +132,19 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.note);
+                break;
+            case 'allNotesOff':
+                // Release every held voice in one message instead of the main
+                // thread fanning out 128 structured-clone note-off postMessages
+                // per device on transport stop. Drop any not-yet-dispatched
+                // scheduled notes first so a queued future noteOn cannot retrigger
+                // after the release. The 0..127 release loop runs on the audio
+                // thread but allocates nothing and is bounded.
+                this._queue.length = 0;
+                this._queueHead = 0;
+                for (let note = 0; note < 128; note++) {
+                    inst.note_off(note);
+                }
                 break;
             case 'param': {
                 const rustName = camelToSnake(msg.name);

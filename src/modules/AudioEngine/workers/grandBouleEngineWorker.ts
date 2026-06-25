@@ -69,6 +69,45 @@ let ringFrames = 0;
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
+/**
+ * Release-publish one rendered block into the SPSC ring.
+ *
+ * Copies `BLOCK_SIZE` stereo frames into the rings (wrapping), then advances the
+ * write head with `Atomics.store(WRITE_HEAD_IDX, ...)`. That store is the release
+ * fence: it is sequenced after the `.set()` copies, so a consumer that acquires
+ * the head with `Atomics.load` before reading the ring can never observe the
+ * head increment without the matching frames. Returns the new write head.
+ *
+ * Hot-path safe: no allocation, no blocking.
+ */
+export function writeBlockRelease(
+    controlInts: Int32Array,
+    leftRing: Float32Array,
+    rightRing: Float32Array,
+    ringFrames: number,
+    writeHead: number,
+    leftSrc: Float32Array,
+    rightSrc: Float32Array,
+    blockSize: number
+): number {
+    const offset = (writeHead >>> 0) % ringFrames;
+    const firstChunk = Math.min(blockSize, ringFrames - offset);
+    const secondChunk = blockSize - firstChunk;
+
+    // Data writes — must be sequenced-before the release store below.
+    leftRing.set(leftSrc.subarray(0, firstChunk), offset);
+    rightRing.set(rightSrc.subarray(0, firstChunk), offset);
+    if (secondChunk > 0) {
+        leftRing.set(leftSrc.subarray(firstChunk), 0);
+        rightRing.set(rightSrc.subarray(firstChunk), 0);
+    }
+
+    const nextWriteHead = (writeHead + blockSize) | 0;
+    // Release fence: publish the frames atomically after they are all written.
+    Atomics.store(controlInts, WRITE_HEAD_IDX, nextWriteHead);
+    return nextWriteHead;
+}
+
 function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSampleRate: number): void {
     // Parse SAB layout.
     controlInts = new Int32Array(sab, 0, 2);
@@ -117,19 +156,9 @@ function renderLoop(): void {
         const leftSrc = new Float32Array(mem, leftPtr, BLOCK_SIZE);
         const rightSrc = new Float32Array(mem, rightPtr, BLOCK_SIZE);
 
-        // Write into ring buffer (wrapping).
-        const offset = (writeHead >>> 0) % ringFrames;
-        const firstChunk = Math.min(BLOCK_SIZE, ringFrames - offset);
-        const secondChunk = BLOCK_SIZE - firstChunk;
+        // Write into the ring (wrapping) and release-publish the new write head.
+        writeBlockRelease(controlInts, leftRing, rightRing, ringFrames, writeHead, leftSrc, rightSrc, BLOCK_SIZE);
 
-        leftRing.set(leftSrc.subarray(0, firstChunk), offset);
-        rightRing.set(rightSrc.subarray(0, firstChunk), offset);
-        if (secondChunk > 0) {
-            leftRing.set(leftSrc.subarray(firstChunk), 0);
-            rightRing.set(rightSrc.subarray(firstChunk), 0);
-        }
-
-        Atomics.store(controlInts, WRITE_HEAD_IDX, (writeHead + BLOCK_SIZE) | 0);
         // Atomics.pause is a Stage 3 proposal — cast to an extended type that includes it
         type AtomicsWithPause = typeof Atomics & { pause?: () => void };
         (Atomics as AtomicsWithPause).pause?.();

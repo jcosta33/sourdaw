@@ -106,6 +106,129 @@ describe('TrackNode', () => {
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
     });
 
+    // ── Fix 8: the per-track meter SAB is one Float32 and the init message must
+    // NOT claim `channels: 2` — that implied per-channel peaks the 1-float buffer
+    // cannot hold. The meter is a single combined-peak readout. ──
+    it('initializes the meter worklet without a misleading channels field', () => {
+        const track = new TrackNode('track-1', deps);
+        const meterPort = (track.strip.meterNode as any).port;
+
+        const initCall = meterPort.postMessage.mock.calls.find(
+            (c: unknown[]) => (c[0] as { type?: string })?.type === 'init'
+        );
+        expect(initCall).toBeDefined();
+        const initMsg = initCall![0] as Record<string, unknown>;
+        expect(initMsg.sab).toBeInstanceOf(ArrayBuffer);
+        // The meter SAB is exactly one Float32 (4 bytes) — a single peak slot.
+        expect((initMsg.sab as ArrayBuffer).byteLength).toBe(4);
+        // No `channels` knob: the processor scans all input channels into the slot.
+        expect('channels' in initMsg).toBe(false);
+    });
+
+    // ── Fix 2: Knead has no tuning-table consumer (its WASM exposes only
+    // set_shift_semitones), so registerTuningTable must NOT post 'tuning-table'
+    // to a Knead device — but must still forward it to a tuned instrument
+    // (Fermenter). ──
+    describe('registerTuningTable', () => {
+        function makeControls() {
+            return { setParam: vi.fn() };
+        }
+
+        it('does not forward a tuning table to a Knead device', () => {
+            const track = new TrackNode('track-1', deps);
+            const kneadControls = makeControls();
+            track.strip.deviceNodes.push({
+                deviceId: 'knead-1',
+                type: 'knead',
+                kneadControls,
+            } as never);
+
+            track.registerTuningTable([440, 466, 494]);
+
+            expect(kneadControls.setParam).not.toHaveBeenCalled();
+        });
+
+        it('forwards the tuning table to a Fermenter device', () => {
+            const track = new TrackNode('track-1', deps);
+            const fermenterControls = makeControls();
+            track.strip.deviceNodes.push({
+                deviceId: 'ferm-1',
+                type: 'fermenter',
+                fermenterControls,
+            } as never);
+
+            const table = [440, 466, 494];
+            track.registerTuningTable(table);
+
+            expect(fermenterControls.setParam).toHaveBeenCalledWith('tuning-table', table);
+        });
+    });
+
+    // ── Fix 3: bypassing a WASM instrument must stop held notes. Its setBypass
+    // only flips a JS flag that gates new noteOn, so updateBypass must also
+    // release held voices (allNotesOff) and remove the generator from the signal
+    // chain (dn.bypassed + rebuild), so even an already-held voice goes silent. ──
+    describe('updateBypass for a generator instrument', () => {
+        function pushGenerator(track: TrackNode) {
+            // A generator has no inputs (numberOfInputs === 0); rebuildChain wires
+            // its output into preFaderTap when live and skips it when bypassed.
+            const outputNode = { connect: vi.fn(), disconnect: vi.fn(), numberOfInputs: 0 };
+            const controller = { setBypass: vi.fn(), allNotesOff: vi.fn() };
+            const dn = {
+                deviceId: 'gen-1',
+                type: 'levain',
+                nodes: [outputNode],
+                inputNode: outputNode,
+                outputNode,
+                controller,
+            };
+            track.strip.deviceNodes.push(dn as never);
+            track.rebuildChain();
+            return { outputNode, controller, dn };
+        }
+
+        it('releases held voices and removes the generator from the chain on bypass', async () => {
+            const track = new TrackNode('track-1', deps);
+            const { outputNode, controller, dn } = pushGenerator(track);
+
+            // Live: the generator output feeds the preFaderTap.
+            expect(outputNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
+            outputNode.connect.mockClear();
+
+            track.updateBypass('gen-1', true);
+
+            // Held notes are released so a sustained voice stops at its source.
+            expect(controller.allNotesOff).toHaveBeenCalledTimes(1);
+            // The node's own bypass flag is set (gates new noteOn).
+            expect(controller.setBypass).toHaveBeenCalledWith(true);
+            // The device is flagged bypassed.
+            expect(dn.bypassed).toBe(true);
+
+            // The rebuild is coalesced onto a microtask; let it run.
+            await Promise.resolve();
+
+            // Chain rebuilt without the generator: its output is no longer wired
+            // into the preFaderTap.
+            expect(outputNode.connect).not.toHaveBeenCalledWith(track.strip.preFaderTap);
+        });
+
+        it('re-adds the generator to the chain on un-bypass', async () => {
+            const track = new TrackNode('track-1', deps);
+            const { outputNode, dn } = pushGenerator(track);
+
+            track.updateBypass('gen-1', true);
+            expect(dn.bypassed).toBe(true);
+            await Promise.resolve();
+            outputNode.connect.mockClear();
+
+            track.updateBypass('gen-1', false);
+            expect(dn.bypassed).toBe(false);
+            await Promise.resolve();
+            // Back in the signal path.
+            expect(outputNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
+        });
+    });
+
     // Regression: live reload (ensureTrackStrips) adds the external-plugin device
     // then immediately replays saved Track.devices[*].parameterValues via
     // updateParam — but the bridge loads asynchronously, so those values land on

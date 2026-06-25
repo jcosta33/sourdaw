@@ -18,6 +18,28 @@
 
 type RecordingMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'start' } | { type: 'stop' };
 
+/**
+ * Release-publish a block of samples into the SPSC ring.
+ *
+ * Writes every sample into the ring (with wrap-around), then advances the head
+ * with `Atomics.add`. That atomic is the release fence: it is sequenced after
+ * the ring writes, so a consumer that acquires the head with `Atomics.load`
+ * before reading the ring can never observe a head increment without the
+ * corresponding samples. Returns the new head for assertion.
+ *
+ * Hot-path safe: no allocation, no blocking; reused by `process`.
+ */
+export function writeRingRelease(ring: Float32Array, writeHead: Int32Array, head: number, input: Float32Array): number {
+    const ringSize = ring.length;
+    // Data writes — must be sequenced-before the release store below.
+    for (let index = 0; index < input.length; index++) {
+        ring[(head + index) % ringSize] = input[index] ?? 0;
+    }
+    // Release fence: publish the samples atomically after they are all written.
+    Atomics.add(writeHead, 0, input.length);
+    return head + input.length;
+}
+
 class RecordingWorkletProcessor extends AudioWorkletProcessor {
     _writeHead: Int32Array | null = null;
     _ring: Float32Array | null = null;
@@ -58,11 +80,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
         }
 
         const head = Atomics.load(this._writeHead, 0);
-        const ringSize = this._ringSize;
-        for (let index = 0; index < input.length; index++) {
-            this._ring[(head + index) % ringSize] = input[index] ?? 0;
-        }
-        Atomics.add(this._writeHead, 0, input.length);
+        writeRingRelease(this._ring, this._writeHead, head, input);
         return true;
     }
 }

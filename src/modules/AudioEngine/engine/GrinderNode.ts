@@ -83,6 +83,34 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
     }
 
+    // Per-frame coalescing for message-port params (those without a backing
+    // AudioParam). A rapid knob drag or automation sweep fires setParam many
+    // times per frame; without coalescing each call is its own structured-clone
+    // postMessage, flooding the worklet port. Buffer the latest value per name
+    // and flush once per animation frame, so N posts of a param collapse to one.
+    const pendingParamPosts = new Map<string, number>();
+    let paramFlushRafId: number | null = null;
+    const canCoalesce = typeof requestAnimationFrame === 'function';
+
+    const flushParamPosts = (): void => {
+        paramFlushRafId = null;
+        for (const [name, value] of pendingParamPosts) {
+            node.port.postMessage({ type: 'param', name, value });
+        }
+        pendingParamPosts.clear();
+    };
+
+    const queueParamPost = (name: string, value: number): void => {
+        if (!canCoalesce) {
+            // No rAF (offline render / non-DOM host): post immediately so the
+            // value is not stranded with no flush ever scheduled.
+            node.port.postMessage({ type: 'param', name, value });
+            return;
+        }
+        pendingParamPosts.set(name, value);
+        paramFlushRafId ??= requestAnimationFrame(flushParamPosts);
+    };
+
     const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
         const outcome = handshake.onMessage(event);
@@ -116,9 +144,13 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             if (Number.isFinite(value)) {
                 const param = node.parameters.get(name);
                 if (param) {
+                    // AudioParam updates are already coalesced by the audio engine
+                    // (setTargetAtTime), so post these straight through.
                     param.setTargetAtTime(value, ctx.currentTime, 0.01);
                 } else {
-                    node.port.postMessage({ type: 'param', name, value });
+                    // Message-port params: coalesce per frame to avoid flooding the
+                    // worklet port on rapid automation/knob drags.
+                    queueParamPost(name, value);
                 }
             }
         },
@@ -172,6 +204,13 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
             }
+            // Cancel a scheduled param flush and drop any buffered posts so the
+            // destroyed node does not post into a closed port on the next frame.
+            if (paramFlushRafId !== null) {
+                cancelAnimationFrame(paramFlushRafId);
+                paramFlushRafId = null;
+            }
+            pendingParamPosts.clear();
             if (slot) {
                 telemetryAllocator.releaseSlot(slot.byteOffset);
                 slot = null;

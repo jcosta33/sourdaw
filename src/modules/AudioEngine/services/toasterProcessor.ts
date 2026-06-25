@@ -14,6 +14,9 @@
 
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
+/** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
+const TOASTER_PAD_COUNT = 16;
+
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
 const PAD_PARAM_MAP: Record<string, string> = {
     volume: 'volume',
@@ -51,6 +54,7 @@ type ToasterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
     | { type: 'noteOff'; pad: number; sampleFrame?: number }
+    | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'padParam'; pad: number; name: string; value: number };
 
@@ -94,7 +98,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
-        this._instance = new ToasterInstance(sampleRate, 16);
+        this._instance = new ToasterInstance(sampleRate, TOASTER_PAD_COUNT);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
     }
@@ -137,6 +141,17 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.pad);
+                break;
+            case 'allNotesOff':
+                // Release every pad in one message instead of the main thread
+                // fanning out 16 structured-clone note-off postMessages per device
+                // on transport stop. Drop not-yet-dispatched scheduled hits first
+                // so a queued future noteOn cannot retrigger after the release.
+                this._queue.length = 0;
+                this._queueHead = 0;
+                for (let pad = 0; pad < TOASTER_PAD_COUNT; pad++) {
+                    inst.note_off(pad);
+                }
                 break;
             case 'param':
                 inst.set_param(KIT_PARAM_MAP[msg.name] ?? msg.name, msg.value);

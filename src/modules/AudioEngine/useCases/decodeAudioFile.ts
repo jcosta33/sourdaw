@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { createDecodeError } from '../errors/DecodeError';
@@ -19,33 +20,74 @@ import { audioBufferCache } from '../stores/audioBufferCache';
  *
  * The decoded buffer is automatically cached in `audioBufferCache`.
  */
+/**
+ * Reduce a (possibly hostile) `File.name` to a bare filename safe to append to
+ * a cache directory. Strips any directory components (both `/` and `\`
+ * separators) and neutralises `..` traversal segments so a name like
+ * `../../etc/passwd` cannot escape the cache dir.
+ */
+export function sanitizeCacheFileName(name: string): string {
+    // Take the last path segment, treating both POSIX and Windows separators.
+    // Splitting on the separators leaves `base` free of any path components.
+    const base = name.split(/[/\\]/).pop() ?? '';
+    // Reject pure-dot segments (".", "..") that survive the split; fall back to a
+    // safe default if nothing usable remains.
+    if (base === '' || base === '.' || base === '..') {
+        return 'audio-file';
+    }
+    return base;
+}
+
 export async function decodeAudioFile(file: File): Promise<{ id: string; buffer: AudioBuffer }> {
     const arrayBuffer = await file.arrayBuffer();
 
     if (isTauri()) {
+        // The Tauri IPC bridge must load before we can talk to the native
+        // decoder at all; a failure here means "Tauri unavailable" (misconfig
+        // or non-Tauri runtime) and is distinct from a decoder-side failure.
+        let invoke: typeof import('@tauri-apps/api/core').invoke | null = null;
         try {
-            // Write to a temp file path so Rust can decode from disk
-            const { invoke } = await import('@tauri-apps/api/core');
-            const tempDir = (await invoke('get_model_dir')) as string;
-            const tempPath = `${tempDir}/../cache/${file.name}`;
+            ({ invoke } = await import('@tauri-apps/api/core'));
+        } catch (error) {
+            logger.warn('[decodeAudioFile] Tauri unavailable — falling back to browser decoder:', error);
+        }
 
-            // Write the file bytes
-            await invoke('write_audio_file', {
-                path: tempPath,
-                data: new Uint8Array(arrayBuffer),
-            });
+        if (invoke) {
+            try {
+                // Write to a temp file path so Rust can decode from disk.
+                const tempDir = (await invoke('get_model_dir')) as string;
+                // Sanitise the filename before joining it to the cache dir so a
+                // hostile `file.name` (e.g. "../../secret") cannot write outside it.
+                const safeName = sanitizeCacheFileName(file.name);
+                const tempPath = `${tempDir}/../cache/${safeName}`;
 
-            // Decode using the new typed repository
-            const decoded = await nativeDecodeAudioFile(tempPath);
-            if (decoded) {
-                const ctx = audioEngine.context;
-                const buffer = samplesToAudioBuffer(decoded, ctx);
-                const id = `audio-${crypto.randomUUID()}`;
-                audioBufferCache.set(id, buffer);
-                return { id, buffer };
+                // Write the file bytes
+                await invoke('write_audio_file', {
+                    path: tempPath,
+                    data: new Uint8Array(arrayBuffer),
+                });
+
+                // Decode using the new typed repository
+                const decoded = await nativeDecodeAudioFile(tempPath);
+                if (decoded) {
+                    const ctx = audioEngine.context;
+                    const buffer = samplesToAudioBuffer(decoded, ctx);
+                    const id = `audio-${crypto.randomUUID()}`;
+                    audioBufferCache.set(id, buffer);
+                    return { id, buffer };
+                }
+                // `decoded` was null/empty — native decoder produced nothing usable.
+                logger.warn(
+                    `[decodeAudioFile] Tauri decoder returned no samples for "${file.name}" — falling back to browser decoder.`
+                );
+            } catch (error) {
+                // The IPC commands or symphonia decoder threw — surface it rather
+                // than silently masking a Tauri-side decoder/misconfig failure.
+                logger.warn(
+                    `[decodeAudioFile] Tauri decoder failed for "${file.name}" — falling back to browser decoder:`,
+                    error
+                );
             }
-        } catch {
-            // Fallback to Web Audio if Tauri command fails
         }
     }
 

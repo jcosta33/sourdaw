@@ -17,6 +17,19 @@ import { logger } from '#/infra/logger/appLogger';
 /** Scalars reserved per plugin slot — sized for the largest telemetry set (Proof: 25 fields). */
 export const FLOATS_PER_SLOT = 32;
 
+/**
+ * Index of the per-slot seqlock generation counter, read/written via Atomics on
+ * {@link TelemetrySlot.seqView}. It is the last slot index (31), past every
+ * field map (Proof's highest field is 24), so it never overlaps telemetry data.
+ *
+ * A writer (worklet) bumps it to an odd value before publishing the float
+ * fields and to the next even value after; a reader samples it before and after
+ * its field read and retries while it is odd or changed, so a poll never mixes
+ * fields from two different writes (a torn snapshot — e.g. tap0 from a new block
+ * with tap5 from the old).
+ */
+export const TELEMETRY_SEQ_IDX = FLOATS_PER_SLOT - 1;
+
 const MAX_SLOTS = 64;
 const BYTES_PER_SLOT = FLOATS_PER_SLOT * Float32Array.BYTES_PER_ELEMENT;
 
@@ -101,6 +114,12 @@ export type TelemetrySlot = {
     sab: SharedArrayBuffer;
     byteOffset: number;
     view: Float32Array;
+    /**
+     * Int32 view over the same slot bytes, used with Atomics on
+     * {@link TELEMETRY_SEQ_IDX} for the seqlock. Float32 and Int32 share a 4-byte
+     * stride, so this index aligns 1:1 with the Float32 `view` indices.
+     */
+    seqView: Int32Array;
 };
 
 // ── Allocator ────────────────────────────────────────────────────────────────
@@ -128,8 +147,9 @@ class TelemetryAllocator {
         }
         const byteOffset = slotIndex * BYTES_PER_SLOT;
         const view = new Float32Array(sab, byteOffset, FLOATS_PER_SLOT);
+        const seqView = new Int32Array(sab, byteOffset, FLOATS_PER_SLOT);
         view.fill(0);
-        return { sab, byteOffset, view };
+        return { sab, byteOffset, view, seqView };
     }
 
     releaseSlot(byteOffset: number): void {

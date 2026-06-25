@@ -1,15 +1,13 @@
-type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer; channels?: number };
+type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer };
 
 export class MeteringWorkletProcessor extends AudioWorkletProcessor {
     private _sab: Float32Array | null = null;
-    private _channels = 1;
 
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<MeteringMsg>) => {
             if (event.data.type === 'init') {
                 this._sab = new Float32Array(event.data.sab);
-                this._channels = event.data.channels ?? 1;
             }
         };
     }
@@ -32,9 +30,14 @@ export class MeteringWorkletProcessor extends AudioWorkletProcessor {
             }
         }
 
-        // Calculate peak across all samples in the block
+        // Calculate the combined peak across every input channel in the block.
+        // The SAB holds a single float, so this is a mono peak readout by design
+        // (the consumer surface, getPeakLevel/getMasterPeakLevel, returns one
+        // number). Scanning all present channels — rather than a caller-supplied
+        // `channels` count against a 1-float buffer — means a hard-panned signal
+        // is not under-reported by the meter.
         let peak = 0;
-        for (let channel = 0; channel < Math.min(input.length, this._channels); channel++) {
+        for (let channel = 0; channel < input.length; channel++) {
             const data = input[channel];
             if (data) {
                 for (let index = 0; index < data.length; index++) {
