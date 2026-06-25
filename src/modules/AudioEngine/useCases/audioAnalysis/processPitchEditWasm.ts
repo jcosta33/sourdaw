@@ -1,7 +1,7 @@
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
 
-import type { PitchContour } from '#/modules/Knead/stores/kneadStore';
+import type { PitchContour } from '#/modules/Knead/stores';
 import type { PitchSegment } from './analyzePitchForClip';
 
 export function processPitchEditWasm(

@@ -60,7 +60,15 @@ export const defaultKneadState: KneadStoreState = {
 };
 
 export const kneadStore = createStore<KneadStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'knead'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'knead', {
+        // `isAnalyzing` / `analysisProgress` are transient UI flags for an
+        // in-flight analysis run. Persisting them lets a mid-analysis crash
+        // rehydrate a stuck spinner, so they are stripped before the CRDT write.
+        toCrdt: ({ activeClipId, clips, contours }) => ({ activeClipId, clips, contours }),
+        // Older documents may still carry the transient flags; force them back
+        // to their idle defaults on hydrate so a crashed run never resurfaces.
+        fromCrdt: (state) => ({ ...state, isAnalyzing: false, analysisProgress: 0 }),
+    }),
     initialData: defaultKneadState,
 });
 

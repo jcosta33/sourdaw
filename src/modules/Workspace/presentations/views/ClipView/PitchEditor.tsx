@@ -2,9 +2,9 @@ import { type ReactElement, useEffect, useRef, useState, type PointerEvent } fro
 
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
 import { commitPitchEditCommand } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
+import { analyzeClipPitch } from '#/modules/Knead/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type PitchEditorProps = {
@@ -161,7 +161,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     }, [draw]);
 
     const handleAnalyze = () => {
-        analyzePitchForClip(clipId).catch(console.error);
+        analyzeClipPitch(clipId).catch(console.error);
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {

@@ -1,7 +1,8 @@
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -81,5 +82,44 @@ describe('useAppInitialization — first-gesture engine resume', () => {
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Audio'), 'warning');
         });
+    });
+});
+
+describe('useAppInitialization — knead engine subscription teardown', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('unsubscribes the knead→engine sync on unmount instead of leaking the subscription', async () => {
+        // Regression: the mount effect discarded the unsubscribe returned by
+        // syncKneadToEngine() and had no cleanup, so the kneadStore/trackStore
+        // subscribers accumulated on every remount/HMR. The fix captures the
+        // unsubscribe and calls it from the effect's cleanup.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncKneadToEngine).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        // The subscription is registered inside the async boot sequence; wait for
+        // it to land before tearing down.
+        await waitFor(() => {
+            expect(syncKneadToEngine).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
     });
 });

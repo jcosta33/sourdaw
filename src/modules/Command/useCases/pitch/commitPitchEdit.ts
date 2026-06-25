@@ -1,7 +1,7 @@
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
-import { type PitchContour } from '#/modules/Knead/stores/kneadStore';
+import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 

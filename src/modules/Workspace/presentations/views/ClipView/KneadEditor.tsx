@@ -8,9 +8,8 @@ import { Slider } from '#/components/ui/slider';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { addDevice } from '#/modules/Arrangement/useCases';
-import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
-import { updateClipKneadState } from '#/modules/Knead/useCases';
+import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
@@ -85,7 +84,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     // Trigger real DSP pitch-analysis pipeline (WASM pitch detection)
     useEffect(() => {
         if (hasKnead && (!kneadState || kneadState.blobs.length === 0)) {
-            analyzePitchForClip(clipId)
+            analyzeClipPitch(clipId)
                 .then((outcome) => {
                     // Surface the "buffer unresolved" path so users get feedback
                     // instead of staring at an empty editor that looks like a stub.

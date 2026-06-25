@@ -138,7 +138,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             contour = JSON.parse(jsonStr) as PitchContour;
         }
 
-        // Store the result
+        // Store the raw contour for the faint background trace in the editor.
         const finalState = kneadStore.value;
         if (finalState) {
             kneadStore.set({
@@ -150,6 +150,10 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             });
         }
 
+        // Blob ingestion is the Knead side's responsibility: the Knead-side
+        // orchestrator (`analyzeClipPitch`) feeds this contour into
+        // `ingestDspAnalysis` after analysis returns, so AudioEngine never has
+        // to import the Knead use-case barrel (which would close a cycle).
         return { status: 'analyzed', contour };
     } catch (error) {
         console.error('Pitch analysis failed:', error);

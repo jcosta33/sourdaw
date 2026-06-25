@@ -153,7 +153,14 @@ class KneadProcessor extends AudioWorkletProcessor {
                     );
 
                     if (blob) {
-                        const centsDelta = blob.pitchCenterCents - blob.originalPitchCenterCents;
+                        // originalPitchCenterCents is absent from the persisted clip
+                        // blob schema (Arrangement/Project forks), so after a project
+                        // reload it rehydrates as undefined. A bare subtraction would
+                        // yield NaN and silently corrupt the shift; fall back to the
+                        // current center (zero shift) when the original is not finite.
+                        const originalCents = blob.originalPitchCenterCents;
+                        const baseCents = Number.isFinite(originalCents) ? originalCents : blob.pitchCenterCents;
+                        const centsDelta = blob.pitchCenterCents - baseCents;
                         currentShiftSemitones = centsDelta / 100;
                     }
                 }

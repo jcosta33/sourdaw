@@ -29,10 +29,22 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
+        // syncKneadToEngine subscribes to the knead/track stores and returns an
+        // unsubscribe. It is created inside the async boot sequence, so we hold it
+        // in a closure and tear it down on cleanup. `disposed` covers the race
+        // where the effect unmounts before the async work registers the
+        // subscription — in that case we unsubscribe as soon as it lands.
+        let unsubscribeKnead: (() => void) | null = null;
+        let disposed = false;
+
         void (async () => {
             try {
                 await initializeAudioEngine();
-                syncKneadToEngine();
+                unsubscribeKnead = syncKneadToEngine();
+                if (disposed) {
+                    unsubscribeKnead();
+                    unsubscribeKnead = null;
+                }
                 const transport = getTransportState();
                 if (transport) {
                     setMasterGainValue(transport.masterGain / 100);
@@ -64,6 +76,14 @@ export const useAppInitialization = (): void => {
                 notifyUser('App failed to load — please reload the page.', 'error');
             }
         })();
+
+        return () => {
+            disposed = true;
+            if (unsubscribeKnead) {
+                unsubscribeKnead();
+                unsubscribeKnead = null;
+            }
+        };
     }, []);
 
     useEffect(() => {

@@ -53,7 +53,13 @@ describe('analyzePitchForClip', () => {
             ],
         } as any);
 
+        // Seed the full KneadStoreState shape that production always carries
+        // (defaultKneadState). analyzePitchForClip writes `contours`, so a
+        // partial fixture would drop that write.
         kneadStore.set({
+            activeClipId: null,
+            clips: {},
+            contours: {},
             isAnalyzing: false,
             analysisProgress: 0,
         } as any);
@@ -173,5 +179,43 @@ describe('analyzePitchForClip', () => {
         trackStore.set({} as any);
         const result = await analyzePitchForClip('c1');
         expect(result).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
+    });
+
+    it('writes the raw contour and returns it without ingesting blobs (ingestion is the Knead side)', async () => {
+        // Blob ingestion moved to the Knead-side orchestrator `analyzeClipPitch`
+        // so AudioEngine never imports the Knead use-case barrel (cycle). This
+        // unit's job is the raw contour: it writes `contours[clipId]` for the
+        // editor's faint background trace and returns the contour for the
+        // orchestrator to ingest — it must NOT touch `clips`/`blobs` itself.
+        kneadStore.set({
+            activeClipId: null,
+            clips: {},
+            contours: {},
+            isAnalyzing: false,
+            analysisProgress: 0,
+        });
+
+        const voicedPoints = Array.from({ length: 8 }, (_, index) => ({
+            time_ms: index * 10,
+            frequency_hz: 440,
+            confidence: 0.9,
+            voiced: true,
+        }));
+        const mockContour = {
+            points: voicedPoints,
+            sample_rate: 44100,
+            hop_size: 256,
+            algorithm: 'pyin',
+        };
+        vi.mocked(invoke).mockResolvedValue(mockContour);
+        vi.mocked(listen).mockResolvedValue(vi.fn());
+
+        const result = await analyzePitchForClip('c1');
+        expect(result).toEqual({ status: 'analyzed', contour: mockContour });
+
+        // The raw contour landed for the background trace.
+        expect((kneadStore.value as any).contours?.c1).toEqual(mockContour);
+        // But this unit did not ingest blobs — `clips` is untouched.
+        expect(kneadStore.value.clips.c1).toBeUndefined();
     });
 });

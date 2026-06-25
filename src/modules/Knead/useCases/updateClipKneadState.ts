@@ -20,6 +20,14 @@ export function updateClipKneadState(clipId: string, updater: (state: KneadClipS
 
     const nextKneadState = updater(clipState);
 
+    // Short-circuit no-op updates. A reference-equal result means the caller
+    // only read the state (e.g. `s => s`); writing it anyway would seed magic
+    // defaults for a clip that had none, fire a store notification, and trigger
+    // a full per-track engine re-sync through the syncKneadToEngine subscriber.
+    if (nextKneadState === clipState) {
+        return;
+    }
+
     kneadStore.set({
         ...state,
         clips: {
