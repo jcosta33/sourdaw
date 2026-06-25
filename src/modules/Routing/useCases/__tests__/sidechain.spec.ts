@@ -4,7 +4,6 @@ import { SidechainCycleError } from '../../errors/RoutingErrors';
 import { addSidechainRoute } from '../sidechain/addSidechainRoute';
 import { getAllSidechainRoutes } from '../sidechain/getAllSidechainRoutes';
 import { getSidechainRoutesForTrack } from '../sidechain/getSidechainRoutesForTrack';
-import { getSidechainSource } from '../sidechain/getSidechainSource';
 import { removeSidechainRoute } from '../sidechain/removeSidechainRoute';
 import { setSidechainRoutes } from '../sidechain/setSidechainRoutes';
 
@@ -121,11 +120,10 @@ describe('sidechain use cases', () => {
         expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('c', 'd', 'devB');
     });
 
-    it('getSidechainRoutesForTrack and getSidechainSource read raw store', () => {
+    it('getSidechainRoutesForTrack and getAllSidechainRoutes read raw store', () => {
         mockStoreValue.value = null;
         // Sanity-check they don't throw on a missing store value.
         expect(getSidechainRoutesForTrack('nope')).toEqual([]);
-        expect(getSidechainSource('nope')).toBeNull();
         expect(getAllSidechainRoutes()).toEqual([]);
     });
 });

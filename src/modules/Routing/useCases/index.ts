@@ -6,6 +6,5 @@ export { hydrateSidechainRoutes } from './hydrateSidechainRoutes';
 export { addSidechainRoute } from './sidechain/addSidechainRoute';
 export { removeSidechainRoute } from './sidechain/removeSidechainRoute';
 export { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTrack';
-export { getSidechainSource } from './sidechain/getSidechainSource';
 export { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
 export { setSidechainRoutes } from './sidechain/setSidechainRoutes';
