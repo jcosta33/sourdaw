@@ -32,16 +32,16 @@ describe('ProofEqCurve', () => {
 
         it('peaking band peaks at its centre frequency and is flat far away', () => {
             // +6 dB peak at 1 kHz: full boost at fc, near zero an octave-decade out.
-            expect(eqBandMag(EQ_PEAK, 1000, 1000, 6, 1)).toBeCloseTo(6, 1);
-            expect(Math.abs(eqBandMag(EQ_PEAK, 50, 1000, 6, 1))).toBeLessThan(0.5);
-            expect(Math.abs(eqBandMag(EQ_PEAK, 18000, 1000, 6, 1))).toBeLessThan(0.5);
+            expect(eqBandMag({ type: EQ_PEAK, f: 1000, fc: 1000, gainDb: 6, Q: 1 })).toBeCloseTo(6, 1);
+            expect(Math.abs(eqBandMag({ type: EQ_PEAK, f: 50, fc: 1000, gainDb: 6, Q: 1 }))).toBeLessThan(0.5);
+            expect(Math.abs(eqBandMag({ type: EQ_PEAK, f: 18000, fc: 1000, gainDb: 6, Q: 1 }))).toBeLessThan(0.5);
             // Unity gain is perfectly flat everywhere.
-            expect(eqBandMag(EQ_PEAK, 1000, 1000, 0, 1)).toBe(0);
+            expect(eqBandMag({ type: EQ_PEAK, f: 1000, fc: 1000, gainDb: 0, Q: 1 })).toBe(0);
         });
 
         it('low shelf boosts the low band and leaves the high band flat (a shelf, not a bump)', () => {
-            const low = eqBandMag(EQ_LOW_SHELF, 20, 80, 6, Q);
-            const high = eqBandMag(EQ_LOW_SHELF, 18000, 80, 6, Q);
+            const low = eqBandMag({ type: EQ_LOW_SHELF, f: 20, fc: 80, gainDb: 6, Q });
+            const high = eqBandMag({ type: EQ_LOW_SHELF, f: 18000, fc: 80, gainDb: 6, Q });
             // Shelf plateau near the boost amount at low frequencies.
             expect(low).toBeGreaterThan(5);
             // High band returns to unity — NOT cut. A peaking formula would dip here.
@@ -50,8 +50,8 @@ describe('ProofEqCurve', () => {
         });
 
         it('high shelf boosts the high band and leaves the low band flat', () => {
-            const high = eqBandMag(EQ_HIGH_SHELF, 18000, 12000, 6, Q);
-            const low = eqBandMag(EQ_HIGH_SHELF, 50, 12000, 6, Q);
+            const high = eqBandMag({ type: EQ_HIGH_SHELF, f: 18000, fc: 12000, gainDb: 6, Q });
+            const low = eqBandMag({ type: EQ_HIGH_SHELF, f: 50, fc: 12000, gainDb: 6, Q });
             expect(high).toBeGreaterThan(5);
             expect(Math.abs(low)).toBeLessThan(0.5);
             expect(low).toBeGreaterThan(-0.5);
@@ -59,18 +59,18 @@ describe('ProofEqCurve', () => {
 
         it('high pass rolls off below cutoff, passes above, and is ~-3 dB at the corner', () => {
             const cutoff = 100;
-            expect(eqBandMag(EQ_HIGH_PASS, cutoff, cutoff, 0, Q)).toBeCloseTo(-3, 0);
+            expect(eqBandMag({ type: EQ_HIGH_PASS, f: cutoff, fc: cutoff, gainDb: 0, Q })).toBeCloseTo(-3, 0);
             // Passband is flat well above cutoff.
-            expect(Math.abs(eqBandMag(EQ_HIGH_PASS, 2000, cutoff, 0, Q))).toBeLessThan(0.5);
+            expect(Math.abs(eqBandMag({ type: EQ_HIGH_PASS, f: 2000, fc: cutoff, gainDb: 0, Q }))).toBeLessThan(0.5);
             // Stopband is strongly attenuated well below cutoff — a real rolloff,
             // not the flat 0 dB the old code drew for HP bands.
-            expect(eqBandMag(EQ_HIGH_PASS, 25, cutoff, 0, Q)).toBeLessThan(-15);
+            expect(eqBandMag({ type: EQ_HIGH_PASS, f: 25, fc: cutoff, gainDb: 0, Q })).toBeLessThan(-15);
         });
 
         it('low pass passes below cutoff, rolls off above, and is ~-3 dB at the corner', () => {
             const cutoff = 18000;
-            expect(eqBandMag(EQ_LOW_PASS, cutoff, cutoff, 0, Q)).toBeCloseTo(-3, 0);
-            expect(Math.abs(eqBandMag(EQ_LOW_PASS, 1000, cutoff, 0, Q))).toBeLessThan(0.5);
+            expect(eqBandMag({ type: EQ_LOW_PASS, f: cutoff, fc: cutoff, gainDb: 0, Q })).toBeCloseTo(-3, 0);
+            expect(Math.abs(eqBandMag({ type: EQ_LOW_PASS, f: 1000, fc: cutoff, gainDb: 0, Q }))).toBeLessThan(0.5);
         });
     });
 

@@ -51,7 +51,9 @@ const DESIGN_SR = 48000;
  * filters and `BiquadFilterNode.getFrequencyResponse`. Pure, allocation-light
  * (fixed locals, no arrays), safe to call per curve point.
  */
-export const eqBandMag = (type: number, f: number, fc: number, gainDb: number, Q: number): number => {
+type EqBandMagInput = { type: number; f: number; fc: number; gainDb: number; Q: number };
+
+export const eqBandMag = ({ type, f, fc, gainDb, Q }: EqBandMagInput): number => {
     // Peak/shelf at unity gain are perfectly flat; short-circuit to avoid float noise.
     if (bandUsesGain(type) && Math.abs(gainDb) < 0.01) {
         return 0;
@@ -232,7 +234,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             }
             // Peak/shelf use gain; HP/LP ignore it and draw their rolloff instead.
             for (let i = 0; i < NUM_POINTS; i++) {
-                const mag = eqBandMag(band.type, freqs[i]!, band.freq, band.gain, band.q);
+                const mag = eqBandMag({ type: band.type, f: freqs[i]!, fc: band.freq, gainDb: band.gain, Q: band.q });
                 bandMags[b]![i] = mag;
                 sumMag[i]! += mag;
             }
@@ -290,7 +292,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             // pin the dot on the curve at the cutoff (its own response there).
             const dotDb = bandUsesGain(band.type)
                 ? band.gain
-                : eqBandMag(band.type, band.freq, band.freq, band.gain, band.q);
+                : eqBandMag({ type: band.type, f: band.freq, fc: band.freq, gainDb: band.gain, Q: band.q });
             const y = gainToY(dotDb, h);
             const color = BAND_COLORS[b]!;
 
@@ -344,7 +346,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             // Hit-test against where the dot is actually drawn (HP/LP sit on the curve).
             const dotDb = bandUsesGain(band.type)
                 ? band.gain
-                : eqBandMag(band.type, band.freq, band.freq, band.gain, band.q);
+                : eqBandMag({ type: band.type, f: band.freq, fc: band.freq, gainDb: band.gain, Q: band.q });
             const by = gainToY(dotDb, height);
             const dist = Math.sqrt((mx - bx) ** 2 + (my - by) ** 2);
             if (dist < closestDist) {
