@@ -47,11 +47,16 @@ export function resolveInstrumentTrack(trackState: TrackStoreState | null): Trac
  * hosts (fermenter / grand-boule / levain). The first matching device wins,
  * matching the priority `handleNoteOff` uses. A no-op if the track has no
  * supported instrument or the strip/control is not ready.
+ *
+ * `releaseVelocity` (normalized 0..1) is the MIDI note-off velocity; it is
+ * forwarded to the Grand Boule control so the release dynamic survives the
+ * rack-routed path.
  */
 export function routeYeastNoteOffToInstrument(
     instrumentTrack: Track,
     strip: TrackChannelStrip | undefined,
     note: number,
+    releaseVelocity: number,
     emitGrandBouleEvent: (deviceId: string, midiNote: number) => void
 ): void {
     const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
@@ -63,7 +68,7 @@ export function routeYeastNoteOffToInstrument(
     const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
     if (gbDev) {
         const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
-        dn?.grandBouleControls?.noteOff(note);
+        dn?.grandBouleControls?.noteOff(note, undefined, releaseVelocity);
         emitGrandBouleEvent(gbDev.id, note);
         return;
     }
@@ -97,6 +102,8 @@ export function routeYeastNoteOffsForTargetTrack(
     }
     const strip = audioEngine.getTrackStrip(instrumentTrack.id);
     for (const note of notes) {
-        routeYeastNoteOffToInstrument(instrumentTrack, strip, note, deps.emitGrandBouleEvent);
+        // Panic / processor-removal path: these are forced offs with no MIDI
+        // release-velocity byte, so the release dynamic is 0.
+        routeYeastNoteOffToInstrument(instrumentTrack, strip, note, 0, deps.emitGrandBouleEvent);
     }
 }

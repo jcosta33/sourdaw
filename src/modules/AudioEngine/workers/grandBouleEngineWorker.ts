@@ -12,7 +12,7 @@
  *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number }
  *   → { type: 'ready' }
  *   ← { type: 'noteOn', midiNote, velocity }
- *   ← { type: 'noteOff', midiNote }
+ *   ← { type: 'noteOff', midiNote, releaseVelocity }
  *   ← { type: 'param', name, value }
  *   ← { type: 'sustain', position }
  *   ← { type: 'unaCorda', engaged }
@@ -146,7 +146,7 @@ function renderLoop(): void {
 
 type GrandBouleDispatchMsg =
     | { type: 'noteOn'; midiNote: number; velocity: number }
-    | { type: 'noteOff'; midiNote: number }
+    | { type: 'noteOff'; midiNote: number; sampleFrame?: number; releaseVelocity?: number }
     | { type: 'param'; name: string; value: number }
     | { type: 'sustain'; position: number }
     | { type: 'unaCorda'; engaged: boolean }
@@ -170,6 +170,11 @@ function dispatch(msg: GrandBouleDispatchMsg): void {
             instance.note_on(msg.midiNote, msg.velocity);
             break;
         case 'noteOff':
+            // `msg.releaseVelocity` (normalized 0..1) is threaded to this engine
+            // boundary from the live-MIDI Note Off. The current WASM ABI
+            // (`note_off(midi_note)`) does not yet consume it; it is forwarded as
+            // part of the typed message so the release dynamic is no longer
+            // dropped at the control boundary.
             instance.note_off(msg.midiNote);
             break;
         case 'param':

@@ -185,6 +185,43 @@ describe('GrandBoule midi.note* emits carry deviceId (panel-filter isolation)', 
         return emitted;
     }
 
+    it('threads release velocity from the Note Off through to engine.noteOff and the emit payload', () => {
+        // Round-2 regression: the MidiNoteOffPayload.releaseVelocity field existed
+        // but no emitter populated it and it was never passed to engine.noteOff.
+        // A non-zero release velocity supplied to handleNoteOff must reach BOTH
+        // grandBouleControls.noteOff (the engine boundary) AND the midi.noteOff
+        // event payload — not be dropped at the handler.
+        const gbTrack = { id: 'track-1', devices: [{ id: GB_DEVICE_ID, type: 'grand-boule' }] };
+        const deps = {
+            ...makeDeps(() => []),
+            getTrackStoreState: () => ({ tracks: [gbTrack], selectedTrackId: 'track-1' }),
+        } as unknown as Deps;
+        const emitted = captureEmits(deps);
+
+        const grandBouleNoteOff = vi.fn<(midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void>();
+        getTrackStrip.mockReturnValue({
+            deviceNodes: [
+                { type: 'grand-boule', deviceId: GB_DEVICE_ID, grandBouleControls: { noteOff: grandBouleNoteOff } },
+            ],
+        });
+
+        const fn = handleNoteOff._factory(deps);
+        activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0, grandBouleDeviceId: GB_DEVICE_ID });
+
+        // 96/127 — the normalized value onMidiMessage would compute from data[2]=96.
+        const releaseVelocity = 96 / 127;
+        fn(0, 60, releaseVelocity);
+
+        // Reached the engine boundary: noteOff(midiNote, sampleFrame, releaseVelocity).
+        expect(grandBouleNoteOff).toHaveBeenCalledTimes(1);
+        expect(grandBouleNoteOff).toHaveBeenCalledWith(60, undefined, releaseVelocity);
+
+        // Reached the event payload (panels / subscribers read it from here).
+        const off = emitted.find((event) => event.type === 'midi.noteOff');
+        expect(off).toBeDefined();
+        expect(off!.payload.releaseVelocity).toBe(releaseVelocity);
+    });
+
     it('non-Yeast Note Off emits midi.noteOff with the device id, not a bare midiNote', () => {
         // Plain GrandBoule track (no Yeast): the Note Off runs the
         // noteData.grandBouleDeviceId branch, which emits midi.noteOff.

@@ -4,7 +4,7 @@ import { bacteriaStore } from '#/modules/Bacteria/stores';
 import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
 import { fermenterStore } from '#/modules/Fermenter/stores';
 import { glutenStore } from '#/modules/Gluten/stores';
-import { grandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
+import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
 import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
@@ -38,7 +38,11 @@ export function resetModuleStoresToDefault(): void {
     scoringStore.set({});
     toasterStore.set({});
     levainStore.set({});
-    grandBouleStore.set(createDefaultGrandBouleState());
+    // Grand Boule keeps a Map of per-device store instances (not a single
+    // Record<deviceId, State> store), so a single `.set(default)` on the shim
+    // would leave every other device's slice intact and leak it into the next
+    // project. resetGrandBouleStores() resets every per-device store (§13.1).
+    resetGrandBouleStores();
     crustStore.set(defaultCrustState);
     kneadStore.set(defaultKneadState);
 }

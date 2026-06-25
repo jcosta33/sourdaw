@@ -124,7 +124,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
         return midiClips[midiClips.length - 1]!.id;
     }
 
-    return function handleNoteOff(channel: number, note: number): void {
+    return function handleNoteOff(channel: number, note: number, releaseVelocity: number = 0): void {
         deps.stepRecordNoteOff(note);
         const noteData = activeNotes.get(note);
         if (!noteData) {
@@ -168,13 +168,19 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
                 );
                 const strip = audioEngine.getTrackStrip(instrumentTrack.id);
                 const emitGrandBouleOff = (deviceId: string, midiNote: number): void => {
-                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote });
+                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
                 };
                 for (const evt of processedEvents) {
                     if (evt.kind.type !== 'noteOff') {
                         continue;
                     }
-                    routeYeastNoteOffToInstrument(instrumentTrack, strip, evt.kind.note, emitGrandBouleOff);
+                    routeYeastNoteOffToInstrument(
+                        instrumentTrack,
+                        strip,
+                        evt.kind.note,
+                        releaseVelocity,
+                        emitGrandBouleOff
+                    );
                 }
             }
         }
@@ -235,11 +241,12 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const dn = strip?.deviceNodes.find((data) => data.deviceId === noteData.grandBouleDeviceId);
             if (dn?.grandBouleControls) {
-                dn.grandBouleControls.noteOff(note);
+                dn.grandBouleControls.noteOff(note, undefined, releaseVelocity);
             }
             void deps.eventBus.emit('midi.noteOff', {
                 deviceId: noteData.grandBouleDeviceId,
                 midiNote: note,
+                releaseVelocity,
             });
         }
 
@@ -332,7 +339,9 @@ export const handleNoteOn = inject({
     ({ handleNoteOff, ...deps }) =>
         function handleNoteOn(channel: number, note: number, velocity: number): void {
             if (velocity === 0) {
-                handleNoteOff(channel, note);
+                // Running-status Note Off (Note On, velocity 0) carries no
+                // release-velocity byte; release dynamic defaults to 0.
+                handleNoteOff(channel, note, 0);
                 return;
             }
 
@@ -722,7 +731,9 @@ export function onMidiMessage(event: MIDIMessageEvent): void {
             handleNoteOn(channel, data[1]!, data[2] ?? 0);
             break;
         case MIDI_NOTE_OFF:
-            handleNoteOff(channel, data[1]!);
+            // data[2] is the raw release/note-off velocity (0..127); normalize to
+            // 0..1 and thread it through so the release dynamic is preserved.
+            handleNoteOff(channel, data[1]!, (data[2] ?? 0) / 127);
             break;
         case MIDI_CC:
             handleCC(channel, data[1]!, data[2] ?? 0);

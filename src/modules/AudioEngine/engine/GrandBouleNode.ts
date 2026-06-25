@@ -46,7 +46,7 @@ async function fetchGrandBouleWasm(url: string): Promise<ArrayBuffer> {
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (midiNote: number, velocity: number, sampleFrame?: number) => void;
-    noteOff: (midiNote: number, sampleFrame?: number) => void;
+    noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void;
     setParam: (name: string, value: number) => void;
     setSustain: (position: number) => void;
     setUnaCorda: (engaged: boolean) => void;
@@ -124,8 +124,8 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
                 post({ type: 'noteOn', midiNote, velocity, sampleFrame });
             }
         },
-        noteOff(midiNote: number, sampleFrame?: number) {
-            post({ type: 'noteOff', midiNote, sampleFrame });
+        noteOff(midiNote: number, sampleFrame?: number, releaseVelocity?: number) {
+            post({ type: 'noteOff', midiNote, sampleFrame, releaseVelocity: releaseVelocity ?? 0 });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

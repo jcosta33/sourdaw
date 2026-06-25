@@ -87,7 +87,16 @@ export type BuiltinDeviceNode = {
     grandBouleControls?: {
         ready: boolean;
         noteOn: (midiNote: number, velocity: number, sampleFrame?: number) => void;
-        noteOff: (midiNote: number, sampleFrame?: number) => void;
+        /**
+         * Release the note. `releaseVelocity` is the normalized (0..1) MIDI
+         * note-off velocity; it is threaded to the engine worker so the release
+         * dynamic is not dropped at the control boundary. Defaults to 0 (no
+         * release dynamic) when the controller omits it. `sampleFrame` stays the
+         * second positional arg so the shared worklet-synth scheduling path
+         * (`scheduleMidiNotes`) can call `noteOff(note, sampleFrame)` uniformly
+         * across fermenter / grand-boule / levain.
+         */
+        noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void;
         setParam: (name: string, value: number) => void;
         setSustain: (position: number) => void;
         setUnaCorda: (engaged: boolean) => void;

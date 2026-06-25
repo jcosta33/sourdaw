@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 const mocks = vi.hoisted(() => ({
@@ -103,5 +104,22 @@ describe('resetModuleStoresToDefault', () => {
         // across a New Project / project load.
         expect(mocks.grinderStoreSet).toHaveBeenCalledWith({});
         expect(mocks.grinderTelemetryStoreSet).toHaveBeenCalledWith({});
+    });
+
+    it('should clear per-device Grand Boule state so a prior project does not leak into a New Project', () => {
+        // Grand Boule is NOT mocked here: it uses a Map of per-device store
+        // instances, so the reset must reach every device's slice. Dirty a
+        // non-default device the way a loaded project would.
+        const store = createGrandBouleStore('prior-project-grand-boule');
+        store.set({ ...createDefaultGrandBouleState(), temperament: 4, activeVoices: 3 });
+        expect(store.value?.temperament).toBe(4);
+
+        resetModuleStoresToDefault();
+
+        // Before the fix, resetModuleStoresToDefault only reset the 'default'
+        // singleton, so this device's state survived into the next project.
+        expect(store.value).toEqual(createDefaultGrandBouleState());
+        expect(store.value?.temperament).toBe(0);
+        expect(store.value?.activeVoices).toBe(0);
     });
 });
