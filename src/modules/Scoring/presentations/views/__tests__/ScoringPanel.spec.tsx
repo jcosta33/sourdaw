@@ -1,30 +1,25 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
+import { getScoringState } from '../../../stores/scoringStore';
 import { ScoringPanel } from '../ScoringPanel';
 
-// Mock external dependencies
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store: unknown, _defaultValue: unknown) => {
-        // Return a mock state for scoringStore
-        return {
-            'device-123': {
-                noteName: 'A',
-                octave: 4,
-                cents: 0,
-                confidence: 0.95,
-                active: true,
-                mode: 'needle',
-                a4Reference: 440,
-                frequency: 440,
-            },
-        };
-    }),
-}));
-
-vi.mock('../../../stores/scoringStore', () => ({
-    scoringStore: { name: 'scoringStore' },
-    getScoringState: vi.fn((_deviceId: unknown) => ({
+// Shared sentinels — hoisted so both the scoringStore mock and the
+// useStoreSelector mock close over the SAME store reference, letting the selector
+// mock branch on identity.
+const { SCORING_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(() => {
+    const fixtureState: {
+        noteName: string;
+        octave: number;
+        cents: number;
+        confidence: number;
+        active: boolean;
+        mode: 'needle' | 'strobe' | 'poly';
+        a4Reference: number;
+        frequency: number;
+    } = {
         noteName: 'A',
         octave: 4,
         cents: 0,
@@ -33,7 +28,33 @@ vi.mock('../../../stores/scoringStore', () => ({
         mode: 'needle',
         a4Reference: 440,
         frequency: 440,
-    })),
+    };
+    return {
+        SCORING_STORE_SENTINEL: { name: 'scoringStore' },
+        fixtureState,
+        // Fixture record the scoringStore subscription resolves against. The
+        // component selects `instances[deviceId]`, so the mock runs the real
+        // selector against this record rather than returning a flat fixture.
+        fixtureInstances: { 'device-123': fixtureState } as Record<string, typeof fixtureState>,
+    };
+});
+
+// Mock the selector subscription. Branch on the store argument: only the
+// scoringStore sentinel resolves against `fixtureInstances`. A subscription to
+// any other store is a test bug — surface it loudly instead of silently feeding
+// the scoring fixture (which would mask a wrong-store subscription).
+vi.mock('#/infra/store/useStoreSelector', () => ({
+    useStoreSelector: vi.fn((store: unknown, selector: (state: unknown) => unknown) => {
+        if (store !== SCORING_STORE_SENTINEL) {
+            throw new Error('useStoreSelector called with an unexpected store');
+        }
+        return selector(fixtureInstances);
+    }),
+}));
+
+vi.mock('../../../stores/scoringStore', () => ({
+    scoringStore: SCORING_STORE_SENTINEL,
+    getScoringState: vi.fn((_deviceId: unknown) => ({ ...fixtureState })),
 }));
 
 vi.mock('../../../useCases/setDisplayMode', () => ({
@@ -162,5 +183,108 @@ describe('ScoringPanel', () => {
     it('should render quick read section', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Quick read')).toBeInTheDocument();
+    });
+
+    // Fix 1: subscribe to this device's instance only, not the whole record.
+    it('selects only this device instance from the scoring store', () => {
+        render(<ScoringPanel deviceId={mockDeviceId} />);
+
+        const [storeArg, selector] = vi.mocked(useStoreSelector).mock.calls[0]!;
+        // The store identity is the scoringStore sentinel (Fix 6 branch guard would
+        // have thrown otherwise), and the selector narrows to instances[deviceId].
+        expect(storeArg).toBe(SCORING_STORE_SENTINEL);
+        expect(selector(fixtureInstances)).toBe(fixtureInstances[mockDeviceId]);
+    });
+
+    // Fix 1 + Fix 6: an unknown device falls back through getScoringState rather than
+    // re-rendering the whole panel set; the selector must not return another device.
+    it('falls back to getScoringState for a device absent from the record', () => {
+        render(<ScoringPanel deviceId="missing-device" />);
+
+        const selector = vi.mocked(useStoreSelector).mock.calls[0]![1];
+        vi.mocked(getScoringState).mockClear();
+        const selected = selector(fixtureInstances);
+
+        expect(getScoringState).toHaveBeenCalledWith('missing-device');
+        expect(selected).not.toBe(fixtureInstances[mockDeviceId]);
+    });
+
+    // Fix 4: the three mode buttons expose aria-pressed reflecting the active mode.
+    it('marks the active mode button as pressed and the others as not', () => {
+        render(<ScoringPanel deviceId={mockDeviceId} />);
+
+        // Fixture mode is 'needle'.
+        expect(screen.getByRole('button', { name: 'Needle display mode' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Strobe display mode' })).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByRole('button', { name: 'Poly display mode' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // Fix 4: each tuner canvas is a labelled image for assistive tech.
+    it('labels the active display canvas for assistive tech', () => {
+        render(<ScoringPanel deviceId={mockDeviceId} />);
+
+        // Fixture mode 'needle' renders the needle canvas plus the history graph.
+        expect(screen.getByRole('img', { name: 'Needle tuner display' })).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: 'Pitch history graph' })).toBeInTheDocument();
+    });
+
+    // Fix 2: the needle display draws on a requestAnimationFrame idle loop (reading
+    // telemetry from refs) rather than synchronously inside a prop-dep useEffect. The
+    // old model ran a full clear+gradients+arcs+needle redraw on every telemetry tick.
+    // Needle mode therefore schedules its OWN rAF loop on top of the always-present
+    // history graph; poly mode (no needle) schedules strictly fewer.
+    it('drives the needle display from its own requestAnimationFrame loop', () => {
+        const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+        try {
+            // Poly mode: history graph only.
+            fixtureState.mode = 'poly';
+            const poly = render(<ScoringPanel deviceId={mockDeviceId} />);
+            const polyRafCount = rafSpy.mock.calls.length;
+            poly.unmount();
+            rafSpy.mockClear();
+
+            // Needle mode: history graph + the needle's own idle-draw loop.
+            fixtureState.mode = 'needle';
+            render(<ScoringPanel deviceId={mockDeviceId} />);
+            const needleRafCount = rafSpy.mock.calls.length;
+
+            expect(needleRafCount).toBeGreaterThan(polyRafCount);
+        } finally {
+            fixtureState.mode = 'needle';
+            rafSpy.mockRestore();
+        }
+    });
+
+    // Fix 3: the needle canvas backs its buffer with physical (dpr-scaled) pixels so
+    // it renders sharp on retina, like the strobe and history canvases.
+    it('scales the needle canvas backing buffer by devicePixelRatio', () => {
+        vi.stubGlobal('devicePixelRatio', 2);
+        try {
+            render(<ScoringPanel deviceId={mockDeviceId} />);
+            const canvas = screen.getByRole('img', { name: 'Needle tuner display' });
+            // Logical 480x200 multiplied by dpr=2.
+            expect(canvas).toHaveAttribute('width', '960');
+            expect(canvas).toHaveAttribute('height', '400');
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    // Fix 4: a polite live region announces the read after the debounce settles.
+    it('announces the current read through a debounced live region', () => {
+        vi.useFakeTimers();
+        try {
+            render(<ScoringPanel deviceId={mockDeviceId} />);
+
+            const liveRegion = screen.getByRole('status');
+            expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+            // Fixture: A4, 0 cents → "A4, sharp 0 cents" once the debounce fires.
+            act(() => {
+                vi.advanceTimersByTime(1000);
+            });
+            expect(liveRegion).toHaveTextContent('A4, sharp 0 cents');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

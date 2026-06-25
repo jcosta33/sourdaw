@@ -11,33 +11,12 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-export type DisplayMode = 'needle' | 'strobe' | 'poly';
+import { DEFAULT_TUNER_STATE, type DisplayMode, type TunerState } from '../models/ScoringState';
 
-export type TunerState = {
-    frequency: number;
-    cents: number;
-    confidence: number;
-    noteIndex: number;
-    octave: number;
-    midiNote: number;
-    noteName: string;
-    active: boolean;
-    mode: DisplayMode;
-    a4Reference: number;
-};
-
-export const DEFAULT_TUNER_STATE: TunerState = {
-    frequency: 0,
-    cents: 0,
-    confidence: 0,
-    noteIndex: 9,
-    octave: 4,
-    midiNote: 69,
-    noteName: 'A',
-    active: false,
-    mode: 'needle',
-    a4Reference: 440,
-};
+// Re-exported here so existing importers of this store path keep resolving the
+// canonical definitions from ../models/ScoringState (no duplicate, no drift).
+export { DEFAULT_TUNER_STATE };
+export type { DisplayMode, TunerState };
 
 type ScoringInstances = Record<string, TunerState>;
 

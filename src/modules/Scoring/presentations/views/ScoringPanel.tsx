@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Activity, Waves } from 'lucide-react';
 
@@ -6,7 +6,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
 import { scoringStore, getScoringState, type DisplayMode } from '../../stores/scoringStore';
@@ -20,6 +20,25 @@ const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> =
 ];
 
 const GUITAR_STRINGS = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'] as const;
+
+const ANNOUNCE_DEBOUNCE_MS = 750;
+
+/**
+ * Returns the latest `message` only after it has stayed unchanged for
+ * ANNOUNCE_DEBOUNCE_MS. Telemetry pushes note/cents updates ~100/s; feeding every
+ * tick straight into an aria-live region would flood assistive tech. Debouncing
+ * announces a stable read instead of a blur of intermediate values.
+ */
+function useDebouncedAnnouncement(message: string): string {
+    const [announced, setAnnounced] = useState(message);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setAnnounced(message), ANNOUNCE_DEBOUNCE_MS);
+        return () => clearTimeout(timer);
+    }, [message]);
+
+    return announced;
+}
 
 function SectionCard({
     title,
@@ -45,8 +64,9 @@ function SectionCard({
 }
 
 export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    const allInstances = useStore(scoringStore, {});
-    const state = allInstances?.[deviceId] ?? getScoringState(deviceId);
+    // Subscribe to this device's instance only — a whole-record subscription would
+    // re-render every mounted ScoringPanel on any device's telemetry tick (~100/s).
+    const state = useStoreSelector(scoringStore, (instances) => instances?.[deviceId] ?? getScoringState(deviceId));
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
     const absoluteCents = Math.abs(cents);
@@ -78,8 +98,19 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         displayComponent = <StrobeDisplay cents={cents} active={active} />;
     }
 
+    // Debounced live announcement of the current read. Telemetry ticks ~100/s; an
+    // un-debounced aria-live region would flood assistive tech with note/cents
+    // updates. Settle for ANNOUNCE_DEBOUNCE_MS of quiet before announcing.
+    const liveMessage = active
+        ? `${noteName}${octave}, ${cents >= 0 ? 'sharp' : 'flat'} ${Math.abs(cents).toFixed(0)} cents`
+        : 'Waiting for pitch';
+    const announced = useDebouncedAnnouncement(liveMessage);
+
     return (
         <div className="scoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
+            <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+                {announced}
+            </div>
             <aside className="flex h-full w-[232px] shrink-0 flex-col gap-3 overflow-y-auto pr-1">
                 <SectionCard title="Display" detail={mode}>
                     <div>
@@ -95,6 +126,8 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 <button
                                     key={entry.id}
                                     type="button"
+                                    aria-pressed={selected}
+                                    aria-label={`${entry.label} display mode`}
                                     className={`scoring-window flex items-center justify-between gap-3 px-3 py-2 text-left transition-all ${
                                         selected
                                             ? 'border-white/16 bg-white/[0.03]'
@@ -269,108 +302,145 @@ const NeedleDisplay = ({
     confidence: number;
 }): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const centsRef = useRef(cents);
+    const activeRef = useRef(active);
+    const confidenceRef = useRef(confidence);
+    const rafRef = useRef(0);
+
+    useEffect(() => {
+        centsRef.current = cents;
+        activeRef.current = active;
+        confidenceRef.current = confidence;
+    }, [cents, active, confidence]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
-        const width = canvas.width;
-        const height = canvas.height;
-        ctx.clearRect(0, 0, width, height);
+        // Handle high-DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        const logicalWidth = 480;
+        const logicalHeight = 200;
+        canvas.width = logicalWidth * dpr;
+        canvas.height = logicalHeight * dpr;
+        ctx.scale(dpr, dpr);
 
-        const background = ctx.createRadialGradient(
-            width / 2,
-            height * 0.85,
-            0,
-            width / 2,
-            height * 0.85,
-            height * 0.9
-        );
-        background.addColorStop(0, 'rgba(12,14,18,0.3)');
-        background.addColorStop(1, 'rgba(4,4,6,0)');
-        ctx.fillStyle = background;
-        ctx.fillRect(0, 0, width, height);
+        const draw = (): void => {
+            const currentCents = centsRef.current;
+            const currentActive = activeRef.current;
+            const currentConfidence = confidenceRef.current;
 
-        const centerX = width / 2;
-        const centerY = height * 0.85;
-        const radius = height * 0.7;
-        const maxAngle = Math.PI * 0.4;
+            const width = logicalWidth;
+            const height = logicalHeight;
+            ctx.clearRect(0, 0, width, height);
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, Math.PI + maxAngle, -maxAngle, false);
-        ctx.stroke();
+            const background = ctx.createRadialGradient(
+                width / 2,
+                height * 0.85,
+                0,
+                width / 2,
+                height * 0.85,
+                height * 0.9
+            );
+            background.addColorStop(0, 'rgba(12,14,18,0.3)');
+            background.addColorStop(1, 'rgba(4,4,6,0)');
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, width, height);
 
-        const zones = [
-            { range: 2, color: 'rgba(52,220,160,0.18)' },
-            { range: 10, color: 'rgba(255,210,30,0.12)' },
-            { range: 50, color: 'rgba(255,100,100,0.08)' },
-        ];
+            const centerX = width / 2;
+            const centerY = height * 0.85;
+            const radius = height * 0.7;
+            const maxAngle = Math.PI * 0.4;
 
-        for (const zone of zones) {
-            const zoneAngle = (zone.range / 50) * maxAngle;
-            ctx.fillStyle = zone.color;
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
-            ctx.arc(centerX, centerY, radius + 5, Math.PI * 1.5 - zoneAngle, Math.PI * 1.5 + zoneAngle, false);
-            ctx.closePath();
-            ctx.fill();
-        }
+            ctx.arc(centerX, centerY, radius, Math.PI + maxAngle, -maxAngle, false);
+            ctx.stroke();
 
-        ctx.save();
-        ctx.shadowColor = 'rgba(52,220,160,0.4)';
-        ctx.shadowBlur = 6;
-        ctx.strokeStyle = 'rgba(52,220,160,0.6)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        const topX = centerX;
-        const topY = centerY - radius - 8;
-        ctx.moveTo(topX, topY);
-        ctx.lineTo(topX, topY + 12);
-        ctx.stroke();
-        ctx.restore();
+            const zones = [
+                { range: 2, color: 'rgba(52,220,160,0.18)' },
+                { range: 10, color: 'rgba(255,210,30,0.12)' },
+                { range: 50, color: 'rgba(255,100,100,0.08)' },
+            ];
 
-        if (active) {
-            const angle = Math.PI * 1.5 + (cents / 50) * maxAngle;
-            const needleLength = radius * 0.9;
-            const needleX = centerX + Math.cos(angle) * needleLength;
-            const needleY = centerY + Math.sin(angle) * needleLength;
+            for (const zone of zones) {
+                const zoneAngle = (zone.range / 50) * maxAngle;
+                ctx.fillStyle = zone.color;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius + 5, Math.PI * 1.5 - zoneAngle, Math.PI * 1.5 + zoneAngle, false);
+                ctx.closePath();
+                ctx.fill();
+            }
 
             ctx.save();
-            ctx.shadowColor = 'rgba(255,255,255,0.25)';
+            ctx.shadowColor = 'rgba(52,220,160,0.4)';
             ctx.shadowBlur = 6;
-            ctx.strokeStyle = `rgba(255,255,255,${0.35 + confidence * 0.65})`;
+            ctx.strokeStyle = 'rgba(52,220,160,0.6)';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
-            ctx.lineTo(needleX, needleY);
+            const topX = centerX;
+            const topY = centerY - radius - 8;
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(topX, topY + 12);
             ctx.stroke();
             ctx.restore();
 
-            ctx.save();
-            ctx.shadowColor = 'rgba(255,255,255,0.5)';
-            ctx.shadowBlur = 8;
-            ctx.fillStyle = 'white';
+            if (currentActive) {
+                const angle = Math.PI * 1.5 + (currentCents / 50) * maxAngle;
+                const needleLength = radius * 0.9;
+                const needleX = centerX + Math.cos(angle) * needleLength;
+                const needleY = centerY + Math.sin(angle) * needleLength;
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(255,255,255,0.25)';
+                ctx.shadowBlur = 6;
+                ctx.strokeStyle = `rgba(255,255,255,${0.35 + currentConfidence * 0.65})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.lineTo(needleX, needleY);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(255,255,255,0.5)';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(needleX, needleY, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
             ctx.beginPath();
-            ctx.arc(needleX, needleY, 3, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
             ctx.fill();
-            ctx.restore();
-        }
 
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
-        ctx.fill();
-    }, [cents, active, confidence]);
+            rafRef.current = requestAnimationFrame(draw);
+        };
 
-    return <canvas ref={canvasRef} width={480} height={200} className="h-full w-full" />;
+        rafRef.current = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(rafRef.current);
+    }, []);
+
+    return (
+        <canvas
+            ref={canvasRef}
+            style={{ width: 480, height: 200 }}
+            className="h-full w-full"
+            role="img"
+            aria-label="Needle tuner display"
+        />
+    );
 };
 
 const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): ReactElement => {
@@ -481,7 +551,15 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
         return () => cancelAnimationFrame(rafRef.current);
     }, []);
 
-    return <canvas ref={canvasRef} style={{ width: 480, height: 180 }} className="h-full w-full" />;
+    return (
+        <canvas
+            ref={canvasRef}
+            style={{ width: 480, height: 180 }}
+            className="h-full w-full"
+            role="img"
+            aria-label="Strobe tuner display"
+        />
+    );
 };
 
 const HISTORY_GRAPH_WINDOW = 300;
@@ -556,10 +634,14 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
             ctx.stroke();
 
             if (historyLength >= 2) {
+                // Single shadowed trace of the pitch history. A previous revision walked
+                // this same moveTo/lineTo path twice (a shadowed pass then a plain pass),
+                // doubling per-frame path cost for a barely-perceptible second stroke; the
+                // shadowed pass alone carries the glow and the visible line.
                 ctx.save();
                 ctx.shadowColor = 'rgba(130,200,220,0.3)';
                 ctx.shadowBlur = 4;
-                ctx.strokeStyle = 'rgba(140,200,220,0.65)';
+                ctx.strokeStyle = 'rgba(140,200,220,0.7)';
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 for (let index = 0; index < historyLength; index += 1) {
@@ -573,20 +655,6 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
                 }
                 ctx.stroke();
                 ctx.restore();
-
-                ctx.strokeStyle = 'rgba(140,200,220,0.7)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                for (let index = 0; index < historyLength; index += 1) {
-                    const x = (index / HISTORY_GRAPH_WINDOW) * width;
-                    const y = height / 2 - (readHistory(index) / 50) * (height / 2);
-                    if (index === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                }
-                ctx.stroke();
             }
 
             rafRef.current = requestAnimationFrame(draw);
@@ -596,7 +664,15 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
         return () => cancelAnimationFrame(rafRef.current);
     }, []);
 
-    return <canvas ref={canvasRef} width={720} height={56} className="h-full w-full" />;
+    return (
+        <canvas
+            ref={canvasRef}
+            style={{ width: 720, height: 56 }}
+            className="h-full w-full"
+            role="img"
+            aria-label="Pitch history graph"
+        />
+    );
 };
 
 const PolyDisplay = (): ReactElement => {
