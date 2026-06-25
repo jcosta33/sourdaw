@@ -59,10 +59,18 @@ export function analyzeMix(): MixAnalysis {
     const tracks = state.tracks.filter((time) => !time.muted && time.kind !== 'folder');
     const trackCount = tracks.length || 1;
 
+    // `track.gain` is a linear amplitude (default 0.8, fed straight into a Web
+    // Audio `gainNode.gain`), not a level in dB. Convert to dBFS via
+    // 20·log10(gain) before writing the dBFS-contract `rmsDb`/`peakDb` fields
+    // (MixComparisonTypes documents both as dBFS, read as dB by compareMixes and
+    // generateLessons). The −6/−1 dB offsets approximate the RMS/peak headroom
+    // below the average fader level.
     const gains = tracks.map((time) => time.gain ?? 0);
     const avgGain = gains.reduce((alpha, b) => alpha + b, 0) / trackCount;
-    const rmsDb = Math.max(-60, avgGain - 6);
-    const peakDb = Math.max(-60, avgGain - 1);
+    // Floor the linear gain so silence (0) maps to the −60 dBFS clamp instead of −∞.
+    const avgGainDb = 20 * Math.log10(Math.max(avgGain, 1e-3));
+    const rmsDb = Math.max(-60, avgGainDb - 6);
+    const peakDb = Math.max(-60, avgGainDb - 1);
     const lufs = rmsDb - 3;
 
     const frequencyProfile = estimateFrequencyProfile(tracks);

@@ -1,5 +1,6 @@
-import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement/useCases';
+import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 
@@ -85,6 +86,31 @@ function freqToMidiPitch(freq: number): number {
     return Math.round(69 + 12 * Math.log2(freq / 440));
 }
 
+/**
+ * Resolve the MIDI track to write into. If `targetTrackId` is already a MIDI track its
+ * id is returned unchanged. Otherwise a new MIDI track is created by **dispatching** an
+ * `addTrack` AppAction (not a direct `addTrack(...)` store mutation) so the creation is
+ * recorded on the undo history — undoing the conversion then also removes the track it
+ * created, instead of leaving an orphan behind. Returns the new track's id, or `null` if
+ * creation failed.
+ *
+ * The `addTrack` handler mutates the track store synchronously inside `executeAppAction`
+ * (before its returned promise resolves), so the new track is visible to the
+ * `getAllTracks()` read below without awaiting; the promise carries only the undo /
+ * history bookkeeping, which we intentionally let settle on the microtask queue.
+ */
+function resolveMidiTrackId(targetTrackId: string, trackName: string): string | null {
+    const existingTrack = getAllTracks().find((track) => track.id === targetTrackId);
+    if (existingTrack && existingTrack.kind === 'midi') {
+        return targetTrackId;
+    }
+
+    const idsBefore = new Set(getAllTracks().map((track) => track.id));
+    void executeAppAction({ type: 'addTrack', payload: { name: trackName, kind: 'midi' } });
+    const created = getAllTracks().find((track) => !idsBefore.has(track.id) && track.kind === 'midi');
+    return created?.id ?? null;
+}
+
 export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minIntervalSec: number): DetectedOnset[] {
     const channelData = buffer.getChannelData(0);
     const sampleRate = buffer.sampleRate;
@@ -126,10 +152,10 @@ export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minInterv
             flux[index]! >= flux[index + 1]! &&
             index - lastOnsetFrame >= minIntervalFrames
         ) {
-            const timeSec = ((index + 1) * HOP_SIZE) / sampleRate;
+            const timeSec = (index * HOP_SIZE) / sampleRate;
             onsets.push({
                 timeSec,
-                amplitude: energies[index + 1]!,
+                amplitude: energies[index]!,
             });
             lastOnsetFrame = index;
         }
@@ -144,7 +170,12 @@ function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targ
     const windowSamples = FRAME_SIZE * 2;
 
     return onsets.map((onset) => {
-        const startSample = Math.max(0, Math.floor(onset.timeSec * sampleRate));
+        const onsetSample = Math.max(0, Math.floor(onset.timeSec * sampleRate));
+        // Slide the window left so a full `windowSamples` span fits inside the clip;
+        // onsets near the right edge would otherwise leave estimatePitch with a silently
+        // shrunk window, yielding an unreliable lag (or tripping its `actual < 64` guard).
+        const maxStart = Math.max(0, channelData.length - windowSamples);
+        const startSample = Math.min(onsetSample, maxStart);
         const freq = estimatePitch(channelData, startSample, windowSamples, sampleRate);
 
         if (freq > 0) {
@@ -187,14 +218,9 @@ export function audioToMidi(options: AudioToMidiOptions): void {
         return;
     }
 
-    let midiTrackId = trackId;
-    const existingTrack = getAllTracks().find((time) => time.id === trackId);
-    if (!existingTrack || existingTrack.kind !== 'midi') {
-        const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: 'midi' });
-        if (!newTrack) {
-            return;
-        }
-        midiTrackId = newTrack.id;
+    const midiTrackId = resolveMidiTrackId(trackId, `${clip.name} (MIDI)`);
+    if (!midiTrackId) {
+        return;
     }
 
     const clipStartBeat = clip.startBeat;

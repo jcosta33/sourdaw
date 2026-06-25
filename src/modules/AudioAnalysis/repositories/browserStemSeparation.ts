@@ -27,8 +27,20 @@ type OrtSession = {
 // loads); a full HMR-safe fix requires porting the session into a
 // persistent store, but the 1-line scope reduction at least hides the
 // binding from external writers.
-const ortSession: { cached: OrtSession | null; ort: typeof import('onnxruntime-web') | null } = {
+//
+// `pending` memoizes the *in-flight* load promise, not just the resolved
+// session. Without it, two concurrent first calls both observe a null
+// session and each download the ~235MB model + create a second
+// InferenceSession (OOM hazard). With it, the first caller stores the
+// promise and every concurrent caller awaits that one load. On failure
+// `pending` is cleared so a later call can retry.
+const ortSession: {
+    cached: OrtSession | null;
+    pending: Promise<OrtSession> | null;
+    ort: typeof import('onnxruntime-web') | null;
+} = {
     cached: null,
+    pending: null,
     ort: null,
 };
 
@@ -100,13 +112,11 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
     }
 
     /**
-     * Create or return a cached ONNX inference session.
+     * Download the model and build a fresh ONNX inference session. This is
+     * the expensive (~235MB download + session create) work that must run
+     * at most once; `getSession` guards against concurrent invocations.
      */
-    async function getSession(): Promise<OrtSession> {
-        if (ortSession.cached) {
-            return ortSession.cached;
-        }
-
+    async function loadSession(): Promise<OrtSession> {
         // §152.2 — cache the onnxruntime-web namespace as well so the
         // second dynamic import in separateStemsBrowser below becomes a
         // closure-scope hit instead of another import() microtask.
@@ -130,9 +140,35 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         });
 
         // eslint-disable-next-line sourdaw/no-type-assertion-escape -- OrtSession is a structural subset of onnxruntime InferenceSession; run() return type differs only in index signature variance
-        ortSession.cached = session as unknown as OrtSession;
+        const ortLikeSession = session as unknown as OrtSession;
         logger.info('[Browser Stems] Session ready');
-        return ortSession.cached;
+        return ortLikeSession;
+    }
+
+    /**
+     * Create or return a cached ONNX inference session.
+     *
+     * Concurrent first callers must not each download the 235MB model and
+     * build a second session (OOM hazard). We memoize the in-flight load
+     * promise so every caller awaits a single `loadSession()`; once it
+     * resolves the result is promoted to `cached` and the promise is
+     * cleared. If the load rejects, `pending` is reset so a later call can
+     * retry instead of permanently caching the failure.
+     */
+    async function getSession(): Promise<OrtSession> {
+        if (ortSession.cached) {
+            return ortSession.cached;
+        }
+
+        ortSession.pending ??= loadSession().catch((error: unknown) => {
+            ortSession.pending = null;
+            throw error;
+        });
+
+        const session = await ortSession.pending;
+        ortSession.cached = session;
+        ortSession.pending = null;
+        return session;
     }
 
     return async function separateStemsBrowser(

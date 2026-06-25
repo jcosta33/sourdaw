@@ -42,14 +42,35 @@ export type PolyphonicAudioToMidiResult = {
 // lives behind a single mutation surface and cannot be reassigned from
 // outside this file. The previous `let basicPitchModel` was an exported
 // mutable binding pattern we've been systematically retiring.
-const modelHolder: { instance: BasicPitch | null } = { instance: null };
+//
+// `pending` memoizes the in-flight *load* promise, not just the resolved
+// instance. `BasicPitch`'s constructor is synchronous today, so callers
+// cannot interleave between the null-check and the assignment; but the
+// model weights it kicks off internally (and any future async resolution
+// of the model URL) make a single coalesced load the safe shape — every
+// concurrent caller awaits one `BasicPitch`, never building a second.
+const modelHolder: { instance: BasicPitch | null; pending: Promise<BasicPitch> | null } = {
+    instance: null,
+    pending: null,
+};
 
-function getBasicPitchModel(): BasicPitch {
-    if (!modelHolder.instance) {
-        logger.info(`[Basic Pitch] Loading model from ${basicPitchModelUrl}`);
-        modelHolder.instance = new BasicPitch(basicPitchModelUrl);
+async function getBasicPitchModel(): Promise<BasicPitch> {
+    if (modelHolder.instance) {
+        return modelHolder.instance;
     }
-    return modelHolder.instance;
+
+    modelHolder.pending ??= (async (): Promise<BasicPitch> => {
+        logger.info(`[Basic Pitch] Loading model from ${basicPitchModelUrl}`);
+        return new BasicPitch(basicPitchModelUrl);
+    })().catch((error: unknown) => {
+        modelHolder.pending = null;
+        throw error;
+    });
+
+    const instance = await modelHolder.pending;
+    modelHolder.instance = instance;
+    modelHolder.pending = null;
+    return instance;
 }
 
 // ── Core conversion ─────────────────────────────────────────────────────
@@ -87,7 +108,7 @@ export async function polyphonicAudioToMidi(
     );
 
     // Run the neural network inference
-    const model = getBasicPitchModel();
+    const model = await getBasicPitchModel();
     let frames: number[][] = [];
     let onsets: number[][] = [];
     let contours: number[][] = [];
