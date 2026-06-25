@@ -25,6 +25,12 @@ export type LevainState = {
     uiLevel: LevainUiLevel;
     engineReady: boolean;
     sampleLoadProgress: number | null;
+    /**
+     * Non-null when the most recent sample load failed. Surfaced in the panel.
+     * Optional so existing `LevainState` literals (e.g. loading-spinner defaults)
+     * that predate this field still satisfy the type without being updated.
+     */
+    sampleLoadError?: string | null;
     activeVoices: number;
     peakL: number;
     peakR: number;
@@ -36,6 +42,7 @@ export const defaultLevainState: LevainState = {
     uiLevel: 1,
     engineReady: false,
     sampleLoadProgress: null,
+    sampleLoadError: null,
     activeVoices: 0,
     peakL: 0,
     peakR: 0,
@@ -57,13 +64,21 @@ export function getLevainState(deviceId: string): LevainState {
 // Engine sync is handled exclusively in useCases/levainParamBridge.ts.
 // ---------------------------------------------------------------------------
 
+// Mutators no-op when the device has no registered entry. Seeding a default
+// entry here would resurrect a phantom instance after unregisterLevainDevice
+// (e.g. a rAF-batched param flush arriving post-teardown). Registration is the
+// only place that creates an entry (see registerLevainDevice).
+
 export function setLevainParam<TKey extends keyof LevainPatch>(
     deviceId: string,
     key: TKey,
     value: LevainPatch[TKey]
 ): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
     levainStore.set({
         ...instances,
         [deviceId]: {
@@ -75,13 +90,32 @@ export function setLevainParam<TKey extends keyof LevainPatch>(
 
 export function setSampleLoadProgress(deviceId: string, progress: number | null): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
-    levainStore.set({ ...instances, [deviceId]: { ...state, sampleLoadProgress: progress } });
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
+    // Starting a fresh load (progress becomes a number) clears any prior error.
+    const sampleLoadError = progress === null ? state.sampleLoadError : null;
+    levainStore.set({ ...instances, [deviceId]: { ...state, sampleLoadProgress: progress, sampleLoadError } });
+}
+
+export function setSampleLoadError(deviceId: string, error: string | null): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
+    // A failed load leaves no in-flight progress; clear the bar so the panel
+    // shows the error instead of a stale percentage.
+    levainStore.set({ ...instances, [deviceId]: { ...state, sampleLoadError: error, sampleLoadProgress: null } });
 }
 
 export function setCurrentArticulation(deviceId: string, articulation: ArticulationType): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
     const entry = state.patch.articulations.find((a) => a.type === articulation);
     levainStore.set({
         ...instances,
@@ -95,7 +129,10 @@ export function setCurrentArticulation(deviceId: string, articulation: Articulat
 
 export function setMacro(deviceId: string, index: number, value: number): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
     if (index >= 0 && index < 8) {
         const macros = [...state.patch.macros] as LevainPatch['macros'];
         macros[index] = value;
@@ -115,11 +152,18 @@ export function setMacro(deviceId: string, index: number, value: number): void {
  */
 export function updateMicPosition(deviceId: string, index: number, updates: Partial<MicPositionState>): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
     if (index >= 0 && index < state.patch.micPositions.length) {
+        // Clamp volume to its nominal [0,1] range at the store boundary so the
+        // fader's forward (volume→dB) and inverse (dB→volume) scaling agree.
+        const clampedUpdates =
+            updates.volume === undefined ? updates : { ...updates, volume: Math.max(0, Math.min(1, updates.volume)) };
         const micPositions = state.patch.micPositions.map((mic, i) => {
             if (i === index) {
-                return { ...mic, ...updates };
+                return { ...mic, ...clampedUpdates };
             }
             return mic;
         });
@@ -135,6 +179,9 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
 
 export function setEngineReady(deviceId: string, ready: boolean): void {
     const instances = levainStore.value ?? {};
-    const state = instances[deviceId] ?? defaultLevainState;
+    const state = instances[deviceId];
+    if (!state) {
+        return;
+    }
     levainStore.set({ ...instances, [deviceId]: { ...state, engineReady: ready } });
 }

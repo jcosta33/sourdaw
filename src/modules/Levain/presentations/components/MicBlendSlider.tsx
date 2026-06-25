@@ -87,10 +87,17 @@ export const MicBlendSlider = ({
         );
     }
 
-    // Compact: single Close/Room blend knob
+    // Compact: single Close/Room blend knob.
+    // Close is mic index 0; Room is the 'room'-type position (index 2 in the
+    // default patch) — the same mic the Space macro drives, so the two controls
+    // agree instead of fighting over a different room mic.
     const closeVol = micPositions[0]?.volume ?? 0.8;
     const roomVol = micPositions.length > 2 ? (micPositions[2]?.volume ?? 0.3) : 0.3;
-    const blend = roomVol / (closeVol + roomVol + 0.001);
+    const total = closeVol + roomVol;
+    // Guard the zero case explicitly: when both mics are silent there is no
+    // meaningful blend, so sit at the neutral midpoint rather than biasing to
+    // Room (the old `+0.001` fudge collapsed to full-Room whenever closeVol was 0).
+    const blend = total === 0 ? 0.5 : roomVol / total;
 
     return (
         <div className="space-y-1">
@@ -99,7 +106,11 @@ export const MicBlendSlider = ({
                 <RotaryKnob
                     value={blend}
                     onChange={(v) => {
-                        const newCloseVol = 1.0 - v * 0.5;
+                        // Symmetric crossfade so the knob round-trips: with
+                        // close = 1 - v and room = v, blend = v/((1-v)+v) = v.
+                        // The old `1 - v*0.5` close coupling pulled Close down as
+                        // Room rose, so reading `blend` back never matched `v`.
+                        const newCloseVol = 1.0 - v;
                         const newRoomVol = v;
                         onUpdateMicPosition(0, { volume: newCloseVol });
                         onSendMicParam(0, 'volume', newCloseVol);

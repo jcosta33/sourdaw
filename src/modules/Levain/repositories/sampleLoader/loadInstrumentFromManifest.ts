@@ -66,15 +66,20 @@ export const DEFAULT_LOD: SampleLodConfig = {
  * @param nodePort The worklet node's MessagePort
  * @param lod LOD configuration for memory management
  * @param onProgress Optional progress callback (0-1)
+ * @param signal Optional abort signal. When a newer load supersedes this one,
+ *   the caller aborts it; this loader then bails without posting `clearZones`,
+ *   `addSample`, or `buildZoneMap`, so the superseded load never overwrites the
+ *   worklet zone map the newer load built.
  */
 export async function loadInstrumentFromManifest(
     manifestUrl: string,
     basePath: string,
     nodePort: MessagePort,
     lod: SampleLodConfig = DEFAULT_LOD,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    signal?: AbortSignal
 ): Promise<void> {
-    const response = await fetch(manifestUrl);
+    const response = await fetch(manifestUrl, signal ? { signal } : undefined);
     if (!response.ok) {
         throw new Error(`Failed to fetch manifest: ${manifestUrl} (${response.status})`);
     }
@@ -101,6 +106,12 @@ export async function loadInstrumentFromManifest(
 
     if (lod.maxMics > 0) {
         numMics = Math.min(numMics, lod.maxMics);
+    }
+
+    // A newer load may have superseded this one while the manifest fetched.
+    // Bail before clearing zones so we don't wipe the newer load's map.
+    if (signal?.aborted) {
+        return;
     }
 
     // Send clear command before adding new samples.
@@ -141,6 +152,14 @@ export async function loadInstrumentFromManifest(
             }
         })
     );
+
+    // Decoding the (large) sample banks is where most time passes, so re-check
+    // for supersession before streaming samples and the final zone map into the
+    // worklet. Without this, a slow superseded load that already cleared zones
+    // could still win by posting its stale map after the newer load's.
+    if (signal?.aborted) {
+        return;
+    }
 
     for (const result of results) {
         if (result.status === 'rejected') {

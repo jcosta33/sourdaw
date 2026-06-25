@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { Cpu, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -10,9 +10,8 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 
-import { type InstrumentId, createDefaultPatch } from '../../models/LevainPatch';
-import { type LevainState } from '../../stores/levainStore';
-import { levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
+import { type InstrumentId } from '../../models/LevainPatch';
+import { defaultLevainState, levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
 import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicParamToEngine';
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../useCases/levainParamBridge/setMacroWithAudio';
@@ -66,24 +65,23 @@ const SectionCard = ({
     </DawPluginSectionCard>
 );
 
-const defaultLevainState: LevainState = {
-    patch: createDefaultPatch('violin-1'),
-    uiLevel: 1,
-    engineReady: false,
-    sampleLoadProgress: null,
-    activeVoices: 0,
-    peakL: 0,
-    peakR: 0,
-    currentArticulationDisplay: 'Long',
-};
-
 export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const instances = useStore(levainStore, {});
     const state = instances[deviceId] ?? defaultLevainState;
     const [search, setSearch] = useState('');
     const [family, setFamily] = useState('All');
 
-    const { patch, activeVoices, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
+    const { patch, currentArticulationDisplay: currentArt, engineReady, sampleLoadProgress } = state;
+    const sampleLoadError = state.sampleLoadError ?? null;
+
+    // Load readout: a failure surfaces as an explicit error (not a synthetic
+    // 100% then "Ready"); otherwise show the live percentage or idle "Ready".
+    let loadValue = 'Ready';
+    if (sampleLoadError !== null) {
+        loadValue = 'Error';
+    } else if (sampleLoadProgress !== null) {
+        loadValue = `${Math.round(sampleLoadProgress * 100)}%`;
+    }
 
     const instLabel =
         INSTRUMENTS.find((instrument) => instrument.id === patch.instrumentId)?.label ?? patch.instrumentId;
@@ -107,7 +105,14 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 </div>
                                 <div className="text-[15px] font-semibold text-foreground">Levain</div>
                             </div>
-                            <DawPluginLed tone="amber">{engineReady ? 'Ready' : 'Loading'}</DawPluginLed>
+                            <DawPluginLed
+                                tone="amber"
+                                role="status"
+                                aria-live="polite"
+                                aria-label={engineReady ? 'Engine ready' : 'Engine loading'}
+                            >
+                                {engineReady ? 'Ready' : 'Loading'}
+                            </DawPluginLed>
                         </div>
 
                         <label className="levain-window flex items-center gap-2 px-3 py-2">
@@ -121,7 +126,11 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                         </label>
 
-                        <div className="flex flex-wrap gap-1.5">
+                        <div
+                            className="flex flex-wrap gap-1.5"
+                            role="radiogroup"
+                            aria-label="Filter instruments by family"
+                        >
                             {FAMILIES.map((entry) => {
                                 const active = family === entry;
                                 return (
@@ -130,6 +139,8 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         active={active}
                                         tone="amber"
                                         size="sm"
+                                        role="radio"
+                                        aria-checked={active}
                                         onClick={() => setFamily(entry)}
                                     >
                                         {entry}
@@ -145,6 +156,8 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     <button
                                         key={instrument.id}
                                         type="button"
+                                        aria-pressed={active}
+                                        aria-current={active ? 'true' : undefined}
                                         className={`levain-window flex flex-col items-start gap-1 px-3 py-2 text-left transition-all ${
                                             active
                                                 ? 'border-white/18 bg-white/[0.03]'
@@ -160,9 +173,6 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                                 {instrument.family}
                                             </span>
                                         </div>
-                                        <span className="text-[9px] leading-4 text-muted-foreground">
-                                            {instrument.id.replaceAll('-', ' ')}
-                                        </span>
                                     </button>
                                 );
                             })}
@@ -199,12 +209,6 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             />
                             <DawPluginMetricTile
                                 className="levain-window"
-                                label="Voices"
-                                value={`${activeVoices}`}
-                                detail="Live active voices"
-                            />
-                            <DawPluginMetricTile
-                                className="levain-window"
                                 label="Legato"
                                 value={patch.legato.enabled ? 'On' : 'Off'}
                                 detail="Transition engine"
@@ -212,10 +216,13 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <DawPluginMetricTile
                                 className="levain-window"
                                 label="Load"
-                                value={
-                                    sampleLoadProgress === null ? 'Ready' : `${Math.round(sampleLoadProgress * 100)}%`
+                                role="status"
+                                aria-live="polite"
+                                value={loadValue}
+                                valueClassName={
+                                    sampleLoadError !== null ? 'text-[var(--color-state-danger)]' : undefined
                                 }
-                                detail="Sample stream"
+                                detail={sampleLoadError !== null ? sampleLoadError : 'Sample stream'}
                             />
                         </div>
                     </div>
@@ -346,10 +353,6 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         >
                                             Dynamic tails
                                         </DawPluginChip>
-                                        <DawPluginLed tone="amber" className="flex items-center gap-1">
-                                            <Cpu className="size-3" />
-                                            {activeVoices} voices
-                                        </DawPluginLed>
                                     </div>
                                 </div>
                             </SectionCard>

@@ -25,6 +25,10 @@ export function camelToSnake(str: string): string {
 export function createLevainBridge(deps: LevainBridgeDeps) {
     const activeDevices = new Map<string, LevainDevice>();
     const activePorts = new Map<string, MessagePort>();
+    // Per-device load cancellation. A new instrument load for a device aborts
+    // the previous one so the last-started load — not the last-finishing one —
+    // wins the worklet zone map and the UI progress.
+    const loadControllers = new Map<string, AbortController>();
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
@@ -61,9 +65,21 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         if (!port) {
             return;
         }
-        deps.autoLoadLevainSamples(deviceId, port, instrumentId).catch((error) => {
-            logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
-        });
+        // Supersede any in-flight load for this device before starting a new one.
+        loadControllers.get(deviceId)?.abort();
+        const controller = new AbortController();
+        loadControllers.set(deviceId, controller);
+        deps.autoLoadLevainSamples(deviceId, port, instrumentId, controller.signal)
+            .finally(() => {
+                // Only clear the slot if it's still ours — a newer load may have
+                // already replaced it.
+                if (loadControllers.get(deviceId) === controller) {
+                    loadControllers.delete(deviceId);
+                }
+            })
+            .catch((error) => {
+                logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
+            });
     }
 
     function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
@@ -84,7 +100,12 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             queueParam(deviceId, 'master_gain', state.patch.masterGain);
             queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
             queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
-            queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
+            // vibratoDepthMax is in cents (default 40, range 0-50). Send it to the
+            // cents slot 'expression_vibrato_depth_max' — the same key the runtime
+            // panel path uses (setLevainParamWithAudio expands expression.vibratoDepthMax
+            // to this key). The CC-scaled slot 'vibrato_depth' expects a normalized
+            // 0-1 value and would saturate a cents value to ~2x configured depth.
+            queueParam(deviceId, 'expression_vibrato_depth_max', state.patch.expression.vibratoDepthMax);
 
             for (const [i, m] of state.patch.micPositions.entries()) {
                 queueParam(deviceId, `mic_${i}_volume`, m.volume);
@@ -97,6 +118,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     function unregisterLevainDevice(deviceId: string): void {
         activeDevices.delete(deviceId);
         activePorts.delete(deviceId);
+        // Cancel any in-flight sample load so it can't write back to a store
+        // entry we're about to delete (the store mutators also no-op on a
+        // missing device, but cancelling avoids the wasted decode work).
+        loadControllers.get(deviceId)?.abort();
+        loadControllers.delete(deviceId);
 
         const state = levainStore.value;
         if (state && state[deviceId]) {
@@ -170,8 +196,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 device.setParam('humanize', 1.0 - value);
                 break;
             case 'Space':
+                // The room mic is the 'room'-type position (index 2 in the default
+                // patch). The compact MicBlendSlider drives the same mic, so both
+                // controls must target the same index or they fight over 'room'.
                 device.setParam('mic_0_volume', 1.0 - value * 0.5);
-                device.setParam('mic_1_volume', value);
+                device.setParam('mic_2_volume', value);
                 break;
             case 'Tone':
                 device.setParam('tone', value);
