@@ -31,19 +31,6 @@ const DEFAULT_SEGMENTS: BezierSegment[] = [
     },
 ];
 
-/** Evaluate cubic Bezier at parameter t. Used for curve preview sampling. */
-export function evalBezier(seg: BezierSegment, t: number): Point {
-    const mt = 1 - t;
-    const mt2 = mt * mt;
-    const mt3 = mt2 * mt;
-    const t2 = t * t;
-    const t3 = t2 * t;
-    return {
-        x: mt3 * seg.p0.x + 3 * mt2 * t * seg.p1.x + 3 * mt * t2 * seg.p2.x + t3 * seg.p3.x,
-        y: mt3 * seg.p0.y + 3 * mt2 * t * seg.p1.y + 3 * mt * t2 * seg.p2.y + t3 * seg.p3.y,
-    };
-}
-
 function toCanvas(p: Point, w: number, h: number): Point {
     return {
         x: (p.x + 1) * 0.5 * w,

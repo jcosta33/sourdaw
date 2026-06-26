@@ -17,7 +17,6 @@ type SpectrumAnalyzerProps = {
     /** Band boundaries for overlay */
     crossoverFreqs?: number[];
     bandCount?: number;
-    activeBand?: number;
     /** Show spectral heatmap trail */
     showHeatmap?: boolean;
 };
@@ -38,7 +37,6 @@ export const SpectrumAnalyzer = ({
     fftData,
     crossoverFreqs = [],
     bandCount = 1,
-    activeBand: _activeBand = 0,
     showHeatmap = false,
 }: SpectrumAnalyzerProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -495,7 +495,6 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                         state.patch.crossoverFreq5,
                     ]}
                     bandCount={state.patch.bandCount}
-                    activeBand={state.activeBand}
                     showHeatmap
                 />
                 <CrossoverDisplay
@@ -645,7 +644,6 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         state.patch.crossoverFreq5,
                     ]}
                     bandCount={state.patch.bandCount}
-                    activeBand={state.activeBand}
                     showHeatmap
                 />
                 <CrossoverDisplay
@@ -713,7 +711,6 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     state.patch.crossoverFreq5,
                 ]}
                 bandCount={state.patch.bandCount}
-                activeBand={state.activeBand}
                 showHeatmap
             />
             <CrossoverDisplay

@@ -24,9 +24,28 @@ export const SpectralBinEditor = ({
     mode,
 }: SpectralBinEditorProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [values, setValues] = useState<number[]>(
-        initialValues.length === numBins ? initialValues : Array.from({ length: numBins }, () => 0.5)
-    );
+
+    const resolveValues = (): number[] =>
+        initialValues.length === numBins ? initialValues : Array.from({ length: numBins }, () => 0.5);
+
+    // Content signature of the controlled props. Bin values are quantized
+    // numbers (never NaN/object), so a join is a faithful content key.
+    const controlledSignature = `${numBins}:${initialValues.join(',')}`;
+
+    const [values, setValues] = useState<number[]>(resolveValues);
+    // Re-sync local edits to the controlled props only when their *content*
+    // changes. The live mount passes a fresh `binValues={[]}` literal on every
+    // parent render, so a re-sync keyed on the array identity would re-fire each
+    // render and clobber in-progress edits. Tracking the last-synced content
+    // signature and adjusting state during render (React's recommended "reset
+    // state on prop change" pattern) re-syncs on real content changes only,
+    // with no dependency on the unstable array reference.
+    const lastSignatureRef = useRef(controlledSignature);
+    if (lastSignatureRef.current !== controlledSignature) {
+        lastSignatureRef.current = controlledSignature;
+        setValues(resolveValues());
+    }
+
     const drawingRef = useRef(false);
 
     const draw = (): void => {
