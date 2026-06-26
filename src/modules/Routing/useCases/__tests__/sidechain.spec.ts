@@ -64,6 +64,34 @@ describe('sidechain use cases', () => {
         expect(() => addSidechainRoute('t1', 't1', 'dev1')).toThrow(SidechainCycleError);
     });
 
+    it('addSidechainRoute throws on a transitive (multi-hop) cycle', () => {
+        // Existing routes form a path c -> b -> a. Adding a -> c closes the loop:
+        // the BFS walks forward from the new target (c) and reaches the new
+        // source (a) two hops away, so it must reject before mutating the store.
+        mockStoreValue.value = {
+            routes: [
+                {
+                    id: 'r1',
+                    sourceTrackId: 'c',
+                    targetTrackId: 'b',
+                    targetDeviceId: 'devC',
+                    targetParameterId: 'threshold',
+                },
+                {
+                    id: 'r2',
+                    sourceTrackId: 'b',
+                    targetTrackId: 'a',
+                    targetDeviceId: 'devB',
+                    targetParameterId: 'threshold',
+                },
+            ],
+        };
+
+        expect(() => addSidechainRoute('a', 'c', 'dev1')).toThrow(SidechainCycleError);
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
+    });
+
     it('addSidechainRoute is idempotent for duplicates', () => {
         const existing = {
             id: 'r1',

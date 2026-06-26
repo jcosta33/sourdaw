@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../setSidechainRoutes';
 import { setSidechainRoutes } from '../setSidechainRoutes';
 
 import type { SidechainRoute } from '../../../models/SidechainRoute';
@@ -47,12 +46,6 @@ describe('setSidechainRoutes', () => {
         vi.clearAllMocks();
         mockStoreValue.value = { routes: [] };
         mocks.getEngineState.mockReturnValue({ isReady: true });
-    });
-
-    it('should export setSidechainRoutes', () => {
-        expect(subject.setSidechainRoutes).toBeDefined();
-        const time = typeof subject.setSidechainRoutes;
-        expect(time === 'function' || time === 'object').toBe(true);
     });
 
     // Regression for the fallback-mode divergence: setSidechainRoutes used to
