@@ -257,7 +257,7 @@ export function ModelManagerPanel(): ReactElement {
             >
                 <div className="space-y-0.5">
                     {instruments.map((instrument) => {
-                        const status = 'status' in instrument ? (instrument as { status: string }).status : undefined;
+                        const status = 'status' in instrument ? instrument.status : undefined;
                         return (
                             <DawPickerRow
                                 key={instrument.id}
@@ -286,12 +286,12 @@ export function ModelManagerPanel(): ReactElement {
             {/* Kokoro TTS */}
             <DawUtilitySection title="Kokoro TTS (82M)" detail="Vocal scratch tracks · Apache 2.0 · hexgrad">
                 <DawPickerRow
-                    heading="Kokoro-82M (q8)"
+                    heading="Kokoro-82M (q8f16)"
                     description={`21 voices · ${formatBytes(KOKORO_MODEL_ENTRY.sizeBytes)}`}
                     endSlot={
                         <ModelAction
                             id={KOKORO_MODEL_ENTRY.id}
-                            name="Kokoro-82M (q8)"
+                            name="Kokoro-82M (q8f16)"
                             family={KOKORO_MODEL_ENTRY.family}
                             url={KOKORO_MODEL_ENTRY.url}
                             sizeBytes={KOKORO_MODEL_ENTRY.sizeBytes}

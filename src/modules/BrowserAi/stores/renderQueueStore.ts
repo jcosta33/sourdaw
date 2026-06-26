@@ -64,11 +64,11 @@ export function markRenderComplete(phraseId: string, cacheKey: string): void {
         if (!state) {
             return state;
         }
-        // Update status to 'preview' in-place — entry is preserved so renderAllStale
-        // can recover the pipeline type if the phrase becomes stale later.
-        const entries = state.entries.map((event) =>
-            event.phraseId === phraseId ? { ...event, status: 'preview' as const } : event
-        );
+        // Drop the completed entry from the queue — its terminal state lives in
+        // phraseStatusMap (which the StatusBar count and the stale-subscription read).
+        // Keeping completed entries grew `entries` unbounded for the session, since
+        // nothing in the module removes them on success.
+        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds
             : [...state.cachedPhraseIds, cacheKey];

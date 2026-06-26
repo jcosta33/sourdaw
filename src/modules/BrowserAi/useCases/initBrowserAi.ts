@@ -32,7 +32,7 @@ let midiStaleSubscription: (() => void) | undefined;
 
 export const KOKORO_MODEL_ENTRY: KokoroModel = {
     id: 'kokoro-82m-q8',
-    name: 'Kokoro TTS (q8)',
+    name: 'Kokoro TTS (q8f16)',
     family: 'kokoro',
     sizeBytes: KOKORO_MODEL_SIZE_BYTES,
     url: KOKORO_MODEL_URL,
