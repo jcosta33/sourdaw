@@ -42,10 +42,6 @@ export const toasterStore = createStore<ToasterInstances>({
     initialData: {},
 });
 
-export function getToasterState(deviceId: string): ToasterState {
-    return (toasterStore.value ?? {})[deviceId] ?? defaultToasterState;
-}
-
 export function unregisterToasterDevice(deviceId: string): void {
     const state = toasterStore.value;
     if (state && state[deviceId]) {
@@ -57,7 +53,11 @@ export function unregisterToasterDevice(deviceId: string): void {
 
 export function selectPad(deviceId: string, index: number): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Unknown deviceId → no-op; selecting a pad must not resurrect a torn-down device.
+    if (!state) {
+        return;
+    }
     if (index >= 0 && index < state.kit.pads.length) {
         toasterStore.set({ ...instances, [deviceId]: { ...state, selectedPadIndex: index } });
     }
@@ -111,7 +111,11 @@ export function updateKit(deviceId: string, updates: Partial<ToasterKit>): void 
 
 export function toggleStep(deviceId: string, padIndex: number, stepIndex: number): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Unknown deviceId → no-op; a step toggle must not resurrect a torn-down device.
+    if (!state) {
+        return;
+    }
     const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
     if (!pattern) {
         return;
@@ -131,7 +135,11 @@ export function toggleStep(deviceId: string, padIndex: number, stepIndex: number
 
 export function setStepVelocity(deviceId: string, padIndex: number, stepIndex: number, velocity: number): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Unknown deviceId → no-op; a velocity write must not resurrect a torn-down device.
+    if (!state) {
+        return;
+    }
     const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
     if (!pattern) {
         return;

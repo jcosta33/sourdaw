@@ -1,1 +1,1 @@
-export { defaultToasterState, toasterStore, unregisterToasterDevice } from './toasterStore';
+export { defaultToasterState, toasterStore } from './toasterStore';

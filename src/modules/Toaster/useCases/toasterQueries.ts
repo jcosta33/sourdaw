@@ -1,28 +1,7 @@
-import { TOASTER_PRESETS as _TOASTER_PRESETS, type ToasterKitPreset } from '../repositories/toasterPresets';
+import { TOASTER_PRESETS as _TOASTER_PRESETS } from '../repositories/toasterPresets';
 
-export const DEFAULT_PAD_NAMES = [
-    'Kick',
-    'Snare',
-    'Closed HH',
-    'Open HH',
-    'Clap',
-    'Rim',
-    'Low Tom',
-    'Mid Tom',
-    'Hi Tom',
-    'Crash',
-    'Ride',
-    'Cowbell',
-    'Clave',
-    'Shaker',
-    'Perc 1',
-    'Perc 2',
-] as const;
-
-export function getToasterPresets(): ToasterKitPreset[] {
-    // Return a shallow copy so callers cannot mutate the shared preset array
-    // (push/splice/reorder) and corrupt the registry for every other consumer.
-    return [..._TOASTER_PRESETS];
-}
+// Single source of truth lives in the model layer; re-exported here so other
+// modules can reach it through the useCases contract barrel (models are private).
+export { DEFAULT_PAD_NAMES } from '../models/ToasterKit';
 
 export { _TOASTER_PRESETS as TOASTER_PRESETS };
