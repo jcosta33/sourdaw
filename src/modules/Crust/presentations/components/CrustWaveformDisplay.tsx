@@ -20,6 +20,8 @@ import { type ReactElement, useRef, useEffect } from 'react';
 
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
+import { grColor } from './crustMeterColors';
+
 const HISTORY = 200;
 
 type Props = {
@@ -31,20 +33,6 @@ type Props = {
     deltaListen: boolean;
     scrollSpeed: 'slow' | 'normal' | 'fast';
 };
-
-function grColor(gr: number): string {
-    const abs = Math.abs(gr);
-    if (abs <= 1) {
-        return '#E8E6E0';
-    }
-    if (abs <= 4) {
-        return '#D4A847';
-    }
-    if (abs <= 8) {
-        return '#C87C2A';
-    }
-    return '#C44030';
-}
 
 function dbToNorm(db: number, min = -60, max = 0): number {
     return Math.max(0, Math.min(1, (db - min) / (max - min)));

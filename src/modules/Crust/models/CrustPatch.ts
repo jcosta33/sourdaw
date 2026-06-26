@@ -1,6 +1,7 @@
 /**
  * Crust — limiter/saturator patch model.
- * All parameter definitions, defaults, and the CRUST_PARAMS list.
+ * Patch shape and defaults. The flat DeviceParameter descriptor lives in the
+ * Arrangement module (models/pluginDescriptors/crustDescriptor.ts).
  */
 
 export type CrustAlgorithm = 'transparent' | 'punchy' | 'dynamic' | 'allround' | 'aggressive' | 'bus' | 'safe' | 'wall';
@@ -67,7 +68,6 @@ export type CrustPatch = {
 
     // Level 5 — LAB
     // (curve data handled in UI state, not serialised here)
-    abSlot: 'a' | 'b';
 
     // UI
     uiLevel: 1 | 2 | 3 | 4 | 5;
@@ -104,36 +104,7 @@ export const DEFAULT_CRUST_PATCH: CrustPatch = {
     stereoMode: 'stereo',
     dither: 'off',
     outputBitDepth: 24,
-    abSlot: 'a',
     uiLevel: 2,
     scrollSpeed: 'normal',
     streamingPreset: 'spotify',
 };
-
-// ── Flat param list for DeviceParameter descriptor ─────────────────────────
-
-export type CrustParamDef = {
-    id: string;
-    label: string;
-    min: number;
-    max: number;
-    default: number;
-    unit: string;
-    step?: number;
-};
-
-export const CRUST_PARAMS: readonly CrustParamDef[] = [
-    { id: 'gain', label: 'Gain', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
-    { id: 'ceiling', label: 'Ceiling', min: -6, max: 0, default: -0.3, unit: 'dBTP', step: 0.1 },
-    { id: 'lookahead', label: 'Lookahead', min: 0, max: 10, default: 2, unit: 'ms', step: 0.1 },
-    { id: 'attack', label: 'Attack', min: 0, max: 100, default: 0, unit: 'ms', step: 0.1 },
-    { id: 'release', label: 'Release', min: 0, max: 1000, default: 0, unit: 'ms', step: 1 },
-    { id: 'channelLinkTransient', label: 'Link Trans', min: 0, max: 100, default: 100, unit: '%', step: 1 },
-    { id: 'channelLinkRelease', label: 'Link Rel', min: 0, max: 100, default: 100, unit: '%', step: 1 },
-    { id: 'truePeak', label: 'True Peak', min: 0, max: 1, default: 1, unit: '', step: 1 },
-    { id: 'oversampling', label: 'Oversampling', min: 1, max: 32, default: 4, unit: 'x', step: 1 },
-    { id: 'satDrive', label: 'Sat Drive', min: 0, max: 18, default: 0, unit: 'dB', step: 0.1 },
-    { id: 'satMix', label: 'Sat Mix', min: 0, max: 100, default: 0, unit: '%', step: 1 },
-    { id: 'deltaListen', label: 'Delta', min: 0, max: 1, default: 0, unit: '', step: 1 },
-    { id: 'scHpfFreq', label: 'SC HPF', min: 20, max: 200, default: 60, unit: 'Hz', step: 1 },
-];

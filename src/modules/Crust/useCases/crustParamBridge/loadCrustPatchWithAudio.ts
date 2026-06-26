@@ -44,12 +44,15 @@ export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): vo
         ['stereoMode', patch.stereoMode],
         ['dither', patch.dither],
         ['outputBitDepth', patch.outputBitDepth],
-        ['abSlot', patch.abSlot],
     ];
 
     for (const [key, rawValue] of params) {
         const encodedValue = encodeCrustValue(key, rawValue);
-        if (encodedValue !== null) {
+        // Push only a real numeric encoding. null = unknown enum (skip);
+        // undefined = store-only key with no engine encoding (skip the push).
+        // The params list carries no store-only keys today, but guarding both
+        // keeps the push type-safe if one is ever added.
+        if (typeof encodedValue === 'number') {
             pushCrustParamImmediately(ref, key, encodedValue);
         }
     }

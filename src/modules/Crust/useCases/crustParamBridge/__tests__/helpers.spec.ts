@@ -27,7 +27,6 @@ describe('encodeCrustValue enum handling', () => {
         ['stereoMode', 'ms', 1],
         ['dither', 'powr2', 4],
         ['scrollSpeed', 'fast', 2],
-        ['abSlot', 'b', 1],
     ])('encodes known %s value %s to index %d', (key, value, expected) => {
         expect(subject.encodeCrustValue(key, value)).toBe(expected);
     });
@@ -44,7 +43,6 @@ describe('encodeCrustValue enum handling', () => {
         ['stereoMode', 'quad'],
         ['dither', 'powr9'],
         ['scrollSpeed', 'glacial'],
-        ['abSlot', 'z'],
     ])('returns null for an unknown %s value %s instead of coercing to a valid index', (key, value) => {
         expect(subject.encodeCrustValue(key, value)).toBeNull();
     });

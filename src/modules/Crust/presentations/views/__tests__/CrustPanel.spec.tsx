@@ -70,6 +70,35 @@ describe('CrustPanel', () => {
         expect(props.outputDb).toBe(-84);
     });
 
+    it('treats the custom preset as no fixed LUFS target (null), matching its skipped ceiling write', () => {
+        // 'custom' labels itself "Custom" and skips the ceiling write, so the
+        // derived target must be null — not the −14 the menu lists only as a
+        // suggested starting point. The waveform's lufsTarget prop is the
+        // observable seam: a non-null number here would draw a target line and
+        // drive penalty math the label denies.
+        crustStateForTest = {
+            ...defaultCrustState,
+            patch: { ...defaultCrustState.patch, streamingPreset: 'custom' },
+        };
+
+        render(<CrustPanel deviceId="crust-1" />);
+
+        const props = lastWaveformProps() as unknown as { lufsTarget: number | null };
+        expect(props.lufsTarget).toBeNull();
+    });
+
+    it('derives the fixed LUFS target for a non-custom preset', () => {
+        crustStateForTest = {
+            ...defaultCrustState,
+            patch: { ...defaultCrustState.patch, streamingPreset: 'ebu_r128' },
+        };
+
+        render(<CrustPanel deviceId="crust-1" />);
+
+        const props = lastWaveformProps() as unknown as { lufsTarget: number | null };
+        expect(props.lufsTarget).toBe(-23);
+    });
+
     it('does not inject a -60 magic number when a meter field is absent', () => {
         // The dead `state?.inputDb ?? -60` ladder only ever diverged from a
         // direct read when the field was nullish — the one input that

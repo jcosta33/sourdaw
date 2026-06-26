@@ -12,7 +12,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { useStore } from '#/infra/store/useStore';
 
-import { type CrustPatch } from '../../models/CrustPatch';
+import { type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
 import { crustStore, defaultCrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
@@ -22,6 +22,10 @@ import { CrustGainStrip } from '../components/CrustGainStrip';
 import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
 import { CrustWaveformDisplay } from '../components/CrustWaveformDisplay';
 
+// `satisfies` ties every row's `id` to the model's CrustStreamingPreset union at
+// compile time while preserving the literal `as const` types the menu relies on.
+// Adding a preset to the union without a row here (or vice versa) is a type error,
+// so the two definitions of the streaming-preset set can no longer drift.
 const STREAMING_PRESETS = [
     { id: 'spotify', label: 'Spotify / Apple Music', lufsTarget: -14, tpCeiling: -1.0, group: 'Streaming' },
     { id: 'youtube', label: 'YouTube', lufsTarget: -14, tpCeiling: -1.0, group: 'Streaming' },
@@ -33,13 +37,34 @@ const STREAMING_PRESETS = [
     { id: 'club_dance', label: 'Club / Dance', lufsTarget: -8, tpCeiling: -0.3, group: 'Music' },
     { id: 'hifi', label: 'Hi-Fi Streaming', lufsTarget: -12, tpCeiling: -1.0, group: 'Music' },
     { id: 'custom', label: 'Custom…', lufsTarget: -14, tpCeiling: -1.0, group: 'Custom' },
-] as const;
+] as const satisfies readonly {
+    id: CrustStreamingPreset;
+    label: string;
+    lufsTarget: number;
+    tpCeiling: number;
+    group: string;
+}[];
 
 type StreamingPreset = (typeof STREAMING_PRESETS)[number];
+
+// Exhaustiveness in the other direction: a union member with no row here makes
+// `missingPreset` resolve to the missing literal instead of `never`, a type
+// error — so the union and the data table stay in lockstep both ways.
+type MissingStreamingPreset = Exclude<CrustStreamingPreset, StreamingPreset['id']>;
+const _assertAllPresetsPresent: MissingStreamingPreset extends never ? true : never = true;
+void _assertAllPresetsPresent;
 
 const OVERSAMPLE_OPTIONS = [1, 4, 8, 16, 32] as const;
 
 function getLufsTarget(presetId: string): number | null {
+    // 'custom' has no fixed loudness goal: the panel skips its ceiling write and
+    // labels it "Custom", so the target tile, penalty math, and waveform target
+    // line must also treat it as "no target" (null) rather than the −14 LUFS the
+    // menu lists only as a starting suggestion.
+    if (presetId === 'custom') {
+        return null;
+    }
+
     const preset = STREAMING_PRESETS.find((entry) => entry.id === presetId);
     if (preset) {
         return preset.lufsTarget;

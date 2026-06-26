@@ -8,6 +8,8 @@ import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 
+import { grColor } from './crustMeterColors';
+
 type Props = {
     grDb: number;
     outputDb: number;
@@ -37,20 +39,6 @@ function lufsColor(lufs: number, target: number | null): string {
         return '#C44030';
     }
     return '#E8E6E0';
-}
-
-function grColor(gr: number): string {
-    const abs = Math.abs(gr);
-    if (abs <= 1) {
-        return '#E8E6E0';
-    }
-    if (abs <= 4) {
-        return '#D4A847';
-    }
-    if (abs <= 8) {
-        return '#C87C2A';
-    }
-    return '#C44030';
 }
 
 const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement => {

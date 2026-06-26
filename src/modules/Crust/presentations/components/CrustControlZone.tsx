@@ -66,6 +66,7 @@ const Knob = ({
     step,
     unit,
     def,
+    disabled = false,
 }: {
     value: number;
     onChange: (v: number) => void;
@@ -75,6 +76,55 @@ const Knob = ({
     step: number;
     unit?: string;
     def: number;
+    disabled?: boolean;
+}): ReactElement => (
+    <div
+        className={cn('flex flex-col items-center gap-0.5', disabled ? 'pointer-events-none opacity-40' : null)}
+        aria-disabled={disabled}
+    >
+        <RotaryKnob
+            value={value}
+            onChange={disabled ? () => {} : onChange}
+            min={min}
+            max={max}
+            step={step}
+            defaultValue={def}
+            size="sm"
+            tone="copper"
+        />
+        <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
+        {unit !== undefined ? (
+            <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
+        ) : null}
+    </div>
+);
+
+// A timing knob (Attack/Release) paired with its own Auto toggle. The knob and
+// the toggle write independent fields, so `auto=false` with a literal 0 ms is a
+// reachable state — dialing 0 no longer forces auto, and auto no longer hides
+// the manual value.
+const AutoKnob = ({
+    auto,
+    onAutoChange,
+    value,
+    onChange,
+    label,
+    min,
+    max,
+    step,
+    def,
+    toggleId,
+}: {
+    auto: boolean;
+    onAutoChange: (auto: boolean) => void;
+    value: number;
+    onChange: (v: number) => void;
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    def: number;
+    toggleId: string;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-0.5">
         <RotaryKnob
@@ -88,9 +138,19 @@ const Knob = ({
             tone="copper"
         />
         <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
-        {unit !== undefined ? (
-            <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
-        ) : null}
+        <span className="text-[6px] font-mono text-muted-foreground/40">{auto ? 'Auto' : `${value.toFixed(0)}ms`}</span>
+        <DawPluginToggle
+            id={toggleId}
+            pressed={auto}
+            tone="steel"
+            size="xs"
+            onLabel="AUTO"
+            offLabel="AUTO"
+            role="switch"
+            aria-checked={auto}
+            aria-label={`${label} auto`}
+            onClick={() => onAutoChange(!auto)}
+        />
     </div>
 );
 
@@ -238,31 +298,29 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 unit="ms"
                 def={2}
             />
-            <Knob
-                value={patch.attackAuto ? 0 : patch.attack}
-                onChange={(v) => {
-                    setParam('attackAuto', v === 0);
-                    setParam('attack', v);
-                }}
+            <AutoKnob
+                auto={patch.attackAuto}
+                onAutoChange={(auto) => setParam('attackAuto', auto)}
+                value={patch.attack}
+                onChange={(v) => setParam('attack', v)}
                 label="Attack"
                 min={0}
                 max={100}
                 step={0.5}
-                unit="ms"
                 def={0}
+                toggleId="crust-attack-auto"
             />
-            <Knob
-                value={patch.releaseAuto ? 0 : patch.release}
-                onChange={(v) => {
-                    setParam('releaseAuto', v === 0);
-                    setParam('release', v);
-                }}
+            <AutoKnob
+                auto={patch.releaseAuto}
+                onAutoChange={(auto) => setParam('releaseAuto', auto)}
+                value={patch.release}
+                onChange={(v) => setParam('release', v)}
                 label="Release"
                 min={0}
                 max={1000}
                 step={5}
-                unit="ms"
                 def={0}
+                toggleId="crust-release-auto"
             />
         </div>
 
@@ -317,7 +375,12 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                 ))}
             </div>
 
-            <CrustSatCurve algorithm={patch.satAlgorithm} drive={patch.satDrive} />
+            <div
+                className={cn(patch.satEnabled ? null : 'pointer-events-none opacity-40')}
+                aria-hidden={!patch.satEnabled}
+            >
+                <CrustSatCurve algorithm={patch.satAlgorithm} drive={patch.satDrive} />
+            </div>
 
             <div className="flex gap-2">
                 <div className="flex flex-col items-center gap-0.5">
@@ -330,8 +393,9 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                         step={0.1}
                         unit="dB"
                         def={0}
+                        disabled={!patch.satEnabled}
                     />
-                    {patch.satDrive > 6 ? (
+                    {patch.satEnabled && patch.satDrive > 6 ? (
                         <span className="text-[6px] font-bold text-[var(--color-state-danger)]">HOT</span>
                     ) : null}
                 </div>
@@ -344,6 +408,7 @@ const SatSection = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     step={1}
                     unit="%"
                     def={0}
+                    disabled={!patch.satEnabled}
                 />
             </div>
         </div>

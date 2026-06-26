@@ -91,12 +91,21 @@ export const SCROLL_SPEED_INDEX = {
     fast: 2,
 } as const;
 
-export const AB_SLOT_INDEX = {
-    a: 0,
-    b: 1,
-} as const;
-
-export function encodeCrustValue(key: string, value: unknown): number | null {
+/**
+ * Encode a patch value into the engine's numeric parameter space.
+ *
+ * Three outcomes, deliberately distinct so callers can route the store write
+ * separately from the engine push:
+ *  - `number`    — encoded; write the store and push the engine.
+ *  - `null`      — the key HAS an index table but the value is not in it
+ *                  (corrupt/unknown enum string). Skip BOTH the store and the
+ *                  engine so a bad value never lands in either (UI↔engine
+ *                  divergence). Also covers genuinely unencodable value types.
+ *  - `undefined` — the key has NO engine encoding at all (store-only string
+ *                  keys such as `streamingPreset` and `name`). The store write
+ *                  must still happen; only the engine push is skipped.
+ */
+export function encodeCrustValue(key: string, value: unknown): number | null | undefined {
     if (typeof value === 'number') {
         return value;
     }
@@ -141,9 +150,8 @@ export function encodeCrustValue(key: string, value: unknown): number | null {
         return SCROLL_SPEED_INDEX[value as keyof typeof SCROLL_SPEED_INDEX] ?? null;
     }
 
-    if (key === 'abSlot') {
-        return AB_SLOT_INDEX[value as keyof typeof AB_SLOT_INDEX] ?? null;
-    }
-
-    return null;
+    // String key with no engine index table (e.g. streamingPreset, name):
+    // store-only. Signal "no engine encoding" with undefined so the caller
+    // preserves the store write and skips only the engine push.
+    return undefined;
 }

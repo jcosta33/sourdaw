@@ -8,10 +8,23 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
     key: Key,
     value: CrustPatch[Key]
 ): void {
-    setCrustParam(key, value);
-
+    // Encode before touching the store so we can tell apart three cases:
+    //  - null      → the key has an engine index table but this value isn't in
+    //                it (corrupt/unknown enum). Skip BOTH writes or the store
+    //                and engine diverge.
+    //  - undefined → store-only key with no engine encoding (streamingPreset,
+    //                name). Still write the store; only the engine push is
+    //                skipped — otherwise selecting a loudness target would
+    //                never reach patch.streamingPreset.
+    //  - number    → encoded; write the store and schedule the engine push.
     const encodedValue = encodeCrustValue(key, value);
     if (encodedValue === null) {
+        return;
+    }
+
+    setCrustParam(key, value);
+
+    if (encodedValue === undefined) {
         return;
     }
 
