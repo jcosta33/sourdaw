@@ -47,8 +47,17 @@ export async function importAudioFile(file: File): Promise<void> {
 
     const track = createTrack({ name, kind: 'audio' });
 
+    // Re-read the track state *after* the awaited addLocalAsset above so a
+    // concurrent write that landed during the asset hash (another import, a
+    // clip/device edit, a remote CRDT apply) is not clobbered by a stale
+    // snapshot. importMidiFile re-reads the same way before its write.
+    const freshState = getTrackState();
+    if (!freshState) {
+        return;
+    }
+
     // Add the track to the store first so that addClip can find it
-    setTrackState({ ...state, tracks: [...state.tracks, track] });
+    setTrackState({ ...freshState, tracks: [...freshState.tracks, track] });
 
     addClip({
         trackId: track.id,

@@ -9,7 +9,7 @@ import { Fader } from '#/components/daw/Fader';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { getAllVCAGroups } from '#/modules/Arrangement/useCases';
+import { getVcaGroups } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -109,7 +109,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     </div>
                     <MixerPopupSeparator />
                     <MixerPopupLabel>VCA Group</MixerPopupLabel>
-                    {getAllVCAGroups().map((g) => (
+                    {getVcaGroups().map((g) => (
                         <MixerPopupOption
                             key={g.id}
                             active={track.vcaGroupId === g.id}

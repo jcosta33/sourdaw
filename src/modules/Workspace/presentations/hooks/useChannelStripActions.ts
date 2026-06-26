@@ -13,7 +13,7 @@ import {
     renameTrack,
     toggleVcaMembership,
     createAndAssignVcaGroup,
-    removeTrackFromVCA,
+    removeFromVca,
 } from '#/modules/Arrangement/useCases';
 import { releaseTouchAutomation } from '#/modules/Automation/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -78,7 +78,7 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
         },
         toggleVca: (groupId) => toggleVcaMembership(track.id, groupId),
         createVcaAndAssign: () => createAndAssignVcaGroup(track.id),
-        removeFromVca: () => removeTrackFromVCA(track.id),
+        removeFromVca: () => removeFromVca(track.id),
         releaseGainAutomation: () => {
             if (track.automationMode === 'touch') {
                 releaseTouchAutomation(track.id, 'gain');

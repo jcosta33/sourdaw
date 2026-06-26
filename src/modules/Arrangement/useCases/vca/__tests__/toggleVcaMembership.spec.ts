@@ -1,16 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Track } from '../../../models/Track';
-import { assignTrackToVCA } from '../../vcaFader/assignTrackToVCA';
-import { removeTrackFromVCA } from '../../vcaFader/removeTrackFromVCA';
+import { assignToVca } from '../assignToVca';
+import { removeFromVca } from '../removeFromVca';
 import { toggleVcaMembership } from '../toggleVcaMembership';
 
-vi.mock('../../vcaFader/removeTrackFromVCA', () => ({
-    removeTrackFromVCA: vi.fn(),
+vi.mock('../removeFromVca', () => ({
+    removeFromVca: vi.fn(),
 }));
 
-vi.mock('../../vcaFader/assignTrackToVCA', () => ({
-    assignTrackToVCA: vi.fn(),
+vi.mock('../assignToVca', () => ({
+    assignToVca: vi.fn(),
 }));
 
 const mockGetTrackById = vi.fn();
@@ -20,8 +20,8 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
 
 describe('toggleVcaMembership', () => {
     beforeEach(() => {
-        vi.mocked(assignTrackToVCA).mockClear();
-        vi.mocked(removeTrackFromVCA).mockClear();
+        vi.mocked(assignToVca).mockClear();
+        vi.mocked(removeFromVca).mockClear();
         mockGetTrackById.mockReset();
     });
 
@@ -30,8 +30,8 @@ describe('toggleVcaMembership', () => {
 
         toggleVcaMembership('t1', 'g1');
 
-        expect(assignTrackToVCA).not.toHaveBeenCalled();
-        expect(removeTrackFromVCA).not.toHaveBeenCalled();
+        expect(assignToVca).not.toHaveBeenCalled();
+        expect(removeFromVca).not.toHaveBeenCalled();
     });
 
     it('should remove when track is already in the group', () => {
@@ -40,8 +40,8 @@ describe('toggleVcaMembership', () => {
 
         toggleVcaMembership('t1', 'g1');
 
-        expect(removeTrackFromVCA).toHaveBeenCalledWith('t1');
-        expect(assignTrackToVCA).not.toHaveBeenCalled();
+        expect(removeFromVca).toHaveBeenCalledWith('t1');
+        expect(assignToVca).not.toHaveBeenCalled();
     });
 
     it('should assign when track is in another or no group', () => {
@@ -50,7 +50,7 @@ describe('toggleVcaMembership', () => {
 
         toggleVcaMembership('t1', 'g2');
 
-        expect(assignTrackToVCA).toHaveBeenCalledWith('t1', 'g2');
-        expect(removeTrackFromVCA).not.toHaveBeenCalled();
+        expect(assignToVca).toHaveBeenCalledWith('t1', 'g2');
+        expect(removeFromVca).not.toHaveBeenCalled();
     });
 });

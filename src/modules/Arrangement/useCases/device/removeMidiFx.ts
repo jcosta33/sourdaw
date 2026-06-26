@@ -1,3 +1,4 @@
+import { logger } from '#/app/registerDependencies';
 import { removeMidiFxFromStrip } from '#/modules/AudioEngine/useCases';
 
 import { updateTrack } from '../updateTrack';
@@ -14,6 +15,6 @@ export function removeMidiFx(trackId: string, fxId: string): void {
     try {
         removeMidiFxFromStrip(trackId, fxId);
     } catch (error) {
-        console.warn(`Failed to remove MIDI FX from engine: ${error}`);
+        logger.warn(`Failed to remove MIDI FX from engine: ${error}`);
     }
 }

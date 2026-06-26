@@ -1,3 +1,4 @@
+import { logger } from '#/app/registerDependencies';
 import { updateMidiFxParam as engineUpdateMidiFxParam } from '#/modules/AudioEngine/useCases';
 
 import { updateTrack } from '../updateTrack';
@@ -17,6 +18,6 @@ export function updateMidiFxParam(trackId: string, fxId: string, paramId: string
     try {
         engineUpdateMidiFxParam(trackId, fxId, paramId, value);
     } catch (error) {
-        console.warn(`Failed to update MIDI FX param in engine: ${error}`);
+        logger.warn(`Failed to update MIDI FX param in engine: ${error}`);
     }
 }

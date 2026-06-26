@@ -1,12 +1,10 @@
-import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
-import { createVCAGroup } from '../vcaFader/createVCAGroup';
-import { getAllVCAGroups } from '../vcaFader/getAllVCAGroups';
+import { createVcaGroup } from './createVcaGroup';
+import { getVcaGroups } from './getVcaGroups';
 
 /**
  * Create a new VCA group named `VCA <n>` where `<n>` is the next sequential number,
  * and immediately assign the given track to it.
  */
 export function createAndAssignVcaGroup(trackId: string): void {
-    const group = createVCAGroup(`VCA ${String(getAllVCAGroups().length + 1)}`);
-    assignTrackToVCA(trackId, group.id);
+    createVcaGroup(`VCA ${String(getVcaGroups().length + 1)}`, [trackId]);
 }

@@ -189,9 +189,6 @@ export { getVcaGroups } from './vca/getVcaGroups';
 export { removeFromVca } from './vca/removeFromVca';
 export { toggleVcaMembership } from './vca/toggleVcaMembership';
 
-export { removeTrackFromVCA } from './vcaFader/removeTrackFromVCA';
-export { getAllVCAGroups } from './vcaFader/getAllVCAGroups';
-
 export { enableWarp } from './warp/enableWarp';
 export { disableWarp } from './warp/disableWarp';
 export { setStretchMode } from './warp/setStretchMode';

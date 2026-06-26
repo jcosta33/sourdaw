@@ -13,8 +13,8 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     getArrangementHandlers,
+    initStalenessDetection,
 } from '#/modules/Arrangement/useCases';
-import { initStalenessDetection } from '#/modules/Arrangement/useCases/freezeBounce/initStalenessDetection';
 import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,

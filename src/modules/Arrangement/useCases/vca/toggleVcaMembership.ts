@@ -1,6 +1,7 @@
 import { getTrackById } from '../../repositories/track/getTrackById';
-import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
-import { removeTrackFromVCA } from '../vcaFader/removeTrackFromVCA';
+
+import { assignToVca } from './assignToVca';
+import { removeFromVca } from './removeFromVca';
 
 export function toggleVcaMembership(trackId: string, vcaGroupId: string): void {
     const track = getTrackById(trackId);
@@ -8,8 +9,8 @@ export function toggleVcaMembership(trackId: string, vcaGroupId: string): void {
         return;
     }
     if (track.vcaGroupId === vcaGroupId) {
-        removeTrackFromVCA(trackId);
+        removeFromVca(trackId);
     } else {
-        assignTrackToVCA(trackId, vcaGroupId);
+        assignToVca(trackId, vcaGroupId);
     }
 }

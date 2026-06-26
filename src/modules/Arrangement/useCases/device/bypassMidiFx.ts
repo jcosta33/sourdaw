@@ -1,3 +1,4 @@
+import { logger } from '#/app/registerDependencies';
 import { updateMidiFxBypass } from '#/modules/AudioEngine/useCases';
 
 import { updateTrack } from '../updateTrack';
@@ -14,6 +15,6 @@ export function bypassMidiFx(trackId: string, fxId: string, bypassed: boolean): 
     try {
         updateMidiFxBypass(trackId, fxId, bypassed);
     } catch (error) {
-        console.warn(`Failed to bypass MIDI FX in engine: ${error}`);
+        logger.warn(`Failed to bypass MIDI FX in engine: ${error}`);
     }
 }
