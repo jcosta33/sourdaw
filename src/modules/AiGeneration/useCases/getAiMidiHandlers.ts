@@ -8,10 +8,10 @@ import { handleStemSeparate } from '../handlers/aiMidi/handleStemSeparate';
 import { handleVariationMidi } from '../handlers/aiMidi/handleVariationMidi';
 
 /**
- * Clip analysis actions (`detectTempo`, `detectKey`, `stripSilence`, `audioToMidi`) are registered
- * only in `Arrangement` `clipHandlers` — they were duplicated here and overwrote the Arrangement
- * handlers in `executeAppAction`’s merge, causing [DEV][WARN] duplicate-key logs. The thin
- * `handle*AiMidi` wrappers remain in `handlers/aiMidi/` for unit tests; Command uses Arrangement.
+ * Clip analysis actions (`detectTempo`, `detectKey`, `audioToMidi`) are registered in
+ * `AudioAnalysis`'s `getAnalysisHandlers`, and `stripSilence` in `Arrangement`'s `clipHandlers`.
+ * They are deliberately not registered here — registering them in two maps would collide on
+ * the shared action key and throw in `registerHandlerMap`.
  */
 type AiMidiAppAction =
     | Extract<AppAction, { type: 'addNotes' }>
