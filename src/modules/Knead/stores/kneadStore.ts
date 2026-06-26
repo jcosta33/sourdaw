@@ -71,10 +71,3 @@ export const kneadStore = createStore<KneadStoreState>({
     }),
     initialData: defaultKneadState,
 });
-
-export function setActiveKneadClip(clipId: string | null): void {
-    const state = kneadStore.value;
-    if (state) {
-        kneadStore.set({ ...state, activeClipId: clipId });
-    }
-}

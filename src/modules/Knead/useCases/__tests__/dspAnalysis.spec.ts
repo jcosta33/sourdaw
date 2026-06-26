@@ -119,6 +119,36 @@ describe('ingestDspAnalysis', () => {
         expect(centers).not.toContain(7500);
     });
 
+    // Boundary fix: two adjacent notes exactly one tempered semitone apart
+    // (440Hz -> 466.16Hz, a clean +100-cent step) must split into two blobs.
+    // The split test is `>= PITCH_SPLIT_CENTS`; a strict `>` would merge them
+    // and average to the 6950-cent midpoint.
+    it('splits two notes exactly one tempered semitone apart', () => {
+        // A4 = 440Hz (6900 cents); A#4 = 440 * 2^(1/12) ≈ 466.16Hz (7000 cents).
+        const semitoneUp = 440 * 2 ** (1 / 12);
+        const frames = [
+            { time: 0.0, f0: 440, periodicity: 0.9 },
+            { time: 0.01, f0: 440, periodicity: 0.9 },
+            { time: 0.02, f0: 440, periodicity: 0.9 },
+            { time: 0.03, f0: 440, periodicity: 0.9 },
+            { time: 0.04, f0: 440, periodicity: 0.9 },
+            { time: 0.05, f0: semitoneUp, periodicity: 0.9 },
+            { time: 0.06, f0: semitoneUp, periodicity: 0.9 },
+            { time: 0.07, f0: semitoneUp, periodicity: 0.9 },
+            { time: 0.08, f0: semitoneUp, periodicity: 0.9 },
+            { time: 0.09, f0: semitoneUp, periodicity: 0.9 },
+        ];
+        ingestDspAnalysis('c1', frames);
+
+        const updater = vi.mocked(updateClipKneadState).mock.calls[0]![1];
+        const next = updater({ blobs: [] } as never);
+        expect(next.blobs).toHaveLength(2);
+        const centers = next.blobs.map((b) => b.pitchCenterCents).sort((a, b) => a - b);
+        expect(centers).toEqual([6900, 7000]);
+        // The two notes did not collapse into one blob averaged to the midpoint.
+        expect(centers).not.toContain(6950);
+    });
+
     // Fix 3: endTime must cover the final frame's hop window, not stop at the
     // last frame's timestamp (which would deactivate one hop early).
     it('extends endTime by one hop past the final voiced frame timestamp', () => {

@@ -1,10 +1,12 @@
 import { type ReactElement, useEffect, useRef, useState, type PointerEvent } from 'react';
 
 import { Button } from '#/components/ui/button';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { commitPitchEditCommand } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { analyzeClipPitch } from '#/modules/Knead/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type PitchEditorProps = {
@@ -161,7 +163,24 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     }, [draw]);
 
     const handleAnalyze = () => {
-        analyzeClipPitch(clipId).catch(console.error);
+        // Mirror KneadEditor's handling of the orchestrator's return contract so
+        // the same non-analysed outcome is surfaced consistently across both
+        // editors rather than silently swallowed here.
+        analyzeClipPitch(clipId)
+            .then((outcome) => {
+                if (outcome.status === 'no-buffer') {
+                    notifyUser(
+                        'Pitch analysis skipped: this clip has no audio buffer. Record or import audio into the track first.',
+                        'info'
+                    );
+                }
+                return null;
+            })
+            .catch((error: unknown) => {
+                logger.error(error instanceof Error ? error : new Error(String(error)));
+                notifyUser('Pitch analysis failed. See logs for details.', 'error');
+                return null;
+            });
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {

@@ -81,9 +81,15 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         stateRef.current = { kneadState, zoom, transportState, isDragging, contour };
     }, [kneadState, zoom, transportState, isDragging, contour]);
 
-    // Trigger real DSP pitch-analysis pipeline (WASM pitch detection)
+    // Trigger real DSP pitch-analysis pipeline (WASM pitch detection).
+    // Gate on the absence of a contour, not on `blobs.length === 0`: a clip that
+    // analyses successfully but yields no qualifying voiced run (percussion,
+    // near-silence, a very short clip) legitimately produces zero blobs. Once a
+    // contour exists, analysis has run; re-triggering on empty blobs would loop
+    // forever because `kneadState` is in this effect's deps.
     useEffect(() => {
-        if (hasKnead && (!kneadState || kneadState.blobs.length === 0)) {
+        const needsAnalysis = (!kneadState || kneadState.blobs.length === 0) && !contour;
+        if (hasKnead && needsAnalysis) {
             analyzeClipPitch(clipId)
                 .then((outcome) => {
                     // Surface the "buffer unresolved" path so users get feedback
@@ -102,7 +108,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     return null;
                 });
         }
-    }, [hasKnead, kneadState, clipId]);
+    }, [hasKnead, kneadState, contour, clipId]);
 
     const pixelsPerSecond = 300 * zoom;
     const rowHeight = 24;
@@ -461,6 +467,18 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             );
         }
         if (!kneadState || kneadState.blobs.length === 0) {
+            // A contour means analysis already ran. If it produced no blobs the
+            // clip simply has no qualifying voiced pitch — show a terminal
+            // message, not the perpetual "analysing" spinner (which would imply
+            // a run that never ends; the analysis effect no longer re-fires once
+            // a contour exists).
+            if (contour) {
+                return (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
+                        <p className="text-xs text-muted-foreground font-medium">No pitch detected in this clip.</p>
+                    </div>
+                );
+            }
             return (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
                     <div className="flex flex-col items-center gap-2 mb-4">

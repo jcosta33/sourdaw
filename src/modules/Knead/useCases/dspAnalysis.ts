@@ -8,7 +8,11 @@ import { updateClipKneadState } from './updateClipKneadState';
  *
  * Aggressive Implementation:
  * - Contiguous voiced frames are grouped into "blobs".
- * - Small gaps (e.g. < 50ms) are bridged if pitch is stable.
+ * - Unvoiced gaps up to MAX_GAP_FRAMES long are bridged unconditionally (no
+ *   pitch comparison across the gap); a longer gap closes the current run.
+ * - A bridged run is then split at note boundaries after the fact: a jump of
+ *   one tempered semitone or more (>= PITCH_SPLIT_CENTS) between consecutive
+ *   voiced frames starts a new blob (see finalizeBlob).
  * - Pitch center is calculated using confidence-weighted average.
  */
 export function ingestDspAnalysis(
@@ -18,8 +22,9 @@ export function ingestDspAnalysis(
     const blobs: NoteBlob[] = [];
     const MIN_BLOB_FRAMES = 5;
     const MAX_GAP_FRAMES = 3;
-    // A jump larger than ~1 semitone between consecutive voiced frames marks a
-    // note boundary: it is a new pitch, not micro-pitch movement within one note.
+    // A jump of one tempered semitone or more between consecutive voiced frames
+    // marks a note boundary: it is a new pitch, not micro-pitch movement within
+    // one note. The split test is `>=` so an exactly-one-semitone step counts.
     const PITCH_SPLIT_CENTS = 100;
     // Fallback hop used only when a run is too short to observe a cadence.
     const DEFAULT_HOP_SECONDS = 0.01;
@@ -91,15 +96,15 @@ export function ingestDspAnalysis(
     }
 
     function finalizeBlob() {
-        // Split the run at note boundaries: a jump >1 semitone between
-        // consecutive voiced frames is a new note, not a single retunable
-        // region. Without this, a run spanning two pitches (possibly bridged
-        // through a gap) would average to a pitch between them and the worklet
-        // would apply one uniform shift across what were two notes.
+        // Split the run at note boundaries: a jump of one tempered semitone or
+        // more between consecutive voiced frames is a new note, not a single
+        // retunable region. Without this, a run spanning two pitches (possibly
+        // bridged through a gap) would average to a pitch between them and the
+        // worklet would apply one uniform shift across what were two notes.
         let segmentStart = 0;
         for (let i = 1; i < currentPitchPoints.length; i++) {
             const jump = Math.abs(currentPitchPoints[i]!.cents - currentPitchPoints[i - 1]!.cents);
-            if (jump > PITCH_SPLIT_CENTS) {
+            if (jump >= PITCH_SPLIT_CENTS) {
                 emitBlob(currentPitchPoints.slice(segmentStart, i));
                 segmentStart = i;
             }
