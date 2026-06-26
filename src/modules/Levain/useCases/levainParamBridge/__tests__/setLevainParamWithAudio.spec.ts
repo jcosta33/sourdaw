@@ -1,9 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../setLevainParamWithAudio';
+const bridge = {
+    setLevainParamWithAudio: vi.fn(),
+};
+
+vi.mock('../levainBridge', () => ({
+    levainBridge: () => bridge,
+}));
+
+import { setLevainParamWithAudio } from '../setLevainParamWithAudio';
 
 describe('setLevainParamWithAudio', () => {
-    it('should load the module', () => {
-        expect(subject).toBeDefined();
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('forwards deviceId, key, and value to the bridge', () => {
+        setLevainParamWithAudio('dev-1', 'masterGain', 0.42);
+
+        expect(bridge.setLevainParamWithAudio).toHaveBeenCalledTimes(1);
+        expect(bridge.setLevainParamWithAudio).toHaveBeenCalledWith('dev-1', 'masterGain', 0.42);
     });
 });

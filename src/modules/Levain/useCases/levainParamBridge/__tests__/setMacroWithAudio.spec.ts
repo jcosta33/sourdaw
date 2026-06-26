@@ -1,11 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../setMacroWithAudio';
+const bridge = {
+    setMacroWithAudio: vi.fn(),
+};
+
+vi.mock('../levainBridge', () => ({
+    levainBridge: () => bridge,
+}));
+
+import { setMacroWithAudio } from '../setMacroWithAudio';
 
 describe('setMacroWithAudio', () => {
-    it('should export setMacroWithAudio', () => {
-        expect(subject.setMacroWithAudio).toBeDefined();
-        const t = typeof subject.setMacroWithAudio;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('forwards deviceId, macro index, and value to the bridge', () => {
+        setMacroWithAudio('dev-1', 4, 0.7);
+
+        expect(bridge.setMacroWithAudio).toHaveBeenCalledTimes(1);
+        expect(bridge.setMacroWithAudio).toHaveBeenCalledWith('dev-1', 4, 0.7);
     });
 });

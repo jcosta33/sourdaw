@@ -5,33 +5,26 @@
 export type SampleLodConfig = {
     /** Maximum mic positions to load (0 = all). */
     maxMics: number;
-    /** Maximum velocity layers per articulation (0 = all). */
-    maxVelLayers: number;
     /** Maximum round-robin groups (0 = all). */
     maxRoundRobins: number;
-    /** Disable legato transition samples. */
-    disableTransitions: boolean;
 };
 
 export const WEB_LOD: SampleLodConfig = {
     maxMics: 2,
-    maxVelLayers: 3,
     maxRoundRobins: 3,
-    disableTransitions: false,
 };
 
-export // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // Audio decoding
 // ---------------------------------------------------------------------------
 
-/**
- * Fetch and decode an audio file to Float32 PCM.
- * Returns { data, frameCount, channels, sampleRate }.
- * Uses a fresh OfflineAudioContext per decode to avoid state issues.
- */
 // Use a single global context for decoding to avoid WKWebView context limits.
 let decodeCtx: OfflineAudioContext | null = null;
 
+/**
+ * Return the shared OfflineAudioContext used for decoding, creating it lazily.
+ * A single global context avoids WKWebView per-context limits.
+ */
 export function getDecodeContext(): OfflineAudioContext {
     if (!decodeCtx) {
         decodeCtx = new OfflineAudioContext(2, 44100, 44100);
@@ -39,9 +32,15 @@ export function getDecodeContext(): OfflineAudioContext {
     return decodeCtx;
 }
 
-export // Global queue to prevent Safari from crashing on concurrent decode requests
+// Global queue to prevent Safari from crashing on concurrent decode requests.
 let decodeQueue = Promise.resolve();
 
+/**
+ * Fetch and decode an audio file to interleaved Float32 PCM.
+ * Returns `{ data, frameCount, channels, sampleRate }`. Decodes are strictly
+ * sequenced through `decodeQueue` to avoid WebKit `EncodingError` under
+ * concurrent `decodeAudioData` calls.
+ */
 export async function fetchAndDecode(url: string): Promise<{
     data: Float32Array;
     frameCount: number;

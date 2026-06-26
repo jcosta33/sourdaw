@@ -48,9 +48,7 @@ export type SampleManifest = {
 
 export const DEFAULT_LOD: SampleLodConfig = {
     maxMics: 0,
-    maxVelLayers: 0,
     maxRoundRobins: 0,
-    disableTransitions: false,
 };
 
 // ---------------------------------------------------------------------------

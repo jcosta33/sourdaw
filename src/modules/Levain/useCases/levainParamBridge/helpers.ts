@@ -35,12 +35,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // Modified to include deviceId in the flush param.
     // We can use a composite key for the batcher: `${deviceId}:${rustKey}`
     const paramBatcher = createRafBatcher<number>();
+    // Track which composite keys are currently pending per device so teardown
+    // can cancel exactly this device's batches. The batcher does not expose its
+    // key set, so we mirror it here; entries are dropped on flush and on cancel.
+    const pendingKeysByDevice = new Map<string, Set<string>>();
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
         if (!deviceId) {
             return;
         }
+        pendingKeysByDevice.get(deviceId)?.delete(compositeKey);
         const rustKey = parts.slice(1).join(':');
         const device = activeDevices.get(deviceId);
         if (device) {
@@ -50,7 +55,14 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     }
 
     function queueParam(deviceId: string, rustKey: string, value: number): void {
-        paramBatcher.schedule(`${deviceId}:${rustKey}`, value, flushParam);
+        const compositeKey = `${deviceId}:${rustKey}`;
+        let keys = pendingKeysByDevice.get(deviceId);
+        if (!keys) {
+            keys = new Set<string>();
+            pendingKeysByDevice.set(deviceId, keys);
+        }
+        keys.add(compositeKey);
+        paramBatcher.schedule(compositeKey, value, flushParam);
     }
 
     function getDevice(deviceId: string): LevainDevice | undefined {
@@ -124,15 +136,25 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         loadControllers.get(deviceId)?.abort();
         loadControllers.delete(deviceId);
 
+        // Cancel this device's pending rAF batches by their deterministic keys.
+        // The `activeDevices` miss already guards `device.setParam`, but
+        // `persistDeviceParam` in `flushParam` is unconditional — a batch scheduled
+        // before teardown would otherwise persist a stale param to project truth
+        // for a device that no longer exists.
+        const pendingKeys = pendingKeysByDevice.get(deviceId);
+        if (pendingKeys) {
+            for (const key of pendingKeys) {
+                paramBatcher.cancel(key);
+            }
+            pendingKeysByDevice.delete(deviceId);
+        }
+
         const state = levainStore.value;
         if (state && state[deviceId]) {
             const next = { ...state };
             delete next[deviceId];
             levainStore.set(next);
         }
-
-        // We can't cancelAll easily per-device without changing the batcher,
-        // but it's okay to let pending updates naturally drop since the device is removed from map.
     }
     function setLevainParamWithAudio<TKey extends keyof LevainPatch>(
         deviceId: string,
@@ -168,6 +190,19 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
     }
 
+    // Macros are fire-and-forget performance gestures. The authoritative,
+    // persisted state is the macro *position* itself (`patch.macros[index]`,
+    // written by `setMacro` below and rendered by the panel's macro strip). The
+    // per-engine effects a macro fans out to (CC gestures via `handleCc`; the
+    // 'humanize'/'mic_*_volume'/'tone'/'attack'/'release' slots via
+    // `device.setParam`) are deliberately NOT mirrored back into the individual
+    // `patch.micPositions` / `patch.humanize` store fields, and are not routed
+    // through `persistDeviceParam`: a macro is a many-to-one control whose
+    // inverse onto discrete patch fields is not well-defined (e.g. Space drives
+    // two mic volumes; Tightness is `1 - value`). Reopening the panel therefore
+    // shows the pre-macro per-field values while the macro knob retains its set
+    // position. Use the granular controls (`setLevainParamWithAudio`) when a
+    // change must be reflected and persisted per field.
     function setMacroWithAudio(deviceId: string, index: number, value: number): void {
         setMacro(deviceId, index, value);
 
@@ -217,20 +252,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
     }
 
-    function sendHumanizeToEngine(deviceId: string, amount: number): void {
-        const device = getDevice(deviceId);
-        if (device) {
-            device.setParam('humanize', amount);
-        }
-    }
-
-    function sendLegatoEnabledToEngine(deviceId: string, enabled: boolean): void {
-        const device = getDevice(deviceId);
-        if (device) {
-            device.setParam('legato_enabled', enabled ? 1.0 : 0.0);
-        }
-    }
-
     function sendMicParamToEngine(deviceId: string, micIndex: number, param: string, value: number): void {
         const device = getDevice(deviceId);
         if (device) {
@@ -244,8 +265,6 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         loadSamplesForInstrument,
         setLevainParamWithAudio,
         setMacroWithAudio,
-        sendHumanizeToEngine,
-        sendLegatoEnabledToEngine,
         sendMicParamToEngine,
     };
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../repositories/sampleLoader/helpers', () => ({
     WEB_LOD: 0,
@@ -13,8 +13,8 @@ vi.mock('../../stores/levainStore', () => ({
     setSampleLoadError: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/path', () => ({
-    resolveResource: vi.fn().mockResolvedValue('/resolved/path'),
+vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
+    resolveSampleBasePath: vi.fn((instrumentId: string) => Promise.resolve(`/samples/levain/${instrumentId}`)),
 }));
 
 import { loadInstrumentFromManifest } from '../../repositories/sampleLoader/loadInstrumentFromManifest';
@@ -28,6 +28,10 @@ describe('autoLoadLevainSamples', () => {
         vi.mocked(setSampleLoadProgress).mockClear();
         vi.mocked(setSampleLoadError).mockClear();
         vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('reports progress and calls the loader with the manifest URL', async () => {
@@ -45,6 +49,34 @@ describe('autoLoadLevainSamples', () => {
             undefined
         );
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
+    });
+
+    describe('the 300ms completion-clear and its abort guard', () => {
+        it('clears the progress bar 300ms after a successful load completes', async () => {
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
+            expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', null);
+
+            vi.advanceTimersByTime(300);
+
+            expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', null);
+        });
+
+        it('does not clear the bar when the load was superseded before the delay fires', async () => {
+            const controller = new AbortController();
+
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1', controller.signal);
+
+            // Completion ran (1.0 set) and scheduled the clear; a newer load now
+            // supersedes this one before the 300ms timer fires.
+            expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
+            controller.abort();
+
+            vi.advanceTimersByTime(300);
+
+            expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', null);
+        });
     });
 
     describe('fix 3 — load failures surface an error instead of a synthetic 100%', () => {

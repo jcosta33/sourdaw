@@ -1,12 +1,9 @@
-import { resolveResource } from '@tauri-apps/api/path';
-
 import { logger } from '#/infra/logger/appLogger';
 
 import { WEB_LOD } from '../repositories/sampleLoader/helpers';
 import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
+import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
 import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
-
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 /**
  * Load levain samples for a specific instrument into the worklet node.
@@ -29,22 +26,10 @@ export async function autoLoadLevainSamples(
     instrumentId: string,
     signal?: AbortSignal
 ): Promise<void> {
-    let manifestBase = `/samples/levain/${instrumentId}`;
-
-    // In Tauri desktop, we bypass the embedded frontend cache
-    // and load massive 1.2GB sample banks straight from OS resources.
-    if (isTauri) {
-        try {
-            // Tauri places parent-relative bundle assets under _up_ to protect the root Resources directory
-            const localPath = await resolveResource(`_up_/public/samples/levain/${instrumentId}`);
-            const tauriCore = await import('@tauri-apps/api/core');
-            // eslint-disable-next-line sourdaw/no-type-assertion-escape -- dynamic import type doesn't expose convertFileSrc; runtime value is structurally correct
-            const { convertFileSrc } = tauriCore as unknown as { convertFileSrc: (p: string) => string };
-            manifestBase = convertFileSrc(localPath);
-        } catch (error) {
-            logger.warn('[Levain] Failed to resolve Tauri resource path:', error);
-        }
-    }
+    // The repository owns the Tauri IPC: on desktop it resolves the bundled
+    // resource directory (massive sample banks straight from OS resources); on
+    // web it returns the public `/samples/levain/<id>` path.
+    const manifestBase = await resolveSampleBasePath(instrumentId);
 
     // A newer load may have superseded this one while the resource path
     // resolved. Bail before touching the UI so we don't clobber its state.

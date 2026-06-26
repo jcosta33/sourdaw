@@ -289,7 +289,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     onSendMicParam={(micIndex, name, value) =>
                                         sendMicParamToEngine(deviceId, micIndex, name, value)
                                     }
-                                    onUpdateMicPosition={(name, partial) => updateMicPosition(deviceId, name, partial)}
+                                    onUpdateMicPosition={(index, partial) =>
+                                        updateMicPosition(deviceId, index, partial)
+                                    }
                                 />
                             </SectionCard>
 

@@ -38,8 +38,17 @@ export function isLevainDevice(deviceType: string): boolean {
  *
  * Resumes the AudioContext if suspended. Caches WASM binary across calls.
  * Await `result.ready` before sending MIDI.
+ *
+ * `onFault` is invoked if the worklet posts a runtime-fault `error` message
+ * after the ready handshake has already settled (a WASM panic mid-playback).
+ * Callers use it to reflect the fault back into UI state (e.g. flip the panel's
+ * "Ready" indicator), since the processor goes silent but the node stays alive.
  */
-export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<LevainNodeResult> {
+export async function createLevainNode(
+    ctx: BaseAudioContext,
+    wasmUrl?: string,
+    onFault?: (message: string) => void
+): Promise<LevainNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -68,6 +77,7 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         ) {
             const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
             logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', message);
+            onFault?.(message);
         }
     };
     const readyPromise = handshake.promise;

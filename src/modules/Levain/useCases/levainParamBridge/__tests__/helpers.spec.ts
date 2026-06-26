@@ -145,4 +145,35 @@ describe('createLevainBridge', () => {
             expect(signals[0]?.aborted).toBe(true);
         });
     });
+
+    describe('fix — teardown cancels pending rAF batches before they persist', () => {
+        it('does not persist a queued param after the device is unregistered', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            // Drain the register-time batched params so the assertion below only
+            // sees the post-register write we schedule next.
+            flushRaf();
+            deps.persistDeviceParam.mockClear();
+
+            // Schedule a param (e.g. dragging the master-gain fader), then tear
+            // the device down in the same frame before the rAF fires.
+            bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
+            expect(paramBatcherHasPending(rafCallbacks)).toBe(true);
+            bridge.unregisterLevainDevice('d1');
+
+            // The rAF still fires — its entry must have been cancelled so the
+            // post-teardown flush never reaches persistDeviceParam.
+            flushRaf();
+
+            expect(deps.persistDeviceParam).not.toHaveBeenCalledWith('d1', 'master_gain', 0.42);
+            expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+        });
+    });
 });
+
+function paramBatcherHasPending(rafCallbacks: FrameRequestCallback[]): boolean {
+    return rafCallbacks.length > 0;
+}

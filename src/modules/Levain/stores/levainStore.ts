@@ -55,10 +55,6 @@ export const levainStore = createStore<LevainInstances>({
     initialData: {},
 });
 
-export function getLevainState(deviceId: string): LevainState {
-    return (levainStore.value ?? {})[deviceId] ?? defaultLevainState;
-}
-
 // ---------------------------------------------------------------------------
 // State update functions — pure store mutations, no engine calls.
 // Engine sync is handled exclusively in useCases/levainParamBridge.ts.

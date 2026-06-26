@@ -1,11 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../unregisterLevainDevice';
+const bridge = {
+    unregisterLevainDevice: vi.fn(),
+};
+
+vi.mock('../levainBridge', () => ({
+    levainBridge: () => bridge,
+}));
+
+import { unregisterLevainDevice } from '../unregisterLevainDevice';
 
 describe('unregisterLevainDevice', () => {
-    it('should export unregisterLevainDevice', () => {
-        expect(subject.unregisterLevainDevice).toBeDefined();
-        const t = typeof subject.unregisterLevainDevice;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('forwards the deviceId to the bridge', () => {
+        unregisterLevainDevice('dev-1');
+
+        expect(bridge.unregisterLevainDevice).toHaveBeenCalledTimes(1);
+        expect(bridge.unregisterLevainDevice).toHaveBeenCalledWith('dev-1');
     });
 });

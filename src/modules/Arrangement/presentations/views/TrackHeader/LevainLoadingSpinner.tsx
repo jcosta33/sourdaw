@@ -3,23 +3,12 @@ import { type ReactElement } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { useStore } from '#/infra/store/useStore';
-import { levainStore, type LevainState } from '#/modules/Levain/stores';
+import { defaultLevainState, levainStore } from '#/modules/Levain/stores';
 
 import { type Track } from '../../../models/Track';
 
 type Props = {
     track: Track;
-};
-
-const defaultLevainState: LevainState = {
-    patch: {} as LevainState['patch'],
-    uiLevel: 1,
-    engineReady: false,
-    sampleLoadProgress: null,
-    activeVoices: 0,
-    peakL: 0,
-    peakR: 0,
-    currentArticulationDisplay: 'Long',
 };
 
 export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {

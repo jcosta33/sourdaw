@@ -220,7 +220,13 @@ const levainDescriptor: WasmDeviceDescriptor = {
             setBypass: () => {},
             destroy: () => {},
         };
-        const loadPromise = createLevainNode(context)
+        const loadPromise = createLevainNode(context, undefined, () => {
+            // A post-ready worklet fault (WASM panic) silences the processor while
+            // the node stays alive. Reflect it into engineReady so the panel LED
+            // stops showing "Ready"; setEngineReady no-ops if the device was
+            // already torn down.
+            setEngineReady(deviceId, false);
+        })
             .then(async (result: LevainNodeResult) => {
                 await result.ready;
                 for (const [name, value] of pendingParams) {

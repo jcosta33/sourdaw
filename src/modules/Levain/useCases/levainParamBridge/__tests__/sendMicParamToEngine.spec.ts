@@ -1,11 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../sendMicParamToEngine';
+const bridge = {
+    sendMicParamToEngine: vi.fn(),
+};
+
+vi.mock('../levainBridge', () => ({
+    levainBridge: () => bridge,
+}));
+
+import { sendMicParamToEngine } from '../sendMicParamToEngine';
 
 describe('sendMicParamToEngine', () => {
-    it('should export sendMicParamToEngine', () => {
-        expect(subject.sendMicParamToEngine).toBeDefined();
-        const t = typeof subject.sendMicParamToEngine;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('forwards deviceId, mic index, param, and value to the bridge', () => {
+        sendMicParamToEngine('dev-1', 2, 'volume', 0.5);
+
+        expect(bridge.sendMicParamToEngine).toHaveBeenCalledTimes(1);
+        expect(bridge.sendMicParamToEngine).toHaveBeenCalledWith('dev-1', 2, 'volume', 0.5);
     });
 });
