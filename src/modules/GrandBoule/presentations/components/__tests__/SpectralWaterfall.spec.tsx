@@ -37,6 +37,20 @@ function makeAnalyser(): AnalyserNode {
     } as unknown as AnalyserNode;
 }
 
+/** An analyser whose magnitude ramps with the bin index, so the column→bin
+ *  mapping (which is sample-rate-dependent) is observable in the painted row. */
+function makeRampAnalyser(): AnalyserNode {
+    return {
+        fftSize: 512,
+        frequencyBinCount: 256,
+        getFloatFrequencyData: (data: Float32Array): void => {
+            for (let i = 0; i < data.length; i += 1) {
+                data[i] = -100 + (i / data.length) * 80;
+            }
+        },
+    } as unknown as AnalyserNode;
+}
+
 describe('SpectralWaterfall', () => {
     let ctxs: RecordingCtx[];
     let rafCallbacks: FrameRequestCallback[];
@@ -113,5 +127,28 @@ describe('SpectralWaterfall', () => {
         const scrollBlit = offscreen.drawImage.mock.calls.find((c) => c[1] === 0 && c[2] === 1);
         expect(scrollBlit).toBeUndefined();
         expect(offscreen.putImageData).not.toHaveBeenCalled();
+    });
+
+    // #10: the column→bin LUT is sample-rate-dependent. Two contexts running at
+    // different rates must paint different rows from the same ramped spectrum;
+    // before the fix the rate was hardcoded to 48 kHz and both were identical.
+    const paintRowAt = (rate: number): Uint8ClampedArray => {
+        render(<SpectralWaterfall analyser={makeRampAnalyser()} sampleRate={rate} />);
+        const offscreen = ctxs[1]!;
+        tick();
+        const lastPaint = offscreen.putImageData.mock.calls.at(-1);
+        const img = lastPaint![0] as ImageData;
+        return img.data;
+    };
+
+    it('scales the frequency-to-column mapping by the provided sample rate', () => {
+        const rowAt48k = Uint8ClampedArray.from(paintRowAt(48000));
+        ctxs = [];
+        rafCallbacks = [];
+        const rowAt44k = Uint8ClampedArray.from(paintRowAt(44100));
+
+        expect(rowAt48k.length).toBe(rowAt44k.length);
+        const differs = rowAt48k.some((value, index) => value !== rowAt44k[index]);
+        expect(differs).toBe(true);
     });
 });

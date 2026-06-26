@@ -88,4 +88,47 @@ describe('setGrandBouleMorphPosition', () => {
         expect(setParam).toHaveBeenCalled();
         expect(mocks.warn).not.toHaveBeenCalled();
     });
+
+    it('persists the new morph position to the store on the enabled branch', () => {
+        const { handle } = fakeEngine();
+        const state = stateWithMorph({ enabled: true, modelA: 'steinway-d', modelB: 'yamaha-cfx' });
+        const store = storeWith(state);
+
+        setGrandBouleMorphPosition({ engine: handle, morphPosition: 0.42, store });
+
+        expect(store.set).toHaveBeenCalledTimes(1);
+        const written = (store.set as ReturnType<typeof vi.fn>).mock.calls[0][0] as GrandBouleState;
+        expect(written.morph.morphPosition).toBe(0.42);
+    });
+
+    // Regression (#9): with morph disabled the engine was updated but the store
+    // was never written, so a controlled knob snapped back to the old position
+    // on the next render.
+    it('persists the new morph position to the store on the disabled branch', () => {
+        const { handle } = fakeEngine();
+        const state = stateWithMorph({
+            enabled: false,
+            modelA: 'steinway-d',
+            modelB: 'yamaha-cfx',
+            morphPosition: 0.1,
+        });
+        const store = storeWith(state);
+
+        setGrandBouleMorphPosition({ engine: handle, morphPosition: 0.7, store });
+
+        expect(store.set).toHaveBeenCalledTimes(1);
+        const written = (store.set as ReturnType<typeof vi.fn>).mock.calls[0][0] as GrandBouleState;
+        expect(written.morph.morphPosition).toBe(0.7);
+    });
+
+    it('clamps an out-of-range morph position before persisting it', () => {
+        const { handle } = fakeEngine();
+        const state = stateWithMorph({ enabled: true, modelA: 'steinway-d', modelB: 'yamaha-cfx' });
+        const store = storeWith(state);
+
+        setGrandBouleMorphPosition({ engine: handle, morphPosition: 1.8, store });
+
+        const written = (store.set as ReturnType<typeof vi.fn>).mock.calls[0][0] as GrandBouleState;
+        expect(written.morph.morphPosition).toBe(1);
+    });
 });

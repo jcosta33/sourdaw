@@ -65,8 +65,6 @@ describe('loadGrandBoulePreset', () => {
             perNoteOverrides: new Map(),
             morph: createDefaultMorphState(),
             temperament: 0,
-            engineReady: false,
-            activeVoices: 0,
         };
 
         const setParam = vi.fn();

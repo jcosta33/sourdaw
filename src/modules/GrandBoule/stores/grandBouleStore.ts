@@ -1,8 +1,9 @@
 /**
  * Grand Boule piano state store.
  *
- * Holds the current per-instance configuration, the preset parameter values
- * that have been applied, and a runtime-ready flag. Project-persistable.
+ * Holds the current per-instance configuration and the preset parameter values
+ * that have been applied. Project-persistable. Engine readiness and live voice
+ * count are derived from the engine handle at render time, not stored here.
  */
 
 import { createStore } from '#/infra/store/createStore';
@@ -41,10 +42,6 @@ export type GrandBouleState = {
     morph: GrandBouleMorphState;
     /** Active historical temperament per spec §4. */
     temperament: TemperamentIndex;
-    /** True once the WASM engine has been constructed and is accepting notes. */
-    engineReady: boolean;
-    /** Number of voices currently sounding (telemetry — read-only). */
-    activeVoices: number;
 };
 
 export function createDefaultGrandBouleState(): GrandBouleState {
@@ -60,8 +57,6 @@ export function createDefaultGrandBouleState(): GrandBouleState {
         perNoteOverrides: new Map(),
         morph: createDefaultMorphState(),
         temperament: 0,
-        engineReady: false,
-        activeVoices: 0,
     };
 }
 

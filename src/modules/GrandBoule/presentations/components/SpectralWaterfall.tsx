@@ -16,8 +16,13 @@ const HISTORY_FRAMES = 128;
 
 type SpectralWaterfallProps = {
     analyser: AnalyserNode | null;
+    /** Engine context sample rate (Hz). Drives the log-frequency bin LUT. */
+    sampleRate?: number;
     className?: string;
 };
+
+/** Fallback rate used until a real engine sample rate is provided. */
+const DEFAULT_SAMPLE_RATE = 48000;
 
 /** Map a display column (0..DISPLAY_COLS-1) to a linear FFT bin index via
  *  log-frequency interpolation. Returns a fractional bin for lerp. */
@@ -57,7 +62,7 @@ function colorMap(mag: number): [number, number, number, number] {
     return [r, g, b, a];
 }
 
-export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProps): ReactElement => {
+export const SpectralWaterfall = ({ analyser, sampleRate, className }: SpectralWaterfallProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -72,9 +77,16 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         Array.from({ length: HISTORY_FRAMES }, () => new Float32Array(DISPLAY_COLS))
     );
     const headRef = useRef(0);
-    // Precomputed bin lookup table (rebuilt when sampleRate is known).
+    // Precomputed bin lookup table (rebuilt when the sample rate changes).
     const binLutRef = useRef<Float64Array | null>(null);
-    const sampleRateRef = useRef(48000);
+    // The bin LUT is frequency-to-column for the *engine* sample rate; a 44.1 kHz
+    // context maps FFT bins differently than 48 kHz, so the rate must feed the
+    // LUT (mirrored to a ref so the rAF loop reads the live value) and the LUT
+    // must be rebuilt when it changes.
+    const effectiveSampleRate = sampleRate ?? DEFAULT_SAMPLE_RATE;
+    const sampleRateRef = useRef(effectiveSampleRate);
+    const lutSampleRateRef = useRef<number | null>(null);
+    sampleRateRef.current = effectiveSampleRate;
 
     useEffect(() => {
         const container = containerRef.current;
@@ -143,13 +155,20 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
                     normBuffer[i] = Math.max(0, Math.min(1, (dbBuffer[i]! + 100) / 100));
                 }
 
-                // Rebuild LUT if bin count or sample rate changed.
-                if (binLutRef.current === null || binLutRef.current.length !== DISPLAY_COLS) {
+                // Rebuild the LUT when it is missing or the sample rate changed
+                // (the column-to-bin mapping is rate-dependent).
+                const rate = sampleRateRef.current;
+                if (
+                    binLutRef.current === null ||
+                    binLutRef.current.length !== DISPLAY_COLS ||
+                    lutSampleRateRef.current !== rate
+                ) {
                     const lut = new Float64Array(DISPLAY_COLS);
                     for (let c = 0; c < DISPLAY_COLS; c++) {
-                        lut[c] = colToFftBin(c, binCount, sampleRateRef.current);
+                        lut[c] = colToFftBin(c, binCount, rate);
                     }
                     binLutRef.current = lut;
+                    lutSampleRateRef.current = rate;
                 }
                 const lut = binLutRef.current;
                 const head = headRef.current;

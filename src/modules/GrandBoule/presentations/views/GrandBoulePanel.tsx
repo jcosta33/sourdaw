@@ -1,9 +1,8 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
-import { Cpu, Power } from 'lucide-react';
+import { Power } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
@@ -111,6 +110,30 @@ const Knob = ({
     </div>
 );
 
+/**
+ * Narrow a `MidiPedalCcPayload.value` (`number | boolean`) to a continuous
+ * 0..1 position for the sustain pedal (CC64). A boolean maps to its extremes;
+ * the use case clamps the number into range.
+ */
+const pedalContinuous = (value: number | boolean): number => {
+    if (typeof value === 'boolean') {
+        return value ? 1 : 0;
+    }
+    return value;
+};
+
+/**
+ * Narrow a `MidiPedalCcPayload.value` to an on/off state for the binary pedals
+ * (CC66 sostenuto, CC67 una corda). A number is engaged past the MIDI-standard
+ * half-way point.
+ */
+const pedalEngaged = (value: number | boolean): boolean => {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    return value >= 0.5;
+};
+
 const TEMPERAMENT_OPTIONS = [
     { value: 0 as TemperamentIndex, label: 'Equal' },
     { value: 1 as TemperamentIndex, label: 'Werckmeister III' },
@@ -134,8 +157,19 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const [lidPosition, setLidPosition] = useState(1.0);
     const [lastVelocity, setLastVelocity] = useState(0);
 
+    // The pedal subscriber dispatches through use cases that need the live
+    // engine/store. Both are recomputed each render (engine is a fresh handle,
+    // store is the per-device instance), so mirror them into refs and read
+    // `*.current` inside the long-lived subscription rather than closing over a
+    // stale value.
+    const engineRef = useRef(engine);
+    engineRef.current = engine;
+    const storeRef = useRef(store);
+    storeRef.current = store;
+
     // Subscribe to external MIDI note events so the visual keyboard reflects
-    // notes played on a physical controller (e.g. Akai).
+    // notes played on a physical controller (e.g. Akai). Re-subscribe when the
+    // device changes so the filters and store writes target the new device.
     useEffect(() => {
         const unsubs = [
             onMidiNoteOn(({ deviceId: eventDeviceId, midiNote, velocity }) => {
@@ -166,16 +200,17 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 if (eventDeviceId && eventDeviceId !== deviceId) {
                     return;
                 }
-                const s = store.value;
-                if (s === null) {
-                    return;
-                }
+                // `value` is `number | boolean`; narrow it at runtime (never
+                // `as`-cast) and route through the pedal use cases so the engine
+                // is notified and the store stays clamped/consistent.
+                const liveEngine = engineRef.current;
+                const liveStore = storeRef.current;
                 if (cc === 64) {
-                    store.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
+                    setGrandBouleSustain({ engine: liveEngine, store: liveStore, position: pedalContinuous(value) });
                 } else if (cc === 66) {
-                    store.set({ ...s, pedals: { ...s.pedals, sostenuto: value as boolean } });
+                    setGrandBouleSostenuto({ engine: liveEngine, store: liveStore, engaged: pedalEngaged(value) });
                 } else if (cc === 67) {
-                    store.set({ ...s, pedals: { ...s.pedals, unaCorda: value as boolean } });
+                    setGrandBouleUnaCorda({ engine: liveEngine, store: liveStore, engaged: pedalEngaged(value) });
                 }
             }),
         ];
@@ -184,7 +219,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 unsub();
             }
         };
-    }, []);
+    }, [deviceId]);
 
     // On mount (or when the engine becomes available), dispatch the active
     // piano model's parameters so the DSP matches the UI from the start.
@@ -197,15 +232,18 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         setGrandBouleMorphPosition({ engine, store, morphPosition: 0 });
     }, [engineReady]);
 
-    // Read FFT data from the track's AnalyserNode for the spectral waterfall.
+    // Read FFT data from the track's AnalyserNode for the spectral waterfall,
+    // and pass the engine context sample rate so its frequency axis is scaled
+    // for the real rate (44.1 kHz vs 48 kHz) rather than a hardcoded default.
     const analyser = engineReady ? engine.getAnalyserNode() : null;
+    const engineSampleRate = engineReady ? engine.sampleRate() : undefined;
 
     const liveState = state ?? store.value;
     if (liveState === null) {
         return <div className="h-full" />;
     }
 
-    const { config, parameters, pedals, morph, temperament, activeVoices } = liveState;
+    const { config, parameters, pedals, morph, temperament } = liveState;
     const presets = listGrandBoulePresets();
 
     const handleNoteOn = (midiNote: number, velocity: number): void => {
@@ -426,17 +464,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             <div className="text-[16px] font-semibold text-foreground">Physical Modeling Piano</div>
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
-                            {/* Announce the live voice count to assistive tech —
-                                the metric tile itself is purely visual. */}
-                            <span className="sr-only" role="status" aria-live="polite">
-                                {`${activeVoices} active ${activeVoices === 1 ? 'voice' : 'voices'}`}
-                            </span>
-                            <DawPluginMetricTile
-                                className="grand-boule-window min-w-[94px]"
-                                label="Voices"
-                                value={`${activeVoices}`}
-                                detail="Active"
-                            />
                             <DawPluginMetricTile
                                 className="grand-boule-window min-w-[94px]"
                                 label="Engine"
@@ -462,7 +489,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                     </div>
 
                     <div className="grand-boule-window min-h-0 shrink-0 overflow-hidden p-2" style={{ height: 160 }}>
-                        <SpectralWaterfall analyser={analyser} className="h-full w-full" />
+                        <SpectralWaterfall
+                            analyser={analyser}
+                            sampleRate={engineSampleRate}
+                            className="h-full w-full"
+                        />
                     </div>
                 </section>
 
@@ -555,7 +586,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         />
                     </SectionCard>
 
-                    <SectionCard title="Transport" detail="Panic and voice status.">
+                    <SectionCard title="Transport" detail="Panic — silence every voice.">
                         <div className="flex items-center gap-2">
                             <DawPluginChip
                                 tone="danger"
@@ -568,10 +599,6 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                                 <Power className="size-3.5" />
                                 Panic
                             </DawPluginChip>
-                            <DawPluginLed tone="neutral" className="flex items-center gap-1">
-                                <Cpu className="size-3" />
-                                {activeVoices} voices
-                            </DawPluginLed>
                         </div>
                     </SectionCard>
 

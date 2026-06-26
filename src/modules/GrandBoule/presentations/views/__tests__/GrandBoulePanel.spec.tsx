@@ -33,13 +33,10 @@ describe('GrandBoulePanel', () => {
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('announces the active voice count through a polite live region', () => {
+    it('renders the engine readiness tile', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        // The Voices metric tile is purely visual; a live region is the
-        // assistive-tech surface for the voice count. (PianoModel3D contributes
-        // its own played-notes live region, so match on the voices text.)
-        const liveRegions = [...document.querySelectorAll('[role="status"][aria-live="polite"]')];
-        const voicesRegion = liveRegions.find((el) => /active voices?$/.test(el.textContent ?? ''));
-        expect(voicesRegion).toBeTruthy();
+        // Engine readiness is derived from the engine handle (engine.isReady()),
+        // not a store field. With no live engine the tile reads "idle".
+        expect(screen.getByText('idle')).toBeTruthy();
     });
 });

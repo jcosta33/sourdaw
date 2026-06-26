@@ -127,7 +127,7 @@ describe('resetModuleStoresToDefault', () => {
         // instances, so the reset must reach every device's slice. Dirty a
         // non-default device the way a loaded project would.
         const store = createGrandBouleStore('prior-project-grand-boule');
-        store.set({ ...createDefaultGrandBouleState(), temperament: 4, activeVoices: 3 });
+        store.set({ ...createDefaultGrandBouleState(), temperament: 4 });
         expect(store.value?.temperament).toBe(4);
 
         resetModuleStoresToDefault();
@@ -136,6 +136,5 @@ describe('resetModuleStoresToDefault', () => {
         // singleton, so this device's state survived into the next project.
         expect(store.value).toEqual(createDefaultGrandBouleState());
         expect(store.value?.temperament).toBe(0);
-        expect(store.value?.activeVoices).toBe(0);
     });
 });

@@ -275,6 +275,14 @@ export const PianoModel3D = ({
     const prevNotesRef = useRef<ReadonlyMap<number, number>>(new Map());
     const lidRef = useRef(lidPosition);
     lidRef.current = lidPosition;
+    // The rAF render loop is created once in a []-deps effect, so it would
+    // otherwise close over the first-render activeNotes/sustainPedal forever.
+    // Mirror both changing inputs into refs and read *.current inside the loop
+    // (same pattern as StringVibrationView's notesRef).
+    const activeNotesRef = useRef(activeNotes);
+    activeNotesRef.current = activeNotes;
+    const sustainPedalRef = useRef(sustainPedal);
+    sustainPedalRef.current = sustainPedal;
     // Keep the latest onNoteOff reachable from the window-level fallback
     // listener without re-subscribing it on every render.
     const onNoteOffRef = useRef(onNoteOff);
@@ -334,11 +342,16 @@ export const PianoModel3D = ({
 
             const anims = animRef.current;
 
+            // Read the latest props through their refs so the loop reflects
+            // live play instead of the mount-time snapshot.
+            const currentNotes = activeNotesRef.current;
+            const currentSustain = sustainPedalRef.current;
+
             // --- Update animation state ---
             for (let i = 0; i < NUM_KEYS; i += 1) {
                 const midi = LOWEST_MIDI + i;
                 const a = anims[i]!;
-                const vel = activeNotes.get(midi);
+                const vel = currentNotes.get(midi);
                 const isHeld = vel !== undefined;
 
                 // Hammer: snap up on new note-on, decay back
@@ -353,7 +366,7 @@ export const PianoModel3D = ({
                 a.keyDepress += (targetDepress - a.keyDepress) * 0.25;
 
                 // Damper: lifted when note held OR sustain pedal engaged
-                const targetDamper = isHeld || sustainPedal > 0.3 ? 1.0 : 0.0;
+                const targetDamper = isHeld || currentSustain > 0.3 ? 1.0 : 0.0;
                 a.damperLift += (targetDamper - a.damperLift) * 0.15;
 
                 // String vibration: energised while held or damper up
@@ -365,7 +378,7 @@ export const PianoModel3D = ({
                     a.stringVib = 0;
                 }
             }
-            prevNotesRef.current = activeNotes;
+            prevNotesRef.current = currentNotes;
 
             // --- Layout constants (pixel coords) ---
             const margin = W * 0.04;

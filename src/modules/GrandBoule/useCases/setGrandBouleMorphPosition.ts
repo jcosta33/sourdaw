@@ -96,6 +96,13 @@ export function setGrandBouleMorphPosition(input: SetGrandBouleMorphPositionInpu
             bodyResonance: modelA.bodyResonance,
             toneColor: modelA.toneColor,
         });
+        // Persist the new position too, or a controlled knob would snap back
+        // to the old value on the next render (the engine moved but the store
+        // did not).
+        input.store.set({
+            ...state,
+            morph: { ...morph, morphPosition: clamped },
+        });
         return;
     }
 

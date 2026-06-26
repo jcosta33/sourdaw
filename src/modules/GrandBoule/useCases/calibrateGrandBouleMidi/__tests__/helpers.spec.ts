@@ -26,8 +26,6 @@ function resetGrandBouleStore(): void {
         perNoteOverrides: new Map(),
         morph: createDefaultMorphState(),
         temperament: 0,
-        engineReady: false,
-        activeVoices: 0,
     });
 }
 

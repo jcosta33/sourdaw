@@ -20,12 +20,11 @@ describe('resetGrandBouleStores', () => {
         const store = createGrandBouleStore(deviceId);
 
         // Dirty this device's slice the way a loaded project would (engaged
-        // sustain pedal + non-equal temperament + extra active voices).
+        // sustain pedal + non-equal temperament).
         store.set({
             ...createDefaultGrandBouleState(),
             pedals: { sustain: 1, unaCorda: true, sostenuto: true },
             temperament: 3,
-            activeVoices: 5,
         });
 
         // Sanity: the dirty state is present before the reset.
@@ -40,7 +39,6 @@ describe('resetGrandBouleStores', () => {
         expect(store.value).toEqual(createDefaultGrandBouleState());
         expect(store.value?.pedals).toEqual({ sustain: 0, unaCorda: false, sostenuto: false });
         expect(store.value?.temperament).toBe(0);
-        expect(store.value?.activeVoices).toBe(0);
     });
 
     it('resets multiple per-device stores in one call', () => {
