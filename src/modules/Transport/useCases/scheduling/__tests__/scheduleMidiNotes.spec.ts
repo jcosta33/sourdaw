@@ -10,6 +10,7 @@ import { getYeastRack } from '#/modules/Yeast/stores';
 
 import { getTempoAtBeat } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleFrozenTrack, scheduleMidiNotes } from '../scheduleMidiNotes';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -20,6 +21,9 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
+}));
+vi.mock('../../../stores/timeSignatureMapStore', () => ({
+    timeSignatureMapStore: { value: { changes: [] } },
 }));
 vi.mock('../../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
@@ -91,6 +95,7 @@ describe('scheduleMidiNotes', () => {
         vi.clearAllMocks();
         (trackStore as { value: unknown }).value = { tracks: [] };
         (midiStore as { value: unknown }).value = null;
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) => clips);
         vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
         vi.mocked(getTempoAtBeat).mockReturnValue(120);
@@ -223,6 +228,48 @@ describe('scheduleMidiNotes', () => {
         // spb = 240/60 = 4; beat 1 => round(1 * 48000 / 4) = 12000.
         // Flat-tempo (buggy) spb = 120/60 = 2 would give 24000.
         expect(seenNoteOnSample).toBe(12000);
+    });
+
+    // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time
+    // signature) must derive from the time-signature map, the same authority the
+    // metronome uses — not the flat transport numerator/denominator. After a
+    // mid-project meter change a bar-aware processor would otherwise read the
+    // wrong bar while the metronome stays correct.
+    it('derives Yeast bar/time-signature metadata from the time-signature map (audit row 2)', async () => {
+        const track = midiTrack({ clips: [midiClip({ endBeat: 12 })], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 6, duration: 1, velocity: 100 }] },
+        };
+        // A 3/4 meter from beat 0. transport defaults stay at 4/4 so a flat-numerator
+        // reading would disagree with the map.
+        (timeSignatureMapStore as { value: unknown }).value = {
+            changes: [{ id: 'ts0', beat: 0, numerator: 3, denominator: 4 }],
+        };
+
+        let seenTransport: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number } | undefined;
+        const processBlock = vi.fn(
+            (
+                _events: unknown,
+                _start: number,
+                _end: number,
+                transportInfo: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number }
+            ) => {
+                seenTransport = transportInfo;
+                return [];
+            }
+        );
+        vi.mocked(getYeastRack).mockReturnValue({ getProcessorIds: () => ['gen'], processBlock } as never);
+
+        // Block starts at beat 6 — bar 3 (index 2), beat 1 in 3/4. Flat 4/4 (buggy)
+        // would report barIndex floor(6/4)=1, beatInBar 6%4=2, timeSigNum 4.
+        await scheduleMidiNotes(6, 10, 6, -1, [], { ...defaultTransportState }, 120);
+
+        expect(seenTransport).toBeDefined();
+        expect(seenTransport!.timeSigNum).toBe(3);
+        expect(seenTransport!.timeSigDen).toBe(4);
+        expect(seenTransport!.barIndex).toBe(2);
+        expect(seenTransport!.beatInBar).toBe(0);
     });
 
     // §4 — A negative groove offset must clamp a note to the iteration start, not

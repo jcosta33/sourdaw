@@ -24,10 +24,6 @@ const _firedClickTimes = new Map<number, number>();
 /** Float tolerance for treating two scheduled click times as the same instant. */
 const CLICK_TIME_EPSILON = 1e-4;
 
-export function getLastMetronomeBeat(): number {
-    return _lastMetronomeBeat;
-}
-
 export function resetMetronomeBeat(position: number): void {
     _lastMetronomeBeat = Math.floor(position) - 1;
     // NB: `_firedClickTimes` is deliberately NOT cleared here. The loop-wrap and

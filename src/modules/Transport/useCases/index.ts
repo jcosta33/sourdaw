@@ -36,12 +36,7 @@ export { addTempoChange } from './tempoMap/addTempoChange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { updateTempoChange } from './tempoMap/updateTempoChange';
 
-export {
-    detectTempoFromOnsets,
-    estimateOnsetsFromClips,
-    applyTempoMap,
-    detectProjectTempo,
-} from './tempoMapping/operations/detectProjectTempo';
+export { detectProjectTempo } from './tempoMapping/operations/detectProjectTempo';
 export { adjustTempoPoint } from './tempoMapping/operations/adjustTempoPoint';
 
 export { seekPlayhead } from './transportControls/seekPlayhead';
@@ -69,8 +64,6 @@ export { getTransportHandlers } from './getTransportHandlers';
 export type { TransportState, TempoChange, TimeSignatureChange } from './transportQueries/helpers';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
-export { getTransportStoreValue } from './transportQueries/getTransportStoreValue';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
-export { getTempoAtBeat } from './transportQueries/getTempoAtBeat';
 export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { updateTransportState } from './transportQueries/updateTransportState';

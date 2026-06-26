@@ -7,7 +7,6 @@ import { updateTransportState as repoUpdateTransportState } from '../../reposito
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoMapState } from '../transportQueries/getTempoMapState';
 import { getTransportState } from '../transportQueries/getTransportState';
-import { getTransportStoreValue } from '../transportQueries/getTransportStoreValue';
 import { updateTransportState } from '../transportQueries/updateTransportState';
 
 import type { TempoMapStoreState } from '../../stores/tempoMapStore';
@@ -28,14 +27,6 @@ describe('transportQueries injectables', () => {
         vi.mocked(repoGetTransportState).mockReturnValue(snapshot);
 
         expect(getTransportState()).toBe(snapshot);
-        expect(repoGetTransportState).toHaveBeenCalledTimes(1);
-    });
-
-    it('should forward getTransportStoreValue to the same repository accessor', () => {
-        const snapshot: TransportState = { ...defaultTransportState, tempo: 77 };
-        vi.mocked(repoGetTransportState).mockReturnValue(snapshot);
-
-        expect(getTransportStoreValue()).toBe(snapshot);
         expect(repoGetTransportState).toHaveBeenCalledTimes(1);
     });
 

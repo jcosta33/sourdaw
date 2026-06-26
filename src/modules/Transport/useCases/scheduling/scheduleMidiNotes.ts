@@ -16,8 +16,10 @@ import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNot
 import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
+import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { type SourceWithFade } from '../playheadScheduler';
 
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
@@ -250,20 +252,38 @@ export async function scheduleMidiNotes(
                         const blockTempo = getTempoAtBeat(changes, fromBeat, transport.tempo);
                         const spb = blockTempo / 60;
                         const yeastSr = getAudioContext().sampleRate;
-                        // Transport metadata describes where this scheduling block
-                        // sits in the timeline (§2). It is derived from fromBeat, not
-                        // the clip/iteration anchor, so bar-aware processors read the
-                        // block's true bar; per-iteration variation comes from the
-                        // events being placed at this iteration's absolute beats.
+                        // §2 / audit row 2 — Bar index, beat-in-bar, and time
+                        // signature must derive from the same authority the metronome
+                        // uses (the time-signature map), not the flat transport
+                        // numerator/denominator. Otherwise a bar-aware Yeast processor
+                        // reads the wrong bar after a mid-project meter change while
+                        // the metronome stays correct. `getBarBeatAtPosition` is the
+                        // map-aware accumulator (1-indexed bar/beat + tick); convert to
+                        // the worklet's 0-indexed convention. `tick` is 0..479 of a
+                        // beat, so `(beat - 1) + tick/480` reconstructs the fractional
+                        // 0-indexed beat-in-bar.
+                        const tsChanges = timeSignatureMapStore.value?.changes ?? [];
+                        const barBeat = getBarBeatAtPosition(
+                            tsChanges,
+                            fromBeat,
+                            transport.timeSignatureNumerator,
+                            transport.timeSignatureDenominator
+                        );
+                        const blockTimeSig = getTimeSignatureAtBeat(
+                            tsChanges,
+                            fromBeat,
+                            transport.timeSignatureNumerator,
+                            transport.timeSignatureDenominator
+                        );
                         const yeastTransport: TransportInfo = {
                             sampleRate: yeastSr,
                             bpm: blockTempo,
                             ppqPosition: fromBeat,
                             isPlaying: true,
-                            barIndex: Math.floor(fromBeat / transport.timeSignatureNumerator),
-                            beatInBar: fromBeat % transport.timeSignatureNumerator,
-                            timeSigNum: transport.timeSignatureNumerator,
-                            timeSigDen: transport.timeSignatureDenominator,
+                            barIndex: barBeat.bar - 1,
+                            beatInBar: barBeat.beat - 1 + barBeat.tick / 480,
+                            timeSigNum: blockTimeSig.numerator,
+                            timeSigDen: blockTimeSig.denominator,
                             loopEnabled: transport.loopStart < transport.loopEnd,
                             loopStartPpq: transport.loopStart,
                             loopEndPpq: transport.loopEnd,

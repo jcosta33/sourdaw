@@ -7,8 +7,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { type AutomationStoreState } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { transportStore } from '#/modules/Transport/stores';
-import { type TransportState } from '#/modules/Transport/stores/transportStore';
+import { transportStore, type TransportState } from '#/modules/Transport/stores';
 
 import { type ProjectSnapshot } from '../../../models/ProjectVersion';
 

@@ -1,4 +1,4 @@
-import { type TempoChange } from '#/modules/Transport/useCases/transportQueries/helpers';
+import { type TempoChange } from '#/modules/Transport/useCases';
 
 import { type AutomationLane, type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';

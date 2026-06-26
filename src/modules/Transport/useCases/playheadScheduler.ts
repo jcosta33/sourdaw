@@ -1,5 +1,5 @@
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
-import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
+import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
@@ -17,6 +17,7 @@ import {
 } from '#/modules/Automation/useCases';
 
 import { getTempoAtBeat } from '../models/TempoMap';
+import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { transportStore } from '../stores/transportStore';
@@ -63,6 +64,14 @@ const schedulerSession = {
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
+    // Re-entrancy guard. `tick` is async and awaits the Yeast worklet round-trip
+    // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
+    // (`scheduleGrainMs`, default 10ms), the next worker message would start a
+    // second `tick` while the first is still suspended, and both would mutate the
+    // shared session mutables (accumulatedPosition, lastScheduledBeat, the dedup
+    // Sets, playheadPositionRef) concurrently. The flag makes overlapping worker
+    // ticks no-op until the in-flight tick resolves.
+    tickInFlight: false,
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
@@ -122,6 +131,23 @@ export function startPlayheadScheduler(): void {
     const grainMs = state.scheduleGrainMs;
 
     async function tick(): Promise<void> {
+        // A prior tick is still awaiting its scheduling work (the Yeast worklet
+        // round-trip in particular). Starting now would let two ticks mutate the
+        // shared session mutables across one another's awaits. Skip this worker
+        // tick; the in-flight tick already advances the playhead and the next
+        // worker message resumes steady scheduling once it resolves.
+        if (schedulerSession.tickInFlight) {
+            return;
+        }
+        schedulerSession.tickInFlight = true;
+        try {
+            await runTick();
+        } finally {
+            schedulerSession.tickInFlight = false;
+        }
+    }
+
+    async function runTick(): Promise<void> {
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -241,7 +267,7 @@ export function startPlayheadScheduler(): void {
         ) {
             schedulerSession.punchRecordingActive = true;
             const clips = startRecording();
-            transportStore.set({ ...transportStore.value!, isRecording: true });
+            updateTransportState({ isRecording: true });
 
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
@@ -251,20 +277,11 @@ export function startPlayheadScheduler(): void {
                         const bufferId = `rec-${crypto.randomUUID()}`;
                         audioBufferCache.set(bufferId, buffer);
                         if (recClip) {
-                            const ts = trackStore.value;
-                            if (ts) {
-                                trackStore.set({
-                                    ...ts,
-                                    tracks: ts.tracks.map((time) => ({
-                                        ...time,
-                                        clips: time.clips.map((context) =>
-                                            context.id === recClip.id
-                                                ? { ...context, audioBufferId: bufferId }
-                                                : context
-                                        ),
-                                    })),
-                                });
-                            }
+                            // Route the cross-module write through Arrangement's own
+                            // use case rather than mutating trackStore directly (audit
+                            // row 9). updateClip locates the clip across all tracks and
+                            // applies the updater, preserving the prior behaviour.
+                            updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
                         }
                     });
                 }
@@ -275,7 +292,7 @@ export function startPlayheadScheduler(): void {
             stopAudioRecording();
             stopRecording();
             schedulerSession.punchRecordingActive = false;
-            transportStore.set({ ...transportStore.value!, isRecording: false });
+            updateTransportState({ isRecording: false });
         }
 
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
@@ -344,6 +361,7 @@ export function stopPlayheadScheduler(): void {
     schedulerSession.lastTickTime = 0;
     schedulerSession.accumulatedPosition = 0;
     schedulerSession.lastScheduledBeat = -1;
+    schedulerSession.tickInFlight = false;
     resetMetronomeBeat(0);
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();
@@ -380,6 +398,7 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.accumulatedPosition = 0;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.punchRecordingActive = false;
+    schedulerSession.tickInFlight = false;
     schedulerSession.scheduledAudioClips.clear();
     schedulerSession.scheduledFrozenTracks.clear();
     schedulerSession.onStopRequested = null;

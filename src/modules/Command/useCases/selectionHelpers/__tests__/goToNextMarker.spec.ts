@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { goToNextMarker } from '../goToNextMarker';
 
 import type { getMarkerState } from '#/modules/Arrangement/useCases';
-import type { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
+import type { getTransportState, seekPlayhead } from '#/modules/Transport/useCases';
 
 const mocks = vi.hoisted(() => ({
     getMarkerState: vi.fn<typeof getMarkerState>(),
-    getTransportStoreValue: vi.fn<typeof getTransportStoreValue>(),
+    getTransportState: vi.fn<typeof getTransportState>(),
     seekPlayhead: vi.fn<typeof seekPlayhead>(),
 }));
 
@@ -23,7 +23,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...mod,
-        getTransportStoreValue: mocks.getTransportStoreValue,
+        getTransportState: mocks.getTransportState,
         seekPlayhead: mocks.seekPlayhead,
     };
 });
@@ -58,9 +58,7 @@ describe('goToNextMarker', () => {
             ],
             sections: [],
         });
-        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 6 } as ReturnType<
-            typeof getTransportStoreValue
-        >);
+        mocks.getTransportState.mockReturnValue({ playheadPosition: 6 } as ReturnType<typeof getTransportState>);
 
         goToNextMarker();
 
@@ -75,9 +73,7 @@ describe('goToNextMarker', () => {
             ],
             sections: [],
         });
-        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 8 } as ReturnType<
-            typeof getTransportStoreValue
-        >);
+        mocks.getTransportState.mockReturnValue({ playheadPosition: 8 } as ReturnType<typeof getTransportState>);
 
         goToNextMarker();
 
@@ -89,7 +85,7 @@ describe('goToNextMarker', () => {
             markers: [{ id: 'a', beat: 4, name: 'A', color: 'x' }],
             sections: [],
         });
-        mocks.getTransportStoreValue.mockReturnValue(undefined);
+        mocks.getTransportState.mockReturnValue(undefined);
 
         goToNextMarker();
 

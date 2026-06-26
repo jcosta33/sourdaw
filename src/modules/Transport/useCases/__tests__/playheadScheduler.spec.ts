@@ -9,6 +9,7 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
 import { disposeAudioClipScheduling } from '../scheduling/scheduleAudioClips';
+import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 
 type FakeWorker = {
     onmessage: ((e: MessageEvent<unknown>) => void) | null;
@@ -280,5 +281,55 @@ describe('playhead scheduler tick', () => {
 
         expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
         expect(vi.mocked(disposeAudioClipScheduling)).toHaveBeenCalled();
+    });
+
+    // audit row 1 — `tick` is async and awaits scheduleMidiNotes (the Yeast
+    // worklet round-trip). If that await outruns the worker interval, the next
+    // worker message must NOT start a second tick body while the first is still
+    // suspended — both would mutate the shared session mutables (accumulatedPosition,
+    // lastScheduledBeat, the dedup Sets, playheadPositionRef) concurrently.
+    it('does not start a second overlapping tick while a prior tick is awaiting (audit row 1)', async () => {
+        // Hold scheduleMidiNotes suspended on a promise we resolve by hand, so the
+        // first tick is in-flight across the second worker message.
+        let releaseMidi: (() => void) | null = null;
+        const midiPending = new Promise<void>((resolve) => {
+            releaseMidi = () => resolve();
+        });
+        vi.mocked(scheduleMidiNotes).mockReturnValueOnce(midiPending);
+
+        startPlayheadScheduler();
+        const worker = harness.workers[harness.workers.length - 1]!;
+
+        // Fire tick #1. It advances to the `await scheduleMidiNotes` and suspends.
+        harness.clock = 0.05;
+        worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const positionAfterFirst = playheadPositionRef.current;
+        const midiCallsAfterFirst = vi.mocked(scheduleMidiNotes).mock.calls.length;
+        const transportSyncsAfterFirst = harness.setTransportInfo.mock.calls.length;
+        expect(midiCallsAfterFirst).toBe(1);
+
+        // Fire tick #2 while #1 is still suspended on its await. The guard must make
+        // it a no-op: no second scheduleMidiNotes call, no extra playhead advance,
+        // no extra transport sync.
+        harness.clock = 0.1;
+        worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBe(midiCallsAfterFirst);
+        expect(playheadPositionRef.current).toBe(positionAfterFirst);
+        expect(harness.setTransportInfo.mock.calls.length).toBe(transportSyncsAfterFirst);
+
+        // Release tick #1. A subsequent tick may run normally again.
+        releaseMidi!();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        harness.clock = 0.15;
+        await fireTick();
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBeGreaterThan(midiCallsAfterFirst);
     });
 });
