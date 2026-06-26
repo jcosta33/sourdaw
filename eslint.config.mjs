@@ -551,6 +551,11 @@ export default defineConfig(
             'public/',
             'coverage/',
             'storybook-static/',
+            // Standalone agent helper scripts run via `npx tsx`, not part of the
+            // `src` application tree and intentionally excluded from
+            // tsconfig.eslint.json — ignore so the type-aware parser does not
+            // fatal on files outside any tsconfig project.
+            '.agents/',
             'src/routeTree.gen.ts',
             'src/modules/AudioEngine/wasm/*.js',
             'test-debug.mjs',
