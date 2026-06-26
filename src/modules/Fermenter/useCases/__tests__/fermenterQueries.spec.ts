@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
 import { FERMENTER_PARAMS } from '../fermenterQueries/FERMENTER_PARAMS';
-import { getFermenterPresets } from '../fermenterQueries/getFermenterPresets';
 import { FERMENTER_PRESETS } from '../fermenterQueries/helpers';
 
 describe('fermenterQueries', () => {
-    it('exposes a non-empty preset list via getter and constant', () => {
-        expect(getFermenterPresets().length).toBeGreaterThan(0);
-        expect(FERMENTER_PRESETS).toBe(getFermenterPresets());
+    it('exposes a non-empty preset list constant', () => {
+        expect(FERMENTER_PRESETS.length).toBeGreaterThan(0);
     });
 
     it('exposes parameter definitions with min/max/default', () => {

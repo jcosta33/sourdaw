@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
@@ -8,7 +8,8 @@ import { type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { setFermenterDependencies } from '../fermenterDependencies';
 import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
-import { lerpPatch, bilinearPatch } from '../presetMorph/bilinearPatch';
+import { bilinearPatch } from '../presetMorph/bilinearPatch';
+import { lerpPatch } from '../presetMorph/lerpPatch';
 
 function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch {
     return { name, version: 1, gain: 0, threshold: 0, ratio: 1, ...overrides } as unknown as FermenterPatch;
@@ -22,6 +23,19 @@ describe('presetMorph', () => {
     const persistDeviceParam = vi.fn();
 
     beforeEach(() => {
+        vi.useFakeTimers();
+        vi.stubGlobal(
+            'requestAnimationFrame',
+            vi.fn((callback: FrameRequestCallback) => {
+                return window.setTimeout(() => callback(0), 16);
+            })
+        );
+        vi.stubGlobal(
+            'cancelAnimationFrame',
+            vi.fn((id: number) => {
+                window.clearTimeout(id);
+            })
+        );
         vi.mocked(loadFermenterPatch).mockClear();
         updateDevicePatch.mockClear();
         persistDevicePatch.mockClear();
@@ -33,6 +47,11 @@ describe('presetMorph', () => {
             updateDevicePatch: updateDevicePatch as never,
             persistDevicePatch: persistDevicePatch as never,
         });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 
     it('lerpPatch interpolates numeric fields linearly', () => {
@@ -98,12 +117,38 @@ describe('presetMorph', () => {
         expect(Number.isInteger(morphed.filterModel)).toBe(true);
     });
 
-    it('applyMorphedPatch updates store and forwards the whole patch to engine + persistence', () => {
+    it('applyMorphedPatch updates store immediately and forwards the patch to engine + persistence on the next frame', () => {
         const p = patch('P', { gain: 5, threshold: -8 });
         applyMorphedPatch('d1', p);
 
+        // Store write is synchronous; engine/persist are deferred to the rAF flush.
         expect(loadFermenterPatch).toHaveBeenCalledWith('d1', p);
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(16);
+
         expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', p);
         expect(persistDevicePatch).toHaveBeenCalledWith('d1', p);
+    });
+
+    it('applyMorphedPatch coalesces a rapid drag to one engine + persist flush with the latest patch', () => {
+        const a = patch('A', { gain: 1 });
+        const b = patch('B', { gain: 2 });
+        const c = patch('C', { gain: 3 });
+
+        applyMorphedPatch('d1', a);
+        applyMorphedPatch('d1', b);
+        applyMorphedPatch('d1', c);
+
+        expect(updateDevicePatch).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(16);
+
+        expect(updateDevicePatch).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', c);
+        expect(persistDevicePatch).toHaveBeenCalledWith('d1', c);
     });
 });

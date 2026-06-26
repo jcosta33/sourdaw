@@ -67,10 +67,16 @@ function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPa
     }
 }
 
-function saveUserPatch(name: string, patch: FermenterPatch): void {
+function saveUserPatch(name: string, patch: FermenterPatch): boolean {
     const patches = loadUserPatches();
     patches.push({ id: `user-${Date.now()}`, name, patch: { ...patch, name } });
-    window.localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
+    try {
+        window.localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
+        return true;
+    } catch {
+        // Quota exceeded or serialization failure — don't crash the save handler.
+        return false;
+    }
 }
 
 function formatPercent(value: number): string {
@@ -195,14 +201,14 @@ function loadPresetPatch(
     return patch;
 }
 
-function randomizePatch(): FermenterPatch {
+export function randomizePatch(): FermenterPatch {
     const range = (min: number, max: number) => min + Math.random() * (max - min);
     const randomInt = (min: number, max: number) => Math.floor(range(min, max + 1));
 
     return {
         ...DEFAULT_PATCH,
         name: 'Random',
-        oscEngine: randomInt(0, 5),
+        oscEngine: randomInt(0, 6),
         oscWaveform: randomInt(0, 3),
         oscLevel: range(0.5, 1),
         filterModel: randomInt(0, 5),
@@ -525,7 +531,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             return;
         }
 
-        saveUserPatch(saveName.trim(), patch);
+        if (!saveUserPatch(saveName.trim(), patch)) {
+            return;
+        }
         setSaveName('');
         setShowSave(false);
         setVersion((currentVersion) => currentVersion + 1);

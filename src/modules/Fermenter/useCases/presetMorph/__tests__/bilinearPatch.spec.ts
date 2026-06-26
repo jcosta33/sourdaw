@@ -8,9 +8,4 @@ describe('bilinearPatch', () => {
         const t = typeof subject.bilinearPatch;
         expect(t === 'function' || t === 'object').toBe(true);
     });
-    it('should export lerpPatch', () => {
-        expect(subject.lerpPatch).toBeDefined();
-        const t = typeof subject.lerpPatch;
-        expect(t === 'function' || t === 'object').toBe(true);
-    });
 });
