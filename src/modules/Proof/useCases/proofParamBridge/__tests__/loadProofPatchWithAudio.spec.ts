@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
-import { loadProofPatchWithAudio, syncFullPatch } from '../loadProofPatchWithAudio';
+import { loadProofPatchWithAudio } from '../loadProofPatchWithAudio';
+import { syncFullPatch } from '../syncFullPatch';
 
 function makeBridge(): ProofAudioBridge & {
     setParam: ReturnType<typeof vi.fn>;

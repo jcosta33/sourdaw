@@ -571,7 +571,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                void syncFullPatch(deviceId);
+                syncFullPatch(deviceId);
                 return;
             })
             .catch((error) => {

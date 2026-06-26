@@ -116,8 +116,11 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                             {/* GR meter bar */}
                             <div className="w-full h-1 bg-surface-inset rounded overflow-hidden">
                                 <div
-                                    className="h-full bg-[var(--color-accent-peach)] transition-all duration-75"
-                                    style={{ width: `${Math.min(100, (Math.abs(gr) / 20) * 100)}%` }}
+                                    className="h-full transition-all duration-75"
+                                    style={{
+                                        width: `${Math.min(100, (Math.abs(gr) / 20) * 100)}%`,
+                                        backgroundColor: BAND_COLORS[i],
+                                    }}
                                 />
                             </div>
                             <span className="text-[6px] text-muted-foreground font-mono">{gr.toFixed(1)} dB</span>

@@ -1,8 +1,12 @@
 import { type ProofPatch } from '../../models/ProofPatch';
+import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
-import { syncEqBands, syncDynBands, syncImager, syncExciter } from './loadProofPatchWithAudio';
+import { syncDynBands } from './syncDynBands';
+import { syncEqBands } from './syncEqBands';
+import { syncExciter } from './syncExciter';
+import { syncImager } from './syncImager';
 
 type SetProofParamWithPatchInput<Key extends keyof ProofPatch> = {
     deviceId: string;
@@ -56,18 +60,7 @@ export function setProofParamWithPatch<Key extends keyof ProofPatch>({
     } else if (key === 'excBands') {
         syncExciter(deviceId);
     } else if (key === 'ditherMode') {
-        bridge.setParam(
-            'dither_mode',
-            (() => {
-                if (value === 'off') {
-                    return 0;
-                }
-                if (value === 'tpdf') {
-                    return 1;
-                }
-                return 2;
-            })()
-        );
+        bridge.setParam('dither_mode', ditherModeToInt(value as ProofPatch['ditherMode']));
     } else if (key === 'ditherBits') {
         bridge.setParam('dither_bits', value as number);
     } else if (key === 'chainOrder') {
