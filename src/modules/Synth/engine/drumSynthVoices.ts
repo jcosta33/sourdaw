@@ -14,6 +14,23 @@
 
 import { type DrumVoiceType } from '../models/DrumSynthTypes';
 
+// Disconnect every node in a voice's graph once its longest-running source
+// ends, mirroring the `onended` teardown discipline in builtinSynth.ts. Without
+// this, stopped 808 nodes stay connected to `dest` until GC collects them; on a
+// dense pattern that lets AudioNodes accumulate. `disconnect` on an
+// already-disconnected node throws, so each call is guarded.
+function disconnectOnEnded(lastSource: AudioScheduledSourceNode, nodes: AudioNode[]): void {
+    lastSource.onended = () => {
+        for (const node of nodes) {
+            try {
+                node.disconnect();
+            } catch {
+                /* already disconnected */
+            }
+        }
+    };
+}
+
 // §157.1 — Cache noise buffers per (ctx, durationSec) so we don't allocate
 // and re-seed a Float32Array on every drum note. The buffer content is
 // white noise; reusing the same buffer for multiple voices is perceptually
@@ -69,6 +86,7 @@ function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
 
     osc.start(startTime);
     osc.stop(startTime + 0.9);
+    disconnectOnEnded(osc, [osc, shaper, gain]);
 }
 
 function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -87,6 +105,7 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     bodyGain.connect(dest);
     bodyOsc.start(startTime);
     bodyOsc.stop(startTime + 0.2);
+    disconnectOnEnded(bodyOsc, [bodyOsc, bodyGain]);
 
     const noiseBuffer = createNoiseBuffer(ctx, 0.3);
     const noise = ctx.createBufferSource();
@@ -105,6 +124,7 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     noiseGain.connect(dest);
     noise.start(startTime);
     noise.stop(startTime + 0.3);
+    disconnectOnEnded(noise, [noise, noiseFilter, noiseGain]);
 }
 
 function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -128,6 +148,7 @@ function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
         env.connect(filter);
         noise.start(startTime + offset);
         noise.stop(startTime + offset + 0.03);
+        disconnectOnEnded(noise, [noise, env]);
     }
 
     const tailNoise = ctx.createBufferSource();
@@ -141,6 +162,8 @@ function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
     tailNoise.stop(startTime + 0.35);
 
     filter.connect(dest);
+    // tailNoise is the last source to end; tear down the shared filter with it.
+    disconnectOnEnded(tailNoise, [tailNoise, tailEnv, filter]);
 }
 
 function schedule808HiHat(
@@ -158,6 +181,7 @@ function schedule808HiHat(
     oscGain.gain.setValueAtTime(vel * 0.25, startTime);
     oscGain.gain.exponentialRampToValueAtTime(0.001, startTime + decayTime);
 
+    const oscillators: OscillatorNode[] = [];
     for (const freq of fundamentals) {
         const osc = ctx.createOscillator();
         osc.type = 'square';
@@ -165,6 +189,7 @@ function schedule808HiHat(
         osc.connect(oscGain);
         osc.start(startTime);
         osc.stop(startTime + decayTime + 0.01);
+        oscillators.push(osc);
     }
 
     const hpf = ctx.createBiquadFilter();
@@ -179,6 +204,8 @@ function schedule808HiHat(
     oscGain.connect(hpf);
     hpf.connect(bpf);
     bpf.connect(dest);
+    // All oscillators stop together; tear the graph down on the last one's end.
+    disconnectOnEnded(oscillators[oscillators.length - 1]!, [...oscillators, oscGain, hpf, bpf]);
 }
 
 function schedule808Tom(
@@ -209,6 +236,7 @@ function schedule808Tom(
     gain.connect(dest);
     osc.start(startTime);
     osc.stop(startTime + 0.35);
+    disconnectOnEnded(osc, [osc, gain]);
 }
 
 function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -225,6 +253,7 @@ function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     envGain.gain.exponentialRampToValueAtTime(vel * 0.15, startTime + 0.02);
     envGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
 
+    const oscillators: OscillatorNode[] = [];
     for (const freq of freqs) {
         const osc = ctx.createOscillator();
         osc.type = 'square';
@@ -232,10 +261,12 @@ function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: n
         osc.connect(bpf);
         osc.start(startTime);
         osc.stop(startTime + 0.4);
+        oscillators.push(osc);
     }
 
     bpf.connect(envGain);
     envGain.connect(dest);
+    disconnectOnEnded(oscillators[oscillators.length - 1]!, [...oscillators, bpf, envGain]);
 }
 
 function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -253,6 +284,7 @@ function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     bodyGain.connect(dest);
     osc.start(startTime);
     osc.stop(startTime + 0.04);
+    disconnectOnEnded(osc, [osc, bodyGain]);
 
     const noiseBuffer = createNoiseBuffer(ctx, 0.05);
     const noise = ctx.createBufferSource();
@@ -268,6 +300,7 @@ function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     nGain.connect(dest);
     noise.start(startTime);
     noise.stop(startTime + 0.05);
+    disconnectOnEnded(noise, [noise, hpf, nGain]);
 }
 
 function schedule808Conga(
@@ -294,6 +327,7 @@ function schedule808Conga(
     gain.connect(dest);
     osc.start(startTime);
     osc.stop(startTime + 0.25);
+    disconnectOnEnded(osc, [osc, gain]);
 }
 
 function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -315,6 +349,7 @@ function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     gain.connect(dest);
     noise.start(startTime);
     noise.stop(startTime + 0.1);
+    disconnectOnEnded(noise, [noise, hpf, gain]);
 }
 
 function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
@@ -337,6 +372,7 @@ function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     gain.connect(dest);
     osc.start(startTime);
     osc.stop(startTime + 0.05);
+    disconnectOnEnded(osc, [osc, bpf, gain]);
 }
 
 /**
