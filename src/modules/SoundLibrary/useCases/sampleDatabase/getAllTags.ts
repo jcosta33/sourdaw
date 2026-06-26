@@ -24,6 +24,10 @@ export function getAllTags(): string[] {
         }
     }
     const result = [...tagSet].sort();
+    // Freeze the cached array so a caller cannot mutate it and corrupt the
+    // value shared by every later read keyed on the same samples reference.
+    // Freeze preserves identity, so the identity-keyed short-circuit holds.
+    Object.freeze(result);
     memo = { samplesRef: state.samples, result };
     return result;
 }

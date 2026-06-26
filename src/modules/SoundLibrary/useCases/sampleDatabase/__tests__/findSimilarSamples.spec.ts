@@ -88,4 +88,13 @@ describe('findSimilarSamples', () => {
         sampleDatabaseStore.clear();
         expect(findSimilarSamples('target')).toEqual([]);
     });
+
+    it('should return a frozen array so a caller cannot corrupt the shared cache', () => {
+        seed([tagged('target', ['kick', 'drum']), tagged('a', ['kick', 'drum'])]);
+        const result = findSimilarSamples('target', 5);
+        expect(Object.isFrozen(result)).toBe(true);
+        expect(() => result.push(tagged('z', ['kick']))).toThrow(TypeError);
+        // The cache the next caller sees is unchanged by the failed mutation.
+        expect(findSimilarSamples('target', 5).map((s) => s.id)).toEqual(['a']);
+    });
 });

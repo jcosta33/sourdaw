@@ -93,4 +93,13 @@ describe('getFilteredSamples', () => {
         sampleDatabaseStore.clear();
         expect(getFilteredSamples()).toEqual([]);
     });
+
+    it('should return a frozen array so a caller cannot corrupt the shared cache', () => {
+        seed([createTestSample({ id: 'a', name: 'Alpha' })]);
+        const result = getFilteredSamples();
+        expect(Object.isFrozen(result)).toBe(true);
+        expect(() => result.push(createTestSample({ id: 'z', name: 'Zulu' }))).toThrow(TypeError);
+        // The cache the next caller sees is unchanged by the failed mutation.
+        expect(getFilteredSamples().map((s) => s.name)).toEqual(['Alpha']);
+    });
 });

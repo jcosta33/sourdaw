@@ -109,6 +109,11 @@ export function getFilteredSamples(): SampleEntry[] {
         }
     });
 
+    // Freeze the cached array so a caller treating the result as owned cannot
+    // sort/splice/push it and silently corrupt the value every later read of
+    // the same (stateRef, fingerprint) selection shares. Freeze preserves the
+    // array identity, so the identity-keyed short-circuit above still holds.
+    Object.freeze(results);
     memo = { stateRef: state, fingerprint, result: results };
     return results;
 }

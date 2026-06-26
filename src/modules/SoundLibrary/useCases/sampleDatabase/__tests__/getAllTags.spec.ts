@@ -57,4 +57,13 @@ describe('getAllTags', () => {
         sampleDatabaseStore.clear();
         expect(getAllTags()).toEqual([]);
     });
+
+    it('should return a frozen array so a caller cannot corrupt the shared cache', () => {
+        seed([createTestSample({ id: 'a', tags: [createTestTag('drum')] })]);
+        const result = getAllTags();
+        expect(Object.isFrozen(result)).toBe(true);
+        expect(() => result.push('mutated')).toThrow(TypeError);
+        // The cache the next caller sees is unchanged by the failed mutation.
+        expect(getAllTags()).toEqual(['drum']);
+    });
 });

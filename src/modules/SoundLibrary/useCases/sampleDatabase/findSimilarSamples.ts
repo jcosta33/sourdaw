@@ -79,6 +79,11 @@ export function findSimilarSamples(sampleId: string, limit: number = 10): Sample
     for (let i = 0; i < take; i++) {
         out[i] = samples[indexes[permutation[i]!]!]!;
     }
+    // Freeze the cached array so a caller cannot mutate it and corrupt the
+    // value shared by every later read keyed on the same (samples, sampleId,
+    // limit) selection. Freeze preserves identity, so the identity-keyed
+    // short-circuit above still holds.
+    Object.freeze(out);
     memo = { samplesRef: state.samples, sampleId, limit, result: out };
     return out;
 }

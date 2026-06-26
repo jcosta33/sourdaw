@@ -7,7 +7,7 @@ import { type SampleTag, type SampleCategory } from '../models/SampleEntry';
 
 /**
  * Auto-tag rules. Each `pattern` is anchored at token boundaries (see
- * {@link tokenize} and {@link ruleMatches}) so an alternative only matches a
+ * {@link tokenize} and {@link ANCHORED_RULE_PATTERNS}) so an alternative only matches a
  * whole word, never a substring buried inside another word — e.g. the `hat`
  * alternative tags `open_hat.wav` but not `whatever.wav`, and `perc` does not
  * fire on `superconductor`. Alternatives keep their intra-token optional
@@ -51,7 +51,7 @@ export const AUTO_TAG_RULES = [
  *
  * Splitting on letter↔digit transitions (`kick808` → `kick 808`, `808kick` →
  * `808 kick`) is what lets a whole-token rule match digit-glued real-world
- * names — `Kick808`, `kick01`, `snare2`, `808kick` — that {@link ruleMatches}
+ * names — `Kick808`, `kick01`, `snare2`, `808kick` — that {@link ANCHORED_RULE_PATTERNS}
  * would otherwise miss, since a `\b` boundary does not exist between two word
  * characters. It does NOT loosen the whole-token rule into a substring match:
  * `bassline` keeps a single token and is still rejected by the `bass` rule.
@@ -63,15 +63,17 @@ function tokenize(name: string, path: string): string {
 }
 
 /**
- * Test a rule against the tokenized text, requiring each alternative to match a
- * whole token (bounded by spaces). The alternation's own optional separators
- * (`.?`) match the collapsed single space, so multi-token spellings such as
- * `hi hat` and `bass drum` still match.
+ * Whole-token-anchored form of each rule's pattern, derived once from the
+ * module-constant {@link AUTO_TAG_RULES} (parallel by index). Each alternative
+ * is required to match a whole token (bounded by spaces); the alternation's own
+ * optional separators (`.?`) match the collapsed single space, so multi-token
+ * spellings such as `hi hat` and `bass drum` still match. Building these at
+ * module load avoids reallocating one `RegExp` per rule on every
+ * {@link autoTagSample} call.
  */
-function ruleMatches(pattern: RegExp, tokenized: string): boolean {
-    const anchored = new RegExp(`(?<=\\s)(?:${pattern.source})(?=\\s)`, pattern.flags.replace('g', ''));
-    return anchored.test(tokenized);
-}
+const ANCHORED_RULE_PATTERNS: readonly RegExp[] = AUTO_TAG_RULES.map(
+    (rule) => new RegExp(`(?<=\\s)(?:${rule.pattern.source})(?=\\s)`, rule.pattern.flags.replace('g', ''))
+);
 
 /**
  * Auto-tag a sample by matching its name and path against known patterns.
@@ -81,8 +83,9 @@ export function autoTagSample(name: string, path: string): { tags: SampleTag[]; 
     let category: SampleCategory = 'other';
     const tokenized = tokenize(name, path);
 
-    for (const rule of AUTO_TAG_RULES) {
-        if (ruleMatches(rule.pattern, tokenized)) {
+    for (let i = 0; i < AUTO_TAG_RULES.length; i++) {
+        const rule = AUTO_TAG_RULES[i]!;
+        if (ANCHORED_RULE_PATTERNS[i]!.test(tokenized)) {
             for (const tag of rule.tags) {
                 if (!tags.some((t) => t.name === tag)) {
                     tags.push({ name: tag, source: 'auto', confidence: 0.8 });
