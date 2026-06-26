@@ -156,7 +156,3 @@ export function subscribeToPosition(instanceId: string, listener: PositionListen
         }
     };
 }
-
-export function getInterpolatedPosition(instanceId: string): number {
-    return sessions.get(instanceId)?.interpolatedFrame ?? 0;
-}

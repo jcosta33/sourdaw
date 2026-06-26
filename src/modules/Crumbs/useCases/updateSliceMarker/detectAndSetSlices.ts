@@ -15,8 +15,12 @@ export async function detectAndSetSlices(instanceId: string, algorithm: OnsetAlg
     try {
         const result = await detectOnsets(instanceId, state.activeSample.sampleId, algorithm);
 
+        // Use a globally-unique id (matching the manual `slice-${uuid}` scheme in
+        // sliceStore) rather than the index-positional `onset-${i}`: two detect runs
+        // returning the same count previously produced identical ids (`onset-0`, …),
+        // colliding as React keys across the two marker namespaces.
         const markers: SliceMarker[] = result.positions.map((pos, i) => ({
-            id: `onset-${i}`,
+            id: `slice-${crypto.randomUUID()}`,
             framePosition: pos,
             label: `S${i + 1}`,
         }));

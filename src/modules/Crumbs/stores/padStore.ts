@@ -76,49 +76,6 @@ export function updatePad(instanceId: string, index: number, updates: Partial<Pa
     });
 }
 
-export function assignSampleToPad(instanceId: string, index: number, sampleId: number, name: string): void {
-    updatePad(instanceId, index, { sampleId, name });
-}
-
-export function resetPad(instanceId: string, index: number): void {
-    padStore.update((s) => {
-        if (!s) {
-            return {};
-        }
-        const inst = s[instanceId];
-        if (!inst) {
-            return s;
-        }
-        const pads = [...inst.pads];
-        const channelStrips = [...inst.channelStrips];
-        pads[index] = createDefaultPad(index);
-        channelStrips[index] = createDefaultChannelStrip();
-        return {
-            ...s,
-            [instanceId]: { ...inst, pads, channelStrips },
-        };
-    });
-}
-
-export function updateChannelStrip(instanceId: string, index: number, updates: Partial<PadChannelStrip>): void {
-    padStore.update((s) => {
-        if (!s) {
-            return {};
-        }
-        const inst = s[instanceId];
-        const existing = inst?.channelStrips[index];
-        if (!inst || !existing) {
-            return s;
-        }
-        const channelStrips = [...inst.channelStrips];
-        channelStrips[index] = { ...existing, ...updates };
-        return {
-            ...s,
-            [instanceId]: { ...inst, channelStrips },
-        };
-    });
-}
-
 export function reorderPad(instanceId: string, fromIndex: number, toIndex: number): void {
     padStore.update((s) => {
         if (!s) {

@@ -51,46 +51,6 @@ export function setMarkers(instanceId: string, markers: SliceMarker[], autoDetec
     });
 }
 
-export function addMarker(instanceId: string, framePosition: number): void {
-    sliceStore.update((s) => {
-        if (!s) {
-            return {};
-        }
-        const inst = s[instanceId];
-        if (!inst) {
-            return s;
-        }
-        const id = `slice-${crypto.randomUUID()}`;
-        const marker: SliceMarker = {
-            id,
-            framePosition,
-            label: `S${inst.markers.length + 1}`,
-        };
-        const markers = [...inst.markers, marker].sort((a, b) => a.framePosition - b.framePosition);
-        return {
-            ...s,
-            [instanceId]: { ...inst, markers, autoDetected: false },
-        };
-    });
-}
-
-export function removeMarker(instanceId: string, id: string): void {
-    sliceStore.update((s) => {
-        if (!s) {
-            return {};
-        }
-        const inst = s[instanceId];
-        if (!inst) {
-            return s;
-        }
-        const markers = inst.markers.filter((m) => m.id !== id);
-        return {
-            ...s,
-            [instanceId]: { ...inst, markers },
-        };
-    });
-}
-
 export function updateMarkerPosition(instanceId: string, id: string, framePosition: number): void {
     sliceStore.update((s) => {
         if (!s) {

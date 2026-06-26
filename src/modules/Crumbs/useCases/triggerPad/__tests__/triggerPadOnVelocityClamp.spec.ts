@@ -1,16 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const crumbsNoteOn = vi.hoisted(() =>
-    vi.fn<typeof import('../../repositories/crumbsBridge').crumbsNoteOn>(() => Promise.resolve())
+    vi.fn<typeof import('../../../repositories/crumbsBridge').crumbsNoteOn>(() => Promise.resolve())
 );
 
-vi.mock('../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge', () => ({
     crumbsNoteOn,
 }));
 
-import { padStore, ensurePadInstance } from '../../stores/padStore';
-
-import { triggerPadOn } from './triggerPadOn';
+import { padStore, ensurePadInstance } from '../../../stores/padStore';
+import { triggerPadOn } from '../triggerPadOn';
 
 const INSTANCE = 'inst-A';
 

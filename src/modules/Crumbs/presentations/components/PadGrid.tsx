@@ -16,6 +16,12 @@ type PadGridProps = {
     padPeaks?: (number[] | null)[];
     onSelectPad: (index: number) => void;
     onTriggerPad: (index: number) => void;
+    /**
+     * Release the pad's note. Called on pointer/key up and on pointer leave so a
+     * non-one-shot or long-release voice is stopped when the user lets go, rather
+     * than sustaining until the engine envelope decides on its own.
+     */
+    onTriggerPadOff?: (index: number) => void;
     onReorderPad?: (fromIndex: number, toIndex: number) => void;
 };
 
@@ -25,6 +31,7 @@ export const PadGrid = ({
     padPeaks,
     onSelectPad,
     onTriggerPad,
+    onTriggerPadOff,
     onReorderPad,
 }: PadGridProps): ReactElement => {
     const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -34,6 +41,10 @@ export const PadGrid = ({
     // at that index.
     const [flashingPads, setFlashingPads] = useState<Record<number, number>>({});
     const flashTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+    // Pads currently held down (keyed by stable pad.id). A note-off must fire once
+    // per press: mouseUp and mouseLeave can both follow a single mouseDown, so the
+    // held set gates the release to exactly the first one that lands.
+    const heldPads = useRef<Set<number>>(new Set());
 
     useEffect(() => {
         const timers = flashTimers.current;
@@ -61,6 +72,7 @@ export const PadGrid = ({
 
     function handleTrigger(index: number, padId: number): void {
         onTriggerPad(index);
+        heldPads.current.add(padId);
 
         const flashId = Date.now();
         setFlashingPads((prev) => ({ ...prev, [padId]: flashId }));
@@ -80,6 +92,15 @@ export const PadGrid = ({
                 return prev;
             });
         }, 150);
+    }
+
+    function handleRelease(index: number, padId: number): void {
+        // Only release a pad we actually triggered, and only once: drop it from the
+        // held set first so a trailing mouseLeave after mouseUp is a no-op.
+        if (!heldPads.current.delete(padId)) {
+            return;
+        }
+        onTriggerPadOff?.(index);
     }
 
     return (
@@ -121,11 +142,19 @@ export const PadGrid = ({
                             e.preventDefault();
                             handleTrigger(index, pad.id);
                         }}
+                        onMouseUp={() => handleRelease(index, pad.id)}
+                        onMouseLeave={() => handleRelease(index, pad.id)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
                                 onSelectPad(index);
                                 handleTrigger(index, pad.id);
+                            }
+                        }}
+                        onKeyUp={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleRelease(index, pad.id);
                             }
                         }}
                         onDragStart={() => setDragFrom(index)}

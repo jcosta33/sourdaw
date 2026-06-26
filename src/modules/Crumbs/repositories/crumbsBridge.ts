@@ -10,7 +10,6 @@ import type {
     MeteringResult,
     OnsetAlgorithm,
     OnsetDetectionResult,
-    PitchDetectionResult,
     CrumbsLoadResult,
     CrumbsMode,
 } from '../models/CrumbsTypes';
@@ -102,23 +101,10 @@ export async function detectOnsets(
     return result as OnsetDetectionResult;
 }
 
-export async function detectSamplePitch(instanceId: string, sampleId: number): Promise<PitchDetectionResult> {
-    ensureTauri('detect_sample_pitch');
-    const result = await tauriInvoke('detect_sample_pitch', { instanceId, sampleId });
-    return result as PitchDetectionResult;
-}
-
 export async function getCrumbsMetering(instanceId: string): Promise<MeteringResult> {
     ensureTauri('get_crumbs_metering');
     const result = await tauriInvoke('get_crumbs_metering', { instanceId });
     return result as MeteringResult;
-}
-
-export async function crumbsAllSoundOff(instanceId: string): Promise<void> {
-    if (!isTauri()) {
-        return;
-    }
-    await tauriInvoke('crumbs_all_sound_off', { instanceId });
 }
 
 export async function getCrumbsPosition(instanceId: string): Promise<number> {

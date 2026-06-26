@@ -36,6 +36,7 @@ import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording'
 import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
 import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
+import { triggerPadOff } from '../../useCases/triggerPad/triggerPadOff';
 import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
 import { debouncedUpdateMarkerPosition } from '../../useCases/updateSliceMarker/debouncedUpdateMarkerPosition';
 import { detectAndSetSlices } from '../../useCases/updateSliceMarker/detectAndSetSlices';
@@ -229,6 +230,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 selectedIndex={pads.selectedPadIndex}
                                 onSelectPad={(index) => selectPad(deviceId, index)}
                                 onTriggerPad={(index) => triggerPadOn(deviceId, index, 100)}
+                                onTriggerPadOff={(index) => triggerPadOff(deviceId, index)}
                                 onReorderPad={(from, to) => reorderPad(deviceId, from, to)}
                             />
                         </SectionCard>

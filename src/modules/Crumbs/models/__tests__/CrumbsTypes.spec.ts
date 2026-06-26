@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { createDefaultPad, midiNoteToName, PAD_COLORS, DEFAULT_PAD_COLOR } from './CrumbsTypes';
+import { createDefaultPad, midiNoteToName, PAD_COLORS, DEFAULT_PAD_COLOR } from '../CrumbsTypes';
 
 describe('midiNoteToName', () => {
     it('names a standard MIDI note', () => {

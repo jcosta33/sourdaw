@@ -13,7 +13,6 @@ import type {
     ModXYState,
     SampleMeta,
     CrumbsMode,
-    SliceMarker,
     VoiceStackParams,
 } from '../models/CrumbsTypes';
 
@@ -21,7 +20,6 @@ export type CrumbsState = {
     mode: CrumbsMode;
     activeSample: SampleMeta | null;
     waveformPeaks: number[];
-    sliceMarkers: SliceMarker[];
     envelope: EnvelopeParams;
     filterCutoff: number;
     filterResonance: number;
@@ -45,7 +43,6 @@ export const defaultCrumbsState: CrumbsState = {
     mode: 'quick',
     activeSample: null,
     waveformPeaks: [],
-    sliceMarkers: [],
     envelope: {
         attack: 0.001,
         hold: 0,
@@ -128,18 +125,6 @@ export function setWaveformPeaks(instanceId: string, peaks: number[]): void {
     });
 }
 
-export function setSliceMarkers(instanceId: string, markers: SliceMarker[]): void {
-    crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {
-            return s;
-        }
-        return {
-            ...s,
-            [instanceId]: { ...s[instanceId], sliceMarkers: markers },
-        };
-    });
-}
-
 export function updateEnvelope(instanceId: string, updates: Partial<EnvelopeParams>): void {
     crumbsStore.update((s) => {
         if (!s || !s[instanceId]) {
@@ -215,18 +200,6 @@ export function setMasterGain(instanceId: string, gain: number): void {
         return {
             ...s,
             [instanceId]: { ...s[instanceId], masterGain: clamped },
-        };
-    });
-}
-
-export function setRootNote(instanceId: string, note: number): void {
-    crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {
-            return s;
-        }
-        return {
-            ...s,
-            [instanceId]: { ...s[instanceId], rootNote: note },
         };
     });
 }

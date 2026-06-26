@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { DEFAULT_PAD_COUNT } from '../models/CrumbsTypes';
-
-import { type PadState, padStore, ensurePadInstance, reorderPad } from './padStore';
+import { DEFAULT_PAD_COUNT } from '../../models/CrumbsTypes';
+import { type PadState, padStore, ensurePadInstance, reorderPad } from '../padStore';
 
 const INSTANCE = 'inst-A';
 
