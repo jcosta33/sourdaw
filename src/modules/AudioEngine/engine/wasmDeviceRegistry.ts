@@ -12,7 +12,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
-import { updateGrinderMeters } from '#/modules/Grinder/stores';
+import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { isFaustModule } from '#/modules/Plugin/useCases';
@@ -472,7 +472,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
-                    updateGrinderMeters(deviceId, {
+                    updateGrinderTelemetry(deviceId, {
                         inputDb: data.inputDb,
                         preampDb: data.preampDb,
                         powerAmpDb: data.powerAmpDb,

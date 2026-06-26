@@ -80,10 +80,21 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
     ): void {
         const patchValue = toPatchValue(key, value);
         setGrinderParam(deviceId, key, patchValue);
+
+        // engineMode and neuralEnabled are coupled: changing one implies the
+        // other. Track the coupled write so it reaches the audio engine too —
+        // otherwise the store and device disagree on neuralEnabled whenever
+        // engineMode is driven through this single-param path (e.g. host
+        // automation or AI actions rather than the panel's full-resync buttons).
+        let coupled: { key: keyof GrinderPatch; value: number } | null = null;
         if (key === 'engineMode') {
-            setGrinderParam(deviceId, 'neuralEnabled', patchValue !== 'circuit');
+            const neuralEnabled = patchValue !== 'circuit';
+            setGrinderParam(deviceId, 'neuralEnabled', neuralEnabled);
+            coupled = { key: 'neuralEnabled', value: neuralEnabled ? 1 : 0 };
         } else if (key === 'neuralEnabled') {
-            setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
+            const engineMode = (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode'];
+            setGrinderParam(deviceId, 'engineMode', engineMode);
+            coupled = { key: 'engineMode', value: ENGINE_MODES.indexOf(engineMode) };
         }
 
         const ref = findDeviceRef(deviceId);
@@ -93,5 +104,13 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
 
         const compositeKey = `${deviceId}:${key}`;
         paramBatcher.schedule(compositeKey, { ref, key, value }, flushParam);
+
+        if (coupled) {
+            paramBatcher.schedule(
+                `${deviceId}:${coupled.key}`,
+                { ref, key: coupled.key, value: coupled.value },
+                flushParam
+            );
+        }
     };
 });

@@ -78,4 +78,48 @@ describe('setGrinderParamWithAudio', () => {
 
         expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'bright', true);
     });
+
+    it('should also push the coupled neuralEnabled to audio when engineMode changes', () => {
+        // Regression for R1: writing engineMode through the single-param path
+        // updated neuralEnabled in the store but never scheduled it to the
+        // device, desyncing the engine's neuralEnabled from the store.
+        const deviceId = 'device-1';
+        const trackId = 'track-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: trackId,
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const action = setGrinderParamWithAudio(deps as any);
+        // engineMode index 1 = 'capture' (non-circuit) → neuralEnabled true → 1.
+        action(deviceId, 'engineMode', 1);
+
+        expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'engineMode', 'capture');
+        expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'neuralEnabled', true);
+        // Both the primary and the coupled key must reach the audio engine.
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'engineMode', 1);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'neuralEnabled', 1);
+    });
+
+    it('should also push the coupled engineMode to audio when neuralEnabled changes', () => {
+        const deviceId = 'device-1';
+        const trackId = 'track-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: trackId,
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const action = setGrinderParamWithAudio(deps as any);
+        // neuralEnabled true → engineMode 'hybrid' (index 2).
+        action(deviceId, 'neuralEnabled', 1);
+
+        expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'neuralEnabled', true);
+        expect(setGrinderParam).toHaveBeenCalledWith(deviceId, 'engineMode', 'hybrid');
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'neuralEnabled', 1);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith(trackId, deviceId, 'engineMode', 2);
+    });
 });

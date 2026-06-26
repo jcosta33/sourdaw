@@ -14,8 +14,6 @@ import {
     migrateGrinderPatch,
 } from '../models/GrinderPatch';
 
-import { updateGrinderTelemetry, type GrinderTelemetry } from './grinderTelemetryStore';
-
 export type GrinderState = {
     patch: GrinderPatch;
     basePatch: GrinderPatch;
@@ -63,12 +61,15 @@ export function setGrinderParam<Key extends keyof GrinderPatch>(
 ): void {
     const instances = grinderStore.value ?? {};
     const state = normalizeGrinderState(instances[deviceId]);
+    // Single-param edits touch only the live patch. `basePatch` is the stable
+    // base that `recallGrinderSnapshot` reads from; mutating it here would let a
+    // knob turned during an active snapshot contaminate the base for every other
+    // snapshot. The base is reset only by loadGrinderPatch / replaceGrinderPatchLocally.
     grinderStore.set({
         ...instances,
         [deviceId]: {
             ...state,
             patch: { ...state.patch, [key]: value },
-            basePatch: { ...state.basePatch, [key]: value },
         },
     });
 }
@@ -132,17 +133,14 @@ export function setGrinderPedalParam(
         ...current,
         ...(paramKey === 'enabled' ? { enabled: value > 0.5 } : { params: { ...current.params, [paramKey]: value } }),
     }));
-    const nextBasePedals = upsertPedal(state.basePatch[chainKey], pedalType, defaults, (current) => ({
-        ...current,
-        ...(paramKey === 'enabled' ? { enabled: value > 0.5 } : { params: { ...current.params, [paramKey]: value } }),
-    }));
 
+    // Single-param edits touch only the live patch; leave the stable `basePatch`
+    // intact so an edit during an active snapshot does not contaminate the base.
     grinderStore.set({
         ...instances,
         [deviceId]: {
             ...state,
             patch: { ...state.patch, [chainKey]: nextPedals },
-            basePatch: { ...state.basePatch, [chainKey]: nextBasePedals },
         },
     });
 }
@@ -157,6 +155,8 @@ export function setGrinderMicParam<Key extends keyof GrinderMic>(
     const state = normalizeGrinderState(instances[deviceId]);
 
     const micKey = micIndex === 1 ? 'mic1' : 'mic2';
+    // Single-param edits touch only the live patch; leave the stable `basePatch`
+    // intact so an edit during an active snapshot does not contaminate the base.
     grinderStore.set({
         ...instances,
         [deviceId]: {
@@ -164,10 +164,6 @@ export function setGrinderMicParam<Key extends keyof GrinderMic>(
             patch: {
                 ...state.patch,
                 [micKey]: { ...state.patch[micKey], [key]: value },
-            },
-            basePatch: {
-                ...state.basePatch,
-                [micKey]: { ...state.basePatch[micKey], [key]: value },
             },
         },
     });
@@ -282,8 +278,4 @@ export function recallGrinderSnapshot(deviceId: string, snapshotIndex: number): 
     });
 
     return nextPatch;
-}
-
-export function updateGrinderMeters(deviceId: string, meters: GrinderTelemetry): void {
-    updateGrinderTelemetry(deviceId, meters);
 }

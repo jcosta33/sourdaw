@@ -2,14 +2,13 @@ import { type GrinderImportedNeuralModel } from '../models/GrinderPatch';
 import { persistGrinderNeuralLibrary } from '../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary';
 import { pickGrinderNeuralModelFiles } from '../repositories/neuralLibraryPersistence/pickGrinderNeuralModelFiles';
 import { parseGrinderNamFile } from '../services/parseGrinderNamFile';
+import { withGrinderNeuralLibraryWriteLock } from '../services/withGrinderNeuralLibraryWriteLock';
 import {
     DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
     grinderNeuralLibraryStore,
     setGrinderNeuralLibraryState,
     upsertGrinderNeuralLibraryEntries,
 } from '../stores/grinderNeuralLibraryStore';
-
-import { withGrinderNeuralLibraryWriteLock } from './removeGrinderNeuralModel';
 
 export async function importGrinderNeuralModels(): Promise<GrinderImportedNeuralModel[]> {
     setGrinderNeuralLibraryState({ loading: true, error: null });

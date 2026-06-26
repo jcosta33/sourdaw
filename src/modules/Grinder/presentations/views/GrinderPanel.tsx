@@ -60,7 +60,7 @@ const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: t
 ];
 
 const ENGINE_MODES: ReadonlyArray<{ id: GrinderEngineMode; label: string; description: string }> = [
-    { id: 'circuit', label: 'Circuit', description: 'Full amp controls, no capture in the loaf' },
+    { id: 'circuit', label: 'Circuit', description: 'Full amp controls, no capture in the loop' },
     { id: 'capture', label: 'Capture', description: 'Run the loaded capture and keep the amp mostly out of it' },
     { id: 'hybrid', label: 'Hybrid', description: 'Blend the circuit path with the loaded capture' },
 ];

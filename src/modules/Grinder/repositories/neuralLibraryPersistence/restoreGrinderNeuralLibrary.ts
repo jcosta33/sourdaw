@@ -3,7 +3,7 @@ import { type GrinderImportedNeuralModel } from '../../models/GrinderPatch';
 import {
     classifyGrinderNeuralPersistenceError,
     type GrinderNeuralPersistenceError,
-} from './persistGrinderNeuralLibrary';
+} from './classifyGrinderNeuralPersistenceError';
 
 export type GrinderNeuralRestoreResult =
     | { ok: true; entries: GrinderImportedNeuralModel[] }
@@ -20,9 +20,8 @@ function normalize_imported_entry(entry: GrinderImportedNeuralModel): GrinderImp
 /**
  * Restore the imported neural library, differentiating IndexedDB failures
  * (quota / schema / permission) into domain errors instead of silently
- * collapsing every problem to an empty list. Callers that need the error
- * channel use this; the legacy array-returning helper below preserves the
- * previous best-effort shape for existing call sites.
+ * collapsing every problem to an empty list, so the caller can surface the
+ * specific failure to the user.
  */
 export async function restoreGrinderNeuralLibraryResult(): Promise<GrinderNeuralRestoreResult> {
     const database_name = 'sourdaw-grinder-neural';
@@ -58,9 +57,4 @@ export async function restoreGrinderNeuralLibraryResult(): Promise<GrinderNeural
     } catch (error) {
         return { ok: false, error: classifyGrinderNeuralPersistenceError(error) };
     }
-}
-
-export async function restoreGrinderNeuralLibrary(): Promise<GrinderImportedNeuralModel[]> {
-    const result = await restoreGrinderNeuralLibraryResult();
-    return result.ok ? result.entries : [];
 }

@@ -7,6 +7,7 @@ import {
     loadGrinderPatch,
     moveGrinderPedalInChain,
     recallGrinderSnapshot,
+    setGrinderParam,
     setGrinderPedalParam,
 } from '../grinderStore';
 
@@ -118,6 +119,29 @@ describe('grinderStore', () => {
         expect(clean_state.activeSnapshot).toBe(0);
         expect(clean_state.gain).toBe(3);
         expect(clean_state.prePedals[0]?.enabled).toBe(false);
+    });
+
+    it('should keep the stable base patch intact when a param is edited during an active snapshot', () => {
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            master: 5,
+            snapshots: [
+                { id: 'a', name: 'A', paramOverrides: {}, bypassStates: {} },
+                { id: 'b', name: 'B', paramOverrides: {}, bypassStates: {} },
+            ],
+        });
+
+        // Activate snapshot B, edit a non-overridden param, then recall snapshot A.
+        recallGrinderSnapshot(device_id, 1);
+        setGrinderParam(device_id, 'master', 9);
+
+        // The edit must not have leaked into the stable base.
+        expect(getGrinderState(device_id).basePatch.master).toBe(5);
+
+        recallGrinderSnapshot(device_id, 0);
+
+        // Recalling another snapshot carries the original base value, not the edit.
+        expect(getGrinderState(device_id).patch.master).toBe(5);
     });
 
     it('should apply numeric snapshot overrides without clobbering string-enum patch fields', () => {
