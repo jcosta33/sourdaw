@@ -16,6 +16,7 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
+import { LCG_MAX, nextLcg } from '../../services/lcgRandom';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,8 +161,8 @@ export class Arpeggiator extends BaseMidiProcessor {
 
             // Probability check (pattern or global)
             if (patternStep && patternStep.probability < 1.0) {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-                if (this.rngState / 0x7fffffff > patternStep.probability) {
+                this.rngState = nextLcg(this.rngState);
+                if (this.rngState / LCG_MAX > patternStep.probability) {
                     this.advanceStep(pool.length);
                     this.lastStepTimeSamples = stepTime;
                     continue;
@@ -208,7 +209,6 @@ export class Arpeggiator extends BaseMidiProcessor {
                     });
 
                     this.activeGenerated.push({
-                        sourceId: this.pressCounter,
                         channel: sn.channel,
                         note: sn.note,
                         offTimeSamples: offTime,
@@ -384,7 +384,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 return [byPitch[Math.max(0, idx)]!];
             }
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+                this.rngState = nextLcg(this.rngState);
                 const idx = this.rngState % byPitch.length;
                 return [byPitch[idx]!];
             }
@@ -423,7 +423,7 @@ export class Arpeggiator extends BaseMidiProcessor {
             case 'fixed':
                 return this.fixedVelocity;
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+                this.rngState = nextLcg(this.rngState);
                 return 40 + (this.rngState % 88); // 40-127
             }
         }

@@ -12,6 +12,7 @@ import {
     samplesPerBeat,
 } from '../../models/MidiEvent';
 import { ScheduledEventQueue } from '../../models/MidiProcessor';
+import { LCG_MAX, nextLcg } from '../../services/lcgRandom';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 
@@ -104,8 +105,8 @@ export class MarkovChain extends BaseMidiProcessor {
             return 0;
         }
 
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        const r = this.rngState / 0x7fffffff;
+        this.rngState = nextLcg(this.rngState);
+        const r = this.rngState / LCG_MAX;
         let cumulative = 0;
 
         for (let index = 0; index < this.stateCount; index++) {

@@ -4,8 +4,8 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
-import { gaussianLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { gaussianLcg } from '../../services/lcgRandom';
 
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 

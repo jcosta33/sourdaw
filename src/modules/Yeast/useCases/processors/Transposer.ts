@@ -3,8 +3,8 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
-import { nextLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { nextLcg } from '../../services/lcgRandom';
 
 export class Transposer extends BaseMidiProcessor {
     readonly name = 'Transposer';

@@ -169,6 +169,61 @@ describe('getWorkletNodeSync — buffering during init', () => {
     });
 });
 
+describe('getYeastWorkletNodeAsync — context swap during init (obs #2)', () => {
+    it('does not return the in-flight promise bound to the old ctx when the ctx changes mid-init', async () => {
+        const store = await freshStore();
+
+        // Two distinct AudioContexts; the second arrives while the first is in
+        // flight (the addModule+construct window).
+        const ctxA = { id: 'A' } as unknown as BaseAudioContext;
+        const ctxB = { id: 'B' } as unknown as BaseAudioContext;
+
+        // Capture each createYeastWorkletNode call's deferred separately so the
+        // test owns when each resolves.
+        const deferreds: Array<{ resolve: (n: YeastWorkletNodeResult) => void }> = [];
+        createYeastWorkletNodeMock.mockImplementation(
+            () =>
+                new Promise<YeastWorkletNodeResult>((resolve) => {
+                    deferreds.push({ resolve });
+                })
+        );
+
+        // Kick off init against ctxA — now in flight.
+        const pendingA = store.getYeastWorkletNodeAsync(ctxA);
+        expect(deferreds).toHaveLength(1);
+
+        // ctx swaps to ctxB while ctxA is still resolving. The bug: the in-flight
+        // branch returned the stale ctxA promise (no ctx comparison), so the
+        // node would be bound to the wrong BaseAudioContext. The fix starts a
+        // fresh creation against ctxB.
+        const pendingB = store.getYeastWorkletNodeAsync(ctxB);
+        expect(pendingB).not.toBe(pendingA);
+        expect(deferreds).toHaveLength(2);
+
+        // Resolve ctxA's stale creation: its node must NOT become the live node,
+        // and it must be torn down (destroy called) rather than bound. Before the
+        // fix, pendingA === pendingB, so resolving ctxA bound nodeA as the live
+        // node against the wrong context.
+        const { node: nodeA } = makeFakeNode(ctxA);
+        let nodeADestroyed = false;
+        nodeA.destroy = () => {
+            nodeADestroyed = true;
+        };
+        deferreds[0]!.resolve(nodeA);
+        const resolvedA = await pendingA;
+        expect(resolvedA).toBeNull();
+        expect(nodeADestroyed).toBe(true);
+
+        // Resolve ctxB's creation: it binds against the current ctx.
+        const { node: nodeB } = makeFakeNode(ctxB);
+        deferreds[1]!.resolve(nodeB);
+        const resolvedB = await pendingB;
+        expect(resolvedB).toBe(nodeB);
+        expect(store.getWorkletNodeSync()).toBe(nodeB);
+        expect(nodeB.context).toBe(ctxB);
+    });
+});
+
 describe('reorderYeastProcessor — worklet mirror', () => {
     it('mirrors a reorder to the worklet so both racks share processor order', async () => {
         vi.resetModules();

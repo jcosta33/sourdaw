@@ -78,7 +78,7 @@ export const KeyboardSplit = ({
                 const x = noteToX(note);
                 const held = heldSet.has(note);
                 const sounding = soundingSet.has(note);
-                const renderIife_18 = () => {
+                const whiteKeyColor = () => {
                     if (sounding) {
                         return 'var(--color-accent-peach)';
                     }
@@ -87,7 +87,7 @@ export const KeyboardSplit = ({
                     }
                     return '#1a1a1a';
                 };
-                const renderIife_19 = () => {
+                const whiteKeyOpacity = () => {
                     if (sounding) {
                         return 0.9;
                     }
@@ -105,8 +105,8 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth - 1,
                             height,
-                            background: renderIife_18(),
-                            opacity: renderIife_19(),
+                            background: whiteKeyColor(),
+                            opacity: whiteKeyOpacity(),
                             borderRadius: '0 0 2px 2px',
                         }}
                     />
@@ -118,7 +118,7 @@ export const KeyboardSplit = ({
                 const x = noteToX(note);
                 const held = heldSet.has(note);
                 const sounding = soundingSet.has(note);
-                const renderIife_20 = () => {
+                const blackKeyColor = () => {
                     if (sounding) {
                         return 'var(--color-accent-peach)';
                     }
@@ -136,7 +136,7 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth * 0.6,
                             height: height * 0.6,
-                            background: renderIife_20(),
+                            background: blackKeyColor(),
                             borderRadius: '0 0 2px 2px',
                             zIndex: 1,
                         }}

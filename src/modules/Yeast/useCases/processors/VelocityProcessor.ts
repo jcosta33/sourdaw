@@ -4,6 +4,7 @@
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { nextLcg } from '../../services/lcgRandom';
 
 type VelCurve = 'linear' | 'soft' | 'hard' | 'sCurve';
 
@@ -72,7 +73,7 @@ export class VelocityProcessor extends BaseMidiProcessor {
                 break;
             }
             case 'random': {
-                this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+                this.rngState = nextLcg(this.rngState);
                 out = this.randomMin + (this.rngState % (this.randomMax - this.randomMin + 1));
                 break;
             }

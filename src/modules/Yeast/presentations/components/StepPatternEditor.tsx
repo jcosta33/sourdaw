@@ -50,7 +50,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                     const isPlaying = index === currentStep;
                     const velNorm = step.velocity / 127;
                     const probOpacity = step.probability;
-                    const renderIife_21 = () => {
+                    const stepFillClass = () => {
                         if (!step.active) {
                             return 'bg-muted-foreground/10';
                         }
@@ -62,7 +62,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                         }
                         return 'bg-[var(--color-accent-peach)]';
                     };
-                    const renderIife_22 = () => {
+                    const octaveBadge = () => {
                         if (step.octaveOffset !== 0) {
                             return (
                                 <div
@@ -104,7 +104,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             >
                                 {/* Fill */}
                                 <div
-                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${renderIife_21()}`}
+                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${stepFillClass()}`}
                                     style={{
                                         height: `${velNorm * 100}%`,
                                         width: `${Math.min(100, step.gateMul * 100)}%`,
@@ -119,7 +119,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 ) : null}
 
                                 {/* Octave badge */}
-                                {renderIife_22()}
+                                {octaveBadge()}
                             </div>
                             {/* Step number */}
                             <span

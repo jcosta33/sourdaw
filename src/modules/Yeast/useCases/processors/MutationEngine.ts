@@ -7,8 +7,8 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
-import { gaussianLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { gaussianLcg } from '../../services/lcgRandom';
 
 type MutationTarget = {
     name: string;
@@ -31,7 +31,6 @@ export class MutationEngine extends BaseMidiProcessor {
     ];
 
     private depth = 0.5; // 0-1 master mutation amount
-    private rate = 1.0; // mutations per beat
     private rngState = 0x1234;
     private stepCounter = 0;
     private stepsPerMutation = 4;
@@ -94,10 +93,14 @@ export class MutationEngine extends BaseMidiProcessor {
             case 'depth':
                 this.depth = Math.max(0, Math.min(1, value));
                 break;
-            case 'rate':
-                this.rate = Math.max(0.1, Math.min(10, value));
-                this.stepsPerMutation = Math.max(1, Math.round(4 / this.rate));
+            case 'rate': {
+                // `rate` (mutations per beat) is only needed to derive the
+                // step cadence; the engine steps on stepCounter/stepsPerMutation,
+                // so keep it local rather than as a write-only field.
+                const rate = Math.max(0.1, Math.min(10, value));
+                this.stepsPerMutation = Math.max(1, Math.round(4 / rate));
                 break;
+            }
         }
     }
 

@@ -83,6 +83,12 @@ type YeastSessionState = {
     pendingWorkletOps: PendingWorkletOp[];
     _workletNode: YeastWorkletNodeResult | null;
     _workletNodePromise: Promise<YeastWorkletNodeResult | null> | null;
+    // The AudioContext the in-flight `_workletNodePromise` is being constructed
+    // against. A resolved node carries its own `.context`, but an in-flight
+    // creation does not — without recording the target ctx here, a context swap
+    // during the `addModule`+construct window cannot tell that the pending
+    // promise is bound to the old, now-stale context.
+    _workletNodeCtx: BaseAudioContext | null;
 };
 
 const session = createHmrPersistentState<YeastSessionState>('yeast.session', () => ({
@@ -91,6 +97,7 @@ const session = createHmrPersistentState<YeastSessionState>('yeast.session', () 
     pendingWorkletOps: [],
     _workletNode: null,
     _workletNodePromise: null,
+    _workletNodeCtx: null,
 }));
 
 /**
@@ -98,10 +105,21 @@ const session = createHmrPersistentState<YeastSessionState>('yeast.session', () 
  * Returns null if the worklet fails to initialize (triggers main-thread fallback).
  */
 export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<YeastWorkletNodeResult | null> {
-    // If context changed, invalidate existing session
-    if (session._workletNode && session._workletNode.context !== ctx) {
+    // If the context changed, invalidate the existing session — both a resolved
+    // node and a creation still in flight. The resolved node carries its own
+    // `.context`; an in-flight promise is matched against the recorded
+    // `_workletNodeCtx` it was started with. Without invalidating the in-flight
+    // case, a ctx swap during the `addModule`+construct window would return a
+    // promise bound to the old context, and its node would be used against the
+    // wrong `BaseAudioContext`.
+    const resolvedCtxStale = session._workletNode !== null && session._workletNode.context !== ctx;
+    const pendingCtxStale =
+        session._workletNode === null && session._workletNodePromise !== null && session._workletNodeCtx !== ctx;
+    if (resolvedCtxStale || pendingCtxStale) {
         session._workletNode = null;
         session._workletNodePromise = null;
+        session._workletNodeCtx = null;
+        session.pendingWorkletOps = [];
     }
 
     if (session._workletNode) {
@@ -111,8 +129,19 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
         return session._workletNodePromise;
     }
 
+    session._workletNodeCtx = ctx;
     session._workletNodePromise = createYeastWorkletNode(ctx)
         .then((node) => {
+            // The context may have swapped while this node was being constructed.
+            // If the session has since moved on to a different ctx (a newer
+            // creation was started, or it was invalidated), this node is bound to
+            // the stale context — discard it instead of clobbering the session,
+            // so the caller falls back to the main-thread rack for this block and
+            // the next call constructs against the live context.
+            if (session._workletNodeCtx !== ctx) {
+                node.destroy();
+                return null;
+            }
             session._workletNode = node;
             // Route the worklet rack's hung-note offs (from a mid-playback
             // removeProcessor) to the live instrument via the same app event the

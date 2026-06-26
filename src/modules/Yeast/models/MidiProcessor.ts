@@ -35,7 +35,6 @@ export type MidiProcessor = {
  * Every Note On must have exactly one eventual Note Off.
  */
 export type ActiveNote = {
-    sourceId: number;
     channel: number;
     note: number;
     offTimeSamples: number;

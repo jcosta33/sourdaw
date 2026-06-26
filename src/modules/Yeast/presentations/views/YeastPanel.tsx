@@ -321,6 +321,11 @@ export const YeastPanel = (): ReactElement => {
 
 const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
     const hasArp = state.processors.some((param) => param.type === 'arpeggiator');
+    // Local UI mirror of the latch toggle. Processor params are not projected
+    // back into the store (the panel is write-only — see audit obs #4), so the
+    // chip tracks its own on/off state to drive a real toggle: without it the
+    // chip could only ever send latch=1 and latch could never be turned off.
+    const [latchOn, setLatchOn] = useState(false);
 
     return (
         <Row align="center" justify="center" gap={8} className="flex-1 px-8">
@@ -368,6 +373,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     <option value={4}>Random</option>
                     <option value={5}>Order</option>
                     <option value={6}>Chord</option>
+                    <option value={7}>Pattern</option>
                 </DawCompactSelect>
             </Stack>
             {/* Rate */}
@@ -392,10 +398,13 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             {/* Latch */}
             <YeastChip
                 size="sm"
+                active={latchOn}
                 onClick={() => {
                     const arp = state.processors.find((param) => param.type === 'arpeggiator');
+                    const next = !latchOn;
+                    setLatchOn(next);
                     if (arp) {
-                        setYeastProcessorParam(arp.id, 'latch', 1);
+                        setYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
                     }
                 }}
             >

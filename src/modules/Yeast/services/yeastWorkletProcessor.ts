@@ -30,7 +30,7 @@ type YeastMsg =
     | { type: 'setBypass'; processorId: string; bypassed: boolean }
     | {
           type: 'processBlock';
-          requestId: string;
+          requestId: number;
           events: MidiEvent[];
           blockStart: number;
           blockEnd: number;
