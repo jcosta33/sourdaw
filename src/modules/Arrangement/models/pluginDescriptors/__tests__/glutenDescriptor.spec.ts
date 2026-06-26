@@ -43,4 +43,18 @@ describe('GLUTEN_DESCRIPTOR', () => {
             expect(param?.value).toBe(defaultValue);
         }
     );
+
+    // `style` is a real engine param the bridge pushes (loadGlutenPatchWithAudio)
+    // and the engine maps (glutenProcessor PARAM_MAP). It was the sole bridge-pushed
+    // key absent from this descriptor, making it invisible to the generic param /
+    // automation system. Encoded as an enum index (glue=0..pump=3), default 'glue' = 0.
+    it('exposes style as an automatable enum parameter (glue=0..pump=3)', () => {
+        const param = byId('style');
+        expect(param, 'style must be present in the automation descriptor').toBeDefined();
+        expect(param?.automatable).toBe(true);
+        expect(param?.minValue).toBe(0);
+        expect(param?.maxValue).toBe(3);
+        expect(param?.defaultValue).toBe(0);
+        expect(param?.type).toBe('int');
+    });
 });

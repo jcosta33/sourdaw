@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { DEFAULT_PATCH } from '../../models/GlutenPatch';
 import {
     DEFAULT_GLUTEN_METERS,
+    deleteGlutenMeters,
     getGlutenMeters,
     getGlutenState,
     glutenMeterStore,
@@ -82,6 +83,39 @@ describe('glutenStore', () => {
             expect(m.crest).toBe(2);
             expect(m.phaseCorr).toBe(0.5);
             expect(m.latency).toBe(32);
+        });
+
+        describe('deleteGlutenMeters — device teardown purges the slice', () => {
+            it('should remove a destroyed device slice so it no longer accretes', () => {
+                updateGlutenMeters('gone', { grDb: -5, inputDb: -18, outputDb: -9 });
+                expect(glutenMeterStore.value?.gone?.grDb).toBe(-5);
+
+                deleteGlutenMeters('gone');
+
+                // The slice is gone and a later read falls back to the default.
+                expect(glutenMeterStore.value?.gone).toBeUndefined();
+                expect(getGlutenMeters('gone')).toEqual(DEFAULT_GLUTEN_METERS);
+            });
+
+            it('should leave other devices referentially unchanged when one is deleted', () => {
+                updateGlutenMeters('keep', { grDb: -1, inputDb: -10, outputDb: -5 });
+                updateGlutenMeters('drop', { grDb: -2, inputDb: -12, outputDb: -6 });
+                const keepBefore = getGlutenMeters('keep');
+
+                deleteGlutenMeters('drop');
+
+                expect(glutenMeterStore.value?.drop).toBeUndefined();
+                expect(getGlutenMeters('keep')).toBe(keepBefore);
+            });
+
+            it('should be a no-op that preserves the map identity when the device is absent', () => {
+                updateGlutenMeters('keep', { grDb: -1, inputDb: -10, outputDb: -5 });
+                const mapBefore = glutenMeterStore.value;
+
+                deleteGlutenMeters('never-existed');
+
+                expect(glutenMeterStore.value).toBe(mapBefore);
+            });
         });
     });
 

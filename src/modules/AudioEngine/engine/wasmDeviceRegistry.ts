@@ -11,7 +11,7 @@ import { eventBus } from '#/app/registerDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
-import { updateGlutenMeters } from '#/modules/Gluten/stores';
+import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
 import { updateGrinderMeters } from '#/modules/Grinder/stores';
 import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
@@ -357,6 +357,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
+                            deleteGlutenMeters(deviceId);
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },

@@ -37,4 +37,13 @@ describe('GlutenPanel', () => {
         expect(screen.getByText('4×')).toBeTruthy();
         expect(screen.queryByText('3×')).toBeNull();
     });
+
+    it('should give the GR meter a per-instance accessible label derived from the patch name', () => {
+        // The panel must pass a `label` to GrMeter so every open Gluten panel's
+        // meter is distinguishable, rather than all sharing the default
+        // 'Gain reduction meter'. The default patch is named 'Init'.
+        render(<GlutenPanel deviceId={DEVICE_ID} />);
+        const meter = screen.getByLabelText('Init gain reduction meter');
+        expect(meter.getAttribute('role')).toBe('meter');
+    });
 });

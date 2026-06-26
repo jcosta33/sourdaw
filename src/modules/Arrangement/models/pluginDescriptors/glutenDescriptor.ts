@@ -11,6 +11,10 @@ import { type PluginDescriptor, type PluginParamDef } from '../DeviceParameterTy
 const GLUTEN_PARAMS: readonly PluginParamDef[] = [
     // Core
     { id: 'topology', label: 'Topology', min: 0, max: 3, default: 0, unit: '', step: 1 },
+    // style enum: glue=0, punch=1, smooth=2, pump=3 (Gluten STYLE_INDEX). The
+    // engine consumes `style` and the bridge pushes it; without this entry the
+    // generic param/automation system that reads this descriptor cannot see it.
+    { id: 'style', label: 'Style', min: 0, max: 3, default: 0, unit: '', step: 1 },
     { id: 'amount', label: 'Amount', min: 0, max: 100, default: 50, unit: '%', step: 1 },
     { id: 'threshold', label: 'Threshold', min: -60, max: 0, default: -18, unit: 'dB', step: 0.5 },
     { id: 'ratio', label: 'Ratio', min: 1, max: 20, default: 4, unit: ':1', step: 0.5 },

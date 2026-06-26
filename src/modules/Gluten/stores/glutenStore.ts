@@ -108,3 +108,21 @@ export function updateGlutenMeters(deviceId: string, meters: GlutenMeterValues):
         },
     });
 }
+
+/**
+ * Drop a device's meter slice when the device is torn down. Without this, a
+ * meter slice keyed by a destroyed deviceId would accrete in `glutenMeterStore`
+ * for the session lifetime (and a reopened panel for a reused deviceId would see
+ * the stale readings). Called from the engine device `destroy()` path. A no-op
+ * when the slice is already absent — the map object is left untouched so other
+ * devices' `useGlutenMeters` snapshots stay referentially stable.
+ */
+export function deleteGlutenMeters(deviceId: string): void {
+    const instances = glutenMeterStore.value;
+    if (!instances || !Object.hasOwn(instances, deviceId)) {
+        return;
+    }
+    const next = { ...instances };
+    delete next[deviceId];
+    glutenMeterStore.set(next);
+}

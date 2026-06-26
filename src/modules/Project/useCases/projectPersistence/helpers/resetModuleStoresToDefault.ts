@@ -3,7 +3,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { bacteriaStore } from '#/modules/Bacteria/stores';
 import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
 import { fermenterStore } from '#/modules/Fermenter/stores';
-import { glutenStore } from '#/modules/Gluten/stores';
+import { glutenStore, glutenMeterStore } from '#/modules/Gluten/stores';
 import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
 import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
@@ -30,6 +30,11 @@ export function resetModuleStoresToDefault(): void {
     // Reset per-device-instance stores (§13.1 — prevents stale device state
     // from previous project leaking into newly loaded projects)
     glutenStore.set({});
+    // Gluten holds high-frequency meter telemetry in a separate store from the
+    // patch (like Grinder's grinderTelemetryStore below); reset it too so a
+    // reopened panel for a reused deviceId does not show the prior project's
+    // last meter readings.
+    glutenMeterStore.set({});
     fermenterStore.set({});
     grinderStore.set({});
     grinderTelemetryStore.set({});

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
@@ -104,6 +105,21 @@ describe('resetModuleStoresToDefault', () => {
         // across a New Project / project load.
         expect(mocks.grinderStoreSet).toHaveBeenCalledWith({});
         expect(mocks.grinderTelemetryStoreSet).toHaveBeenCalledWith({});
+    });
+
+    it('should clear per-device Gluten meter telemetry so prior-project meters do not linger', () => {
+        // glutenMeterStore is NOT mocked here: it is the real split telemetry
+        // store, keyed per device instance. Dirty a device the way a ticking
+        // engine would, then assert the reset purges it. Before the fix the
+        // reset omitted glutenMeterStore, so this slice survived into the next
+        // project and a reopened panel for a reused deviceId showed stale meters.
+        updateGlutenMeters('prior-project-device', { grDb: -7, inputDb: -20, outputDb: -13 });
+        expect(glutenMeterStore.value?.['prior-project-device']?.grDb).toBe(-7);
+
+        resetModuleStoresToDefault();
+
+        expect(glutenMeterStore.value).toEqual({});
+        expect(glutenMeterStore.value?.['prior-project-device']).toBeUndefined();
     });
 
     it('should clear per-device Grand Boule state so a prior project does not leak into a New Project', () => {

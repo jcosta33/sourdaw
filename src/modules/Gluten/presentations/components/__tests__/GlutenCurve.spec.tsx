@@ -16,7 +16,7 @@ describe('GlutenCurve', () => {
     });
 
     it('should not apply a grab cursor on pointer up when non-interactive', () => {
-        // No onThresholdChange / onRatioChange → render leaves cursor undefined.
+        // No onThresholdChange → render leaves cursor undefined.
         const { container } = render(
             <GlutenCurve threshold={-18} ratio={3} knee={2} makeup={0} grDb={0} inputDb={-12} width={120} height={80} />
         );

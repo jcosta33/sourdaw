@@ -636,11 +636,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
                             <GrMeter
                                 grDb={grDb}
-                                inputDb={inputDb}
-                                outputDb={outputDb}
                                 width={54}
                                 height={236}
                                 accentColor={accentColor}
+                                label={`${patch.name} gain reduction meter`}
                             />
                         </Grid>
                     </Stack>

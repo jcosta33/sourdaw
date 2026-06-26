@@ -7,8 +7,6 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 
 type GrMeterProps = {
     grDb: number;
-    inputDb: number;
-    outputDb: number;
     width?: number;
     height?: number;
     accentColor?: string;
@@ -18,8 +16,6 @@ type GrMeterProps = {
 
 export const GrMeter = ({
     grDb,
-    inputDb,
-    outputDb,
     width = 60,
     height = 160,
     accentColor,
@@ -128,7 +124,7 @@ export const GrMeter = ({
         ctx.font = '7px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('GR', width / 2, height - 1);
-    }, [grDb, inputDb, outputDb, width, height, accentColor]);
+    }, [grDb, width, height, accentColor]);
 
     // Round to one decimal so the announced value matches the visible readout
     // (the canvas prints `grDb.toFixed(1)`), instead of leaking the raw float.

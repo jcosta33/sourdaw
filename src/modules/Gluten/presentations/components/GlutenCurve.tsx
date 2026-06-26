@@ -12,7 +12,6 @@ type GlutenCurveProps = {
     width?: number;
     height?: number;
     onThresholdChange?: (value: number) => void;
-    onRatioChange?: (value: number) => void;
     accentColor?: string;
 };
 
@@ -44,11 +43,10 @@ export const GlutenCurve = ({
     width = 340,
     height = 180,
     onThresholdChange,
-    onRatioChange,
     accentColor,
 }: GlutenCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const isDragging = useRef<'threshold' | 'ratio' | null>(null);
+    const isDragging = useRef<'threshold' | null>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -222,7 +220,7 @@ export const GlutenCurve = ({
     }, [accentColor, grDb, height, inputDb, knee, makeup, ratio, threshold, width]);
 
     function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>): void {
-        if (!onThresholdChange && !onRatioChange) {
+        if (!onThresholdChange) {
             return;
         }
 
@@ -254,7 +252,7 @@ export const GlutenCurve = ({
     }
 
     function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>): void {
-        if (!onThresholdChange && !onRatioChange) {
+        if (!onThresholdChange) {
             return;
         }
 
