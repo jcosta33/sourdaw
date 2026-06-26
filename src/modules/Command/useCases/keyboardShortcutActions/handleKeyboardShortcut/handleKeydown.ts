@@ -12,7 +12,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { loopStationStore } from '#/modules/Transport/stores';
 import { stopPlayback, seekPlayhead, setLoopRegion, stopAllSlots, triggerPad } from '#/modules/Transport/useCases';
-import { workspaceStore, toolSwapStore } from '#/modules/Workspace/stores';
+import { workspaceStore, toolSwapStore, type EditingTool } from '#/modules/Workspace/stores';
 import {
     clearClipSelection,
     cycleAutomationVisibility,
@@ -28,7 +28,6 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
-    type EditingTool,
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace/useCases';
 

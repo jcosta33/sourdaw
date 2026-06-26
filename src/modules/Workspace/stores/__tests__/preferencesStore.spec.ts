@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { stringify } from 'superjson';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { preferencesStore } from '../preferencesStore';
 
@@ -26,5 +27,42 @@ describe('preferencesStore', () => {
 
         // Restore
         preferencesStore.set(original);
+    });
+});
+
+describe('preferencesStore — present-but-corrupt persisted blob', () => {
+    const STORAGE_KEY = 'sourdaw-preferences';
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('returns the schema-validated form (not the raw corrupt blob) when a present blob has invalid fields', async () => {
+        // A non-null but schema-invalid blob already present in localStorage at
+        // store-module load: `theme` is null (invalid enum) and `autoSave` is a
+        // string. The createStore seeding guard ("seed only when storage is
+        // null") would otherwise leave these raw values in `.value`.
+        window.localStorage.setItem(STORAGE_KEY, stringify({ theme: null, autoSave: 'yes', uiScale: 1.5 }));
+
+        // The singleton is built at module init; force a fresh instance so its
+        // loadPreferences() runs against the corrupt blob we just seeded.
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        // Read boundary must return the sanitized form: invalid fields fall back
+        // to defaults, valid fields are preserved.
+        expect(fresh.value?.theme).toBe('dark'); // invalid null → default
+        expect(fresh.value?.autoSave).toBe(true); // invalid 'yes' → default
+        expect(fresh.value?.uiScale).toBe(1.5); // valid → preserved
+
+        // And the validated form is the actual stored form (write-through), so a
+        // later consumer reading the raw blob also sees the sanitized values.
+        const persisted = window.localStorage.getItem(STORAGE_KEY);
+        expect(persisted).not.toBeNull();
+        expect(persisted).not.toContain('"theme":null');
     });
 });

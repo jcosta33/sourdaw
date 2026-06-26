@@ -11,7 +11,7 @@ type AppNotification = {
 
 export function useNotificationQueue(): {
     items: AppNotification[];
-    dismissLatest: () => void;
+    dismissCurrent: () => void;
 } {
     const [items, setItems] = useState<AppNotification[]>([]);
 
@@ -32,19 +32,28 @@ export function useNotificationQueue(): {
         });
     }, []);
 
+    // Auto-dismiss the head of the queue after 8s. The effect keys on the head
+    // item's id (not the whole `items` array), so a new notification appended to
+    // the tail does NOT restart the head's timer — otherwise, under a burst of
+    // distinct notifications arriving < 8s apart, the head would never dismiss
+    // until the stream paused (the timer was perpetually reset).
+    const headId = items[0]?.id;
     useEffect(() => {
-        if (items.length === 0) {
+        if (headId === undefined) {
             return undefined;
         }
         const timer = setTimeout(() => {
             setItems((prev) => prev.slice(1));
         }, 8000);
         return () => clearTimeout(timer);
-    }, [items]);
+    }, [headId]);
 
     return {
         items,
-        dismissLatest: () => {
+        // The toast renders the head (`items[0]`) — the oldest unacknowledged
+        // notification — and this dismisses that same head, so the dismiss button
+        // always clears the notification the user is looking at.
+        dismissCurrent: () => {
             setItems((prev) => prev.slice(1));
         },
     };

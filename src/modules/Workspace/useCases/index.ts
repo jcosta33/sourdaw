@@ -54,7 +54,9 @@ export { getWorkspaceHandlers } from './getWorkspaceHandlers';
 
 export { gridSnapBeats } from './workspaceQueries/gridSnapBeats';
 export { TRACK_HEIGHT_VALUES, defaultPreferences, TOOL_SHORTCUTS } from './workspaceQueries/helpers';
-export type { Preferences, GridSnapOption, WorkspaceState, EditingTool } from './workspaceQueries/helpers';
+// Public state/preferences TYPES are exported from the `stores/` barrel (next to
+// the stores that hold them), not here — the `useCases/` contract barrel must not
+// re-export types (arch rule `no-usecase-type-exports-on-index`).
 
 // ── Workspace State ───────────────────────────────────────────────────────────
 

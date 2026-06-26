@@ -18,6 +18,9 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessionLaunchStore';
+import { launchSessionScene } from '../../useCases/sessionLaunch/launchSessionScene';
+import { stopAllSessionSlots } from '../../useCases/sessionLaunch/stopAllSessionSlots';
+import { toggleSessionSlot } from '../../useCases/sessionLaunch/toggleSessionSlot';
 import { useTracks } from '../hooks/useTracks';
 
 const SCENE_COUNT = 8;
@@ -31,26 +34,18 @@ export const SessionView = (): ReactElement => {
     const activeSlots = state.activeSlots;
 
     const handleLaunchSlot = (trackId: string, sceneIndex: number): void => {
-        const current = sessionLaunchStore.value ?? emptyState;
-        const next = { ...current.activeSlots };
-        if (next[trackId] === sceneIndex) {
-            delete next[trackId];
-        } else {
-            next[trackId] = sceneIndex;
-        }
-        sessionLaunchStore.set({ activeSlots: next });
+        toggleSessionSlot(trackId, sceneIndex);
     };
 
     const handleLaunchScene = (sceneIndex: number): void => {
-        const next: Record<string, number> = {};
-        for (const time of tracks) {
-            next[time.id] = sceneIndex;
-        }
-        sessionLaunchStore.set({ activeSlots: next });
+        launchSessionScene(
+            tracks.map((time) => time.id),
+            sceneIndex
+        );
     };
 
     const handleStopAll = (): void => {
-        sessionLaunchStore.set({ activeSlots: {} });
+        stopAllSessionSlots();
     };
 
     // §142.1 — pre-compute the clip-per-slot map once per track during the

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
@@ -109,6 +109,26 @@ export const usePreviewAudio = (): PreviewHandle => {
             // Format not supported or decode failed — preview is best-effort
         }
     };
+
+    // Release any sounding preview node when the consuming component unmounts.
+    // Without this, unmounting mid-playback leaves the source running and its
+    // gain node connected to ctx.destination (audio keeps sounding, graph
+    // leaks). We tear down from the ref directly so the effect can keep an
+    // empty dependency array and not capture a stale `stop` closure.
+    useEffect(() => {
+        return () => {
+            const source = sourceRef.current;
+            if (source) {
+                try {
+                    source.stop();
+                } catch {
+                    /* already stopped */
+                }
+                source.disconnect();
+                sourceRef.current = null;
+            }
+        };
+    }, []);
 
     return { playingId, play, playTone, playFile, stop };
 };

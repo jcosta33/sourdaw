@@ -10,6 +10,12 @@ import {
     type Preferences,
 } from '../models/Preferences';
 
+// Re-export the public preferences type alongside the store that holds it. The
+// `useCases/` contract barrel must not re-export types (arch rule
+// `no-usecase-type-exports-on-index`), so the cross-module type surface lives on
+// the `stores/` barrel next to `preferencesStore`.
+export type { Preferences };
+
 const storage = createLocalStorage<Preferences>('sourdaw-preferences');
 
 const GRID_SNAP_VALUES = new Set<unknown>(GRID_SNAP_OPTIONS.map((option) => option.value));
@@ -99,8 +105,22 @@ export function validateStoredPreferences(stored: unknown): Preferences {
 
 // Validate stored data against the schema so new keys are present and corrupt
 // values (e.g. `theme: null`) never leak into consumers.
+//
+// `createStore` only writes `initialData` when storage is empty, so a sanitized
+// `initialData` derived from a *present* corrupt blob would be discarded and
+// `store.value` would return the raw corrupt blob. To keep the documented
+// guarantee at the read boundary, write the validated form back through the
+// storage adapter here whenever it differs from what is stored — this covers the
+// present-but-corrupt-blob case as well as schema migration (new keys filled
+// with defaults). When storage is empty the write seeds the defaults, matching
+// the previous behavior.
 function loadPreferences(): Preferences {
-    return validateStoredPreferences(storage.get());
+    const raw = storage.get();
+    const validated = validateStoredPreferences(raw);
+    if (raw === null || JSON.stringify(raw) !== JSON.stringify(validated)) {
+        storage.set(validated);
+    }
+    return validated;
 }
 
 export const preferencesStore = createStore<Preferences>({

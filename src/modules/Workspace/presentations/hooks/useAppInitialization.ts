@@ -120,10 +120,37 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            saveProject();
-        }, 30_000);
-        return () => clearInterval(interval);
+        // Autosave cadence and on/off are governed by the user's preferences. The
+        // "Auto Save" toggle and the interval field both exist and are validated;
+        // gate the timer on them so toggling the control actually stops/starts
+        // autosave and changing the interval re-arms at the new cadence. We
+        // re-read on every preferences change rather than capturing once.
+        let interval: ReturnType<typeof setInterval> | null = null;
+
+        const applyAutosaveSchedule = (): void => {
+            if (interval !== null) {
+                clearInterval(interval);
+                interval = null;
+            }
+            const prefs = preferencesStore.value;
+            const enabled = prefs?.autoSave ?? true;
+            if (!enabled) {
+                return;
+            }
+            const intervalMs = prefs?.autoSaveIntervalMs ?? 30_000;
+            interval = setInterval(() => {
+                saveProject();
+            }, intervalMs);
+        };
+
+        applyAutosaveSchedule();
+        const unsubscribe = preferencesStore.subscribe(applyAutosaveSchedule);
+        return () => {
+            if (interval !== null) {
+                clearInterval(interval);
+            }
+            unsubscribe();
+        };
     }, []);
 
     useEffect(() => {

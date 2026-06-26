@@ -11,6 +11,7 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { routingConnectionKey, routingMatrixStore, type RoutingMatrixState } from '../../stores/routingMatrixStore';
+import { toggleRoutingConnection } from '../../useCases/routingMatrix/toggleRoutingConnection';
 import { useTracks } from '../hooks/useTracks';
 
 const emptyState: RoutingMatrixState = { connections: {} };
@@ -23,15 +24,7 @@ export const RoutingMatrix = (): ReactElement => {
     const connections = state.connections;
 
     const toggleConnection = (srcId: string, destId: string): void => {
-        const key = routingConnectionKey(srcId, destId);
-        const current = routingMatrixStore.value ?? emptyState;
-        const next = { ...current.connections };
-        if (key in next) {
-            delete next[key];
-        } else {
-            next[key] = { sourceId: srcId, destId, level: 1.0 };
-        }
-        routingMatrixStore.set({ connections: next });
+        toggleRoutingConnection(srcId, destId);
     };
 
     // Separate buses from regular tracks

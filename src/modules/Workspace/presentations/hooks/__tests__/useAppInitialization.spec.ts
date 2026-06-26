@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
+import { saveProject } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -43,8 +44,16 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), getTransportState: vi.fn(() => null) }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/utils/tauriBridge', () => ({ isTauri: vi.fn(() => false) }));
-vi.mock('../../stores/preferencesStore', () => ({
-    preferencesStore: { value: { uiScale: 1 }, subscribe: vi.fn(() => () => {}) },
+const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
+// Path resolves (from this __tests__ dir) to Workspace/stores/preferencesStore —
+// the exact module the hook imports, so the mock actually intercepts it.
+vi.mock('../../../stores/preferencesStore', () => ({
+    preferencesStore: {
+        get value(): Record<string, unknown> | null {
+            return mockPreferencesValueHolder.current;
+        },
+        subscribe: vi.fn(() => () => {}),
+    },
 }));
 
 describe('useAppInitialization — first-gesture engine resume', () => {
@@ -121,5 +130,49 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         unmount();
 
         expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('useAppInitialization — autosave governed by preferences', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers();
+        vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 30_000 };
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('does NOT fire saveProject when the autoSave preference is disabled', () => {
+        // The "Auto Save" toggle must actually stop autosave: with autoSave:false
+        // the 30s interval must never call saveProject.
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
+
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(90_000);
+
+        expect(saveProject).not.toHaveBeenCalled();
+    });
+
+    it('fires saveProject on the preference-configured interval when autoSave is enabled', () => {
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 10_000 };
+
+        renderHook(() => useAppInitialization());
+
+        vi.advanceTimersByTime(10_000);
+        expect(saveProject).toHaveBeenCalledTimes(1);
+
+        vi.advanceTimersByTime(20_000);
+        expect(saveProject).toHaveBeenCalledTimes(3);
     });
 });
