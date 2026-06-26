@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createSession, leaveSession } from '../sessionManagement';
+import { createSession, leaveSession, onPresence } from '../sessionManagement';
 
 const mocks = vi.hoisted(() => {
     const automergeStart = vi.fn();
@@ -257,6 +257,58 @@ describe('collaboration sessionManagement', () => {
             });
 
             expect(mocks.collaborationStoreValue.value.localColor).toBe('#aaaaaa');
+        });
+
+        it('sanitizes a malformed peer-supplied presence color to a safe fallback', () => {
+            setStore({
+                isEnabled: true,
+                localPeerId: 'host',
+                isHost: true,
+                peers: [{ id: 'evil', name: 'Evil', color: '#000', isHost: false }],
+            });
+
+            const received: string[] = [];
+            const unsubscribe = onPresence((data) => {
+                received.push(data.color);
+            });
+
+            // A 32-char string that fits the length cap but is not a CSS color —
+            // it would otherwise interpolate verbatim into the playhead gradient
+            // CSS at PresenceMarker.tsx:25.
+            const injection = 'red;}#a{background:url(x)}';
+            deliver('evil', {
+                type: 'presence',
+                data: { peerId: 'evil', name: 'Evil', color: injection, playheadBeat: 1 },
+            });
+
+            unsubscribe();
+
+            expect(received).toHaveLength(1);
+            expect(received[0]).not.toBe(injection);
+            expect(received[0]).toBe('#888888');
+        });
+
+        it('passes a well-formed peer-supplied presence color through unchanged', () => {
+            setStore({
+                isEnabled: true,
+                localPeerId: 'host',
+                isHost: true,
+                peers: [{ id: 'p2', name: 'Peer', color: '#000', isHost: false }],
+            });
+
+            const received: string[] = [];
+            const unsubscribe = onPresence((data) => {
+                received.push(data.color);
+            });
+
+            deliver('p2', {
+                type: 'presence',
+                data: { peerId: 'p2', name: 'Peer', color: '#22c55e', playheadBeat: 1 },
+            });
+
+            unsubscribe();
+
+            expect(received).toEqual(['#22c55e']);
         });
     });
 });

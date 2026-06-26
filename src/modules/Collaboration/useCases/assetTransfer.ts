@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
-import { DOC_ID_ASSET } from '../models/syncChannelConstants';
+import { DOC_ID_ASSET } from '../models/SyncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const CHUNK_SIZE = 256 * 1024; // 256 KiB

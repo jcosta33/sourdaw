@@ -324,15 +324,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // §fix-9 — Cursor-only delta: omit playheadBeat so it doesn't
                 // overwrite the value the playhead heartbeat keeps current.
                 broadcastPresence({
-                    view: 'arrangement',
                     cursorBeat,
                     cursorTrackId: trackHit?.id ?? null,
-                    selectedClipIds: [],
-                    selectedNoteIds: [],
-                    viewportStartBeat: 0,
-                    viewportEndBeat: 0,
-                    viewportTrackIds: [],
-                    action: null,
                 });
             }
         }

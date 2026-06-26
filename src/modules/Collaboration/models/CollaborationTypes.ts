@@ -27,15 +27,8 @@ export type PresenceData = {
     peerId: PeerId;
     name: string;
     color: string;
-    view: 'arrangement' | 'mixer' | 'piano-roll' | 'device';
     cursorBeat: number | null;
     cursorTrackId: string | null;
-    selectedClipIds: string[];
-    selectedNoteIds: string[];
-    viewportStartBeat: number;
-    viewportEndBeat: number;
-    viewportTrackIds: string[];
-    action: string | null;
     /** Current playhead position in beats — used to render ghost playheads. */
     playheadBeat: number | null;
 };

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type PeerMessage } from '../../models/CollaborationTypes';
-import { DOC_ID_ASSET } from '../../models/syncChannelConstants';
+import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer } from '../assetTransfer';
 

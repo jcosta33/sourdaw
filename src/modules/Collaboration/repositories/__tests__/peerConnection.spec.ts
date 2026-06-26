@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { type PeerMessage } from '../../models/CollaborationTypes';
-import { PeerConnectionManager } from '../../repositories/peerConnection';
+import { PeerConnectionManager } from '../peerConnection';
 
 /**
  * jsdom provides no WebRTC. These fakes implement just enough of the

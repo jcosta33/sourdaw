@@ -31,9 +31,9 @@ describe('usePresence (§fix-9 presence deltas)', () => {
         const { result } = renderHook(() => usePresence());
 
         // Heartbeat delta: carries playhead, omits cursor fields.
-        emit({ peerId: 'p1', name: 'Alice', color: '#f00', view: 'arrangement', playheadBeat: 12 });
+        emit({ peerId: 'p1', name: 'Alice', color: '#f00', playheadBeat: 12 });
         // Cursor delta: carries cursor, omits playhead.
-        emit({ peerId: 'p1', name: 'Alice', color: '#f00', view: 'arrangement', cursorBeat: 30, cursorTrackId: 't1' });
+        emit({ peerId: 'p1', name: 'Alice', color: '#f00', cursorBeat: 30, cursorTrackId: 't1' });
 
         const entry = result.current.find((data) => data.peerId === 'p1');
         // The cursor update must NOT have nulled the playhead.
@@ -45,8 +45,8 @@ describe('usePresence (§fix-9 presence deltas)', () => {
     it('a heartbeat delta does not wipe the cursor set by a prior cursor delta', () => {
         const { result } = renderHook(() => usePresence());
 
-        emit({ peerId: 'p1', name: 'Alice', color: '#f00', view: 'arrangement', cursorBeat: 30, cursorTrackId: 't1' });
-        emit({ peerId: 'p1', name: 'Alice', color: '#f00', view: 'arrangement', playheadBeat: 99 });
+        emit({ peerId: 'p1', name: 'Alice', color: '#f00', cursorBeat: 30, cursorTrackId: 't1' });
+        emit({ peerId: 'p1', name: 'Alice', color: '#f00', playheadBeat: 99 });
 
         const entry = result.current.find((data) => data.peerId === 'p1');
         expect(entry?.cursorBeat).toBe(30);
@@ -58,14 +58,13 @@ describe('usePresence (§fix-9 presence deltas)', () => {
         const { result } = renderHook(() => usePresence());
 
         // First-ever delta for this peer is a playhead-only heartbeat.
-        emit({ peerId: 'p1', name: 'Alice', color: '#f00', view: 'arrangement', playheadBeat: 5 });
+        emit({ peerId: 'p1', name: 'Alice', color: '#f00', playheadBeat: 5 });
 
         const entry = result.current.find((data) => data.peerId === 'p1');
-        // Cursor fields the heartbeat omitted must be seeded to null/[] — never
+        // Cursor fields the heartbeat omitted must be seeded to null — never
         // undefined — so PresenceOverlay's `!== null` checks behave correctly.
         expect(entry?.cursorBeat).toBeNull();
         expect(entry?.cursorTrackId).toBeNull();
-        expect(entry?.selectedClipIds).toEqual([]);
         expect(entry?.playheadBeat).toBe(5);
     });
 });

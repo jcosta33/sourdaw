@@ -7,6 +7,5 @@ export {
     broadcastPresence,
     onPresence,
     getAssetTransfer,
-    getPermissionManager,
 } from './collaboration/sessionManagement';
 export { getCollaborationHandlers } from './getCollaborationHandlers';

@@ -12,6 +12,7 @@ import {
     mutateCrdtDoc,
     persistCrdtProject,
     hasCrdtDoc,
+    DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
@@ -25,7 +26,7 @@ import {
     peerColorForIndex,
     type PresenceDelta,
 } from '../../models/CollaborationTypes';
-import { DOC_ID_ASSET, DOC_ID_BRANCHES } from '../../models/syncChannelConstants';
+import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { AssetTransfer } from '../assetTransfer';
@@ -116,20 +117,39 @@ const PLAYHEAD_BROADCAST_HZ = 4;
 const MAX_PRESENCE_NAME_LEN = 64;
 const MAX_PRESENCE_COLOR_LEN = 32;
 
+/** Fallback applied when a peer's presence color is not a well-formed CSS color. */
+const FALLBACK_PRESENCE_COLOR = '#888888';
+
 /**
- * Bound the sender-controlled display fields on incoming presence so a hostile
- * peer can't supply an unbounded name/color string (rendered verbatim in the
- * presence overlay). Behaviour-preserving for well-formed presence.
+ * Accept only the CSS color formats this app actually mints for peers — hex
+ * (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`) and the functional `hsl()/hsla()/
+ * rgb()/rgba()` forms (see PEER_COLORS and peerColorForIndex). Anything else is
+ * rejected so a sender-supplied string can't break out of the CSS gradient
+ * value it is interpolated into at PresenceMarker.tsx (`repeating-linear-gradient
+ * (..., ${color}, ...)`).
+ */
+const SAFE_CSS_COLOR_RE =
+    /^(#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%/\s]+\))$/;
+
+function isSafeCssColor(color: string): boolean {
+    return SAFE_CSS_COLOR_RE.test(color);
+}
+
+/**
+ * Bound and validate the sender-controlled display fields on incoming presence
+ * so a hostile peer can't supply an unbounded name string or an arbitrary color
+ * value (both rendered in the presence overlay; the color is interpolated into
+ * a CSS gradient). Behaviour-preserving for well-formed presence.
  */
 function sanitizePresence(data: PresenceDelta): PresenceDelta {
-    if (data.name.length <= MAX_PRESENCE_NAME_LEN && data.color.length <= MAX_PRESENCE_COLOR_LEN) {
+    const name = data.name.length <= MAX_PRESENCE_NAME_LEN ? data.name : data.name.slice(0, MAX_PRESENCE_NAME_LEN);
+    const boundedColor =
+        data.color.length <= MAX_PRESENCE_COLOR_LEN ? data.color : data.color.slice(0, MAX_PRESENCE_COLOR_LEN);
+    const color = isSafeCssColor(boundedColor) ? boundedColor : FALLBACK_PRESENCE_COLOR;
+    if (name === data.name && color === data.color) {
         return data;
     }
-    return {
-        ...data,
-        name: data.name.slice(0, MAX_PRESENCE_NAME_LEN),
-        color: data.color.slice(0, MAX_PRESENCE_COLOR_LEN),
-    };
+    return { ...data, name, color };
 }
 
 // -- Branch sync helpers --
@@ -156,11 +176,11 @@ function startBranchSync(isHost: boolean): void {
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
-        removeCrdtDoc(DOC_ID_BRANCHES);
-        createCrdtDoc(DOC_ID_BRANCHES);
+        removeCrdtDoc(DOC_BRANCHES);
+        createCrdtDoc(DOC_BRANCHES);
         const currentBranches = branchStore.value?.branches ?? [];
         mutateCrdtDoc({
-            id: DOC_ID_BRANCHES,
+            id: DOC_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc.branches = currentBranches;
             },
@@ -173,11 +193,11 @@ function startBranchSync(isHost: boolean): void {
         if (sessionState.isProjectingBranches || !state) {
             return;
         }
-        if (!hasCrdtDoc(DOC_ID_BRANCHES)) {
+        if (!hasCrdtDoc(DOC_BRANCHES)) {
             return;
         }
         mutateCrdtDoc({
-            id: DOC_ID_BRANCHES,
+            id: DOC_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
                 doc.branches = state.branches;
             },
@@ -187,12 +207,12 @@ function startBranchSync(isHost: boolean): void {
     // Project incoming __branches__ doc changes back into branchStore.
     sessionState.unsubscribeAutomergeChanges = subscribeToCrdtChanges((docId) => {
         // §138.1 — Skip the projection entirely when the hint tells us a
-        // different doc changed. Only undefined (bulk) or DOC_ID_BRANCHES
+        // different doc changed. Only undefined (bulk) or DOC_BRANCHES
         // can affect the branch projection.
-        if (docId !== undefined && docId !== DOC_ID_BRANCHES) {
+        if (docId !== undefined && docId !== DOC_BRANCHES) {
             return;
         }
-        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_ID_BRANCHES);
+        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
         if (!doc?.branches) {
             return;
         }
@@ -235,7 +255,7 @@ function stopBranchSync(): void {
         sessionState.unsubscribeAutomergeChanges = null;
     }
 
-    removeCrdtDoc(DOC_ID_BRANCHES);
+    removeCrdtDoc(DOC_BRANCHES);
 
     if (sessionState.branchStoreSnapshot) {
         sessionState.isProjectingBranches = true;
@@ -283,7 +303,7 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
             }
             // §fix-7 — Branch metadata is host-authoritative. A non-host sender
             // may never rewrite every joiner's branch list.
-            if (docId === DOC_ID_BRANCHES) {
+            if (docId === DOC_BRANCHES) {
                 return false;
             }
             const manager = sessionState.permissionManager;
@@ -642,7 +662,6 @@ function startPlayheadBroadcast(): void {
                 peerId: state.localPeerId,
                 name: state.localName,
                 color: state.localColor,
-                view: 'arrangement',
                 playheadBeat,
             },
         });
@@ -743,11 +762,6 @@ export function onPresence(listener: (data: PresenceDelta) => void): () => void 
 /** Get the asset transfer instance (for requesting/providing assets). */
 export function getAssetTransfer(): AssetTransfer | null {
     return sessionState.assetTransfer;
-}
-
-/** Get the permission manager instance (for role checks). */
-export function getPermissionManager(): PermissionManager | null {
-    return sessionState.permissionManager;
 }
 
 // -- Internal handlers --

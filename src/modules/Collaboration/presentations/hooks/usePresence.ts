@@ -17,15 +17,8 @@ function seedPresence(delta: PresenceDelta): PresenceData {
         peerId: delta.peerId,
         name: delta.name,
         color: delta.color,
-        view: delta.view ?? 'arrangement',
         cursorBeat: delta.cursorBeat ?? null,
         cursorTrackId: delta.cursorTrackId ?? null,
-        selectedClipIds: delta.selectedClipIds ?? [],
-        selectedNoteIds: delta.selectedNoteIds ?? [],
-        viewportStartBeat: delta.viewportStartBeat ?? 0,
-        viewportEndBeat: delta.viewportEndBeat ?? 0,
-        viewportTrackIds: delta.viewportTrackIds ?? [],
-        action: delta.action ?? null,
         playheadBeat: delta.playheadBeat ?? null,
     };
 }

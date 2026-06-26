@@ -14,6 +14,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    DOC_PREFIX_ROOT: 'root',
+    DOC_BRANCHES: '__branches__',
 }));
 
 function makePeerManager() {

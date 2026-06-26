@@ -1,5 +1,3 @@
-import { createStore } from '#/infra/store/createStore';
-
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 
 /**
@@ -8,29 +6,15 @@ import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
  * STUN only reveals each peer's public IP to themselves — no data
  * flows through these servers. The actual connection is direct P2P
  * with DTLS encryption.
- *
- * Users can override this via advanced settings to use their own
- * STUN/TURN servers or disable STUN entirely for strict zero-server mode.
  */
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-// Wrapped in a store rather than a module-level `let` so the only way to
-// mutate it is through the setter below — `export let` would allow any
-// importer to reassign this silently.
-const iceServersStore = createStore<RTCIceServer[] | null>({ initialData: null });
-
-/** Override the default ICE servers (for advanced settings / strict zero-server mode). */
-export function setIceServers(servers: RTCIceServer[] | null): void {
-    iceServersStore.set(servers);
-}
-
 /** Get the current ICE server configuration. */
 function getIceConfig(): RTCConfiguration {
-    const servers = iceServersStore.value ?? DEFAULT_ICE_SERVERS;
-    return { iceServers: servers };
+    return { iceServers: DEFAULT_ICE_SERVERS };
 }
 
 type PeerConnectionCallbacks = {

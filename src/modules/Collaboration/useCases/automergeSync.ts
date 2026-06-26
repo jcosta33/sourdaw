@@ -16,14 +16,17 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
+    DOC_PREFIX_ROOT,
+    DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
-import { DOC_ID_BRANCHES } from '../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
-const DOC_PREFIX_ROOT = 'root';
+// Branch-content docs share a `branch_<id>` id scheme minted by CrdtDocument's
+// crdtBranching (forkProjectBranch). CrdtDocument exposes no constant for the
+// prefix, so the routing predicate keeps a local one.
 const DOC_PREFIX_BRANCH = 'branch_';
 
 /**
@@ -48,7 +51,7 @@ export type AutomergeSyncHooks = {
  * and branch content docs — never an arbitrary doc minted by a remote peer.
  */
 function isKnownDocId(docId: string): boolean {
-    return docId === DOC_PREFIX_ROOT || docId === DOC_ID_BRANCHES || docId.startsWith(DOC_PREFIX_BRANCH);
+    return docId === DOC_PREFIX_ROOT || docId === DOC_BRANCHES || docId.startsWith(DOC_PREFIX_BRANCH);
 }
 
 // Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
@@ -211,13 +214,13 @@ export class AutomergeSync {
         this.sendDocSyncToPeer({ peerId, docId: DOC_PREFIX_ROOT });
 
         // Sync branch metadata doc if it exists (session-scoped)
-        if (hasCrdtDoc(DOC_ID_BRANCHES)) {
-            this.sendDocSyncToPeer({ peerId, docId: DOC_ID_BRANCHES });
+        if (hasCrdtDoc(DOC_BRANCHES)) {
+            this.sendDocSyncToPeer({ peerId, docId: DOC_BRANCHES });
         }
 
         // Sync branch content docs
         for (const docId of getCrdtDocIds()) {
-            if (docId.startsWith('branch_')) {
+            if (docId.startsWith(DOC_PREFIX_BRANCH)) {
                 this.sendDocSyncToPeer({ peerId, docId });
             }
         }
