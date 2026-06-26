@@ -1,35 +1,79 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { BranchManagerDialog } from '../BranchManagerDialog';
 
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+const mocks = vi.hoisted(() => ({
+    useStore: vi.fn(),
 }));
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: mocks.useStore,
+}));
+
+const branchState = {
+    activeBranchId: 'main',
+    branches: [
+        {
+            branchId: 'main',
+            name: 'Main',
+            rootDocId: 'root',
+            sourceBranchId: null,
+            createdAt: 0,
+            createdFromHeads: [],
+            note: '',
+        },
+        {
+            branchId: 'feat',
+            name: 'Feature X',
+            rootDocId: 'branch_feat',
+            sourceBranchId: 'main',
+            createdAt: 1,
+            createdFromHeads: [],
+            note: '',
+        },
+    ],
+};
 
 describe('BranchManagerDialog', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.useStore.mockReturnValue(branchState);
     });
 
-    it('should render without crashing', () => {
-        render(<BranchManagerDialog />);
-        expect(document.body).toBeTruthy();
+    it('exposes a labelled modal dialog', () => {
+        render(<BranchManagerDialog onClose={vi.fn()} />);
+        const dialog = screen.getByRole('dialog', { name: 'Branches' });
+        expect(dialog).toHaveAttribute('aria-modal', 'true');
     });
 
-    it('should handle store state', () => {
-        render(<BranchManagerDialog />);
-        expect(document.body).toBeTruthy();
+    it('closes when Escape is pressed', () => {
+        const onClose = vi.fn();
+        render(<BranchManagerDialog onClose={onClose} />);
+
+        const dialog = screen.getByRole('dialog', { name: 'Branches' });
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+
+        expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('should render with useCase bindings', () => {
-        render(<BranchManagerDialog />);
-        expect(document.body).toBeTruthy();
+    it('does not close on other keys', () => {
+        const onClose = vi.fn();
+        render(<BranchManagerDialog onClose={onClose} />);
+
+        const dialog = screen.getByRole('dialog', { name: 'Branches' });
+        fireEvent.keyDown(dialog, { key: 'Enter' });
+
+        expect(onClose).not.toHaveBeenCalled();
     });
 
-    it('should have interactive elements', () => {
-        render(<BranchManagerDialog />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+    it('gives the icon-only branch controls accessible names', () => {
+        render(<BranchManagerDialog onClose={vi.fn()} />);
+
+        // Non-active branch "Feature X" has merge + delete; main has neither.
+        expect(screen.getByRole('button', { name: 'Merge branch Feature X into current branch' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Delete branch Feature X' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Switch to branch Feature X' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Close branch manager' })).toBeTruthy();
     });
 });

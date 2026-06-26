@@ -52,10 +52,23 @@ function processLoad(bundle: Map<string, Uint8Array>): {
         }
     }
 
+    // Order by the full `${millis}-${seqBase36}` token, not just `parseInt` of
+    // its millis prefix — same-millisecond chunks must replay in `seq` order.
+    // Inlined (not imported) to keep this worker's bundle free of main-thread
+    // deps; mirrors `compareIncrementalKeys` in repositories/crdtPersistence.
     incrementals.sort((alpha, b) => {
-        const tA = parseInt(alpha.key.split(':').pop() ?? '0', 10);
-        const tB = parseInt(b.key.split(':').pop() ?? '0', 10);
-        return tA - tB;
+        const tokenA = alpha.key.split(':').pop() ?? '';
+        const tokenB = b.key.split(':').pop() ?? '';
+        const dashA = tokenA.indexOf('-');
+        const dashB = tokenB.indexOf('-');
+        const millisA = parseInt(dashA === -1 ? tokenA : tokenA.slice(0, dashA), 10) || 0;
+        const millisB = parseInt(dashB === -1 ? tokenB : tokenB.slice(0, dashB), 10) || 0;
+        if (millisA !== millisB) {
+            return millisA - millisB;
+        }
+        const seqA = dashA === -1 ? 0 : parseInt(tokenA.slice(dashA + 1), 36) || 0;
+        const seqB = dashB === -1 ? 0 : parseInt(tokenB.slice(dashB + 1), 36) || 0;
+        return seqA - seqB;
     });
 
     for (const { key, bytes } of incrementals) {

@@ -18,8 +18,8 @@ import { persistCrdtProject } from './crdtProjectLifecycle';
 
 const DEBOUNCE_MS = 2_000;
 
-/** Consecutive save failure count — readable by UI to surface warnings. */
-export const autoSaveHealth = { consecutiveFailures: 0 };
+/** Consecutive save failure count — module-private, gates the escalating warn/error log. */
+const autoSaveHealth = { consecutiveFailures: 0 };
 
 export function startCrdtAutoSave(): () => void {
     let timer: ReturnType<typeof setTimeout> | null = null;

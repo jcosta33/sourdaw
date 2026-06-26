@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { projectCrdtToStores } from '../projectProjection';
+import { projectCrdtToStores, setupProjectionBridge } from '../projectProjection';
 
 const mocks = vi.hoisted(() => ({
     trackStore: { hydrate: vi.fn() },
@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
     arrangementStore: { hydrate: vi.fn() },
     projectStore: { hydrate: vi.fn() },
     hydrateSidechainRoutes: vi.fn(),
+    onChange: vi.fn(),
+}));
+
+vi.mock('../../../repositories/automergeRepository', () => ({
+    automergeRepository: { onChange: mocks.onChange },
 }));
 
 // Mock Arrangement stores
@@ -75,5 +80,39 @@ describe('projectCrdtToStores', () => {
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('setupProjectionBridge docId hint', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    function subscribeAndGetCallback(): (docId?: string) => void {
+        setupProjectionBridge();
+        expect(mocks.onChange).toHaveBeenCalledTimes(1);
+        return mocks.onChange.mock.calls[0][0] as (docId?: string) => void;
+    }
+
+    it('re-hydrates on a root-doc change', () => {
+        const onChangeCallback = subscribeAndGetCallback();
+        onChangeCallback('root');
+        expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-hydrates on a bulk op (undefined hint)', () => {
+        const onChangeCallback = subscribeAndGetCallback();
+        onChangeCallback(undefined);
+        expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips the full re-hydrate for a non-root doc (branch / __branches__) change', () => {
+        const onChangeCallback = subscribeAndGetCallback();
+        onChangeCallback('branch_abc123');
+        onChangeCallback('__branches__');
+        expect(mocks.trackStore.hydrate).not.toHaveBeenCalled();
+        expect(mocks.projectStore.hydrate).not.toHaveBeenCalled();
+        expect(mocks.hydrateSidechainRoutes).not.toHaveBeenCalled();
     });
 });

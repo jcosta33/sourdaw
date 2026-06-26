@@ -71,7 +71,17 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Branches"
+            onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                    onClose();
+                }
+            }}
+        >
             <DawUtilityPanel className="w-full max-w-sm">
                 <DawHeaderBand
                     className="px-4 py-3"
@@ -79,7 +89,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                     title="Branches"
                     titleClassName="text-[11px] text-foreground"
                     actions={
-                        <Button variant="ghost" size="icon-xs" onClick={onClose}>
+                        <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close branch manager">
                             <X className="size-3" />
                         </Button>
                     }
@@ -141,18 +151,35 @@ const BranchRow = ({ branch, isActive, onSwitch, onMerge, onDelete }: BranchRowP
         className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs ${isActive ? 'bg-muted/30' : 'hover:bg-muted/10'}`}
     >
         <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-        <button onClick={onSwitch} className="flex-1 text-left min-w-0">
+        <button
+            onClick={onSwitch}
+            className="flex-1 text-left min-w-0"
+            aria-label={`Switch to branch ${branch.name}`}
+            aria-current={isActive ? 'true' : undefined}
+        >
             <span className="truncate text-foreground">{branch.name}</span>
         </button>
         {isActive ? (
             <Check className="size-3 text-[var(--color-state-success)] shrink-0" />
         ) : (
             <>
-                <Button variant="ghost" size="icon-xs" onClick={onMerge} title="Merge into current branch">
+                <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={onMerge}
+                    title="Merge into current branch"
+                    aria-label={`Merge branch ${branch.name} into current branch`}
+                >
                     <Merge className="size-3" />
                 </Button>
                 {branch.branchId !== MAIN_BRANCH_ID ? (
-                    <Button variant="ghost" size="icon-xs" onClick={onDelete} title="Delete branch">
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onDelete}
+                        title="Delete branch"
+                        aria-label={`Delete branch ${branch.name}`}
+                    >
                         <Trash2 className="size-3" />
                     </Button>
                 ) : null}

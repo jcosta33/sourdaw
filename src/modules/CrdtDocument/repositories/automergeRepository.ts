@@ -19,6 +19,8 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
+import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
+
 type AnyDoc = Record<string, unknown>;
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -426,11 +428,7 @@ class AutomergeRepository {
             }
         }
 
-        incrementals.sort((alpha, b) => {
-            const timeA = parseInt(alpha.id.split(':').pop() ?? '0', 10);
-            const timeB = parseInt(b.id.split(':').pop() ?? '0', 10);
-            return timeA - timeB;
-        });
+        incrementals.sort((alpha, b) => compareIncrementalKeys(alpha.id, b.id));
 
         for (const { id: key, bytes } of incrementals) {
             const docId = key.substring(0, key.indexOf(':incremental:'));
