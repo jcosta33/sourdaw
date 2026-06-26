@@ -1,26 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../stores/scoringStore', () => ({
-    scoringStore: { value: {}, set: vi.fn() },
-    getScoringState: vi.fn(() => ({ a4Reference: 440, mode: 'needle' })),
+    mergeDeviceState: vi.fn(),
 }));
 
-import { scoringStore, getScoringState } from '../../stores/scoringStore';
+import { mergeDeviceState } from '../../stores/scoringStore';
 import { setDisplayMode } from '../setDisplayMode';
 
 describe('setDisplayMode', () => {
     beforeEach(() => {
-        vi.mocked(scoringStore.set).mockClear();
-        vi.mocked(getScoringState).mockClear();
+        vi.mocked(mergeDeviceState).mockClear();
     });
 
-    it('writes the new display mode for the given device', () => {
-        // 'strobe' is a real DisplayMode member; the prior fixture used non-DisplayMode
-        // strings ('note'/'cents') that the use-case signature would never accept.
+    it('merges the new display mode for the given device', () => {
+        // 'strobe' is a real DisplayMode member; a non-DisplayMode string would be
+        // rejected by the use-case signature.
         setDisplayMode('d1', 'strobe');
 
-        expect(scoringStore.set).toHaveBeenCalledWith({
-            d1: { a4Reference: 440, mode: 'strobe' },
-        });
+        expect(mergeDeviceState).toHaveBeenCalledWith('d1', { mode: 'strobe' });
     });
 });

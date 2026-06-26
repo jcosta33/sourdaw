@@ -167,6 +167,30 @@ describe('ScoringPanel', () => {
         expect(screen.getByText('95%')).toBeInTheDocument();
     });
 
+    // Fix: clamp confidence to [0,1] before display so an out-of-range worklet value
+    // cannot render the Conf tile above 100% (or below 0%).
+    it('clamps an above-range confidence to 100% on the Conf tile', () => {
+        fixtureState.confidence = 1.2;
+        try {
+            render(<ScoringPanel deviceId={mockDeviceId} />);
+            expect(screen.getByText('100%')).toBeInTheDocument();
+            expect(screen.queryByText('120%')).not.toBeInTheDocument();
+        } finally {
+            fixtureState.confidence = 0.95;
+        }
+    });
+
+    it('clamps a below-range confidence to 0% on the Conf tile', () => {
+        fixtureState.confidence = -0.5;
+        try {
+            render(<ScoringPanel deviceId={mockDeviceId} />);
+            expect(screen.getByText('0%')).toBeInTheDocument();
+            expect(screen.queryByText('-50%')).not.toBeInTheDocument();
+        } finally {
+            fixtureState.confidence = 0.95;
+        }
+    });
+
     it('should render section cards', () => {
         render(<ScoringPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Display')).toBeInTheDocument();

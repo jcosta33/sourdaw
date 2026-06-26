@@ -25,9 +25,11 @@ const ANNOUNCE_DEBOUNCE_MS = 750;
 
 /**
  * Returns the latest `message` only after it has stayed unchanged for
- * ANNOUNCE_DEBOUNCE_MS. Telemetry pushes note/cents updates ~100/s; feeding every
- * tick straight into an aria-live region would flood assistive tech. Debouncing
- * announces a stable read instead of a blur of intermediate values.
+ * ANNOUNCE_DEBOUNCE_MS. Telemetry pushes note/cents updates at display rate
+ * (the producer polls via requestAnimationFrame, ~60/s on a 60 Hz display);
+ * feeding every tick straight into an aria-live region would flood assistive
+ * tech. Debouncing announces a stable read instead of a blur of intermediate
+ * values.
  */
 function useDebouncedAnnouncement(message: string): string {
     const [announced, setAnnounced] = useState(message);
@@ -65,10 +67,15 @@ function SectionCard({
 
 export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Subscribe to this device's instance only — a whole-record subscription would
-    // re-render every mounted ScoringPanel on any device's telemetry tick (~100/s).
+    // re-render every mounted ScoringPanel on any device's telemetry tick (the
+    // producer polls via requestAnimationFrame, ~60/s on a 60 Hz display).
     const state = useStoreSelector(scoringStore, (instances) => instances?.[deviceId] ?? getScoringState(deviceId));
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
+    // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
+    // read and here enforces it. Clamp before any display use so the Conf tile cannot
+    // read e.g. 120% and the needle alpha stays in range.
+    const displayConfidence = Math.max(0, Math.min(1, confidence));
     const absoluteCents = Math.abs(cents);
     let toneColor: string;
     if (!active) {
@@ -93,13 +100,14 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
     let displayComponent = <PolyDisplay />;
     if (mode === 'needle') {
-        displayComponent = <NeedleDisplay cents={cents} active={active} confidence={confidence} />;
+        displayComponent = <NeedleDisplay cents={cents} active={active} confidence={displayConfidence} />;
     } else if (mode === 'strobe') {
         displayComponent = <StrobeDisplay cents={cents} active={active} />;
     }
 
-    // Debounced live announcement of the current read. Telemetry ticks ~100/s; an
-    // un-debounced aria-live region would flood assistive tech with note/cents
+    // Debounced live announcement of the current read. Telemetry ticks at display
+    // rate (~60/s on a 60 Hz display via the producer's requestAnimationFrame poll);
+    // an un-debounced aria-live region would flood assistive tech with note/cents
     // updates. Settle for ANNOUNCE_DEBOUNCE_MS of quiet before announcing.
     const liveMessage = active
         ? `${noteName}${octave}, ${cents >= 0 ? 'sharp' : 'flat'} ${Math.abs(cents).toFixed(0)} cents`
@@ -201,7 +209,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             valueClassName="text-white/88"
                             detailClassName="text-white/42"
                             label="Conf"
-                            value={`${Math.round(confidence * 100)}%`}
+                            value={`${Math.round(displayConfidence * 100)}%`}
                             detail="Tracker"
                         />
                     </div>

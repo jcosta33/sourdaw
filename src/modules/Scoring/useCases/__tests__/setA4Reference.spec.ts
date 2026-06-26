@@ -1,26 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../stores/scoringStore', () => ({
-    scoringStore: { value: {}, set: vi.fn() },
-    // 'needle' is a real DisplayMode member; the prior fixture used 'note', which is
-    // not a DisplayMode, masking that the existing mode is preserved on the write.
-    getScoringState: vi.fn(() => ({ a4Reference: 440, mode: 'needle' })),
+    mergeDeviceState: vi.fn(),
 }));
 
-import { scoringStore, getScoringState } from '../../stores/scoringStore';
+import { mergeDeviceState } from '../../stores/scoringStore';
 import { setA4Reference } from '../setA4Reference';
 
 describe('setA4Reference', () => {
     beforeEach(() => {
-        vi.mocked(scoringStore.set).mockClear();
-        vi.mocked(getScoringState).mockClear();
+        vi.mocked(mergeDeviceState).mockClear();
     });
 
-    it('writes the new A4 reference for the given device', () => {
+    it('merges the new A4 reference for the given device', () => {
         setA4Reference('d1', 442);
 
-        expect(scoringStore.set).toHaveBeenCalledWith({
-            d1: { a4Reference: 442, mode: 'needle' },
-        });
+        expect(mergeDeviceState).toHaveBeenCalledWith('d1', { a4Reference: 442 });
     });
 });

@@ -22,8 +22,28 @@ type ScoringInstances = Record<string, TunerState>;
 
 export const scoringStore = createStore<ScoringInstances>({ initialData: {} });
 
+// Stable fallback for a device with no entry yet. `useStoreSelector` caches
+// selections by `Object.is`; returning a fresh `{ ...DEFAULT_TUNER_STATE }` per
+// call would make every selection a cache miss, re-rendering a mounted panel on
+// every *other* device's telemetry tick. A single frozen reference keeps the
+// fallback identity stable so the per-device subscription holds. Callers only
+// ever spread this value ({ ...existing, ... }), never mutate it in place.
+const FALLBACK_TUNER_STATE: TunerState = Object.freeze({ ...DEFAULT_TUNER_STATE });
+
 export function getScoringState(deviceId: string): TunerState {
-    return scoringStore.value?.[deviceId] ?? { ...DEFAULT_TUNER_STATE };
+    return scoringStore.value?.[deviceId] ?? FALLBACK_TUNER_STATE;
+}
+
+/**
+ * Merge a partial patch into one device's tuner state, preserving every field
+ * not named in the patch. The single read-modify-write site for the store —
+ * `updateTunerTelemetry` and the user-preference use cases all route through it,
+ * so the `{ ...existing, ...patch }` preservation lives in exactly one place.
+ */
+export function mergeDeviceState(deviceId: string, patch: Partial<TunerState>): void {
+    const instances = scoringStore.value ?? {};
+    const existing = getScoringState(deviceId);
+    scoringStore.set({ ...instances, [deviceId]: { ...existing, ...patch } });
 }
 
 /**
@@ -32,7 +52,5 @@ export function getScoringState(deviceId: string): TunerState {
  * High-frequency — does not go through an undo/redo boundary.
  */
 export function updateTunerTelemetry(deviceId: string, data: Partial<TunerState>): void {
-    const instances = scoringStore.value ?? {};
-    const existing = instances[deviceId] ?? { ...DEFAULT_TUNER_STATE };
-    scoringStore.set({ ...instances, [deviceId]: { ...existing, ...data } });
+    mergeDeviceState(deviceId, data);
 }
