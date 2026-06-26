@@ -5,9 +5,11 @@
  * - Each white key is a fixed 28px wide. The full keyboard is 9 octaves = 63 whites + C8 = 64 whites = 1792px total.
  * - Black keys are absolutely positioned over the white key row using exact pixel math.
  * - The keyboard container scrolls horizontally. On mount it scrolls to show the active octave.
- * - Mouse: pointerdown = noteOn, pointerup = noteOff. Drag across keys glides. Dragging off a
- *   key (pointerleave) keeps it sounding until pointerup; re-entering the same held key does not
- *   re-trigger it.
+ * - Mouse: pointerdown = noteOn, pointerup = noteOff. Drag across keys glides. A white-key
+ *   pointerdown calls setPointerCapture, so dragging off the key keeps it sounding until
+ *   pointerup; re-entering the same held key does not re-trigger it. A global pointerup AND
+ *   pointercancel handler releases the held note even when the gesture ends or is cancelled
+ *   off the panel.
  * - Computer keyboard (ASDFGHJKL; = white keys, WETYUOP = black keys) fires notes only
  *   when the panel is focused. Keys are matched by physical position (event.code) so the
  *   layout works on non-QWERTY keyboards. Z/X = octave down/up.
@@ -27,22 +29,24 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import {
-    type WorkspaceState,
-    setVirtualKeyboardOctave,
-    setVirtualKeyboardVelocity,
-} from '#/modules/Workspace/useCases';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
+import { setVirtualKeyboardOctave, setVirtualKeyboardVelocity } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
 /** Width of each white key in px */
 const KEY_W = 28;
-/** Height of a white key fills the container — we use 100% */
+/** Width of each black key in px */
 const BLACK_KEY_W = 16;
 /** Black key height as a % of white key height */
 const BLACK_KEY_H_RATIO = 0.62;
+
+/**
+ * MIDI channel passed to the live-note use cases. 0 = omni: the AudioEngine routes the
+ * note to the currently selected track (see AudioEngine/useCases/triggerLiveNoteOn.ts).
+ */
+const OMNI_CHANNEL = 0;
 
 /** Number of white keys per octave */
 const WHITES_PER_OCT = 7;
@@ -57,8 +61,13 @@ const TOTAL_WIDTH_PX = TOTAL_WHITE_KEYS * KEY_W;
 
 // ─── Music theory helpers ─────────────────────────────────────────────────────
 
-/** Semitone offset within an octave → is it a white key? */
-const WHITE_KEY_SEMITONES = new Set([0, 2, 4, 5, 7, 9, 11]);
+/**
+ * The seven white-key semitone offsets within an octave, in left-to-right order
+ * (C D E F G A B). Single source of truth: the ordered array indexes white keys by
+ * position; the Set answers white-key membership for a given semitone.
+ */
+const WHITE_SEMITONE_OFFSETS = [0, 2, 4, 5, 7, 9, 11];
+const WHITE_KEY_SEMITONES = new Set(WHITE_SEMITONE_OFFSETS);
 
 /**
  * Semitone → pixel offset from the LEFT edge of the white key to the LEFT edge of
@@ -95,8 +104,7 @@ type BlackKeyDef = {
 function whiteIdxToMidi(whiteIdx: number): number {
     const octave = Math.floor(whiteIdx / WHITES_PER_OCT); // 0 = C-1 octave
     const posInOct = whiteIdx % WHITES_PER_OCT;
-    const semiOffsets = [0, 2, 4, 5, 7, 9, 11];
-    return (octave - 1) * 12 + 12 + (semiOffsets[posInOct] ?? 0);
+    return (octave - 1) * 12 + 12 + (WHITE_SEMITONE_OFFSETS[posInOct] ?? 0);
     // octave 0 → C-1 = MIDI 0: (0-1)*12+12 = 0 ✓
     // octave 1 → C0 = MIDI 12: (1-1)*12+12 = 12 ✓
     // octave 5 → C4 = MIDI 60: (5-1)*12+12 = 60 ✓
@@ -126,11 +134,6 @@ function buildBlackKeys(): BlackKeyDef[] {
 }
 
 const ALL_BLACK_KEYS = buildBlackKeys();
-
-const defaultWorkspaceState: WorkspaceState = {
-    virtualKeyboardOctave: 4,
-    virtualKeyboardVelocity: 100,
-} as WorkspaceState;
 
 // ─── Computer keyboard mappings ───────────────────────────────────────────────
 
@@ -186,20 +189,17 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
      * visibilitychange→hidden, window.blur) release the notes that are actually held now
      * instead of an empty set.
      *
-     * The ref is written SYNCHRONOUSLY in the same step as every setPressedNotes (see
-     * setPressed below), so it is never stale relative to the held-note set — even before
-     * React commits the state update or flushes effects. A teardown event that fires between
-     * a note-on and the next commit therefore still sees the held note. The passive effect
-     * below is a belt-and-suspenders mirror for any state path that bypasses setPressed.
+     * The ref is written SYNCHRONOUSLY by setPressed — the single write path for the
+     * held-note set — in the same step as setPressedNotes, so it is never stale relative
+     * to the state even before React commits or flushes effects. A teardown event that
+     * fires between a note-on and the next commit therefore still sees the held note.
      */
     const pressedNotesRef = useRef<Set<number>>(pressedNotes);
-    useEffect(() => {
-        pressedNotesRef.current = pressedNotes;
-    }, [pressedNotes]);
     /**
      * Update the held-note set and its ref atomically. Writing the ref in the same
      * synchronous tick as setPressedNotes keeps pressedNotesRef.current current the instant
-     * a note is added or removed, which is what makes teardown release deterministic.
+     * a note is added or removed, which is what makes teardown release deterministic. Every
+     * mutation of pressedNotes goes through here so the ref and the state cannot diverge.
      */
     const setPressed = (updater: (prev: Set<number>) => Set<number>) => {
         const next = updater(pressedNotesRef.current);
@@ -231,7 +231,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         if (midiNote < 0 || midiNote > 127) {
             return;
         }
-        triggerLiveNoteOn(0, midiNote, velocity);
+        triggerLiveNoteOn(OMNI_CHANNEL, midiNote, velocity);
         setPressed((prev) => {
             if (prev.has(midiNote)) {
                 return prev;
@@ -243,7 +243,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     };
 
     const triggerNoteOff = (midiNote: number) => {
-        triggerLiveNoteOff(0, midiNote);
+        triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
         setPressed((prev) => {
             if (!prev.has(midiNote)) {
                 return prev;
@@ -318,16 +318,23 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         glideTo(midiNote, event);
     };
 
-    // Release mouse note on global pointer-up (handles releasing outside panel)
+    // Release the held mouse note on global pointer-up (handles releasing outside the panel)
+    // and on pointer-cancel. A touch/pen pointer interrupted by the browser (OS gesture
+    // takeover, palm rejection, pointer-capture loss) fires `pointercancel` — not `pointerup`
+    // — so without this the started noteOn would leak an audible hung note.
     useEffect(() => {
-        const onGlobalUp = () => {
+        const onGlobalRelease = () => {
             if (mouseNote.current !== null) {
                 triggerNoteOff(mouseNote.current);
                 mouseNote.current = null;
             }
         };
-        window.addEventListener('pointerup', onGlobalUp);
-        return () => window.removeEventListener('pointerup', onGlobalUp);
+        window.addEventListener('pointerup', onGlobalRelease);
+        window.addEventListener('pointercancel', onGlobalRelease);
+        return () => {
+            window.removeEventListener('pointerup', onGlobalRelease);
+            window.removeEventListener('pointercancel', onGlobalRelease);
+        };
     }, []);
 
     // ── Computer keyboard ─────────────────────────────────────────────────────
@@ -417,7 +424,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         heldKeys.current.clear();
         heldKeyNotes.current.clear();
         for (const midiNote of pressedNotesRef.current) {
-            triggerLiveNoteOff(0, midiNote);
+            triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
         }
         if (pressedNotesRef.current.size > 0) {
             setPressed(() => new Set());
@@ -447,7 +454,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             window.removeEventListener('blur', releaseAllHeldNotes);
             // Final teardown: silence anything still sounding so unmount cannot leave a hung note.
             for (const midiNote of pressedNotesRef.current) {
-                triggerLiveNoteOff(0, midiNote);
+                triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
             }
         };
     }, []);
@@ -612,6 +619,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                             isValid ? (event) => onWhitePointerEnter(midiNote, event) : undefined
                                         }
                                         aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
+                                        aria-pressed={isPressed}
                                         role="button"
                                     >
                                         {isC ? (
@@ -652,6 +660,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                     onPointerUp={(event) => onBlackPointerUp(midiNote, event)}
                                     onPointerEnter={(event) => onBlackPointerEnter(midiNote, event)}
                                     aria-label={`MIDI ${midiNote}`}
+                                    aria-pressed={isPressed}
                                     role="button"
                                 />
                             );

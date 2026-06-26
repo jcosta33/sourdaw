@@ -231,6 +231,15 @@ describe('VirtualKeyboard', () => {
             fireEvent.keyDown(slider, { code: 'KeyA', key: 'a', bubbles: true });
             expect(onMock).not.toHaveBeenCalled();
         });
+
+        // The workspace velocity is applied to the noteOn, not a hard-coded default — a note
+        // fired at velocity 40 must carry 40 to the AudioEngine use case.
+        it('applies the current workspace velocity to the noteOn', () => {
+            workspaceState.virtualKeyboardVelocity = 40;
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 40);
+        });
     });
 
     describe('mouse glide', () => {
@@ -254,6 +263,29 @@ describe('VirtualKeyboard', () => {
 
             expect(onMock).not.toHaveBeenCalled();
             expect(offMock).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('pointer cancellation', () => {
+        const onMock = vi.mocked(triggerLiveNoteOn);
+        const offMock = vi.mocked(triggerLiveNoteOff);
+
+        // A touch/pen pointer interrupted by the browser (OS gesture takeover, palm
+        // rejection, pointer-capture loss) fires `pointercancel`, NOT `pointerup`. Without a
+        // global pointercancel handler the started noteOn leaks an audible hung note.
+        it('releases the held mouse note on a global pointercancel', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+            offMock.mockClear();
+
+            // The browser cancels the gesture instead of completing it with pointerup.
+            fireEvent(window, new Event('pointercancel'));
+
+            expect(offMock).toHaveBeenCalledTimes(1);
+            expect(offMock).toHaveBeenCalledWith(0, 60);
         });
     });
 
