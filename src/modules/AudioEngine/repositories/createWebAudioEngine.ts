@@ -424,7 +424,7 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.setPan(pan);
     }
 
-    public setTrackMute(trackId: string, muted: boolean, _restoreGain?: number): void {
+    public setTrackMute(trackId: string, muted: boolean): void {
         this.ensureTrackStrip(trackId);
         this.trackNodes.get(trackId)?.setMute(muted);
     }
@@ -646,7 +646,7 @@ class AudioEngineImpl implements AudioEngine {
         }
 
         const sendGain = this.context.createGain();
-        sendGain.gain.value = level;
+        sendGain.gain.value = clampedLevel;
         const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
         tap.connect(sendGain);
         sendGain.connect(busStrip.gainNode);

@@ -56,6 +56,20 @@ class KneadProcessor extends AudioWorkletProcessor {
 
     _clips: Record<string, KneadClip> = {};
 
+    // RT-safe WASM-memory views. A `new Float32Array(memory, ptr, frames)` is a
+    // heap allocation even though it copies no bytes, so we must not build one
+    // per render quantum. These views are rebuilt only when the backing buffer,
+    // pointer, or frame count actually changes (memory growth, first block, or a
+    // block-size change) — steady-state playback reuses them with zero allocation.
+    _wasmInL: Float32Array | null = null;
+    _wasmInR: Float32Array | null = null;
+    _wasmOutL: Float32Array | null = null;
+    _viewBuffer: ArrayBufferLike | null = null;
+    _viewInputLeftPtr = -1;
+    _viewInputRightPtr = -1;
+    _viewResultPtr = -1;
+    _viewFrames = -1;
+
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<KneadMsg>) => {
@@ -148,9 +162,22 @@ class KneadProcessor extends AudioWorkletProcessor {
                     const clipStartTimeSeconds = (activeClip.startBeat / tempo) * 60;
                     const clipTimeSeconds = songTimeSeconds - clipStartTimeSeconds;
 
-                    const blob = activeClip.blobs.find(
-                        (b) => clipTimeSeconds >= b.startTime && clipTimeSeconds <= b.endTime
-                    );
+                    // Explicit loop rather than Array.prototype.find: the arrow
+                    // passed to find() is a fresh closure allocation per render
+                    // quantum, which the RT audio thread must avoid.
+                    let blob: KneadClipBlob | null = null;
+                    const blobs = activeClip.blobs;
+                    for (let index = 0; index < blobs.length; index++) {
+                        const candidate = blobs[index];
+                        if (
+                            candidate &&
+                            clipTimeSeconds >= candidate.startTime &&
+                            clipTimeSeconds <= candidate.endTime
+                        ) {
+                            blob = candidate;
+                            break;
+                        }
+                    }
 
                     if (blob) {
                         // originalPitchCenterCents is absent from the persisted clip
@@ -179,15 +206,35 @@ class KneadProcessor extends AudioWorkletProcessor {
             const inputLeftPtr = inst.get_input_left_ptr();
             const inputRightPtr = inst.get_input_right_ptr();
 
-            const wasmInL = new Float32Array(mem, inputLeftPtr, frames);
-            const wasmInR = new Float32Array(mem, inputRightPtr, frames);
+            // Invalidate every cached view if the backing buffer or frame count
+            // changed (memory growth / block-size change); otherwise reuse them.
+            if (mem !== this._viewBuffer || frames !== this._viewFrames) {
+                this._viewBuffer = mem;
+                this._viewFrames = frames;
+                this._viewInputLeftPtr = -1;
+                this._viewInputRightPtr = -1;
+                this._viewResultPtr = -1;
+            }
 
-            wasmInL.set(in0);
-            wasmInR.set(input[1] ?? in0);
+            if (!this._wasmInL || inputLeftPtr !== this._viewInputLeftPtr) {
+                this._wasmInL = new Float32Array(mem, inputLeftPtr, frames);
+                this._viewInputLeftPtr = inputLeftPtr;
+            }
+            if (!this._wasmInR || inputRightPtr !== this._viewInputRightPtr) {
+                this._wasmInR = new Float32Array(mem, inputRightPtr, frames);
+                this._viewInputRightPtr = inputRightPtr;
+            }
+
+            this._wasmInL.set(in0);
+            this._wasmInR.set(input[1] ?? in0);
 
             const resultPtr = inst.process(frames);
 
-            const wasmOutL = new Float32Array(mem, resultPtr, frames);
+            if (!this._wasmOutL || resultPtr !== this._viewResultPtr) {
+                this._wasmOutL = new Float32Array(mem, resultPtr, frames);
+                this._viewResultPtr = resultPtr;
+            }
+            const wasmOutL = this._wasmOutL;
             const out0 = output[0];
             if (out0) {
                 out0.set(wasmOutL);

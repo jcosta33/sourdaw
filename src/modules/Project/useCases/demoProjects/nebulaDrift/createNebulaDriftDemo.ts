@@ -2324,7 +2324,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     setTrackOutput(toasterFolder.id, toasterFolder.outputId);
     setTrackGain(toasterFolder.id, toasterFolder.gain);
     setTrackPan(toasterFolder.id, toasterFolder.pan);
-    setTrackMute(toasterFolder.id, toasterFolder.muted, toasterFolder.gain);
+    setTrackMute(toasterFolder.id, toasterFolder.muted);
 
     ensureTrackStrips();
     await waitForDevices();

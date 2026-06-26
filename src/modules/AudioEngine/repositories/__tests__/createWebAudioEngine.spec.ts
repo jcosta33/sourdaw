@@ -163,6 +163,20 @@ describe('AudioEngine', () => {
             expect(createGainCallsAfterReSend).toBeGreaterThan(createGainCallsBeforeReSend);
         });
 
+        it('clamps the initial gain of a brand-new send to [0,1] (Observation 10)', () => {
+            engine.ensureTrackStrip('clampSrc');
+
+            // A fresh send with an out-of-range level. The create path must apply
+            // the same [0,1] clamp the update path uses — not the raw level.
+            engine.setSend('clampSrc', 'busHi', 1.5);
+            const overGain = mockCtx.createGain.mock.results.at(-1)!.value as { gain: { value: number } };
+            expect(overGain.gain.value).toBe(1);
+
+            engine.setSend('clampSrc', 'busLo', -0.5);
+            const underGain = mockCtx.createGain.mock.results.at(-1)!.value as { gain: { value: number } };
+            expect(underGain.gain.value).toBe(0);
+        });
+
         it('disconnects the source track sidechain gain when the track is removed', () => {
             // Wire a sidechain whose target device is a sidechain compressor.
             const srcStrip = engine.ensureTrackStrip('scSrc');

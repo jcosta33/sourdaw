@@ -19,6 +19,10 @@ type AudioWorkletProcessorLike = {
         postMessage: (msg: unknown) => void;
     };
     process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+    // RT-safe cached WASM-memory views, asserted for reuse across render quanta.
+    _wasmInL: Float32Array | null;
+    _wasmInR: Float32Array | null;
+    _wasmOutL: Float32Array | null;
 };
 
 vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorShim);
@@ -158,5 +162,41 @@ describe('KneadProcessor pitch-shift computation', () => {
         expect(lastShift).not.toBeNaN();
         // Missing original is treated as the current center → zero shift.
         expect(lastShift).toBe(0);
+    });
+
+    it('reuses the WASM-memory typed-array views across render quanta (no per-block allocation)', async () => {
+        const proc = await loadProcessor();
+        const transportSAB = makePlayingTransport(2, 120);
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: {
+                c1: {
+                    startBeat: 0,
+                    endBeat: 4,
+                    blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
+                },
+            },
+        });
+
+        const input = [new Float32Array(128), new Float32Array(128)];
+        const output = [new Float32Array(128), new Float32Array(128)];
+
+        // First render quantum builds the views.
+        proc.process([input], [output]);
+        const firstInL = proc._wasmInL;
+        const firstInR = proc._wasmInR;
+        const firstOutL = proc._wasmOutL;
+        expect(firstInL).toBeInstanceOf(Float32Array);
+        expect(firstInR).toBeInstanceOf(Float32Array);
+        expect(firstOutL).toBeInstanceOf(Float32Array);
+
+        // Subsequent quanta with the same buffer/ptrs/frames must reuse the very
+        // same view objects — a fresh Float32Array here would be a per-block alloc.
+        proc.process([input], [output]);
+        proc.process([input], [output]);
+        expect(proc._wasmInL).toBe(firstInL);
+        expect(proc._wasmInR).toBe(firstInR);
+        expect(proc._wasmOutL).toBe(firstOutL);
     });
 });

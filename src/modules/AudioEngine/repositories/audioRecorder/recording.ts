@@ -41,7 +41,17 @@ type RecordingSession = {
     recordingNode: AudioWorkletNode | null;
     recordingWorker: Worker | null;
     onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
+    /** Guard timer armed at stop() to force teardown if the worker never flushes. */
+    stopFlushTimer: ReturnType<typeof setTimeout> | null;
 };
+
+// On stop() the OPFS worker is expected to flush and post back a final `wav`
+// message, which drives decode + teardown. If it never replies (a silent flush
+// stall, or a worker that exits without posting), the Worker and the
+// activeSessions entry would leak — and startAudioRecording early-returns on
+// activeSessions.has(trackId), permanently blocking re-recording that track.
+// This bound forces teardown so a stalled worker cannot wedge the track.
+const STOP_FLUSH_TIMEOUT_MS = 5_000;
 
 // Use a Map to support multi-track simultaneous recording.
 const activeSessions = createHmrPersistentState<Map<string, RecordingSession>>(
@@ -76,30 +86,6 @@ function releaseSharedMediaStream(): void {
             track.stop();
         }
         sharedStreamState.stream = null;
-    }
-}
-
-/**
- * Pre-request microphone permission so the browser prompt fires on page load
- * rather than at first-record time. The stream is stopped immediately.
- */
-export async function requestMicPermission(): Promise<boolean> {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-            },
-        });
-        for (const track of stream.getTracks()) {
-            track.stop();
-        }
-        audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
-        return true;
-    } catch {
-        audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: false });
-        return false;
     }
 }
 
@@ -160,6 +146,7 @@ export const startAudioRecording = inject({ logger })(
                     recordingNode,
                     recordingWorker,
                     onRecordingComplete: onComplete,
+                    stopFlushTimer: null,
                 };
                 activeSessions.set(trackId, session);
 
@@ -207,9 +194,39 @@ export function stopAudioRecording(): void {
         session.recordingNode?.port.postMessage({ type: 'stop' });
         session.recordingWorker?.postMessage({ type: 'stop' });
         cleanupNodesForSession(session);
+        armStopFlushTimer(session);
     }
 
     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+}
+
+// After stop() we wait for the worker's final `wav` flush, but bound the wait:
+// if it never arrives, force-terminate the worker and drop the session so the
+// track is not permanently blocked from re-recording.
+function armStopFlushTimer(session: RecordingSession): void {
+    const { trackId } = session;
+    session.stopFlushTimer = setTimeout(() => {
+        const stalled = activeSessions.get(trackId);
+        if (!stalled) {
+            return;
+        }
+        logger.error(
+            new Error(
+                `Recording worker did not flush within ${STOP_FLUSH_TIMEOUT_MS}ms on track ${trackId}; forcing teardown`
+            )
+        );
+        stalled.onRecordingComplete = null;
+        terminateWorker(stalled);
+        activeSessions.delete(trackId);
+        checkAllStopped();
+    }, STOP_FLUSH_TIMEOUT_MS);
+}
+
+function clearStopFlushTimer(session: RecordingSession): void {
+    if (session.stopFlushTimer !== null) {
+        clearTimeout(session.stopFlushTimer);
+        session.stopFlushTimer = null;
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -219,6 +236,9 @@ async function decodeAndDeliver(trackId: string, wavBuffer: ArrayBuffer, ctx: Au
     if (!session) {
         return;
     }
+
+    // The worker flushed in time — cancel the stop-flush guard.
+    clearStopFlushTimer(session);
 
     const cb = session.onRecordingComplete;
     session.onRecordingComplete = null;
@@ -243,6 +263,7 @@ async function decodeAndDeliver(trackId: string, wavBuffer: ArrayBuffer, ctx: Au
 }
 
 function terminateWorker(session: RecordingSession): void {
+    clearStopFlushTimer(session);
     session.recordingWorker?.terminate();
     session.recordingWorker = null;
 }
@@ -256,6 +277,7 @@ function cleanupNode(trackId: string): void {
 }
 
 function cleanupNodesForSession(session: RecordingSession): void {
+    clearStopFlushTimer(session);
     if (session.recordingNode) {
         session.recordingNode.disconnect();
         session.recordingNode = null;

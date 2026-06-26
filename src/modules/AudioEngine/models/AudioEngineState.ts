@@ -188,7 +188,7 @@ export type AudioEngine = {
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
     setTrackGain(trackId: string, gain: number): void;
     setTrackPan(trackId: string, pan: number): void;
-    setTrackMute(trackId: string, muted: boolean, restoreGain?: number): void;
+    setTrackMute(trackId: string, muted: boolean): void;
     getTrackPeakLevel(trackId: string): number;
     getMasterPeakLevel(): number;
     getBusPeakLevel(busId: string): number;

@@ -36,7 +36,7 @@ export function ensureTrackStrips(): void {
         setTrackOutput(track.id, track.outputId);
         setTrackGain(track.id, track.gain);
         setTrackPan(track.id, track.pan);
-        setTrackMute(track.id, track.muted, track.gain);
+        setTrackMute(track.id, track.muted);
 
         // Bootstrap devices (effects & instruments) from the store data.
         // Without this, devices exist in the UI but have no audio nodes.
@@ -66,7 +66,7 @@ export function ensureTrackStrips(): void {
                 continue;
             }
             const shouldMute = !track.soloed;
-            setTrackMute(track.id, shouldMute || track.muted, track.gain);
+            setTrackMute(track.id, shouldMute || track.muted);
         }
     }
 }
