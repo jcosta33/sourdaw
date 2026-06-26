@@ -6,8 +6,7 @@ import {
     type AdjustmentLayer,
 } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
-import { type AutomationCurveType, type AutomationLane } from '#/modules/Automation/models/Automation';
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, type AutomationCurveType, type AutomationLane } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 

@@ -58,7 +58,9 @@ export function createAutomationLane(
     clipId?: string
 ): AutomationLane {
     return {
-        id: `auto-${crypto.randomUUID().slice(0, 8)}`,
+        // Full UUID (not a 32-bit truncation) so lane ids stay unique across a
+        // persisted/merged project regardless of how many lanes it accumulates.
+        id: `auto-${crypto.randomUUID()}`,
         trackId,
         clipId,
         parameterId,
@@ -71,22 +73,5 @@ export function createAutomationLane(
         virginTerritory: true,
         minValue,
         maxValue,
-    };
-}
-
-export function createAutomationObject(
-    laneId: string,
-    startBeat: number,
-    endBeat: number,
-    points: AutomationPoint[] = [],
-    name = 'Untitled'
-): AutomationObject {
-    return {
-        id: `auto-obj-${crypto.randomUUID().slice(0, 8)}`,
-        laneId,
-        startBeat,
-        endBeat,
-        points,
-        name,
     };
 }

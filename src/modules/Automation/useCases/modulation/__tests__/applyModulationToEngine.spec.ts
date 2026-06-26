@@ -12,6 +12,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
 }));
 
+import { automationStore } from '../../../stores/automationStore';
 import { modulationStore } from '../../../stores/modulationStore';
 import { applyModulationToEngine, resetModulationSlew } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
@@ -21,6 +22,9 @@ describe('applyModulationToEngine', () => {
         // The slew map is module-level and survives across ticks; clear it so a
         // prior test's seeded value does not suppress the first write here.
         resetModulationSlew();
+        // The automated-base path reads the real automationStore; start empty so
+        // a leftover lane from a prior case does not leak into the next.
+        automationStore.set({ lanes: [] });
         mocks.updateDeviceParam.mockReset();
         mocks.getPluginById.mockReset();
         setModulationDependencies({
@@ -146,5 +150,125 @@ describe('applyModulationToEngine', () => {
 
         applyModulationToEngine(1);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('does not ride a device-param modulation on a track-level gain lane that shares the bare id', () => {
+        // A track-level gain lane carries the bare id 'gain' (normalized 0..1,
+        // converted dB→linear / pan-remapped before a *track* engine setter),
+        // while the modulation targets a *device* 'gain' param written verbatim.
+        // The two merely share a string id; the track lane must NOT become the
+        // base, or a normalized 0..1 value rides the device write in wrong units.
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    automationMode: 'read',
+                    clips: [],
+                    devices: [{ id: 'd1', type: 'builtin-gainer', parameterValues: { gain: 0.5 } }],
+                },
+            ],
+        };
+        mocks.getPluginById.mockImplementation((pluginId: string) =>
+            pluginId === 'builtin-gainer'
+                ? {
+                      id: 'builtin-gainer',
+                      name: 'Gainer',
+                      parameters: [{ id: 'gain', minValue: 0, maxValue: 1, defaultValue: 0.5 }],
+                  }
+                : undefined
+        );
+        // Track-level gain lane parked at the range top (would be base=1 under the bug).
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'lane-track-gain',
+                    trackId: 't1',
+                    parameterId: 'gain',
+                    parameterName: 'Volume',
+                    points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        } as never);
+        // amount 0 → delta 0, so the engine value equals the base exactly.
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo1',
+                    name: 'LFO',
+                    trackId: 't1',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'gain', amount: 0 }],
+                    enabled: true,
+                },
+            ],
+        });
+
+        applyModulationToEngine(1);
+
+        // Base must be the device's persisted param value (0.5), not the
+        // track-gain lane's 1. Under the bug it would write 1.
+        const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
+        expect(value).toBeCloseTo(0.5);
+    });
+
+    it('rides a device-param modulation on the matching device-param automation lane', () => {
+        // The device-param lane carries the prefixed id `${deviceType}:${paramId}`
+        // and its value is in the device param's engine space — so it is the
+        // correct automated base for a device-param modulation.
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    automationMode: 'read',
+                    clips: [],
+                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
+                },
+            ],
+        };
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'lane-device-cutoff',
+                    trackId: 't1',
+                    parameterId: 'builtin-filter:cutoff',
+                    parameterName: 'Filter → Cutoff',
+                    points: [{ beat: 0, value: 800, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: false,
+                    minValue: 0,
+                    maxValue: 1000,
+                },
+            ],
+        } as never);
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo1',
+                    name: 'LFO',
+                    trackId: 't1',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                    enabled: true,
+                },
+            ],
+        });
+
+        applyModulationToEngine(1);
+
+        // Base is the device-param automation value (800), not the persisted 500.
+        const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
+        expect(value).toBeCloseTo(800);
     });
 });

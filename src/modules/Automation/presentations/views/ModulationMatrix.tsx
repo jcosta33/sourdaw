@@ -45,8 +45,6 @@ type DestinationLabel = {
     trackName: string;
     deviceName: string;
     paramName: string;
-    paramMin: number;
-    paramMax: number;
 };
 
 function describeDestination(tracks: TrackRef[], mapping: ModulatorMapping): DestinationLabel | null {
@@ -67,8 +65,6 @@ function describeDestination(tracks: TrackRef[], mapping: ModulatorMapping): Des
         trackName: track.name,
         deviceName: device.name,
         paramName: param.name,
-        paramMin: param.minValue,
-        paramMax: param.maxValue,
     };
 }
 

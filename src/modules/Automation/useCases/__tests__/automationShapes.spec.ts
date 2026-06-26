@@ -59,4 +59,20 @@ describe('automationShapes', () => {
             { beat: 8, value: 10, curve: 'linear', tension: 0 },
         ]);
     });
+
+    it('produces an identical random shape on every insertion (deterministic)', () => {
+        insertAutomationShape('lane-a', 'random', 0, 4);
+        const first = storeCell.state?.lanes[0]?.points;
+
+        // A second insertion over the same range must yield the same values —
+        // a Math.random() shape would diverge, splitting CRDT collaborators on a
+        // merge. The seeded RNG keeps the shape reproducible.
+        storeCell.state = { lanes: [makeLane('lane-a')] };
+        insertAutomationShape('lane-a', 'random', 0, 4);
+        const second = storeCell.state?.lanes[0]?.points;
+
+        expect(second).toEqual(first);
+        // And the shape is real (not flat zeros): at least one point left the floor.
+        expect(first?.some((point) => point.value > 0)).toBe(true);
+    });
 });

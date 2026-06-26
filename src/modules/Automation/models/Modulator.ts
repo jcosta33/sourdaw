@@ -43,22 +43,3 @@ export type Modulator = {
     mappings: ModulatorMapping[];
     enabled: boolean;
 };
-
-export function createLfoModulator(trackId: string, name = 'LFO'): Modulator {
-    return {
-        id: `mod-lfo-${crypto.randomUUID().slice(0, 8)}`,
-        name,
-        trackId,
-        kind: 'lfo',
-        config: {
-            kind: 'lfo',
-            waveform: 'sine',
-            rate: 1,
-            sync: true,
-            phase: 0,
-            depth: 1,
-        },
-        mappings: [],
-        enabled: true,
-    };
-}

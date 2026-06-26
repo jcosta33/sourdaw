@@ -1,3 +1,5 @@
+import { createSeededRandom } from '#/utils/SeededRandom/SeededRandom';
+
 import { type AutomationPoint } from '../models/Automation';
 import { automationStore } from '../stores/automationStore';
 
@@ -69,10 +71,16 @@ function generateAutomationShapePoints({
                 makePoint({ beat: endBeat, norm: 0, curve: 'smooth', tension: 0.5 }),
             ];
         case 'random': {
+            // Seed the RNG from the cycle's start beat so the same insertion
+            // reproduces the same points across CRDT collaborators — matching the
+            // deterministic (Mulberry32) stance computeModulatorValue took for the
+            // same reason. A bare Math.random() here would make two collaborators
+            // diverge on a merge.
             const count = 8;
+            const rng = createSeededRandom(Math.round(startBeat * 1000));
             const points: AutomationPoint[] = [];
             for (let pointIndex = 0; pointIndex <= count; pointIndex++) {
-                points.push(makePoint({ beat: startBeat + (pointIndex / count) * duration, norm: Math.random() }));
+                points.push(makePoint({ beat: startBeat + (pointIndex / count) * duration, norm: rng() }));
             }
             return points;
         }

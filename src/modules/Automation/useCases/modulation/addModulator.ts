@@ -17,7 +17,9 @@ export function addModulator(modulator: Omit<Modulator, 'id'>): string {
         throw new Error('addModulator: trackId must not be empty');
     }
 
-    const id = `mod-${modulator.kind}-${crypto.randomUUID().slice(0, 8)}`;
+    // Use the full UUID (not a 32-bit truncation) so ids stay unique across a
+    // persisted/merged project regardless of how many modulators it accumulates.
+    const id = `mod-${modulator.kind}-${crypto.randomUUID()}`;
     const state = modulationStore.value ?? { modulators: [] };
     modulationStore.set({
         modulators: [...state.modulators, { ...modulator, id }],

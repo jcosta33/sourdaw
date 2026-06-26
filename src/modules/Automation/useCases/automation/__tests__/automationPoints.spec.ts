@@ -100,6 +100,20 @@ describe('Automation Point Use Cases', () => {
         });
     });
 
+    it('updateAutomationPoint matches a near-beat (pixel round-trip) by tolerance', () => {
+        mocks.automationStoreValue.value = {
+            lanes: [{ id: 'l1', points: [{ beat: 5, value: 0.2 }] }],
+        } as any;
+
+        // 5.02 never equals the stored 5 under `===`, but sits inside the 0.05
+        // match window, so the edit must land on the existing point — not no-op.
+        updateAutomationPoint('l1', 5.02, 0.9);
+
+        expect(mocks.automationStoreSet).toHaveBeenCalledWith({
+            lanes: [{ id: 'l1', points: [{ beat: 5, value: 0.9 }] }],
+        });
+    });
+
     describe('getAutomationValueAtBeat', () => {
         it('returns first point value if beat is before all points', () => {
             const points = [
@@ -184,6 +198,28 @@ describe('Automation Point Use Cases', () => {
             // never silently sample its own localPoints.
             expect(getAutomationValueAtBeat('follower', 5)).toBeNull();
             expect(mocks.interpolateAutomationPointValue).not.toHaveBeenCalled();
+        });
+
+        it('returns null (not a real 0) when linked lanes form a cycle', () => {
+            // A→B→A. The cycle guard must report "no value" (null) like every
+            // other no-value path, so the scheduler skips the lane and leaves the
+            // param untouched — a hard 0 would drive the param to a real zero.
+            mocks.automationStoreValue.value = {
+                lanes: [
+                    { id: 'A', points: [{ beat: 0, value: 0.7 }], linkedLaneId: 'B' },
+                    { id: 'B', points: [{ beat: 0, value: 0.3 }], linkedLaneId: 'A' },
+                ],
+            } as any;
+
+            expect(getAutomationValueAtBeat('A', 5)).toBeNull();
+        });
+
+        it('returns null (not a real 0) when a lane links to itself', () => {
+            mocks.automationStoreValue.value = {
+                lanes: [{ id: 'A', points: [{ beat: 0, value: 0.7 }], linkedLaneId: 'A' }],
+            } as any;
+
+            expect(getAutomationValueAtBeat('A', 5)).toBeNull();
         });
     });
 

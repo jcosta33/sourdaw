@@ -39,9 +39,13 @@ export function getAutomationValueAtBeat(
     // when the source is empty: an empty source yields null (no value to report),
     // never a silent fall-through to this lane's local points.
     if (lane.linkedLaneId) {
-        // Guard against circular links (A→B→A) — break the cycle.
+        // Guard against circular links (A→B→A) — break the cycle by reporting
+        // "no value" (null), matching every other no-value path in this function
+        // (empty lanes, missing lanes, empty linked source). The scheduler treats
+        // null as "skip this lane" (applyAutomation.ts), so a cycle leaves the
+        // param untouched rather than driving it to a real 0.
         if (_visited.has(lane.linkedLaneId)) {
-            return 0;
+            return null;
         }
         _visited.add(laneId);
         const sourceVal = getAutomationValueAtBeat(lane.linkedLaneId, beat, _visited);

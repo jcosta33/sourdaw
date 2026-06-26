@@ -10,8 +10,12 @@ export function updateAutomationPoint(laneId: string, beat: number, newValue: nu
             if (length.id !== laneId) {
                 return length;
             }
+            // Match the target point by tolerance, not exact float equality:
+            // a beat round-tripped through pixel coordinates never compares
+            // exactly with `===`, so the edit would silently no-op. The 0.05
+            // window matches setAutomationPointCurve.
             const updated = length.points.map((param) =>
-                param.beat === beat ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
+                Math.abs(param.beat - beat) < 0.05 ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
             );
             return { ...length, points: updated.sort((alpha, b) => alpha.beat - b.beat) };
         }),

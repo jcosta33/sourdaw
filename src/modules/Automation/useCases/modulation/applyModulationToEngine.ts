@@ -32,6 +32,7 @@ type MappingBinding = {
     baseValue: number;
     paramMin: number;
     paramMax: number;
+    deviceType: string;
 };
 
 function resolveBinding(mapping: ModulatorMapping): MappingBinding | null {
@@ -55,6 +56,7 @@ function resolveBinding(mapping: ModulatorMapping): MappingBinding | null {
         baseValue: device.parameterValues[mapping.targetParamId] ?? paramDef.defaultValue,
         paramMin: paramDef.min,
         paramMax: paramDef.max,
+        deviceType: device.type,
     };
 }
 
@@ -109,17 +111,26 @@ export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): voi
 }
 
 /**
- * The value automation is driving a `(trackId, parameterId)` to at `currentBeat`,
- * or `null` when automation is not authoritative for that param this tick. Used
+ * The value automation is driving the modulation's target device-param to at
+ * `currentBeat`, or `null` when automation is not authoritative this tick. Used
  * as the base the modulation delta rides on top of, so a param that is BOTH
  * automated and modulated combines the two instead of the scheduler's later
  * modulation write clobbering the earlier automation write (last-write-wins).
+ *
+ * The lane it matches must be the *device-param* lane that writes to this exact
+ * param: device-param lanes carry a prefixed `${deviceType}:${paramId}`
+ * parameterId (Workspace/.../automationViewHelpers.ts), and `applyAutomation`
+ * forwards their value verbatim to `updateDeviceParam` — the same engine space
+ * the modulation write targets. A *track-level* `gain`/`pan` lane carries the
+ * bare id and is converted (dB→linear, pan remap) before a *track* engine
+ * setter; it must NOT be matched here, or a normalized track-gain value would
+ * ride a device-param modulation in the wrong units.
  *
  * Mirrors `applyAutomation`'s lane guards: the track must exist and not be in
  * `automationMode === 'off'`, a clip-scoped lane only applies inside its clip,
  * and a lane being recorded into is skipped (the user is writing it live).
  */
-function automatedBaseFor(trackId: string, parameterId: string, currentBeat: number): number | null {
+function automatedBaseFor(trackId: string, deviceType: string, paramId: string, currentBeat: number): number | null {
     const autoState = automationStore.value;
     if (!autoState) {
         return null;
@@ -129,8 +140,9 @@ function automatedBaseFor(trackId: string, parameterId: string, currentBeat: num
         return null;
     }
 
+    const deviceLaneParameterId = `${deviceType}:${paramId}`;
     for (const lane of autoState.lanes) {
-        if (lane.trackId !== trackId || lane.parameterId !== parameterId || lane.points.length === 0) {
+        if (lane.trackId !== trackId || lane.parameterId !== deviceLaneParameterId || lane.points.length === 0) {
             continue;
         }
         if (lane.clipId) {
@@ -139,7 +151,7 @@ function automatedBaseFor(trackId: string, parameterId: string, currentBeat: num
                 continue;
             }
         }
-        if (isRecordingAutomation(trackId, parameterId)) {
+        if (isRecordingAutomation(trackId, lane.parameterId)) {
             continue;
         }
         const value = getAutomationValueAtBeat(lane.id, currentBeat);
@@ -181,9 +193,12 @@ export function applyModulationToEngine(currentBeat: number): void {
             }
 
             // Combine: ride modulation on top of automation when the param is
-            // automated this tick; otherwise on top of the persisted base.
+            // automated this tick; otherwise on top of the persisted base. The
+            // automated base is read from the device-param lane (binding.deviceType),
+            // so it is already in this param's engine space.
             const base =
-                automatedBaseFor(mapping.targetTrackId, mapping.targetParamId, currentBeat) ?? binding.baseValue;
+                automatedBaseFor(mapping.targetTrackId, binding.deviceType, mapping.targetParamId, currentBeat) ??
+                binding.baseValue;
 
             const paramRange = binding.paramMax - binding.paramMin;
             const delta = modValue * mapping.amount * paramRange;
