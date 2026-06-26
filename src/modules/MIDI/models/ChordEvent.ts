@@ -1,4 +1,4 @@
-import { type ChordType } from '../useCases/chordStamps/helpers';
+import { type ChordType } from './ChordTypes';
 
 export type ChordEvent = {
     id: string;

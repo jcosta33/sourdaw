@@ -54,7 +54,7 @@ export { startMidiLearn } from './midiLearn/startMidiLearn';
 export { stopMidiLearn } from './midiLearn/stopMidiLearn';
 export { completeMidiLearn } from './midiLearn/completeMidiLearn';
 export { clearAllMappings } from './midiLearn/clearAllMappings';
-export { handleMidiMessage, scaleMidiValue } from './midiLearn/handleMidiMessage';
+export { handleMidiMessage } from './midiLearn/handleMidiMessage';
 export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────

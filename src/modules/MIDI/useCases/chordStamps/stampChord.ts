@@ -1,9 +1,6 @@
+import { CHORD_TYPES, type ChordType } from '../../models/ChordTypes';
 import { createMidiNote, type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
-
-import { CHORD_TYPES } from './helpers';
-
-import type { ChordType } from './helpers';
 
 /**
  * Shift `pitch` by whole octaves so it lands within the valid MIDI range

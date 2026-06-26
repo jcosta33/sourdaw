@@ -75,8 +75,55 @@ describe('createPatternInstance', () => {
         ]);
     });
 
+    it('mints deterministic instance note ids derived from (instance clip, parent note)', () => {
+        const sourceClip = {
+            id: 'cBase',
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Loop',
+            type: 'midi',
+        };
+        mocks.trackStoreValue = {
+            tracks: [{ id: 't1', clips: [sourceClip] }],
+        };
+        mocks.getNotesForClip.mockReturnValue([{ id: 'n1', startBeat: 1, pitch: 60 }]);
+
+        const instanceId = createPatternInstance('cBase', 't1', 16);
+        expect(instanceId).not.toBeNull();
+
+        // Identity must match propagateParentChanges' scheme `note-inst-${clip.id}-${node.id}`
+        // so the first parent edit re-derives the same ids instead of replacing them.
+        const [targetClipId, clonedNotes] = mocks.setNotesForClip.mock.calls[0] as [string, Array<{ id: string }>];
+        expect(targetClipId).toBe(instanceId);
+        expect(clonedNotes[0]?.id).toBe(`note-inst-${targetClipId}-n1`);
+    });
+
     it('bails if source clip not found', () => {
         mocks.trackStoreValue = { tracks: [] };
         expect(createPatternInstance('missing', 't1', 0)).toBeNull();
+    });
+
+    it('does not write notes to the store when the target track is missing', () => {
+        const sourceClip = {
+            id: 'cBase',
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Loop',
+            type: 'midi',
+        };
+        // Source clip lives on t1, but the target track t2 does not exist.
+        mocks.trackStoreValue = {
+            tracks: [{ id: 't1', clips: [sourceClip] }],
+        };
+        mocks.getNotesForClip.mockReturnValue([{ id: 'n1', startBeat: 1, pitch: 60 }]);
+
+        const result = createPatternInstance('cBase', 't2', 16);
+
+        expect(result).toBeNull();
+        // No orphaned notes: the failure path must not mutate the store.
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.appendClipToTrack).not.toHaveBeenCalled();
     });
 });

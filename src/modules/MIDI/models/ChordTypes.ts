@@ -24,5 +24,3 @@ export const CHORD_TYPES = {
 } as const;
 
 export type ChordType = keyof typeof CHORD_TYPES;
-
-export const CHORD_TYPE_KEYS = Object.keys(CHORD_TYPES) as ChordType[];

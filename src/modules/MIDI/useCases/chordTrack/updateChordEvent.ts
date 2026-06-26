@@ -14,7 +14,7 @@ export function updateChordEvent(
         event.id === eventId
             ? {
                   ...event,
-                  ...(partial.root !== undefined ? { root: partial.root % 12 } : {}),
+                  ...(partial.root !== undefined ? { root: ((partial.root % 12) + 12) % 12 } : {}),
                   ...(partial.quality !== undefined ? { quality: partial.quality } : {}),
                   ...(partial.duration !== undefined ? { duration: Math.max(0.25, partial.duration) } : {}),
               }

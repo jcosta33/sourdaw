@@ -46,19 +46,19 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         overrides: {},
     };
 
+    if (!state.tracks.some((track) => track.id === targetTrackId)) {
+        return null;
+    }
+
     const sourceNotes = getNotesForClip(sourceClipId);
     if (sourceNotes.length > 0) {
         const offset = startBeat - sourceClip.startBeat;
         const clonedNotes = sourceNotes.map((node) => ({
             ...node,
-            id: `note-inst-${crypto.randomUUID()}`,
+            id: `note-inst-${instanceId}-${node.id}`,
             startBeat: node.startBeat + offset,
         }));
         setNotesForClip(instanceId, clonedNotes);
-    }
-
-    if (!state.tracks.some((track) => track.id === targetTrackId)) {
-        return null;
     }
 
     appendClipToTrack(targetTrackId, instance);

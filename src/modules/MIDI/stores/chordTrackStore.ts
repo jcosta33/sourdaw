@@ -9,11 +9,36 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
+function isChordEvent(value: unknown): value is ChordEvent {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const entry = value as Record<string, unknown>;
+    return (
+        typeof entry.id === 'string' &&
+        typeof entry.beat === 'number' &&
+        typeof entry.root === 'number' &&
+        typeof entry.quality === 'string' &&
+        typeof entry.duration === 'number'
+    );
+}
+
+function isChordTrackState(value: unknown): value is ChordTrackState {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const entry = value as Record<string, unknown>;
+    return typeof entry.enabled === 'boolean' && Array.isArray(entry.events) && entry.events.every(isChordEvent);
+}
+
 function loadFromStorage(): ChordTrackState {
     try {
         const stored = window.localStorage.getItem('sourdaw_chord_track');
         if (stored) {
-            return JSON.parse(stored) as ChordTrackState;
+            const parsed: unknown = JSON.parse(stored);
+            if (isChordTrackState(parsed)) {
+                return parsed;
+            }
         }
     } catch {
         // Fallback

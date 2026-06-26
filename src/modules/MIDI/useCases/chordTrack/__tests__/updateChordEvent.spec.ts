@@ -49,4 +49,12 @@ describe('updateChordEvent', () => {
             ],
         });
     });
+
+    it('normalizes a negative root into the 0-11 range (sign-safe)', () => {
+        updateChordEvent('e1', { root: -1 });
+
+        const [updated] = mocks.set.mock.calls[0] as [{ events: Array<{ root: number }> }];
+        // -1 must wrap to 11, not stay negative (`-1 % 12 === -1`).
+        expect(updated.events[0]?.root).toBe(11);
+    });
 });

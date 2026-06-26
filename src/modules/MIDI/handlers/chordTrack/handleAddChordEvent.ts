@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { type ChordType, CHORD_TYPES } from '../../useCases/chordStamps/helpers';
+import { type ChordType, CHORD_TYPES } from '../../models/ChordTypes';
 import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
 
 function isChordType(value: string): value is ChordType {
