@@ -187,10 +187,10 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
     function executeShortcutAction(action: ShortcutAction): boolean {
         if (action.type === 'appAction') {
-            const { type, payload } = action.action;
+            const appAction = action.action;
 
             // Handle dynamic payloads
-            if (type === 'duplicateClip' && (payload as { clipId?: string })?.clipId === 'selected') {
+            if (appAction.type === 'duplicateClip' && appAction.payload.clipId === 'selected') {
                 // R-B4: if marquee selection exists, duplicate the time range forward (Cmd+D)
                 const marq = workspaceStore.value?.marqueeSelection;
                 if (marq && marq.endBeat > marq.startBeat) {
@@ -210,7 +210,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 }
                 return true;
             }
-            if (type === 'duplicateClipToNextBar' && (payload as { clipId?: string })?.clipId === 'selected') {
+            if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
                 const selectedClipId = workspaceStore.value?.selectedClipId;
                 if (selectedClipId) {
                     void executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });

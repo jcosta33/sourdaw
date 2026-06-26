@@ -15,7 +15,8 @@
  */
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { commitActionUndoEntry, generateGroupId } from '#/modules/Command/stores';
+import { commitActionUndoEntry } from '#/modules/Command/stores';
+import { generateGroupId } from '#/modules/Command/useCases';
 import { transactSnapshot } from '#/modules/CrdtDocument/useCases';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 

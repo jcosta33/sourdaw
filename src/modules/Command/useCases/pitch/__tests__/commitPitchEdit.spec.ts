@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- test file: must mock Tauri APIs at their source
 import { invoke } from '@tauri-apps/api/core';
 
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
@@ -14,6 +15,10 @@ import { commitPitchEditCommand } from '../commitPitchEdit';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: vi.fn() },
 }));
 
 vi.mock('../../commitUndoEntry', () => ({
@@ -137,24 +142,17 @@ describe('commitPitchEditCommand', () => {
         vi.mocked(isTauri).mockReturnValue(false);
         vi.mocked(audioBufferCache.get).mockReturnValue(undefined);
 
-        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         await commitPitchEditCommand('c1', [], {});
-        expect(consoleSpy).toHaveBeenCalledWith(
-            'Failed to commit pitch edit:',
-            new Error('Could not get audio buffer for clip')
-        );
-        consoleSpy.mockRestore();
+
+        expect(logger.error).toHaveBeenCalledWith(new Error('Could not get audio buffer for clip'));
     });
 
     it('should catch and log errors', async () => {
-        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         vi.mocked(invoke).mockRejectedValueOnce(new Error('test error'));
 
         await commitPitchEditCommand('c1', [], {});
 
-        expect(consoleSpy).toHaveBeenCalledWith('Failed to commit pitch edit:', new Error('test error'));
-
-        consoleSpy.mockRestore();
+        expect(logger.error).toHaveBeenCalledWith(new Error('test error'));
     });
 
     it('should handle undefined tracks safely', async () => {

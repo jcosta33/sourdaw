@@ -4,7 +4,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ShortcutsSection } from '../ShortcutsSection';
 
 const mocks = vi.hoisted(() => ({
-    setSpy: vi.fn(),
+    setShortcutMapping: vi.fn(),
+    resetShortcutMappings: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    setShortcutMapping: mocks.setShortcutMapping,
+    resetShortcutMappings: mocks.resetShortcutMappings,
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -53,7 +59,7 @@ vi.mock('#/modules/Command/stores', () => ({
             ],
             customMappings: { 'editing.undo': ['mod+z'] },
         },
-        set: (next: unknown) => mocks.setSpy(next),
+        set: vi.fn(),
     },
 }));
 
@@ -85,10 +91,10 @@ describe('ShortcutsSection', () => {
         expect(screen.getByText('Undo')).toBeInTheDocument();
     });
 
-    it('clears customMappings on `Reset to Defaults`', () => {
+    it('resets custom mappings through the Command use case on `Reset to Defaults`', () => {
         render(<ShortcutsSection />);
         fireEvent.click(screen.getByText('Reset to Defaults'));
-        expect(mocks.setSpy).toHaveBeenCalledWith(expect.objectContaining({ customMappings: {} }));
+        expect(mocks.resetShortcutMappings).toHaveBeenCalledTimes(1);
     });
 
     it('enters capture mode when a binding button is clicked', () => {

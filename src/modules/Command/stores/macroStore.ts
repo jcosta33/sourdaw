@@ -29,11 +29,28 @@ export type MacroStoreState = {
     currentRecording: AppAction[];
 };
 
+/** Shape-guard a parsed entry before trusting it as a `Macro` (mirrors undoStore's defensive load). */
+function isMacro(value: unknown): value is Macro {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const candidate = value as Record<string, unknown>;
+    return (
+        typeof candidate.id === 'string' &&
+        typeof candidate.name === 'string' &&
+        typeof candidate.createdAt === 'number' &&
+        Array.isArray(candidate.actions)
+    );
+}
+
 function loadPersistedMacros(): Macro[] {
     try {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
-            return JSON.parse(stored) as Macro[];
+            const parsed: unknown = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+                return parsed.filter(isMacro);
+            }
         }
     } catch {
         // Fallback to empty

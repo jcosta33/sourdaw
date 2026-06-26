@@ -8,7 +8,6 @@ export { undoStore, pushUndo } from './undoStore';
 export type { UndoStoreState } from './undoStore';
 export { pushUndoEntry } from './pushUndoEntry';
 export { clearUndoHistory } from './clearUndoHistory';
-export { generateGroupId } from './generateGroupId';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 
 export { shortcutStore } from './shortcutStore';

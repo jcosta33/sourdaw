@@ -7,6 +7,7 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/Command/stores';
+import { resetShortcutMappings, setShortcutMapping } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
@@ -98,25 +99,11 @@ function formatCombo(combo: string): string {
 }
 
 function updateMapping(definitionId: string, combo: string): void {
-    const state = shortcutStore.value;
-    if (!state) {
-        return;
-    }
-    shortcutStore.set({
-        definitions: state.definitions,
-        customMappings: { ...state.customMappings, [definitionId]: [combo] },
-    });
+    setShortcutMapping(definitionId, combo);
 }
 
 function resetMappings(): void {
-    const state = shortcutStore.value;
-    if (!state) {
-        return;
-    }
-    shortcutStore.set({
-        definitions: state.definitions,
-        customMappings: {},
-    });
+    resetShortcutMappings();
 }
 
 const FALLBACK_STATE: ShortcutStoreState = {

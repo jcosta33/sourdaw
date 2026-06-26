@@ -1,4 +1,5 @@
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { logger } from '#/infra/logger/appLogger';
+import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
 import { type PitchContour } from '#/modules/Knead/stores';
@@ -84,31 +85,16 @@ export async function commitPitchEditCommand(
             processPitchEditWasm(buffer, segments, contour, outputAudioPath);
         }
 
-        function updateTracks(fileId: string): Track[] {
-            const state = trackStore.value;
-            if (!state) {
-                return [];
-            }
-            return state.tracks.map((track) => ({
-                ...track,
-                clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, fileId } : clip)),
-            }));
+        function setClipFileId(fileId: string): void {
+            updateClipInStore(clipId, (clip) => ({ ...clip, fileId }));
         }
 
         function undoFn() {
-            const state = trackStore.value;
-            if (!state) {
-                return;
-            }
-            trackStore.set({ ...state, tracks: updateTracks(originalFileId) });
+            setClipFileId(originalFileId);
         }
 
         function redoFn() {
-            const state = trackStore.value;
-            if (!state) {
-                return;
-            }
-            trackStore.set({ ...state, tracks: updateTracks(outputAudioPath) });
+            setClipFileId(outputAudioPath);
         }
 
         redoFn();
@@ -118,11 +104,9 @@ export async function commitPitchEditCommand(
     } catch (error) {
         // Previously the failure was swallowed into `console.error` only, so a
         // failed pitch commit looked like success to the user (no edit applied,
-        // no feedback). Surface it. (Full migration of this command onto an
-        // AppAction/handler + the project `logger` facade is tracked as a
-        // follow-up; the `console.error` is retained here only because its
-        // existing regression test asserts it.)
-        console.error('Failed to commit pitch edit:', error);
+        // no feedback). Surface it through the project `logger` facade (the rest
+        // of the module logs that way) and notify the user.
+        logger.error(error instanceof Error ? error : new Error(String(error)));
         notifyUser('Failed to commit pitch edit', 'error');
     }
 }

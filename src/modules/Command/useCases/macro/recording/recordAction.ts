@@ -2,7 +2,13 @@ import { macroStore } from '../../../stores/macroStore';
 import { type AppAction } from '../../commandQueries';
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */
-const EXCLUDED_ACTIONS = new Set(['startMacroRecording', 'stopMacroRecording', 'playMacro', 'deleteMacro']);
+const EXCLUDED_ACTIONS = new Set([
+    'startMacroRecording',
+    'stopMacroRecording',
+    'playMacro',
+    'deleteMacro',
+    'renameMacro',
+]);
 
 /**
  * Called from executeAppAction dispatch to capture actions during recording.

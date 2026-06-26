@@ -1,8 +1,6 @@
 import { type AppAction } from '../models/AppAction';
 import { createUndoEntry, type UndoSource } from '../models/UndoEntry';
-import { recordToTree } from '../useCases/undoTree/recordToTree';
-
-import { pushUndo } from './undoStore';
+import { commitUndoEntry } from '../useCases/commitUndoEntry';
 
 type CommitActionUndoEntryInput = {
     action: AppAction;
@@ -28,6 +26,5 @@ export function commitActionUndoEntry({
         entry.groupLabel = groupLabel;
     }
 
-    pushUndo(entry);
-    recordToTree(entry);
+    commitUndoEntry(entry);
 }

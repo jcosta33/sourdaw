@@ -1,7 +1,5 @@
 import { createCallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
-import { recordToTree } from '../useCases/undoTree/recordToTree';
-
-import { pushUndo } from './undoStore';
+import { commitUndoEntry } from '../useCases/commitUndoEntry';
 
 type PushUndoEntryOptions = {
     groupId?: string;
@@ -21,6 +19,5 @@ export function pushUndoEntry(
         entry.groupLabel = options.groupLabel;
     }
 
-    pushUndo(entry);
-    recordToTree(entry);
+    commitUndoEntry(entry);
 }

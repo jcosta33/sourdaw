@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { clearUndoHistory } from '#/modules/Command/useCases/clearUndoHistory';
+import { clearUndoHistory } from '#/modules/Command/stores';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 import { type ProjectData } from '../../../models/ProjectData';
