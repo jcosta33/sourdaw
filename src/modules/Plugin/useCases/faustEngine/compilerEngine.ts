@@ -292,8 +292,6 @@ export function isFaustModule(moduleId: string): boolean {
     return modules.has(moduleId);
 }
 
-export type { FaustModule, FaustParamDescriptor };
-
 // ── Plugin loader registration ─────────────────────────────────────────────
 //
 // Register the Faust loader against the format-agnostic

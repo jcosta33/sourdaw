@@ -5,12 +5,17 @@
  * NOTE: FM Synth and Rhodes are registered in faustEngine.ts — do NOT re-register here.
  */
 
-import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/useCases';
+import { registerFaustDSP } from '#/modules/Plugin/useCases';
 
 import additiveSynthDsp from './dsp/additive-synth.dsp?raw';
 import morphingSynthDsp from './dsp/morphing-synth.dsp?raw';
 import physicalModelStringDsp from './dsp/physical-model-string.dsp?raw';
 import supersawUnisonDsp from './dsp/supersaw-unison.dsp?raw';
+
+// The Plugin module's param-descriptor model is private (AGENTS.md § Model
+// isolation), so derive the element type from the public `registerFaustDSP`
+// signature rather than importing the model type across the boundary.
+type FaustParamDescriptor = NonNullable<Parameters<typeof registerFaustDSP>[2]>[number];
 
 /**
  * Register all pro synth instruments.

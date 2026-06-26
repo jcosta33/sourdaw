@@ -100,4 +100,15 @@ describe('startPluginScan', () => {
             })
         );
     });
+
+    it('no-ops when a scan is already in flight', async () => {
+        mocks.pluginScanStoreValue.value.isScanning = true;
+
+        await startPluginScan();
+
+        // Guard returns before touching the store or the IPC bridge.
+        expect(mocks.pluginScanStoreSet).not.toHaveBeenCalled();
+        expect(mocks.getDefaultPluginPaths).not.toHaveBeenCalled();
+        expect(mocks.scanPlugins).not.toHaveBeenCalled();
+    });
 });

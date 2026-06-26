@@ -23,7 +23,7 @@ import {
     DEFAULT_PARAMS,
     PARAM_MAP,
     type ProofChamberEngineState,
-    SPACE_PRESETS,
+    expandSpacePreset,
     type SpaceType,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
@@ -197,9 +197,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     }
 
     function selectSpace(space: SpaceType): void {
-        const preset = SPACE_PRESETS[space];
-        const algorithm = (preset as Record<string, unknown>).algorithm as ProofChamberAlgorithm | undefined;
-        const nextParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algorithm ?? 'plate' };
+        const nextParams = expandSpacePreset(space);
 
         updateChamberEngine(deviceId, () => nextParams);
         void executeAppAction({

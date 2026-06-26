@@ -12,10 +12,15 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { addTrack, addExternalDevice } from '#/modules/Arrangement/useCases';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
-import { startPluginScan, type ScannedPlugin } from '#/modules/Plugin/useCases';
+import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/Plugin/stores';
+import { startPluginScan } from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
+
+// A scanned-plugin row, projected from the Plugin store's state contract. The
+// Plugin model type stays private (AGENTS.md § Model isolation); this consumer
+// reads the shape it renders off the public store-state contract instead.
+type ScannedPlugin = PluginScanState['scannedPlugins'][number];
 
 type PluginBrowserProps = {
     selectedTrackId: string | null;

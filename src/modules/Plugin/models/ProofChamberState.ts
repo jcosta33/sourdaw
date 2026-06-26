@@ -85,6 +85,23 @@ export const SPACE_PRESETS: Record<SpaceType, Partial<ProofChamberEngineState>> 
     },
 };
 
+/**
+ * Expand a space preset into a full engine state: the module defaults, overlaid
+ * with the space's tuning, with `space` pinned and `algorithm` resolved (the
+ * space's own algorithm if it sets one, else the default). Single source of the
+ * "expand a space into a full engine state" rule, shared by the live panel and
+ * the factory-preset table so the two cannot drift.
+ */
+export function expandSpacePreset(space: SpaceType): ProofChamberEngineState {
+    const preset = SPACE_PRESETS[space];
+    return {
+        ...DEFAULT_PARAMS,
+        ...preset,
+        space,
+        algorithm: preset.algorithm ?? DEFAULT_PARAMS.algorithm,
+    };
+}
+
 /** Map UI param name to Rust engine param name */
 export const PARAM_MAP: Record<string, string> = {
     mix: 'mix',

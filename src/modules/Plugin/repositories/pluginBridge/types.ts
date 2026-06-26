@@ -2,19 +2,7 @@
  * Plugin bridge types — DTOs for Tauri plugin IPC.
  */
 
-export type ScannedPlugin = {
-    id: string;
-    name: string;
-    vendor: string;
-    format: string;
-    category: string;
-    path: string;
-    version: string;
-    num_inputs: number;
-    num_outputs: number;
-    num_parameters: number;
-    has_custom_ui: boolean;
-};
+import { type ScannedPlugin } from '../../models/ScannedPlugin';
 
 export type PluginParameter = {
     id: number;

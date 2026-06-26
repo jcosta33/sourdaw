@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { defaultPluginScanState, pluginScanStore, type ScannedPlugin } from '../../../stores/pluginScanStore';
+import { type ScannedPlugin } from '../../../models/ScannedPlugin';
+import { defaultPluginScanState, pluginScanStore } from '../../../stores/pluginScanStore';
 import { findPluginByName } from '../queries';
 
 function sample(name: string): ScannedPlugin {

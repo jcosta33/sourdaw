@@ -1,6 +1,5 @@
-import { pluginScanStore, defaultPluginScanState, type ScannedPlugin } from '../../stores/pluginScanStore';
-
-export type { ScannedPlugin } from '../../stores/pluginScanStore';
+import { type ScannedPlugin } from '../../models/ScannedPlugin';
+import { pluginScanStore, defaultPluginScanState } from '../../stores/pluginScanStore';
 
 function getState() {
     return pluginScanStore.value ?? defaultPluginScanState;

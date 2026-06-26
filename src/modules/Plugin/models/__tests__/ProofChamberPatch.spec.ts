@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { ALGORITHM_MAP, DEFAULT_PARAMS, PARAM_MAP, SPACE_PRESETS } from '../ProofChamberState';
+import { ALGORITHM_MAP, DEFAULT_PARAMS, PARAM_MAP, SPACE_PRESETS, expandSpacePreset } from '../ProofChamberState';
 
 describe('ProofChamberPatch constants', () => {
     it('should map every algorithm type to a distinct index', () => {
@@ -24,5 +24,24 @@ describe('ProofChamberPatch constants', () => {
 
     it('should only use known algorithm labels in DEFAULT_PARAMS', () => {
         expect(Object.keys(ALGORITHM_MAP)).toContain(DEFAULT_PARAMS.algorithm);
+    });
+});
+
+describe('expandSpacePreset', () => {
+    it('overlays the space tuning onto the defaults and pins the space', () => {
+        const result = expandSpacePreset('hall');
+        expect(result).toEqual({ ...DEFAULT_PARAMS, ...SPACE_PRESETS.hall, space: 'hall', algorithm: 'plate' });
+        // Spot-check that the space tuning actually won over the defaults.
+        expect(result.size).toBe(SPACE_PRESETS.hall.size);
+        expect(result.predelay).toBe(SPACE_PRESETS.hall.predelay);
+    });
+
+    it('defaults algorithm to the module default when the space sets none', () => {
+        expect(expandSpacePreset('cathedral').algorithm).toBe('plate');
+    });
+
+    it('keeps the algorithm a space declares for itself', () => {
+        // SPACE_PRESETS.spring sets algorithm: 'spring'.
+        expect(expandSpacePreset('spring').algorithm).toBe('spring');
     });
 });

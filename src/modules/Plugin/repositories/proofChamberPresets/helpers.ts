@@ -1,7 +1,7 @@
 import {
     type ProofChamberEngineState,
     DEFAULT_PARAMS,
-    SPACE_PRESETS,
+    expandSpacePreset,
     type SpaceType,
     type ProofChamberAlgorithm,
 } from '../../models/ProofChamberState';
@@ -23,24 +23,19 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         id: 'hall-large',
         name: 'Large Concert Hall',
         category: 'hall',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.hall,
-            space: 'hall' as SpaceType,
-            algorithm: 'fdn-8' as ProofChamberAlgorithm,
-        },
+        params: { ...expandSpacePreset('hall'), algorithm: 'fdn-8' as ProofChamberAlgorithm },
     },
     {
         id: 'hall-cathedral',
         name: 'Cathedral',
         category: 'hall',
-        params: { ...DEFAULT_PARAMS, ...SPACE_PRESETS.cathedral, space: 'cathedral' as SpaceType },
+        params: expandSpacePreset('cathedral'),
     },
     {
         id: 'hall-vintage',
         name: 'Vintage Hall (80s)',
         category: 'hall',
-        params: { ...DEFAULT_PARAMS, ...SPACE_PRESETS.hall, space: 'hall' as SpaceType, vintage: 1 },
+        params: { ...expandSpacePreset('hall'), vintage: 1 },
     },
 
     // Rooms
@@ -48,38 +43,19 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         id: 'room-small',
         name: 'Small Room',
         category: 'room',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.room,
-            space: 'room' as SpaceType,
-            algorithm: 'fdn-8' as ProofChamberAlgorithm,
-        },
+        params: { ...expandSpacePreset('room'), algorithm: 'fdn-8' as ProofChamberAlgorithm },
     },
     {
         id: 'room-vocal',
         name: 'Vocal Room',
         category: 'room',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.room,
-            space: 'room' as SpaceType,
-            mix: 0.2,
-            decay: 0.3,
-            highCut: 8000,
-        },
+        params: { ...expandSpacePreset('room'), mix: 0.2, decay: 0.3, highCut: 8000 },
     },
     {
         id: 'room-ambient',
         name: 'Ambient Room',
         category: 'room',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.room,
-            space: 'room' as SpaceType,
-            mix: 0.4,
-            decay: 0.5,
-            modDepth: 0.5,
-        },
+        params: { ...expandSpacePreset('room'), mix: 0.4, decay: 0.5, modDepth: 0.5 },
     },
 
     // Plates
@@ -87,32 +63,19 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         id: 'plate-classic',
         name: 'Classic Plate',
         category: 'plate',
-        params: { ...DEFAULT_PARAMS, ...SPACE_PRESETS.plate, space: 'plate' as SpaceType },
+        params: expandSpacePreset('plate'),
     },
     {
         id: 'plate-bright',
         name: 'Bright Plate',
         category: 'plate',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.plate,
-            space: 'plate' as SpaceType,
-            highCut: 18000,
-            damping: 0.05,
-        },
+        params: { ...expandSpacePreset('plate'), highCut: 18000, damping: 0.05 },
     },
     {
         id: 'plate-dark',
         name: 'Dark Plate',
         category: 'plate',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.plate,
-            space: 'plate' as SpaceType,
-            highCut: 4000,
-            damping: 0.6,
-            vintage: 2,
-        },
+        params: { ...expandSpacePreset('plate'), highCut: 4000, damping: 0.6, vintage: 2 },
     },
 
     // Spring
@@ -120,26 +83,13 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         id: 'spring-guitar',
         name: 'Guitar Spring',
         category: 'spring',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...(SPACE_PRESETS.spring ?? {}),
-            space: 'spring' as SpaceType,
-            algorithm: 'spring' as ProofChamberAlgorithm,
-        },
+        params: expandSpacePreset('spring'),
     },
     {
         id: 'spring-dark',
         name: 'Dark Spring',
         category: 'spring',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...(SPACE_PRESETS.spring ?? {}),
-            space: 'spring' as SpaceType,
-            algorithm: 'spring' as ProofChamberAlgorithm,
-            damping: 0.6,
-            highCut: 5000,
-            vintage: 2,
-        },
+        params: { ...expandSpacePreset('spring'), damping: 0.6, highCut: 5000, vintage: 2 },
     },
 
     // Creative
@@ -147,19 +97,13 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
         id: 'shimmer-pad',
         name: 'Shimmer Pad',
         category: 'creative',
-        params: {
-            ...DEFAULT_PARAMS,
-            ...SPACE_PRESETS.shimmer,
-            space: 'shimmer' as SpaceType,
-            shimmer: true,
-            shimmerAmount: 0.35,
-        },
+        params: { ...expandSpacePreset('shimmer'), shimmer: true, shimmerAmount: 0.35 },
     },
     {
         id: 'infinite-hold',
         name: 'Infinite Hold',
         category: 'creative',
-        params: { ...DEFAULT_PARAMS, ...SPACE_PRESETS.infinite, space: 'infinite' as SpaceType },
+        params: expandSpacePreset('infinite'),
     },
     {
         id: 'ghost-reverb',
@@ -194,11 +138,11 @@ export const FACTORY_PRESETS: ProofChamberPreset[] = [
     },
 ];
 
-export // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // User presets (localStorage)
 // ---------------------------------------------------------------------------
 
-const USER_PRESETS_KEY = 'proof-chamber-user-presets';
+export const USER_PRESETS_KEY = 'proof-chamber-user-presets';
 
 export function getUserPresets(): ProofChamberPreset[] {
     try {

@@ -1,8 +1,11 @@
 /**
  * IrBrowser — impulse response file loader with drag-and-drop.
  *
- * Drop zone accepts WAV/AIFF files. Decodes and shows the IR waveform.
- * Sends the decoded IR data to the Dutch Oven engine.
+ * Drop zone accepts WAV/AIFF files. Decodes the file through the shared
+ * AudioContext, shows the IR waveform, and hands the decoded interleaved
+ * samples to the `onIrLoaded` callback. Routing that data into the reverb
+ * engine is the caller's responsibility — this component does not touch the
+ * engine itself.
  */
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
 
