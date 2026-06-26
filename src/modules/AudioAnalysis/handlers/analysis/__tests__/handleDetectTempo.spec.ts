@@ -82,7 +82,7 @@ describe('handleDetectTempo', () => {
         expect(description.label).toBe('Detect tempo');
     });
 
-    it('should be undoable', () => {
-        expect(handleDetectTempo.undoable).toBe(true);
+    it('is not undoable — it only reads tempo and notifies, mutating no state', () => {
+        expect(handleDetectTempo.undoable).toBe(false);
     });
 });

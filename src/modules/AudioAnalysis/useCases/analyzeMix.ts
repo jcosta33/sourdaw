@@ -1,16 +1,13 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
-import { detectIssues, generateSuggestions, readFrequencyBalance, readLevels } from '../services/mixAnalysisHelpers';
-
-// AudioAnalysis-local shape (AGENTS.md §95 — model isolation). Structurally
-// compatible with AiRuntime's MixAnalysis; no cross-module model import.
-type MixIssue = {
-    severity: 'info' | 'warning' | 'critical';
-    category: 'level' | 'frequency' | 'stereo' | 'dynamics';
-    message: string;
-    trackId?: string;
-};
+import {
+    type MixIssue,
+    detectIssues,
+    generateSuggestions,
+    readFrequencyBalance,
+    readLevels,
+} from '../services/mixAnalysisHelpers';
 
 export type AnalyzeMixOutput = {
     timestamp: number;

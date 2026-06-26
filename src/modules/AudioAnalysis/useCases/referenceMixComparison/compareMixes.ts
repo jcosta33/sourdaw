@@ -4,7 +4,7 @@ import {
     type MixComparisonResult,
     type MixSuggestion,
     FREQUENCY_RANGES,
-} from '#/modules/AudioAnalysis/models/MixComparisonTypes';
+} from '../../models/MixComparisonTypes';
 
 import { analyzeMix } from './analyzeMix/analyzeMix';
 import { createReferenceAnalysis } from './analyzeMix/createReferenceAnalysis';

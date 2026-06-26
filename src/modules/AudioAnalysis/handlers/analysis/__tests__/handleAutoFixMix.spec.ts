@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     storeSet: vi.fn(),
     executeAppAction: vi.fn(),
     trackStore: { value: null as { tracks: unknown[] } | null },
+    loggerError: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/stores', () => ({
@@ -17,6 +18,10 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
         },
         set: mocks.storeSet,
     },
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: mocks.loggerError },
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -37,6 +42,7 @@ describe('handleAutoFixMix', () => {
         mocks.storeSet.mockReset();
         mocks.executeAppAction.mockReset();
         mocks.trackStore.value = null;
+        mocks.loggerError.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
 
@@ -170,12 +176,14 @@ describe('handleAutoFixMix', () => {
         }
     });
 
-    it('should reset analyzing state on error', async () => {
+    it('should log the error and reset analyzing state on error', async () => {
         mocks.storeValue = { isAnalyzing: false };
-        vi.mocked(analyzeMix).mockRejectedValue(new Error('crash'));
+        const failure = new Error('crash');
+        vi.mocked(analyzeMix).mockRejectedValue(failure);
 
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
 
+        expect(mocks.loggerError).toHaveBeenCalledWith(failure);
         expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ isAnalyzing: false }));
     });
 

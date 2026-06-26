@@ -59,7 +59,7 @@ describe('handleAudioToMidi', () => {
         expect(description.label).toBe('Convert audio to MIDI');
     });
 
-    it('should be undoable', () => {
-        expect(handleAudioToMidi.undoable).toBe(true);
+    it('is not undoable — its clip/note writes bypass the command pipeline so there is no inverse to honor', () => {
+        expect(handleAudioToMidi.undoable).toBe(false);
     });
 });

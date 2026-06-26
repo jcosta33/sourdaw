@@ -1,4 +1,4 @@
-import { type MixAnalysis } from '#/modules/AudioAnalysis/models/MixComparisonTypes';
+import { type MixAnalysis } from '../../../models/MixComparisonTypes';
 
 /**
  * Create a reference analysis (simulating a mastered track).

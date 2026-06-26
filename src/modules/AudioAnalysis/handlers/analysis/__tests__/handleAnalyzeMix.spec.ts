@@ -6,6 +6,7 @@ import { handleAnalyzeMix } from '../handleAnalyzeMix';
 const mocks = vi.hoisted(() => ({
     storeValue: null as unknown,
     storeSet: vi.fn(),
+    loggerError: vi.fn(),
 }));
 
 vi.mock('#/modules/AiRuntime/stores', () => ({
@@ -17,6 +18,10 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
     },
 }));
 
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: mocks.loggerError },
+}));
+
 vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
@@ -25,6 +30,7 @@ describe('handleAnalyzeMix', () => {
     beforeEach(() => {
         mocks.storeValue = null;
         mocks.storeSet.mockReset();
+        mocks.loggerError.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
 
@@ -59,5 +65,16 @@ describe('handleAnalyzeMix', () => {
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
         expect(analyzeMix).not.toHaveBeenCalled();
+    });
+
+    it('logs the error and resets isAnalyzing when analysis throws', async () => {
+        mocks.storeValue = { isAnalyzing: false, panelOpen: false, result: null };
+        const failure = new Error('master analyser unusable');
+        vi.mocked(analyzeMix).mockRejectedValue(failure);
+
+        await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
+
+        expect(mocks.loggerError).toHaveBeenCalledWith(failure);
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ isAnalyzing: false }));
     });
 });

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { mixAnalysisStore } from '#/modules/AiRuntime/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -74,7 +75,10 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
 
             const refreshed = await analyzeMix();
             mixAnalysisStore.set({ result: refreshed, isAnalyzing: false, panelOpen: true });
-        } catch {
+        } catch (error) {
+            // Surface the failure instead of swallowing it — a thrown analysis/fix error would
+            // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
+            logger.error(error instanceof Error ? error : new Error(`Auto-fix mix failed: ${String(error)}`));
             mixAnalysisStore.set({ ...state, isAnalyzing: false });
         }
     },

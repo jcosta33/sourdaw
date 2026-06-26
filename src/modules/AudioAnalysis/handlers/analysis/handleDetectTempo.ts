@@ -29,5 +29,9 @@ export const handleDetectTempo = createHandler<'detectTempo'>({
         notifyUser('Could not confidently detect tempo — add more content first', 'warning');
     },
     describe: () => ({ label: 'Detect tempo' }),
-    undoable: true,
+    // Not undoable: this handler only reads (detectTempo / detectProjectTempo) and notifies the
+    // user — it mutates no state. Marking it undoable would push a no-op entry that wedges the
+    // undo stack (undoRedo.ts:107-112). The sibling notify-only handler handleDetectKey is
+    // likewise `undoable: false`.
+    undoable: false,
 });
