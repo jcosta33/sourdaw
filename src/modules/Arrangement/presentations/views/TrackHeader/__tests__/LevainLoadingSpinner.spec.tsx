@@ -12,6 +12,10 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/Levain/stores/levainStore', () => ({
     levainStore: {},
+    // The component now imports the canonical defaultLevainState from the Levain
+    // stores barrel (re-exported from levainStore); provide it so the
+    // no-device / fallback path has a defined idle state to read.
+    defaultLevainState: { sampleLoadProgress: null, engineReady: false },
 }));
 
 const LEVAIN_DEVICE_ID = 'levain-device-1';
