@@ -2,56 +2,54 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { applyGroove } from '../applyGroove';
 
+type GrooveNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+
 const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
-    midiStoreSet: vi.fn(),
-    midiStoreValue: { value: null } as any,
+    setNotesForClip: vi.fn<(clipId: string, notes: GrooveNote[]) => void>(),
+    getNotesForClip: vi.fn<(clipId: string) => GrooveNote[]>(),
+    notesByClipId: {} as Record<string, GrooveNote[]>,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: mocks.getAllTracks,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        get value() {
-            return mocks.midiStoreValue.value;
-        },
-        set: mocks.midiStoreSet,
-    },
+vi.mock('#/modules/MIDI/useCases', () => ({
+    getNotesForClip: mocks.getNotesForClip,
+    setNotesForClip: mocks.setNotesForClip,
 }));
 
 describe('applyGroove', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.midiStoreValue.value = null;
+        mocks.notesByClipId = {};
+        mocks.getNotesForClip.mockImplementation((clipId: string) => mocks.notesByClipId[clipId] ?? []);
         mocks.getAllTracks.mockReturnValue([]);
     });
 
-    it('bails if midi store is unavailable', () => {
+    it('bails if the clip has no notes (store empty)', () => {
         applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
     it('bails if clip has no notes', () => {
-        mocks.midiStoreValue.value = { notesByClipId: {} };
+        mocks.notesByClipId = {};
         applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
 
-        mocks.midiStoreValue.value = { notesByClipId: { c1: [] } };
+        mocks.notesByClipId = { c1: [] };
         applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
     it('applies groove template offsets and velocities clamped to amount', () => {
         // Setup clip notes
-        mocks.midiStoreValue.value = {
-            notesByClipId: {
-                c1: [
-                    { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
-                    { id: 'n2', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
-                ],
-            },
+        mocks.notesByClipId = {
+            c1: [
+                { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                { id: 'n2', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+            ],
         };
 
         // Setup tracks to resolve clip length
@@ -82,8 +80,9 @@ describe('applyGroove', () => {
         // newStart: 1 + -0.05 = 0.95
         // newVel: 100 * 0.9 = 90
 
-        expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
-        const updatedNotes = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        expect(mocks.setNotesForClip).toHaveBeenCalledTimes(1);
+        expect(mocks.setNotesForClip.mock.calls[0][0]).toBe('c1');
+        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
 
         expect(updatedNotes[0]).toMatchObject({
             startBeat: 0.05,
@@ -98,30 +97,26 @@ describe('applyGroove', () => {
 
     it('falls back to length 4 if clip cannot be found', () => {
         // Just verify it doesn't crash
-        mocks.midiStoreValue.value = {
-            notesByClipId: {
-                c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            },
+        mocks.notesByClipId = {
+            c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
         };
 
         const template = { id: 'g1', subdivisions: 4, offsets: [0.5, 0, 0, 0], velocities: [1, 1, 1, 1] };
         applyGroove('c1', template, 1);
 
-        const updatedNotes = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
         expect(updatedNotes[0].startBeat).toBe(0.5);
     });
 
     it('clamps resulting startBeats to positive and velocity to 1-127', () => {
-        mocks.midiStoreValue.value = {
-            notesByClipId: {
-                c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 120 }],
-            },
+        mocks.notesByClipId = {
+            c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 120 }],
         };
 
         const template = { id: 'g1', subdivisions: 1, offsets: [-1], velocities: [2] };
         applyGroove('c1', template, 1);
 
-        const updatedNotes = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
         expect(updatedNotes[0].startBeat).toBe(0); // 0 - 1 clamped to 0
         expect(updatedNotes[0].velocity).toBe(127); // 120 * 2 clamped to 127
     });

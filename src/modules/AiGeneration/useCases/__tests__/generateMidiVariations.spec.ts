@@ -5,13 +5,15 @@ const { streamCloudChatCompletionMock, resolveBackendMock } = vi.hoisted(() => (
     resolveBackendMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
-const { getTrackStoreStateMock, createAlternativeClipsMock } = vi.hoisted(() => ({
+const { getTrackStoreStateMock, createAlternativeClipsMock, setTrackStoreStateMock } = vi.hoisted(() => ({
     getTrackStoreStateMock: vi.fn<(...args: unknown[]) => unknown>().mockReturnValue(null),
     createAlternativeClipsMock: vi.fn<(...args: unknown[]) => unknown>(),
+    setTrackStoreStateMock: vi.fn<(value: unknown) => void>(),
 }));
 
-const { getNotesForClipMock } = vi.hoisted(() => ({
+const { getNotesForClipMock, setMidiStoreStateMock } = vi.hoisted(() => ({
     getNotesForClipMock: vi.fn<(...args: unknown[]) => unknown>(),
+    setMidiStoreStateMock: vi.fn<(value: unknown) => void>(),
 }));
 
 const { pushUndoEntryMock } = vi.hoisted(() => ({
@@ -27,6 +29,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getTrackStoreState: getTrackStoreStateMock,
     createAlternativeClips: createAlternativeClipsMock,
+    setTrackStoreState: setTrackStoreStateMock,
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
@@ -38,6 +41,7 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     getNotesForClip: getNotesForClipMock,
+    setMidiStoreState: setMidiStoreStateMock,
 }));
 
 vi.mock('#/modules/Command/stores', async (importOriginal) => ({
@@ -122,15 +126,17 @@ describe('generateMidiVariations', () => {
         expect(label).toBe('AI Variations: clip-1');
         expect(undoOptions).toEqual({ source: 'ai' });
 
-        // Undo restores the pre-mutation snapshots captured before createAlternativeClips ran.
+        // Undo restores the pre-mutation snapshots captured before createAlternativeClips
+        // ran, routed through the owning modules' write-path use-cases (not a direct
+        // foreign-store.set).
         undoFn();
-        expect(trackStoreMock.set).toHaveBeenLastCalledWith({ snapshot: 'track-before' });
-        expect(midiStoreMock.set).toHaveBeenLastCalledWith({ snapshot: 'midi-before' });
+        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'track-before' });
+        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'midi-before' });
 
-        // Redo restores the post-mutation snapshots.
+        // Redo restores the post-mutation snapshots, also through the owning use-cases.
         redoFn();
-        expect(trackStoreMock.set).toHaveBeenLastCalledWith({ snapshot: 'track-after' });
-        expect(midiStoreMock.set).toHaveBeenLastCalledWith({ snapshot: 'midi-after' });
+        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'track-after' });
+        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'midi-after' });
     });
 
     it('drops out-of-range and non-finite variation notes before creating clips', async () => {

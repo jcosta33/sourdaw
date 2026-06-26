@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { aiStore, getAiSnapshot, subscribeAiStore, type AiState } from '../aiStore';
+import { aiStore, getAiSnapshot, type AiState } from '../aiStore';
 
 describe('aiStore', () => {
     beforeEach(() => {
@@ -26,17 +26,5 @@ describe('aiStore', () => {
 
         snapshot = getAiSnapshot();
         expect(snapshot).toEqual(newState);
-    });
-
-    it('subscribeAiStore registers a callback', () => {
-        let called = false;
-        const unsubscribe = subscribeAiStore(() => {
-            called = true;
-        });
-
-        aiStore.set({ tasks: [], isPanelOpen: true });
-        expect(called).toBe(true);
-
-        unsubscribe();
     });
 });

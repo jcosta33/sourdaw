@@ -31,9 +31,6 @@ const initialState: AiState = {
 
 export const aiStore = createStore<AiState>({ initialData: initialState });
 
-export function subscribeAiStore(callback: () => void) {
-    return aiStore.subscribe(callback);
-}
 export function getAiSnapshot() {
     return aiStore.value ?? initialState;
 }

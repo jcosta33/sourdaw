@@ -6,13 +6,18 @@ import {
     isNativeEngineReady,
 } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
+import {
+    createAlternativeClips,
+    getTrackStoreState as getTrackState,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { type VariationNote } from '#/modules/Arrangement/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
+import { readBalancedObject } from '../services/readBalancedObject';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
@@ -193,18 +198,18 @@ ONLY output raw JSON, no markdown blocks.`;
         `AI Variations: ${clipId}`,
         () => {
             if (trackSnapshotBefore) {
-                trackStore.set(trackSnapshotBefore);
+                setTrackStoreState(trackSnapshotBefore);
             }
             if (midiSnapshotBefore) {
-                midiStore.set(midiSnapshotBefore);
+                setMidiStoreState(midiSnapshotBefore);
             }
         },
         () => {
             if (trackSnapshotAfter) {
-                trackStore.set(trackSnapshotAfter);
+                setTrackStoreState(trackSnapshotAfter);
             }
             if (midiSnapshotAfter) {
-                midiStore.set(midiSnapshotAfter);
+                setMidiStoreState(midiSnapshotAfter);
             }
         },
         { source: 'ai' }
@@ -228,43 +233,5 @@ function extractVariationsJsonObject(text: string): string | null {
             return candidate;
         }
     }
-    return null;
-}
-
-/**
- * Read the balanced-brace JSON object starting at `start` (which must point at
- * a `{`), or null if it never closes.
- */
-function readBalancedObject(text: string, start: number): string | null {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let index = start; index < text.length; index++) {
-        const char = text[index];
-
-        if (inString) {
-            if (escaped) {
-                escaped = false;
-            } else if (char === '\\') {
-                escaped = true;
-            } else if (char === '"') {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (char === '"') {
-            inString = true;
-        } else if (char === '{') {
-            depth++;
-        } else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-                return text.slice(start, index + 1);
-            }
-        }
-    }
-
     return null;
 }

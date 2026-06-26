@@ -1,5 +1,5 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { getNotesForClip } from '#/modules/MIDI/useCases';
 
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
@@ -32,8 +32,9 @@ export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate
         return undefined;
     }
 
-    const state = midiStore.value;
-    const notes: MidiNote[] = state?.notesByClipId[clipId] ?? [];
+    // Read MIDI notes through the MIDI module's owning use-case rather than
+    // reaching into `midiStore` directly — the note store belongs to MIDI.
+    const notes: MidiNote[] = getNotesForClip(clipId);
 
     const clip = findClip(clipId);
     const clipLength = clip ? clip.endBeat - clip.startBeat : 4;

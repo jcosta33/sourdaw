@@ -10,6 +10,8 @@ import {
 import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { readBalancedObject } from '../services/readBalancedObject';
+
 // ── System prompt for music generation ──
 
 const MIDI_SYSTEM_PROMPT = `You are a music composition assistant embedded in a digital audio workstation.
@@ -191,45 +193,6 @@ function extractNotesJsonObject(raw: string): string | null {
             return candidate;
         }
     }
-    return null;
-}
-
-/**
- * Read the balanced-brace JSON object starting at `start` (which must point at
- * a `{`), or null if it never closes. String literals (with escapes) are
- * tracked so braces inside strings don't skew the depth count.
- */
-function readBalancedObject(text: string, start: number): string | null {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let index = start; index < text.length; index++) {
-        const char = text[index];
-
-        if (inString) {
-            if (escaped) {
-                escaped = false;
-            } else if (char === '\\') {
-                escaped = true;
-            } else if (char === '"') {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (char === '"') {
-            inString = true;
-        } else if (char === '{') {
-            depth++;
-        } else if (char === '}') {
-            depth--;
-            if (depth === 0) {
-                return text.slice(start, index + 1);
-            }
-        }
-    }
-
     return null;
 }
 

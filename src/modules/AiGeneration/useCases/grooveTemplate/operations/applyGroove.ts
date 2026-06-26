@@ -1,5 +1,5 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
@@ -15,13 +15,11 @@ export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1
         return undefined;
     }
 
-    const state = midiStore.value;
-    if (!state) {
-        return;
-    }
-
-    const existing = state.notesByClipId[clipId];
-    if (!existing || existing.length === 0) {
+    // Read and write MIDI notes through the MIDI module's owning use-cases
+    // rather than mutating `midiStore` directly — the note store's write path
+    // belongs to MIDI (`setNotesForClip`), not to AiGeneration.
+    const existing = getNotesForClip(clipId);
+    if (existing.length === 0) {
         return;
     }
 
@@ -44,11 +42,5 @@ export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1
         };
     });
 
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [clipId]: updated,
-        },
-    });
+    setNotesForClip(clipId, updated);
 }

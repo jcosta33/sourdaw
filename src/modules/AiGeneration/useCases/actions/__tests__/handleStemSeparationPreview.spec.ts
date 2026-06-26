@@ -39,4 +39,18 @@ describe('handleStemSeparationPreview', () => {
             })
         );
     });
+
+    it('includes durationMs on the error task so failed runs carry a duration', async () => {
+        await handleStemSeparationPreview('missing-buffer-id');
+
+        // The error path must carry a numeric duration like the success path and
+        // the sibling handlers, so a failed stem-separation task is not duration-less.
+        expect(updateTaskMock).toHaveBeenCalledWith(
+            'task-1',
+            expect.objectContaining({
+                status: 'error',
+                durationMs: expect.any(Number),
+            })
+        );
+    });
 });

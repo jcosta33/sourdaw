@@ -1,9 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
 
@@ -156,18 +156,18 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
                         () => {
                             if (trackSnapshotBefore) {
-                                trackStore.set(trackSnapshotBefore);
+                                setTrackStoreState(trackSnapshotBefore);
                             }
                             if (midiSnapshotBefore) {
-                                midiStore.set(midiSnapshotBefore);
+                                setMidiStoreState(midiSnapshotBefore);
                             }
                         },
                         () => {
                             if (trackSnapshotAfter) {
-                                trackStore.set(trackSnapshotAfter);
+                                setTrackStoreState(trackSnapshotAfter);
                             }
                             if (midiSnapshotAfter) {
-                                midiStore.set(midiSnapshotAfter);
+                                setMidiStoreState(midiSnapshotAfter);
                             }
                         },
                         { source: 'ai' }
@@ -189,18 +189,18 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'} (no clip)`,
                         () => {
                             if (trackSnapshotBefore) {
-                                trackStore.set(trackSnapshotBefore);
+                                setTrackStoreState(trackSnapshotBefore);
                             }
                             if (midiSnapshotBefore) {
-                                midiStore.set(midiSnapshotBefore);
+                                setMidiStoreState(midiSnapshotBefore);
                             }
                         },
                         () => {
                             if (trackSnapshotAfter) {
-                                trackStore.set(trackSnapshotAfter);
+                                setTrackStoreState(trackSnapshotAfter);
                             }
                             if (midiSnapshotAfter) {
-                                midiStore.set(midiSnapshotAfter);
+                                setMidiStoreState(midiSnapshotAfter);
                             }
                         },
                         { source: 'ai' }

@@ -14,9 +14,8 @@ export async function handleStemSeparationPreview(clipId: string) {
         status: 'processing',
         prompt: 'Extracting: Drums, Bass, Vocals, Other',
     });
+    const start = performance.now();
     try {
-        const start = performance.now();
-
         const buffer = audioBufferCache.get(clipId);
         if (!buffer) {
             throw createAiGenerationError('Audio buffer not found for clip');
@@ -47,6 +46,7 @@ export async function handleStemSeparationPreview(clipId: string) {
         updateTask(taskId, {
             status: 'error',
             error: errorMessage,
+            durationMs: Math.round(performance.now() - start),
         });
     }
 }
