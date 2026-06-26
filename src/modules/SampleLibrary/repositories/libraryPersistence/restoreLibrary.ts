@@ -4,7 +4,6 @@ import { isTauri } from '#/utils/tauriBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, libraryStore } from '../../stores/libraryStore';
-import { buildFolderTree } from '../../useCases/buildFolderTree';
 
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
@@ -29,8 +28,14 @@ async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['s
 
 /**
  * Restore library roots and samples from IndexedDB on app launch.
+ *
+ * Returns the ids of the roots that were restored so the calling use case can
+ * rebuild their folder trees. Folder-tree shaping lives in the `buildFolderTree`
+ * use case; a repository touches IDB and the store but does not drive use-case
+ * logic, so the rebuild is the caller's responsibility, not this function's. On
+ * failure the empty array is returned (nothing was restored).
  */
-export async function restoreLibrary(): Promise<void> {
+export async function restoreLibrary(): Promise<string[]> {
     try {
         const db = await openDb();
 
@@ -105,11 +110,6 @@ export async function restoreLibrary(): Promise<void> {
             addSamples(samples);
         }
 
-        // Rebuild folder trees for all restored roots
-        for (const root of roots) {
-            buildFolderTree(root.id);
-        }
-
         // Restore the session's last focused root if it was persisted and still
         // exists. Restoring it explicitly (rather than letting addLibraryRoot
         // auto-focus the last-out-of-IDB root) is what stops focus resetting to
@@ -124,6 +124,8 @@ export async function restoreLibrary(): Promise<void> {
         }
 
         db.close();
+
+        return roots.map((root) => root.id);
     } catch (error) {
         // openDb resolves (creating stores) on a clean first launch, so reaching
         // this catch means a genuine failure — a corrupted DB or transient IO
@@ -131,5 +133,6 @@ export async function restoreLibrary(): Promise<void> {
         // fresh, which would hide the loss of a previously connected library.
         logger.error(error instanceof Error ? error : new Error(String(error)));
         notifyUser('Could not load your saved sample library. It may be unavailable this session.', 'error');
+        return [];
     }
 }

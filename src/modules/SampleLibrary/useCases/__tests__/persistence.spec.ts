@@ -20,6 +20,7 @@ describe('Sample Library Persistence Use Cases', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('restoreLibrary delegates to repository', async () => {
+        mocks.restoreLibraryRepo.mockResolvedValue([]);
         await restoreLibrary();
         expect(mocks.restoreLibraryRepo).toHaveBeenCalledTimes(1);
     });

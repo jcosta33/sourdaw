@@ -1,5 +1,4 @@
-import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
-import { libraryStore, removeLibraryRoot, updateLibraryRootStatus } from '../../stores/libraryStore';
+import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
 
 import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
 
@@ -21,25 +20,16 @@ export async function rescanRoot(rootId: string): Promise<void> {
         return;
     }
 
-    updateLibraryRootStatus(rootId, 'scanning');
-
+    // Only the two branches below actually run a scanner that clears the
+    // 'scanning' status in its finally block. A handle-less browser root
+    // (permission_required / offline) matches neither, so flipping the status
+    // to 'scanning' up front would strand it on a permanent spinner. Decide
+    // which scanner runs first, and only enter the scanning state when one will.
     if (root.provider === 'browser' && root.handle) {
+        updateLibraryRootStatus(rootId, 'scanning');
         await scanBrowserDirectory(root);
     } else if (root.provider === 'tauri') {
+        updateLibraryRootStatus(rootId, 'scanning');
         await scanTauriDirectory(root);
     }
-}
-
-/**
- * Disconnect a library root and clear its persisted footprint.
- *
- * {@link removeLibraryRoot} drops the root's in-memory state; this use case then
- * persists that removal so the root's sample rows, root row and directory-handle
- * row are pruned from IndexedDB. Without it the orphaned rows linger and the
- * disconnected root reappears on the next launch. Persistence lives here in a
- * use case — a store never writes to repositories directly.
- */
-export async function disconnectLibraryRoot(rootId: string): Promise<void> {
-    removeLibraryRoot(rootId);
-    await persistSamples();
 }

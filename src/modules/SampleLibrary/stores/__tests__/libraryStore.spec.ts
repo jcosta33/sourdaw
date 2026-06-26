@@ -8,7 +8,6 @@ import {
     updateLibraryRootStatus,
     addSamples,
     toggleSampleFavorite,
-    addSampleTag,
     setActiveRoot,
     setCurrentFolder,
     setSearchQuery,
@@ -17,7 +16,6 @@ import {
     setSortField,
     setScanProgress,
     setFolderTree,
-    toggleFolderExpanded,
 } from '../libraryStore';
 
 describe('libraryStore', () => {
@@ -131,29 +129,6 @@ describe('libraryStore', () => {
         expect(libraryStore.value?.samples[0]?.favorite).toBe(false);
     });
 
-    it('should add tags', () => {
-        const s1 = {
-            id: 's1',
-            libraryRootId: 'r1',
-            relativePath: '',
-            displayName: 'Sample 1',
-            ext: 'wav',
-            folder: '/',
-            sync: { exists: true, status: 'discovered' as const },
-            format: {},
-            tags: [],
-            favorite: false,
-        };
-        addSamples([s1]);
-
-        addSampleTag('s1', 'kick');
-        expect(libraryStore.value?.samples[0]?.tags).toContain('kick');
-
-        // Ignore duplicate
-        addSampleTag('s1', 'kick');
-        expect(libraryStore.value?.samples[0]?.tags).toHaveLength(1);
-    });
-
     it('should handle UI state updates', () => {
         setActiveRoot('r2');
         expect(libraryStore.value?.activeRootId).toBe('r2');
@@ -234,38 +209,7 @@ describe('libraryStore', () => {
         expect(libraryStore.value?.samples).toHaveLength(2);
     });
 
-    it('toggleFolderExpanded preserves the identity of untouched subtrees', () => {
-        const root = {
-            id: 'r1',
-            name: 'Root 1',
-            provider: 'browser' as const,
-            rootRef: '',
-            connectedAt: 0,
-            status: 'ready' as const,
-            fileCount: 0,
-            settings: { recursive: true },
-        };
-        addLibraryRoot(root);
-
-        const sibling = { name: 'b', path: 'b', fileCount: 0, expanded: false, children: [] };
-        const tree = {
-            name: 'Root',
-            path: '',
-            fileCount: 0,
-            expanded: true,
-            children: [{ name: 'a', path: 'a', fileCount: 0, expanded: false, children: [] }, sibling],
-        };
-        setFolderTree('r1', tree);
-
-        toggleFolderExpanded('a');
-        const after = libraryStore.value?.folderTrees.r1;
-        // The toggled node flipped...
-        expect(after?.children[0]?.expanded).toBe(true);
-        // ...but the sibling subtree was not re-created (identity preserved).
-        expect(after?.children[1]).toBe(sibling);
-    });
-
-    it('should set and expand folder trees', () => {
+    it('should set folder trees', () => {
         const root = {
             id: 'r1',
             name: 'Root 1',
@@ -287,8 +231,6 @@ describe('libraryStore', () => {
         };
         setFolderTree('r1', tree);
         expect(libraryStore.value?.folderTrees.r1?.name).toBe('Root');
-
-        toggleFolderExpanded('/sub');
-        expect(libraryStore.value?.folderTrees.r1?.children[0]?.expanded).toBe(true);
+        expect(libraryStore.value?.folderTrees.r1?.children[0]?.path).toBe('/sub');
     });
 });

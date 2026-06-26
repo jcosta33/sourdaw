@@ -168,19 +168,6 @@ export function toggleSampleFavorite(sampleId: string): void {
     });
 }
 
-export function addSampleTag(sampleId: string, tag: string): void {
-    const state = libraryStore.value;
-    if (!state) {
-        return;
-    }
-    libraryStore.set({
-        ...state,
-        samples: state.samples.map((s) =>
-            s.id === sampleId && !s.tags.includes(tag) ? { ...s, tags: [...s.tags, tag] } : s
-        ),
-    });
-}
-
 // ── UI state ─────────────────────────────────────────────────────────────────
 
 export function setActiveRoot(rootId: string | null): void {
@@ -237,44 +224,4 @@ export function setFolderTree(rootId: string, tree: FolderNode): void {
     if (state) {
         libraryStore.set({ ...state, folderTrees: { ...state.folderTrees, [rootId]: tree } });
     }
-}
-
-export function toggleFolderExpanded(path: string): void {
-    const state = libraryStore.value;
-    if (!state || !state.activeRootId) {
-        return;
-    }
-
-    const rootTree = state.folderTrees[state.activeRootId];
-    if (!rootTree) {
-        return;
-    }
-
-    // The target lives in at most one child subtree, so descend into only that
-    // child and clone strictly along the path to it. Every sibling (and its whole
-    // subtree) is kept by reference rather than re-created on each click, reducing
-    // O(total nodes) clones to O(depth).
-    function toggleInNode(node: FolderNode): FolderNode {
-        if (node.path === path) {
-            return { ...node, expanded: !node.expanded };
-        }
-        const childIndex = node.children.findIndex((child) => path === child.path || path.startsWith(`${child.path}/`));
-        if (childIndex === -1) {
-            // The target is not within this subtree — leave it untouched.
-            return node;
-        }
-        const child = node.children[childIndex]!;
-        const nextChild = toggleInNode(child);
-        if (nextChild === child) {
-            return node;
-        }
-        const children = node.children.slice();
-        children[childIndex] = nextChild;
-        return { ...node, children };
-    }
-
-    libraryStore.set({
-        ...state,
-        folderTrees: { ...state.folderTrees, [state.activeRootId]: toggleInNode(rootTree) },
-    });
 }

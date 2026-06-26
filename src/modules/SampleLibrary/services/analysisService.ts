@@ -8,9 +8,10 @@ import {
 } from '../models/LibraryTypes';
 
 /**
- * Background analysis service for audio samples.
+ * Analysis service for audio samples.
  * R-G1: Musical analysis.
- * Initial implementation uses spectral heuristics for BPM/Key/Descriptors.
+ * Placeholder implementation: runs on the main thread (no Web Worker) and derives
+ * BPM/Key/Descriptors from a simple RMS spectral heuristic rather than real DSP.
  */
 
 export type AnalysisResult = {
@@ -24,7 +25,8 @@ export type AnalysisResult = {
  * Implementation uses deterministic spectral heuristics.
  */
 export async function performMusicalAnalysis(audioBuffer: AudioBuffer): Promise<AnalysisResult> {
-    // Artificial delay to simulate background work
+    // Artificial delay standing in for the real (not-yet-implemented) analysis
+    // work; this runs on the main thread, not in a worker.
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Simple deterministic heuristics based on buffer content

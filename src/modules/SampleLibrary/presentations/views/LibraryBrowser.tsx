@@ -27,14 +27,15 @@ import {
     setCurrentFolder,
     setSearchQuery,
     setFavoritesOnly,
-    toggleSampleFavorite,
 } from '../../stores/libraryStore';
 import { analyzeSample } from '../../useCases/analyzeSample';
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
-import { disconnectLibraryRoot, rescanRoot } from '../../useCases/connectFolder/rescanRoot';
+import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLibraryRoot';
+import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { projectSpatialMap } from '../../useCases/projectSpatialMap';
 import { requestPermission } from '../../useCases/requestPermission';
+import { toggleFavorite } from '../../useCases/toggleFavorite';
 import { LibraryRootCard } from '../components/LibraryRootCard';
 import { SampleRow } from '../components/SampleRow';
 
@@ -310,7 +311,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     <span className="text-[8px] font-bold">MAP</span>
                 </button>
 
-                {activeRoot && visibleFiles.length > 0 && (
+                {activeRoot && visibleFiles.length > 0 ? (
                     <button
                         type="button"
                         className="h-5 px-1.5 rounded text-[9px] text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"
@@ -319,7 +320,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     >
                         Analyze
                     </button>
-                )}
+                ) : null}
                 <button
                     type="button"
                     aria-label="Show favorites only"
@@ -528,7 +529,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                         void playSample(sample);
                                     }}
                                     onStop={preview.stop}
-                                    onToggleFavorite={() => toggleSampleFavorite(sample.id)}
+                                    onToggleFavorite={() => void toggleFavorite(sample.id)}
                                     onFindSimilar={() => handleFindSimilar(sample.id)}
                                     onDragStart={(e) => {
                                         e.dataTransfer.setData(

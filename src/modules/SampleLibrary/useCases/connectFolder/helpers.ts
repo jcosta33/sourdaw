@@ -75,9 +75,14 @@ export async function* traverseBrowserDirectory(
     }
 }
 
-export // ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createSampleRecord(rootId: string, relativePath: string, filename: string, mtimeMs?: number): SampleRecord {
+export function createSampleRecord(
+    rootId: string,
+    relativePath: string,
+    filename: string,
+    mtimeMs?: number
+): SampleRecord {
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     const displayName = filename.replace(/\.[^.]+$/, '');
     const folder = relativePath.includes('/') ? relativePath.substring(0, relativePath.lastIndexOf('/')) : '';
@@ -159,9 +164,9 @@ function reconcileScannedRoot(rootId: string, scanned: Map<string, SampleRecord>
     }
 }
 
-export // ── Browser directory scanning ───────────────────────────────────────────────
+// ── Browser directory scanning ───────────────────────────────────────────────
 
-async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
+export async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
     if (!root.handle) {
         return;
     }
@@ -221,9 +226,9 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
     }
 }
 
-export // ── Tauri directory scanning ─────────────────────────────────────────────────
+// ── Tauri directory scanning ─────────────────────────────────────────────────
 
-async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
+export async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
     setScanAbortController(new AbortController());
     const signal = getScanAbortController()!.signal;
     setScanProgress(true, 0);

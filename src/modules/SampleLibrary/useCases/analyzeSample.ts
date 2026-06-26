@@ -1,11 +1,15 @@
+import { logger } from '#/infra/logger/appLogger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 import { performMusicalAnalysis } from '../services/analysisService';
 import { libraryStore } from '../stores/libraryStore';
 
 /**
- * Trigger asynchronous musical analysis for a sample record.
- * R-G1: Musical analysis in Web Workers.
+ * Trigger musical analysis for a sample record.
+ *
+ * R-G1: Musical analysis. The current implementation runs a synchronous
+ * main-thread spectral heuristic (see {@link performMusicalAnalysis}); it is not
+ * yet offloaded to a Web Worker.
  */
 export async function analyzeSample(sampleId: string): Promise<void> {
     const state = libraryStore.value;
@@ -56,6 +60,8 @@ export async function analyzeSample(sampleId: string): Promise<void> {
             ),
         });
     } catch (error) {
-        console.error(`Failed to analyze sample ${sampleId}:`, error);
+        logger.error(
+            error instanceof Error ? error : new Error(`Failed to analyze sample ${sampleId}: ${String(error)}`)
+        );
     }
 }

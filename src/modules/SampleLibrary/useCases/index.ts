@@ -6,4 +6,3 @@ export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
 export { generateFactorySamples } from './factoryContent/generateFactorySamples';
 export { seedFactoryLibrary } from './factoryContent/seedFactoryLibrary';
-export type { FactorySample, FactorySampleCategory } from './factoryContent/types';

@@ -14,10 +14,6 @@ vi.mock('../../../stores/libraryStore', () => ({
     updateLibraryRootStatus: vi.fn(),
 }));
 
-vi.mock('../../../useCases/buildFolderTree', () => ({
-    buildFolderTree: vi.fn(),
-}));
-
 describe('Library Persistence', () => {
     beforeEach(() => {
         vi.clearAllMocks();
