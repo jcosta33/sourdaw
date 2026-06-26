@@ -38,7 +38,6 @@ export const parsePromptToActions = inject({ logger })(
                 const validated = validateActions(presetResult);
                 return {
                     actions: validated,
-                    confidence: 0.95,
                     rawText: prompt,
                     requiresConfirmation: requiresConfirmation(validated),
                 };
@@ -50,7 +49,6 @@ export const parsePromptToActions = inject({ logger })(
                 const validated = validateActions(paramResult);
                 return {
                     actions: validated,
-                    confidence: 0.95,
                     rawText: prompt,
                     requiresConfirmation: requiresConfirmation(validated),
                 };
@@ -62,14 +60,13 @@ export const parsePromptToActions = inject({ logger })(
                 const validated = validateActions(compoundResult);
                 return {
                     actions: validated,
-                    confidence: 0.95,
                     rawText: prompt,
                     requiresConfirmation: requiresConfirmation(validated),
                 };
             }
 
             if (signal?.aborted) {
-                return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
+                return { actions: [], rawText: prompt, requiresConfirmation: false };
             }
 
             // 4. LLM path: DSO editor — Qwen3-8B emits typed Domain-Specific Operations
@@ -79,13 +76,12 @@ export const parsePromptToActions = inject({ logger })(
                     const result = await executeDsoEdit(prompt, signal);
 
                     if (signal?.aborted) {
-                        return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
+                        return { actions: [], rawText: prompt, requiresConfirmation: false };
                     }
 
                     if (result.success) {
                         return {
                             actions: [],
-                            confidence: 0.9,
                             rawText: prompt,
                             requiresConfirmation: false,
                             _jsonEditApplied: true,
@@ -95,7 +91,6 @@ export const parsePromptToActions = inject({ logger })(
                         logger.warn(`[AI] DSO editor failed: ${result.error ?? 'unknown'}`);
                         return {
                             actions: [],
-                            confidence: 0,
                             rawText: prompt,
                             requiresConfirmation: false,
                             _jsonEditAttempted: true,
@@ -103,12 +98,11 @@ export const parsePromptToActions = inject({ logger })(
                     }
                 } catch (error) {
                     if (signal?.aborted) {
-                        return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
+                        return { actions: [], rawText: prompt, requiresConfirmation: false };
                     }
                     logger.warn(`[AI] DSO editor failed: ${String(error)}`);
                     return {
                         actions: [],
-                        confidence: 0,
                         rawText: prompt,
                         requiresConfirmation: false,
                         _jsonEditAttempted: true,
@@ -116,6 +110,6 @@ export const parsePromptToActions = inject({ logger })(
                 }
             }
 
-            return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
+            return { actions: [], rawText: prompt, requiresConfirmation: false };
         }
 );

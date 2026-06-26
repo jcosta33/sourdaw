@@ -2,7 +2,6 @@ import { type RuntimeAction } from './RuntimeAction';
 
 export type IntentResult = {
     actions: RuntimeAction[];
-    confidence: number;
     rawText: string;
     requiresConfirmation: boolean;
     /** Set when the JSON editor flow was used and changes were already applied */

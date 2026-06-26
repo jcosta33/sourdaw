@@ -12,7 +12,12 @@ export type AiChangeNotification = {
     timestamp: number;
 };
 
-let changeListeners: ((change: AiChangeNotification) => void)[] = [];
+// §60.1 — Use a Set inside a holder so the binding can't be reassigned from
+// outside this file and the unsubscribe path is O(1) instead of allocating a
+// filtered copy. Mirrors the prompt-injection bus in `promptInjection.ts`.
+const changeBus: { listeners: Set<(change: AiChangeNotification) => void> } = {
+    listeners: new Set(),
+};
 
 /**
  * Monotonic counter combined with the timestamp so two notifications emitted
@@ -22,9 +27,9 @@ let changeListeners: ((change: AiChangeNotification) => void)[] = [];
 let notificationSeq = 0;
 
 export function subscribeAiChangeNotification(cb: (change: AiChangeNotification) => void): () => void {
-    changeListeners.push(cb);
+    changeBus.listeners.add(cb);
     return () => {
-        changeListeners = changeListeners.filter((length) => length !== cb);
+        changeBus.listeners.delete(cb);
     };
 }
 
@@ -35,7 +40,7 @@ export function notifyAiChange(summary: string, details: string[]): void {
         details,
         timestamp: Date.now(),
     };
-    for (const listener of changeListeners) {
+    for (const listener of changeBus.listeners) {
         listener(notification);
     }
 }

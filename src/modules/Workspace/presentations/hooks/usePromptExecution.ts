@@ -61,7 +61,6 @@ type PromptAction = RuntimeAction;
 type PromptPreview = {
     actions: PromptAction[];
     actionLabels: string[];
-    confidence: number;
     rawText: string;
     requiresConfirmation: boolean;
     _jsonEditApplied?: boolean;
@@ -243,7 +242,6 @@ export const usePromptExecution = (): PromptExecutionState => {
             setPreview({
                 actions,
                 actionLabels: actions.map((action) => describeAction(action)),
-                confidence: 0.95,
                 rawText: result.preset.label,
                 requiresConfirmation: true,
             });

@@ -107,10 +107,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
+    const dictationUnlistenRef = useRef<(() => void) | null>(null);
     const modeRef = useRef<VoiceMode>(null);
     const isListeningRef = useRef(false);
+    const isMountedRef = useRef(true);
 
     // Keep ref in sync with state
     useEffect(() => {
@@ -119,18 +119,28 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     // ── Whisper recording ───────────────────────────────────────────────
 
-    const cleanupWhisperRecording = (): void => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
+    // Release the native dictation-result listener registered in
+    // startWhisperRecording. Safe to call when no listener is active.
+    const releaseDictationListener = (): void => {
+        const unlisten = dictationUnlistenRef.current;
+        dictationUnlistenRef.current = null;
+        if (unlisten) {
+            unlisten();
         }
-        mediaRecorderRef.current = null;
-        chunksRef.current = [];
+    };
+
+    const cleanupWhisperRecording = (): void => {
+        releaseDictationListener();
     };
 
     const startWhisperRecording = async (): Promise<void> => {
         try {
             // Auto-download and load model on first use
             await ensureWhisperLoaded();
+
+            // A prior listener may still be live if recording restarts before a
+            // result arrived — release it so listeners do not accumulate.
+            releaseDictationListener();
 
             // Listen for transcription result from Rust
             const unlisten = await onDictationResult((result) => {
@@ -141,8 +151,15 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 }
                 setTranscribing(false);
                 setIsListening(false);
-                unlisten();
+                releaseDictationListener();
             });
+            // If the component unmounted while we awaited the listener
+            // registration, release it immediately instead of leaking it.
+            if (!isMountedRef.current) {
+                unlisten();
+                return;
+            }
+            dictationUnlistenRef.current = unlisten;
 
             // Start native recording via cpal + whisper inference
             await startDictation();
@@ -318,6 +335,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     useEffect(() => {
         return () => {
+            isMountedRef.current = false;
             if (recognitionRef.current) {
                 recognitionRef.current.abort();
             }

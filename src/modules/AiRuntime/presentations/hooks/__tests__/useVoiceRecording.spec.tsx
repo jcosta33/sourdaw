@@ -110,4 +110,26 @@ describe('useVoiceRecording', () => {
         expect(result.current.transcribing).toBe(true);
         expect(voiceStatusStore.value?.transcribing).toBe(true);
     });
+
+    it('releases the dictation listener on unmount before a result arrives', async () => {
+        mocks.isTauri.mockReturnValue(true);
+        const unlisten = vi.fn<() => void>();
+        mocks.onDictationResult.mockResolvedValueOnce(unlisten);
+
+        const { result, unmount } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        expect(mocks.onDictationResult).toHaveBeenCalled();
+        // No transcription result has arrived yet; the listener is still live.
+        expect(unlisten).not.toHaveBeenCalled();
+
+        unmount();
+
+        // Unmounting must tear the native listener down so it cannot accumulate.
+        expect(unlisten).toHaveBeenCalledTimes(1);
+    });
 });

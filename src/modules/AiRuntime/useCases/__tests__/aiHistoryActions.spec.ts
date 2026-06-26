@@ -2,29 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { revertAiActionGroup } from '../aiHistoryActions';
 
-vi.mock('#/modules/Command/stores', () => ({
-    undoStore: {
-        value: {
-            past: [
-                {
-                    id: 'u1',
-                    kind: 'action' as const,
-                    label: 'test',
-                    timestamp: 0,
-                    source: 'manual' as const,
-                    groupId: 'g1',
-                    action: { type: 'setTempo', payload: { bpm: 100 } },
-                    inverseAction: { type: 'stopPlayback' },
-                },
-            ],
-            future: [],
-        },
-        set: vi.fn(),
-    },
-}));
-
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    revertActionGroup: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('#/modules/AiRuntime/stores/aiActionHistoryStore', () => ({
@@ -36,8 +15,8 @@ describe('revertAiActionGroup', () => {
         vi.clearAllMocks();
     });
 
-    it('calls executeAppAction for action entries with inverseAction', async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
+    it('delegates the undo-store mutation to Command and marks the group reverted', async () => {
+        const { revertActionGroup } = await import('#/modules/Command/useCases');
         const { markGroupReverted } = await import('#/modules/AiRuntime/stores/aiActionHistoryStore');
 
         await revertAiActionGroup({
@@ -49,7 +28,7 @@ describe('revertAiActionGroup', () => {
             reverted: false,
         });
 
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'stopPlayback' });
+        expect(revertActionGroup).toHaveBeenCalledWith('g1');
         expect(markGroupReverted).toHaveBeenCalledWith('g1');
     });
 });

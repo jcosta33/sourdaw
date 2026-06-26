@@ -57,7 +57,6 @@ describe('parsePromptToActions', () => {
 
         expect(result).toEqual({
             actions: [],
-            confidence: 0,
             rawText: 'anything',
             requiresConfirmation: false,
         });

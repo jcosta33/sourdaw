@@ -1,0 +1,111 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { revertActionGroup } from '../revertActionGroup';
+
+import type { UndoEntry } from '../commandQueries';
+
+const mocks = vi.hoisted(() => ({
+    undoStoreValue: {
+        value: {
+            past: [] as import('../commandQueries').UndoEntry[],
+            future: [] as import('../commandQueries').UndoEntry[],
+        } as import('../../stores/undoStore').UndoStoreState | null,
+    },
+    undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
+    executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>().mockResolvedValue(undefined),
+    undoTreeMoveTo: vi.fn<(id: string | null) => void>(),
+}));
+
+vi.mock('../../stores/undoStore', () => ({
+    undoStore: {
+        get value() {
+            return mocks.undoStoreValue.value;
+        },
+        set: mocks.undoStoreSet,
+    },
+}));
+
+vi.mock('../executeAppAction', () => ({
+    executeAppAction: mocks.executeAppAction,
+}));
+
+vi.mock('../undoTree/undoTreeMoveTo', () => ({
+    undoTreeMoveTo: mocks.undoTreeMoveTo,
+}));
+
+function actionEntry(id: string, groupId: string | undefined): UndoEntry {
+    return {
+        kind: 'action',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'ai',
+        groupId,
+        action: { type: 'togglePlayback' },
+        inverseAction: { type: 'toggleRecording' },
+    };
+}
+
+describe('revertActionGroup', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.undoStoreValue.value = { past: [], future: [] };
+    });
+
+    it('reverts every entry in the group newest-first with skipUndo and rebuilds the split', async () => {
+        const other = actionEntry('keep', 'g0');
+        const g1 = actionEntry('1', 'g1');
+        const g2 = actionEntry('2', 'g1');
+        mocks.undoStoreValue.value = { past: [other, g1, g2], future: [] };
+
+        await revertActionGroup('g1');
+
+        // Inverse replays must run under skipUndo so they do not push fresh entries.
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(1, { type: 'toggleRecording' }, { skipUndo: true });
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        // Group entries are stripped from past and prepended (in order) to future.
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({
+            past: [other],
+            future: [g1, g2],
+        });
+        // Undo-tree position follows the new top of past.
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('keep');
+    });
+
+    it('moves the undo tree to root when the group was the entire past stack', async () => {
+        const g1 = actionEntry('1', 'g1');
+        mocks.undoStoreValue.value = { past: [g1], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
+    });
+
+    it('leaves the store untouched when no member of the group could be undone', async () => {
+        const inert: UndoEntry = {
+            kind: 'action',
+            id: 'x',
+            label: 'x',
+            timestamp: 0,
+            source: 'ai',
+            groupId: 'g1',
+            action: { type: 'togglePlayback' },
+            inverseAction: null,
+        };
+        mocks.undoStoreValue.value = { past: [inert], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the group is absent from past', async () => {
+        mocks.undoStoreValue.value = { past: [actionEntry('a', 'gX')], future: [] };
+
+        await revertActionGroup('g1');
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+    });
+});

@@ -22,4 +22,5 @@ export { stopMacroRecording } from './macro/recording/stopMacroRecording';
 export type { Macro } from './macro/recording/stopMacroRecording';
 
 export { undo, redo } from './undoRedo';
+export { revertActionGroup } from './revertActionGroup';
 export { commitPitchEditCommand } from './pitch/commitPitchEdit';
