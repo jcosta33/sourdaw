@@ -3,7 +3,8 @@
  *
  * TODO: SECURITY — createDawApi() exposes executeAppAction with full access to
  * the entire action registry (tracks, clips, transport, plugins, AI, etc.).
- * The `as any` cast bypasses type safety. Permissions declared in
+ * The `action as AppAction` cast forwards arbitrary action shapes to the
+ * registry without validation. Permissions declared in
  * ExtensionManifest are never checked. Before shipping:
  *   1. Move to Worker-based execution with postMessage proxy
  *   2. Validate each action against the extension's declared permissions

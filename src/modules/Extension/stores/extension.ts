@@ -70,7 +70,7 @@ export type InstalledExtension = {
     installedAt: string;
     /** Last update check */
     lastUpdatedAt: string;
-    /** Extension state (persisted across sessions) */
+    /** Extension state (in-memory only; not yet persisted across sessions) */
     state: Record<string, unknown>;
 };
 
