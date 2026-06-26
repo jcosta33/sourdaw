@@ -45,7 +45,7 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
-import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project/useCases';
+import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases';
 import {
     getTransportHandlers,
@@ -124,6 +124,7 @@ registerHandlerMap(getMacroHandlers());
 registerHandlerMap(getUndoTreeHandlers());
 registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());
+registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());
 

@@ -8,6 +8,7 @@ import { type ProjectData } from '../../../models/ProjectData';
 import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
+import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
 import { hydrateProjectMidi } from './midiStateMapping';
@@ -17,6 +18,11 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
     resetAudioGraph();
+
+    // Reset per-device-instance stores (§13.1) so stale device state from the
+    // previously open project does not leak into the imported project;
+    // hydrateModuleStoresFromProjectData does not touch the device stores.
+    resetModuleStoresToDefault();
 
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);
@@ -56,7 +62,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         arrangements: [
             {
                 id: defaultArrangementId,
-                name: 'Main Arrangement',
+                name: 'Arrangement 1',
                 tracks: {
                     tracks: data.arrangement.tracks || [],
                     selectedTrackId: null,

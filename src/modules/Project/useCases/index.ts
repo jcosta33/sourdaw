@@ -7,7 +7,7 @@ export { importSclFile } from './importSclFile';
 export { pickFiles } from './fileDialog';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
-export { previewLoops, getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';
+export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';
@@ -15,7 +15,6 @@ export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImp
 export { importDawProject } from './dawProject/importDawProject';
 export { pickAndImportDawProject } from './dawProject/pickAndImportDawProject';
 export { exportDawProject } from './dawProject/exportDawProject';
-export { renderToClip } from './renderToClip';
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 export { getSongStructureHandlers } from './getSongStructureHandlers';

@@ -9,6 +9,7 @@ import { isSupportedProjectVersion, type ProjectData } from '../../models/Projec
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
+import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
 export async function loadRecentProject(key: string): Promise<boolean> {
@@ -31,6 +32,11 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         // project's audio graph before we hydrate stores for the new project.
         stopPlayback();
         resetAudioGraph();
+
+        // Reset per-device-instance stores (§13.1) so stale device state from the
+        // previously open project does not leak into the project being loaded;
+        // hydrateModuleStoresFromProjectData does not touch the device stores.
+        resetModuleStoresToDefault();
 
         hydrateModuleStoresFromProjectData(data);
 

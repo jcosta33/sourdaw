@@ -30,6 +30,10 @@ describe('handleDetectSongStructure', () => {
         expect(notifyUser).toHaveBeenCalledWith('No clips found to analyze — add some clips first', 'warning');
     });
 
+    it('is not undoable — it captures no pre-state and supplies no inverseAction', () => {
+        expect(handleDetectSongStructure.undoable).toBe(false);
+    });
+
     it('notifies success with section names when detection finds sections', async () => {
         vi.mocked(detectAndApplySongStructure).mockReturnValue([
             // @ts-expect-error — partial Section for test

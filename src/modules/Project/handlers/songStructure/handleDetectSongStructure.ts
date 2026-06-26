@@ -15,6 +15,9 @@ export const handleDetectSongStructure = createHandler<'detectSongStructure'>({
             );
         }
     },
-    undoable: true,
+    // Not undoable: this handler captures no pre-state and returns no
+    // inverseAction, so an undo entry could only no-op. Marking it non-undoable
+    // keeps no-op entries off the undo/history stack.
+    undoable: false,
     describe: () => ({ label: 'Detect Song Structure' }),
 });

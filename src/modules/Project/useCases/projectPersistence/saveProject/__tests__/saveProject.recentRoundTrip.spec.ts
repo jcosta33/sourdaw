@@ -59,6 +59,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }))
 vi.mock('../../helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));
+vi.mock('../../helpers/resetModuleStoresToDefault', () => ({
+    resetModuleStoresToDefault: vi.fn(),
+}));
 vi.mock('../../helpers/verifyAudioBufferReferences', () => ({
     verifyAudioBufferReferences: vi.fn(),
 }));

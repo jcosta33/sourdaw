@@ -28,18 +28,15 @@ export function loadSnapshot(data: ArrangementSnapshot): void {
     });
     automationStore.set(data.automation);
     midiStore.set(data.midi);
-    if (data.tempoMap) {
-        tempoMapStore.set(data.tempoMap);
-    }
-    if (data.timeSignatureMap) {
-        timeSignatureMapStore.set(data.timeSignatureMap);
-    }
-    if (data.markers) {
-        markerStore.set(data.markers);
-    }
-    if (data.takeLanes) {
-        takeLaneStore.set(data.takeLanes);
-    }
+    // These four fields are optional on a snapshot but always live in shared
+    // stores. When the target arrangement's snapshot omits one, reset that store
+    // to empty rather than leaving the previous arrangement's value installed —
+    // otherwise switching to an arrangement without a tempo map / markers / take
+    // lanes leaks the prior arrangement's into the shared store.
+    tempoMapStore.set(data.tempoMap ?? { changes: [] });
+    timeSignatureMapStore.set(data.timeSignatureMap ?? { changes: [] });
+    markerStore.set(data.markers ?? { markers: [], sections: [] });
+    takeLaneStore.set(data.takeLanes ?? { lanes: [] });
 }
 
 export function syncCurrentArrangementToStore(): void {

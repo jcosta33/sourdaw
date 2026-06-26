@@ -26,6 +26,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/stores', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+// The §13.1 device-store reset runs before hydration; its per-device resets are
+// not what this round-trip asserts (it checks the hydrated track/transport/midi/
+// arrangement values), so stub it out to avoid pulling in every device store.
+vi.mock('../../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: vi.fn() }));
 
 function audioClip(id: string, bufferId: string): ProjectTrack['clips'][number] {
     return {

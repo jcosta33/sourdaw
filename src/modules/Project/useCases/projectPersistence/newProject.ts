@@ -8,7 +8,7 @@ import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/use
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/storageOperations';
-import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
+import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 
 import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
@@ -27,18 +27,10 @@ export function newProject(name = 'Untitled Project'): void {
 
     resetModuleStoresToDefault();
 
-    arrangementStore.set({
-        arrangements: [
-            {
-                id: defaultArrangementId,
-                name: 'Arrangement 1',
-                tracks: { tracks: [], selectedTrackId: null },
-                automation: { lanes: [] },
-                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-            },
-        ],
-        activeArrangementId: defaultArrangementId,
-    });
+    // Seed a single empty arrangement from the store's canonical default so the
+    // seed shape and name ('Arrangement 1') stay defined in one place. Clone so a
+    // fresh project never shares a reference with the module-level default.
+    arrangementStore.set(structuredClone(defaultArrangementStoreState));
 
     addTrack({ name: 'Master', kind: 'master' });
 

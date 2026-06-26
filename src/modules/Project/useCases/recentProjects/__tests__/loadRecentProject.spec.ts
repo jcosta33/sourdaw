@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
+import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { loadRecentProject } from '../loadRecentProject';
 
 vi.mock('../../../repositories/project/storageOperations', () => ({
@@ -22,6 +23,9 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
+}));
+vi.mock('../../projectPersistence/helpers/resetModuleStoresToDefault', () => ({
+    resetModuleStoresToDefault: vi.fn(),
 }));
 vi.mock('../../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
     verifyAudioBufferReferences: vi.fn(),
@@ -48,6 +52,7 @@ describe('loadRecentProject', () => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
+        vi.mocked(resetModuleStoresToDefault).mockClear();
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -63,6 +68,20 @@ describe('loadRecentProject', () => {
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
     });
 
+    it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        const ok = await loadRecentProject('sourdaw:project:Large Project');
+
+        expect(ok).toBe(true);
+        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        // The reset must precede hydration so device stores are blank before the
+        // loaded project's non-device state is written over them.
+        const resetOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
+        const hydrateOrder = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
+        expect(resetOrder).toBeLessThan(hydrateOrder);
+    });
+
     it('returns false when neither localStorage nor IndexedDB has the project', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(null);
 
@@ -70,5 +89,7 @@ describe('loadRecentProject', () => {
 
         expect(ok).toBe(false);
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        // No project was replaced, so the device-store reset must not fire either.
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
     });
 });
