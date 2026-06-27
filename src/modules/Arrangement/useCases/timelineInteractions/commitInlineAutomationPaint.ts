@@ -2,7 +2,8 @@ import {
     addAutomationLane,
     batchAddAutomationPoints,
     getAutomationLanes,
-    removeAutomationPoint,
+    removeAutomationLane,
+    replaceAutomationLanePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
 
@@ -16,24 +17,42 @@ type CommitInlineAutomationPaintInput = {
     points: AutomationPoint[];
 };
 
-function resolveLaneId(input: CommitInlineAutomationPaintInput): string | null {
+type AutomationLaneForPaint = ReturnType<typeof getAutomationLanes>[number];
+
+type AutomationLaneSnapshot = {
+    id: string;
+    trackId: string;
+    parameterId: string;
+    parameterName: string;
+    points: AutomationPoint[];
+};
+
+function clonePoints(points: AutomationPoint[]): AutomationPoint[] {
+    return points.map((point) => ({ ...point }));
+}
+
+function cloneLane(lane: AutomationLaneForPaint): AutomationLaneSnapshot {
+    return {
+        id: lane.id,
+        trackId: lane.trackId,
+        parameterId: lane.parameterId,
+        parameterName: lane.parameterName,
+        points: clonePoints(lane.points),
+    };
+}
+
+function findTargetLane(input: CommitInlineAutomationPaintInput): AutomationLaneForPaint | null {
+    const lanes = getAutomationLanes();
     if (input.laneId) {
-        return input.laneId;
+        return lanes.find((lane) => lane.id === input.laneId) ?? null;
     }
 
-    const existingLane = getAutomationLanes().find(
-        (lane) => lane.trackId === input.trackId && lane.parameterId === input.parameterId
-    );
-    if (existingLane) {
-        return existingLane.id;
-    }
+    return lanes.find((lane) => lane.trackId === input.trackId && lane.parameterId === input.parameterId) ?? null;
+}
 
+function createTargetLane(input: CommitInlineAutomationPaintInput): AutomationLaneForPaint | null {
     addAutomationLane(input.trackId, input.parameterId, input.parameterName);
-    const createdLane = getAutomationLanes().find(
-        (lane) => lane.trackId === input.trackId && lane.parameterId === input.parameterId
-    );
-
-    return createdLane?.id ?? null;
+    return findTargetLane(input);
 }
 
 export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintInput): boolean {
@@ -41,22 +60,46 @@ export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintIn
         return false;
     }
 
-    const laneId = resolveLaneId(input);
-    if (!laneId) {
+    const previousLane = findTargetLane(input);
+    if (!previousLane && input.laneId) {
+        return false;
+    }
+
+    const targetLane = previousLane ?? createTargetLane(input);
+    if (!targetLane) {
         return false;
     }
 
     const points = input.points.map((point) => ({ ...point }));
-    batchAddAutomationPoints(laneId, points);
+    const previousSnapshot = previousLane ? cloneLane(previousLane) : null;
+    let activeLaneId = targetLane.id;
+
+    batchAddAutomationPoints(activeLaneId, points);
+
+    const nextLane = getAutomationLanes().find((lane) => lane.id === activeLaneId);
+    const nextPoints = nextLane ? clonePoints(nextLane.points) : points;
+
     pushUndoEntry(
         `Draw ${points.length} automation point${points.length > 1 ? 's' : ''}`,
         () => {
-            for (const point of points) {
-                removeAutomationPoint(laneId, point.beat);
+            if (previousSnapshot) {
+                replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: previousSnapshot.points });
+                return;
             }
+            removeAutomationLane(activeLaneId);
         },
         () => {
-            batchAddAutomationPoints(laneId, points);
+            if (previousSnapshot) {
+                replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: nextPoints });
+                return;
+            }
+
+            const redoneLane = createTargetLane(input);
+            if (!redoneLane) {
+                return;
+            }
+            activeLaneId = redoneLane.id;
+            replaceAutomationLanePoints({ laneId: activeLaneId, points: nextPoints });
         }
     );
 
