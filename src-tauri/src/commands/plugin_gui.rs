@@ -24,16 +24,26 @@ pub async fn is_plugin_gui_supported(
     instance_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<bool, String> {
-    let plugins = state
-        .plugins
+    {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get(&instance_id) {
+            return Ok(instance.has_gui());
+        }
+    }
+
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if engine_plugins.contains_key(&instance_id) {
+        return Ok(false);
+    }
 
-    let instance = plugins
-        .get(&instance_id)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
-
-    Ok(instance.has_gui())
+    Err(format!("No plugin instance: {}", instance_id))
 }
 
 /// Open the plugin GUI in a floating native window.
@@ -58,9 +68,22 @@ pub async fn open_plugin_gui(
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        let instance = plugins
-            .get(&instance_id)
-            .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
+        let instance = match plugins.get(&instance_id) {
+            Some(instance) => instance,
+            None => {
+                let engine_plugins = state
+                    .engine_plugins
+                    .lock()
+                    .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+                if let Some(engine_instance) = engine_plugins.get(&instance_id) {
+                    return Err(format!(
+                        "Plugin GUI is not available for engine-owned native instance: {} ({})",
+                        instance_id, engine_instance.name
+                    ));
+                }
+                return Err(format!("No plugin instance: {}", instance_id));
+            }
+        };
 
         if !instance.has_gui() {
             return Err("Plugin does not support GUI".to_string());

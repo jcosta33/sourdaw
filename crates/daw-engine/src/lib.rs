@@ -40,6 +40,12 @@ impl EngineHandle {
         self.mts_esp_master = Some(MtsEspMaster::new(tuning_output));
     }
 
+    /// Register a default equal-temperament tuning source for MTS-ESP broadcasting.
+    pub fn register_default_mts_esp_master(&mut self) {
+        let (_, output) = triple_buffer::triple_buffer(&TuningTable::default());
+        self.register_mts_esp_master(output);
+    }
+
     /// Background task to update MTS-ESP tuning. Should be called periodically
     /// from the main loop or a dedicated background thread.
     pub fn update_mts_esp(&mut self) {
@@ -77,6 +83,9 @@ impl EngineHandle {
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
         self.command_tx
             .push(GraphCommand::RemovePlugin(id))
+            .map_err(|_| "Audio command queue full".to_string())?;
+        self.command_tx
+            .push(GraphCommand::UnregisterAudioBridge(id))
             .map_err(|_| "Audio command queue full".to_string())
     }
 

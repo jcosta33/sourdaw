@@ -9,6 +9,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(state::AppState::default())
         .manage(commands::collab::CollabState::default())
+        .manage(commands::link::LinkState::default())
         .manage(commands::midi::MidiState::default())
         .manage(commands::native_llm::NativeLlmState::default())
         .manage(commands::speech::DictationState::default())
@@ -39,6 +40,9 @@ pub fn run() {
             commands::speech::start_dictation,
             commands::speech::stop_dictation,
             commands::speech::get_asr_status,
+            commands::audio_decode::decode_audio_file,
+            commands::audio_decode::get_audio_file_info,
+            commands::audio_decode::get_audio_file_metadata,
             commands::filesystem::read_audio_file,
             commands::filesystem::write_audio_file,
             commands::filesystem::list_directory,
@@ -67,6 +71,13 @@ pub fn run() {
             commands::midi::list_midi_inputs,
             commands::midi::open_midi_input,
             commands::midi::close_midi_input,
+            // Ableton Link bridge
+            commands::link::enable_link,
+            commands::link::disable_link,
+            commands::link::set_link_tempo,
+            commands::link::get_link_status,
+            commands::link::link_start_playing,
+            commands::link::link_stop_playing,
             // CRDT collaboration
             commands::collab::collab_create_project,
             commands::collab::collab_save_bundle,
@@ -78,6 +89,7 @@ pub fn run() {
             commands::collab::collab_start_advertising,
             commands::collab::collab_stop_advertising,
             commands::collab::collab_start_browsing,
+            commands::collab::collab_stop_browsing,
             commands::collab::collab_get_nearby_sessions,
             // Crumbs
             commands::crumbs::create_crumbs,

@@ -28,6 +28,7 @@ pub struct PluginInstance {
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
     pub latency_samples: u32,
+    pub engine_plugin_id: Option<usize>,
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
@@ -178,7 +179,20 @@ pub async fn load_plugin(
                         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
                     bridges.insert(id, bridge_handle);
 
-                    id
+                    let mut engine_plugins = state
+                        .engine_plugins
+                        .lock()
+                        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+                    engine_plugins.insert(
+                        instance_id.0.clone(),
+                        crate::state::EnginePluginInstanceData {
+                            engine_plugin_id: id,
+                            name: name.clone(),
+                            parameters: params.clone(),
+                        },
+                    );
+
+                    Some(id)
                 } else {
                     eprintln!(
                         "[Plugin] Warning: native engine not running, plugin won't process audio"
@@ -193,7 +207,7 @@ pub async fn load_plugin(
                             plugin: Box::new(wrapper),
                         },
                     );
-                    0
+                    None
                 }
             };
 
@@ -204,6 +218,7 @@ pub async fn load_plugin(
                 parameters: params,
                 is_active: true,
                 latency_samples: 0,
+                engine_plugin_id,
             };
 
             Ok(instance)
@@ -232,6 +247,7 @@ pub async fn load_plugin(
                 parameters: params,
                 is_active: true,
                 latency_samples: 0,
+                engine_plugin_id: None,
             })
         }
         "au" => Err(
@@ -248,19 +264,54 @@ pub async fn unload_plugin(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    if plugins.remove(&instance_id.0).is_none() {
-        return Err(format!(
-            "No plugin instance found with id: {}",
-            instance_id.0
-        ));
+        if plugins.remove(&instance_id.0).is_some() {
+            return Ok(());
+        }
     }
 
-    Ok(())
+    let engine_plugin_id = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| instance.engine_plugin_id)
+    };
+
+    if let Some(engine_plugin_id) = engine_plugin_id {
+        let mut engine_guard = state
+            .engine
+            .lock()
+            .map_err(|e| format!("Failed to lock engine: {}", e))?;
+        let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+        engine.remove_plugin(engine_plugin_id)?;
+
+        let mut bridges = state
+            .audio_bridges
+            .lock()
+            .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
+        bridges.remove(&engine_plugin_id);
+
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins.remove(&instance_id.0);
+
+        return Ok(());
+    }
+
+    Err(format!(
+        "No plugin instance found with id: {}",
+        instance_id.0
+    ))
 }
 
 // ── Parameter commands ──────────────────────────────────────────────────
@@ -273,17 +324,54 @@ pub async fn set_plugin_parameter(
     value: f64,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins
-        .get_mut(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+        if let Some(instance) = plugins.get_mut(&instance_id.0) {
+            instance.plugin.set_parameter(param_id, value);
+            return Ok(());
+        }
+    }
 
-    instance.plugin.set_parameter(param_id, value);
-    Ok(())
+    let engine_plugin_id = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| instance.engine_plugin_id)
+    };
+
+    if let Some(engine_plugin_id) = engine_plugin_id {
+        let mut engine_guard = state
+            .engine
+            .lock()
+            .map_err(|e| format!("Failed to lock engine: {}", e))?;
+        let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+        engine.set_plugin_param(engine_plugin_id, param_id, value)?;
+
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
+            if let Some(parameter) = instance
+                .parameters
+                .iter_mut()
+                .find(|parameter| parameter.id == param_id)
+            {
+                parameter.value = value;
+            }
+        }
+
+        return Ok(());
+    }
+
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -292,16 +380,26 @@ pub async fn get_plugin_parameters(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PluginParameter>, String> {
-    let plugins = state
-        .plugins
+    {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get(&instance_id.0) {
+            return Ok(instance.plugin.get_parameters());
+        }
+    }
+
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if let Some(instance) = engine_plugins.get(&instance_id.0) {
+        return Ok(instance.parameters.clone());
+    }
 
-    let instance = plugins
-        .get(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    Ok(instance.plugin.get_parameters())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -310,16 +408,29 @@ pub async fn get_plugin_state(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let plugins = state
-        .plugins
+    {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get(&instance_id.0) {
+            return Ok(instance.plugin.get_state());
+        }
+    }
+
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if engine_plugins.contains_key(&instance_id.0) {
+        return Err(format!(
+            "Plugin state is not available for engine-owned native instance: {}",
+            instance_id.0
+        ));
+    }
 
-    let instance = plugins
-        .get(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    Ok(instance.plugin.get_state())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -329,17 +440,30 @@ pub async fn set_plugin_state(
     plugin_state: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get_mut(&instance_id.0) {
+            instance.plugin.set_state(&plugin_state);
+            return Ok(());
+        }
+    }
+
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if engine_plugins.contains_key(&instance_id.0) {
+        return Err(format!(
+            "Plugin state restore is not available for engine-owned native instance: {}",
+            instance_id.0
+        ));
+    }
 
-    let instance = plugins
-        .get_mut(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    instance.plugin.set_state(&plugin_state);
-    Ok(())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
@@ -359,10 +483,8 @@ pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<St
     let mut handle =
         EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
 
-    // Create a triple-buffer for the global tuning table
-    // and register it with the MTS-ESP master bridge.
-    let (_, output) = triple_buffer::triple_buffer(&daw_core::tuning::TuningTable::default());
-    handle.register_mts_esp_master(output);
+    // Create the default tuning source inside daw-engine, which owns the triple-buffer dependency.
+    handle.register_default_mts_esp_master();
 
     eprintln!("[Engine] Native audio engine started with MTS-ESP support");
     *engine_guard = Some(handle);

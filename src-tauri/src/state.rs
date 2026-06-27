@@ -2,6 +2,7 @@ use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
 use daw_plugin_host::ClapWrapper;
+use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
@@ -56,9 +57,17 @@ impl PluginInstanceData {
     }
 }
 
+pub struct EnginePluginInstanceData {
+    pub engine_plugin_id: usize,
+    pub name: String,
+    pub parameters: Vec<PluginParameter>,
+}
+
 pub struct AppState {
     /// Active plugin instances keyed by instance_id.
     pub plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
+    /// Engine-owned plugin instances keyed by UI/runtime instance_id.
+    pub engine_plugins: Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>,
     /// Registry mapping plugin_id → (file_path, clap_plugin_id).
     /// Populated by scan_plugins so load_plugin can find the library.
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
@@ -84,6 +93,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             plugins: Arc::new(Mutex::new(HashMap::new())),
+            engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
             engine: Arc::new(Mutex::new(None)),

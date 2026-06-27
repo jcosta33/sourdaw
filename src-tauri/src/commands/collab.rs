@@ -24,6 +24,18 @@ impl Default for CollabState {
     }
 }
 
+fn get_or_create_discovery(
+    guard: &mut Option<LanDiscovery>,
+) -> Result<&mut LanDiscovery, String> {
+    if guard.is_none() {
+        *guard = Some(LanDiscovery::new()?);
+    }
+
+    guard
+        .as_mut()
+        .ok_or_else(|| "Failed to initialize LAN discovery".to_string())
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct MergeResultResponse {
     pub merged_doc_ids: Vec<String>,
@@ -131,7 +143,7 @@ pub fn collab_start_advertising(
     approval_required: bool,
 ) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    let discovery = get_or_create_discovery(&mut guard)?;
     discovery.advertise(
         &session_id,
         &host_name,
@@ -154,8 +166,17 @@ pub fn collab_stop_advertising(state: State<'_, CollabState>) -> Result<bool, St
 #[tauri::command]
 pub fn collab_start_browsing(state: State<'_, CollabState>) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    let discovery = get_or_create_discovery(&mut guard)?;
     discovery.start_browsing()?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_stop_browsing(state: State<'_, CollabState>) -> Result<bool, String> {
+    let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    if let Some(discovery) = guard.as_mut() {
+        discovery.stop_browsing()?;
+    }
     Ok(true)
 }
 
