@@ -21,8 +21,8 @@ impl MtsEspMaster {
     /// Should be called from a non-audio thread (e.g., a background worker)
     /// to avoid I/O or locking on the audio thread.
     pub fn update(&mut self) {
-        if self.tuning_output.has_changed() {
-            let table = self.tuning_output.read();
+        if self.tuning_output.update() {
+            let table = self.tuning_output.output_buffer();
             self.broadcast_tuning(table);
         }
     }

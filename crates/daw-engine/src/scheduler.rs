@@ -84,11 +84,7 @@ impl AudioScheduler {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     let instance = match plugin_type.as_str() {
                         "knead" => {
-                            let (_, output) = triple_buffer::triple_buffer(&TuningTable::default());
-                            Some(PluginCore::Knead(KneadEngine::new(
-                                self.sample_rate,
-                                daw_core::tuning::TuningManager::new(output),
-                            )))
+                            Some(PluginCore::Knead(KneadEngine::new(self.sample_rate)))
                         }
                         _ => None,
                     };
@@ -123,6 +119,7 @@ impl AudioScheduler {
                         midi_fx: Vec::new(),
                         pending_midi: Vec::new(),
                     });
+                }
                 GraphCommand::SetPluginParam(id, param_id, value) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         if let PluginCore::Native(ref mut plugin) = effect.instance {
@@ -157,8 +154,6 @@ impl AudioScheduler {
                     }
                 }
                 GraphCommand::SendMidiNote(id, event) => {
-                ...
-
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         effect.pending_midi.push(event);
                     }
@@ -166,12 +161,8 @@ impl AudioScheduler {
                 GraphCommand::SetTransport(state) => {
                     self.transport = state;
                 }
-                GraphCommand::RegisterTuning(id, output) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        if let PluginCore::Knead(ref mut engine) = effect.instance {
-                            engine.tuning = daw_core::tuning::TuningManager::new(output);
-                        }
-                    }
+                GraphCommand::RegisterTuning(_id, _output) => {
+                    // The current KneadEngine contract does not expose a tuning input.
                 }
                 GraphCommand::RegisterAudioBridge(bridge) => {
                     self.audio_bridges.push(bridge);
@@ -202,28 +193,30 @@ impl AudioScheduler {
                 }
 
                 if let PluginCore::Native(ref mut plugin) = effect.instance {
-                    // Apply MIDI FX chain before processing
-                    for fx in &mut effect.midi_fx {
-                        fx.process_midi(
-                            &mut effect.pending_midi,
-                            &self.transport,
-                            self.sample_rate,
-                            num_samples,
-                        );
-                    }
-
-                    let midi = &effect.pending_midi;
-                    let transport = &self.transport;
+                    let midi_fx = &mut effect.midi_fx;
+                    let pending_midi = &mut effect.pending_midi;
+                    let transport = self.transport;
+                    let sample_rate = self.sample_rate;
 
                     bridge.try_process(|left, right, num_samples| {
-                        if midi.is_empty() {
+                        for fx in midi_fx.iter_mut() {
+                            fx.process_midi(pending_midi, &transport, sample_rate, num_samples);
+                        }
+
+                        if pending_midi.is_empty() {
                             plugin.process_audio(left, right, num_samples);
                         } else {
-                            plugin.process_with_events(left, right, num_samples, midi, transport);
+                            plugin.process_with_events(
+                                left,
+                                right,
+                                num_samples,
+                                pending_midi,
+                                &transport,
+                            );
                         }
                     });
 
-                    effect.pending_midi.clear();
+                    pending_midi.clear();
                 }
             }
         }

@@ -475,7 +475,7 @@ pub async fn process_plugin_audio(
     }
 
     // Try to pop processed output
- (may be from previous block — 1 block latency)
+    // This may be from the previous block with one block of latency.
     if let Some(output) = bridge.pop_output() {
         // Re-interleave and encode as raw bytes
         let n = num_samples.min(128);
