@@ -25,11 +25,11 @@
  *   - inject calls where the deps variable is a shared const (e.g. fooBarDependencies)
  *     because those shared objects are used by tests via injectDependencies()
  *
- * Run as dry-run first:
- *   pnpm jscodeshift -t codemods/remove-inject-ceremony.ts src/ -d -p --extensions=ts,tsx
+ * Historical migration reference. Do not run unless a human explicitly assigns
+ * this codemod execution as the task.
  *
- * Apply:
- *   pnpm jscodeshift -t codemods/remove-inject-ceremony.ts src/ --extensions=ts,tsx
+ * Human-approved dry run:
+ *   npx jscodeshift -t codemods/remove-inject-ceremony.ts src/ -d -p --extensions=ts,tsx
  */
 
 import { FileInfo, API } from 'jscodeshift';

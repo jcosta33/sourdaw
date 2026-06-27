@@ -33,9 +33,12 @@
  *     Only when **every** deps property is `identKey: identValue` (no methods, getters, spreads, computed keys).
  *     Optional chaining (`d?.x`) is not rewritten — such files are skipped if `d` would remain.
  *
- * Dry runs (use before applying):
+ * Historical migration reference. Do not run unless a human explicitly assigns
+ * this codemod execution as the task.
  *
- *   pnpm exec jscodeshift -t codemods/remove-inject-non-container.ts <path-or-dir> -d -p --parser=tsx --extensions=ts
+ * Human-approved dry run:
+ *
+ *   npx jscodeshift -t codemods/remove-inject-non-container.ts <path-or-dir> -d -p --parser=tsx --extensions=ts
  *
  * jscodeshift results: `ok` = transformed (review printed diff); `skipped` = no match (e.g. specs, or skip rules above).
  *
@@ -47,7 +50,7 @@
  *   - Must not change: `.../addTrack.ts` (eventBus), `executeDsoEdit.ts` (logger)
  *   - Identifier deps: `importMidiFile.ts` (same-file deps + ObjectPattern), `trackShortcuts.ts` (`(d) =>` member inlining)
  *
- * Apply: same command without `-d -p`.
+ * Human-approved apply: same command without `-d -p`.
  *
  * Verification (syntax of printed output, not full project typecheck):
  *

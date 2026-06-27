@@ -126,7 +126,7 @@ An audit that still lists fixed issues as open, or omits new problems discovered
 
 ## 9. Close out the task file
 
-Complete `## Self-review` in the task file before ending the session (every question answered, verification outputs pasted). Task templates do not use a separate `## Handoff` section — the file is self-contained. Capture what was done, what was not, risks, and doc updates in **Decisions**, **Findings**, **Next steps**, and Self-review so the next session can start from the task file without reconstructing context.
+Complete `## Run summary` in the assigned Corpus task packet before ending the session (changed files, verification outputs, out-of-scope edits, and blocked questions pasted). Worktree-local scratch may additionally include `## Self-review`. Task templates do not use a separate `## Handoff` section — the file is self-contained. Capture what was done, what was not, risks, and doc updates in **Decisions**, **Findings**, **Next steps**, and the closeout section so the next session can start from the task file without reconstructing context.
 
 ---
 

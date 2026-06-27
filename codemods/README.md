@@ -1,6 +1,13 @@
 # Codemods
 
-This directory contains `jscodeshift` codemods for automating codebase transformations.
+This directory contains historical `jscodeshift` codemods from reviewed
+migration work. They are retained as references, not as normal agent-run write
+tools.
+
+Agents must not run these transforms unless a human explicitly assigns that
+codemod execution as the task. Human maintainers who choose to reuse one should
+start with a dry run, inspect the full diff, and run the repository verification
+commands afterward.
 
 ## Setup
 
@@ -8,11 +15,11 @@ These codemods are not bundled with the application. The directory has its own `
 
 ## Usage
 
-You can run codemods using `jscodeshift` via `pnpm` or `npx`.
+There is intentionally no root package script for these codemods. For a
+human-approved migration, call `jscodeshift` directly and begin with a dry run:
 
 ```bash
-# Run a specific codemod against the src directory
-pnpm jscodeshift -t codemods/example.ts src/
+npx jscodeshift -t codemods/example.ts src/ -d -p --extensions=ts,tsx
 ```
 
 ### Options
@@ -21,10 +28,12 @@ pnpm jscodeshift -t codemods/example.ts src/
 - `-p` or `--print`: Print output to stdout.
 - `--extensions=ts,tsx`: Specify extensions to run on (jscodeshift assumes `.js` by default unless specified or inferred).
 
-Example dry-run to see what would change:
+If the dry-run diff has been reviewed and the migration is explicitly approved,
+remove `-d -p` for the write pass and then run the relevant verification
+commands.
 
 ```bash
-pnpm jscodeshift -t codemods/example.ts src/ -d -p --extensions=ts,tsx
+npx jscodeshift -t codemods/example.ts src/ --extensions=ts,tsx
 ```
 
 ## Writing Codemods
