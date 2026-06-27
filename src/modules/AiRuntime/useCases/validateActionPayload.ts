@@ -52,6 +52,12 @@ function isNumber(value: unknown): value is number {
 function isInRange(value: unknown, min: number, max: number): value is number {
     return isNumber(value) && value >= min && value <= max;
 }
+function isPositiveNumber(value: unknown): value is number {
+    return isNumber(value) && value > 0;
+}
+function isNonNegativeNumber(value: unknown): value is number {
+    return isNumber(value) && value >= 0;
+}
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
 }
@@ -63,6 +69,15 @@ function hasTrackId(param: unknown): param is { trackId: string } {
 }
 function hasClipId(param: unknown): param is { clipId: string } {
     return isObj(param) && isString(param.clipId);
+}
+function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
+    return (
+        isObj(param) &&
+        isInRange(param.pitch, 0, 127) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isPositiveNumber(param.duration) &&
+        isOptional(param.velocity, (value): value is number => isInRange(value, 1, 127))
+    );
 }
 
 // A DocumentBundle is `Map<DocId, Uint8Array>` (CrdtDocumentTypes). The
@@ -295,7 +310,8 @@ const validators = {
     scaleVelocities: 'unchecked',
     scaleAllVelocities: 'unchecked',
     setAllVelocities: 'unchecked',
-    addNotes: 'unchecked',
+    addNotes: (param): param is PayloadOf<'addNotes'> =>
+        isObj(param) && isString(param.clipId) && Array.isArray(param.notes) && param.notes.every(isAddNotesNote),
     arpeggiate: 'unchecked',
 
     // Automation secondary ops

@@ -1,6 +1,6 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
-import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
+import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -12,6 +12,8 @@ import { cn } from '#/utils/Styles/cn';
 import { type ChatMessage } from '../../models/Chat';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
+import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
+import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { ChatComposer } from '../components/ChatComposer';
@@ -116,7 +118,17 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
     );
 };
 
-const ChatMessageItem = ({ msg }: { msg: ChatMessage }): ReactElement => {
+type ChatMessageItemProps = {
+    msg: ChatMessage;
+    onConfirmPendingActions: (confirmationId: string) => void;
+    onCancelPendingActions: (confirmationId: string) => void;
+};
+
+const ChatMessageItem = ({
+    msg,
+    onConfirmPendingActions,
+    onCancelPendingActions,
+}: ChatMessageItemProps): ReactElement => {
     let msgIcon = <User className="size-3" />;
     if (msg.isDsoAction) {
         msgIcon = <Zap className="size-3 text-emerald-400" />;
@@ -137,6 +149,9 @@ const ChatMessageItem = ({ msg }: { msg: ChatMessage }): ReactElement => {
     } else if (msg.isDsoAction) {
         msgBubbleClassName = 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
     }
+
+    const pendingConfirmationId =
+        msg.pendingActionConfirmationStatus === 'proposed' ? msg.pendingActionConfirmationId : undefined;
 
     return (
         <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
@@ -172,6 +187,30 @@ const ChatMessageItem = ({ msg }: { msg: ChatMessage }): ReactElement => {
                 ) : (
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 )}
+                {pendingConfirmationId ? (
+                    <div className="mt-3 flex items-center gap-2 border-t border-emerald-500/20 pt-2">
+                        <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => onConfirmPendingActions(pendingConfirmationId)}
+                            aria-label="Confirm pending actions"
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            <Check className="size-3" />
+                            Confirm
+                        </Button>
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => onCancelPendingActions(pendingConfirmationId)}
+                            aria-label="Cancel pending actions"
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            <X className="size-3" />
+                            Cancel
+                        </Button>
+                    </div>
+                ) : null}
             </div>
         </div>
     );
@@ -220,6 +259,14 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         }
     };
 
+    const handleConfirmPendingActions = (confirmationId: string): void => {
+        void confirmPendingChatActions({ confirmationId });
+    };
+
+    const handleCancelPendingActions = (confirmationId: string): void => {
+        cancelPendingChatActions({ confirmationId });
+    };
+
     if (!chatState) {
         return <></>;
     }
@@ -240,7 +287,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         chatPanelContent = (
             <div className="flex w-full flex-col gap-5">
                 {chatState.messages.map((msg) => (
-                    <ChatMessageItem key={msg.id} msg={msg} />
+                    <ChatMessageItem
+                        key={msg.id}
+                        msg={msg}
+                        onConfirmPendingActions={handleConfirmPendingActions}
+                        onCancelPendingActions={handleCancelPendingActions}
+                    />
                 ))}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
             </div>

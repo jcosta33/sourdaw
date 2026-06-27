@@ -118,6 +118,8 @@ describe('sendChatMessage injectables', () => {
             expect.objectContaining({
                 isStreaming: false,
                 content: expect.stringContaining('requires confirmation'),
+                pendingActionConfirmationId: expect.stringMatching(/^prompt-confirmation-/),
+                pendingActionConfirmationStatus: 'proposed',
             })
         );
     });

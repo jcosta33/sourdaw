@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Dso } from '../../../models/DsoTypes';
-import { executeDsos, resolveDsoNames } from '../compileDso';
+import { executeDsos, resolveDsoNames, validateDsos } from '../compileDso';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as { value: unknown },
@@ -227,6 +227,32 @@ describe('executeDsos', () => {
             { type: 'toggleLoop' },
             expect.objectContaining({ source: 'ai', skipUndo: true })
         );
+    });
+
+    it('should reject time signature denominators unsupported by Transport validation', () => {
+        mocks.trackStoreValue.value = trackState([]);
+        const dso: Dso = { op: 'set_time_signature', numerator: 7, denominator: 3 };
+
+        const errors = validateDsos([dso]);
+
+        expect(errors).toEqual([
+            {
+                dso,
+                reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16',
+            },
+        ]);
+    });
+
+    it('should surface invalid time signature execution instead of summarizing it as applied', async () => {
+        mocks.trackStoreValue.value = trackState([]);
+
+        const result = await executeDsos([{ op: 'set_time_signature', numerator: 7, denominator: 3 }]);
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(result.summaries).toEqual([]);
+        expect(result.failures).toEqual([
+            { op: 'set_time_signature', reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16' },
+        ]);
     });
 });
 

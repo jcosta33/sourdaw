@@ -138,6 +138,18 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
     punk: 'punk',
 };
 
+const VALID_TIME_SIGNATURE_DENOMINATORS: readonly number[] = [2, 4, 8, 16];
+
+function validateTimeSignatureParts(numerator: number, denominator: number): string | null {
+    if (numerator < 1 || numerator > 32) {
+        return `Time signature numerator ${numerator} out of range (1-32)`;
+    }
+    if (!VALID_TIME_SIGNATURE_DENOMINATORS.includes(denominator)) {
+        return `Time signature denominator ${denominator} must be one of 2, 4, 8, or 16`;
+    }
+    return null;
+}
+
 function toMelodyStyle(state: string): MelodyStyle {
     const resolved = MELODY_STYLE_MAP[state.toLowerCase()];
     if (resolved === undefined) {
@@ -625,8 +637,16 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 }
                 break;
 
-            case 'add_track':
             case 'set_time_signature':
+                {
+                    const reason = validateTimeSignatureParts(dso.numerator, dso.denominator);
+                    if (reason) {
+                        errors.push({ dso, reason });
+                    }
+                }
+                break;
+
+            case 'add_track':
             case 'set_loop':
                 break;
         }
@@ -847,6 +867,10 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'set_time_signature': {
+            const reason = validateTimeSignatureParts(dso.numerator, dso.denominator);
+            if (reason) {
+                throw new Error(reason);
+            }
             await executeAppAction(
                 { type: 'setTimeSignature', payload: { numerator: dso.numerator, denominator: dso.denominator } },
                 DSO_EXEC_OPTIONS

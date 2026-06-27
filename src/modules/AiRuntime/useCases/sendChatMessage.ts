@@ -18,6 +18,7 @@ import {
     setChatGenerating,
     setActiveAborter,
 } from '../stores/chatStore';
+import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -232,14 +233,21 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 });
 
                 if (result.requiresConfirmation) {
-                    const pendingLabels = result.actions.map((action) => ({
-                        action,
-                        label: describeAction(action),
-                    }));
+                    const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+                    const actionLabels = result.actions.map((action) => describeAction(action));
+                    proposePendingActionConfirmation({
+                        id: confirmationId,
+                        prompt: userText,
+                        assistantMessageId: assistantMsgId,
+                        actions: result.actions,
+                        actionLabels,
+                    });
 
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
-                        content: `This prompt requires confirmation before execution:\n\n${pendingLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
+                        pendingActionConfirmationId: confirmationId,
+                        pendingActionConfirmationStatus: 'proposed',
+                        content: `This prompt requires confirmation before execution:\n\n${result.actions.map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`).join('\n')}`,
                     });
                     return;
                 }

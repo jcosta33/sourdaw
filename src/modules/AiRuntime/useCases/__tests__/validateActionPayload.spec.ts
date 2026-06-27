@@ -81,6 +81,61 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('addNotes', () => {
+        it('should require clipId and a notes array with finite bounded note fields', () => {
+            const guard = PAYLOAD_VALIDATORS.addNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                })
+            ).toBe(true);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 0, startBeat: 0, duration: 0.01 }],
+                })
+            ).toBe(true);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 127, startBeat: 4, duration: 2, velocity: 127 }],
+                })
+            ).toBe(true);
+        });
+
+        it('should reject malformed addNotes payloads before they reach the MIDI handler', () => {
+            const guard = PAYLOAD_VALIDATORS.addNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 1, notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: 'bad' })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: -1, startBeat: 0, duration: 1 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: -0.01, duration: 1 }] })).toBe(
+                false
+            );
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 0 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: Number.NaN }] })).toBe(
+                false
+            );
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 0 }] })).toBe(
+                false
+            );
+            expect(
+                guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 128 }] })
+            ).toBe(false);
+        });
+    });
+
     describe('exportMidi', () => {
         it('should require clipId string', () => {
             const guard = PAYLOAD_VALIDATORS.exportMidi;
