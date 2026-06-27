@@ -5,16 +5,26 @@ import { executeDsos, resolveDsoNames } from '../compileDso';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as { value: unknown },
-    executeAppAction: vi.fn(),
-    warn: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
+    transportStoreValue: { value: null } as { value: unknown },
+    midiStoreValue: { value: null } as { value: unknown },
+    transportStoreSet: vi.fn(),
+    midiStoreSet: vi.fn(),
     addTrack: vi.fn(),
     removeTrack: vi.fn(),
     addClip: vi.fn(),
     addDevice: vi.fn(),
     setSend: vi.fn(),
+    humanizeNotes: vi.fn(),
+    executeAppAction: vi.fn(),
+    warn: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addTrack: mocks.addTrack,
+    removeTrack: mocks.removeTrack,
+    addClip: mocks.addClip,
+    addDevice: mocks.addDevice,
+    setSend: mocks.setSend,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -36,15 +46,25 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null },
+    midiStore: {
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+        set: mocks.midiStoreSet,
+    },
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
-    humanizeNotes: vi.fn(),
+    humanizeNotes: mocks.humanizeNotes,
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { value: null },
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue.value;
+        },
+        set: mocks.transportStoreSet,
+    },
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -78,7 +98,10 @@ describe('executeDsos', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.trackStoreValue.value = null;
+        mocks.transportStoreValue.value = null;
+        mocks.midiStoreValue.value = null;
         mocks.executeAppAction.mockReset();
+        mocks.executeAppAction.mockResolvedValue(undefined);
     });
 
     it('runs with an empty DSO list (smoke)', async () => {
@@ -121,6 +144,88 @@ describe('executeDsos', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'setTempo', payload: { bpm: 140 } },
             expect.anything()
+        );
+    });
+
+    it('should route compiled DAW mutations through executeAppAction instead of direct writers', async () => {
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    kind: 'midi',
+                    clips: [{ id: 'clip-1', name: 'Pattern', type: 'midi', startBeat: 4, endBeat: 8 }],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.transportStoreValue.value = {
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        mocks.midiStoreValue.value = {
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        await executeDsos([
+            { op: 'add_track', track_id: 'track-new', name: 'Keys', kind: 'midi' },
+            { op: 'remove_track', track_id: 'track-1' },
+            { op: 'set_time_signature', numerator: 7, denominator: 8 },
+            {
+                op: 'add_midi_notes',
+                clip_id: 'clip-1',
+                notes: [{ pitch: 60, start_beat: 1, duration: 2, velocity: 96 }],
+            },
+            { op: 'humanize_midi', clip_id: 'clip-1', timing_amount: 0.2, velocity_amount: 0.3 },
+            { op: 'create_send', from_track_id: 'track-1', to_track_id: 'bus-1', gain: 0.5 },
+            { op: 'set_loop', enabled: false, start_beats: 0, end_beats: 4 },
+        ]);
+
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
+        expect(mocks.transportStoreSet).not.toHaveBeenCalled();
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+        expect(mocks.humanizeNotes).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'addTrack', payload: { id: 'track-new', name: 'Keys', kind: 'midi' } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'removeTrack', payload: { trackId: 'track-1' } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setTimeSignature', payload: { numerator: 7, denominator: 8 } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 5, duration: 2, velocity: 96 }],
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'humanizeNotes', payload: { clipId: 'clip-1', amount: 0.2, velocityAmount: 0.3 } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'setSend', payload: { trackId: 'track-1', busId: 'bus-1', level: 0.5 } },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleLoop' },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
         );
     });
 });

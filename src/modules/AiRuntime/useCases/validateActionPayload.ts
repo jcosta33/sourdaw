@@ -131,6 +131,10 @@ const validators = {
 
     // Transport (pre-existing range checks from §91)
     setTempo: (param): param is PayloadOf<'setTempo'> => isObj(param) && isInRange(param.bpm, 20, 300),
+    setTimeSignature: (param): param is PayloadOf<'setTimeSignature'> =>
+        isObj(param) &&
+        isInRange(param.numerator, 1, 32) &&
+        (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
         isObj(param) && isInRange(param.volume, 0, 1),

@@ -42,7 +42,7 @@ export type RipplePlanSnapshot = {
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
 export type AppAction =
-    | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
+    | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
     | {
           /** Inverse of `removeTrack`. Carries full snapshots of the removed track and its
@@ -91,6 +91,7 @@ export type AppAction =
     | { type: 'bounceInPlace'; payload: { trackId: string } }
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
     | { type: 'setTempo'; payload: { bpm: number } }
+    | { type: 'setTimeSignature'; payload: { numerator: number; denominator: number } }
     | { type: 'togglePlayback'; payload?: undefined }
     | { type: 'stopPlayback'; payload?: undefined }
     | { type: 'toggleRecording'; payload?: undefined }
@@ -101,7 +102,14 @@ export type AppAction =
     | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
     | {
           type: 'addClip';
-          payload: { trackId: string; startBeat: number; endBeat: number; name: string; audioBufferId?: string };
+          payload: {
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type?: 'audio' | 'midi';
+              audioBufferId?: string;
+          };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
     | { type: 'duplicateClip'; payload: { clipId: string } }

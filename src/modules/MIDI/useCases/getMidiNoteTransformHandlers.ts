@@ -1,5 +1,6 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
+import { handleAddNotes } from '../handlers/noteCrud/handleAddNotes';
 import { handleHumanizeNotes } from '../handlers/noteTransform/handleHumanizeNotes';
 import { handleInvertNotes } from '../handlers/noteTransform/handleInvertNotes';
 import { handleQuantizeNoteLengths } from '../handlers/noteTransform/handleQuantizeNoteLengths';
@@ -11,6 +12,7 @@ import { handleSetAllVelocities } from '../handlers/noteTransform/handleSetAllVe
 import { handleTransposeNotes } from '../handlers/noteTransform/handleTransposeNotes';
 
 type MidiNoteTransformAppAction =
+    | Extract<AppAction, { type: 'addNotes' }>
     | Extract<AppAction, { type: 'humanizeNotes' }>
     | Extract<AppAction, { type: 'invertNotes' }>
     | Extract<AppAction, { type: 'quantizeNoteLengths' }>
@@ -30,6 +32,7 @@ export type MidiNoteTransformHandlersMap = {
  */
 export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
     return {
+        addNotes: handleAddNotes,
         humanizeNotes: handleHumanizeNotes,
         invertNotes: handleInvertNotes,
         quantizeNoteLengths: handleQuantizeNoteLengths,

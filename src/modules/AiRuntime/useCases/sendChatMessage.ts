@@ -230,6 +230,20 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     timestamp: Date.now(),
                     isDsoAction: true,
                 });
+
+                if (result.requiresConfirmation) {
+                    const pendingLabels = result.actions.map((action) => ({
+                        action,
+                        label: describeAction(action),
+                    }));
+
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        content: `This prompt requires confirmation before execution:\n\n${pendingLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
+                    });
+                    return;
+                }
+
                 const group = generateGroupId(userText);
                 const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
 

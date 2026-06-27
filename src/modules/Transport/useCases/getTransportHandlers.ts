@@ -10,6 +10,7 @@ import { handleSetPreRollBars } from '../handlers/transport/handleSetPreRollBars
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
 import { handleSetPunchOut } from '../handlers/transport/handleSetPunchOut';
 import { handleSetTempo } from '../handlers/transport/handleSetTempo';
+import { handleSetTimeSignature } from '../handlers/transport/handleSetTimeSignature';
 import { handleStopPlayback } from '../handlers/transport/handleStopPlayback';
 import { handleToggleCountIn } from '../handlers/transport/handleToggleCountIn';
 import { handleToggleLoop } from '../handlers/transport/handleToggleLoop';
@@ -35,6 +36,7 @@ export type TransportHandlersMap = {
     setPunchIn: typeof handleSetPunchIn;
     setPunchOut: typeof handleSetPunchOut;
     setTempo: typeof handleSetTempo;
+    setTimeSignature: typeof handleSetTimeSignature;
     stopPlayback: typeof handleStopPlayback;
     toggleCountIn: typeof handleToggleCountIn;
     toggleLoop: typeof handleToggleLoop;
@@ -67,6 +69,7 @@ export function getTransportHandlers(): TransportHandlersMap {
         togglePunch: handleTogglePunch,
         toggleCountIn: handleToggleCountIn,
         setCountInBars: handleSetCountInBars,
+        setTimeSignature: handleSetTimeSignature,
         addTimeSignatureChange: handleAddTimeSignatureChange,
         removeTimeSignatureChange: handleRemoveTimeSignatureChange,
         togglePreRoll: handleTogglePreRoll,
