@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { renderQueueStore, enqueueRender, markRenderComplete, type RenderQueueEntry } from './renderQueueStore';
+import { renderQueueStore, enqueueRender, markRenderComplete, type RenderQueueEntry } from '../renderQueueStore';
 
 function makeEntry(over: Partial<RenderQueueEntry> = {}): RenderQueueEntry {
     return {

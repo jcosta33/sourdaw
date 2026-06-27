@@ -14,6 +14,18 @@ const createDummyLogger = (): Logger => ({
 });
 
 describe('createStore', () => {
+    it('should expose the store contract methods', () => {
+        const store = createStore({ initialData: { count: 0 } });
+
+        expect(typeof store.set).toBe('function');
+        expect(typeof store.update).toBe('function');
+        expect(typeof store.clear).toBe('function');
+        expect(typeof store.hydrate).toBe('function');
+        expect(typeof store.subscribe).toBe('function');
+        expect(typeof store.subscribeReact).toBe('function');
+        expect(typeof store.getSnapshot).toBe('function');
+    });
+
     it('should return null when created with no initial data', () => {
         const store = createStore<{ count: number }>();
         expect(store.value).toBeNull();
@@ -213,5 +225,17 @@ describe('createStore', () => {
 
         store.set({ count: 10 });
         expect(store.getSnapshot()).toEqual({ count: 10 });
+    });
+
+    it('should return the same value reference until a write replaces it', () => {
+        const store = createStore({ initialData: { count: 0 } });
+        const firstSnapshot = store.value;
+        const secondSnapshot = store.value;
+
+        expect(firstSnapshot).toBe(secondSnapshot);
+
+        store.set({ count: 1 });
+
+        expect(store.value).not.toBe(firstSnapshot);
     });
 });

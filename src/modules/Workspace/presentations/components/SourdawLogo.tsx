@@ -121,7 +121,7 @@ export const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactEleme
             aria-label="Sourdaw logo"
         >
             {/* Inject keyframes */}
-            {!paused && <style>{styleBlock}</style>}
+            {!paused ? <style>{styleBlock}</style> : null}
             {/* Bread loaf — the hero, always static and crisp */}
             <img
                 src={LOAF.src}

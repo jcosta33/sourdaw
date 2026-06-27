@@ -68,7 +68,7 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                     })}
                 </div>
             </div>
-            {otherParams.length > 0 && (
+            {otherParams.length > 0 ? (
                 <div className="flex flex-col gap-2 border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
                     <div className="grid grid-cols-2 gap-4">
@@ -79,7 +79,7 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
                         ))}
                     </div>
                 </div>
-            )}
+            ) : null}
         </div>
     );
 };

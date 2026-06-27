@@ -291,7 +291,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
-                    {contextMenu.kind === 'empty' && (
+                    {contextMenu.kind === 'empty' ? (
                         <>
                             <DawMenuMutedRow className="px-2">Beat {Math.floor(contextMenu.beat)}</DawMenuMutedRow>
                             {ROOT_NAMES.slice(0, 7).map((name, rootIdx) => (
@@ -305,8 +305,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 </button>
                             ))}
                         </>
-                    )}
-                    {contextMenu.kind === 'chord' && (
+                    ) : null}
+                    {contextMenu.kind === 'chord' ? (
                         <>
                             <DawMenuMutedRow className="px-2">{formatChordName(contextMenu.event)}</DawMenuMutedRow>
                             <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
@@ -363,7 +363,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 Delete Chord
                             </button>
                         </>
-                    )}
+                    ) : null}
                 </div>
             ) : null}
         </div>

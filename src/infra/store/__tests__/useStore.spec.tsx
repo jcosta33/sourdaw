@@ -1,8 +1,8 @@
 import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { createStore } from './createStore';
-import { useStore } from './useStore';
+import { createStore } from '../createStore';
+import { useStore } from '../useStore';
 
 vi.unmock('#/infra/store/useStore');
 

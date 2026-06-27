@@ -94,7 +94,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
 
                         {/* Parameter Controls */}
                         <div className="flex flex-wrap gap-4 px-1 py-1">
-                            {fx.type === 'arp' && (
+                            {fx.type === 'arp' ? (
                                 <>
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryKnob
@@ -122,8 +122,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         <MixerStripValue size="sm">Mode</MixerStripValue>
                                     </div>
                                 </>
-                            )}
-                            {fx.type === 'velocity' && (
+                            ) : null}
+                            {fx.type === 'velocity' ? (
                                 <>
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryKnob
@@ -146,8 +146,8 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         <MixerStripValue size="sm">Offset</MixerStripValue>
                                     </div>
                                 </>
-                            )}
-                            {fx.type === 'probability' && (
+                            ) : null}
+                            {fx.type === 'probability' ? (
                                 <div className="flex flex-col items-center gap-1">
                                     <RotaryKnob
                                         size="sm"
@@ -158,7 +158,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                     />
                                     <MixerStripValue size="sm">Seed</MixerStripValue>
                                 </div>
-                            )}
+                            ) : null}
                         </div>
                     </ChoiceCard>
                 ))}

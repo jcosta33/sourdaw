@@ -285,12 +285,12 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         top: contextMenu.y,
                     }}
                 >
-                    {contextMenu.kind === 'empty' && (
+                    {contextMenu.kind === 'empty' ? (
                         <DawMenuButton onClick={handleAddMarker}>
                             Add Marker at Beat {Math.floor(contextMenu.beat)}
                         </DawMenuButton>
-                    )}
-                    {contextMenu.kind === 'marker' && (
+                    ) : null}
+                    {contextMenu.kind === 'marker' ? (
                         <>
                             <DawMenuButton onClick={handleStartRename}>Rename Marker</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
@@ -312,7 +312,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                 Delete Marker
                             </DawMenuButton>
                         </>
-                    )}
+                    ) : null}
                 </div>
             ) : null}
         </TimelineChromeSurface>

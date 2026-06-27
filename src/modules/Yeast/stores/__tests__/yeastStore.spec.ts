@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
+import type { YeastWorkletNodeResult } from '../../engine/YeastWorkletNode';
 
 /**
  * A fake worklet node that records every mutation method call in order, so a
@@ -46,17 +46,17 @@ let resolveCreate: ((node: YeastWorkletNodeResult) => void) | null = null;
 let rejectCreate: ((err: Error) => void) | null = null;
 const createYeastWorkletNodeMock = vi.fn<() => Promise<YeastWorkletNodeResult>>();
 
-vi.mock('../engine/YeastWorkletNode', () => ({
+vi.mock('../../engine/YeastWorkletNode', () => ({
     createYeastWorkletNode: (): Promise<YeastWorkletNodeResult> => createYeastWorkletNodeMock(),
 }));
 
 const fakeCtx = {} as unknown as BaseAudioContext;
 
-type StoreModule = typeof import('./yeastStore');
+type StoreModule = typeof import('../yeastStore');
 
 async function freshStore(): Promise<StoreModule> {
     vi.resetModules();
-    return import('./yeastStore');
+    return import('../yeastStore');
 }
 
 beforeEach(() => {
@@ -227,10 +227,10 @@ describe('getYeastWorkletNodeAsync — context swap during init (obs #2)', () =>
 describe('reorderYeastProcessor — worklet mirror', () => {
     it('mirrors a reorder to the worklet so both racks share processor order', async () => {
         vi.resetModules();
-        const store = await import('./yeastStore');
+        const store = await import('../yeastStore');
         // The use case must resolve getWorkletNodeSync from the SAME module
         // instance imported after this resetModules call.
-        const { reorderYeastProcessor } = await import('../useCases/reorderYeastProcessor');
+        const { reorderYeastProcessor } = await import('../../useCases/reorderYeastProcessor');
         const { node, calls } = makeFakeNode(fakeCtx);
 
         // Begin init so getWorkletNodeSync yields the buffering recorder.

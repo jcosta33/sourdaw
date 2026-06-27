@@ -92,7 +92,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
 
                     return (
                         <>
-                            {isStale && (
+                            {isStale ? (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
                                         <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help">
@@ -104,7 +104,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                     </TooltipTrigger>
                                     <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
                                 </Tooltip>
-                            )}
+                            ) : null}
                             <Button
                                 variant={track.frozen || isStale ? 'secondary' : 'ghost'}
                                 size="xs"

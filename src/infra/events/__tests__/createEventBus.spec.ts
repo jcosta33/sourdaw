@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+
+import { logger } from '#/infra/logger/appLogger';
+
 import { createEventBus } from '../createEventBus';
 import { recordEvents } from '../testing/recordEvents';
 
@@ -71,6 +77,34 @@ describe('createEventBus', () => {
         await bus.emit('user.created', { id: '1', name: 'Alice' });
 
         expect(completed).toBe(true);
+    });
+
+    it('should log async handler rejections without failing emit', async () => {
+        const bus = createEventBus<TestEvents>();
+        const error = new Error('async handler failed');
+
+        bus.on('user.created', async () => {
+            await Promise.resolve();
+            throw error;
+        });
+
+        await bus.emit('user.created', { id: '1', name: 'Alice' });
+
+        expect(logger.warn).toHaveBeenCalledWith('Error in async event handler for user.created:', error);
+    });
+
+    it('should log async wildcard handler rejections without failing emit', async () => {
+        const bus = createEventBus<TestEvents>();
+        const error = new Error('async wildcard handler failed');
+
+        bus.onAny(async () => {
+            await Promise.resolve();
+            throw error;
+        });
+
+        await bus.emit('user.created', { id: '1', name: 'Alice' });
+
+        expect(logger.warn).toHaveBeenCalledWith('Error in async wildcard event handler for user.created:', error);
     });
 
     it('should resolve waitForIdle() after pending handlers finish', async () => {

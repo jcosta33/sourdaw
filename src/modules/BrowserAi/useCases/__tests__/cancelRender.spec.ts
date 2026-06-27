@@ -5,7 +5,7 @@ const cancelTfjsRequest = vi.hoisted(() => vi.fn());
 const terminateOnnxWorker = vi.hoisted(() => vi.fn());
 const terminateTfjsWorker = vi.hoisted(() => vi.fn());
 
-vi.mock('../repositories/inferenceWorkerBridge', () => ({
+vi.mock('../../repositories/inferenceWorkerBridge', () => ({
     inferenceWorkerBridge: {
         cancelOnnxRequest,
         cancelTfjsRequest,
@@ -14,11 +14,10 @@ vi.mock('../repositories/inferenceWorkerBridge', () => ({
     },
 }));
 
-import { type ActiveRender } from '../models/RenderProgress';
-import { inferenceProgressStore, startActiveRender } from '../stores/inferenceProgressStore';
-import { enqueueRender, renderQueueStore } from '../stores/renderQueueStore';
-
-import { cancelRender } from './cancelRender';
+import { type ActiveRender } from '../../models/RenderProgress';
+import { inferenceProgressStore, startActiveRender } from '../../stores/inferenceProgressStore';
+import { enqueueRender, renderQueueStore } from '../../stores/renderQueueStore';
+import { cancelRender } from '../cancelRender';
 
 function seedActiveRender(over: Partial<ActiveRender> = {}): ActiveRender {
     const render: ActiveRender = {

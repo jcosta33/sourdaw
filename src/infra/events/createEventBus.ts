@@ -4,6 +4,11 @@ import { createSubscriptionRegistry } from './internal/createSubscriptionRegistr
 
 import type { EventBus, EventMap } from './types';
 
+type PendingHandlerPromise = {
+    kind: 'event' | 'wildcard';
+    promise: Promise<void>;
+};
+
 export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
     const registry = createSubscriptionRegistry<TEvents>();
     let pendingCount = 0;
@@ -29,13 +34,13 @@ export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
 
         pendingCount++;
         try {
-            const promises: Promise<void>[] = [];
+            const promises: PendingHandlerPromise[] = [];
 
             for (const handler of snapshot.eventHandlers) {
                 try {
                     const result = handler(payload);
                     if (result instanceof Promise) {
-                        promises.push(result);
+                        promises.push({ kind: 'event', promise: result });
                     }
                 } catch (handlerError) {
                     logger.warn(`Error in event handler for ${event}:`, handlerError);
@@ -46,7 +51,7 @@ export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
                 try {
                     const result = handler(event, payload);
                     if (result instanceof Promise) {
-                        promises.push(result);
+                        promises.push({ kind: 'wildcard', promise: result });
                     }
                 } catch (handlerError) {
                     logger.warn(`Error in wildcard event handler for ${event}:`, handlerError);
@@ -54,7 +59,23 @@ export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
             }
 
             if (promises.length > 0) {
-                await Promise.allSettled(promises);
+                const results = await Promise.allSettled(promises.map((entry) => entry.promise));
+                for (const [index, result] of results.entries()) {
+                    if (result.status === 'fulfilled') {
+                        continue;
+                    }
+
+                    const entry = promises[index];
+                    if (!entry) {
+                        continue;
+                    }
+
+                    if (entry.kind === 'event') {
+                        logger.warn(`Error in async event handler for ${event}:`, result.reason);
+                    } else {
+                        logger.warn(`Error in async wildcard event handler for ${event}:`, result.reason);
+                    }
+                }
             }
         } finally {
             pendingCount--;

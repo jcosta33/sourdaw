@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { type BrowserModel, type DiffSingerVoicebank, type ModelFamily } from '../models/BrowserModel';
-
-import { modelRegistryStore, updateModelStatus } from './modelRegistryStore';
+import { type BrowserModel, type DiffSingerVoicebank, type ModelFamily } from '../../models/BrowserModel';
+import { modelRegistryStore, updateModelStatus } from '../modelRegistryStore';
 
 function makeSubModel(id: string, family: ModelFamily): BrowserModel {
     return {

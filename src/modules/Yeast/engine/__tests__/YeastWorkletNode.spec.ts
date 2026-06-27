@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createYeastWorkletNode, type YeastWorkletNodeResult } from './YeastWorkletNode';
+import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../YeastWorkletNode';
 
-import type { TransportInfo } from '../models/MidiEvent';
+import type { TransportInfo } from '../../models/MidiEvent';
 
 /**
  * A controllable AudioWorkletNode stand-in. Captures posted messages and lets a
