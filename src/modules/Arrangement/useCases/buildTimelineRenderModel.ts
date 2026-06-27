@@ -1,4 +1,4 @@
-import { logger } from '#/app/registerDependencies';
+import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
@@ -8,6 +8,7 @@ import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases';
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 
@@ -121,6 +122,52 @@ const renderCache: {
 // playing frame. Compare only the render-affecting field instead.
 function renderAffectingTransport(transport: { tempo: number } | null | undefined): number | null {
     return transport?.tempo ?? null;
+}
+
+function applyInlineMidiNotePreview(cachedModel: TimelineRenderModel): TimelineRenderModel {
+    const notePreview = inlineMidiNotePreviewRef.current;
+    if (!notePreview) {
+        return cachedModel;
+    }
+
+    let changed = false;
+    const tracks = cachedModel.tracks.map((track) => {
+        let trackChanged = false;
+        const clips = track.clips.map((clip) => {
+            if (clip.id !== notePreview.clipId) {
+                return clip;
+            }
+
+            let noteChanged = false;
+            const midiNotes = clip.midiNotes.map((note) => {
+                if (note.id !== notePreview.noteId) {
+                    return note;
+                }
+                noteChanged = true;
+                return { ...note, pitch: notePreview.pitch, startBeat: notePreview.startBeat };
+            });
+
+            if (!noteChanged) {
+                return clip;
+            }
+
+            changed = true;
+            trackChanged = true;
+            return { ...clip, midiNotes };
+        });
+
+        if (!trackChanged) {
+            return track;
+        }
+
+        return { ...track, clips };
+    });
+
+    if (!changed) {
+        return cachedModel;
+    }
+
+    return { ...cachedModel, tracks, dataDirty: true };
 }
 
 export function buildTimelineRenderModel(): TimelineRenderModel {
@@ -315,7 +362,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.model!.timeSignatureDenominator = denominator;
     }
 
-    const cachedModel = renderCache.model!;
+    let cachedModel = renderCache.model!;
 
     // Recording overlay — mutate only the recording clip's endBeat, not the whole tree.
     const recClips = activeRecordingRef.current;
@@ -334,6 +381,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     }
 
     recordingInvariantReported = false;
+
+    cachedModel = applyInlineMidiNotePreview(cachedModel);
 
     const preview = clipDragPreviewRef.current;
     if (!preview || preview.positions.size === 0) {

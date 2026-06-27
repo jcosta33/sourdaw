@@ -81,6 +81,7 @@ export { enableLink, disableLink } from './engineAccess/helpers';
 
 export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 
+export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { getTrackLatency } from './latencyCompensation/compensation/helpers';

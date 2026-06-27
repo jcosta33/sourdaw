@@ -7,18 +7,8 @@
  * eliminating the 10 type-guard branches.
  */
 
-import { eventBus } from '#/app/registerDependencies';
 import { logger } from '#/infra/logger/appLogger';
-import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
-import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
-import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
-import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
-import { setEngineReady } from '#/modules/Levain/stores';
-import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { isFaustModule } from '#/modules/Plugin/useCases';
-import { updateProofMeters } from '#/modules/Proof/stores';
-import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
-import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
@@ -36,6 +26,7 @@ import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResu
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
+import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +85,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     result.setPatch(pendingPatch);
                 }
                 result.onTelemetry((data) => {
-                    setFermenterTelemetry(deviceId, data.peakL, data.peakR, data.scopeBuffer);
+                    getAudioDeviceRuntimeSink().setFermenterTelemetry(deviceId, data);
                 });
                 onLoaded({
                     deviceId,
@@ -179,7 +170,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                             // audioDevice.loaded hydration path. A bare store delete (the
                             // prior behavior) left a running:true sequencer re-arming ghost
                             // hits after the device was gone.
-                            void eventBus.emit('audioDevice.removed', { deviceId, deviceType });
+                            getAudioDeviceRuntimeSink().emitDeviceRemoved({ deviceId, deviceType });
                         },
                     },
                     toasterControls: {
@@ -192,7 +183,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
             .catch((error) => {
@@ -223,9 +214,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
         const loadPromise = createLevainNode(context, undefined, () => {
             // A post-ready worklet fault (WASM panic) silences the processor while
             // the node stays alive. Reflect it into engineReady so the panel LED
-            // stops showing "Ready"; setEngineReady no-ops if the device was
+            // stops showing "Ready"; the Levain sink no-ops if the device was
             // already torn down.
-            setEngineReady(deviceId, false);
+            getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: false });
         })
             .then(async (result: LevainNodeResult) => {
                 await result.ready;
@@ -249,7 +240,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             result.destroy();
                             try {
-                                _unregisterLevainDevice(deviceId);
+                                getAudioDeviceRuntimeSink().unregisterLevainDevice(deviceId);
                             } catch {
                                 // Intentionally empty: the device may already be
                                 // unregistered from the Levain store; teardown proceeds.
@@ -267,16 +258,16 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                registerLevainDevice(
+                getAudioDeviceRuntimeSink().registerLevainDevice({
                     deviceId,
-                    {
+                    device: {
                         setParam: result.setParam,
                         handleCc: result.handleCc,
                         setInstrument: result.setInstrument,
                     },
-                    result.workletNode.port
-                );
-                setEngineReady(deviceId, true);
+                    port: result.workletNode.port,
+                });
+                getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: true });
                 return;
             })
             .catch((error) => {
@@ -341,7 +332,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     result.setParam(name, value);
                 }
                 result.onMeterData((data) => {
-                    updateGlutenMeters(deviceId, {
+                    getAudioDeviceRuntimeSink().updateGlutenMeters(deviceId, {
                         grDb: data.grDb,
                         inputDb: data.inputDb,
                         outputDb: data.outputDb,
@@ -363,7 +354,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             result.destroy();
                             clearReportedLatency(deviceId);
-                            deleteGlutenMeters(deviceId);
+                            getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
@@ -402,7 +393,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
-                    updateBacteriaMeters(deviceId, data.inputDb, data.outputDb, data.bandLevels, data.latency);
+                    getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, data);
                 });
                 onLoaded({
                     deviceId,
@@ -472,7 +463,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
-                    updateGrinderTelemetry(deviceId, {
+                    getAudioDeviceRuntimeSink().updateGrinderTelemetry(deviceId, {
                         inputDb: data.inputDb,
                         preampDb: data.preampDb,
                         powerAmpDb: data.powerAmpDb,
@@ -539,9 +530,9 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
-                    updateProofMeters(deviceId, data);
+                    getAudioDeviceRuntimeSink().updateProofMeters(deviceId, data);
                 });
-                registerProofDevice({
+                getAudioDeviceRuntimeSink().registerProofDevice({
                     deviceId,
                     bridge: {
                         setParam: result.setParam,
@@ -562,7 +553,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                             result.destroy();
                             clearReportedLatency(deviceId);
                             try {
-                                unregisterProofDevice(deviceId);
+                                getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
                             } catch {
                                 // Intentionally empty: the device may already be
                                 // unregistered from the Proof store; teardown proceeds.
@@ -571,7 +562,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                syncFullPatch(deviceId);
+                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
                 return;
             })
             .catch((error) => {
@@ -591,7 +582,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
             .then(async (result: ScoringNodeResult) => {
                 await result.ready;
                 result.onTelemetry((data) => {
-                    updateTunerTelemetry(deviceId, {
+                    getAudioDeviceRuntimeSink().updateTunerTelemetry(deviceId, {
                         frequency: data.frequency,
                         cents: data.cents,
                         confidence: data.confidence,
@@ -686,7 +677,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
             .catch((error) => {
@@ -754,7 +745,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         destroy: controls.destroy,
                     },
                 });
-                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
             .catch((error) => {

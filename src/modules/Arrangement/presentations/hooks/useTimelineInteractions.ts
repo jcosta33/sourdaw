@@ -1,11 +1,9 @@
 import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 'react';
 
-import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { moveMidiNote } from '#/modules/MIDI/useCases';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import {
@@ -20,6 +18,7 @@ import {
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
+import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
@@ -39,6 +38,8 @@ import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
 import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
 import { setTrackState } from '../../useCases/setTrackState';
 import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
+import { commitInlineAutomationPaint } from '../../useCases/timelineInteractions/commitInlineAutomationPaint';
+import { commitInlineMidiNoteMove } from '../../useCases/timelineInteractions/commitInlineMidiNoteMove';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
 import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -74,7 +75,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
     const pointersRef = useRef<Map<number, PointerEvent>>(new Map());
     const loopDragRef = useRef<{ startBeat: number } | null>(null);
-    const autoDragRef = useRef<{ laneId: string; trackId: string; points: AutomationPoint[] } | null>(null);
+    const autoDragRef = useRef<{
+        laneId?: string;
+        trackId: string;
+        parameterId: string;
+        parameterName: string;
+        points: AutomationPoint[];
+    } | null>(null);
     const drawDragRef = useRef<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>(null);
     const slipDragRef = useRef<{
         clipId: string;
@@ -308,7 +315,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const newStartBeat = snapToGrid(drag.originalStartBeat + deltaBeat);
             const newPitch = Math.max(0, Math.min(127, drag.originalPitch + deltaPitch));
 
-            moveMidiNote(drag.clipId, drag.noteId, newPitch, newStartBeat);
+            inlineMidiNotePreviewRef.current = {
+                clipId: drag.clipId,
+                noteId: drag.noteId,
+                pitch: newPitch,
+                startBeat: newStartBeat,
+            };
+            previewDirtyFlag.value = true;
             return;
         }
 
@@ -517,7 +530,22 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     // ── Mouse Up ──────────────────────────────────────────────────────────────
 
     const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
-        noteDragRef.current = null;
+        if (noteDragRef.current) {
+            const drag = noteDragRef.current;
+            const preview = inlineMidiNotePreviewRef.current;
+            noteDragRef.current = null;
+            inlineMidiNotePreviewRef.current = null;
+            previewDirtyFlag.value = true;
+            if (preview && preview.clipId === drag.clipId && preview.noteId === drag.noteId) {
+                commitInlineMidiNoteMove({
+                    clipId: preview.clipId,
+                    noteId: preview.noteId,
+                    pitch: preview.pitch,
+                    startBeat: preview.startBeat,
+                });
+            }
+            return;
+        }
         if (slipDragRef.current) {
             const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
             slipDragRef.current = null;
@@ -546,21 +574,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (autoDragRef.current) {
-            const { laneId, points: drawnPoints } = autoDragRef.current;
-            if (drawnPoints.length > 0) {
-                const savedPoints = drawnPoints.map((param) => ({ ...param }));
-                pushUndoEntry(
-                    `Draw ${savedPoints.length} automation point${savedPoints.length > 1 ? 's' : ''}`,
-                    () => {
-                        for (const param of savedPoints) {
-                            removeAutomationPoint(laneId, param.beat);
-                        }
-                    },
-                    () => {
-                        batchAddAutomationPoints(laneId, savedPoints);
-                    }
-                );
-            }
+            commitInlineAutomationPaint(autoDragRef.current);
             autoDragRef.current = null;
             return;
         }

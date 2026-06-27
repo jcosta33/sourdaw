@@ -1,7 +1,6 @@
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { TRACK_HEIGHT_VALUES, onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases';
@@ -19,6 +18,12 @@ import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
 
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
+
+const PresenceOverlayLazy = lazy(() =>
+    import('#/modules/Collaboration/presentations/views').then((module) => ({
+        default: module.PresenceOverlay,
+    }))
+);
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -416,32 +421,34 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerCancel={handlePointerCancel}
             />
 
-            <PresenceOverlay
-                beatToX={(beat) => {
-                    const view = timelineViewStore.value;
-                    if (!view) {
-                        return 0;
-                    }
-                    return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
-                }}
-                trackIdToY={(trackId) => {
-                    const model = buildTimelineRenderModel();
-                    const view = timelineViewStore.value;
-                    if (!model || !view) {
-                        return null;
-                    }
-                    const scrollY = view.scrollY ?? 0;
-                    let y = 0;
-                    for (const track of model.tracks) {
-                        if (track.id === trackId) {
-                            return y - scrollY;
+            <Suspense fallback={null}>
+                <PresenceOverlayLazy
+                    beatToX={(beat) => {
+                        const view = timelineViewStore.value;
+                        if (!view) {
+                            return 0;
                         }
-                        y += track.height;
-                    }
-                    return null;
-                }}
-                trackHeight={TRACK_HEIGHT_VALUES.normal}
-            />
+                        return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
+                    }}
+                    trackIdToY={(trackId) => {
+                        const model = buildTimelineRenderModel();
+                        const view = timelineViewStore.value;
+                        if (!model || !view) {
+                            return null;
+                        }
+                        const scrollY = view.scrollY ?? 0;
+                        let y = 0;
+                        for (const track of model.tracks) {
+                            if (track.id === trackId) {
+                                return y - scrollY;
+                            }
+                            y += track.height;
+                        }
+                        return null;
+                    }}
+                    trackHeight={TRACK_HEIGHT_VALUES.normal}
+                />
+            </Suspense>
 
             {rubberBand ? (
                 <div

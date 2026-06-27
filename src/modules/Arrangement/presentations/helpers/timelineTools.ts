@@ -6,10 +6,8 @@
  */
 import { type RefObject } from 'react';
 
-import { automationStore } from '#/modules/Automation/stores';
-import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
+import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
-import { addMidiNote, removeMidiNote } from '#/modules/MIDI/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { timelineViewStore } from '../../stores/timelineViewStore';
@@ -17,6 +15,8 @@ import { trackStore } from '../../stores/trackStore';
 import { addClip } from '../../useCases/clip/addClip';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { commitInlineMidiNoteCreate } from '../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
+import { commitInlineMidiNoteDelete } from '../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
 import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -25,7 +25,13 @@ import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 
-type AutoDragRef = RefObject<{ laneId: string; trackId: string; points: AutomationPoint[] } | null>;
+type AutoDragRef = RefObject<{
+    laneId?: string;
+    trackId: string;
+    parameterId: string;
+    parameterName: string;
+    points: AutomationPoint[];
+} | null>;
 type DrawDragRef = RefObject<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>;
 
 // ── Cut tool ─────────────────────────────────────────────────────────────────
@@ -83,7 +89,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
         // Hitting a note with draw tool: delete it (logic pro style)
         const noteId = hit.noteId;
         const clipId = hit.clipId;
-        removeMidiNote(clipId, noteId);
+        commitInlineMidiNoteDelete({ clipId, noteId });
         return true;
     }
 
@@ -94,7 +100,13 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
             // Draw a new note inside the inline clip
             const pitch = hit.pitch ?? 60;
             const startBeat = snapToGrid(beat);
-            addMidiNote(hit.clipId, pitch, startBeat, 0.25, 100);
+            commitInlineMidiNoteCreate({
+                clipId: hit.clipId,
+                pitch,
+                startBeat,
+                duration: 0.25,
+                velocity: 100,
+            });
             return true;
         }
     }
@@ -121,8 +133,13 @@ export const handleAutomationTool = (
     const subLaneHit = hitTestAutomationSubLane(x, y);
     if (subLaneHit) {
         const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
-        addAutomationPoint(subLaneHit.laneId, point);
-        autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
+        autoDragRef.current = {
+            laneId: subLaneHit.laneId,
+            trackId: subLaneHit.trackId,
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [point],
+        };
         selectTrack(subLaneHit.trackId);
         return true;
     }
@@ -137,20 +154,17 @@ export const handleAutomationTool = (
     const value = trackHit ? valueAtTrackY(contentY, trackHit.offset, trackHit.height) : 0.5;
 
     // Ensure a gain lane exists on this track
-    let lane = automationStore.value?.lanes.find(
+    const lane = getAutomationLanes().find(
         (length) => length.trackId === trackId && length.parameterId === 'gain'
     );
-    if (!lane) {
-        addAutomationLane(trackId, 'gain', 'Gain');
-        lane = automationStore.value?.lanes.find(
-            (length) => length.trackId === trackId && length.parameterId === 'gain'
-        );
-    }
-    if (lane) {
-        const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-        addAutomationPoint(lane.id, point);
-        autoDragRef.current = { laneId: lane.id, trackId, points: [point] };
-    }
+    const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
+    autoDragRef.current = {
+        laneId: lane?.id,
+        trackId,
+        parameterId: 'gain',
+        parameterName: 'Gain',
+        points: [point],
+    };
     selectTrack(trackId);
     return true;
 };
@@ -163,8 +177,13 @@ export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef):
         return false;
     }
     const point: AutomationPoint = { beat: subLaneHit.beat, value: subLaneHit.value, curve: 'linear', tension: 0 };
-    addAutomationPoint(subLaneHit.laneId, point);
-    autoDragRef.current = { laneId: subLaneHit.laneId, trackId: subLaneHit.trackId, points: [point] };
+    autoDragRef.current = {
+        laneId: subLaneHit.laneId,
+        trackId: subLaneHit.trackId,
+        parameterId: 'gain',
+        parameterName: 'Gain',
+        points: [point],
+    };
     selectTrack(subLaneHit.trackId);
     return true;
 };
@@ -188,6 +207,5 @@ export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDr
     if (!lastPoint || Math.abs(beat - lastPoint.beat) >= 0.1) {
         const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
         ref.points.push(point);
-        addAutomationPoint(ref.laneId, point);
     }
 };

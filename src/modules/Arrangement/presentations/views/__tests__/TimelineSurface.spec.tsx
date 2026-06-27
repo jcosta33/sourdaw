@@ -126,7 +126,7 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     workspaceStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
-vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
+vi.mock('#/modules/Collaboration/presentations/views', () => ({
     PresenceOverlay: () => <div data-testid="presence-overlay">Presence</div>,
 }));
 
@@ -200,9 +200,9 @@ describe('TimelineSurface', () => {
         expect(canvas).toHaveAttribute('aria-label', 'Timeline editor surface');
     });
 
-    it('should render PresenceOverlay', () => {
+    it('should render PresenceOverlay', async () => {
         renderWithTooltip(<TimelineSurface />);
-        expect(screen.getByTestId('presence-overlay')).toBeInTheDocument();
+        expect(await screen.findByTestId('presence-overlay')).toBeInTheDocument();
     });
 
     it('should handle drag over state', () => {

@@ -24,6 +24,7 @@ import {
     getAudioContext,
     getCompensationDelay,
     getFinalFeatureHandlers,
+    configureAudioDeviceRuntimeSink,
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
@@ -31,12 +32,18 @@ import {
     setAutomationRecordingDependencies,
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
+import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import { getMacroHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
 import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
+import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
+import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
+import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
+import { setEngineReady } from '#/modules/Levain/stores';
+import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
     getMidiNoteTransformHandlers,
@@ -45,7 +52,10 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
+import { updateProofMeters } from '#/modules/Proof/stores';
+import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
+import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases';
 import {
     getTransportHandlers,
@@ -105,6 +115,36 @@ setMidiLearnDependencies({
     getAllTracks,
 });
 
+configureAudioDeviceRuntimeSink({
+    emitDeviceLoaded: (payload) => {
+        void eventBus.emit('audioDevice.loaded', payload);
+    },
+    emitDeviceRemoved: (payload) => {
+        void eventBus.emit('audioDevice.removed', payload);
+    },
+    registerLevainDevice: ({ deviceId, device, port }) => {
+        registerLevainDevice(deviceId, device, port);
+    },
+    unregisterLevainDevice,
+    setLevainEngineReady: ({ deviceId, isReady }) => {
+        setEngineReady(deviceId, isReady);
+    },
+    setFermenterTelemetry: (deviceId, telemetry) => {
+        setFermenterTelemetry(deviceId, telemetry.peakL, telemetry.peakR, telemetry.scopeBuffer);
+    },
+    updateGlutenMeters,
+    deleteGlutenMeters,
+    updateBacteriaMeters: (deviceId, meters) => {
+        updateBacteriaMeters(deviceId, meters.inputDb, meters.outputDb, meters.bandLevels, meters.latency);
+    },
+    updateGrinderTelemetry,
+    registerProofDevice,
+    unregisterProofDevice,
+    syncProofPatch: syncFullPatch,
+    updateProofMeters,
+    updateTunerTelemetry,
+});
+
 registerHandlerMap(getArrangementHandlers());
 registerHandlerMap(getTransportHandlers());
 registerHandlerMap(getWorkspaceHandlers());
@@ -128,7 +168,7 @@ registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());
 
-initToasterSubscribers();
+initToasterSubscribers({ eventBus, logger });
 initStalenessDetection();
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.

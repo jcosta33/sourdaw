@@ -26,8 +26,10 @@ const mocks = vi.hoisted(() => ({
     toggleLoop: vi.fn(),
     getTransportState: vi.fn(),
     setLoopRegion: vi.fn(),
-    removeAutomationPoint: vi.fn(),
-    batchAddAutomationPoints: vi.fn(),
+    commitInlineAutomationPaint: vi.fn(),
+    commitInlineMidiNoteMove: vi.fn(),
+    inlineMidiNotePreviewRef: { current: null },
+    midiStoreValue: { value: { notesByClipId: {} } },
     pushUndoEntry: vi.fn(),
     selectTrack: vi.fn(),
     addClip: vi.fn(),
@@ -106,12 +108,20 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    removeAutomationPoint: mocks.removeAutomationPoint,
-    batchAddAutomationPoints: mocks.batchAddAutomationPoints,
 }));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Command/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     pushUndoEntry: mocks.pushUndoEntry,
+}));
+vi.mock('#/modules/MIDI/stores', () => ({
+    midiStore: {
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+    },
+}));
+vi.mock('../../../stores/inlineMidiNotePreviewRef', () => ({
+    inlineMidiNotePreviewRef: mocks.inlineMidiNotePreviewRef,
 }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: mocks.selectTrack }));
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
@@ -122,12 +132,18 @@ vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: mocks.buildTimelineRenderModel,
 }));
+vi.mock('../../../useCases/timelineInteractions/commitInlineAutomationPaint', () => ({
+    commitInlineAutomationPaint: mocks.commitInlineAutomationPaint,
+}));
+vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteMove', () => ({
+    commitInlineMidiNoteMove: mocks.commitInlineMidiNoteMove,
+}));
 vi.mock('../../../useCases/timelineInteractions/getTrackAtY', () => ({ getTrackAtY: mocks.getTrackAtY }));
-vi.mock('../helpers/timelineMouse', () => ({
+vi.mock('../../helpers/timelineMouse', () => ({
     canvasXToBeat: mocks.canvasXToBeat,
     getContentY: mocks.getContentY,
 }));
-vi.mock('../helpers/timelineTools', () => ({
+vi.mock('../../helpers/timelineTools', () => ({
     handleCutTool: vi.fn(),
     handleDrawTool: vi.fn(),
     handleAutomationTool: vi.fn(),
@@ -148,6 +164,12 @@ describe('useTimelineInteractions', () => {
         mocks.hitTestClip.mockReturnValue(null);
         mocks.beginClipDrag.mockReturnValue(undefined);
         mocks.hitTestClipEdge.mockReturnValue(null);
+        mocks.workspaceStoreValue.value = { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' };
+        mocks.timelineViewStoreValue.value = { scrollY: 0, pixelsPerBeat: 100, scrollX: 0 };
+        mocks.collaborationStoreValue.value = { isEnabled: false };
+        mocks.trackStoreValue.value = { tracks: [] };
+        mocks.midiStoreValue.value = { notesByClipId: {} };
+        mocks.inlineMidiNotePreviewRef.current = null;
     });
 
     it('selects a clip on mouse down', () => {
@@ -221,6 +243,70 @@ describe('useTimelineInteractions', () => {
             endX: 50,
             endY: 50,
         });
+    });
+
+    it('previews an inline MIDI note drag and commits once on mouse up', () => {
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        mocks.hitTestClip.mockReturnValue({
+            clipId: 'clip-1',
+            trackId: 'track-1',
+            noteId: 'note-1',
+            noteHeight: 10,
+        });
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 }],
+            },
+        };
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 100, clientY: 100 } as any);
+            result.current.handleMouseMove({ clientX: 250, clientY: 80 } as any);
+        });
+
+        expect(mocks.inlineMidiNotePreviewRef.current).toEqual({
+            clipId: 'clip-1',
+            noteId: 'note-1',
+            pitch: 62,
+            startBeat: 2.5,
+        });
+
+        act(() => {
+            result.current.handleMouseUp({ clientX: 250, clientY: 80 } as any);
+        });
+
+        expect(mocks.inlineMidiNotePreviewRef.current).toBeNull();
+        expect(mocks.commitInlineMidiNoteMove).toHaveBeenCalledTimes(1);
+        expect(mocks.commitInlineMidiNoteMove).toHaveBeenCalledWith({
+            clipId: 'clip-1',
+            noteId: 'note-1',
+            pitch: 62,
+            startBeat: 2.5,
+        });
+    });
+
+    it('stages visible automation paint and commits it on mouse up', () => {
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        const draft = {
+            laneId: 'lane-1',
+            trackId: 'track-1',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [{ beat: 1, value: 0.5, curve: 'linear', tension: 0 }],
+        };
+        mocks.workspaceStoreValue.value = { activeTool: 'select', selectedClipIds: [], automationVisibility: 'visible' };
+        mocks.tryPaintSubLane.mockImplementation((_, __, ref) => {
+            ref.current = draft;
+            return true;
+        });
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 100, clientY: 100 } as any);
+            result.current.handleMouseUp({ clientX: 100, clientY: 100 } as any);
+        });
+
+        expect(mocks.commitInlineAutomationPaint).toHaveBeenCalledTimes(1);
+        expect(mocks.commitInlineAutomationPaint).toHaveBeenCalledWith(draft);
     });
 
     const pointer = (pointerId: number, clientX: number, clientY: number) =>
