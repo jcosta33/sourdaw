@@ -7,11 +7,11 @@
         "start": "node dist/collab-server.js"
     },
     "dependencies": {
-        "ws": "^8.0.0"
+        "ws": "^8.21.0"
     },
     "devDependencies": {
+        "@types/ws": "^8.18.1",
         "tsx": "^4.0.0",
-        "typescript": "^5.0.0",
-        "@types/ws": "^8.0.0"
+        "typescript": "^5.0.0"
     }
 }
