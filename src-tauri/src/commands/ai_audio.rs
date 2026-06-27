@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use super::model_download;
+use super::{filesystem, model_download};
 
 /// Cached ONNX session for Demucs (avoids reloading 235MB model per call).
 static DEMUCS_SESSION: std::sync::OnceLock<Mutex<ort::session::Session>> =
@@ -71,10 +71,19 @@ pub async fn denoise_audio(request: DenoiseRequest) -> Result<DenoiseResult, Str
 // ── Stem Separation (Demucs v4 ONNX via ort) ────────────────────────────
 
 const DEMUCS_MODEL_URL: &str =
-    "https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx";
+    "https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/125b3e0aa9b553f625e92a6c2a1cf5d214be2ec0/demucsv4.onnx";
 const DEMUCS_MODEL_FILE: &str = "demucsv4.onnx";
+const DEMUCS_MODEL_SHA256: &str =
+    "4bef152b260bb7ac65daabd591a673195f6c9b0e9eeb330bce6e834530388b0d";
+const DEMUCS_MODEL_SIZE_BYTES: u64 = 246_148_867;
 const DEMUCS_SAMPLE_RATE: u32 = 44100;
 const DEMUCS_SEGMENT_LEN: usize = 343980; // ~7.8s at 44100Hz
+const DEMUCS_MODEL: model_download::ModelDownload = model_download::ModelDownload {
+    filename: DEMUCS_MODEL_FILE,
+    url: DEMUCS_MODEL_URL,
+    expected_sha256: DEMUCS_MODEL_SHA256,
+    expected_size_bytes: DEMUCS_MODEL_SIZE_BYTES,
+};
 
 /// Stem names output by the 6-source Demucs model.
 const STEM_NAMES: [&str; 6] = ["drums", "bass", "other", "vocals", "guitar", "piano"];
@@ -102,8 +111,9 @@ pub async fn separate_stems(request: StemSeparationRequest) -> Result<StemResult
     let start = std::time::Instant::now();
 
     // Read WAV file
-    let reader = hound::WavReader::open(&request.audio_path)
-        .map_err(|e| format!("Failed to read WAV file: {e}"))?;
+    let audio_path = filesystem::resolve_existing_file_path(&request.audio_path)?;
+    let reader =
+        hound::WavReader::open(&audio_path).map_err(|e| format!("Failed to read WAV file: {e}"))?;
     let spec = reader.spec();
     let source_rate = spec.sample_rate;
     let channels = spec.channels as usize;
@@ -153,8 +163,7 @@ pub async fn separate_stems(request: StemSeparationRequest) -> Result<StemResult
 
     // Initialize ONNX session (cached after first load)
     if DEMUCS_SESSION.get().is_none() {
-        let model_path =
-            model_download::ensure_model(DEMUCS_MODEL_FILE, DEMUCS_MODEL_URL, None).await?;
+        let model_path = model_download::ensure_model(&DEMUCS_MODEL).await?;
 
         eprintln!("[Stems] Loading Demucs ONNX model...");
         let session = ort::session::Session::builder()

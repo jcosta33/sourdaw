@@ -66,9 +66,17 @@ pub struct ToolCallResult {
 // ── Model config ─────────────────────────────────────────────────────────
 
 const GGUF_REPO: &str = "Qwen/Qwen3-8B-GGUF";
-const GGUF_FILE: &str = "qwen3-8b-q4_k_m.gguf";
+const GGUF_FILE: &str = "Qwen3-8B-Q4_K_M.gguf";
 const GGUF_URL: &str =
-    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf";
+    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf";
+const GGUF_SHA256: &str = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785";
+const GGUF_SIZE_BYTES: u64 = 5_027_783_488;
+const GGUF_MODEL: model_download::ModelDownload = model_download::ModelDownload {
+    filename: GGUF_FILE,
+    url: GGUF_URL,
+    expected_sha256: GGUF_SHA256,
+    expected_size_bytes: GGUF_SIZE_BYTES,
+};
 
 // ── Helper ───────────────────────────────────────────────────────────────
 
@@ -110,7 +118,7 @@ pub async fn init_native_llm(
         serde_json::json!({ "progress": 0.0, "text": "Checking model cache…" }),
     );
 
-    let model_path = model_download::ensure_model(GGUF_FILE, GGUF_URL, None).await?;
+    let model_path = model_download::ensure_model(&GGUF_MODEL).await?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
     let _ = app.emit(

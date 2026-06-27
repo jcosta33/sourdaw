@@ -7121,6 +7121,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-specta",
  "tokio",
+ "triple_buffer",
  "uuid 1.23.0",
  "vst3",
  "whisper-rs",

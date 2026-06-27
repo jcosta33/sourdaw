@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
+
+const APP_DIR_NAME: &str = "com.sourdaw.app";
+const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AudioFileInfo {
@@ -21,16 +24,13 @@ pub struct DirectoryEntry {
 
 #[tauri::command]
 pub async fn read_audio_file(path: String) -> Result<Vec<u8>, String> {
-    let file_path = PathBuf::from(&path);
-    if !file_path.exists() {
-        return Err(format!("File not found: {}", path));
-    }
+    let file_path = resolve_existing_file_path(&path)?;
     std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
 #[tauri::command]
 pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    let file_path = PathBuf::from(&path);
+    let file_path = resolve_writable_file_path(&path)?;
     if let Some(parent) = file_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
@@ -40,10 +40,7 @@ pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String>
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
-    let dir_path = PathBuf::from(&path);
-    if !dir_path.is_dir() {
-        return Err(format!("Not a directory: {}", path));
-    }
+    let dir_path = resolve_existing_directory_path(&path)?;
 
     let mut entries = Vec::new();
     let read_dir =
@@ -70,4 +67,192 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
     });
 
     Ok(entries)
+}
+
+pub(crate) fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
+    let resolved = resolve_renderer_path(path)?;
+    let canonical = canonicalize_existing_path(&resolved)?;
+    ensure_allowed_root(&canonical)?;
+    if !canonical.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+    Ok(canonical)
+}
+
+pub(crate) fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
+    let resolved = resolve_renderer_path(path)?;
+    let canonical = canonicalize_existing_path(&resolved)?;
+    ensure_allowed_root(&canonical)?;
+    if !canonical.is_dir() {
+        return Err("Not a directory".to_string());
+    }
+    Ok(canonical)
+}
+
+pub(crate) fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
+    let resolved = resolve_renderer_path(path)?;
+    if let Ok(canonical) = canonicalize_existing_path(&resolved) {
+        ensure_allowed_root(&canonical)?;
+        if canonical.is_dir() {
+            return Err("Path is a directory".to_string());
+        }
+        return Ok(canonical);
+    }
+
+    let parent = resolved
+        .parent()
+        .ok_or_else(|| "Path must include a parent directory".to_string())?;
+    let canonical_parent = canonicalize_existing_parent(parent)?;
+    ensure_allowed_root(&canonical_parent)?;
+    Ok(resolved)
+}
+
+pub(crate) fn require_extension(
+    path: PathBuf,
+    extension: &str,
+    label: &str,
+) -> Result<PathBuf, String> {
+    let actual = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if !actual.eq_ignore_ascii_case(extension) {
+        return Err(format!("{label} path must use .{extension} extension"));
+    }
+    Ok(path)
+}
+
+fn resolve_renderer_path(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Renderer path must not be empty".to_string());
+    }
+
+    let input = Path::new(trimmed);
+    if input.is_absolute() {
+        return normalize_absolute_path(input);
+    }
+
+    reject_relative_parent_segments(input)?;
+    Ok(ipc_temp_dir().join(input))
+}
+
+fn ipc_temp_dir() -> PathBuf {
+    std::env::temp_dir().join(IPC_TEMP_DIR_NAME)
+}
+
+fn reject_relative_parent_segments(path: &Path) -> Result<(), String> {
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err("Renderer path must not contain parent-directory traversal".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn normalize_absolute_path(path: &Path) -> Result<PathBuf, String> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::Normal(segment) => normalized.push(segment),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err("Renderer path must not escape the filesystem root".to_string());
+                }
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, String> {
+    path.canonicalize()
+        .map_err(|_| "File not found or not accessible".to_string())
+}
+
+fn canonicalize_existing_parent(path: &Path) -> Result<PathBuf, String> {
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = current.canonicalize() {
+            return Ok(canonical);
+        }
+        current = current
+            .parent()
+            .ok_or_else(|| "No existing parent directory for path".to_string())?;
+    }
+}
+
+fn ensure_allowed_root(canonical_path: &Path) -> Result<(), String> {
+    for root in allowed_roots() {
+        if let Ok(canonical_root) = root.canonicalize() {
+            if canonical_path.starts_with(canonical_root) {
+                return Ok(());
+            }
+        }
+    }
+    Err("Path is outside allowed native file roots".to_string())
+}
+
+fn allowed_roots() -> Vec<PathBuf> {
+    let mut roots = vec![std::env::temp_dir()];
+
+    if let Some(data_dir) = dirs::data_dir() {
+        roots.push(data_dir.join(APP_DIR_NAME));
+    }
+    if let Some(cache_dir) = dirs::cache_dir() {
+        roots.push(cache_dir.join(APP_DIR_NAME));
+    }
+    if let Some(document_dir) = dirs::document_dir() {
+        roots.push(document_dir);
+    }
+    if let Some(download_dir) = dirs::download_dir() {
+        roots.push(download_dir);
+    }
+    if let Some(desktop_dir) = dirs::desktop_dir() {
+        roots.push(desktop_dir);
+    }
+    if let Some(audio_dir) = dirs::audio_dir() {
+        roots.push(audio_dir);
+    }
+
+    roots
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_resolve_relative_renderer_paths_inside_ipc_temp_root() {
+        let resolved = resolve_renderer_path("__sourdaw_stems_input_1.wav").unwrap();
+
+        assert!(resolved.starts_with(ipc_temp_dir()));
+        assert!(resolved.ends_with("__sourdaw_stems_input_1.wav"));
+    }
+
+    #[test]
+    fn should_reject_parent_segments_in_relative_renderer_paths() {
+        let result = resolve_renderer_path("../outside.wav");
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Renderer path must not contain parent-directory traversal"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn should_reject_absolute_paths_outside_allowed_roots() {
+        let result = resolve_existing_file_path("/etc/passwd");
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+    }
 }

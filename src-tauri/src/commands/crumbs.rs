@@ -22,6 +22,8 @@ use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use super::filesystem;
+
 // ── Crumbs State ──────────────────────────────────────────────────────
 
 pub struct CrumbsInstanceData {
@@ -173,6 +175,9 @@ pub async fn load_sample(
     file_path: String,
     state: State<'_, CrumbsState>,
 ) -> Result<SampleLoadResult, String> {
+    let file_path = filesystem::resolve_existing_file_path(&file_path)?;
+    let file_path = file_path.to_string_lossy().to_string();
+
     // Decode the audio file.
     let decoded = daw_io::decode_audio_file(&file_path)?;
 

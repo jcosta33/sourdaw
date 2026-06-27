@@ -393,6 +393,7 @@ pub async fn send_plugin_midi(
             velocity,
             channel,
             is_note_on,
+            probability: 1.0,
         },
     )
 }
