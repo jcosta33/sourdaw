@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { onNotification } from '../onNotification';
 
@@ -8,11 +10,12 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.mockEventBus,
-}));
-
 describe('onNotification', () => {
+    beforeEach(() => {
+        injectDependencies(onNotification, { eventBus: mocks.mockEventBus });
+        mocks.mockEventBus.on.mockClear();
+    });
+
     it('should subscribe to ui.notify and return unsubscribe', () => {
         const unsubscribe = vi.fn();
         mocks.mockEventBus.on.mockReturnValue(unsubscribe);

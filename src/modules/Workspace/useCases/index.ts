@@ -1,5 +1,6 @@
 export { openExportDialog } from './dialogs/openExportDialog';
 export { openPreferencesDialog } from './dialogs/openPreferencesDialog';
+export { setWorkspaceEventBus } from './workspaceEventBus';
 
 // ── Scratch Pad ───────────────────────────────────────────────────────────────
 

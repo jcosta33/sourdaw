@@ -4,8 +4,7 @@ import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
-import { getTrackStrip } from '#/modules/AudioEngine/useCases/engineAccess/getTrackStrip';
+import { addDeviceToStrip, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { createGrandBouleTrack } from '../createGrandBouleTrack';
 
@@ -32,10 +31,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 vi.mock('#/modules/Arrangement/useCases/createTrack', () => ({
     createTrack: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     addDeviceToStrip: vi.fn(),
-}));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/getTrackStrip', () => ({
     getTrackStrip: vi.fn(),
 }));
 

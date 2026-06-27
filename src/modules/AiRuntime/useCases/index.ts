@@ -54,3 +54,4 @@ export { runAiActionWithToast } from './runAiActionWithToast';
 export type { AiActionToastMessages } from './runAiActionWithToast';
 
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
+export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';

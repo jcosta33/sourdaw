@@ -1,4 +1,4 @@
-import { eventBus } from '#/app/registerDependencies';
+import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../../useCases/executeAppAction';
 import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
@@ -17,7 +17,7 @@ export const miscCommands: CommandEntry[] = [
         category: 'App',
         shortcut: '⌘,',
         action: () => {
-            void eventBus.emit('dialog.openPreferences', undefined);
+            openPreferencesDialog();
         },
     },
 

@@ -1,5 +1,10 @@
-import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
 
-export function toggleVoiceInput(active?: boolean): void {
-    void eventBus.emit('voice.toggle', { active });
-}
+import { VoiceToggleEventBus } from './voiceToggleEventBus';
+
+export const toggleVoiceInput = inject({ eventBus: VoiceToggleEventBus })(
+    ({ eventBus }) =>
+        function toggleVoiceInput(active?: boolean): void {
+            void eventBus.emit('voice.toggle', { active });
+        }
+);

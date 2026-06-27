@@ -1,5 +1,6 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
+
+import { WorkspaceEventBus } from '../../workspaceEventBus';
 
 // ── Device-type → panel-event mapping (kept in the use-case layer) ────────────
 
@@ -41,7 +42,7 @@ const DEVICE_TYPE_TO_PANEL_EVENT: Partial<Record<string, DevicePanelEvent>> = {
  * for backward compatibility. Once all subscribers migrate to `onShowDevicePanel`,
  * the per-device emit can be removed.
  */
-export const showDevicePanelForType = inject({ eventBus })(
+export const showDevicePanelForType = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function showDevicePanelForType(deviceType: string, deviceId: string): void {
             const event = DEVICE_TYPE_TO_PANEL_EVENT[deviceType];

@@ -1,14 +1,14 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
 import { createTrack as createTrackModel } from '../models/Track';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { type Track, type TrackKind } from '../stores/trackStore';
+import { ArrangementEventBus } from './arrangementEventBus';
 
 type AddTrackInput = { id?: string; name: string; kind: TrackKind };
 
-export const addTrack = inject({ eventBus })(
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
         function addTrack(input: AddTrackInput): Track | null {
             const state = getTrackState();

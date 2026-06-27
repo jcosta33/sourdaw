@@ -1,12 +1,13 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { toolSwapStore } from '#/modules/Workspace/stores';
 import { setEditingTool } from '#/modules/Workspace/useCases';
 
+import { CommandEventBus } from '../../commandEventBus';
+
 /**
  * Handles a keyup event for shortcuts that need release tracking.
  */
-export const handleKeyup = inject({ eventBus })(
+export const handleKeyup = inject({ eventBus: CommandEventBus })(
     ({ eventBus }) =>
         function handleKeyup(key: string): void {
             if (key === 'v') {

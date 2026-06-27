@@ -1,7 +1,8 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
-export const cycleAutomationVisibility = inject({ eventBus })(
+import { WorkspaceEventBus } from '../../workspaceEventBus';
+
+export const cycleAutomationVisibility = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function cycleAutomationVisibility(): void {
             void eventBus.emit('panel.showAutomation', undefined);

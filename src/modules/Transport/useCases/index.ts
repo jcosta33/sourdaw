@@ -23,6 +23,7 @@ export { getCurrentItem } from './setlist/getCurrentItem';
 export { getRemainingDuration } from './setlist/getRemainingDuration';
 export { getSetlistProgress } from './setlist/getSetlistProgress';
 export { goToItem } from './setlist/goToItem';
+export { setSetlistEventBus } from './setlist/setlistEventBus';
 export { nextItem } from './setlist/nextItem';
 export { previousItem } from './setlist/previousItem';
 export { removeSetlistItem } from './setlist/removeSetlistItem';

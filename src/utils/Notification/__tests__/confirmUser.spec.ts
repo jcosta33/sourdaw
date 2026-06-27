@@ -1,15 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const emit = vi.hoisted(() => vi.fn());
-
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: { emit },
-}));
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { confirmUser } from '../confirmUser';
 
+const emit = vi.hoisted(() => vi.fn());
+
 describe('confirmUser', () => {
     beforeEach(() => {
+        injectDependencies(confirmUser, { eventBus: { emit } });
         emit.mockClear();
     });
 

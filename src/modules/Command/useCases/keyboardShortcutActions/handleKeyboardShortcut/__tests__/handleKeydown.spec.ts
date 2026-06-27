@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { seekPlayhead } from '#/modules/Transport/useCases';
 
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
@@ -11,9 +11,7 @@ const { getLastClipEndBeatMock, goToNextMarkerMock, goToPreviousMarkerMock } = v
     goToPreviousMarkerMock: vi.fn(),
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: { emit: vi.fn(), on: vi.fn(() => () => undefined) },
-}));
+const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { selectedTrackId: null, tracks: [] } },
@@ -86,6 +84,7 @@ function descriptor(overrides: Partial<KeyDescriptor> & { key: string }): KeyDes
 
 describe('handleKeydown', () => {
     beforeEach(() => {
+        injectDependencies(handleKeydown, { eventBus });
         vi.clearAllMocks();
     });
 

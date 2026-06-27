@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { describeAction } from './actionLabels';
+export { setCommandEventBus } from './commandEventBus';
 
 export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
 export { generateGroupId } from './commandQueries';

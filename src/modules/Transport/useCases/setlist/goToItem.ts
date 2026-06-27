@@ -1,12 +1,12 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
 import { setlistStore } from '../../stores/setlistStore';
+import { SetlistEventBus } from './setlistEventBus';
 
 /**
  * Navigate to a specific setlist item by index.
  */
-export const goToItem = inject({ eventBus })(
+export const goToItem = inject({ eventBus: SetlistEventBus })(
     ({ eventBus: bus }) =>
         function goToItem(index: number): void {
             const state = setlistStore.value;

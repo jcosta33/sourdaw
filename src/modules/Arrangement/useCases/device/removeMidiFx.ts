@@ -1,9 +1,12 @@
-import { logger } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
+import { RuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { removeMidiFxFromStrip } from '#/modules/AudioEngine/useCases';
 
 import { updateTrack } from '../updateTrack';
 
-export function removeMidiFx(trackId: string, fxId: string): void {
+export const removeMidiFx = inject({ logger: RuntimeLogger })(
+    ({ logger }) =>
+        function removeMidiFx(trackId: string, fxId: string): void {
     updateTrack(trackId, (track) => {
         if (track.kind !== 'midi') {
             return track;
@@ -17,4 +20,5 @@ export function removeMidiFx(trackId: string, fxId: string): void {
     } catch (error) {
         logger.warn(`Failed to remove MIDI FX from engine: ${error}`);
     }
-}
+        }
+);

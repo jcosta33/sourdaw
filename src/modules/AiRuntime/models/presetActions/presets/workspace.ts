@@ -1,4 +1,4 @@
-import { eventBus } from '#/app/registerDependencies';
+import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 
 import { type PresetAction } from './types';
 
@@ -79,7 +79,7 @@ export const workspacePresets: readonly PresetAction[] = [
         keywords: ['preferences', 'settings', 'options', 'config'],
         category: 'Workspace',
         buildAction: () => {
-            void eventBus.emit('dialog.openPreferences', undefined);
+            openPreferencesDialog();
             return [];
         },
     },

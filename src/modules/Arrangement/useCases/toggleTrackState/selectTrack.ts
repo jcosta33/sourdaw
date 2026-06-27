@@ -1,26 +1,30 @@
-import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrackState } from '../../repositories/track/updateTrackState';
 import { trackStore } from '../../stores/trackStore';
+import { ArrangementEventBus } from '../arrangementEventBus';
 
-export function selectTrack(trackId: string | null): void {
+export const selectTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
+        function selectTrack(trackId: string | null): void {
     // Subscribers receive `previousTrackId` so they can distinguish a real
     // selection change from a re-click on the already-selected track (e.g.
     // device panels only tear down when the selection actually moves).
-    const previousTrackId = trackStore.value?.selectedTrackId ?? null;
+            const previousTrackId = trackStore.value?.selectedTrackId ?? null;
 
-    updateTrackState({ selectedTrackId: trackId });
+            updateTrackState({ selectedTrackId: trackId });
 
-    if (trackId) {
-        const track = getTrackById(trackId);
-        if (track && track.kind === 'midi') {
-            setMidiInputTrack(trackId);
+            if (trackId) {
+                const track = getTrackById(trackId);
+                if (track && track.kind === 'midi') {
+                    setMidiInputTrack(trackId);
+                }
+            }
+
+            if (previousTrackId !== trackId) {
+                void eventBus.emit('track.selectionChanged', { trackId, previousTrackId });
+            }
         }
-    }
-
-    if (previousTrackId !== trackId) {
-        void eventBus.emit('track.selectionChanged', { trackId, previousTrackId });
-    }
-}
+);

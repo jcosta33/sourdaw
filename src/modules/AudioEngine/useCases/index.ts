@@ -125,6 +125,7 @@ export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 
 export { initWebMidi } from './webMidiInput/initWebMidi';
+export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { setMpeEnabled } from './webMidiInput/setMpeEnabled';
 export { resetMidiState } from './webMidiInput/resetMidiState';

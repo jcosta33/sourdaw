@@ -1,8 +1,8 @@
-// registerDependencies MUST be the first import — it populates the DI Container
-// before any downstream module (like toasterSubscriber → toasterStore) resolves
-// Logger/EventBus at module scope.
+// registerDependencies owns app singleton construction; bootstrap wires those
+// instances into module-owned dependency ports before runtime subscribers start.
+import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
-import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
+import { getAiOrganizationHandlers, setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
@@ -14,6 +14,7 @@ import {
     setDeviceParameter,
     getArrangementHandlers,
     initStalenessDetection,
+    setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -25,6 +26,7 @@ import {
     getCompensationDelay,
     getFinalFeatureHandlers,
     configureAudioDeviceRuntimeSink,
+    setWebMidiRuntimeEventBus,
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
@@ -36,11 +38,12 @@ import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
-import { getMacroHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
+import { getMacroHandlers, getUndoTreeHandlers, setCommandEventBus } from '#/modules/Command/useCases';
 import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
+import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
@@ -56,19 +59,34 @@ import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
-import { initToasterSubscribers } from '#/modules/Toaster/useCases';
+import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
 import {
     getTransportHandlers,
     getTransportState,
+    setSetlistEventBus,
     setStopPlaybackCallback,
     stopPlayback,
 } from '#/modules/Transport/useCases';
-import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace/useCases';
+import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
+import { setYeastEventBus } from '#/modules/Yeast/stores';
 import { logCapabilities } from '#/utils/capabilities';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { eventBus, logger } from './registerDependencies';
 
 logCapabilities();
+
+setRuntimeLogger(logger);
+setArrangementEventBus(eventBus);
+setWorkspaceEventBus(eventBus);
+setCommandEventBus(eventBus);
+setSetlistEventBus(eventBus);
+setVoiceToggleEventBus(eventBus);
+setGrandBouleEventBus(eventBus);
+setToasterEventBus(eventBus);
+setYeastEventBus(eventBus);
+setWebMidiRuntimeEventBus({ eventBus });
+setNotificationEventBus(eventBus);
 
 window.addEventListener('beforeunload', () => {
     // Attempt GC on window close

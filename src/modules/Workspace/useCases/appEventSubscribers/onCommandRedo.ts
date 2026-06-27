@@ -1,7 +1,8 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
-export const onCommandRedo = inject({ eventBus })(
+import { WorkspaceEventBus } from '../workspaceEventBus';
+
+export const onCommandRedo = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function onCommandRedo(handler: () => void): () => void {
             return eventBus.on('command.redo', handler);

@@ -1,5 +1,5 @@
-import { eventBus } from '#/app/registerDependencies';
 import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
+import { openExportDialog } from '#/modules/Workspace/useCases';
 
 import { type CommandEntry } from '../CommandEntry';
 
@@ -31,7 +31,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            void eventBus.emit('dialog.openExport', undefined);
+            openExportDialog();
         },
     },
     {

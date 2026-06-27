@@ -1,9 +1,9 @@
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement } from 'react';
 
-import { eventBus } from '#/app/registerDependencies';
 import { Button } from '#/components/ui/button';
-import { type ConfirmPayload } from '#/modules/Workspace/events';
 import { cn } from '#/utils/Styles/cn';
+
+import { useConfirmationDialog } from '../hooks/useConfirmationDialog';
 
 /**
  * Async confirmation dialog. Subscribes to the \`ui.confirm\` event bus
@@ -14,34 +14,11 @@ import { cn } from '#/utils/Styles/cn';
  * Mounted once at the top of AppShell, next to NotificationToast.
  */
 export const ConfirmDialog = (): ReactElement | null => {
-    const [pending, setPending] = useState<ConfirmPayload | null>(null);
-
-    useEffect(() => {
-        return eventBus.on('ui.confirm', (payload) => {
-            // If a previous confirm is still on screen we resolve it as
-            // cancelled — only one dialog is visible at a time.
-            setPending((current) => {
-                if (current) {
-                    current.resolve(false);
-                }
-                return payload;
-            });
-        });
-    }, []);
+    const { pending, confirm, cancel } = useConfirmationDialog();
 
     if (!pending) {
         return null;
     }
-
-    const handleConfirm = (): void => {
-        pending.resolve(true);
-        setPending(null);
-    };
-
-    const handleCancel = (): void => {
-        pending.resolve(false);
-        setPending(null);
-    };
 
     const isDanger = pending.variant === 'danger';
 
@@ -53,9 +30,9 @@ export const ConfirmDialog = (): ReactElement | null => {
             aria-labelledby="confirm-dialog-title"
             onKeyDown={(event) => {
                 if (event.key === 'Escape') {
-                    handleCancel();
+                    cancel();
                 } else if (event.key === 'Enter') {
-                    handleConfirm();
+                    confirm();
                 }
             }}
         >
@@ -72,13 +49,13 @@ export const ConfirmDialog = (): ReactElement | null => {
                 ) : null}
                 <p className="text-xs text-foreground/90 leading-relaxed">{pending.message}</p>
                 <div className="mt-4 flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={handleCancel} autoFocus={!isDanger}>
+                    <Button variant="ghost" size="sm" onClick={cancel} autoFocus={!isDanger}>
                         {pending.cancelLabel ?? 'Cancel'}
                     </Button>
                     <Button
                         variant={isDanger ? 'destructive' : 'default'}
                         size="sm"
-                        onClick={handleConfirm}
+                        onClick={confirm}
                         autoFocus={isDanger}
                     >
                         {pending.confirmLabel ?? 'OK'}

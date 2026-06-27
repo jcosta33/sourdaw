@@ -5,7 +5,6 @@
  * Handlers share module-local MIDI routing state. Some exports use `inject({ logger })` or
  * `inject(midiMessageHandlerDependencies)` for test overrides and lazy resolution.
  */
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -45,6 +44,7 @@ import { audioEngine } from '../createWebAudioEngine';
 
 import { routeYeastNoteOffToInstrument } from './routeYeastNoteOff';
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
+import { WebMidiEventBus } from './webMidiEventBus';
 
 function getTrackStoreState(): TrackStoreState | null {
     return trackStore.value;
@@ -79,7 +79,7 @@ const midiMessageHandlerDependencies = {
     processRealtimeMidiInput,
     stepRecordNoteOn,
     stepRecordNoteOff,
-    eventBus,
+    eventBus: WebMidiEventBus,
 };
 
 function secondsToBeats(seconds: number, tempo: number): number {

@@ -5,14 +5,15 @@
  * into the audio engine strip.
  */
 
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { appendTrack, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { addDeviceToStrip, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
-export const createGrandBouleTrack = inject({ eventBus })(
+import { GrandBouleEventBus } from './grandBouleEventBus';
+
+export const createGrandBouleTrack = inject({ eventBus: GrandBouleEventBus })(
     ({ eventBus }) =>
         function createGrandBouleTrack(): string | null {
             if (trackStore.value === null) {

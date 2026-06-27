@@ -4,6 +4,7 @@
 // ── Track ────────────────────────────────────────────────────────────────────
 
 export { addTrack } from './addTrack';
+export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack, normalizeTrack } from './createTrack';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';

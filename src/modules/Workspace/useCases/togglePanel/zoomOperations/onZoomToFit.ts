@@ -1,7 +1,8 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
-export const onZoomToFit = inject({ eventBus })(
+import { WorkspaceEventBus } from '../../workspaceEventBus';
+
+export const onZoomToFit = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function onZoomToFit(handler: () => void): () => void {
             return eventBus.on('zoom.toFit', handler);

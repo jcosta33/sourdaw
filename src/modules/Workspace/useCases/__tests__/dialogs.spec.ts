@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { onDialogOpenExport } from '../dialogs/onDialogOpenExport';
 import { onDialogOpenPreferences } from '../dialogs/onDialogOpenPreferences';
@@ -12,11 +14,13 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.mockEventBus,
-}));
-
 describe('dialogs', () => {
+    beforeEach(() => {
+        injectDependencies(openExportDialog, { eventBus: mocks.mockEventBus });
+        mocks.mockEventBus.emit.mockClear();
+        mocks.mockEventBus.on.mockClear();
+    });
+
     it('should emit dialog.openExport when openExportDialog is called', () => {
         openExportDialog();
 
