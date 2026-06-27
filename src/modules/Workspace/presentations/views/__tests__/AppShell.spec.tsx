@@ -1,9 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
+import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
+import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
+import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { AppShell } from '../AppShell';
 
 // Mock external dependencies
@@ -72,8 +77,32 @@ vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
 }));
 
+const mockWorkspaceEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
+const mockVoiceToggleEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
+const mockNotificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+};
+
+const mockWebMidiEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
 describe('AppShell', () => {
     beforeEach(() => {
+        Container.clear();
+        setWorkspaceEventBus(mockWorkspaceEventBus);
+        setVoiceToggleEventBus(mockVoiceToggleEventBus);
+        setNotificationEventBus(mockNotificationEventBus);
+        setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
         // Default implementation to avoid errors
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -38,23 +38,18 @@ vi.mock('../../stores/takeLaneStore', () => ({
         set: vi.fn(),
     },
 }));
-vi.mock('#/app/registerDependencies', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/app/registerDependencies')>();
-    return {
-        ...actual,
-        eventBus: {
-            ...actual.eventBus,
-            emit: vi.fn(),
-        },
-    };
-});
+
+const mockEventBus = {
+    emit: vi.fn(),
+};
 
 describe('removeTrack', () => {
     beforeEach(() => {
+        injectDependencies(removeTrack, { eventBus: mockEventBus });
         vi.mocked(getTrackState).mockReset();
         vi.mocked(getTrackById).mockReset();
         vi.mocked(setTrackState).mockReset();
-        vi.mocked(eventBus.emit).mockReset();
+        mockEventBus.emit.mockReset();
     });
 
     it('should return early when track state is missing', () => {
@@ -62,7 +57,7 @@ describe('removeTrack', () => {
 
         removeTrack('t1');
 
-        expect(eventBus.emit).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
     it('should return early when track id is unknown', () => {
@@ -74,7 +69,7 @@ describe('removeTrack', () => {
         removeTrack('missing');
 
         expect(setTrackState).not.toHaveBeenCalled();
-        expect(eventBus.emit).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
     it('should remove track, clean related state, and emit track.removed', () => {
@@ -93,6 +88,6 @@ describe('removeTrack', () => {
         removeTrack('t1');
 
         expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 't1' });
+        expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 't1' });
     });
 });

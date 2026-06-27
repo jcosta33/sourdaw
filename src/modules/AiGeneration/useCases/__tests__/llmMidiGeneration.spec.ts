@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/filterTemplates';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
@@ -21,8 +23,13 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     ],
 }));
 
+const mockNotificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+};
+
 describe('generateMidiViaLlm', () => {
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.clearAllMocks();
     });
 

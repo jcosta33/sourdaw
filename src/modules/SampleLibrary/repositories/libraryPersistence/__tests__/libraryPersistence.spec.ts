@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { libraryStore } from '../../../stores/libraryStore';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
@@ -14,8 +17,13 @@ vi.mock('../../../stores/libraryStore', () => ({
     updateLibraryRootStatus: vi.fn(),
 }));
 
+const mockNotificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+};
+
 describe('Library Persistence', () => {
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.clearAllMocks();
     });
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import * as workspaceRepo from '../../../repositories/getWorkspaceState';
 import { cycleAutomationVisibility } from '../zoomOperations/cycleAutomationVisibility';
@@ -16,10 +18,6 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.mockEventBus,
-}));
-
 vi.mock('../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: vi.fn(),
 }));
@@ -33,6 +31,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 describe('zoomOperations', () => {
     beforeEach(() => {
+        injectDependencies(zoomToFit, { eventBus: mocks.mockEventBus });
         vi.clearAllMocks();
         vi.mocked(workspaceRepo.getWorkspaceState).mockReset();
     });

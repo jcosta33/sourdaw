@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- test file: must mock Tauri APIs at their source
 import { invoke } from '@tauri-apps/api/core';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../../commandQueries';
@@ -51,12 +53,17 @@ vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
     commit_pitch_edit_wasm: vi.fn(),
 }));
 
+const mockNotificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+};
+
 describe('commitPitchEditCommand', () => {
     const AudioBufferMock = vi.fn(function AudioBufferMock(this: { copyToChannel: ReturnType<typeof vi.fn> }) {
         this.copyToChannel = vi.fn();
     });
 
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.clearAllMocks();
         vi.mocked(isTauri).mockReturnValue(true);
         vi.stubGlobal('AudioBuffer', AudioBufferMock);

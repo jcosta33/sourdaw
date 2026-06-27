@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack';
 
 import { type Track } from '../../../models/Track';
@@ -29,17 +30,13 @@ vi.mock('../../../stores/trackStore', () => ({
 }));
 
 const mockEmit = vi.fn<(...args: unknown[]) => void>();
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        emit: (...args: unknown[]) => mockEmit(...args),
-        on: vi.fn(() => () => {}),
-        off: vi.fn(),
-    },
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
+const mockEventBus = {
+    emit: (...args: unknown[]) => mockEmit(...args),
+};
 
 describe('selectTrack', () => {
     beforeEach(() => {
+        injectDependencies(selectTrack, { eventBus: mockEventBus });
         vi.mocked(setMidiInputTrack).mockClear();
         mockUpdateTrackState.mockReset();
         mockGetTrackById.mockReset();
