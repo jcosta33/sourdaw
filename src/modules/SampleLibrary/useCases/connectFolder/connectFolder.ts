@@ -1,3 +1,5 @@
+import { basename_from_path } from '#/utils/path-basename';
+
 import { type LibraryRoot } from '../../models/LibraryTypes';
 import { addLibraryRoot } from '../../stores/libraryStore';
 
@@ -47,7 +49,7 @@ async function connectFolderTauri(): Promise<string | null> {
         }
 
         const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
-        const folderName = selected.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || selected;
+        const folderName = basename_from_path(selected);
 
         const root: LibraryRoot = {
             id,

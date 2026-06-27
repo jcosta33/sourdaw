@@ -76,6 +76,16 @@ describe('nativeFileDialog', () => {
             expect(result![0]!.name).toBe('test.wav');
         });
 
+        it('should derive File names from native Windows Tauri paths', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(helpers.openViaTauri).mockResolvedValue(['C:\\Users\\jose\\Samples\\kick.wav']);
+
+            const result = await pickFiles();
+
+            expect(result).toHaveLength(1);
+            expect(result![0]!.name).toBe('kick.wav');
+        });
+
         it('should use browser fallback when not in Tauri', () => {
             vi.mocked(isTauri).mockReturnValue(false);
             const mockInput = {

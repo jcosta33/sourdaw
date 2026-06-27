@@ -67,6 +67,21 @@ describe('loadSampleFromPath', () => {
         expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
     });
 
+    it('stores sample metadata names from native Windows paths', async () => {
+        mocks.loadSample.mockResolvedValue(makeLoadResult());
+        mocks.getWaveformPeaks.mockResolvedValue([]);
+
+        await loadSampleFromPath('inst1', 'D:\\Loops\\kick.wav');
+
+        expect(mocks.setActiveSample).toHaveBeenCalledWith(
+            'inst1',
+            expect.objectContaining({
+                fileName: 'kick.wav',
+                filePath: 'D:\\Loops\\kick.wav',
+            })
+        );
+    });
+
     it('passes through recognised categories unchanged', async () => {
         for (const category of ['percussive', 'tonal', 'loop', 'unknown'] as const) {
             vi.clearAllMocks();

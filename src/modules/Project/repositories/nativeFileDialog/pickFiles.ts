@@ -1,4 +1,5 @@
 import { isTauri } from '#/utils/tauriBridge';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { openViaTauri } from './helpers';
 
@@ -77,7 +78,7 @@ export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] |
             const files: File[] = [];
             for (const param of paths) {
                 const bytes = await fs.readFile(param);
-                const name = param.split('/').pop() ?? param.split('\\').pop() ?? param;
+                const name = basename_from_path(param);
                 files.push(new File([bytes], name));
             }
             return files.length > 0 ? files : null;
