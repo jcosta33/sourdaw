@@ -1,7 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { useStore } from '#/infra/store/useStore';
 import { vcaGroupStore } from '#/modules/Arrangement/stores';
 
 import { TrackVcaSection } from '../TrackVcaSection';
@@ -111,16 +110,7 @@ describe('TrackVcaSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockGetVcaGroups.mockReturnValue([]);
-        // §202.1 — component reads groups via useStore(vcaGroupStore).
-        // Override the global useStore mock to route through the real
-        // vcaGroupStore so per-test group fixtures actually show up.
         vcaGroupStore.set({ groups: [] });
-        vi.mocked(useStore).mockImplementation((store: unknown, defaultValue: unknown) => {
-            if (store === vcaGroupStore) {
-                return vcaGroupStore.value ?? defaultValue;
-            }
-            return defaultValue;
-        });
     });
 
     const setVcaGroups = (groups: Array<{ id: string; name: string; trackIds: string[] }>): void => {

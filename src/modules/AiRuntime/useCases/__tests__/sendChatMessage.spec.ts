@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { sendChatMessage } from '../sendChatMessage';
-
 import { type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ProjectContext } from '../getProjectContext';
+import { sendChatMessage } from '../sendChatMessage';
 
 const mocks = vi.hoisted(() => ({
     chatStoreValue: { value: null as ChatState | null },

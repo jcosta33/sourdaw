@@ -2,9 +2,61 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { type Store } from '#/infra/store/types';
 
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
+
+const createReactiveStoreFixture = vi.hoisted(() => {
+    return <TData,>({ initialValue }: { initialValue: TData | null }): Store<TData> => {
+        let currentValue = initialValue;
+        const subscribers = new Set<(value: TData | null) => void>();
+        const reactListeners = new Set<() => void>();
+
+        const notify = (): void => {
+            for (const subscriber of subscribers) {
+                subscriber(currentValue);
+            }
+            for (const listener of reactListeners) {
+                listener();
+            }
+        };
+
+        const store: Store<TData> = {
+            get value(): TData | null {
+                return currentValue;
+            },
+            set(value: TData | null): void {
+                currentValue = value;
+                notify();
+            },
+            update(updater: (current: TData | null) => TData | null): void {
+                store.set(updater(currentValue));
+            },
+            clear(): void {
+                store.set(null);
+            },
+            hydrate(): void {},
+            subscribe(callback: (value: TData | null) => void): () => void {
+                subscribers.add(callback);
+                return () => {
+                    subscribers.delete(callback);
+                };
+            },
+            subscribeReact(listener: () => void): () => void {
+                reactListeners.add(listener);
+                return () => {
+                    reactListeners.delete(listener);
+                };
+            },
+            getSnapshot(): TData | null {
+                return currentValue;
+            },
+        };
+
+        return store;
+    };
+});
 
 // Mock external dependencies
 vi.mock('../../../useCases/initTimelineRenderer', () => ({
@@ -22,11 +74,9 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: {
-        value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    timelineViewStore: createReactiveStoreFixture({
+        initialValue: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
+    }),
     setAutoScroll: vi.fn(),
 }));
 
@@ -73,11 +123,7 @@ vi.mock('../../hooks/useTimelineInteractions', () => ({
 }));
 
 vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
-    workspaceStore: {
-        value: {},
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    workspaceStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
 vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
@@ -85,35 +131,19 @@ vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
 }));
 
 vi.mock('#/modules/Automation/stores/automationStore', () => ({
-    automationStore: {
-        value: {},
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    automationStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: {
-        value: { tracks: [], selectedTrackId: null },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    trackStore: createReactiveStoreFixture({ initialValue: { tracks: [], selectedTrackId: null } }),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
-    takeLaneStore: {
-        value: { lanes: [] },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    takeLaneStore: createReactiveStoreFixture({ initialValue: { lanes: [] } }),
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
-    transportStore: {
-        value: { isPlaying: false },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    transportStore: createReactiveStoreFixture({ initialValue: { isPlaying: false } }),
 }));
 
 vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
@@ -121,27 +151,15 @@ vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
 }));
 
 vi.mock('#/modules/Transport/stores/tempoMapStore', () => ({
-    tempoMapStore: {
-        value: {},
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    tempoMapStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
 vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
-    timeSignatureMapStore: {
-        value: {},
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    timeSignatureMapStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
 vi.mock('../../../stores/markerStore', () => ({
-    markerStore: {
-        value: { markers: [] },
-        subscribe: vi.fn(() => vi.fn()),
-        set: vi.fn(),
-    },
+    markerStore: createReactiveStoreFixture({ initialValue: { markers: [] } }),
 }));
 
 vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onScrollToPlayhead', () => ({

@@ -1,6 +1,49 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+const createStorageShim = (): Storage => {
+    const values = new Map<string, string>();
+
+    return {
+        get length(): number {
+            return values.size;
+        },
+        clear(): void {
+            values.clear();
+        },
+        getItem(key: string): string | null {
+            return values.get(String(key)) ?? null;
+        },
+        key(index: number): string | null {
+            return [...values.keys()][index] ?? null;
+        },
+        removeItem(key: string): void {
+            values.delete(String(key));
+        },
+        setItem(key: string, value: string): void {
+            values.set(String(key), String(value));
+        },
+    };
+};
+
+const getWindowLocalStorage = (): Storage | null => {
+    try {
+        return window.localStorage ?? null;
+    } catch {
+        return null;
+    }
+};
+
+const localStorageShim = getWindowLocalStorage() ?? createStorageShim();
+Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: localStorageShim,
+});
+Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: localStorageShim,
+});
+
 // Radix UI (Slider, etc.) uses ResizeObserver in layout effects — jsdom does not provide it.
 globalThis.ResizeObserver = class ResizeObserver {
     observe(): void {}

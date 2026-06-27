@@ -68,7 +68,11 @@ export function proposePendingActionConfirmation(
 }
 
 export function getPendingActionConfirmation(confirmationId: string): PendingActionConfirmation | null {
-    return pendingActionConfirmationStore.value?.confirmations.find((confirmation) => confirmation.id === confirmationId) ?? null;
+    return (
+        pendingActionConfirmationStore.value?.confirmations.find(
+            (confirmation) => confirmation.id === confirmationId
+        ) ?? null
+    );
 }
 
 type RecordPendingActionExecutionInput = {
@@ -76,7 +80,9 @@ type RecordPendingActionExecutionInput = {
     execution: PendingActionExecution;
 };
 
-export function recordPendingActionExecution(input: RecordPendingActionExecutionInput): PendingActionConfirmation | null {
+export function recordPendingActionExecution(
+    input: RecordPendingActionExecutionInput
+): PendingActionConfirmation | null {
     const state = pendingActionConfirmationStore.value;
     if (!state) {
         return null;
