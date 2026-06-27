@@ -47,7 +47,7 @@ async function connectFolderTauri(): Promise<string | null> {
         }
 
         const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
-        const folderName = selected.split('/').pop() ?? selected.split('\\').pop() ?? selected;
+        const folderName = selected.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || selected;
 
         const root: LibraryRoot = {
             id,
