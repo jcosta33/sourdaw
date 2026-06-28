@@ -357,12 +357,27 @@ impl SharedClapPlugin {
         })
     }
 
-    pub fn begin_unload(&self) {
+    pub fn begin_unload(&self) -> Result<(), String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.lifecycle.begin_unload();
+        Ok(())
     }
 
     pub fn retire(&self) {
         self.lifecycle.retire();
+    }
+
+    pub fn ensure_public_control_allowed(&self) -> Result<(), String> {
+        self.ensure_active_lifecycle()
+    }
+
+    pub fn with_public_control_serialized<ResultValue>(
+        &self,
+        operation: impl FnOnce() -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        operation()
     }
 
     pub fn with_control<ResultValue>(

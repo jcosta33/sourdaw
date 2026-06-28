@@ -7,6 +7,7 @@ use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Manager;
@@ -28,6 +29,15 @@ pub struct PluginInstance {
     pub is_active: bool,
     pub latency_samples: u32,
     pub engine_plugin_id: Option<usize>,
+}
+
+fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
+    engine_plugins: &mut HashMap<String, EnginePluginRecord>,
+    instance_id: &str,
+    scheduler_removal_result: Result<(), String>,
+) -> Result<Option<EnginePluginRecord>, String> {
+    scheduler_removal_result?;
+    Ok(engine_plugins.remove(instance_id))
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
@@ -298,16 +308,14 @@ pub async fn unload_plugin(
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        let engine_plugin = engine_plugins.remove(&instance_id.0);
-        if let Some(instance) = &engine_plugin {
-            instance.runtime.begin_unload();
+        let engine_plugin = engine_plugins.get(&instance_id.0);
+        if let Some(instance) = engine_plugin {
+            instance.runtime.begin_unload()?;
         }
-        engine_plugin
+        engine_plugin.map(|instance| (instance.engine_plugin_id, Arc::clone(&instance.runtime)))
     };
 
-    if let Some(engine_plugin) = engine_plugin {
-        let engine_plugin_id = engine_plugin.engine_plugin_id;
-        let runtime = Arc::clone(&engine_plugin.runtime);
+    if let Some((engine_plugin_id, runtime)) = engine_plugin {
         state
             .inner()
             .retain_retired_engine_plugin(Arc::clone(&runtime));
@@ -332,14 +340,28 @@ pub async fn unload_plugin(
             }
         }
 
-        let mut engine_guard = state
-            .engine
-            .lock()
-            .map_err(|e| format!("Failed to lock engine: {}", e))?;
-        let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
-        engine.remove_plugin(engine_plugin_id)?;
+        let scheduler_removal_result = {
+            let mut engine_guard = state
+                .engine
+                .lock()
+                .map_err(|e| format!("Failed to lock engine: {}", e))?;
+            let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+            engine.remove_plugin(engine_plugin_id)
+        };
+
+        {
+            let mut engine_plugins = state
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            let _removed_engine_plugin = remove_engine_plugin_record_after_scheduler_removal(
+                &mut engine_plugins,
+                &instance_id.0,
+                scheduler_removal_result,
+            )?;
+        }
+
         runtime.retire();
-        drop(engine_guard);
 
         let mut bridges = state
             .audio_bridges
@@ -438,6 +460,7 @@ pub async fn get_plugin_parameters(
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
     if let Some(instance) = engine_plugins.get(&instance_id.0) {
+        instance.runtime.ensure_public_control_allowed()?;
         return Ok(instance.parameters.clone());
     }
 
@@ -722,5 +745,39 @@ mod tests {
             Err("No engine-owned plugin instance: test".to_string())
         );
         assert_eq!(parameters[0].value, 0.25);
+    }
+
+    #[test]
+    fn remove_engine_plugin_record_after_scheduler_removal_preserves_record_on_queue_failure() {
+        let mut engine_plugins = std::collections::HashMap::from([(
+            "engine-owned-1".to_string(),
+            42_u32,
+        )]);
+
+        let result = remove_engine_plugin_record_after_scheduler_removal(
+            &mut engine_plugins,
+            "engine-owned-1",
+            Err("Audio command queue full".to_string()),
+        );
+
+        assert_eq!(result, Err("Audio command queue full".to_string()));
+        assert_eq!(engine_plugins.get("engine-owned-1"), Some(&42_u32));
+    }
+
+    #[test]
+    fn remove_engine_plugin_record_after_scheduler_removal_removes_record_after_acceptance() {
+        let mut engine_plugins = std::collections::HashMap::from([(
+            "engine-owned-1".to_string(),
+            42_u32,
+        )]);
+
+        let result = remove_engine_plugin_record_after_scheduler_removal(
+            &mut engine_plugins,
+            "engine-owned-1",
+            Ok(()),
+        );
+
+        assert_eq!(result, Ok(Some(42_u32)));
+        assert!(!engine_plugins.contains_key("engine-owned-1"));
     }
 }

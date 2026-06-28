@@ -40,6 +40,7 @@ pub async fn is_plugin_gui_supported(
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
     if let Some(instance) = engine_plugins.get(&instance_id) {
+        instance.runtime.ensure_public_control_allowed()?;
         return Ok(instance.has_gui);
     }
 
@@ -63,7 +64,7 @@ pub async fn open_plugin_gui(
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginGuiInfo, String> {
     // 1. Get plugin name and check GUI support
-    let (plugin_name, is_engine_owned) = {
+    let (plugin_name, engine_runtime) = {
         let plugins = state
             .plugins
             .lock()
@@ -74,7 +75,7 @@ pub async fn open_plugin_gui(
                     return Err("Plugin does not support GUI".to_string());
                 }
 
-                (instance.get_name().to_string(), false)
+                (instance.get_name().to_string(), None)
             }
             None => {
                 let engine_plugins = state
@@ -86,7 +87,12 @@ pub async fn open_plugin_gui(
                         return Err("Plugin does not support GUI".to_string());
                     }
 
-                    (engine_instance.name.clone(), true)
+                    engine_instance.runtime.ensure_public_control_allowed()?;
+
+                    (
+                        engine_instance.name.clone(),
+                        Some(std::sync::Arc::clone(&engine_instance.runtime)),
+                    )
                 } else {
                     return Err(format!("No plugin instance: {}", instance_id));
                 }
@@ -133,8 +139,8 @@ pub async fn open_plugin_gui(
     };
 
     // 4. Open the plugin GUI (CLAP lifecycle: create → scale → get_size → set_parent → show)
-    let gui_size_result = if is_engine_owned {
-        state.inner().with_engine_plugin_control(&instance_id, |plugin| {
+    let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
+        runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
             plugin.open_gui(handle_ptr)
         })
     } else {
@@ -157,18 +163,38 @@ pub async fn open_plugin_gui(
         }
     };
 
-    // 5. Resize the window to match the plugin's preferred size and show it
-    let _ = plugin_window.set_size(tauri::LogicalSize::new(width, height));
-    let _ = plugin_window.show();
-    let _ = plugin_window.set_focus();
+    let publish_window = || -> Result<(), String> {
+        let _ = plugin_window.set_size(tauri::LogicalSize::new(width, height));
+        let _ = plugin_window.show();
+        let _ = plugin_window.set_focus();
 
-    // 6. Track the window
-    {
         let mut windows = state
             .plugin_windows
             .lock()
             .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
         windows.insert(instance_id.clone(), window_label);
+        Ok(())
+    };
+
+    if let Some(runtime) = engine_runtime.as_ref() {
+        let publish_result = runtime.with_public_control_serialized(publish_window);
+        cleanup_opened_engine_gui_after_rejected_lifecycle(
+            publish_result,
+            || {
+                let _ = runtime.with_unload_control(
+                    std::time::Duration::from_secs(2),
+                    |plugin| {
+                        plugin.close_gui();
+                        Ok(())
+                    },
+                );
+            },
+            || {
+                let _ = plugin_window.destroy();
+            },
+        )?;
+    } else {
+        publish_window()?;
     }
 
     Ok(PluginGuiInfo {
@@ -177,6 +203,20 @@ pub async fn open_plugin_gui(
         width,
         height,
     })
+}
+
+fn cleanup_opened_engine_gui_after_rejected_lifecycle(
+    lifecycle_result: Result<(), String>,
+    close_gui: impl FnOnce(),
+    destroy_window: impl FnOnce(),
+) -> Result<(), String> {
+    if let Err(error) = lifecycle_result {
+        close_gui();
+        destroy_window();
+        return Err(error);
+    }
+
+    Ok(())
 }
 
 /// Close the plugin GUI and destroy the native window.
@@ -324,4 +364,53 @@ pub async fn show_all_plugin_guis(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn cleanup_opened_engine_gui_after_rejected_lifecycle_closes_gui_and_window() {
+        let closed_gui = Cell::new(false);
+        let destroyed_window = Cell::new(false);
+
+        let result = cleanup_opened_engine_gui_after_rejected_lifecycle(
+            Err("Engine-owned plugin instance 'fixture' is unloading".to_string()),
+            || {
+                closed_gui.set(true);
+            },
+            || {
+                destroyed_window.set(true);
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+        );
+        assert!(closed_gui.get());
+        assert!(destroyed_window.get());
+    }
+
+    #[test]
+    fn cleanup_opened_engine_gui_after_rejected_lifecycle_keeps_gui_on_success() {
+        let closed_gui = Cell::new(false);
+        let destroyed_window = Cell::new(false);
+
+        let result = cleanup_opened_engine_gui_after_rejected_lifecycle(
+            Ok(()),
+            || {
+                closed_gui.set(true);
+            },
+            || {
+                destroyed_window.set(true);
+            },
+        );
+
+        assert_eq!(result, Ok(()));
+        assert!(!closed_gui.get());
+        assert!(!destroyed_window.get());
+    }
 }
