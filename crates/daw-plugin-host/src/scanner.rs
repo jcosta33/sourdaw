@@ -66,6 +66,31 @@ fn plugin_name_from_path(path: &Path) -> String {
 // ── Directory scanning ──────────────────────────────────────────────────
 
 pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut Vec<String>) {
+    match path_has_symlink_component(dir) {
+        Ok(true) => {
+            errors.push(format!("Skipping symlinked plugin path: {}", dir.display()));
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            errors.push(error);
+            return;
+        }
+    }
+
+    let dir_metadata = match fs::symlink_metadata(dir) {
+        Ok(metadata) => metadata,
+        Err(e) => {
+            errors.push(format!("Cannot inspect {}: {}", dir.display(), e));
+            return;
+        }
+    };
+
+    if dir_metadata.file_type().is_symlink() {
+        errors.push(format!("Skipping symlinked plugin path: {}", dir.display()));
+        return;
+    }
+
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(e) => {
@@ -84,7 +109,23 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
         };
 
         let entry_path = entry.path();
-        let is_dir = entry_path.is_dir();
+        let entry_metadata = match fs::symlink_metadata(&entry_path) {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                errors.push(format!("Cannot inspect {}: {}", entry_path.display(), e));
+                continue;
+            }
+        };
+
+        if entry_metadata.file_type().is_symlink() {
+            errors.push(format!(
+                "Skipping symlinked plugin path: {}",
+                entry_path.display()
+            ));
+            continue;
+        }
+
+        let is_dir = entry_metadata.is_dir();
 
         if let Some(format) = detect_format(&entry_path, is_dir) {
             let name = plugin_name_from_path(&entry_path);
@@ -118,6 +159,112 @@ pub fn scan_directory(dir: &Path, plugins: &mut Vec<ScannedPlugin>, errors: &mut
         } else if is_dir {
             scan_directory(&entry_path, plugins, errors);
         }
+    }
+}
+
+fn path_has_symlink_component(path: &Path) -> Result<bool, String> {
+    let mut current_path = std::path::PathBuf::new();
+
+    for component in path.components() {
+        current_path.push(component.as_os_str());
+        match fs::symlink_metadata(&current_path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Ok(true);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                return Err(format!(
+                    "Cannot inspect {}: {}",
+                    current_path.display(),
+                    error
+                ));
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[cfg(unix)]
+    fn unique_temp_scan_root(test_name: &str) -> PathBuf {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sourdaw-{test_name}-{}-{unique_suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_directory_skips_symlinked_plugin_paths() {
+        let temp_root = unique_temp_scan_root("scanner-symlink-plugin");
+        let scan_root = temp_root.join("scan-root");
+        let outside_root = temp_root.join("outside");
+        let outside_plugin = outside_root.join("escape.clap");
+        let symlinked_plugin = scan_root.join("escape.clap");
+        std::fs::create_dir_all(&scan_root).expect("scan root should be created");
+        std::fs::create_dir_all(&outside_root).expect("outside root should be created");
+        std::fs::write(&outside_plugin, b"not a real clap plugin")
+            .expect("outside plugin placeholder should be written");
+        std::os::unix::fs::symlink(&outside_plugin, &symlinked_plugin)
+            .expect("symlink should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        scan_directory(&scan_root, &mut plugins, &mut errors);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(
+            plugins.is_empty(),
+            "scanner must not register symlinked plugin paths: {plugins:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("Skipping symlinked plugin path")),
+            "expected symlink skip error, got {errors:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_directory_skips_scan_roots_with_symlink_ancestors() {
+        let temp_root = unique_temp_scan_root("scanner-symlink-root");
+        let symlinked_scan_root = temp_root.join("scan-root");
+        let outside_root = temp_root.join("outside");
+        let outside_child = outside_root.join("Vendor");
+        let outside_plugin = outside_child.join("escape.clap");
+        std::fs::create_dir_all(&outside_child).expect("outside child should be created");
+        std::fs::write(&outside_plugin, b"not a real clap plugin")
+            .expect("outside plugin placeholder should be written");
+        std::os::unix::fs::symlink(&outside_root, &symlinked_scan_root)
+            .expect("scan root symlink should be created");
+
+        let mut plugins = Vec::new();
+        let mut errors = Vec::new();
+        scan_directory(&symlinked_scan_root.join("Vendor"), &mut plugins, &mut errors);
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        assert!(
+            plugins.is_empty(),
+            "scanner must not register plugins below symlinked scan roots: {plugins:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("Skipping symlinked plugin path")),
+            "expected symlink skip error, got {errors:?}"
+        );
     }
 }
 

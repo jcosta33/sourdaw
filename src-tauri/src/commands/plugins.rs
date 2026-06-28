@@ -1,6 +1,7 @@
 //! Tauri commands for plugin scanning, loading, and parameter management.
 
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
+use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::create_audio_bridge;
@@ -49,11 +50,17 @@ pub async fn scan_plugins(
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
     let start = std::time::Instant::now();
+    let scan_policy = PluginScanPolicy::platform_defaults();
     let mut plugins = Vec::new();
     let mut errors = Vec::new();
 
     for scan_path in &paths {
         let path = PathBuf::from(scan_path);
+        if let Err(error) = scan_policy.authorize_scan_root(&path) {
+            errors.push(error);
+            continue;
+        }
+
         if !path.is_dir() {
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
@@ -93,39 +100,7 @@ pub async fn scan_plugins(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
-    let mut paths = Vec::new();
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let home = home.display();
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/VST3"));
-            paths.push("/Library/Audio/Plug-Ins/VST3".to_string());
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/CLAP"));
-            paths.push("/Library/Audio/Plug-Ins/CLAP".to_string());
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/Components"));
-            paths.push("/Library/Audio/Plug-Ins/Components".to_string());
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        paths.push("C:\\Program Files\\Common Files\\VST3".to_string());
-        paths.push("C:\\Program Files\\Common Files\\CLAP".to_string());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let home = home.display();
-            paths.push(format!("{home}/.vst3"));
-            paths.push(format!("{home}/.clap"));
-            paths.push("/usr/lib/vst3".to_string());
-            paths.push("/usr/lib/clap".to_string());
-        }
-    }
-
-    Ok(paths)
+    Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
 }
 
 // ── Instance lifecycle commands ─────────────────────────────────────────
@@ -737,6 +712,60 @@ mod tests {
                 has_gui: true,
             },
         );
+    }
+
+    fn unique_temp_scan_root(test_name: &str) -> PathBuf {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sourdaw-{test_name}-{}-{unique_suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn scan_plugins_rejects_arbitrary_renderer_raw_path_without_grant() {
+        let app = command_test_app();
+        let scan_root = unique_temp_scan_root("raw-plugin-scan-path");
+        std::fs::create_dir_all(&scan_root).expect("temp scan root should be created");
+
+        let result = tauri::async_runtime::block_on(scan_plugins(
+            vec![scan_root.display().to_string()],
+            app.state::<AppState>(),
+        ))
+        .expect("scan command should return policy errors in-band");
+        let _ = std::fs::remove_dir_all(&scan_root);
+
+        assert!(result.plugins.is_empty());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains("Unauthorized plugin scan path")),
+            "errors should reject the raw renderer path: {:?}",
+            result.errors
+        );
+
+        let state = app.state::<AppState>();
+        let registry = state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available");
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn get_default_plugin_paths_returns_authorized_native_scan_roots() {
+        let paths = tauri::async_runtime::block_on(get_default_plugin_paths())
+            .expect("default plugin paths should resolve");
+        let scan_policy = PluginScanPolicy::platform_defaults();
+
+        assert!(!paths.is_empty());
+        for path in paths {
+            assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+        }
     }
 
     #[test]
