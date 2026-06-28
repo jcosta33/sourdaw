@@ -358,13 +358,13 @@ pub async fn unload_plugin(
 
 // ── Parameter commands ──────────────────────────────────────────────────
 
-fn update_parameter_cache_after_apply(
+fn update_parameter_cache_after_enqueue(
     parameters: &mut [PluginParameter],
     param_id: u32,
     value: f64,
-    apply_result: Result<(), String>,
+    enqueue_result: Result<(), String>,
 ) -> Result<(), String> {
-    apply_result?;
+    enqueue_result?;
 
     if let Some(parameter) = parameters
         .iter_mut()
@@ -407,24 +407,21 @@ pub async fn set_plugin_parameter(
     };
 
     if let Some(runtime) = runtime {
-        let apply_result = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
-            plugin.set_parameter(param_id, value);
-            Ok(())
-        });
+        let enqueue_result = runtime.enqueue_parameter(param_id, value);
 
         let mut engine_plugins = state
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
-            update_parameter_cache_after_apply(
+            update_parameter_cache_after_enqueue(
                 &mut instance.parameters,
                 param_id,
                 value,
-                apply_result,
+                enqueue_result,
             )?;
         } else {
-            apply_result?;
+            enqueue_result?;
         }
 
         return Ok(());
@@ -691,27 +688,48 @@ mod tests {
     }
 
     #[test]
-    fn update_parameter_cache_after_apply_updates_only_after_success() {
+    fn update_parameter_cache_after_enqueue_updates_only_after_success() {
         let mut parameters = vec![plugin_parameter(7, 0.25)];
 
-        let result = update_parameter_cache_after_apply(&mut parameters, 7, 0.75, Ok(()));
+        let result = update_parameter_cache_after_enqueue(&mut parameters, 7, 0.75, Ok(()));
 
         assert!(result.is_ok());
         assert_eq!(parameters[0].value, 0.75);
     }
 
     #[test]
-    fn update_parameter_cache_after_apply_preserves_cache_after_failure() {
+    fn update_parameter_cache_after_enqueue_preserves_cache_when_queue_is_full() {
         let mut parameters = vec![plugin_parameter(7, 0.25)];
 
-        let result = update_parameter_cache_after_apply(
+        let result = update_parameter_cache_after_enqueue(
             &mut parameters,
             7,
             0.75,
-            Err("control unavailable".to_string()),
+            Err("Pending parameter queue full for plugin 'test'".to_string()),
         );
 
-        assert_eq!(result, Err("control unavailable".to_string()));
+        assert_eq!(
+            result,
+            Err("Pending parameter queue full for plugin 'test'".to_string())
+        );
+        assert_eq!(parameters[0].value, 0.25);
+    }
+
+    #[test]
+    fn update_parameter_cache_after_enqueue_preserves_cache_when_runtime_is_unavailable() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_enqueue(
+            &mut parameters,
+            7,
+            0.75,
+            Err("No engine-owned plugin instance: test".to_string()),
+        );
+
+        assert_eq!(
+            result,
+            Err("No engine-owned plugin instance: test".to_string())
+        );
         assert_eq!(parameters[0].value, 0.25);
     }
 }
