@@ -35,7 +35,29 @@ jobs:
         run: pnpm typecheck
 
       - name: Lint
-        run: pnpm lint --quiet
+        run: |
+          pnpm lint --quiet &
+          lint_pid=$!
+          (
+            sleep_pid=
+            trap 'kill "$sleep_pid" 2>/dev/null || true; exit 0' TERM
+            while kill -0 "$lint_pid" 2>/dev/null; do
+              echo "lint still running..."
+              sleep "${LINT_HEARTBEAT_SECONDS:-60}" &
+              sleep_pid=$!
+              wait "$sleep_pid" 2>/dev/null || true
+            done
+          ) &
+          heartbeat_pid=$!
+
+          set +e
+          wait "$lint_pid"
+          lint_status=$?
+          set -e
+
+          kill "$heartbeat_pid" 2>/dev/null || true
+          wait "$heartbeat_pid" 2>/dev/null || true
+          exit "$lint_status"
 
       - name: Test
         run: pnpm test:run
