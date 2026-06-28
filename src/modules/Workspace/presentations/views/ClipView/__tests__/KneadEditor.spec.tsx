@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
 import { analyzeClipPitch } from '#/modules/Knead/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useTracks } from '../../../hooks/useTracks';
 import { KneadEditor } from '../KneadEditor';
@@ -107,6 +109,8 @@ describe('KneadEditor', () => {
     };
 
     beforeEach(() => {
+        const emit = vi.fn().mockResolvedValue(undefined);
+        injectDependencies(notifyUser, { eventBus: { emit } });
         vi.clearAllMocks();
     });
 
