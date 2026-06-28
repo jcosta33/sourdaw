@@ -197,12 +197,6 @@ impl NativePlugin for ClapPluginSlot {
         }
     }
 
-    fn set_param(&mut self, param_id: u32, value: f64) {
-        let _ = self
-            .plugin
-            .with_process(|wrapper| wrapper.set_parameter(param_id, value));
-    }
-
     fn name(&self) -> &str {
         self.plugin.name()
     }
@@ -230,10 +224,6 @@ impl NativePlugin for Vst3PluginSlot {
         // Vst3Wrapper is currently passthrough-only (COM audio processing pending).
         // Audio passes through unchanged — no allocation needed.
         // When COM processing is added, add preallocated scratch buffers here.
-    }
-
-    fn set_param(&mut self, param_id: u32, value: f64) {
-        self.wrapper.set_parameter(param_id, value);
     }
 
     fn name(&self) -> &str {
@@ -299,10 +289,6 @@ impl NativePlugin for CrumbsPluginSlot {
         left[..num_samples].fill(0.0);
         right[..num_samples].fill(0.0);
         self.engine.process_block(left, right);
-    }
-
-    fn set_param(&mut self, _param_id: u32, _value: f64) {
-        // Crumbs uses named parameters via the command queue (command_rx).
     }
 
     fn name(&self) -> &str {

@@ -23,7 +23,7 @@ pub enum GraphCommand {
     AddPlugin(usize, Box<dyn NativePlugin>),
     AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
     RemovePlugin(usize),
-    SetPluginParam(usize, u32, f64),
+    RemovePluginWithBridge(usize),
 
     // MIDI events (routed to a specific plugin by ID)
     SendMidiNote(usize, MidiNoteEvent),
@@ -102,6 +102,10 @@ impl AudioScheduler {
                 GraphCommand::RemoveEffect(id) | GraphCommand::RemovePlugin(id) => {
                     self.effects.retain(|e| e.id != id);
                 }
+                GraphCommand::RemovePluginWithBridge(id) => {
+                    self.effects.retain(|e| e.id != id);
+                    self.audio_bridges.retain(|b| b.plugin_id != id);
+                }
                 GraphCommand::SetParam(id, _name, _value) => {
                     if let Some(_effect) = self.effects.iter_mut().find(|e| e.id == id) {
                         // TODO: Map string parameters to Knead methods
@@ -130,13 +134,6 @@ impl AudioScheduler {
                         pending_midi: Vec::new(),
                     });
                     self.audio_bridges.push(bridge);
-                }
-                GraphCommand::SetPluginParam(id, param_id, value) => {
-                    if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        if let PluginCore::Native(ref mut plugin) = effect.instance {
-                            plugin.set_param(param_id, value);
-                        }
-                    }
                 }
                 GraphCommand::AddMidiFx(id, fx_type) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
@@ -293,10 +290,6 @@ mod tests {
             }
         }
 
-        fn set_param(&mut self, _param_id: u32, value: f64) {
-            self.value = value as f32;
-        }
-
         fn name(&self) -> &str {
             "fake-native-plugin"
         }
@@ -341,5 +334,28 @@ mod tests {
         scheduler.process_block(&mut left, &mut right, 4);
         assert_eq!(left, [0.25; 4]);
         assert_eq!(right, [0.25; 4]);
+    }
+
+    #[test]
+    fn remove_plugin_with_bridge_removes_plugin_and_bridge_atomically() {
+        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
+
+        command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .unwrap();
+        scheduler.update_graph();
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(42))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(scheduler.effects.is_empty());
+        assert!(scheduler.audio_bridges.is_empty());
     }
 }

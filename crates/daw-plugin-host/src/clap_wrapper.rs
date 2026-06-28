@@ -160,6 +160,14 @@ struct StreamCursor {
     pos: usize,
 }
 
+fn state_load_result(plugin_name: &str, loaded: bool) -> Result<(), String> {
+    if loaded {
+        return Ok(());
+    }
+
+    Err(format!("[CLAP] state.load() failed for {}", plugin_name))
+}
+
 impl ClapWrapper {
     /// Load a CLAP plugin from a shared library path.
     ///
@@ -790,16 +798,16 @@ impl AudioPlugin for ClapWrapper {
         }
     }
 
-    fn set_state(&mut self, state_data: &[u8]) {
+    fn set_state(&mut self, state_data: &[u8]) -> Result<(), String> {
         if self.state_ext.is_null() || self.plugin.is_null() {
-            return;
+            return Ok(());
         }
 
         unsafe {
             let state = &*self.state_ext;
             let load_fn = match state.load {
                 Some(f) => f,
-                None => return,
+                None => return Ok(()),
             };
 
             let mut cursor = StreamCursor {
@@ -812,11 +820,10 @@ impl AudioPlugin for ClapWrapper {
                 read: Some(istream_read),
             };
 
-            let ok = load_fn(self.plugin, &istream);
-            if !ok {
-                eprintln!("[CLAP] state.load() failed for {}", self.name);
-            }
+            state_load_result(&self.name, load_fn(self.plugin, &istream))?;
         }
+
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -825,6 +832,24 @@ impl AudioPlugin for ClapWrapper {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_load_result_returns_ok_when_clap_load_succeeds() {
+        assert_eq!(state_load_result("fixture", true), Ok(()));
+    }
+
+    #[test]
+    fn state_load_result_returns_error_when_clap_load_fails() {
+        assert_eq!(
+            state_load_result("fixture", false),
+            Err("[CLAP] state.load() failed for fixture".to_string())
+        );
     }
 }
 

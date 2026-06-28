@@ -358,6 +358,24 @@ pub async fn unload_plugin(
 
 // ── Parameter commands ──────────────────────────────────────────────────
 
+fn update_parameter_cache_after_apply(
+    parameters: &mut [PluginParameter],
+    param_id: u32,
+    value: f64,
+    apply_result: Result<(), String>,
+) -> Result<(), String> {
+    apply_result?;
+
+    if let Some(parameter) = parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == param_id)
+    {
+        parameter.value = value;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn set_plugin_parameter(
@@ -378,36 +396,35 @@ pub async fn set_plugin_parameter(
         }
     }
 
-    let engine_plugin_id = {
+    let runtime = {
         let engine_plugins = state
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         engine_plugins
             .get(&instance_id.0)
-            .map(|instance| instance.engine_plugin_id)
+            .map(|instance| Arc::clone(&instance.runtime))
     };
 
-    if let Some(engine_plugin_id) = engine_plugin_id {
-        let mut engine_guard = state
-            .engine
-            .lock()
-            .map_err(|e| format!("Failed to lock engine: {}", e))?;
-        let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
-        engine.set_plugin_param(engine_plugin_id, param_id, value)?;
+    if let Some(runtime) = runtime {
+        let apply_result = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
+            plugin.set_parameter(param_id, value);
+            Ok(())
+        });
 
         let mut engine_plugins = state
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
-            if let Some(parameter) = instance
-                .parameters
-                .iter_mut()
-                .find(|parameter| parameter.id == param_id)
-            {
-                parameter.value = value;
-            }
+            update_parameter_cache_after_apply(
+                &mut instance.parameters,
+                param_id,
+                value,
+                apply_result,
+            )?;
+        } else {
+            apply_result?;
         }
 
         return Ok(());
@@ -489,7 +506,7 @@ pub async fn set_plugin_state(
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get_mut(&instance_id.0) {
-            instance.plugin.set_state(&plugin_state);
+            instance.plugin.set_state(&plugin_state)?;
             return Ok(());
         }
     }
@@ -501,8 +518,7 @@ pub async fn set_plugin_state(
     if engine_plugins.contains_key(&instance_id.0) {
         drop(engine_plugins);
         return state.inner().with_engine_plugin_control(&instance_id.0, |plugin| {
-            plugin.set_state(&plugin_state);
-            Ok(())
+            plugin.set_state(&plugin_state)
         });
     }
 
@@ -654,5 +670,48 @@ pub async fn process_plugin_audio(
     } else {
         // No output yet (first block) — return the dry input
         Ok(audio_bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
+        PluginParameter {
+            id,
+            name: format!("Param {id}"),
+            value,
+            default_value: 0.0,
+            min_value: 0.0,
+            max_value: 1.0,
+            unit: None,
+            is_automatable: true,
+        }
+    }
+
+    #[test]
+    fn update_parameter_cache_after_apply_updates_only_after_success() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_apply(&mut parameters, 7, 0.75, Ok(()));
+
+        assert!(result.is_ok());
+        assert_eq!(parameters[0].value, 0.75);
+    }
+
+    #[test]
+    fn update_parameter_cache_after_apply_preserves_cache_after_failure() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_apply(
+            &mut parameters,
+            7,
+            0.75,
+            Err("control unavailable".to_string()),
+        );
+
+        assert_eq!(result, Err("control unavailable".to_string()));
+        assert_eq!(parameters[0].value, 0.25);
     }
 }

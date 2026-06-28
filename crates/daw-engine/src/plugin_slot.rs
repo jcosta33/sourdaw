@@ -54,9 +54,6 @@ pub trait NativePlugin: Any + Send {
         self.process_audio(left, right, num_samples);
     }
 
-    /// Set a parameter by ID and value.
-    fn set_param(&mut self, param_id: u32, value: f64);
-
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;
 

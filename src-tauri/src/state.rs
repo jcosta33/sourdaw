@@ -68,6 +68,10 @@ pub struct EnginePluginInstanceData {
 }
 
 pub struct AppState {
+    /// Native audio engine handle (cpal thread + lock-free scheduler).
+    /// None until start_native_engine is called. Declared before engine-owned
+    /// runtime maps so app teardown drops the stream before active CLAP runtimes.
+    pub engine: Arc<Mutex<Option<EngineHandle>>>,
     /// Active plugin instances keyed by instance_id.
     pub plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
     /// Engine-owned plugin instances keyed by UI/runtime instance_id.
@@ -77,9 +81,6 @@ pub struct AppState {
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
     /// Open plugin GUI windows, keyed by instance_id → window label.
     pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
-    /// Native audio engine handle (cpal thread + lock-free scheduler).
-    /// None until start_native_engine is called.
-    pub engine: Arc<Mutex<Option<EngineHandle>>>,
     /// Audio bridge handles for each plugin instance (main thread side).
     /// Keyed by engine_plugin_id.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
@@ -100,11 +101,11 @@ pub struct PluginRegistryEntry {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            engine: Arc::new(Mutex::new(None)),
             plugins: Arc::new(Mutex::new(HashMap::new())),
             engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
-            engine: Arc::new(Mutex::new(None)),
             audio_bridges: Arc::new(Mutex::new(HashMap::new())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
         }

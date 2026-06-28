@@ -109,17 +109,7 @@ impl EngineHandle {
     /// Remove a native plugin from the audio thread.
     pub fn remove_plugin(&mut self, id: usize) -> Result<(), String> {
         self.command_tx
-            .push(GraphCommand::RemovePlugin(id))
-            .map_err(|_| "Audio command queue full".to_string())?;
-        self.command_tx
-            .push(GraphCommand::UnregisterAudioBridge(id))
-            .map_err(|_| "Audio command queue full".to_string())
-    }
-
-    /// Set a parameter on a native plugin (lock-free, from any thread).
-    pub fn set_plugin_param(&mut self, id: usize, param_id: u32, value: f64) -> Result<(), String> {
-        self.command_tx
-            .push(GraphCommand::SetPluginParam(id, param_id, value))
+            .push(GraphCommand::RemovePluginWithBridge(id))
             .map_err(|_| "Audio command queue full".to_string())
     }
 

@@ -117,7 +117,9 @@ impl AudioPlugin for Vst3Wrapper {
     fn get_state(&self) -> Vec<u8> {
         vec![]
     }
-    fn set_state(&mut self, _state: &[u8]) {}
+    fn set_state(&mut self, _state: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
