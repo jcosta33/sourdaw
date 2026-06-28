@@ -51,7 +51,7 @@ pub struct ClapParameterUpdate {
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
     /// The dynamically loaded shared library — must outlive the plugin instance.
-    _library: Library,
+    _library: Option<Library>,
     /// Pointer to the clap_plugin struct.
     plugin: *const clap_plugin,
     /// Host descriptor — must outlive the plugin.
@@ -78,6 +78,14 @@ pub struct ClapWrapper {
     midi_scratch: Vec<clap_event_note>,
     /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
     parameter_scratch: Vec<clap_event_param_value>,
+    #[cfg(feature = "engine-owned-command-fixture")]
+    command_fixture: Option<EngineOwnedCommandFixture>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+struct EngineOwnedCommandFixture {
+    state: Vec<u8>,
+    has_gui: bool,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -303,7 +311,7 @@ impl ClapWrapper {
             eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
 
             Ok(Self {
-                _library: library,
+                _library: Some(library),
                 plugin,
                 host,
                 activated,
@@ -317,7 +325,35 @@ impl ClapWrapper {
                 output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 midi_scratch: Vec::with_capacity(MAX_MIDI),
                 parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+                #[cfg(feature = "engine-owned-command-fixture")]
+                command_fixture: None,
             })
+        }
+    }
+
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn new_engine_owned_command_fixture(
+        name: &str,
+        state: Vec<u8>,
+        has_gui: bool,
+    ) -> Self {
+        Self {
+            _library: None,
+            plugin: ptr::null(),
+            host: Box::new(create_host_descriptor()),
+            activated: true,
+            name: name.to_string(),
+            sample_rate: 0.0,
+            params_ext: ptr::null(),
+            state_ext: ptr::null(),
+            gui_ext: ptr::null(),
+            gui_open: false,
+            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            command_fixture: Some(EngineOwnedCommandFixture { state, has_gui }),
         }
     }
 
@@ -348,6 +384,11 @@ impl ClapWrapper {
 
     /// Returns true if the plugin provides a custom GUI.
     pub fn has_gui(&self) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.has_gui;
+        }
+
         !self.gui_ext.is_null()
     }
 
@@ -359,6 +400,15 @@ impl ClapWrapper {
     /// Get the preferred GUI size (width, height) if the plugin has a GUI.
     /// Must be called AFTER gui.create() for most plugins.
     pub fn get_gui_size(&self) -> Option<(u32, u32)> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return if fixture.has_gui {
+                Some((800, 600))
+            } else {
+                None
+            };
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() {
             return None;
         }
@@ -406,6 +456,19 @@ impl ClapWrapper {
     /// 5. gui.set_parent(window)
     /// 6. gui.show()
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            if !fixture.has_gui {
+                return Err("Plugin does not support GUI".to_string());
+            }
+            if self.gui_open {
+                return Err("GUI is already open".to_string());
+            }
+
+            self.gui_open = true;
+            return Ok((800, 600));
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() {
             return Err("Plugin does not support GUI".to_string());
         }
@@ -493,6 +556,12 @@ impl ClapWrapper {
 
     /// Close (hide + destroy) the plugin GUI.
     pub fn close_gui(&mut self) {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if self.command_fixture.is_some() {
+            self.gui_open = false;
+            return;
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
             return;
         }
@@ -788,6 +857,11 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn get_parameters(&self) -> Vec<PluginParameter> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if self.command_fixture.is_some() {
+            return Vec::new();
+        }
+
         if self.params_ext.is_null() || self.plugin.is_null() {
             return vec![];
         }
@@ -848,6 +922,11 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn get_state(&self) -> Vec<u8> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.state.clone();
+        }
+
         if self.state_ext.is_null() || self.plugin.is_null() {
             return vec![];
         }
@@ -876,6 +955,12 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn set_state(&mut self, state_data: &[u8]) -> Result<(), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.state = state_data.to_vec();
+            return Ok(());
+        }
+
         if self.state_ext.is_null() || self.plugin.is_null() {
             return Ok(());
         }

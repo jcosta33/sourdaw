@@ -391,7 +391,57 @@ pub async fn show_all_plugin_guis(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::native_bridge::SharedClapPlugin;
+    use crate::state::{AppState, EnginePluginInstanceData};
+    use daw_plugin_host::ClapWrapper;
     use std::cell::Cell;
+    use std::sync::Arc;
+    use tauri::Manager;
+
+    fn command_test_app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("test app should build")
+    }
+
+    fn insert_engine_owned_fixture(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+        has_gui: bool,
+    ) {
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], has_gui);
+        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 17,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui,
+            },
+        );
+    }
+
+    #[test]
+    fn is_plugin_gui_supported_queries_engine_owned_runtime_owner_through_command_state() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+
+        let result = tauri::async_runtime::block_on(is_plugin_gui_supported(
+            "engine-owned-fixture".to_string(),
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(result, Ok(true));
+    }
 
     #[test]
     fn publish_engine_gui_window_with_lifecycle_checks_rejects_before_publish() {

@@ -47,3 +47,7 @@ daw-engine = { path = "../crates/daw-engine" }
 daw-plugin-host = { path = "../crates/daw-plugin-host" }
 daw-dsp = { path = "../crates/daw-dsp" }
 daw-io = { path = "../crates/daw-io" }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["protocol-asset", "devtools", "unstable", "test"] }
+daw-plugin-host = { path = "../crates/daw-plugin-host", features = ["engine-owned-command-fixture"] }

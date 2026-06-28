@@ -687,6 +687,9 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::EnginePluginInstanceData;
+    use daw_core::PluginInstanceId;
+    use tauri::Manager;
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
         PluginParameter {
@@ -699,6 +702,75 @@ mod tests {
             unit: None,
             is_automatable: true,
         }
+    }
+
+    fn command_test_app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("test app should build")
+    }
+
+    fn insert_engine_owned_fixture(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+        state_bytes: Vec<u8>,
+    ) {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Engine Owned Fixture",
+            state_bytes,
+            true,
+        );
+        let parameters = wrapper.get_parameters();
+        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 17,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters,
+                has_gui: true,
+            },
+        );
+    }
+
+    #[test]
+    fn get_plugin_state_reads_engine_owned_runtime_owner_through_command_state() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let result = tauri::async_runtime::block_on(get_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(result, Ok(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn set_plugin_state_writes_engine_owned_runtime_owner_through_command_state() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let set_result = tauri::async_runtime::block_on(set_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            vec![9, 8, 7],
+            app.state::<AppState>(),
+        ));
+        let get_result = tauri::async_runtime::block_on(get_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(set_result, Ok(()));
+        assert_eq!(get_result, Ok(vec![9, 8, 7]));
     }
 
     #[test]
