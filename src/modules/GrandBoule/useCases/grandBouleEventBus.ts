@@ -11,11 +11,11 @@ type GrandBouleEvents = {
 };
 
 export abstract class GrandBouleEventBus {
-    abstract emit<TEventName extends keyof GrandBouleEvents & string>(
+    abstract emit<TEventName extends keyof GrandBouleEvents>(
         event: TEventName,
         payload: GrandBouleEvents[TEventName]
     ): Promise<void>;
-    abstract on<TEventName extends keyof GrandBouleEvents & string>(
+    abstract on<TEventName extends keyof GrandBouleEvents>(
         event: TEventName,
         handler: (payload: GrandBouleEvents[TEventName]) => void | Promise<void>
     ): () => void;

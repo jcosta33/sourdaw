@@ -8,7 +8,7 @@ type CommandEvents = {
 };
 
 export abstract class CommandEventBus {
-    abstract emit<TEventName extends keyof CommandEvents & string>(
+    abstract emit<TEventName extends keyof CommandEvents>(
         event: TEventName,
         payload: CommandEvents[TEventName]
     ): Promise<void>;

@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
-import { type CapabilityReport } from '../../models/CapabilityReport';
-
 const subscribe_to_midi_store = vi.hoisted(() => vi.fn(() => () => undefined));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -12,6 +10,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 
+import { type CapabilityReport } from '../../models/CapabilityReport';
 import { capabilityStore } from '../../stores/capabilityStore';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { initBrowserAi } from '../initBrowserAi';

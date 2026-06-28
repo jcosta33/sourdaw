@@ -15,6 +15,7 @@ import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDe
 import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
 import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
 
+import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
@@ -26,7 +27,6 @@ import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResu
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
-import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

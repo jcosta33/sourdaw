@@ -5,7 +5,6 @@ import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
 import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
-import { WebMidiEventBus } from '../webMidiEventBus';
 import {
     getMidiAccess,
     getActiveInput,
@@ -16,6 +15,7 @@ import {
     setTauriMode,
     setTargetTrackId,
 } from '../state';
+import { WebMidiEventBus } from '../webMidiEventBus';
 
 import { attachInput, selectMidiInputTauri } from './helpers';
 

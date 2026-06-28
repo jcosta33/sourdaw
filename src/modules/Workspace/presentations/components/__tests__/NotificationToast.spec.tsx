@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
-import { NotificationToast } from '../NotificationToast';
 import { onNotification } from '../../../useCases/onNotification';
+import { NotificationToast } from '../NotificationToast';
 
 const notifyHandlerRef: {
     current: null | ((payload: { message: string; level: 'warning' | 'error' | 'info' | 'success' }) => void);

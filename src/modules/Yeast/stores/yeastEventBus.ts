@@ -7,7 +7,7 @@ type YeastEvents = {
 };
 
 export abstract class YeastEventBus {
-    abstract emit<TEventName extends keyof YeastEvents & string>(
+    abstract emit<TEventName extends keyof YeastEvents>(
         event: TEventName,
         payload: YeastEvents[TEventName]
     ): Promise<void>;

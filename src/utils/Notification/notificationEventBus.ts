@@ -8,7 +8,7 @@ type NotificationEvents = {
 };
 
 export abstract class NotificationEventBus {
-    abstract emit<TEventName extends keyof NotificationEvents & string>(
+    abstract emit<TEventName extends keyof NotificationEvents>(
         event: TEventName,
         payload: NotificationEvents[TEventName]
     ): Promise<void>;

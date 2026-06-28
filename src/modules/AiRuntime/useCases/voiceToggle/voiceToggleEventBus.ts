@@ -7,11 +7,11 @@ type VoiceToggleEvents = {
 };
 
 export abstract class VoiceToggleEventBus {
-    abstract emit<TEventName extends keyof VoiceToggleEvents & string>(
+    abstract emit<TEventName extends keyof VoiceToggleEvents>(
         event: TEventName,
         payload: VoiceToggleEvents[TEventName]
     ): Promise<void>;
-    abstract on<TEventName extends keyof VoiceToggleEvents & string>(
+    abstract on<TEventName extends keyof VoiceToggleEvents>(
         event: TEventName,
         handler: (payload: VoiceToggleEvents[TEventName]) => void | Promise<void>
     ): () => void;

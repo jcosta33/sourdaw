@@ -11,11 +11,11 @@ type WebMidiEvents = {
 };
 
 export abstract class WebMidiEventBus {
-    abstract emit<TEventName extends keyof WebMidiEvents & string>(
+    abstract emit<TEventName extends keyof WebMidiEvents>(
         event: TEventName,
         payload: WebMidiEvents[TEventName]
     ): Promise<void>;
-    abstract on<TEventName extends keyof WebMidiEvents & string>(
+    abstract on<TEventName extends keyof WebMidiEvents>(
         event: TEventName,
         handler: (payload: WebMidiEvents[TEventName]) => void | Promise<void>
     ): () => void;

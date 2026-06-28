@@ -5,10 +5,10 @@ vi.stubGlobal('navigator', {
     requestMIDIAccess: vi.fn(),
 });
 
+import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
-import { Container } from '#/infra/di/Container';
 import * as state from '../../state';
 import { setWebMidiEventBus } from '../../webMidiEventBus';
 import * as helpers from '../helpers';

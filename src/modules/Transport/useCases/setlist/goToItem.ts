@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 
 import { setlistStore } from '../../stores/setlistStore';
+
 import { SetlistEventBus } from './setlistEventBus';
 
 /**

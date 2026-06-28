@@ -1,7 +1,4 @@
-import {
-    type AudioDeviceRuntimeSink,
-    setAudioDeviceRuntimeSink,
-} from '../engine/audioDeviceRuntimeSink';
+import { type AudioDeviceRuntimeSink, setAudioDeviceRuntimeSink } from '../engine/audioDeviceRuntimeSink';
 
 type ConfigureAudioDeviceRuntimeSinkInput = Partial<AudioDeviceRuntimeSink>;
 

@@ -45,11 +45,11 @@ type WorkspaceEvents = {
 };
 
 export abstract class WorkspaceEventBus {
-    abstract emit<TEventName extends keyof WorkspaceEvents & string>(
+    abstract emit<TEventName extends keyof WorkspaceEvents>(
         event: TEventName,
         payload: WorkspaceEvents[TEventName]
     ): Promise<void>;
-    abstract on<TEventName extends keyof WorkspaceEvents & string>(
+    abstract on<TEventName extends keyof WorkspaceEvents>(
         event: TEventName,
         handler: (payload: WorkspaceEvents[TEventName]) => void | Promise<void>
     ): () => void;

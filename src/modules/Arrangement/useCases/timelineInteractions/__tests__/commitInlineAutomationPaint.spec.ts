@@ -91,10 +91,7 @@ describe('commitInlineAutomationPaint', () => {
             { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
             { beat: 3, value: 0.7, curve: 'linear', tension: 0 },
         ];
-        const nextPoints = [
-            { beat: 1, value: 0.9, curve: 'linear', tension: 0 },
-            previousPoints[1],
-        ];
+        const nextPoints = [{ beat: 1, value: 0.9, curve: 'linear', tension: 0 }, previousPoints[1]];
         mocks.getAutomationLanes
             .mockReturnValueOnce([
                 {

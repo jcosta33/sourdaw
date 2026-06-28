@@ -6,8 +6,9 @@ import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/u
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
-import { ArrangementEventBus } from './arrangementEventBus';
 import { takeLaneStore } from '../stores/takeLaneStore';
+
+import { ArrangementEventBus } from './arrangementEventBus';
 
 export const removeTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>

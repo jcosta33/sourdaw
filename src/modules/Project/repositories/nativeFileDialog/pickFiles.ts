@@ -1,5 +1,5 @@
-import { isTauri } from '#/utils/tauriBridge';
 import { basename_from_path } from '#/utils/path-basename';
+import { isTauri } from '#/utils/tauriBridge';
 
 import { openViaTauri } from './helpers';
 

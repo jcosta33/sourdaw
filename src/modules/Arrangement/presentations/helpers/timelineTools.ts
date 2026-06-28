@@ -154,9 +154,7 @@ export const handleAutomationTool = (
     const value = trackHit ? valueAtTrackY(contentY, trackHit.offset, trackHit.height) : 0.5;
 
     // Ensure a gain lane exists on this track
-    const lane = getAutomationLanes().find(
-        (length) => length.trackId === trackId && length.parameterId === 'gain'
-    );
+    const lane = getAutomationLanes().find((length) => length.trackId === trackId && length.parameterId === 'gain');
     const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
     autoDragRef.current = {
         laneId: lane?.id,

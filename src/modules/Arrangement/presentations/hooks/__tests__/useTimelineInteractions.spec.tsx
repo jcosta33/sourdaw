@@ -294,7 +294,11 @@ describe('useTimelineInteractions', () => {
             parameterName: 'Gain',
             points: [{ beat: 1, value: 0.5, curve: 'linear', tension: 0 }],
         };
-        mocks.workspaceStoreValue.value = { activeTool: 'select', selectedClipIds: [], automationVisibility: 'visible' };
+        mocks.workspaceStoreValue.value = {
+            activeTool: 'select',
+            selectedClipIds: [],
+            automationVisibility: 'visible',
+        };
         mocks.tryPaintSubLane.mockImplementation((_, __, ref) => {
             ref.current = draft;
             return true;

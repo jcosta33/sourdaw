@@ -15,6 +15,7 @@ import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/A
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
 
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
+
 import { ToasterEventBus } from './toasterEventBus';
 
 export const createDrumTrackStack = inject({ eventBus: ToasterEventBus })(

@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
-import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
-import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
+import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
 // Mock external dependencies

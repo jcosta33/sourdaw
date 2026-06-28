@@ -1,10 +1,6 @@
 import { Container } from '#/infra/di/Container';
 
-import type {
-    TrackAddedPayload,
-    TrackRemovedPayload,
-    TrackSelectionChangedPayload,
-} from '../events';
+import type { TrackAddedPayload, TrackRemovedPayload, TrackSelectionChangedPayload } from '../events';
 
 type ArrangementEvents = {
     'track.added': TrackAddedPayload;
@@ -13,7 +9,7 @@ type ArrangementEvents = {
 };
 
 export abstract class ArrangementEventBus {
-    abstract emit<TEventName extends keyof ArrangementEvents & string>(
+    abstract emit<TEventName extends keyof ArrangementEvents>(
         event: TEventName,
         payload: ArrangementEvents[TEventName]
     ): Promise<void>;

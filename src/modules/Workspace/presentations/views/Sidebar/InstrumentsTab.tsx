@@ -21,6 +21,11 @@ import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases';
 
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
+import { showCrumbsPanel } from '../../../useCases/panels/devicePanels/showCrumbsPanel';
+import { showFermenterPanel } from '../../../useCases/panels/devicePanels/showFermenterPanel';
+import { showGrandBoulePanel } from '../../../useCases/panels/devicePanels/showGrandBoulePanel';
+import { showLevainPanel } from '../../../useCases/panels/devicePanels/showLevainPanel';
+import { showToasterPanel } from '../../../useCases/panels/devicePanels/showToasterPanel';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -37,11 +42,6 @@ import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
 
 import { type SidebarRoute } from './SidebarTypes';
-import { showCrumbsPanel } from '../../../useCases/panels/devicePanels/showCrumbsPanel';
-import { showFermenterPanel } from '../../../useCases/panels/devicePanels/showFermenterPanel';
-import { showGrandBoulePanel } from '../../../useCases/panels/devicePanels/showGrandBoulePanel';
-import { showLevainPanel } from '../../../useCases/panels/devicePanels/showLevainPanel';
-import { showToasterPanel } from '../../../useCases/panels/devicePanels/showToasterPanel';
 
 // ── Instrument Family Groups ────────────────────────────────────────────────
 

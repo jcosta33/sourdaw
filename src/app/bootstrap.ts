@@ -55,9 +55,9 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
+import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
-import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
 import {

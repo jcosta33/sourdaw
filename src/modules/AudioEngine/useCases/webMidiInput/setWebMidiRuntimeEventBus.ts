@@ -1,7 +1,7 @@
+import { setWebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
+
 import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/Workspace/events';
 import type { YeastNotesOffPayload } from '#/modules/Yeast/events';
-
-import { setWebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
 type WebMidiRuntimeEvents = {
     'midi.noteOn': MidiNoteOnPayload;
@@ -11,11 +11,11 @@ type WebMidiRuntimeEvents = {
 };
 
 type WebMidiRuntimeEventBus = {
-    emit<TEventName extends keyof WebMidiRuntimeEvents & string>(
+    emit<TEventName extends keyof WebMidiRuntimeEvents>(
         event: TEventName,
         payload: WebMidiRuntimeEvents[TEventName]
     ): Promise<void>;
-    on<TEventName extends keyof WebMidiRuntimeEvents & string>(
+    on<TEventName extends keyof WebMidiRuntimeEvents>(
         event: TEventName,
         handler: (payload: WebMidiRuntimeEvents[TEventName]) => void | Promise<void>
     ): () => void;

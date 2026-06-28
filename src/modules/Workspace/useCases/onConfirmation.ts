@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 
 import { type ConfirmPayload } from '../events/WorkspaceEvents';
+
 import { WorkspaceEventBus } from './workspaceEventBus';
 
 export const onConfirmation = inject({ eventBus: WorkspaceEventBus })(

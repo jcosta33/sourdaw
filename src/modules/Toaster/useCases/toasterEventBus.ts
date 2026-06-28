@@ -7,7 +7,7 @@ type ToasterEvents = {
 };
 
 export abstract class ToasterEventBus {
-    abstract emit<TEventName extends keyof ToasterEvents & string>(
+    abstract emit<TEventName extends keyof ToasterEvents>(
         event: TEventName,
         payload: ToasterEvents[TEventName]
     ): Promise<void>;

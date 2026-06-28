@@ -19,8 +19,8 @@ vi.mock('../helpers', () => ({
     scanTauriDirectory: vi.fn(),
 }));
 
-import { connectFolder } from '../connectFolder';
 import { addLibraryRoot } from '../../../stores/libraryStore';
+import { connectFolder } from '../connectFolder';
 
 describe('connectFolder', () => {
     beforeEach(() => {

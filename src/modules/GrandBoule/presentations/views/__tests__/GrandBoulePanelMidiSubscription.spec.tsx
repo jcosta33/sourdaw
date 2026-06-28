@@ -33,7 +33,7 @@ const testEventBus = {
         if (eventHandlers === undefined) {
             return;
         }
-        await Promise.all([...eventHandlers].map((handler) => handler(payload)));
+        await Promise.all([...eventHandlers].map((handler) => Promise.resolve(handler(payload))));
     },
     on: (event: string, handler: TestHandler): (() => void) => {
         const eventHandlers = handlers.get(event) ?? new Set<TestHandler>();
