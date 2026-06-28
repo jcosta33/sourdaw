@@ -257,15 +257,6 @@ export const miscCommands: CommandEntry[] = [
         },
     },
 
-    // ── Node View ─────────────────────────────────────────────
-    {
-        id: 'toggle-node-view',
-        label: 'Toggle Node-Based Routing',
-        description: 'Switch between linear inserts and a Fusion-style node graph view',
-        category: 'View',
-        action: { type: 'toggleNodeView' },
-    },
-
     // ── Control Surfaces ──────────────────────────────────────
     {
         id: 'connect-mcu',
@@ -319,15 +310,6 @@ export const miscCommands: CommandEntry[] = [
         description: 'Enable deep hardware integration with Ableton Push 3',
         category: 'Hardware',
         action: { type: 'connectPush', payload: { model: 'push3' } },
-    },
-
-    // ── DAWproject ────────────────────────────────────────────
-    {
-        id: 'export-dawproject',
-        label: 'Export DAWproject',
-        description: 'Export project in DAWproject format for Bitwig/Studio One interop',
-        category: 'Project',
-        action: { type: 'exportDawProject' },
     },
 
     // ── Audio Warping ─────────────────────────────────────────
