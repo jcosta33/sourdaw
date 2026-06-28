@@ -69,7 +69,7 @@ test.describe('Workspace Panels', () => {
         await bottomDockButton.click();
 
         // The bottom dock should now be visible and default to Mixer
-        const sessionTabButton = page.getByRole('button', { name: 'Session', exact: true });
+        const sessionTabButton = page.getByRole('tab', { name: 'Session', exact: true });
         await expect(sessionTabButton).toBeVisible();
 
         // Click to open the Session View in the bottom dock
@@ -94,7 +94,7 @@ test.describe('Workspace Panels', () => {
         await bottomDockButton.click();
 
         // Click the Loop Station tab
-        const loopStationTabButton = page.getByRole('button', { name: 'Loop Station', exact: true });
+        const loopStationTabButton = page.getByRole('tab', { name: 'Loop Station', exact: true });
         await expect(loopStationTabButton).toBeVisible();
         await loopStationTabButton.click();
 
