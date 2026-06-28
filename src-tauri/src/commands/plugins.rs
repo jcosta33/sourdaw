@@ -310,7 +310,7 @@ pub async fn unload_plugin(
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         let engine_plugin = engine_plugins.get(&instance_id.0);
         if let Some(instance) = engine_plugin {
-            instance.runtime.begin_unload()?;
+            instance.runtime.begin_unload();
         }
         engine_plugin.map(|instance| (instance.engine_plugin_id, Arc::clone(&instance.runtime)))
     };

@@ -172,22 +172,33 @@ pub async fn open_plugin_gui(
             .plugin_windows
             .lock()
             .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
-        windows.insert(instance_id.clone(), window_label);
+        windows.insert(instance_id.clone(), window_label.clone());
         Ok(())
     };
 
     if let Some(runtime) = engine_runtime.as_ref() {
-        let publish_result = runtime.with_public_control_serialized(publish_window);
+        let publish_result = publish_engine_gui_window_with_lifecycle_checks(
+            || runtime.ensure_public_control_allowed(),
+            publish_window,
+        );
         cleanup_opened_engine_gui_after_rejected_lifecycle(
             publish_result,
             || {
-                let _ = runtime.with_unload_control(
-                    std::time::Duration::from_secs(2),
-                    |plugin| {
-                        plugin.close_gui();
-                        Ok(())
-                    },
-                );
+                let _ = runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
+                    plugin.close_gui();
+                    Ok(())
+                });
+            },
+            || {
+                if let Ok(mut windows) = state.plugin_windows.lock() {
+                    let should_remove = windows
+                        .get(&instance_id)
+                        .map(|label| label == &window_label)
+                        .unwrap_or(false);
+                    if should_remove {
+                        windows.remove(&instance_id);
+                    }
+                }
             },
             || {
                 let _ = plugin_window.destroy();
@@ -205,13 +216,24 @@ pub async fn open_plugin_gui(
     })
 }
 
+fn publish_engine_gui_window_with_lifecycle_checks(
+    ensure_public_control_allowed: impl Fn() -> Result<(), String>,
+    publish_window: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    ensure_public_control_allowed()?;
+    publish_window()?;
+    ensure_public_control_allowed()
+}
+
 fn cleanup_opened_engine_gui_after_rejected_lifecycle(
     lifecycle_result: Result<(), String>,
     close_gui: impl FnOnce(),
+    remove_window_label: impl FnOnce(),
     destroy_window: impl FnOnce(),
 ) -> Result<(), String> {
     if let Err(error) = lifecycle_result {
         close_gui();
+        remove_window_label();
         destroy_window();
         return Err(error);
     }
@@ -372,14 +394,66 @@ mod tests {
     use std::cell::Cell;
 
     #[test]
+    fn publish_engine_gui_window_with_lifecycle_checks_rejects_before_publish() {
+        let published = Cell::new(false);
+
+        let result = publish_engine_gui_window_with_lifecycle_checks(
+            || Err("Engine-owned plugin instance 'fixture' is unloading".to_string()),
+            || {
+                published.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+        );
+        assert!(!published.get());
+    }
+
+    #[test]
+    fn publish_engine_gui_window_with_lifecycle_checks_rejects_after_publish() {
+        let lifecycle_checks = Cell::new(0);
+        let published = Cell::new(false);
+
+        let result = publish_engine_gui_window_with_lifecycle_checks(
+            || {
+                let checks = lifecycle_checks.get() + 1;
+                lifecycle_checks.set(checks);
+                if checks == 1 {
+                    Ok(())
+                } else {
+                    Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+                }
+            },
+            || {
+                published.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+        );
+        assert!(published.get());
+        assert_eq!(lifecycle_checks.get(), 2);
+    }
+
+    #[test]
     fn cleanup_opened_engine_gui_after_rejected_lifecycle_closes_gui_and_window() {
         let closed_gui = Cell::new(false);
+        let removed_window_label = Cell::new(false);
         let destroyed_window = Cell::new(false);
 
         let result = cleanup_opened_engine_gui_after_rejected_lifecycle(
             Err("Engine-owned plugin instance 'fixture' is unloading".to_string()),
             || {
                 closed_gui.set(true);
+            },
+            || {
+                removed_window_label.set(true);
             },
             || {
                 destroyed_window.set(true);
@@ -391,12 +465,14 @@ mod tests {
             Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
         );
         assert!(closed_gui.get());
+        assert!(removed_window_label.get());
         assert!(destroyed_window.get());
     }
 
     #[test]
     fn cleanup_opened_engine_gui_after_rejected_lifecycle_keeps_gui_on_success() {
         let closed_gui = Cell::new(false);
+        let removed_window_label = Cell::new(false);
         let destroyed_window = Cell::new(false);
 
         let result = cleanup_opened_engine_gui_after_rejected_lifecycle(
@@ -405,12 +481,16 @@ mod tests {
                 closed_gui.set(true);
             },
             || {
+                removed_window_label.set(true);
+            },
+            || {
                 destroyed_window.set(true);
             },
         );
 
         assert_eq!(result, Ok(()));
         assert!(!closed_gui.get());
+        assert!(!removed_window_label.get());
         assert!(!destroyed_window.get());
     }
 }

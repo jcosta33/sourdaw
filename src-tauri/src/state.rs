@@ -112,6 +112,17 @@ impl Default for AppState {
     }
 }
 
+fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
+    if retired_runtimes
+        .iter()
+        .any(|retired_runtime| Arc::ptr_eq(retired_runtime, &runtime))
+    {
+        return;
+    }
+
+    retired_runtimes.push(runtime);
+}
+
 impl AppState {
     pub fn with_engine_plugin_control<ResultValue>(
         &self,
@@ -134,11 +145,55 @@ impl AppState {
 
     pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedClapPlugin>) {
         match self.retired_engine_plugins.lock() {
-            Ok(mut retired_plugins) => retired_plugins.push(runtime),
+            Ok(mut retired_plugins) => {
+                retain_runtime_once(&mut retired_plugins, runtime);
+            }
             Err(poisoned) => {
                 let mut retired_plugins = poisoned.into_inner();
-                retired_plugins.push(runtime);
+                retain_runtime_once(&mut retired_plugins, runtime);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retain_runtime_once_pushes_new_runtime() {
+        let runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+
+        assert_eq!(retired_runtimes.len(), 1);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &runtime));
+    }
+
+    #[test]
+    fn retain_runtime_once_dedupes_same_runtime_arc() {
+        let runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+
+        assert_eq!(retired_runtimes.len(), 1);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &runtime));
+    }
+
+    #[test]
+    fn retain_runtime_once_keeps_distinct_runtimes() {
+        let first_runtime = Arc::new(17_u32);
+        let second_runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&first_runtime));
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&second_runtime));
+
+        assert_eq!(retired_runtimes.len(), 2);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &first_runtime));
+        assert!(Arc::ptr_eq(&retired_runtimes[1], &second_runtime));
     }
 }
