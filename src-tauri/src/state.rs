@@ -1,3 +1,4 @@
+use crate::host::native_bridge::SharedClapPlugin;
 use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
@@ -6,6 +7,7 @@ use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,
@@ -59,8 +61,10 @@ impl PluginInstanceData {
 
 pub struct EnginePluginInstanceData {
     pub engine_plugin_id: usize,
+    pub runtime: Arc<SharedClapPlugin>,
     pub name: String,
     pub parameters: Vec<PluginParameter>,
+    pub has_gui: bool,
 }
 
 pub struct AppState {
@@ -79,6 +83,10 @@ pub struct AppState {
     /// Audio bridge handles for each plugin instance (main thread side).
     /// Keyed by engine_plugin_id.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
+    /// Retired engine-owned runtimes kept alive after scheduler removal is
+    /// queued so the CPAL callback never final-drops a hosted plugin. Declared
+    /// after `engine` so app teardown drops the stream before these runtimes.
+    pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedClapPlugin>>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +106,28 @@ impl Default for AppState {
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
             engine: Arc::new(Mutex::new(None)),
             audio_bridges: Arc::new(Mutex::new(HashMap::new())),
+            retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+}
+
+impl AppState {
+    pub fn with_engine_plugin_control<ResultValue>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let runtime = {
+            let engine_plugins = self
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins
+                .get(instance_id)
+                .map(|instance| Arc::clone(&instance.runtime))
+                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
+        };
+
+        runtime.with_control(Duration::from_secs(2), operation)
     }
 }

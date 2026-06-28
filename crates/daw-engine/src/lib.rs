@@ -71,12 +71,39 @@ impl EngineHandle {
     /// Add a native plugin (CLAP/VST3) to the audio thread's processing chain.
     /// Returns the assigned plugin ID for future reference.
     pub fn add_plugin(&mut self, plugin: Box<dyn NativePlugin>) -> Result<usize, String> {
+        let id = self.reserve_plugin_id();
+        self.add_plugin_with_id(id, plugin)?;
+        Ok(id)
+    }
+
+    /// Reserve a native plugin ID before all runtime-side state is registered.
+    pub fn reserve_plugin_id(&mut self) -> usize {
         let id = self.next_plugin_id;
         self.next_plugin_id += 1;
+        id
+    }
+
+    /// Add a native plugin with an already reserved plugin ID.
+    pub fn add_plugin_with_id(
+        &mut self,
+        id: usize,
+        plugin: Box<dyn NativePlugin>,
+    ) -> Result<(), String> {
         self.command_tx
             .push(GraphCommand::AddPlugin(id, plugin))
-            .map_err(|_| "Audio command queue full".to_string())?;
-        Ok(id)
+            .map_err(|_| "Audio command queue full".to_string())
+    }
+
+    /// Add a native plugin and its audio bridge with one scheduler command.
+    pub fn add_plugin_with_bridge(
+        &mut self,
+        id: usize,
+        plugin: Box<dyn NativePlugin>,
+        bridge: audio_bridge::PluginAudioBridge,
+    ) -> Result<(), String> {
+        self.command_tx
+            .push(GraphCommand::AddPluginWithBridge(id, plugin, bridge))
+            .map_err(|_| "Audio command queue full".to_string())
     }
 
     /// Remove a native plugin from the audio thread.

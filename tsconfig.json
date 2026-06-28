@@ -16,6 +16,7 @@
         "isolatedModules": true,
         "esModuleInterop": true,
         "jsx": "react-jsx",
+        "noEmit": true,
         "skipLibCheck": true,
         "paths": {
             "#/*": ["./src/*"]

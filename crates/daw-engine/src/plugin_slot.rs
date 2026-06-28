@@ -1,5 +1,7 @@
 //! Plugin slot — trait for external plugins processed on the native audio thread.
 
+use std::any::Any;
+
 /// A MIDI note event to send to a plugin.
 #[derive(Clone, Copy)]
 pub struct MidiNoteEvent {
@@ -35,7 +37,7 @@ impl Default for TransportState {
 }
 
 /// Trait for a plugin that can process audio on the real-time thread.
-pub trait NativePlugin: Send {
+pub trait NativePlugin: Any + Send {
     /// Process a block of stereo audio in-place.
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize);
 
@@ -62,4 +64,10 @@ pub trait NativePlugin: Send {
     fn accepts_midi(&self) -> bool {
         false
     }
+
+    /// Expose concrete plugin adapters to non-RT control code after transfer.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Expose concrete plugin adapters to non-RT control code after transfer.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

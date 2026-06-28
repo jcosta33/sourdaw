@@ -39,8 +39,8 @@ pub async fn is_plugin_gui_supported(
         .engine_plugins
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if engine_plugins.contains_key(&instance_id) {
-        return Ok(false);
+    if let Some(instance) = engine_plugins.get(&instance_id) {
+        return Ok(instance.has_gui);
     }
 
     Err(format!("No plugin instance: {}", instance_id))
@@ -63,33 +63,35 @@ pub async fn open_plugin_gui(
     state: tauri::State<'_, AppState>,
 ) -> Result<PluginGuiInfo, String> {
     // 1. Get plugin name and check GUI support
-    let plugin_name = {
+    let (plugin_name, is_engine_owned) = {
         let plugins = state
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-        let instance = match plugins.get(&instance_id) {
-            Some(instance) => instance,
+        match plugins.get(&instance_id) {
+            Some(instance) => {
+                if !instance.has_gui() {
+                    return Err("Plugin does not support GUI".to_string());
+                }
+
+                (instance.get_name().to_string(), false)
+            }
             None => {
                 let engine_plugins = state
                     .engine_plugins
                     .lock()
                     .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
                 if let Some(engine_instance) = engine_plugins.get(&instance_id) {
-                    return Err(format!(
-                        "Plugin GUI is not available for engine-owned native instance: {} ({})",
-                        instance_id, engine_instance.name
-                    ));
+                    if !engine_instance.has_gui {
+                        return Err("Plugin does not support GUI".to_string());
+                    }
+
+                    (engine_instance.name.clone(), true)
+                } else {
+                    return Err(format!("No plugin instance: {}", instance_id));
                 }
-                return Err(format!("No plugin instance: {}", instance_id));
             }
-        };
-
-        if !instance.has_gui() {
-            return Err("Plugin does not support GUI".to_string());
         }
-
-        instance.get_name().to_string()
     };
 
     // 2. Create a bare native window (no WebView) for the plugin editor
@@ -111,20 +113,31 @@ pub async fn open_plugin_gui(
         .map_err(|e| format!("Failed to create plugin window: {}", e))?;
 
     // 3. Extract the native window handle
-    let handle = plugin_window
+    let handle_ptr_result = plugin_window
         .window_handle()
-        .map_err(|e| format!("Failed to get window handle: {}", e))?;
+        .map_err(|e| format!("Failed to get window handle: {}", e))
+        .and_then(|handle| match handle.as_raw() {
+            RawWindowHandle::AppKit(h) => Ok(h.ns_view.as_ptr()),
+            #[cfg(target_os = "windows")]
+            RawWindowHandle::Win32(h) => Ok(h.hwnd.get() as *mut std::ffi::c_void),
+            RawWindowHandle::Xlib(h) => Ok(h.window as *mut std::ffi::c_void),
+            _ => Err("Unsupported platform for plugin GUI".to_string()),
+        });
 
-    let handle_ptr = match handle.as_raw() {
-        RawWindowHandle::AppKit(h) => h.ns_view.as_ptr(),
-        #[cfg(target_os = "windows")]
-        RawWindowHandle::Win32(h) => h.hwnd.get() as *mut std::ffi::c_void,
-        RawWindowHandle::Xlib(h) => h.window as *mut std::ffi::c_void,
-        _ => return Err("Unsupported platform for plugin GUI".to_string()),
+    let handle_ptr = match handle_ptr_result {
+        Ok(handle_ptr) => handle_ptr,
+        Err(error) => {
+            let _ = plugin_window.destroy();
+            return Err(error);
+        }
     };
 
     // 4. Open the plugin GUI (CLAP lifecycle: create → scale → get_size → set_parent → show)
-    let (width, height) = {
+    let gui_size_result = if is_engine_owned {
+        state.inner().with_engine_plugin_control(&instance_id, |plugin| {
+            plugin.open_gui(handle_ptr)
+        })
+    } else {
         let mut plugins = state
             .plugins
             .lock()
@@ -133,7 +146,15 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
-        instance.open_gui(handle_ptr)?
+        instance.open_gui(handle_ptr)
+    };
+
+    let (width, height) = match gui_size_result {
+        Ok(size) => size,
+        Err(error) => {
+            let _ = plugin_window.destroy();
+            return Err(error);
+        }
     };
 
     // 5. Resize the window to match the plugin's preferred size and show it
@@ -165,14 +186,33 @@ pub async fn close_plugin_gui(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    // Close the CLAP GUI
-    {
+    let closed_command_owned = {
         let mut plugins = state
             .plugins
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         if let Some(instance) = plugins.get_mut(&instance_id) {
             instance.close_gui();
+            true
+        } else {
+            false
+        }
+    };
+
+    if !closed_command_owned {
+        let is_engine_owned = {
+            let engine_plugins = state
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins.contains_key(&instance_id)
+        };
+
+        if is_engine_owned {
+            state.inner().with_engine_plugin_control(&instance_id, |plugin| {
+                plugin.close_gui();
+                Ok(())
+            })?;
         }
     }
 
@@ -209,6 +249,21 @@ pub async fn close_all_plugin_guis(
         for instance in plugins.values_mut() {
             instance.close_gui();
         }
+    }
+
+    let engine_instance_ids: Vec<String> = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins.keys().cloned().collect()
+    };
+
+    for instance_id in engine_instance_ids {
+        state.inner().with_engine_plugin_control(&instance_id, |plugin| {
+            plugin.close_gui();
+            Ok(())
+        })?;
     }
 
     // Destroy all native windows

@@ -13,16 +13,120 @@ use daw_plugin_host::Vst3Wrapper;
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::types::CrumbsCommand;
 use rtrb::Consumer;
-
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Maximum block size the native engine produces (matches ClapWrapper activation).
 const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events per block for the event-conversion scratch array.
 const MAX_MIDI_EVENTS: usize = 64;
 
-/// Newtype wrapper that implements NativePlugin for ClapWrapper.
+const PLUGIN_ACCESS_IDLE: u8 = 0;
+const PLUGIN_ACCESS_PROCESSING: u8 = 1;
+const PLUGIN_ACCESS_CONTROL: u8 = 2;
+
+/// Runtime owner for a CLAP plugin shared by the RT processor and non-RT control path.
+pub struct SharedClapPlugin {
+    name: String,
+    wrapper: UnsafeCell<ClapWrapper>,
+    access_state: AtomicU8,
+}
+
+// SAFETY: access_state enforces exclusive mutable access to wrapper. The audio
+// path never waits; if non-RT control owns the wrapper, processing bypasses it.
+unsafe impl Send for SharedClapPlugin {}
+unsafe impl Sync for SharedClapPlugin {}
+
+impl SharedClapPlugin {
+    pub fn new(wrapper: ClapWrapper) -> Self {
+        let name = wrapper.get_name().to_string();
+        Self {
+            name,
+            wrapper: UnsafeCell::new(wrapper),
+            access_state: AtomicU8::new(PLUGIN_ACCESS_IDLE),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn with_control<ResultValue>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let deadline = Instant::now() + timeout;
+
+        loop {
+            if self
+                .access_state
+                .compare_exchange(
+                    PLUGIN_ACCESS_IDLE,
+                    PLUGIN_ACCESS_CONTROL,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                let _guard = PluginAccessGuard {
+                    access_state: &self.access_state,
+                };
+                return operation(unsafe { &mut *self.wrapper.get() });
+            }
+
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "Timed out waiting for plugin control access: {}",
+                    self.name
+                ));
+            }
+
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn with_process<ResultValue>(
+        &self,
+        operation: impl FnOnce(&mut ClapWrapper) -> ResultValue,
+    ) -> Option<ResultValue> {
+        if self
+            .access_state
+            .compare_exchange(
+                PLUGIN_ACCESS_IDLE,
+                PLUGIN_ACCESS_PROCESSING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return None;
+        }
+
+        let _guard = PluginAccessGuard {
+            access_state: &self.access_state,
+        };
+        Some(operation(unsafe { &mut *self.wrapper.get() }))
+    }
+}
+
+struct PluginAccessGuard<'a> {
+    access_state: &'a AtomicU8,
+}
+
+impl Drop for PluginAccessGuard<'_> {
+    fn drop(&mut self) {
+        self.access_state
+            .store(PLUGIN_ACCESS_IDLE, Ordering::Release);
+    }
+}
+
+/// RT processing handle for a shared CLAP runtime plugin.
 pub struct ClapPluginSlot {
-    pub wrapper: ClapWrapper,
+    plugin: Arc<SharedClapPlugin>,
     /// Preallocated output scratch for left channel (avoids per-block Vec alloc on RT thread).
     out_l_scratch: Box<[f32; MAX_BUFFER]>,
     /// Preallocated output scratch for right channel.
@@ -30,9 +134,9 @@ pub struct ClapPluginSlot {
 }
 
 impl ClapPluginSlot {
-    pub fn new(wrapper: ClapWrapper) -> Self {
+    pub fn new(plugin: Arc<SharedClapPlugin>) -> Self {
         Self {
-            wrapper,
+            plugin,
             out_l_scratch: Box::new([0.0f32; MAX_BUFFER]),
             out_r_scratch: Box::new([0.0f32; MAX_BUFFER]),
         }
@@ -42,19 +146,21 @@ impl ClapPluginSlot {
 impl NativePlugin for ClapPluginSlot {
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         let n = num_samples.min(MAX_BUFFER);
-        let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
-        // Destructure to satisfy the borrow checker: wrapper + scratch are separate fields.
-        let (wrapper, out_l, out_r) = (
-            &mut self.wrapper,
-            &mut self.out_l_scratch,
-            &mut self.out_r_scratch,
-        );
-        {
-            let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
-            wrapper.process(&inputs, &mut outputs, n);
+        let processed = self.plugin.with_process(|wrapper| {
+            let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
+            let out_l = &mut self.out_l_scratch;
+            let out_r = &mut self.out_r_scratch;
+            {
+                let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
+                wrapper.process(&inputs, &mut outputs, n);
+            }
+            left[..n].copy_from_slice(&out_l[..n]);
+            right[..n].copy_from_slice(&out_r[..n]);
+        });
+
+        if processed.is_none() {
+            // Non-RT state/editor control owns the plugin. Leave the block as-is.
         }
-        left[..n].copy_from_slice(&out_l[..n]);
-        right[..n].copy_from_slice(&out_r[..n]);
     }
 
     fn process_with_events(
@@ -74,30 +180,43 @@ impl NativePlugin for ClapPluginSlot {
             event_buf[i] = (e.note, e.velocity, e.channel, e.is_note_on);
         }
 
-        let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
-        let (wrapper, out_l, out_r) = (
-            &mut self.wrapper,
-            &mut self.out_l_scratch,
-            &mut self.out_r_scratch,
-        );
-        {
-            let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
-            wrapper.process_with_midi(&inputs, &mut outputs, n, &event_buf[..count]);
+        let processed = self.plugin.with_process(|wrapper| {
+            let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
+            let out_l = &mut self.out_l_scratch;
+            let out_r = &mut self.out_r_scratch;
+            {
+                let mut outputs: [&mut [f32]; 2] = [&mut out_l[..n], &mut out_r[..n]];
+                wrapper.process_with_midi(&inputs, &mut outputs, n, &event_buf[..count]);
+            }
+            left[..n].copy_from_slice(&out_l[..n]);
+            right[..n].copy_from_slice(&out_r[..n]);
+        });
+
+        if processed.is_none() {
+            // Non-RT state/editor control owns the plugin. Leave the block as-is.
         }
-        left[..n].copy_from_slice(&out_l[..n]);
-        right[..n].copy_from_slice(&out_r[..n]);
     }
 
     fn set_param(&mut self, param_id: u32, value: f64) {
-        self.wrapper.set_parameter(param_id, value);
+        let _ = self
+            .plugin
+            .with_process(|wrapper| wrapper.set_parameter(param_id, value));
     }
 
     fn name(&self) -> &str {
-        self.wrapper.get_name()
+        self.plugin.name()
     }
 
     fn accepts_midi(&self) -> bool {
         true // CLAP instruments accept MIDI
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -119,6 +238,14 @@ impl NativePlugin for Vst3PluginSlot {
 
     fn name(&self) -> &str {
         self.wrapper.get_name()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -184,5 +311,13 @@ impl NativePlugin for CrumbsPluginSlot {
 
     fn accepts_midi(&self) -> bool {
         true
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

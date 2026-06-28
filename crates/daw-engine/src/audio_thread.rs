@@ -3,7 +3,8 @@
 use crate::scheduler::{AudioScheduler, GraphCommand};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::Consumer;
-use std::thread;
+
+const MAX_CALLBACK_FRAMES: usize = 4096;
 
 pub struct AudioThreadHandle {
     // Keep stream alive
@@ -29,15 +30,14 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
     let sample_rate = config.sample_rate().0 as f32;
     let mut scheduler = AudioScheduler::new(command_rx, sample_rate);
 
-    // Provide a simple test sine wave for now so we know native audio is running!
-    // TODO: In the future, this input buffer should read from daw-core track timelines.
-    let mut phase: f32 = 0.0;
-
     // We strictly use f32 streams
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
+            let mut left_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
+            let mut right_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
+
             device
                 .build_output_stream(
                     &config.into(),
@@ -50,21 +50,27 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
                         // CLAP/VST3, writes output back for main thread to return.
                         scheduler.process_audio_bridges();
 
-                        // 3. Process the native effects chain (for standalone native rendering)
-                        let frames = data.len() / 2;
-                        let mut left = vec![0.0f32; frames];
-                        let mut right = vec![0.0f32; frames];
+                        // 3. Process the native effects chain (for standalone native rendering).
+                        // Scratch is fixed-size and captured by the callback, so no heap
+                        // allocation occurs per buffer.
+                        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * 2) {
+                            let frames = chunk.len() / 2;
+                            let left = &mut left_scratch[..frames];
+                            let right = &mut right_scratch[..frames];
+                            left.fill(0.0);
+                            right.fill(0.0);
 
-                        // Silent input — native chain only processes bridged plugins above.
-                        // Standalone native rendering (without Web Audio) would inject
-                        // timeline audio here.
-                        scheduler.process_block(&mut left, &mut right, frames);
+                            // Silent input — native chain only processes bridged plugins above.
+                            // Standalone native rendering (without Web Audio) would inject
+                            // timeline audio here.
+                            scheduler.process_block(left, right, frames);
 
-                        // Interleave output for CPAL (silent unless standalone mode)
-                        for (i, frame) in data.chunks_mut(2).enumerate() {
-                            if i < frames {
-                                frame[0] = left[i];
-                                frame[1] = right[i];
+                            // Interleave output for CPAL (silent unless standalone mode)
+                            for (i, frame) in chunk.chunks_exact_mut(2).enumerate() {
+                                if i < frames {
+                                    frame[0] = left[i];
+                                    frame[1] = right[i];
+                                }
                             }
                         }
                     },

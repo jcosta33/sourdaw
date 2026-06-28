@@ -1,21 +1,20 @@
 //! Tauri commands for plugin scanning, loading, and parameter management.
 
-use cpal::traits::{DeviceTrait, HostTrait};
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-
-use crate::host::native_bridge::ClapPluginSlot;
+use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+use cpal::traits::{DeviceTrait, HostTrait};
+use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
-use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tauri::Manager;
+use daw_plugin_host::scanner::{self, ScanResult};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
 pub use daw_plugin_host::PluginParameter;
-
-// Re-export for use by other modules
-pub use daw_plugin_host::ScannedPlugin as ScannedPluginInfo;
 
 // ── Types ───────────────────────────────────────────────────────────────
 use daw_core::{PluginId, PluginInstanceId};
@@ -159,6 +158,7 @@ pub async fn load_plugin(
             let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
+            let has_gui = wrapper.has_gui();
 
             // Send the plugin to the native audio thread for real-time processing
             // and create an audio bridge for worklet ↔ Rust data transfer
@@ -168,29 +168,39 @@ pub async fn load_plugin(
                     .lock()
                     .map_err(|e| format!("Failed to lock engine: {}", e))?;
                 if let Some(ref mut engine) = *engine_guard {
-                    let slot = ClapPluginSlot::new(wrapper);
-                    let id = engine.add_plugin(Box::new(slot))?;
+                    let id = engine.reserve_plugin_id();
+                    let (bridge, bridge_handle) = create_audio_bridge(id);
+                    let shared_plugin = Arc::new(SharedClapPlugin::new(wrapper));
 
-                    // Create ring-buffer audio bridge
-                    let bridge_handle = engine.create_audio_bridge(id)?;
                     let mut bridges = state
                         .audio_bridges
                         .lock()
                         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
-                    bridges.insert(id, bridge_handle);
-
                     let mut engine_plugins = state
                         .engine_plugins
                         .lock()
                         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+                    bridges.insert(id, bridge_handle);
                     engine_plugins.insert(
                         instance_id.0.clone(),
                         crate::state::EnginePluginInstanceData {
                             engine_plugin_id: id,
+                            runtime: Arc::clone(&shared_plugin),
                             name: name.clone(),
                             parameters: params.clone(),
+                            has_gui,
                         },
                     );
+
+                    if let Err(error) = engine.add_plugin_with_bridge(
+                        id,
+                        Box::new(ClapPluginSlot::new(shared_plugin)),
+                        bridge,
+                    ) {
+                        bridges.remove(&id);
+                        engine_plugins.remove(&instance_id.0);
+                        return Err(error);
+                    }
 
                     Some(id)
                 } else {
@@ -262,6 +272,7 @@ pub async fn load_plugin(
 #[specta::specta]
 pub async fn unload_plugin(
     instance_id: PluginInstanceId,
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     {
@@ -286,12 +297,34 @@ pub async fn unload_plugin(
     };
 
     if let Some(engine_plugin_id) = engine_plugin_id {
+        state
+            .inner()
+            .with_engine_plugin_control(&instance_id.0, |plugin| {
+                plugin.close_gui();
+                Ok(())
+            })?;
+
+        let window_label = {
+            let mut windows = state
+                .plugin_windows
+                .lock()
+                .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            windows.remove(&instance_id.0)
+        };
+
+        if let Some(label) = window_label {
+            if let Some(window) = app.get_window(&label) {
+                let _ = window.destroy();
+            }
+        }
+
         let mut engine_guard = state
             .engine
             .lock()
             .map_err(|e| format!("Failed to lock engine: {}", e))?;
         let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
         engine.remove_plugin(engine_plugin_id)?;
+        drop(engine_guard);
 
         let mut bridges = state
             .audio_bridges
@@ -303,7 +336,16 @@ pub async fn unload_plugin(
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        engine_plugins.remove(&instance_id.0);
+        let removed_instance = engine_plugins.remove(&instance_id.0);
+        drop(engine_plugins);
+
+        if let Some(instance) = removed_instance {
+            let mut retired_plugins = state
+                .retired_engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock retired_engine_plugins: {}", e))?;
+            retired_plugins.push(instance.runtime);
+        }
 
         return Ok(());
     }
@@ -424,10 +466,10 @@ pub async fn get_plugin_state(
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
     if engine_plugins.contains_key(&instance_id.0) {
-        return Err(format!(
-            "Plugin state is not available for engine-owned native instance: {}",
-            instance_id.0
-        ));
+        drop(engine_plugins);
+        return state.inner().with_engine_plugin_control(&instance_id.0, |plugin| {
+            Ok(plugin.get_state())
+        });
     }
 
     Err(format!("No plugin instance: {}", instance_id.0))
@@ -457,10 +499,11 @@ pub async fn set_plugin_state(
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
     if engine_plugins.contains_key(&instance_id.0) {
-        return Err(format!(
-            "Plugin state restore is not available for engine-owned native instance: {}",
-            instance_id.0
-        ));
+        drop(engine_plugins);
+        return state.inner().with_engine_plugin_control(&instance_id.0, |plugin| {
+            plugin.set_state(&plugin_state);
+            Ok(())
+        });
     }
 
     Err(format!("No plugin instance: {}", instance_id.0))

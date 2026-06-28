@@ -21,6 +21,7 @@ pub enum GraphCommand {
 
     // External plugins (CLAP/VST3/AU)
     AddPlugin(usize, Box<dyn NativePlugin>),
+    AddPluginWithBridge(usize, Box<dyn NativePlugin>, PluginAudioBridge),
     RemovePlugin(usize),
     SetPluginParam(usize, u32, f64),
 
@@ -68,8 +69,8 @@ pub struct AudioScheduler {
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
         Self {
-            effects: Vec::new(),
-            audio_bridges: Vec::new(),
+            effects: Vec::with_capacity(128),
+            audio_bridges: Vec::with_capacity(128),
             command_rx,
             sample_rate,
             transport: TransportState::default(),
@@ -119,6 +120,16 @@ impl AudioScheduler {
                         midi_fx: Vec::new(),
                         pending_midi: Vec::new(),
                     });
+                }
+                GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
+                    self.effects.push(ActiveEffect {
+                        id,
+                        instance: PluginCore::Native(plugin),
+                        bypassed: false,
+                        midi_fx: Vec::new(),
+                        pending_midi: Vec::new(),
+                    });
+                    self.audio_bridges.push(bridge);
                 }
                 GraphCommand::SetPluginParam(id, param_id, value) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
@@ -261,5 +272,74 @@ impl AudioScheduler {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rtrb::RingBuffer;
+    use std::any::Any;
+
+    struct FakeNativePlugin {
+        value: f32,
+    }
+
+    impl NativePlugin for FakeNativePlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            for index in 0..num_samples {
+                left[index] = self.value;
+                right[index] = self.value;
+            }
+        }
+
+        fn set_param(&mut self, _param_id: u32, value: f64) {
+            self.value = value as f32;
+        }
+
+        fn name(&self) -> &str {
+            "fake-native-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    fn create_scheduler() -> (rtrb::Producer<GraphCommand>, AudioScheduler) {
+        let (command_tx, command_rx) = RingBuffer::new(16);
+        let scheduler = AudioScheduler::new(command_rx, 48_000.0);
+
+        (command_tx, scheduler)
+    }
+
+    #[test]
+    fn add_plugin_with_bridge_registers_plugin_and_bridge_atomically() {
+        let (mut command_tx, mut scheduler) = create_scheduler();
+        let (bridge, _handle) = crate::audio_bridge::create_audio_bridge(42);
+
+        assert!(command_tx
+            .push(GraphCommand::AddPluginWithBridge(
+                42,
+                Box::new(FakeNativePlugin { value: 0.25 }),
+                bridge,
+            ))
+            .is_ok());
+        scheduler.update_graph();
+
+        assert_eq!(scheduler.effects.len(), 1);
+        assert_eq!(scheduler.audio_bridges.len(), 1);
+        assert_eq!(scheduler.effects[0].id, 42);
+        assert_eq!(scheduler.audio_bridges[0].plugin_id, 42);
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+        assert_eq!(left, [0.25; 4]);
+        assert_eq!(right, [0.25; 4]);
     }
 }
