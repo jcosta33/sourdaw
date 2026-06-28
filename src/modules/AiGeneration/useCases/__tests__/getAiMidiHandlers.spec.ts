@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 
-import { handleAddNotes } from '../../handlers/aiMidi/handleAddNotes';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+
 import { handleStemSeparate } from '../../handlers/aiMidi/handleStemSeparate';
 import { getAiMidiHandlers } from '../getAiMidiHandlers';
 
 describe('getAiMidiHandlers', () => {
-    it('returns a map of AI MIDI action handlers', () => {
+    it('should return a map of AI MIDI action handlers without MIDI-owned addNotes', () => {
         const handlers = getAiMidiHandlers();
+        const midi_handlers = getMidiNoteTransformHandlers();
 
-        expect(handlers).toHaveProperty('addNotes');
+        expect(handlers).not.toHaveProperty('addNotes');
+        expect(midi_handlers).toHaveProperty('addNotes');
         expect(handlers).toHaveProperty('stemSeparate');
 
-        expect(handlers.addNotes).toBe(handleAddNotes);
         expect(handlers.stemSeparate).toBe(handleStemSeparate);
     });
 });
