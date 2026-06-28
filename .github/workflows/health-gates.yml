@@ -60,7 +60,7 @@ jobs:
           exit "$lint_status"
 
       - name: Test
-        run: pnpm test:run
+        run: pnpm test:run --reporter=dot --silent=passed-only
 
       - name: Build
         run: pnpm build
