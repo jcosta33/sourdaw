@@ -249,10 +249,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleNewProject = (): void => {
         setLoadingName('New Project');
         setView('loading');
-        // Let the loading animation render before synchronous work
-        setTimeout(() => {
-            newProject();
-        }, 280);
+        newProject();
     };
 
     const handleImportDawProject = (): void => {

@@ -1,5 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { newProject } from '#/modules/Project/useCases/projectPersistence/newProject';
 
 import { LaunchScreen } from '../LaunchScreen';
 
@@ -49,5 +51,13 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('dialog', { name: /Sourdaw — start a project/ })).toBeInTheDocument();
         expect(screen.getByText('Sourdaw')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+    });
+
+    it('starts a new project in the click handler before shortcuts can run', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
+
+        expect(newProject).toHaveBeenCalledTimes(1);
     });
 });

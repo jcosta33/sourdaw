@@ -67,7 +67,7 @@ export const useAppInitialization = (): void => {
                 } else {
                     const current = projectStore.value;
                     if (current) {
-                        projectStore.set({ ...current, loading: false, initialized: false });
+                        projectStore.set({ ...current, loading: false });
                     }
                 }
                 ensureTrackStrips();
