@@ -31,7 +31,8 @@ const PENDING_PARAMETER_EMPTY: u8 = 0;
 const PENDING_PARAMETER_WRITING: u8 = 1;
 const PENDING_PARAMETER_READY: u8 = 2;
 const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
-const PLUGIN_LIFECYCLE_RETIRED: u8 = 1;
+const PLUGIN_LIFECYCLE_UNLOADING: u8 = 1;
+const PLUGIN_LIFECYCLE_RETIRED: u8 = 2;
 
 type PendingParameterUpdate = ClapParameterUpdate;
 
@@ -216,12 +217,60 @@ fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
     }
 }
 
+struct PluginRuntimeLifecycle {
+    state: AtomicU8,
+}
+
+impl PluginRuntimeLifecycle {
+    fn new() -> Self {
+        Self {
+            state: AtomicU8::new(PLUGIN_LIFECYCLE_ACTIVE),
+        }
+    }
+
+    fn begin_unload(&self) {
+        let _ = self.state.compare_exchange(
+            PLUGIN_LIFECYCLE_ACTIVE,
+            PLUGIN_LIFECYCLE_UNLOADING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
+    fn retire(&self) {
+        self.state
+            .store(PLUGIN_LIFECYCLE_RETIRED, Ordering::Release);
+    }
+
+    fn allows_process(&self) -> bool {
+        self.state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE
+    }
+
+    fn ensure_public_control_allowed(&self, plugin_name: &str) -> Result<(), String> {
+        match self.state.load(Ordering::Acquire) {
+            PLUGIN_LIFECYCLE_ACTIVE => Ok(()),
+            PLUGIN_LIFECYCLE_UNLOADING => Err(format!(
+                "Engine-owned plugin instance '{}' is unloading",
+                plugin_name
+            )),
+            PLUGIN_LIFECYCLE_RETIRED => Err(format!(
+                "Engine-owned plugin instance '{}' has been retired",
+                plugin_name
+            )),
+            lifecycle_state => Err(format!(
+                "Engine-owned plugin instance '{}' is in invalid lifecycle state {}",
+                plugin_name, lifecycle_state
+            )),
+        }
+    }
+}
+
 /// Runtime owner for a CLAP plugin shared by the RT processor and non-RT control path.
 pub struct SharedClapPlugin {
     name: String,
     wrapper: UnsafeCell<ClapWrapper>,
     access_state: AtomicU8,
-    lifecycle_state: AtomicU8,
+    lifecycle: PluginRuntimeLifecycle,
     non_rt_control_lock: Mutex<()>,
     activated: bool,
     pending_parameters: PendingParameterQueue,
@@ -240,7 +289,7 @@ impl SharedClapPlugin {
             name,
             wrapper: UnsafeCell::new(wrapper),
             access_state: AtomicU8::new(PLUGIN_ACCESS_IDLE),
-            lifecycle_state: AtomicU8::new(PLUGIN_LIFECYCLE_ACTIVE),
+            lifecycle: PluginRuntimeLifecycle::new(),
             non_rt_control_lock: Mutex::new(()),
             activated,
             pending_parameters: PendingParameterQueue::new(),
@@ -308,9 +357,12 @@ impl SharedClapPlugin {
         })
     }
 
+    pub fn begin_unload(&self) {
+        self.lifecycle.begin_unload();
+    }
+
     pub fn retire(&self) {
-        self.lifecycle_state
-            .store(PLUGIN_LIFECYCLE_RETIRED, Ordering::Release);
+        self.lifecycle.retire();
     }
 
     pub fn with_control<ResultValue>(
@@ -320,6 +372,15 @@ impl SharedClapPlugin {
     ) -> Result<ResultValue, String> {
         let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.ensure_active_lifecycle()?;
+        self.with_control_locked(timeout, operation)
+    }
+
+    pub fn with_unload_control<ResultValue>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
         self.with_control_locked(timeout, operation)
     }
 
@@ -333,14 +394,7 @@ impl SharedClapPlugin {
     }
 
     fn ensure_active_lifecycle(&self) -> Result<(), String> {
-        if self.lifecycle_state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE {
-            return Ok(());
-        }
-
-        Err(format!(
-            "Engine-owned plugin instance '{}' has been retired",
-            self.name
-        ))
+        self.lifecycle.ensure_public_control_allowed(&self.name)
     }
 
     fn with_control_locked<ResultValue>(
@@ -382,7 +436,7 @@ impl SharedClapPlugin {
         &self,
         operation: impl FnOnce(&mut ClapWrapper, &PendingParameterQueue) -> ResultValue,
     ) -> Option<ResultValue> {
-        if self.lifecycle_state.load(Ordering::Acquire) != PLUGIN_LIFECYCLE_ACTIVE {
+        if !self.lifecycle.allows_process() {
             return None;
         }
 
@@ -761,6 +815,21 @@ mod tests {
             }
         );
         assert_eq!(drain_pending_parameters_for_process(&queue, &mut scratch), 0);
+    }
+
+    #[test]
+    fn plugin_lifecycle_rejects_public_control_after_unload_begins() {
+        let lifecycle = PluginRuntimeLifecycle::new();
+
+        assert!(lifecycle.ensure_public_control_allowed("fixture").is_ok());
+
+        lifecycle.begin_unload();
+
+        assert_eq!(
+            lifecycle.ensure_public_control_allowed("fixture"),
+            Err("Engine-owned plugin instance 'fixture' is unloading".to_string())
+        );
+        assert!(!lifecycle.allows_process());
     }
 }
 

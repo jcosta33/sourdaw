@@ -131,4 +131,14 @@ impl AppState {
 
         runtime.with_control(Duration::from_secs(2), operation)
     }
+
+    pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedClapPlugin>) {
+        match self.retired_engine_plugins.lock() {
+            Ok(mut retired_plugins) => retired_plugins.push(runtime),
+            Err(poisoned) => {
+                let mut retired_plugins = poisoned.into_inner();
+                retired_plugins.push(runtime);
+            }
+        }
+    }
 }
