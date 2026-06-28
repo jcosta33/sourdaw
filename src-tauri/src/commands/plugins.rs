@@ -168,6 +168,13 @@ pub async fn load_plugin(
                     .lock()
                     .map_err(|e| format!("Failed to lock engine: {}", e))?;
                 if let Some(ref mut engine) = *engine_guard {
+                    if !wrapper.is_activated() {
+                        return Err(format!(
+                            "CLAP plugin '{}' failed to activate for engine-owned runtime",
+                            name
+                        ));
+                    }
+
                     let id = engine.reserve_plugin_id();
                     let (bridge, bridge_handle) = create_audio_bridge(id);
                     let shared_plugin = Arc::new(SharedClapPlugin::new(wrapper));
@@ -286,17 +293,17 @@ pub async fn unload_plugin(
         }
     }
 
-    let engine_plugin_id = {
+    let engine_plugin = {
         let engine_plugins = state
             .engine_plugins
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         engine_plugins
             .get(&instance_id.0)
-            .map(|instance| instance.engine_plugin_id)
+            .map(|instance| (instance.engine_plugin_id, Arc::clone(&instance.runtime)))
     };
 
-    if let Some(engine_plugin_id) = engine_plugin_id {
+    if let Some((engine_plugin_id, runtime)) = engine_plugin {
         state
             .inner()
             .with_engine_plugin_control(&instance_id.0, |plugin| {
@@ -324,6 +331,7 @@ pub async fn unload_plugin(
             .map_err(|e| format!("Failed to lock engine: {}", e))?;
         let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
         engine.remove_plugin(engine_plugin_id)?;
+        runtime.retire();
         drop(engine_guard);
 
         let mut bridges = state
@@ -396,36 +404,21 @@ pub async fn set_plugin_parameter(
         }
     }
 
-    let runtime = {
-        let engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        engine_plugins
-            .get(&instance_id.0)
-            .map(|instance| Arc::clone(&instance.runtime))
-    };
-
-    if let Some(runtime) = runtime {
-        let enqueue_result = runtime.enqueue_parameter(param_id, value);
-
-        let mut engine_plugins = state
-            .engine_plugins
-            .lock()
-            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-        if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
-            update_parameter_cache_after_enqueue(
-                &mut instance.parameters,
-                param_id,
-                value,
-                enqueue_result,
-            )?;
-        } else {
-            enqueue_result?;
-        }
-
+    let mut engine_plugins = state
+        .engine_plugins
+        .lock()
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
+        let enqueue_result = instance.runtime.enqueue_parameter(param_id, value);
+        update_parameter_cache_after_enqueue(
+            &mut instance.parameters,
+            param_id,
+            value,
+            enqueue_result,
+        )?;
         return Ok(());
     }
+    drop(engine_plugins);
 
     Err(format!("No plugin instance: {}", instance_id.0))
 }
@@ -475,15 +468,17 @@ pub async fn get_plugin_state(
         }
     }
 
-    let engine_plugins = state
-        .engine_plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if engine_plugins.contains_key(&instance_id.0) {
-        drop(engine_plugins);
-        return state.inner().with_engine_plugin_control(&instance_id.0, |plugin| {
-            Ok(plugin.get_state())
-        });
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| Arc::clone(&instance.runtime))
+    };
+    if let Some(runtime) = runtime {
+        return runtime.get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2));
     }
 
     Err(format!("No plugin instance: {}", instance_id.0))
@@ -508,15 +503,29 @@ pub async fn set_plugin_state(
         }
     }
 
-    let engine_plugins = state
-        .engine_plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if engine_plugins.contains_key(&instance_id.0) {
-        drop(engine_plugins);
-        return state.inner().with_engine_plugin_control(&instance_id.0, |plugin| {
-            plugin.set_state(&plugin_state)
-        });
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| Arc::clone(&instance.runtime))
+    };
+    if let Some(runtime) = runtime {
+        let refreshed_parameters = runtime.set_state_invalidating_pending_parameters(
+            std::time::Duration::from_secs(2),
+            &plugin_state,
+        )?;
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        let instance = engine_plugins
+            .get_mut(&instance_id.0)
+            .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+        instance.parameters = refreshed_parameters;
+        return Ok(());
     }
 
     Err(format!("No plugin instance: {}", instance_id.0))

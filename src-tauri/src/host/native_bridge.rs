@@ -9,11 +9,11 @@
 use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_dsp::crumbs::engine::CrumbsEngine;
 use daw_dsp::crumbs::types::CrumbsCommand;
-use daw_plugin_host::{AudioPlugin, ClapParameterUpdate, ClapWrapper, Vst3Wrapper};
+use daw_plugin_host::{AudioPlugin, ClapParameterUpdate, ClapWrapper, PluginParameter, Vst3Wrapper};
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -30,12 +30,15 @@ const PLUGIN_ACCESS_CONTROL: u8 = 2;
 const PENDING_PARAMETER_EMPTY: u8 = 0;
 const PENDING_PARAMETER_WRITING: u8 = 1;
 const PENDING_PARAMETER_READY: u8 = 2;
+const PLUGIN_LIFECYCLE_ACTIVE: u8 = 0;
+const PLUGIN_LIFECYCLE_RETIRED: u8 = 1;
 
 type PendingParameterUpdate = ClapParameterUpdate;
 
 struct PendingParameterSlot {
     param_id: AtomicU32,
     value_bits: AtomicU64,
+    sequence: AtomicU64,
     state: AtomicU8,
 }
 
@@ -44,26 +47,36 @@ impl PendingParameterSlot {
         Self {
             param_id: AtomicU32::new(0),
             value_bits: AtomicU64::new(0.0f64.to_bits()),
+            sequence: AtomicU64::new(0),
             state: AtomicU8::new(PENDING_PARAMETER_EMPTY),
         }
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PendingParameterDrainEntry {
+    update: PendingParameterUpdate,
+    sequence: u64,
+}
+
 struct PendingParameterQueue {
     slots: [PendingParameterSlot; PENDING_PARAMETER_CAPACITY],
+    next_sequence: AtomicU64,
 }
 
 impl PendingParameterQueue {
     fn new() -> Self {
         Self {
             slots: std::array::from_fn(|_| PendingParameterSlot::new()),
+            next_sequence: AtomicU64::new(1),
         }
     }
 
     fn enqueue(&self, param_id: u32, value: f64) -> Result<(), ()> {
         let value_bits = value.to_bits();
+        let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
 
-        if self.coalesce(param_id, value_bits) {
+        if self.coalesce(param_id, value_bits, sequence) {
             return Ok(());
         }
 
@@ -80,20 +93,21 @@ impl PendingParameterQueue {
             {
                 slot.param_id.store(param_id, Ordering::Relaxed);
                 slot.value_bits.store(value_bits, Ordering::Relaxed);
+                slot.sequence.store(sequence, Ordering::Relaxed);
                 slot.state
                     .store(PENDING_PARAMETER_READY, Ordering::Release);
                 return Ok(());
             }
         }
 
-        if self.coalesce(param_id, value_bits) {
+        if self.coalesce(param_id, value_bits, sequence) {
             return Ok(());
         }
 
         Err(())
     }
 
-    fn coalesce(&self, param_id: u32, value_bits: u64) -> bool {
+    fn coalesce(&self, param_id: u32, value_bits: u64, sequence: u64) -> bool {
         for slot in &self.slots {
             if slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_READY {
                 continue;
@@ -117,6 +131,7 @@ impl PendingParameterQueue {
             }
 
             slot.value_bits.store(value_bits, Ordering::Relaxed);
+            slot.sequence.store(sequence, Ordering::Relaxed);
             slot.state
                 .store(PENDING_PARAMETER_READY, Ordering::Release);
             return true;
@@ -127,6 +142,7 @@ impl PendingParameterQueue {
 
     fn drain(&self, out: &mut [PendingParameterUpdate]) -> usize {
         let mut count = 0;
+        let mut entries = [PendingParameterDrainEntry::default(); PENDING_PARAMETER_CAPACITY];
 
         for slot in &self.slots {
             if count >= out.len() {
@@ -146,16 +162,57 @@ impl PendingParameterQueue {
                 continue;
             }
 
-            out[count] = PendingParameterUpdate {
+            let update = PendingParameterUpdate {
                 param_id: slot.param_id.load(Ordering::Relaxed),
                 value: f64::from_bits(slot.value_bits.load(Ordering::Relaxed)),
             };
-            count += 1;
+            let sequence = slot.sequence.load(Ordering::Relaxed);
+            if let Some(existing) = entries[..count]
+                .iter_mut()
+                .find(|entry| entry.update.param_id == update.param_id)
+            {
+                if sequence > existing.sequence {
+                    *existing = PendingParameterDrainEntry { update, sequence };
+                }
+            } else {
+                entries[count] = PendingParameterDrainEntry { update, sequence };
+                count += 1;
+            }
             slot.state
                 .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
         }
 
+        sort_pending_parameter_entries(&mut entries[..count]);
+        for (index, entry) in entries[..count].iter().enumerate() {
+            out[index] = entry.update;
+        }
+
         count
+    }
+
+    fn has_pending(&self) -> bool {
+        self.slots
+            .iter()
+            .any(|slot| slot.state.load(Ordering::Acquire) != PENDING_PARAMETER_EMPTY)
+    }
+
+    fn clear(&self) {
+        for slot in &self.slots {
+            slot.state
+                .store(PENDING_PARAMETER_EMPTY, Ordering::Release);
+        }
+    }
+}
+
+fn sort_pending_parameter_entries(entries: &mut [PendingParameterDrainEntry]) {
+    for index in 1..entries.len() {
+        let entry = entries[index];
+        let mut cursor = index;
+        while cursor > 0 && entries[cursor - 1].sequence > entry.sequence {
+            entries[cursor] = entries[cursor - 1];
+            cursor -= 1;
+        }
+        entries[cursor] = entry;
     }
 }
 
@@ -164,6 +221,9 @@ pub struct SharedClapPlugin {
     name: String,
     wrapper: UnsafeCell<ClapWrapper>,
     access_state: AtomicU8,
+    lifecycle_state: AtomicU8,
+    non_rt_control_lock: Mutex<()>,
+    activated: bool,
     pending_parameters: PendingParameterQueue,
 }
 
@@ -175,10 +235,14 @@ unsafe impl Sync for SharedClapPlugin {}
 impl SharedClapPlugin {
     pub fn new(wrapper: ClapWrapper) -> Self {
         let name = wrapper.get_name().to_string();
+        let activated = wrapper.is_activated();
         Self {
             name,
             wrapper: UnsafeCell::new(wrapper),
             access_state: AtomicU8::new(PLUGIN_ACCESS_IDLE),
+            lifecycle_state: AtomicU8::new(PLUGIN_LIFECYCLE_ACTIVE),
+            non_rt_control_lock: Mutex::new(()),
+            activated,
             pending_parameters: PendingParameterQueue::new(),
         }
     }
@@ -188,6 +252,16 @@ impl SharedClapPlugin {
     }
 
     pub fn enqueue_parameter(&self, param_id: u32, value: f64) -> Result<(), String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+
+        if !self.activated {
+            return Err(format!(
+                "CLAP plugin '{}' is not activated; parameter update rejected",
+                self.name
+            ));
+        }
+
         if !value.is_finite() {
             return Err(format!(
                 "Invalid parameter value for plugin '{}': {}",
@@ -200,7 +274,76 @@ impl SharedClapPlugin {
         })
     }
 
+    pub fn get_state_after_pending_parameters_drain(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+
+        self.with_control_locked(timeout, |plugin| {
+            if self.pending_parameters.has_pending() {
+                return Err(format!(
+                    "Plugin '{}' has pending parameter writes awaiting audio processing; retry state save after the process path drains them",
+                    self.name
+                ));
+            }
+
+            Ok(plugin.get_state())
+        })
+    }
+
+    pub fn set_state_invalidating_pending_parameters(
+        &self,
+        timeout: Duration,
+        plugin_state: &[u8],
+    ) -> Result<Vec<PluginParameter>, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+
+        self.with_control_locked(timeout, |plugin| {
+            plugin.set_state(plugin_state)?;
+            self.pending_parameters.clear();
+            Ok(plugin.get_parameters())
+        })
+    }
+
+    pub fn retire(&self) {
+        self.lifecycle_state
+            .store(PLUGIN_LIFECYCLE_RETIRED, Ordering::Release);
+    }
+
     pub fn with_control<ResultValue>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let _non_rt_control_guard = self.lock_non_rt_control()?;
+        self.ensure_active_lifecycle()?;
+        self.with_control_locked(timeout, operation)
+    }
+
+    fn lock_non_rt_control(&self) -> Result<MutexGuard<'_, ()>, String> {
+        self.non_rt_control_lock.lock().map_err(|error| {
+            format!(
+                "Failed to lock plugin non-RT control path for '{}': {}",
+                self.name, error
+            )
+        })
+    }
+
+    fn ensure_active_lifecycle(&self) -> Result<(), String> {
+        if self.lifecycle_state.load(Ordering::Acquire) == PLUGIN_LIFECYCLE_ACTIVE {
+            return Ok(());
+        }
+
+        Err(format!(
+            "Engine-owned plugin instance '{}' has been retired",
+            self.name
+        ))
+    }
+
+    fn with_control_locked<ResultValue>(
         &self,
         timeout: Duration,
         operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
@@ -239,6 +382,14 @@ impl SharedClapPlugin {
         &self,
         operation: impl FnOnce(&mut ClapWrapper, &PendingParameterQueue) -> ResultValue,
     ) -> Option<ResultValue> {
+        if self.lifecycle_state.load(Ordering::Acquire) != PLUGIN_LIFECYCLE_ACTIVE {
+            return None;
+        }
+
+        if !self.activated {
+            return None;
+        }
+
         if self
             .access_state
             .compare_exchange(
@@ -298,11 +449,21 @@ impl ClapPluginSlot {
     }
 }
 
+fn drain_pending_parameters_for_process(
+    pending_parameters: &PendingParameterQueue,
+    scratch: &mut [PendingParameterUpdate; PENDING_PARAMETER_CAPACITY],
+) -> usize {
+    pending_parameters.drain(scratch)
+}
+
 impl NativePlugin for ClapPluginSlot {
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
         let n = num_samples.min(MAX_BUFFER);
         let processed = self.plugin.with_process(|wrapper, pending_parameters| {
-            let parameter_count = pending_parameters.drain(&mut self.pending_parameter_scratch);
+            let parameter_count = drain_pending_parameters_for_process(
+                pending_parameters,
+                &mut self.pending_parameter_scratch,
+            );
             let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
             let out_l = &mut self.out_l_scratch;
             let out_r = &mut self.out_r_scratch;
@@ -346,7 +507,10 @@ impl NativePlugin for ClapPluginSlot {
         }
 
         let processed = self.plugin.with_process(|wrapper, pending_parameters| {
-            let parameter_count = pending_parameters.drain(&mut self.pending_parameter_scratch);
+            let parameter_count = drain_pending_parameters_for_process(
+                pending_parameters,
+                &mut self.pending_parameter_scratch,
+            );
             let inputs: [&[f32]; 2] = [&left[..n], &right[..n]];
             let out_l = &mut self.out_l_scratch;
             let out_r = &mut self.out_r_scratch;
@@ -492,6 +656,111 @@ mod tests {
                 value: 0.2,
             }
         );
+    }
+
+    #[test]
+    fn pending_parameter_queue_drains_latest_duplicate_param_by_sequence() {
+        let queue = PendingParameterQueue::new();
+        queue.slots[0].param_id.store(7, Ordering::Relaxed);
+        queue.slots[0]
+            .value_bits
+            .store(0.9f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0].sequence.store(2, Ordering::Relaxed);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+        queue.slots[1].param_id.store(7, Ordering::Relaxed);
+        queue.slots[1]
+            .value_bits
+            .store(0.1f64.to_bits(), Ordering::Relaxed);
+        queue.slots[1].sequence.store(1, Ordering::Relaxed);
+        queue.slots[1]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            drained[0],
+            PendingParameterUpdate {
+                param_id: 7,
+                value: 0.9,
+            }
+        );
+    }
+
+    #[test]
+    fn pending_parameter_queue_drains_unique_params_in_sequence_order() {
+        let queue = PendingParameterQueue::new();
+        queue.slots[0].param_id.store(1, Ordering::Relaxed);
+        queue.slots[0]
+            .value_bits
+            .store(0.1f64.to_bits(), Ordering::Relaxed);
+        queue.slots[0].sequence.store(3, Ordering::Relaxed);
+        queue.slots[0]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+        queue.slots[1].param_id.store(2, Ordering::Relaxed);
+        queue.slots[1]
+            .value_bits
+            .store(0.2f64.to_bits(), Ordering::Relaxed);
+        queue.slots[1].sequence.store(2, Ordering::Relaxed);
+        queue.slots[1]
+            .state
+            .store(PENDING_PARAMETER_READY, Ordering::Release);
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = queue.drain(&mut drained);
+
+        assert_eq!(count, 2);
+        assert_eq!(
+            drained[0],
+            PendingParameterUpdate {
+                param_id: 2,
+                value: 0.2,
+            }
+        );
+        assert_eq!(
+            drained[1],
+            PendingParameterUpdate {
+                param_id: 1,
+                value: 0.1,
+            }
+        );
+    }
+
+    #[test]
+    fn pending_parameter_queue_clear_invalidates_accepted_updates() {
+        let queue = PendingParameterQueue::new();
+
+        assert!(queue.enqueue(7, 0.75).is_ok());
+        assert!(queue.has_pending());
+        queue.clear();
+
+        let mut drained = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        assert_eq!(queue.drain(&mut drained), 0);
+        assert!(!queue.has_pending());
+    }
+
+    #[test]
+    fn process_drain_reads_updates_enqueued_for_runtime_delivery() {
+        let queue = PendingParameterQueue::new();
+        assert!(queue.enqueue(11, 0.42).is_ok());
+
+        let mut scratch = [PendingParameterUpdate::default(); PENDING_PARAMETER_CAPACITY];
+        let count = drain_pending_parameters_for_process(&queue, &mut scratch);
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            scratch[0],
+            PendingParameterUpdate {
+                param_id: 11,
+                value: 0.42,
+            }
+        );
+        assert_eq!(drain_pending_parameters_for_process(&queue, &mut scratch), 0);
     }
 }
 

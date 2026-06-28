@@ -4,5 +4,5 @@ export async function setPluginState(instanceId: string, state: number[]): Promi
     if (!isTauri()) {
         return;
     }
-    await tauriInvoke('set_plugin_state', { instanceId, state });
+    await tauriInvoke('set_plugin_state', { instanceId, pluginState: state });
 }

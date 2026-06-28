@@ -339,6 +339,11 @@ impl ClapWrapper {
         &self.name
     }
 
+    /// Returns true if the plugin was successfully activated.
+    pub fn is_activated(&self) -> bool {
+        self.activated
+    }
+
     // ── GUI support ─────────────────────────────────────────────────────
 
     /// Returns true if the plugin provides a custom GUI.
