@@ -74,6 +74,13 @@ export type AppAction =
               midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
           };
       }
+    | {
+          /** Inverse of clip duplication. Removes the exact duplicate created by
+           *  `duplicateClip` / `duplicateClipToNextBar` without applying the user's
+           *  current ripple-delete mode. */
+          type: 'discardDuplicatedClip';
+          payload: { clipId: string };
+      }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
     | { type: 'createTrackAlternative'; payload: { trackId: string; name: string; duplicateActive: boolean } }
@@ -112,8 +119,8 @@ export type AppAction =
           };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
-    | { type: 'duplicateClip'; payload: { clipId: string } }
-    | { type: 'duplicateClipToNextBar'; payload: { clipId: string } }
+    | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
+    | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateTrack'; payload: { trackId: string } }
     | { type: 'removeClip'; payload: { clipId: string } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }

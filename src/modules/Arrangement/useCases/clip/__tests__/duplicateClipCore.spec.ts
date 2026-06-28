@@ -75,11 +75,16 @@ describe('duplicateClipCore', () => {
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
 
         // computeStartBeat = clip.endBeat (matches duplicateClip's behavior)
-        duplicateClipCore('c1', (clip) => clip.endBeat);
+        duplicateClipCore({
+            clipId: 'c1',
+            targetClipId: 'c2',
+            computeStartBeat: (clip) => clip.endBeat,
+        });
 
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
+                id: 'c2',
                 trackId: 't1',
                 startBeat: 4,
                 endBeat: 8,
@@ -128,7 +133,10 @@ describe('duplicateClipCore', () => {
             originalTempo: 120,
         });
 
-        duplicateClipCore('c1', (clip) => clip.endBeat);
+        duplicateClipCore({
+            clipId: 'c1',
+            computeStartBeat: (clip) => clip.endBeat,
+        });
 
         expect(mocks.setWarpState).toHaveBeenCalledWith(
             'c2',

@@ -6,6 +6,7 @@ import { handleCopyClip } from './handleCopyClip';
 import { handleCrossfadeClips } from './handleCrossfadeClips';
 import { handleCutClip } from './handleCutClip';
 import { handleDeleteTime } from './handleDeleteTime';
+import { handleDiscardDuplicatedClip } from './handleDiscardDuplicatedClip';
 import { handleDuplicateClip } from './handleDuplicateClip';
 import { handleDuplicateClipToNextBar } from './handleDuplicateClipToNextBar';
 import { handleDuplicateTimeRange } from './handleDuplicateTimeRange';
@@ -34,6 +35,7 @@ import { handleTrimClipStart } from './handleTrimClipStart';
 export const clipHandlers = {
     addClip: handleAddClip,
     moveClip: handleMoveClip,
+    discardDuplicatedClip: handleDiscardDuplicatedClip,
     duplicateClip: handleDuplicateClip,
     duplicateClipToNextBar: handleDuplicateClipToNextBar,
     removeClip: handleRemoveClip,
