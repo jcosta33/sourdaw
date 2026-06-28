@@ -35,7 +35,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Lint
-        run: pnpm lint
+        run: pnpm lint --quiet
 
       - name: Test
         run: pnpm test:run
