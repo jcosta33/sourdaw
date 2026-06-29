@@ -8,7 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 
 import { type DiffSingerVoicebank } from '../../models/BrowserModel';
-import { DDSP_INSTRUMENT_CATALOG } from '../../models/ddspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG } from '../../models/DdspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadModel } from '../../useCases/downloadModel';
 import { KOKORO_MODEL_ENTRY, NSF_HIFIGAN_VOCODER } from '../../useCases/initBrowserAi';
