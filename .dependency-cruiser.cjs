@@ -180,9 +180,9 @@ module.exports = {
             name: 'no-models-repos-transformers-in-index',
             severity: 'error',
             comment:
-                'Module index.ts files must never import or re-export models, repositories, or transformers from anywhere.',
+                'Contract-folder barrels must never import or re-export models, repositories, or transformers from anywhere.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
+                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
             },
             to: {
                 path: '/(models|repositories|transformers)/',
