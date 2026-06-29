@@ -1,4 +1,4 @@
-import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
+import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 
 export type McpPropertySchema = {
     type: string;
