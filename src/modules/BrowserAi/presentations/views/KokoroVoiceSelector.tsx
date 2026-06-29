@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 
-import { KOKORO_VOICE_CATALOG } from '../../models/ddspInstrumentCatalog';
+import { KOKORO_VOICE_CATALOG } from '../../models/DdspInstrumentCatalog';
 
 type KokoroVoiceSelectorProps = {
     value: string;

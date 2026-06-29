@@ -15,7 +15,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
+import { DEFAULT_EN_PHONEME_MAP } from '../models/PhonemeMap';
 
 import { phonemize } from './phonemizer';
 

@@ -20,7 +20,7 @@ import {
     NSF_HIFIGAN_SIZE_BYTES,
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
-} from '../models/ddspInstrumentCatalog';
+} from '../models/DdspInstrumentCatalog';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { checkModelCached } from '../repositories/storageManager';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';

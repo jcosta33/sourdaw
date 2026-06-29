@@ -13,7 +13,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
+import { DEFAULT_EN_PHONEME_MAP } from '../models/PhonemeMap';
 import { type RenderProvenance, type RenderQuality, RENDER_QUALITY_STEPS } from '../models/RenderProgress';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
