@@ -15,33 +15,43 @@ export async function startPluginScan(): Promise<void> {
     pluginScanStore.set({ ...state, isScanning: true, errors: [] });
 
     try {
-        const existingPaths = state.scanPaths;
         const defaultPaths = await getDefaultPluginPaths();
-        const allPaths = [...new Set([...existingPaths, ...defaultPaths])];
+        const scanPathsBeforeScan = getState().scanPaths;
+        const allPaths = [...new Set([...scanPathsBeforeScan, ...defaultPaths])];
 
         if (allPaths.length === 0) {
-            pluginScanStore.set({
-                ...getState(),
+            pluginScanStore.update((current) => ({
+                ...(current ?? getState()),
                 isScanning: false,
                 errors: ['No plugin paths configured'],
-            });
+            }));
             return;
         }
 
         const result = await scanPlugins(allPaths);
-        pluginScanStore.set({
-            ...getState(),
-            scannedPlugins: result.plugins,
-            scanPaths: allPaths,
-            isScanning: false,
-            lastScanTime: Date.now(),
-            errors: result.errors,
+        pluginScanStore.update((current) => {
+            const currentState = current ?? getState();
+            const removedScanPaths = new Set(
+                scanPathsBeforeScan.filter((scan_path) => !currentState.scanPaths.includes(scan_path))
+            );
+            const scanPaths = [...new Set([...currentState.scanPaths, ...defaultPaths])].filter(
+                (scan_path) => !removedScanPaths.has(scan_path)
+            );
+
+            return {
+                ...currentState,
+                scanPaths,
+                isScanning: false,
+                lastScanTime: Date.now(),
+                errors: result.errors,
+                scannedPlugins: result.plugins,
+            };
         });
     } catch (error) {
-        pluginScanStore.set({
-            ...getState(),
+        pluginScanStore.update((current) => ({
+            ...(current ?? getState()),
             isScanning: false,
             errors: [error instanceof Error ? error.message : String(error)],
-        });
+        }));
     }
 }

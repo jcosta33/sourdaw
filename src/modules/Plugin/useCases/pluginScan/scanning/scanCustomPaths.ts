@@ -15,21 +15,24 @@ export async function scanCustomPaths(paths: string[]): Promise<void> {
 
     try {
         const result = await scanPlugins(paths);
-        const existingIds = new Set(state.scannedPlugins.map((param) => param.id));
-        const newPlugins = result.plugins.filter((param) => !existingIds.has(param.id));
+        pluginScanStore.update((current) => {
+            const currentState = current ?? getState();
+            const existingIds = new Set(currentState.scannedPlugins.map((plugin) => plugin.id));
+            const newPlugins = result.plugins.filter((plugin) => !existingIds.has(plugin.id));
 
-        pluginScanStore.set({
-            ...getState(),
-            scannedPlugins: [...state.scannedPlugins, ...newPlugins],
-            isScanning: false,
-            lastScanTime: Date.now(),
-            errors: result.errors,
+            return {
+                ...currentState,
+                scannedPlugins: [...currentState.scannedPlugins, ...newPlugins],
+                isScanning: false,
+                lastScanTime: Date.now(),
+                errors: result.errors,
+            };
         });
     } catch (error) {
-        pluginScanStore.set({
-            ...getState(),
+        pluginScanStore.update((current) => ({
+            ...(current ?? getState()),
             isScanning: false,
             errors: [error instanceof Error ? error.message : String(error)],
-        });
+        }));
     }
 }

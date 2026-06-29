@@ -1,11 +1,187 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../startPluginScan';
+import { type ScannedPlugin } from '../../../../models/ScannedPlugin';
+import { type ScanResult } from '../../../../repositories/pluginBridge/types';
+import { type PluginScanState } from '../../../../stores/pluginScanStore';
+import { startPluginScan } from '../startPluginScan';
+
+function create_scanned_plugin(overrides: Partial<ScannedPlugin> = {}): ScannedPlugin {
+    return {
+        id: 'plugin-id',
+        name: 'Plugin',
+        vendor: 'Vendor',
+        format: 'vst3',
+        category: 'instrument',
+        path: '/plugins/plugin.vst3',
+        version: '1.0.0',
+        num_inputs: 2,
+        num_outputs: 2,
+        num_parameters: 8,
+        has_custom_ui: false,
+        ...overrides,
+    };
+}
+
+function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): PluginScanState {
+    return {
+        scanPaths: [],
+        isScanning: false,
+        scannedPlugins: [],
+        errors: [],
+        lastScanTime: null,
+        ...overrides,
+    };
+}
+
+function create_deferred<ResultValue>() {
+    let resolve_promise = (_value: ResultValue): void => {};
+    const promise = new Promise<ResultValue>((resolve) => {
+        resolve_promise = resolve;
+    });
+
+    return { promise, resolve: resolve_promise };
+}
+
+const mocks = vi.hoisted(() => ({
+    pluginScanStoreValue: {
+        value: {
+            scanPaths: [] as string[],
+            isScanning: false,
+            scannedPlugins: [] as ScannedPlugin[],
+            errors: [] as string[],
+            lastScanTime: null,
+        } satisfies PluginScanState,
+    },
+    pluginScanStoreSet: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.set>(),
+    pluginScanStoreUpdate: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.update>(),
+    scanPlugins: vi.fn<typeof import('../../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
+    getDefaultPluginPaths:
+        vi.fn<typeof import('../../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
+}));
+
+vi.mock('../../../../stores/pluginScanStore', () => ({
+    pluginScanStore: {
+        get value() {
+            return mocks.pluginScanStoreValue.value;
+        },
+        set: mocks.pluginScanStoreSet,
+        update: mocks.pluginScanStoreUpdate,
+    },
+}));
+
+vi.mock('../../../../repositories/pluginBridge/scanPlugins', () => ({
+    scanPlugins: mocks.scanPlugins,
+}));
+
+vi.mock('../../../../repositories/pluginBridge/getDefaultPluginPaths', () => ({
+    getDefaultPluginPaths: mocks.getDefaultPluginPaths,
+}));
 
 describe('startPluginScan', () => {
-    it('should export startPluginScan', () => {
-        expect(subject.startPluginScan).toBeDefined();
-        const time = typeof subject.startPluginScan;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state();
+        mocks.pluginScanStoreSet.mockImplementation((value) => {
+            if (value !== null) {
+                mocks.pluginScanStoreValue.value = value;
+            }
+        });
+        mocks.pluginScanStoreUpdate.mockImplementation((updater) => {
+            const next_value = updater(mocks.pluginScanStoreValue.value);
+            mocks.pluginScanStoreSet(next_value);
+        });
+        mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
+    });
+
+    it('sets isScanning and then updates with results', async () => {
+        const mockPlugins = [create_scanned_plugin({ id: 'p1', name: 'Synth' })];
+        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], scan_duration_ms: 0 });
+
+        await startPluginScan();
+
+        // Check start state
+        expect(mocks.pluginScanStoreSet).toHaveBeenCalledWith(expect.objectContaining({ isScanning: true }));
+
+        // Check end state
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                scannedPlugins: mockPlugins,
+                errors: [],
+            })
+        );
+    });
+
+    it('merges existing paths with default paths', async () => {
+        mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
+        mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
+        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 0 });
+
+        await startPluginScan();
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(expect.arrayContaining(['/custom/path', '/default/path']));
+    });
+
+    it('should not restore a scan path removed while scanPlugins is awaiting', async () => {
+        mocks.pluginScanStoreValue.value.scanPaths = ['/removed/path'];
+        mocks.getDefaultPluginPaths.mockResolvedValue([]);
+        const scan_deferred = create_deferred<ScanResult>();
+        mocks.scanPlugins.mockReturnValue(scan_deferred.promise);
+
+        const scan_promise = startPluginScan();
+        await Promise.resolve();
+
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(['/removed/path']);
+
+        mocks.pluginScanStoreValue.value = {
+            ...mocks.pluginScanStoreValue.value,
+            scanPaths: [],
+        };
+        scan_deferred.resolve({ plugins: [], errors: [], scan_duration_ms: 0 });
+        await scan_promise;
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                scanPaths: [],
+                isScanning: false,
+            })
+        );
+    });
+
+    it('sets error if no paths are configured or found', async () => {
+        mocks.getDefaultPluginPaths.mockResolvedValue([]);
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['No plugin paths configured'],
+            })
+        );
+    });
+
+    it('handles repository errors gracefully', async () => {
+        mocks.scanPlugins.mockRejectedValue(new Error('IPC Failure'));
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['IPC Failure'],
+            })
+        );
+    });
+
+    it('no-ops when a scan is already in flight', async () => {
+        mocks.pluginScanStoreValue.value.isScanning = true;
+
+        await startPluginScan();
+
+        // Guard returns before touching the store or the IPC bridge.
+        expect(mocks.pluginScanStoreSet).not.toHaveBeenCalled();
+        expect(mocks.getDefaultPluginPaths).not.toHaveBeenCalled();
+        expect(mocks.scanPlugins).not.toHaveBeenCalled();
     });
 });
