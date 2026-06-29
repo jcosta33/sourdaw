@@ -16,7 +16,7 @@ import { viewCommands } from './Commands/ViewCommands';
 /**
  * Command registry — aggregates all commands from per-category sub-files.
  *
- * To add a new command: find the relevant sub-file in `./commands/` and add it there.
+ * To add a new command: find the relevant sub-file in `./Commands/` and add it there.
  * The `CommandEntry` type lives in `./CommandEntry.ts`; pure search helpers
  * (`fuzzyMatch`, `searchCommands`) live in `../services/commandSearch.ts`.
  *
