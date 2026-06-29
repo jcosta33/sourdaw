@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
 
-import { libraryStore } from '../../../stores/libraryStore';
+import { type LibraryRoot } from '../../../models/LibraryTypes';
+import { addLibraryRoot, libraryStore } from '../../../stores/libraryStore';
+import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
 import { persistSamples } from '../persistSamples';
@@ -17,13 +20,74 @@ vi.mock('../../../stores/libraryStore', () => ({
     updateLibraryRootStatus: vi.fn(),
 }));
 
+vi.mock('#/utils/tauriBridge', () => ({
+    isTauri: vi.fn(),
+}));
+
+vi.mock('../../readTauriDirectory', () => ({
+    readTauriDirectory: vi.fn(),
+}));
+
 const mockNotificationEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
 };
 
+function createReadRequest<TResult>(result: TResult): {
+    result: TResult;
+    onsuccess?: () => void;
+    onerror?: () => void;
+} {
+    const request: { result: TResult; onsuccess?: () => void; onerror?: () => void } = { result };
+    queueMicrotask(() => request.onsuccess?.());
+    return request;
+}
+
+type RestoreDbInput = {
+    roots: LibraryRoot[];
+    handles?: Array<{ id: string; handle: FileSystemDirectoryHandle }>;
+    samples?: unknown[];
+};
+
+function createRestoreDb({ roots, handles = [], samples = [] }: RestoreDbInput) {
+    return {
+        transaction: () => ({
+            objectStore: (name: string) => ({
+                getAll: () => {
+                    if (name === 'roots') {
+                        return createReadRequest(roots);
+                    }
+                    if (name === 'handles') {
+                        return createReadRequest(handles);
+                    }
+                    if (name === 'samples') {
+                        return createReadRequest(samples);
+                    }
+                    throw new Error(`Unexpected object store ${name}`);
+                },
+            }),
+        }),
+        close: vi.fn(),
+    };
+}
+
+function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
+    return {
+        id: 'root-1',
+        name: 'Samples',
+        provider: 'tauri',
+        rootRef: '/Users/jose/Samples',
+        connectedAt: 1,
+        status: 'offline',
+        fileCount: 0,
+        settings: { recursive: true },
+        ...overrides,
+    };
+}
+
 describe('Library Persistence', () => {
     beforeEach(() => {
         injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
+        localStorage.clear();
         vi.clearAllMocks();
     });
 
@@ -134,6 +198,93 @@ describe('Library Persistence', () => {
             vi.spyOn(helpers, 'openDb').mockRejectedValue(new Error('no db'));
             await restoreLibrary();
             expect(helpers.openDb).toHaveBeenCalled();
+        });
+
+        it('should probe restored Tauri roots through the native directory reader', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockResolvedValue([]);
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            const restoredRootIds = await restoreLibrary();
+
+            expect(readTauriDirectory).toHaveBeenCalledWith({ path: '/Users/jose/Samples' });
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'ready',
+                }),
+                { activate: false }
+            );
+            expect(restoredRootIds).toEqual(['root-1']);
+        });
+
+        it('should mark restored Tauri roots missing when the native directory reader reports a missing path', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('File not found or not accessible');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'path_missing',
+                }),
+                { activate: false }
+            );
+        });
+
+        it('should keep restored Tauri roots ready when a child entry fails after the root opens', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read entry: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'ready',
+                }),
+                { activate: false }
+            );
+        });
+
+        it('should keep restored Tauri roots ready when child metadata fails after the root opens', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read metadata: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'ready',
+                }),
+                { activate: false }
+            );
+        });
+
+        it('should mark restored Tauri roots offline when the root cannot be read', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read directory: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'offline',
+                }),
+                { activate: false }
+            );
         });
     });
 });

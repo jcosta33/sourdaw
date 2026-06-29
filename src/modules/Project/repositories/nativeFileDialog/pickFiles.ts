@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 import { basename_from_path } from '#/utils/path-basename';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -58,9 +60,42 @@ function pickFilesViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
     });
 }
 
+function parseNativeReadFileBytes(rawBytes: unknown): Uint8Array {
+    if (rawBytes instanceof ArrayBuffer) {
+        return new Uint8Array(rawBytes);
+    }
+
+    if (rawBytes instanceof Uint8Array) {
+        return rawBytes;
+    }
+
+    if (!Array.isArray(rawBytes)) {
+        throw new TypeError('read_audio_file returned a non-array payload');
+    }
+
+    const rawByteValues: readonly unknown[] = rawBytes;
+    const bytes = new Uint8Array(rawByteValues.length);
+    let byteIndex = 0;
+    for (const rawByte of rawByteValues) {
+        if (typeof rawByte !== 'number' || !Number.isInteger(rawByte) || rawByte < 0 || rawByte > 255) {
+            throw new TypeError('read_audio_file returned an invalid byte payload');
+        }
+        bytes[byteIndex] = rawByte;
+        byteIndex += 1;
+    }
+
+    return bytes;
+}
+
+function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return buffer;
+}
+
 /**
  * Opens a file picker and returns the selected File objects.
- * In Tauri, opens the native dialog then reads files via the FS plugin.
+ * In Tauri, opens the native dialog then reads files via the native path-policy command.
  * In the browser, uses a hidden `<input type="file">`.
  * Returns `null` when the user cancels.
  */
@@ -70,21 +105,14 @@ export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] |
         if (!paths || paths.length === 0) {
             return null;
         }
-        try {
-            const modName = '@tauri-apps/plugin-fs';
-            const fs = (await import(/* @vite-ignore */ modName)) as {
-                readFile: (path: string) => Promise<ArrayBuffer>;
-            };
-            const files: File[] = [];
-            for (const param of paths) {
-                const bytes = await fs.readFile(param);
-                const name = basename_from_path(param);
-                files.push(new File([bytes], name));
-            }
-            return files.length > 0 ? files : null;
-        } catch {
-            return pickFilesViaBrowser(options);
+
+        const files: File[] = [];
+        for (const param of paths) {
+            const bytes = parseNativeReadFileBytes(await invoke('read_audio_file', { path: param }));
+            const name = basename_from_path(param);
+            files.push(new File([copyBytesToArrayBuffer(bytes)], name));
         }
+        return files.length > 0 ? files : null;
     }
     return pickFilesViaBrowser(options);
 }

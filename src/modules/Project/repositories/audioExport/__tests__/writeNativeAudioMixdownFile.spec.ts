@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { writeFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 
 import { writeNativeAudioMixdownFile } from '../writeNativeAudioMixdownFile';
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    writeFile: vi.fn(),
+vi.mock('@tauri-apps/api/core', () => ({
+    invoke: vi.fn(),
 }));
 
 describe('writeNativeAudioMixdownFile', () => {
     beforeEach(() => {
-        vi.mocked(writeFile).mockReset();
+        vi.mocked(invoke).mockReset();
     });
 
     it('should replace the selected file extension for each native mixdown format write', async () => {
@@ -28,7 +28,13 @@ describe('writeNativeAudioMixdownFile', () => {
             selectedFilePath: '/exports/Sourdaw_Bake_1.wav',
         });
 
-        expect(writeFile).toHaveBeenNthCalledWith(1, '/exports/Sourdaw_Bake_1.wav', wavBytes);
-        expect(writeFile).toHaveBeenNthCalledWith(2, '/exports/Sourdaw_Bake_1.mp3', mp3Bytes);
+        expect(invoke).toHaveBeenNthCalledWith(1, 'write_audio_file', {
+            path: '/exports/Sourdaw_Bake_1.wav',
+            data: [1, 2, 3],
+        });
+        expect(invoke).toHaveBeenNthCalledWith(2, 'write_audio_file', {
+            path: '/exports/Sourdaw_Bake_1.mp3',
+            data: [4, 5, 6],
+        });
     });
 });

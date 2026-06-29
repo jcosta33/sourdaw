@@ -4,9 +4,30 @@ import { isTauri } from '#/utils/tauriBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples, setActiveRoot, libraryStore } from '../../stores/libraryStore';
+import { readTauriDirectory } from '../readTauriDirectory';
 
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
+
+function getNativeDirectoryErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'string') {
+        return error;
+    }
+    return '';
+}
+
+function isNativeMissingDirectoryError(error: unknown): boolean {
+    const message = getNativeDirectoryErrorMessage(error);
+    return message === 'File not found or not accessible' || message === 'Not a directory';
+}
+
+function isNativeChildListingError(error: unknown): boolean {
+    const message = getNativeDirectoryErrorMessage(error);
+    return message.startsWith('Failed to read entry:') || message.startsWith('Failed to read metadata:');
+}
 
 /**
  * Validate that a restored Tauri root's absolute path still resolves on disk.
@@ -19,9 +40,15 @@ async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['s
         return 'offline';
     }
     try {
-        const { exists } = await import('@tauri-apps/plugin-fs');
-        return (await exists(root.rootRef)) ? 'ready' : 'path_missing';
-    } catch {
+        await readTauriDirectory({ path: root.rootRef });
+        return 'ready';
+    } catch (error) {
+        if (isNativeMissingDirectoryError(error)) {
+            return 'path_missing';
+        }
+        if (isNativeChildListingError(error)) {
+            return 'ready';
+        }
         return 'offline';
     }
 }
