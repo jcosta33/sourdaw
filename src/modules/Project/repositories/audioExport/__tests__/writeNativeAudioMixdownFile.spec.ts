@@ -30,11 +30,11 @@ describe('writeNativeAudioMixdownFile', () => {
 
         expect(invoke).toHaveBeenNthCalledWith(1, 'write_audio_file', {
             path: '/exports/Sourdaw_Bake_1.wav',
-            data: wavBytes,
+            data: [1, 2, 3],
         });
         expect(invoke).toHaveBeenNthCalledWith(2, 'write_audio_file', {
             path: '/exports/Sourdaw_Bake_1.mp3',
-            data: mp3Bytes,
+            data: [4, 5, 6],
         });
     });
 });

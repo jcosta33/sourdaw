@@ -47,7 +47,7 @@ describe('DAWproject native repositories', () => {
 
         expect(invoke).toHaveBeenCalledWith('write_audio_file', {
             path: '/tmp/session.dawproject',
-            data: bytes,
+            data: [1, 2, 3],
         });
     });
 });

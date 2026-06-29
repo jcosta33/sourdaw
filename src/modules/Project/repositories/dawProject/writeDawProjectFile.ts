@@ -8,5 +8,5 @@ type WriteDawProjectFileInput = {
 type WriteDawProjectFileOutput = Promise<void>;
 
 export async function writeDawProjectFile({ bytes, filePath }: WriteDawProjectFileInput): WriteDawProjectFileOutput {
-    await invoke('write_audio_file', { path: filePath, data: bytes });
+    await invoke('write_audio_file', { path: filePath, data: Array.from(bytes) });
 }

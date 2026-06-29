@@ -32,7 +32,7 @@ describe('writeNativeAudioStemFile', () => {
         expect(join).toHaveBeenCalledWith('/exports', 'Kick.wav');
         expect(invoke).toHaveBeenCalledWith('write_audio_file', {
             path: '/exports/Kick.wav',
-            data: bytes,
+            data: [7, 8, 9],
         });
     });
 });
