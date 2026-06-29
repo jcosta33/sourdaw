@@ -172,7 +172,7 @@ async function confirmPendingDsoEdit(confirmation: PendingDsoEditConfirmation): 
 }
 
 function getDsoConfirmationTargetMismatch(confirmation: PendingDsoEditConfirmation): string | null {
-    const currentTargets = getDsoConfirmationTargets({ dsos: confirmation.plan.dsos });
+    const currentTargets = getDsoConfirmationTargets({ dsos: confirmation.plan.dsos }).confirmationTargets;
     if (currentTargets.length !== confirmation.confirmationTargets.length) {
         return 'The destructive edit targets no longer match the pending confirmation.';
     }

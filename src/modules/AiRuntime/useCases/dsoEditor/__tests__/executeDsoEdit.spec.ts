@@ -251,6 +251,190 @@ describe('executeDsoEdit', () => {
         );
     });
 
+    it('should list every DSO in a mixed destructive confirmation without executing before confirmation', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.streamNativeCompletion.mockImplementation(
+            async (
+                _messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void
+            ): Promise<void> => {
+                onToken(
+                    JSON.stringify({
+                        kind: 'edit_plan',
+                        moderation: 'allow',
+                        intent: 'remove and mute drums',
+                        dsos: [
+                            { op: 'remove_track', track_id: 'track-1' },
+                            { op: 'mute_track', track_id: 'track-1', muted: true },
+                        ],
+                    })
+                );
+            }
+        );
+
+        const result = await executeDsoEdit('delete drums and mute them first');
+
+        expect(result.success).toBe(true);
+        expect(result.summaries).toEqual([]);
+        expect(mocks.executeDsos).not.toHaveBeenCalled();
+        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
+            expect.objectContaining({
+                actionLabels: ['Remove track "Drums"', 'Mute track "Drums"'],
+                confirmationTargets: [
+                    expect.objectContaining({
+                        op: 'remove_track',
+                        label: 'Remove track "Drums"',
+                    }),
+                ],
+            }),
+        ]);
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                content: expect.stringContaining('- Mute track "Drums"'),
+            })
+        );
+    });
+
+    it('should disambiguate duplicate destructive track names', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [],
+                    devices: [],
+                },
+                {
+                    id: 'track-2',
+                    name: 'Drums',
+                    clips: [],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.streamNativeCompletion.mockImplementation(
+            async (
+                _messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void
+            ): Promise<void> => {
+                onToken(
+                    JSON.stringify({
+                        kind: 'edit_plan',
+                        moderation: 'allow',
+                        intent: 'remove first drums',
+                        dsos: [{ op: 'remove_track', track_id: 'track-1' }],
+                    })
+                );
+            }
+        );
+
+        await executeDsoEdit('delete the first drums');
+
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
+            expect.objectContaining({
+                actionLabels: ['Remove track "Drums" (id: track-1)'],
+            }),
+        ]);
+    });
+
+    it('should disambiguate duplicate destructive clip names with track context', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [],
+                },
+                {
+                    id: 'track-2',
+                    name: 'Bass',
+                    clips: [{ id: 'clip-2', name: 'Chorus', trackId: 'track-2' }],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.streamNativeCompletion.mockImplementation(
+            async (
+                _messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void
+            ): Promise<void> => {
+                onToken(
+                    JSON.stringify({
+                        kind: 'edit_plan',
+                        moderation: 'allow',
+                        intent: 'remove chorus on drums',
+                        dsos: [{ op: 'remove_clip', clip_id: 'clip-1' }],
+                    })
+                );
+            }
+        );
+
+        await executeDsoEdit('delete chorus on drums');
+
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
+            expect.objectContaining({
+                actionLabels: ['Remove clip "Chorus" on track "Drums"'],
+            }),
+        ]);
+    });
+
+    it('should add a stable suffix when duplicate destructive clip names share a track', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [
+                        { id: 'clip-1', name: 'Chorus', trackId: 'track-1' },
+                        { id: 'clip-2', name: 'Chorus', trackId: 'track-1' },
+                    ],
+                    devices: [],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
+        mocks.streamNativeCompletion.mockImplementation(
+            async (
+                _messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void
+            ): Promise<void> => {
+                onToken(
+                    JSON.stringify({
+                        kind: 'edit_plan',
+                        moderation: 'allow',
+                        intent: 'remove first chorus',
+                        dsos: [{ op: 'remove_clip', clip_id: 'clip-1' }],
+                    })
+                );
+            }
+        );
+
+        await executeDsoEdit('delete the first chorus clip');
+
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
+            expect.objectContaining({
+                actionLabels: ['Remove clip "Chorus" on track "Drums" (id: clip-1)'],
+            }),
+        ]);
+    });
+
     it('should keep non-destructive DSO plans auto-applying immediately', async () => {
         mocks.dsoBackendAvailable.value = true;
         mocks.backend.value = 'native';

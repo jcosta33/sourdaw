@@ -150,15 +150,14 @@ export const executeDsoEdit = inject({ logger })(
 
                 if (classification === 'confirmation_required') {
                     const confirmationId = `dso-confirmation-${crypto.randomUUID()}`;
-                    const confirmationTargets = getDsoConfirmationTargets({ dsos: plan.dsos });
-                    const actionLabels = confirmationTargets.map((target) => target.label);
+                    const confirmationMetadata = getDsoConfirmationTargets({ dsos: plan.dsos });
                     const confirmation = proposePendingDsoConfirmation({
                         id: confirmationId,
                         prompt: userRequest,
                         assistantMessageId: assistantMsgId,
                         plan,
-                        actionLabels,
-                        confirmationTargets,
+                        actionLabels: confirmationMetadata.actionLabels,
+                        confirmationTargets: confirmationMetadata.confirmationTargets,
                         reasoning,
                     });
                     if (!confirmation) {
@@ -169,7 +168,7 @@ export const executeDsoEdit = inject({ logger })(
                         content:
                             `This destructive edit requires confirmation before execution:\n\n` +
                             `Intent: ${plan.intent}\n\n` +
-                            `${actionLabels.map((label) => `- ${label}`).join('\n')}`,
+                            `${confirmationMetadata.actionLabels.map((label) => `- ${label}`).join('\n')}`,
                         isStreaming: false,
                         reasoning,
                         isDsoAction: true,
