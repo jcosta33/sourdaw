@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
+
 import { isTauri } from '#/utils/tauriBridge';
 
 import * as helpers from '../helpers';
@@ -16,8 +19,12 @@ vi.mock('../helpers', () => ({
     openViaTauri: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    readFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer),
+vi.mock('@tauri-apps/api/core', () => ({
+    invoke: vi.fn().mockResolvedValue([1, 2, 3]),
+}));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+    save: vi.fn().mockResolvedValue('/save/path.wav'),
 }));
 
 describe('nativeFileDialog', () => {
@@ -54,11 +61,7 @@ describe('nativeFileDialog', () => {
 
         it('should use native save dialog in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            // We need to mock the dynamic import of @tauri-apps/plugin-dialog
-            // Since it's inside saveFileDialog.ts, we mock it globally
-            vi.mock('@tauri-apps/plugin-dialog', () => ({
-                save: vi.fn().mockResolvedValue('/save/path.wav'),
-            }));
+            vi.mocked(save).mockResolvedValue('/save/path.wav');
 
             const result = await saveFileDialog({ defaultPath: 'test.wav' });
             expect(result).toBe('/save/path.wav');
@@ -74,6 +77,7 @@ describe('nativeFileDialog', () => {
             expect(result).toHaveLength(1);
             expect(result![0]).toBeInstanceOf(File);
             expect(result![0]!.name).toBe('test.wav');
+            expect(invoke).toHaveBeenCalledWith('read_audio_file', { path: '/path/test.wav' });
         });
 
         it('should derive File names from native Windows Tauri paths', async () => {
@@ -84,6 +88,7 @@ describe('nativeFileDialog', () => {
 
             expect(result).toHaveLength(1);
             expect(result![0]!.name).toBe('kick.wav');
+            expect(invoke).toHaveBeenCalledWith('read_audio_file', { path: 'C:\\Users\\jose\\Samples\\kick.wav' });
         });
 
         it('should use browser fallback when not in Tauri', () => {

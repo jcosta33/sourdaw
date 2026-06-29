@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readDir } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 
 import { readTauriDirectory } from '../readTauriDirectory';
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    readDir: vi.fn(),
+vi.mock('@tauri-apps/api/core', () => ({
+    invoke: vi.fn(),
 }));
 
 describe('readTauriDirectory', () => {
@@ -14,14 +14,14 @@ describe('readTauriDirectory', () => {
     });
 
     it('should forward the absolute path to the native directory reader', async () => {
-        vi.mocked(readDir).mockResolvedValue([
-            { name: 'Drums', isDirectory: true, isFile: false, isSymlink: false },
-            { name: 'kick.wav', isDirectory: false, isFile: true, isSymlink: false },
+        vi.mocked(invoke).mockResolvedValue([
+            { name: 'Drums', path: '/Users/jose/Samples/Drums', is_directory: true, size_bytes: 0 },
+            { name: 'kick.wav', path: '/Users/jose/Samples/kick.wav', is_directory: false, size_bytes: 12 },
         ]);
 
         const entries = await readTauriDirectory({ path: '/Users/jose/Samples' });
 
-        expect(readDir).toHaveBeenCalledWith('/Users/jose/Samples');
+        expect(invoke).toHaveBeenCalledWith('list_directory', { path: '/Users/jose/Samples' });
         expect(entries).toEqual([
             { name: 'Drums', isDirectory: true },
             { name: 'kick.wav', isDirectory: false },

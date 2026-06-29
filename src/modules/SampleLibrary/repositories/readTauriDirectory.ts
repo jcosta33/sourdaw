@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 type TauriDirectoryEntry = {
     name: string;
     isDirectory: boolean;
@@ -9,12 +11,33 @@ type ReadTauriDirectoryInput = {
 
 type ReadTauriDirectoryOutput = Promise<TauriDirectoryEntry[]>;
 
-export async function readTauriDirectory({ path }: ReadTauriDirectoryInput): ReadTauriDirectoryOutput {
-    const { readDir } = await import('@tauri-apps/plugin-fs');
-    const entries = await readDir(path);
+type NativeDirectoryEntryCandidate = {
+    name?: unknown;
+    is_directory?: unknown;
+};
 
-    return entries.map((entry) => ({
+function parseNativeDirectoryEntry(rawEntry: unknown): TauriDirectoryEntry {
+    if (typeof rawEntry !== 'object' || rawEntry === null) {
+        throw new TypeError('list_directory returned a non-object entry');
+    }
+
+    const entry = rawEntry as NativeDirectoryEntryCandidate;
+    if (typeof entry.name !== 'string' || typeof entry.is_directory !== 'boolean') {
+        throw new TypeError('list_directory returned an invalid entry payload');
+    }
+
+    return {
         name: entry.name,
-        isDirectory: entry.isDirectory,
-    }));
+        isDirectory: entry.is_directory,
+    };
+}
+
+export async function readTauriDirectory({ path }: ReadTauriDirectoryInput): ReadTauriDirectoryOutput {
+    const entries: unknown = await invoke('list_directory', { path });
+
+    if (!Array.isArray(entries)) {
+        throw new TypeError('list_directory returned a non-array payload');
+    }
+
+    return entries.map((entry) => parseNativeDirectoryEntry(entry));
 }
