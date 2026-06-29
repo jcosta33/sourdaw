@@ -714,6 +714,12 @@ module.exports = {
                     '^src/modules/MIDI/workers/midiImportWorker\\.ts$',
                     '^src/modules/BrowserAi/workers/tfjsInferenceWorker\\.ts$',
                     '^src/modules/AudioEngine/workers/recordingWorker\\.ts$',
+                    // Module-root shared test fixtures imported only from spec
+                    // files, which dependency-cruiser excludes from this graph.
+                    '^src/modules/SoundLibrary/__tests__/createTestSample\\.ts$',
+                    '^src/modules/Arrangement/__tests__/TrackDummy\\.ts$',
+                    '^src/modules/Arrangement/__tests__/PluginDummy\\.ts$',
+                    '^src/modules/Arrangement/__tests__/ClipDummy\\.ts$',
                 ],
             },
             to: {},
