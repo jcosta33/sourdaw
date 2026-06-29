@@ -4,8 +4,8 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type LibraryRoot } from '../../../models/LibraryTypes';
-import { addLibraryRoot, libraryStore } from '../../../stores/libraryStore';
+import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
+import { addLibraryRoot, addSamples, type LibraryState, libraryStore } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
@@ -70,6 +70,69 @@ function createRestoreDb({ roots, handles = [], samples = [] }: RestoreDbInput) 
     };
 }
 
+type PersistedHandle = { id: string; handle: FileSystemDirectoryHandle };
+type PersistedRow = LibraryRoot | SampleRecord | PersistedHandle;
+
+function clonePersistedRow<Row extends PersistedRow>(row: Row): Row {
+    return structuredClone(row);
+}
+
+function getPersistedRowId(key: IDBValidKey): string {
+    if (typeof key === 'string') {
+        return key;
+    }
+    throw new Error('Unexpected non-string persistence test key');
+}
+
+function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
+    const rows = new Map(initial.map((row) => [row.id, clonePersistedRow(row)]));
+    return {
+        rows,
+        put: (row: Row) => rows.set(row.id, clonePersistedRow(row)),
+        delete: (key: IDBValidKey) => rows.delete(getPersistedRowId(key)),
+        getAll: () => createReadRequest([...rows.values()].map(clonePersistedRow)),
+        getAllKeys: () => createReadRequest([...rows.keys()]),
+    };
+}
+
+type PersistenceDbInput = {
+    roots?: LibraryRoot[];
+    handles?: PersistedHandle[];
+    samples?: SampleRecord[];
+};
+
+function createPersistenceDb({ roots = [], handles = [], samples = [] }: PersistenceDbInput = {}) {
+    const stores = {
+        roots: createWritableStore(roots),
+        handles: createWritableStore(handles),
+        samples: createWritableStore(samples),
+    };
+    return {
+        transaction: () => ({
+            objectStore: (name: string) => {
+                if (name === 'roots') {
+                    return stores.roots;
+                }
+                if (name === 'handles') {
+                    return stores.handles;
+                }
+                if (name === 'samples') {
+                    return stores.samples;
+                }
+                throw new Error(`Unexpected object store ${name}`);
+            },
+            set oncomplete(cb: () => void) {
+                queueMicrotask(cb);
+            },
+            set onerror(_cb: () => void) {
+                /* unused in the success path */
+            },
+        }),
+        close: vi.fn(),
+        stores,
+    };
+}
+
 function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
     return {
         id: 'root-1',
@@ -80,6 +143,24 @@ function createTauriRoot(overrides: Partial<LibraryRoot> = {}): LibraryRoot {
         status: 'offline',
         fileCount: 0,
         settings: { recursive: true },
+        ...overrides,
+    };
+}
+
+function createLibraryState(overrides: Partial<LibraryState> = {}): LibraryState {
+    return {
+        roots: [],
+        samples: [],
+        folderTrees: {},
+        activeRootId: null,
+        currentFolder: null,
+        searchQuery: '',
+        tagFilter: null,
+        favoritesOnly: false,
+        sortField: 'name',
+        sortDirection: 'asc',
+        scanning: false,
+        scanProgress: 0,
         ...overrides,
     };
 }
@@ -173,6 +254,43 @@ describe('Library Persistence', () => {
             // Removed root's root + handle rows are pruned; live root stays.
             expect([...rootStore.rows.keys()].sort()).toEqual(['r1']);
             expect([...handleStore.rows.keys()].sort()).toEqual(['r1']);
+        });
+
+        it('should restore favorite and existing tags after the real persistSamples to restoreLibrary path', async () => {
+            const root = createTauriRoot({ id: 'root-1', status: 'ready' });
+            const sample = {
+                id: 'sample-1',
+                libraryRootId: 'root-1',
+                relativePath: 'Drums/Kick.wav',
+                displayName: 'Kick',
+                ext: 'wav',
+                folder: 'Drums',
+                sync: { exists: true, status: 'indexed' },
+                format: { durationSec: 0.5, sampleRate: 48000, channels: 2, bitDepth: 24 },
+                tags: ['drum', 'one-shot', 'kick'],
+                favorite: true,
+            } satisfies SampleRecord;
+            const db = createPersistenceDb({ roots: [root] });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+            vi.mocked(isTauri).mockReturnValue(false);
+            vi.mocked(libraryStore).value = createLibraryState({
+                roots: [root],
+                samples: [sample],
+                activeRootId: root.id,
+            });
+
+            await persistSamples();
+            vi.mocked(libraryStore).value = createLibraryState();
+
+            await restoreLibrary();
+
+            expect(addSamples).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    id: 'sample-1',
+                    favorite: true,
+                    tags: ['drum', 'one-shot', 'kick'],
+                }),
+            ]);
         });
     });
 
