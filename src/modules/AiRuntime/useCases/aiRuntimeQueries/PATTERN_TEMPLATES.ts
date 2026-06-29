@@ -1,4 +1,4 @@
-import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../models/midiPatternLibrary';
+import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../models/MidiPatternLibrary';
 
 import { toPublicPatternTemplate } from './helpers';
 

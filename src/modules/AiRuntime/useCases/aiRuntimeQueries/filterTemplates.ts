@@ -1,4 +1,4 @@
-import { filterTemplates as filterModelTemplates } from '../../models/midiPatternLibrary';
+import { filterTemplates as filterModelTemplates } from '../../models/MidiPatternLibrary';
 
 import { toPublicPatternTemplate } from './helpers';
 
