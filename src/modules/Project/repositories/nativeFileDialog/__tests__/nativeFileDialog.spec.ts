@@ -91,6 +91,20 @@ describe('nativeFileDialog', () => {
             expect(invoke).toHaveBeenCalledWith('read_audio_file', { path: 'C:\\Users\\jose\\Samples\\kick.wav' });
         });
 
+        it('should reject native read failures after a Tauri selection without opening a browser picker', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/test.wav']);
+            vi.mocked(invoke).mockRejectedValue(new Error('native read denied'));
+            const createElementSpy = vi.spyOn(document, 'createElement');
+
+            try {
+                await expect(pickFiles()).rejects.toThrow('native read denied');
+                expect(createElementSpy).not.toHaveBeenCalled();
+            } finally {
+                createElementSpy.mockRestore();
+            }
+        });
+
         it('should use browser fallback when not in Tauri', () => {
             vi.mocked(isTauri).mockReturnValue(false);
             const mockInput = {
@@ -98,10 +112,16 @@ describe('nativeFileDialog', () => {
                 addEventListener: vi.fn(),
                 type: '',
             };
-            vi.spyOn(document, 'createElement').mockReturnValue(mockInput as unknown as HTMLInputElement);
+            const createElementSpy = vi
+                .spyOn(document, 'createElement')
+                .mockReturnValue(mockInput as unknown as HTMLInputElement);
 
-            void pickFiles();
-            expect(mockInput.click).toHaveBeenCalled();
+            try {
+                void pickFiles();
+                expect(mockInput.click).toHaveBeenCalled();
+            } finally {
+                createElementSpy.mockRestore();
+            }
         });
 
         it('should resolve to null when focus returns without a change or cancel event', async () => {

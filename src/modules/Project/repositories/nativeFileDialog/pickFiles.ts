@@ -105,17 +105,14 @@ export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] |
         if (!paths || paths.length === 0) {
             return null;
         }
-        try {
-            const files: File[] = [];
-            for (const param of paths) {
-                const bytes = parseNativeReadFileBytes(await invoke('read_audio_file', { path: param }));
-                const name = basename_from_path(param);
-                files.push(new File([copyBytesToArrayBuffer(bytes)], name));
-            }
-            return files.length > 0 ? files : null;
-        } catch {
-            return pickFilesViaBrowser(options);
+
+        const files: File[] = [];
+        for (const param of paths) {
+            const bytes = parseNativeReadFileBytes(await invoke('read_audio_file', { path: param }));
+            const name = basename_from_path(param);
+            files.push(new File([copyBytesToArrayBuffer(bytes)], name));
         }
+        return files.length > 0 ? files : null;
     }
     return pickFilesViaBrowser(options);
 }

@@ -9,14 +9,24 @@ import { readTauriDirectory } from '../readTauriDirectory';
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 import { ACTIVE_ROOT_KEY } from './persistSamples';
 
-function isNativeMissingDirectoryError(error: unknown): boolean {
-    let message = '';
+function getNativeDirectoryErrorMessage(error: unknown): string {
     if (error instanceof Error) {
-        message = error.message;
-    } else if (typeof error === 'string') {
-        message = error;
+        return error.message;
     }
+    if (typeof error === 'string') {
+        return error;
+    }
+    return '';
+}
+
+function isNativeMissingDirectoryError(error: unknown): boolean {
+    const message = getNativeDirectoryErrorMessage(error);
     return message === 'File not found or not accessible' || message === 'Not a directory';
+}
+
+function isNativeChildListingError(error: unknown): boolean {
+    const message = getNativeDirectoryErrorMessage(error);
+    return message.startsWith('Failed to read entry:') || message.startsWith('Failed to read metadata:');
 }
 
 /**
@@ -35,6 +45,9 @@ async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['s
     } catch (error) {
         if (isNativeMissingDirectoryError(error)) {
             return 'path_missing';
+        }
+        if (isNativeChildListingError(error)) {
+            return 'ready';
         }
         return 'offline';
     }

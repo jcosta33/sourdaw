@@ -211,6 +211,24 @@ describe('scanTauriDirectory', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it('should classify a Tauri root read failure instead of reporting the root ready', async () => {
+        const root = createTauriRoot();
+        mocks.readTauriDirectory.mockRejectedValue(new DOMException('denied', 'NotAllowedError'));
+
+        await scanTauriDirectory(root);
+
+        expect(mocks.addSamples).not.toHaveBeenCalled();
+        expect(mocks.buildFolderTree).not.toHaveBeenCalled();
+        expect(mocks.persistLibraryRoots).not.toHaveBeenCalled();
+        expect(mocks.persistSamples).not.toHaveBeenCalled();
+        expect(mocks.updateLibraryRootStatus).toHaveBeenCalledTimes(1);
+        expect(mocks.updateLibraryRootStatus).toHaveBeenCalledWith('root-1', 'permission_required');
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Lost permission to read "Samples". Reconnect the folder to rescan.',
+            'error'
+        );
+    });
+
     it('should warn and avoid pruning when a Tauri subdirectory is unreadable', async () => {
         const root = createTauriRoot();
         const staleSkippedSample = {

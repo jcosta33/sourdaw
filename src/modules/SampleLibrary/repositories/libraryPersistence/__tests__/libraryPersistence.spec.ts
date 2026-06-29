@@ -235,5 +235,56 @@ describe('Library Persistence', () => {
                 { activate: false }
             );
         });
+
+        it('should keep restored Tauri roots ready when a child entry fails after the root opens', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read entry: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'ready',
+                }),
+                { activate: false }
+            );
+        });
+
+        it('should keep restored Tauri roots ready when child metadata fails after the root opens', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read metadata: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'ready',
+                }),
+                { activate: false }
+            );
+        });
+
+        it('should mark restored Tauri roots offline when the root cannot be read', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockRejectedValue('Failed to read directory: Operation not permitted');
+            const root = createTauriRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: 'root-1',
+                    status: 'offline',
+                }),
+                { activate: false }
+            );
+        });
     });
 });
