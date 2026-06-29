@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type PluginScanState } from '../../../stores/pluginScanStore';
 import { startPluginScan } from '../scanning/startPluginScan';
 
 const mocks = vi.hoisted(() => ({
@@ -7,11 +8,13 @@ const mocks = vi.hoisted(() => ({
         value: {
             scanPaths: [] as string[],
             isScanning: false,
-            scannedPlugins: [] as unknown[],
+            scannedPlugins: [] as PluginScanState['scannedPlugins'],
             errors: [] as string[],
-        },
+            lastScanTime: null,
+        } satisfies PluginScanState,
     },
     pluginScanStoreSet: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.set>(),
+    pluginScanStoreUpdate: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.update>(),
     scanPlugins: vi.fn<typeof import('../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
     getDefaultPluginPaths:
         vi.fn<typeof import('../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
@@ -23,6 +26,7 @@ vi.mock('../../../stores/pluginScanStore', () => ({
             return mocks.pluginScanStoreValue.value;
         },
         set: mocks.pluginScanStoreSet,
+        update: mocks.pluginScanStoreUpdate,
     },
 }));
 
@@ -42,7 +46,17 @@ describe('startPluginScan', () => {
             isScanning: false,
             scannedPlugins: [],
             errors: [],
-        } as unknown as typeof mocks.pluginScanStoreValue.value;
+            lastScanTime: null,
+        };
+        mocks.pluginScanStoreSet.mockImplementation((value) => {
+            if (value !== null) {
+                mocks.pluginScanStoreValue.value = value;
+            }
+        });
+        mocks.pluginScanStoreUpdate.mockImplementation((updater) => {
+            const next_value = updater(mocks.pluginScanStoreValue.value);
+            mocks.pluginScanStoreSet(next_value);
+        });
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
     });
 
