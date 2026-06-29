@@ -7,7 +7,7 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
 
-import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/colorPalette';
+import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/ColorPalette';
 import { type Marker } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { addMarker } from '../../useCases/marker/markerOperations/addMarker';

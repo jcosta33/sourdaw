@@ -1,4 +1,4 @@
-import { TRACK_COLOR_PALETTE } from './colorPalette';
+import { TRACK_COLOR_PALETTE } from './ColorPalette';
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
