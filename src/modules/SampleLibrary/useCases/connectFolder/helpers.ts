@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type LibraryRoot, type SampleRecord, isAudioFile } from '../../models/LibraryTypes';
 import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
+import { readTauriDirectory } from '../../repositories/readTauriDirectory';
 import {
     addSamples,
     removeSamples,
@@ -234,7 +235,6 @@ export async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
     setScanProgress(true, 0);
 
     try {
-        const { readDir } = await import('@tauri-apps/plugin-fs');
         const batch: SampleRecord[] = [];
         const scanned = new Map<string, SampleRecord>();
         let totalFound = 0;
@@ -242,7 +242,7 @@ export async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
 
         async function scanDir(dirPath: string, relativePath: string): Promise<void> {
             try {
-                const entries = await readDir(dirPath);
+                const entries = await readTauriDirectory({ path: dirPath });
                 for (const entry of entries) {
                     if (signal.aborted) {
                         return;
