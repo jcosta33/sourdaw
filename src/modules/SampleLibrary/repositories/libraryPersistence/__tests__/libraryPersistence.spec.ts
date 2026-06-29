@@ -77,12 +77,19 @@ function clonePersistedRow<Row extends PersistedRow>(row: Row): Row {
     return structuredClone(row);
 }
 
+function getPersistedRowId(key: IDBValidKey): string {
+    if (typeof key === 'string') {
+        return key;
+    }
+    throw new Error('Unexpected non-string persistence test key');
+}
+
 function createWritableStore<Row extends PersistedRow>(initial: Row[] = []) {
     const rows = new Map(initial.map((row) => [row.id, clonePersistedRow(row)]));
     return {
         rows,
         put: (row: Row) => rows.set(row.id, clonePersistedRow(row)),
-        delete: (key: IDBValidKey) => rows.delete(String(key)),
+        delete: (key: IDBValidKey) => rows.delete(getPersistedRowId(key)),
         getAll: () => createReadRequest([...rows.values()].map(clonePersistedRow)),
         getAllKeys: () => createReadRequest([...rows.keys()]),
     };
