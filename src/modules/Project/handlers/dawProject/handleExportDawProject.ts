@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { exportDawProject } from '../../useCases/dawProject/exportDawProject';
+import { saveDawProjectNativeFile } from '../../useCases/dawProject/saveDawProjectNativeFile';
 
 type ShowSaveFilePicker = (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
     createWritable: () => Promise<{
@@ -24,16 +25,7 @@ function getShowSaveFilePicker(): ShowSaveFilePicker | null {
 
 async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
     if (isTauri()) {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        const { writeFile } = await import('@tauri-apps/plugin-fs');
-        const filePath = await save({
-            defaultPath: suggestedName,
-            filters: [{ name: 'DAWproject', extensions: ['dawproject'] }],
-        });
-        if (!filePath) {
-            return;
-        }
-        await writeFile(filePath, bytes);
+        await saveDawProjectNativeFile({ bytes, suggestedName });
         return;
     }
 
