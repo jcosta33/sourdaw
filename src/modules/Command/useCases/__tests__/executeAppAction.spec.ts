@@ -64,6 +64,25 @@ describe('executeAppAction', () => {
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
     });
 
+    it('should log and rethrow rejected registered handlers without recording side effects', async () => {
+        const action: AppAction = { type: 'toggleSidebar' };
+        const cause = new Error('handler failed');
+        clearHandlerRegistry();
+        registerHandlerMap({ [action.type]: mocks.mockHandler });
+        mocks.mockHandler.execute.mockRejectedValueOnce(cause);
+
+        await expect(executeAppAction(action)).rejects.toBe(cause);
+
+        const reported_error = mocks.logger.error.mock.calls[0]?.[0];
+        expect(reported_error).toBeInstanceOf(Error);
+        expect(reported_error?.message).toContain(action.type);
+        expect(reported_error?.cause).toBe(cause);
+        expect(mocks.clearSemanticContext).toHaveBeenCalledOnce();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
+        expect(mocks.pushUndo).not.toHaveBeenCalled();
+    });
+
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an
     // undoable action, `describe()` must run BEFORE `execute()` so it can snapshot
     // pre-mutation state for destructive inverses (restoreTrack/restoreClip), and
