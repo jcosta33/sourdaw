@@ -79,6 +79,15 @@ export const parsePromptToActions = inject({ logger })(
                         return { actions: [], rawText: prompt, requiresConfirmation: false };
                     }
 
+                    if (result.success && result.pendingConfirmationId) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            _jsonEditAttempted: true,
+                        };
+                    }
+
                     if (result.success) {
                         return {
                             actions: [],

@@ -1,4 +1,4 @@
-import { eventBus } from '#/app/registerDependencies';
+import { redo, undo } from '#/modules/Command/useCases';
 
 import { type PresetAction } from './types';
 
@@ -51,7 +51,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['undo', 'ctrl z', 'cmd z'],
         category: 'File',
         buildAction: () => {
-            void eventBus.emit('command.undo', undefined);
+            void undo();
             return [];
         },
     },
@@ -61,7 +61,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['redo', 'ctrl shift z', 'cmd shift z'],
         category: 'File',
         buildAction: () => {
-            void eventBus.emit('command.redo', undefined);
+            void redo();
             return [];
         },
     },

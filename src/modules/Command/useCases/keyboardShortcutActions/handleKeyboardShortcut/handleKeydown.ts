@@ -1,4 +1,3 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import {
@@ -32,6 +31,7 @@ import {
 } from '#/modules/Workspace/useCases';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
+import { CommandEventBus } from '../../commandEventBus';
 import { executeAppAction } from '../../executeAppAction';
 import { pushUndoEntry } from '../../pushUndoEntry';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -184,7 +184,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
     );
 }
 
-export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
+export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
     function executeShortcutAction(action: ShortcutAction): boolean {
         if (action.type === 'appAction') {
             const appAction = action.action;

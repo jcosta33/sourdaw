@@ -25,6 +25,14 @@ vi.mock('#/modules/AiRuntime/useCases/sendChatMessage', () => ({
     sendChatMessage: vi.fn(),
 }));
 
+vi.mock('../../../useCases/confirmPendingChatActions', () => ({
+    confirmPendingChatActions: vi.fn(),
+}));
+
+vi.mock('../../../useCases/cancelPendingChatActions', () => ({
+    cancelPendingChatActions: vi.fn(),
+}));
+
 vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat', () => ({
     toggleChat: vi.fn(),
 }));
@@ -57,13 +65,15 @@ vi.mock('../../components/ChatComposer', () => ({
             <button onClick={onSend} disabled={!isLlmAvailable}>
                 Send
             </button>
-            {isGenerating && <button onClick={onStop}>Stop</button>}
+            {isGenerating ? <button onClick={onStop}>Stop</button> : null}
         </div>
     ),
 }));
 
 // Import the mocked modules to access mock functions
 const { useStore } = await import('#/infra/store/useStore');
+const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
+const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
 const { isLlmAvailable } =
     await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
@@ -71,6 +81,7 @@ const { isLlmAvailable } =
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Element.prototype.scrollIntoView = vi.fn();
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             messages: [],
             isGenerating: false,
@@ -121,6 +132,33 @@ describe('ChatPanel', () => {
     it('should render ChatComposer component', () => {
         render(<ChatPanel />);
         expect(screen.getByTestId('chat-composer')).toBeInTheDocument();
+    });
+
+    it('should let the user confirm or cancel pending prompt actions', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'assistant-1',
+                    role: 'assistant',
+                    content: 'This prompt requires confirmation',
+                    timestamp: 1,
+                    isDsoAction: true,
+                    pendingActionConfirmationId: 'confirm-1',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+
+        render(<ChatPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm pending actions' }));
+        expect(confirmPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel pending actions' }));
+        expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
     it('should have correct accessibility attributes', () => {

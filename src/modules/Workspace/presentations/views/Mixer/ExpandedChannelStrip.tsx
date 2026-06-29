@@ -122,7 +122,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <MixerPopupOption role="menuitem" onClick={act(actions.createVcaAndAssign)}>
                         + New VCA Group
                     </MixerPopupOption>
-                    {track.vcaGroupId && (
+                    {track.vcaGroupId ? (
                         <MixerPopupOption
                             role="menuitem"
                             className="text-muted-foreground"
@@ -130,7 +130,7 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         >
                             Remove from VCA
                         </MixerPopupOption>
-                    )}
+                    ) : null}
                     <MixerPopupSeparator />
                     <MixerPopupOption role="menuitem" tone="danger" onClick={act(actions.removeWithConfirm)}>
                         Remove Channel

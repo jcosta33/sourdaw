@@ -1,4 +1,4 @@
-import { type getDrumKitById as getDrumKitByIdFromFactory } from '../../models/factoryDrumKits';
+import { type getDrumKitById as getDrumKitByIdFromFactory } from '../../models/FactoryDrumKits';
 
 export type SynthWaveform = 'sine' | 'triangle' | 'sawtooth' | 'square';
 export type SynthFilterType = 'lowpass' | 'highpass' | 'bandpass';

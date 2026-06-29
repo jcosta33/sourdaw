@@ -8,6 +8,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
 
+const projectStoreMock = vi.hoisted(() => ({
+    current: null as Record<string, unknown> | null,
+    set: vi.fn(),
+}));
+
 // The hook fans out into the whole app boot sequence; every collaborator is
 // stubbed so the test can isolate the user-gesture effect (the fix-5 seam:
 // resumeEngine() must no longer be fire-and-forget). Async members resolve so
@@ -30,7 +35,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ hasCrdtProject: vi.fn().mockResolvedValue(false) }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ registerProModulationEffects: vi.fn() }));
-vi.mock('#/modules/Project/stores', () => ({ projectStore: { value: null, set: vi.fn() } }));
+vi.mock('#/modules/Project/stores', () => ({
+    projectStore: {
+        get value(): Record<string, unknown> | null {
+            return projectStoreMock.current;
+        },
+        set: projectStoreMock.set,
+    },
+}));
 vi.mock('#/modules/Project/useCases', () => ({
     verifyAudioBufferReferences: vi.fn().mockResolvedValue(undefined),
     loadProject: vi.fn().mockResolvedValue(undefined),
@@ -59,6 +71,7 @@ vi.mock('../../../stores/preferencesStore', () => ({
 describe('useAppInitialization — first-gesture engine resume', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectStoreMock.current = null;
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
         vi.mocked(requestMicPermission).mockResolvedValue(undefined);
         try {
@@ -97,6 +110,7 @@ describe('useAppInitialization — first-gesture engine resume', () => {
 describe('useAppInitialization — knead engine subscription teardown', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectStoreMock.current = null;
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
         vi.mocked(requestMicPermission).mockResolvedValue(undefined);
         try {
@@ -136,6 +150,7 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
 describe('useAppInitialization — autosave governed by preferences', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectStoreMock.current = null;
         vi.useFakeTimers();
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
         vi.mocked(requestMicPermission).mockResolvedValue(undefined);
@@ -174,5 +189,37 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
         vi.advanceTimersByTime(20_000);
         expect(saveProject).toHaveBeenCalledTimes(3);
+    });
+});
+
+describe('useAppInitialization — launch state preservation', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        projectStoreMock.current = {
+            name: 'Untitled Project',
+            loading: true,
+            initialized: true,
+        };
+        vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        try {
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('does not mark a user-started project uninitialized when boot finishes later', async () => {
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(projectStoreMock.set).toHaveBeenCalledWith(
+                expect.objectContaining({ loading: false, initialized: true })
+            );
+        });
     });
 });

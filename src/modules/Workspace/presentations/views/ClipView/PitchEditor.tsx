@@ -242,7 +242,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
     return (
         <div className="absolute inset-0 pointer-events-none flex flex-col z-10">
-            {!contour && !kneadState.isAnalyzing && (
+            {!contour && !kneadState.isAnalyzing ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -253,9 +253,9 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                         Analyze Pitch
                     </Button>
                 </div>
-            )}
+            ) : null}
 
-            {contour && (
+            {contour ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -266,9 +266,9 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                         Bounce & Commit
                     </Button>
                 </div>
-            )}
+            ) : null}
 
-            {kneadState.isAnalyzing && (
+            {kneadState.isAnalyzing ? (
                 <div className="absolute top-2 right-2 flex items-center gap-2 bg-[var(--color-bg-base)] border border-border/50 rounded px-2 py-1 pointer-events-auto">
                     <div className="w-16 h-1.5 bg-black rounded overflow-hidden">
                         <div
@@ -280,7 +280,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                         {Math.round(kneadState.analysisProgress * 100)}%
                     </span>
                 </div>
-            )}
+            ) : null}
 
             <div ref={containerRef} className="flex-1 w-full h-full relative">
                 <canvas

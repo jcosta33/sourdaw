@@ -15,6 +15,6 @@ resolver = "2"
 
 [profile.release]
 opt-level = 3
-lto = false
+lto = true
 codegen-units = 16
 split-debuginfo = "unpacked"

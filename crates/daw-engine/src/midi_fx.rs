@@ -1,11 +1,90 @@
 use crate::plugin_slot::{MidiNoteEvent, TransportState};
 
+pub const MIDI_EVENT_BUFFER_CAPACITY: usize = 128;
+
+const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
+    note: 0,
+    velocity: 0,
+    channel: 0,
+    is_note_on: false,
+    probability: 0.0,
+};
+
+pub struct MidiEventBuffer {
+    events: [MidiNoteEvent; MIDI_EVENT_BUFFER_CAPACITY],
+    len: usize,
+}
+
+impl MidiEventBuffer {
+    pub fn new() -> Self {
+        Self {
+            events: [EMPTY_MIDI_EVENT; MIDI_EVENT_BUFFER_CAPACITY],
+            len: 0,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        MIDI_EVENT_BUFFER_CAPACITY
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn as_slice(&self) -> &[MidiNoteEvent] {
+        &self.events[..self.len]
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &MidiNoteEvent> {
+        self.as_slice().iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut MidiNoteEvent> {
+        self.events[..self.len].iter_mut()
+    }
+
+    pub fn try_push(&mut self, event: MidiNoteEvent) -> bool {
+        if self.len >= MIDI_EVENT_BUFFER_CAPACITY {
+            return false;
+        }
+
+        self.events[self.len] = event;
+        self.len += 1;
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    pub fn retain_mut<F>(&mut self, mut keep_event: F)
+    where
+        F: FnMut(&mut MidiNoteEvent) -> bool,
+    {
+        let mut write_index = 0;
+
+        for read_index in 0..self.len {
+            let mut event = self.events[read_index];
+            if keep_event(&mut event) {
+                self.events[write_index] = event;
+                write_index += 1;
+            }
+        }
+
+        self.len = write_index;
+    }
+}
+
 pub trait MidiFx: Send {
     /// Process MIDI events. This can add, remove, or modify events.
     /// Returns the modified list of MIDI events to be passed to the next stage.
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         transport: &TransportState,
         sample_rate: f32,
         num_samples: usize,
@@ -39,7 +118,7 @@ impl Default for VelocityScaler {
 impl MidiFx for VelocityScaler {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
@@ -73,11 +152,95 @@ pub enum ArpMode {
     Random,
 }
 
+const ARPEGGIATOR_ACTIVE_NOTE_CAPACITY: usize = 16;
+
+struct ActiveNoteBuffer {
+    notes: [u8; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
+    len: usize,
+}
+
+impl ActiveNoteBuffer {
+    fn new() -> Self {
+        Self {
+            notes: [0; ARPEGGIATOR_ACTIVE_NOTE_CAPACITY],
+            len: 0,
+        }
+    }
+
+    #[cfg(test)]
+    fn capacity(&self) -> usize {
+        ARPEGGIATOR_ACTIVE_NOTE_CAPACITY
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn contains(&self, note: &u8) -> bool {
+        self.notes[..self.len].contains(note)
+    }
+
+    fn get(&self, index: usize) -> Option<u8> {
+        if index >= self.len {
+            return None;
+        }
+
+        Some(self.notes[index])
+    }
+
+    fn try_insert_sorted(&mut self, note: u8) -> bool {
+        if self.contains(&note) {
+            return true;
+        }
+
+        if self.len >= ARPEGGIATOR_ACTIVE_NOTE_CAPACITY {
+            return false;
+        }
+
+        let mut insert_index = 0;
+        while insert_index < self.len && self.notes[insert_index] < note {
+            insert_index += 1;
+        }
+
+        let mut shift_index = self.len;
+        while shift_index > insert_index {
+            self.notes[shift_index] = self.notes[shift_index - 1];
+            shift_index -= 1;
+        }
+
+        self.notes[insert_index] = note;
+        self.len += 1;
+        true
+    }
+
+    fn remove(&mut self, note: u8) {
+        let mut remove_index = None;
+
+        for index in 0..self.len {
+            if self.notes[index] == note {
+                remove_index = Some(index);
+                break;
+            }
+        }
+
+        if let Some(start_index) = remove_index {
+            for index in start_index..self.len.saturating_sub(1) {
+                self.notes[index] = self.notes[index + 1];
+            }
+            self.len -= 1;
+        }
+    }
+}
+
 pub struct Arpeggiator {
     pub mode: ArpMode,
     pub rate_beats: f64,
     pub octave_range: u8,
-    active_notes: Vec<u8>,
+    active_notes: ActiveNoteBuffer,
     current_step: usize,
     last_beat_step: f64,
     step_trigger_count: u64,
@@ -89,7 +252,7 @@ impl Default for Arpeggiator {
             mode: ArpMode::Up,
             rate_beats: 0.25, // 1/16th note
             octave_range: 1,
-            active_notes: Vec::with_capacity(16),
+            active_notes: ActiveNoteBuffer::new(),
             current_step: 0,
             last_beat_step: -1.0,
             step_trigger_count: 0,
@@ -100,22 +263,18 @@ impl Default for Arpeggiator {
 impl MidiFx for Arpeggiator {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
     ) {
-        let mut new_notes = Vec::new();
-
         // 1. Maintain active note list from incoming events
         for event in events.iter() {
             if event.is_note_on {
-                if !self.active_notes.contains(&event.note) {
-                    self.active_notes.push(event.note);
-                    self.active_notes.sort_unstable();
-                }
+                // Drop the newest active note when the fixed tracking buffer is full.
+                let _ = self.active_notes.try_insert_sorted(event.note);
             } else {
-                self.active_notes.retain(|&n| n != event.note);
+                self.active_notes.remove(event.note);
             }
         }
 
@@ -126,6 +285,9 @@ impl MidiFx for Arpeggiator {
         if self.active_notes.is_empty() {
             self.reset();
             return;
+        }
+        if self.current_step >= self.active_notes.len() {
+            self.current_step = self.active_notes.len() - 1;
         }
 
         // 2. Determine if it's time for a new step
@@ -170,18 +332,17 @@ impl MidiFx for Arpeggiator {
                 }
 
                 // 4. Emit the note
-                let note = self.active_notes[self.current_step];
-                new_notes.push(MidiNoteEvent {
-                    note,
-                    velocity: 100, // Default for now
-                    channel: 0,
-                    is_note_on: true,
-                    probability: 1.0,
-                });
+                if let Some(note) = self.active_notes.get(self.current_step) {
+                    let _ = events.try_push(MidiNoteEvent {
+                        note,
+                        velocity: 100, // Default for now
+                        channel: 0,
+                        is_note_on: true,
+                        probability: 1.0,
+                    });
+                }
             }
         }
-
-        *events = new_notes;
     }
 
     fn set_param(&mut self, name: &str, value: f32) {
@@ -220,7 +381,7 @@ impl Default for ProbabilityEvaluator {
 impl MidiFx for ProbabilityEvaluator {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
@@ -245,4 +406,42 @@ impl MidiFx for ProbabilityEvaluator {
     }
 
     fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn note_on(note: u8) -> MidiNoteEvent {
+        MidiNoteEvent {
+            note,
+            velocity: 100,
+            channel: 0,
+            is_note_on: true,
+            probability: 1.0,
+        }
+    }
+
+    #[test]
+    fn scheduler_arpeggiator_drops_newest_active_notes_after_fixed_capacity() {
+        let mut arpeggiator = Arpeggiator::default();
+        let mut events = MidiEventBuffer::new();
+
+        for note in 60..=76 {
+            assert!(events.try_push(note_on(note)));
+        }
+
+        arpeggiator.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
+
+        assert_eq!(
+            arpeggiator.active_notes.capacity(),
+            ARPEGGIATOR_ACTIVE_NOTE_CAPACITY
+        );
+        assert_eq!(
+            arpeggiator.active_notes.len(),
+            ARPEGGIATOR_ACTIVE_NOTE_CAPACITY
+        );
+        assert!(arpeggiator.active_notes.contains(&75));
+        assert!(!arpeggiator.active_notes.contains(&76));
+    }
 }

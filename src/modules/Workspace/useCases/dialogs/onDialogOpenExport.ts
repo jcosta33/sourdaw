@@ -1,7 +1,8 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
-export const onDialogOpenExport = inject({ eventBus })(
+import { WorkspaceEventBus } from '../workspaceEventBus';
+
+export const onDialogOpenExport = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function onDialogOpenExport(handler: () => void): () => void {
             return eventBus.on('dialog.openExport', handler);

@@ -1,5 +1,7 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
+export type ChatActionConfirmationStatus = 'proposed' | 'accepted' | 'executed' | 'failed' | 'cancelled';
+
 export type ChatMessage = {
     id: string;
     role: ChatRole;
@@ -11,6 +13,9 @@ export type ChatMessage = {
     reasoning?: string;
     /** Whether this message came from the DSO editor (not chat) */
     isDsoAction?: boolean;
+    /** Pending prompt-action confirmation owned by AiRuntime. */
+    pendingActionConfirmationId?: string;
+    pendingActionConfirmationStatus?: ChatActionConfirmationStatus;
 };
 
 export type ChatState = {

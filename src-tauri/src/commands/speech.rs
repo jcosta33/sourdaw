@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use super::model_download;
+use super::{filesystem, model_download};
 
 // ── Managed state ───────────────────────────────────────────────────────
 
@@ -49,10 +49,12 @@ pub async fn load_whisper_model(
     model_path: String,
     state: tauri::State<'_, DictationState>,
 ) -> Result<AsrStatus, String> {
-    let ctx = WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
+    let model_path = filesystem::resolve_existing_file_path(&model_path)?;
+    let model_path_str = model_path.to_string_lossy().to_string();
+    let ctx = WhisperContext::new_with_params(&model_path_str, WhisperContextParameters::default())
         .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
-    let name = std::path::Path::new(&model_path)
+    let name = model_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
@@ -68,8 +70,17 @@ pub async fn load_whisper_model(
 }
 
 const WHISPER_MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin";
 const WHISPER_MODEL_FILE: &str = "ggml-base.en.bin";
+const WHISPER_MODEL_SHA256: &str =
+    "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
+const WHISPER_MODEL_SIZE_BYTES: u64 = 147_964_211;
+const WHISPER_MODEL: model_download::ModelDownload = model_download::ModelDownload {
+    filename: WHISPER_MODEL_FILE,
+    url: WHISPER_MODEL_URL,
+    expected_sha256: WHISPER_MODEL_SHA256,
+    expected_size_bytes: WHISPER_MODEL_SIZE_BYTES,
+};
 
 /// Ensure the Whisper model is downloaded and loaded.
 /// Auto-downloads `ggml-base.en.bin` (~142MB) from HuggingFace on first use.
@@ -89,8 +100,7 @@ pub async fn ensure_whisper_ready(
     }
 
     // Download model if needed
-    let model_path =
-        model_download::ensure_model(WHISPER_MODEL_FILE, WHISPER_MODEL_URL, None).await?;
+    let model_path = model_download::ensure_model(&WHISPER_MODEL).await?;
     let model_path_str = model_path.to_string_lossy().to_string();
 
     // Load model

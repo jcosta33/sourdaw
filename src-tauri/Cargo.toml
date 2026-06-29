@@ -35,6 +35,7 @@ ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
 mistralrs = { version = "0.7", features = ["metal", "accelerate"] }
 ndarray = "0.16"
 sha2 = "0.10"
+triple_buffer = "9.0.0"
 rtrb = "0.3"
 hound = "3.5"
 uuid = { version = "1.23.0", features = ["v4"] }
@@ -46,3 +47,7 @@ daw-engine = { path = "../crates/daw-engine" }
 daw-plugin-host = { path = "../crates/daw-plugin-host" }
 daw-dsp = { path = "../crates/daw-dsp" }
 daw-io = { path = "../crates/daw-io" }
+
+[dev-dependencies]
+tauri = { version = "2", features = ["protocol-asset", "devtools", "unstable", "test"] }
+daw-plugin-host = { path = "../crates/daw-plugin-host", features = ["engine-owned-command-fixture"] }

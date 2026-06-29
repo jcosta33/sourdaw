@@ -81,6 +81,7 @@ export { enableLink, disableLink } from './engineAccess/helpers';
 
 export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 
+export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { getTrackLatency } from './latencyCompensation/compensation/helpers';
@@ -124,6 +125,7 @@ export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 
 export { initWebMidi } from './webMidiInput/initWebMidi';
+export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { setMpeEnabled } from './webMidiInput/setMpeEnabled';
 export { resetMidiState } from './webMidiInput/resetMidiState';

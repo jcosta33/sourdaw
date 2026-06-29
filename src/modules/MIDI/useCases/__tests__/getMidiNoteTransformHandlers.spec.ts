@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    batchAddMidiNotes: vi.fn(),
     humanizeNotes: vi.fn(),
     invertNotes: vi.fn(),
     quantizeNoteLengths: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     transposeNotes: vi.fn(),
 }));
 
+vi.mock('../midiNoteCrud/batchAddMidiNotes', () => ({ batchAddMidiNotes: mocks.batchAddMidiNotes }));
 vi.mock('../midiNoteTransforms/humanizeNotes', () => ({ humanizeNotes: mocks.humanizeNotes }));
 vi.mock('../midiNoteTransforms/invertNotes', () => ({ invertNotes: mocks.invertNotes }));
 vi.mock('../midiNoteTransforms/quantizeNoteLengths', () => ({ quantizeNoteLengths: mocks.quantizeNoteLengths }));
@@ -33,6 +35,7 @@ describe('getMidiNoteTransformHandlers', () => {
         const handlers = getMidiNoteTransformHandlers();
 
         expect(Object.keys(handlers).sort()).toEqual([
+            'addNotes',
             'humanizeNotes',
             'invertNotes',
             'quantizeNoteLengths',
@@ -48,6 +51,10 @@ describe('getMidiNoteTransformHandlers', () => {
     it('should delegate note transform actions to MIDI use cases', () => {
         const handlers = getMidiNoteTransformHandlers();
 
+        handlers.addNotes.execute({
+            type: 'addNotes',
+            payload: { clipId: 'clip1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        });
         handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
         handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });
         handlers.invertNotes.execute({ type: 'invertNotes', payload: { clipId: 'clip1' } });
@@ -73,6 +80,9 @@ describe('getMidiNoteTransformHandlers', () => {
             payload: { clipId: 'clip1', velocity: 90 },
         });
 
+        expect(mocks.batchAddMidiNotes).toHaveBeenCalledWith('clip1', [
+            { pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+        ]);
         expect(mocks.transposeNotes).toHaveBeenCalledWith('clip1', 2);
         // The handler forwards optional velocityAmount + seed (both absent on a
         // first execute) so it can capture the returned seed for deterministic redo.

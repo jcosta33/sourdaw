@@ -1,33 +1,22 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { handleKeydown, type KeyDescriptor } from '../handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../handleKeyboardShortcut/handleKeyup';
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        emit: vi.fn(),
-        on: vi.fn(() => () => undefined),
-    },
-    logger: {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-        setWriters: vi.fn(),
-    },
-}));
+const eventBus = {
+    emit: vi.fn(),
+    on: vi.fn(() => () => undefined),
+};
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
-    return {
-        ...actual,
-        stopPlayback: vi.fn(),
-        toggleMetronome: vi.fn(),
-        seekPlayhead: vi.fn(),
-    };
-});
+vi.mock('#/modules/Transport/useCases', () => ({
+    stopPlayback: vi.fn(),
+    seekPlayhead: vi.fn(),
+    setLoopRegion: vi.fn(),
+    stopAllSlots: vi.fn(),
+    triggerPad: vi.fn(),
+}));
 
 vi.mock('../trackShortcuts/clearSolos', () => ({ clearSolos: vi.fn() }));
 vi.mock('../trackShortcuts/addTrack', () => ({ addTrack: vi.fn() }));
@@ -66,23 +55,20 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     TOOL_SHORTCUTS: {},
 }));
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...actual,
-        trackStore: { value: { selectedTrackId: null, tracks: [] } },
-    };
-});
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: { selectedTrackId: null, tracks: [] } },
+    zoomTimeline: vi.fn(),
+}));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        addClip: vi.fn(),
-        removeClip: vi.fn(),
-        deleteTimeRange: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    acceptGhostClip: vi.fn(),
+    dismissGhostClip: vi.fn(),
+    deleteTimeRange: vi.fn(),
+    insertTime: vi.fn(),
+    duplicateTimeRange: vi.fn(),
+    removeClip: vi.fn(),
+    addClip: vi.fn(),
+}));
 
 vi.mock('../../undoRedo', () => ({
     undo: vi.fn(),
@@ -105,6 +91,12 @@ vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker
 vi.mock('../../executeAppAction', () => ({ executeAppAction: vi.fn() }));
 
 describe('handleKeyboardShortcut', () => {
+    beforeEach(() => {
+        injectDependencies(handleKeydown, { eventBus });
+        injectDependencies(handleKeyup, { eventBus });
+        vi.clearAllMocks();
+    });
+
     it('should emit voice.toggle on keyup for v', () => {
         handleKeyup('v');
 

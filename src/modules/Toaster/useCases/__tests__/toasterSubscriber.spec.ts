@@ -1,18 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMock } from '#/infra/di/testing/createMock';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Logger } from '#/infra/logger/types';
-
-/** Avoid circular import: toasterSubscriber → engineAccess → wasmDeviceRegistry → registerDependencies → toasterSubscriber */
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        emit: vi.fn().mockResolvedValue(undefined),
-        on: vi.fn(),
-        waitForIdle: vi.fn().mockResolvedValue(undefined),
-    },
-    logger: {},
-}));
 
 vi.mock('../disposeToasterDevice', () => ({
     disposeToasterDevice: vi.fn(),
@@ -43,14 +32,10 @@ describe('initToasterSubscribers', () => {
         const eventBus = createMock<EventBusShape>();
         eventBus.on.mockReturnValue(vi.fn());
 
-        injectDependencies(initToasterSubscribers, {
+        initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),
-            getTrackStrip: vi.fn(),
-            getAllTracks: vi.fn(() => []),
         });
-
-        initToasterSubscribers();
 
         expect(eventBus.on).toHaveBeenCalledWith('audioDevice.loaded', expect.any(Function));
         expect(eventBus.on).toHaveBeenCalledWith('audioDevice.removed', expect.any(Function));
@@ -62,14 +47,10 @@ describe('initToasterSubscribers', () => {
         const unsubRemoved = vi.fn();
         eventBus.on.mockReturnValueOnce(unsubLoaded).mockReturnValueOnce(unsubRemoved);
 
-        injectDependencies(initToasterSubscribers, {
+        const teardown = initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),
-            getTrackStrip: vi.fn(),
-            getAllTracks: vi.fn(() => []),
         });
-
-        const teardown = initToasterSubscribers();
         teardown();
 
         expect(unsubLoaded).toHaveBeenCalledTimes(1);
@@ -84,13 +65,10 @@ describe('initToasterSubscribers', () => {
         const eventBus = createMock<EventBusShape>();
         eventBus.on.mockReturnValue(vi.fn());
 
-        injectDependencies(initToasterSubscribers, {
+        initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),
-            getTrackStrip: vi.fn(),
-            getAllTracks: vi.fn(() => []),
         });
-        initToasterSubscribers();
 
         handlerFor(eventBus, 'audioDevice.removed')({ deviceId: 'toast-1', deviceType: 'toaster' });
 
@@ -101,13 +79,10 @@ describe('initToasterSubscribers', () => {
         const eventBus = createMock<EventBusShape>();
         eventBus.on.mockReturnValue(vi.fn());
 
-        injectDependencies(initToasterSubscribers, {
+        initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),
-            getTrackStrip: vi.fn(),
-            getAllTracks: vi.fn(() => []),
         });
-        initToasterSubscribers();
 
         handlerFor(eventBus, 'audioDevice.removed')({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
 

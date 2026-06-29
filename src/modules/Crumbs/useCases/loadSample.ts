@@ -4,6 +4,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { getWaveformPeaks, loadSample } from '../repositories/crumbsBridge';
 import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
@@ -78,7 +79,7 @@ export async function loadSampleFromPath(
     try {
         const result = await loadSample(instanceId, filePath);
 
-        const fileName = filePath.split('/').pop() ?? filePath.split('\\').pop() ?? filePath;
+        const fileName = basename_from_path(filePath);
         const meta: SampleMeta = {
             sampleId: result.sampleId,
             sampleRate: result.sampleRate,

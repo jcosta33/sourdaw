@@ -285,9 +285,9 @@ Anything preventing progress.
 ## Next steps
 Concrete starting points for the next session if this one ends incomplete.
 
-## Self-review
-Mandatory questions and verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). The task file is self-contained — there is no separate Handoff section. Use Decisions, Findings, and Next steps for narrative the next reader needs.
+## Run summary
+Mandatory changed-file summary, verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.), out-of-scope edits, and blocked questions. Worktree-local scratch may also include `## Self-review`, but the assigned Corpus task packet closes with `## Run summary`. The task file is self-contained — there is no separate Handoff section. Use Decisions, Findings, and Next steps for narrative the next reader needs.
 ```
 
 **What "done" looks like:**
-Self-review is complete (every question answered with a written trace). The Progress checklist reflects what actually happened. Decisions are recorded with rationale. Any findings that belong in audits or specs have been moved there. Blockers are recorded with enough context for the next session.
+Run summary is complete (every required verification has a pasted output or exact blocker). The Progress checklist reflects what actually happened. Decisions are recorded with rationale. Any findings that belong in audits or specs have been moved there. Blockers are recorded with enough context for the next session.

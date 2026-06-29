@@ -3,6 +3,7 @@
     "private": true,
     "version": "0.1.0",
     "type": "module",
+    "packageManager": "pnpm@11.6.0",
     "scripts": {
         "dev": "vite",
         "dev:no-hmr": "NO_HMR=1 vite",
@@ -15,13 +16,12 @@
         "test:coverage": "vitest run --coverage",
         "typecheck": "tsgo --noEmit",
         "typecheck:test": "tsgo --noEmit -p tsconfig.test.json",
-        "codemod": "jscodeshift",
         "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,json,md,css}\" && cargo fmt --all",
         "lint": "eslint --cache --cache-location node_modules/.cache/eslint/ \"src/**/*.{ts,tsx}\"",
         "lint:fix": "eslint --cache --cache-location node_modules/.cache/eslint/ --fix \"src/**/*.{ts,tsx}\"",
         "deps:validate": "depcruise src",
         "tauri:dev": "tauri dev",
-        "tauri:build": "RUSTFLAGS='-Cembed-bitcode=no -Zpacked-bundled-libs=no' tauri build",
+        "tauri:build": "tauri build",
         "wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp --no-typescript && rm -f ../../public/wasm/daw-dsp/.gitignore && node --experimental-strip-types ../../scripts/gen-daw-dsp-worklet.ts",
         "wasm:proof-chamber": "cd crates/proof-chamber && wasm-pack build --target web --out-dir ../../public/wasm/proof-chamber --no-typescript && rm -f ../../public/wasm/proof-chamber/.gitignore && node --experimental-strip-types ../../scripts/gen-proof-chamber-worklet.ts",
         "wasm:scoring": "cd crates/scoring && wasm-pack build --target web --out-dir ../../public/wasm/scoring --no-typescript && rm -f ../../public/wasm/scoring/.gitignore && node --experimental-strip-types ../../scripts/gen-scoring-worklet.ts",
@@ -60,11 +60,6 @@
         "superjson": "^2.2.6",
         "tailwind-merge": "^3.5.0",
         "tailwindcss": "^4.2.2"
-    },
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "esbuild"
-        ]
     },
     "devDependencies": {
         "@eslint-community/eslint-plugin-eslint-comments": "^4.7.1",

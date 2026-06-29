@@ -1,0 +1,88 @@
+name: Health gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web app health gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate dependency boundaries
+        run: pnpm deps:validate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: |
+          pnpm lint --quiet &
+          lint_pid=$!
+          (
+            sleep_pid=
+            trap 'kill "$sleep_pid" 2>/dev/null || true; exit 0' TERM
+            while kill -0 "$lint_pid" 2>/dev/null; do
+              echo "lint still running..."
+              sleep "${LINT_HEARTBEAT_SECONDS:-60}" &
+              sleep_pid=$!
+              wait "$sleep_pid" 2>/dev/null || true
+            done
+          ) &
+          heartbeat_pid=$!
+
+          set +e
+          wait "$lint_pid"
+          lint_status=$?
+          set -e
+
+          kill "$heartbeat_pid" 2>/dev/null || true
+          wait "$heartbeat_pid" 2>/dev/null || true
+          exit "$lint_status"
+
+      - name: Test
+        run: pnpm test:run --reporter=dot --silent=passed-only
+
+      - name: Build
+        run: pnpm build
+
+  server:
+    name: Collaboration server health gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Build server
+        working-directory: server
+        run: npm run build

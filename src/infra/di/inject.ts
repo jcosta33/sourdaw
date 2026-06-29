@@ -3,7 +3,7 @@ import { registrations, cache, testOverrides } from './internal/containerState';
 import { type DependencyKey } from './types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
-type ResolveDependency<TDep> = TDep extends new (...args: any[]) => infer TInstance ? TInstance : TDep;
+type ResolveDependency<TDep> = TDep extends abstract new (...args: any[]) => infer TInstance ? TInstance : TDep;
 
 type ResolveDependencies<TDeps extends Record<string, unknown>> = {
     [TKey in keyof TDeps]: ResolveDependency<TDeps[TKey]>;

@@ -1,14 +1,24 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+
+import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
 
+const mockEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
 describe('GrandBoulePanel', () => {
     beforeEach(() => {
+        Container.clear();
+        setGrandBouleEventBus(mockEventBus);
         vi.clearAllMocks();
     });
 

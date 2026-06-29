@@ -1,8 +1,9 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { type MidiNoteOnPayload } from '#/modules/Workspace/events';
 
-export const onMidiNoteOn = inject({ eventBus })(
+import { GrandBouleEventBus } from '../grandBouleEventBus';
+
+export const onMidiNoteOn = inject({ eventBus: GrandBouleEventBus })(
     ({ eventBus }) =>
         function onMidiNoteOn(handler: (payload: MidiNoteOnPayload) => void): () => void {
             return eventBus.on('midi.noteOn', handler);

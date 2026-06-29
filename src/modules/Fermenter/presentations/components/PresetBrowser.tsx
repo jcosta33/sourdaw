@@ -129,7 +129,7 @@ export const PresetBrowser = ({
                 })}
             </div>
             {/* Tag filter (contextual) */}
-            {category !== 'user' && (
+            {category !== 'user' ? (
                 <div className="flex flex-wrap gap-0.5 px-2 py-0.5 shrink-0">
                     {TAGS.filter((tag) => {
                         // Only show tags that have matching presets in current category
@@ -151,7 +151,7 @@ export const PresetBrowser = ({
                             </button>
                         ))}
                 </div>
-            )}
+            ) : null}
             {/* Preset list */}
             <div className="flex-1 overflow-y-auto px-1 py-0.5">
                 {filtered.length === 0 ? (

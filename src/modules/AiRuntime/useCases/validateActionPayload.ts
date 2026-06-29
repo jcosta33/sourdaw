@@ -52,6 +52,12 @@ function isNumber(value: unknown): value is number {
 function isInRange(value: unknown, min: number, max: number): value is number {
     return isNumber(value) && value >= min && value <= max;
 }
+function isPositiveNumber(value: unknown): value is number {
+    return isNumber(value) && value > 0;
+}
+function isNonNegativeNumber(value: unknown): value is number {
+    return isNumber(value) && value >= 0;
+}
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
 }
@@ -63,6 +69,15 @@ function hasTrackId(param: unknown): param is { trackId: string } {
 }
 function hasClipId(param: unknown): param is { clipId: string } {
     return isObj(param) && isString(param.clipId);
+}
+function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes'][number] {
+    return (
+        isObj(param) &&
+        isInRange(param.pitch, 0, 127) &&
+        isNonNegativeNumber(param.startBeat) &&
+        isPositiveNumber(param.duration) &&
+        isOptional(param.velocity, (value): value is number => isInRange(value, 1, 127))
+    );
 }
 
 // A DocumentBundle is `Map<DocId, Uint8Array>` (CrdtDocumentTypes). The
@@ -108,12 +123,9 @@ const validators = {
         isString(param.name),
     removeClip: hasClipId as PayloadValidator<'removeClip'>,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
+        isObj(param) && isString(param.clipId) && isNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
-        isObj(param) &&
-        isString(param.clipId) &&
-        isNumber(param.newStartBeat) &&
-        isOptional(param.newTrackId, isString),
+        isObj(param) && isString(param.clipId) && isString(param.trackId) && isNumber(param.startBeat),
     duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
 
     // Device lifecycle
@@ -122,15 +134,15 @@ const validators = {
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
         isObj(param) && isString(param.trackId) && isString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
-        isObj(param) &&
-        isString(param.trackId) &&
-        isString(param.deviceId) &&
-        isString(param.paramId) &&
-        isNumber(param.value),
+        isObj(param) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
     setTempo: (param): param is PayloadOf<'setTempo'> => isObj(param) && isInRange(param.bpm, 20, 300),
+    setTimeSignature: (param): param is PayloadOf<'setTimeSignature'> =>
+        isObj(param) &&
+        isInRange(param.numerator, 1, 32) &&
+        (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
         isObj(param) && isInRange(param.volume, 0, 1),
@@ -291,7 +303,8 @@ const validators = {
     scaleVelocities: 'unchecked',
     scaleAllVelocities: 'unchecked',
     setAllVelocities: 'unchecked',
-    addNotes: 'unchecked',
+    addNotes: (param): param is PayloadOf<'addNotes'> =>
+        isObj(param) && isString(param.clipId) && Array.isArray(param.notes) && param.notes.every(isAddNotesNote),
     arpeggiate: 'unchecked',
 
     // Automation secondary ops

@@ -1,9 +1,10 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { Container } from '#/infra/di/Container';
 
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
+import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 // Render with the typed default so the panel mounts (and its subscription
@@ -23,8 +24,32 @@ vi.mock('#/infra/store/useStore', () => ({
  *     re-keyed panel writes the new device's store, not the stale one.
  */
 
+type TestHandler = (payload: unknown) => void | Promise<void>;
+
+const handlers = new Map<string, Set<TestHandler>>();
+const testEventBus = {
+    emit: async (event: string, payload: unknown): Promise<void> => {
+        const eventHandlers = handlers.get(event);
+        if (eventHandlers === undefined) {
+            return;
+        }
+        await Promise.all([...eventHandlers].map((handler) => Promise.resolve(handler(payload))));
+    },
+    on: (event: string, handler: TestHandler): (() => void) => {
+        const eventHandlers = handlers.get(event) ?? new Set<TestHandler>();
+        eventHandlers.add(handler);
+        handlers.set(event, eventHandlers);
+        return () => {
+            eventHandlers.delete(handler);
+        };
+    },
+};
+
 describe('GrandBoulePanel MIDI pedal subscription', () => {
     beforeEach(() => {
+        Container.clear();
+        handlers.clear();
+        setGrandBouleEventBus(testEventBus);
         resetGrandBouleStores();
     });
 
@@ -33,7 +58,7 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         render(<GrandBoulePanel deviceId={deviceId} />);
         const store = createGrandBouleStore(deviceId);
 
-        await eventBus.emit('midi.pedalCc', { deviceId, cc: 64, value: true });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 64, value: true });
 
         // A boolean true is mapped to the fully-engaged numeric position, not
         // written as the boolean itself.
@@ -46,7 +71,7 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         render(<GrandBoulePanel deviceId={deviceId} />);
         const store = createGrandBouleStore(deviceId);
 
-        await eventBus.emit('midi.pedalCc', { deviceId, cc: 66, value: 1 });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 66, value: 1 });
 
         expect(store.value?.pedals.sostenuto).toBe(true);
         expect(typeof store.value?.pedals.sostenuto).toBe('boolean');
@@ -57,10 +82,10 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         render(<GrandBoulePanel deviceId={deviceId} />);
         const store = createGrandBouleStore(deviceId);
 
-        await eventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 0 });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 0 });
         expect(store.value?.pedals.unaCorda).toBe(false);
 
-        await eventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 1 });
+        await testEventBus.emit('midi.pedalCc', { deviceId, cc: 67, value: 1 });
         expect(store.value?.pedals.unaCorda).toBe(true);
     });
 
@@ -74,7 +99,7 @@ describe('GrandBoulePanel MIDI pedal subscription', () => {
         const storeA = createGrandBouleStore(deviceA);
         const storeB = createGrandBouleStore(deviceB);
 
-        await eventBus.emit('midi.pedalCc', { deviceId: deviceB, cc: 64, value: 0.5 });
+        await testEventBus.emit('midi.pedalCc', { deviceId: deviceB, cc: 64, value: 0.5 });
 
         // The new device's store is updated; the old device's is untouched.
         expect(storeB.value?.pedals.sustain).toBe(0.5);

@@ -12,6 +12,7 @@ Before writing any code, start with the foundational principles. Our codebase fo
 
 - ➡️ **Read about our [TypeScript module architecture](./architecture/03-typescript-module.md)**
 - ➡️ **Read about our [system architecture](./architecture/01-system.md)**
+- ➡️ **Review [plugin hosting security](./architecture/04-plugin-hosting-security.md) before changing native plugin scan/load behavior**
 
 ### 2. Dependency Injection
 

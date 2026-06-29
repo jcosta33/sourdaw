@@ -3,7 +3,7 @@ import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
 export type RuntimeTrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type RuntimeAction =
-    | { type: 'addTrack'; payload: { name: string; kind: RuntimeTrackKind } }
+    | { type: 'addTrack'; payload: { id?: string; name: string; kind: RuntimeTrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
     | {
           type: 'restoreTrack';
@@ -63,6 +63,7 @@ export type RuntimeAction =
     | { type: 'bounceInPlace'; payload: { trackId: string } }
     | { type: 'reorderTrack'; payload: { trackId: string; newIndex: number } }
     | { type: 'setTempo'; payload: { bpm: number } }
+    | { type: 'setTimeSignature'; payload: { numerator: number; denominator: number } }
     | { type: 'togglePlayback'; payload?: undefined }
     | { type: 'stopPlayback'; payload?: undefined }
     | { type: 'toggleRecording'; payload?: undefined }
@@ -73,7 +74,14 @@ export type RuntimeAction =
     | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
     | {
           type: 'addClip';
-          payload: { trackId: string; startBeat: number; endBeat: number; name: string; audioBufferId?: string };
+          payload: {
+              trackId: string;
+              startBeat: number;
+              endBeat: number;
+              name: string;
+              type?: 'audio' | 'midi';
+              audioBufferId?: string;
+          };
       }
     | { type: 'moveClip'; payload: { clipId: string; trackId: string; startBeat: number } }
     | { type: 'duplicateClip'; payload: { clipId: string } }

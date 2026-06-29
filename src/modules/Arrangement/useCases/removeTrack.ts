@@ -1,4 +1,3 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -9,7 +8,9 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
-export const removeTrack = inject({ eventBus })(
+import { ArrangementEventBus } from './arrangementEventBus';
+
+export const removeTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
         function removeTrack(trackId: string): void {
             const state = getTrackState();

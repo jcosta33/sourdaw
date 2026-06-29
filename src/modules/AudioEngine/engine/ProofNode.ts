@@ -7,8 +7,6 @@
  * Effect processor: 1 input, 1 output.
  */
 
-import { type updateProofMeters } from '#/modules/Proof/stores';
-
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
@@ -30,21 +28,6 @@ export type ProofMeterData = {
     tapPeaks: Array<{ peakL: number; peakR: number }>;
     latency: number;
 };
-
-/**
- * Compile-time guard that this engine-side `ProofMeterData` stays structurally
- * identical to the meter shape the Proof store consumes. Proof defines its own
- * local copy (it cannot import this private engine module), so a field added,
- * removed, or retyped on either side would otherwise drift silently until a
- * runtime value was wrong. Mutual assignability fails the build on any drift.
- *
- * `updateProofMeters` is the public Proof sink AudioEngine already feeds via
- * `wasmDeviceRegistry`; its second parameter is Proof's local `ProofMeterData`.
- */
-type ProofMeterSink = Parameters<typeof updateProofMeters>[1];
-type AssertMutuallyAssignable<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : never) : never;
-const proofMeterDataCompat: AssertMutuallyAssignable<ProofMeterData, ProofMeterSink> = true;
-void proofMeterDataCompat;
 
 export type ProofNodeResult = {
     workletNode: AudioWorkletNode;

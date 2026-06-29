@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { onVoiceToggle } from '../voiceToggle/onVoiceToggle';
 import { toggleVoiceInput } from '../voiceToggle/toggleVoiceInput';
 
@@ -10,12 +12,9 @@ const { mockEventBus } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mockEventBus,
-}));
-
 describe('voiceToggle', () => {
     beforeEach(() => {
+        injectDependencies(toggleVoiceInput, { eventBus: mockEventBus });
         vi.clearAllMocks();
     });
 

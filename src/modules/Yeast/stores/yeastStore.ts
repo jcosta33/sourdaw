@@ -12,7 +12,7 @@
  *   - internal sync and registration helpers used by the use cases
  */
 
-import { eventBus } from '#/app/registerDependencies';
+import { Container } from '#/infra/di/Container';
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
@@ -20,6 +20,8 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
+
+import { YeastEventBus } from './yeastEventBus';
 
 /**
  * The processor-kind discriminant carried by the store's reactive state.
@@ -150,7 +152,7 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
             // them and the note hangs.
             node.onNotesOff((notes) => {
                 if (notes.length > 0) {
-                    void eventBus.emit('yeast.notesOff', { notes });
+                    void Container.get(YeastEventBus).emit('yeast.notesOff', { notes });
                 }
             });
             // Sync any processors that were added before the worklet was ready.

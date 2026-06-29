@@ -1,7 +1,8 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
-export const onProjectSave = inject({ eventBus })(
+import { WorkspaceEventBus } from '../workspaceEventBus';
+
+export const onProjectSave = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function onProjectSave(handler: () => void): () => void {
             return eventBus.on('project.save', handler);

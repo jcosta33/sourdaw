@@ -1,4 +1,7 @@
+import { basename_from_path } from '#/utils/path-basename';
+
 import { type LibraryRoot } from '../../models/LibraryTypes';
+import { pickTauriSampleFolder } from '../../repositories/pickTauriSampleFolder';
 import { addLibraryRoot } from '../../stores/libraryStore';
 
 import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
@@ -40,14 +43,13 @@ async function connectFolderBrowser(): Promise<string | null> {
 
 async function connectFolderTauri(): Promise<string | null> {
     try {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const selected = await open({ directory: true, multiple: false, title: 'Connect Sample Folder' });
-        if (!selected || typeof selected !== 'string') {
+        const selected = await pickTauriSampleFolder();
+        if (!selected) {
             return null;
         }
 
         const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
-        const folderName = selected.split('/').pop() ?? selected.split('\\').pop() ?? selected;
+        const folderName = basename_from_path(selected);
 
         const root: LibraryRoot = {
             id,

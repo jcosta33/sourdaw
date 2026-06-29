@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { type ShowDevicePanelPayload, type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEvents';
 import { onPanelShowAutomation } from '../devicePanels/onPanelShowAutomation';
 import { onPanelShowBacteria } from '../devicePanels/onPanelShowBacteria';
@@ -38,10 +40,6 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.mockEventBus,
-}));
-
 const showPanelCases: Array<{ label: string; show: (deviceId: string | null) => void; event: string }> = [
     { label: 'fermenter', show: showFermenterPanel, event: 'panel.showFermenter' },
     { label: 'toaster', show: showToasterPanel, event: 'panel.showToaster' },
@@ -78,6 +76,7 @@ const onPanelCases: Array<{
 
 describe('devicePanels', () => {
     beforeEach(() => {
+        injectDependencies(showDevicePanel, { eventBus: mocks.mockEventBus });
         vi.clearAllMocks();
     });
 

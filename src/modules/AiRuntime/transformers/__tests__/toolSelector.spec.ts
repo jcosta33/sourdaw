@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
+import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 import { type ToolSchema } from '../../models/tools/types';
 import { selectToolsForPrompt } from '../toolSelector';
 

@@ -1,4 +1,6 @@
-import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
+
+import { NotificationEventBus } from './notificationEventBus';
 
 /**
  * Async confirmation dialog. Replaces \`window.confirm\` (§183.1, §196.1)
@@ -23,15 +25,19 @@ export type ConfirmUserOptions = {
     variant?: 'default' | 'danger';
 };
 
-export const confirmUser = (options: ConfirmUserOptions): Promise<boolean> =>
-    new Promise<boolean>((resolve) => {
-        void eventBus.emit('ui.confirm', {
-            id: crypto.randomUUID(),
-            message: options.message,
-            title: options.title,
-            confirmLabel: options.confirmLabel,
-            cancelLabel: options.cancelLabel,
-            variant: options.variant,
-            resolve,
-        });
-    });
+export const confirmUser = inject({ eventBus: NotificationEventBus })(
+    ({ eventBus }) =>
+        function confirmUser(options: ConfirmUserOptions): Promise<boolean> {
+            return new Promise<boolean>((resolve) => {
+                void eventBus.emit('ui.confirm', {
+                    id: crypto.randomUUID(),
+                    message: options.message,
+                    title: options.title,
+                    confirmLabel: options.confirmLabel,
+                    cancelLabel: options.cancelLabel,
+                    variant: options.variant,
+                    resolve,
+                });
+            });
+        }
+);

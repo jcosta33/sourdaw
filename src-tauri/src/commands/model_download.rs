@@ -1,6 +1,13 @@
 use sha2::{Digest, Sha256};
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::{Component, Path, PathBuf};
+
+pub struct ModelDownload {
+    pub filename: &'static str,
+    pub url: &'static str,
+    pub expected_sha256: &'static str,
+    pub expected_size_bytes: u64,
+}
 
 /// Get the shared model cache directory.
 pub fn model_dir() -> Result<PathBuf, String> {
@@ -14,26 +21,21 @@ pub fn model_dir() -> Result<PathBuf, String> {
 
 /// Ensure a model file exists locally, downloading it if necessary.
 /// Returns the path to the cached model file.
-pub async fn ensure_model(
-    filename: &str,
-    url: &str,
-    expected_sha256: Option<&str>,
-) -> Result<PathBuf, String> {
+pub async fn ensure_model(model: &ModelDownload) -> Result<PathBuf, String> {
+    validate_model_spec(model)?;
     let dir = model_dir()?;
-    let path = dir.join(filename);
+    let path = dir.join(model.filename);
 
     if path.exists() {
-        if let Some(expected) = expected_sha256 {
-            let actual = sha256_file(&path)?;
-            if actual != expected {
-                eprintln!("[Model] Cached {filename} has wrong hash, re-downloading.");
-                std::fs::remove_file(&path)
-                    .map_err(|e| format!("Failed to remove corrupt model: {e}"))?;
-            } else {
-                return Ok(path);
-            }
-        } else {
+        if model_file_matches(&path, model)? {
             return Ok(path);
+        } else {
+            eprintln!(
+                "[Model] Cached {} failed integrity checks, re-downloading.",
+                model.filename
+            );
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to remove untrusted model: {e}"))?;
         }
     }
 
@@ -44,37 +46,29 @@ pub async fn ensure_model(
     }
 
     // Check available disk space before downloading
-    check_disk_space(&dir, filename)?;
+    check_disk_space(&dir, model.filename)?;
 
-    eprintln!("[Model] Downloading {filename}...");
-    download_with_progress(url, &tmp, filename).await?;
+    eprintln!("[Model] Downloading {}...", model.filename);
+    download_with_progress(model, &tmp).await?;
+
+    verify_model_file(&tmp, model)?;
 
     // Rename to final path
     std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to finalize model file: {e}"))?;
 
-    if let Some(expected) = expected_sha256 {
-        let actual = sha256_file(&path)?;
-        if actual != expected {
-            std::fs::remove_file(&path).ok();
-            return Err(format!(
-                "Downloaded file hash mismatch: expected {expected}, got {actual}"
-            ));
-        }
-    }
-
-    eprintln!("[Model] {filename} ready");
+    eprintln!("[Model] {} ready", model.filename);
     Ok(path)
 }
 
 /// Stream download with progress logging.
-async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result<(), String> {
+async fn download_with_progress(model: &ModelDownload, dest: &PathBuf) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3600)) // 1h timeout for large models
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
     let response = client
-        .get(url)
+        .get(model.url)
         .send()
         .await
         .map_err(|e| format!("Download request failed: {e}"))?;
@@ -84,10 +78,16 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
     }
 
     let total = response.content_length().unwrap_or(0);
+    if total > 0 && total != model.expected_size_bytes {
+        return Err(format!(
+            "Model size mismatch before download for {}: expected {} bytes, server reported {} bytes",
+            model.filename, model.expected_size_bytes, total
+        ));
+    }
     let total_mb = total as f64 / 1_048_576.0;
 
     if total > 0 {
-        eprintln!("[Model] {name}: {total_mb:.1} MB");
+        eprintln!("[Model] {}: {total_mb:.1} MB", model.filename);
     }
 
     let mut file =
@@ -109,7 +109,8 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
         if total > 0 && downloaded - last_report > 10_485_760 {
             let pct = (downloaded as f64 / total as f64 * 100.0) as u32;
             eprintln!(
-                "[Model] {name}: {pct}% ({:.1}/{total_mb:.1} MB)",
+                "[Model] {}: {pct}% ({:.1}/{total_mb:.1} MB)",
+                model.filename,
                 downloaded as f64 / 1_048_576.0
             );
             last_report = downloaded;
@@ -120,9 +121,87 @@ async fn download_with_progress(url: &str, dest: &PathBuf, name: &str) -> Result
     drop(file);
 
     eprintln!(
-        "[Model] {name}: download complete ({:.1} MB)",
+        "[Model] {}: download complete ({:.1} MB)",
+        model.filename,
         downloaded as f64 / 1_048_576.0
     );
+    Ok(())
+}
+
+fn validate_model_spec(model: &ModelDownload) -> Result<(), String> {
+    validate_model_filename(model.filename)?;
+    validate_model_url(model.url)?;
+    validate_sha256(model.expected_sha256)?;
+    if model.expected_size_bytes == 0 {
+        return Err("Model expected size must be non-zero".to_string());
+    }
+    Ok(())
+}
+
+fn validate_model_filename(filename: &str) -> Result<(), String> {
+    let path = Path::new(filename);
+    if path.components().count() != 1 {
+        return Err("Model filename must be a single path segment".to_string());
+    }
+    for component in path.components() {
+        if !matches!(component, Component::Normal(_)) {
+            return Err("Model filename must be a normal path segment".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn validate_model_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Invalid model URL: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Model URL must use HTTPS".to_string());
+    }
+    if parsed.host_str() != Some("huggingface.co") {
+        return Err("Model URL host must be huggingface.co".to_string());
+    }
+    Ok(())
+}
+
+fn validate_sha256(expected: &str) -> Result<(), String> {
+    let is_hex = expected.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if expected.len() != 64 || !is_hex {
+        return Err("Expected model SHA-256 must be a 64-character hex digest".to_string());
+    }
+    Ok(())
+}
+
+fn model_file_matches(path: &PathBuf, model: &ModelDownload) -> Result<bool, String> {
+    match verify_model_file(path, model) {
+        Ok(()) => Ok(true),
+        Err(error) => {
+            eprintln!(
+                "[Model] Integrity check failed for {}: {error}",
+                model.filename
+            );
+            Ok(false)
+        }
+    }
+}
+
+fn verify_model_file(path: &PathBuf, model: &ModelDownload) -> Result<(), String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|e| format!("Failed to stat model file: {e}"))?;
+    if metadata.len() != model.expected_size_bytes {
+        return Err(format!(
+            "Model size mismatch for {}: expected {} bytes, got {} bytes",
+            model.filename,
+            model.expected_size_bytes,
+            metadata.len()
+        ));
+    }
+
+    let actual = sha256_file(path)?;
+    if actual != model.expected_sha256 {
+        return Err(format!(
+            "Model hash mismatch for {}: expected {}, got {}",
+            model.filename, model.expected_sha256, actual
+        ));
+    }
     Ok(())
 }
 
@@ -149,8 +228,18 @@ fn check_disk_space(dir: &PathBuf, filename: &str) -> Result<(), String> {
 }
 
 fn sha256_file(path: &PathBuf) -> Result<String, String> {
-    let data = std::fs::read(path).map_err(|e| format!("Failed to read file for hash: {e}"))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("Failed to read file for hash: {e}"))?;
     let mut hasher = Sha256::new();
-    hasher.update(&data);
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Failed to read file for hash: {e}"))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
     Ok(format!("{:x}", hasher.finalize()))
 }

@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { onCommandRedo } from '../appEventSubscribers/onCommandRedo';
 import { onCommandUndo } from '../appEventSubscribers/onCommandUndo';
@@ -12,11 +14,12 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.mockEventBus,
-}));
-
 describe('appEventSubscribers', () => {
+    beforeEach(() => {
+        injectDependencies(onProjectSave, { eventBus: mocks.mockEventBus });
+        mocks.mockEventBus.on.mockClear();
+    });
+
     it('should subscribe to project.save', () => {
         const unsubscribe = vi.fn();
         mocks.mockEventBus.on.mockReturnValue(unsubscribe);

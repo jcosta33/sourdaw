@@ -1,9 +1,5 @@
-import { useSyncExternalStore } from 'react';
-
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { useStore } from '#/infra/store/useStore';
 
 import { sessionLaunchStore } from '../../../stores/sessionLaunchStore';
 import { SessionView } from '../SessionView';
@@ -26,17 +22,6 @@ describe('SessionView', () => {
         // Reset the real store between tests so click handlers that write
         // through sessionLaunchStore.set start from a clean slate.
         sessionLaunchStore.set({ activeSlots: {} });
-        // Override the global useStore mock (setupTests.ts) to actually
-        // read from the real sessionLaunchStore so click handlers that
-        // call sessionLaunchStore.set(...) are reflected in the next
-        // render. The global mock returns a frozen blob which does not
-        // simulate state updates.
-        vi.mocked(useStore).mockImplementation((store: any, defaultValue: any) => {
-            if (store === sessionLaunchStore) {
-                return useSyncExternalStore(store.subscribeReact, () => store.getSnapshot() ?? defaultValue);
-            }
-            return defaultValue;
-        });
     });
 
     it('should render tracks as columns', () => {

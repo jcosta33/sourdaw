@@ -1,8 +1,9 @@
-import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 
+import { WorkspaceEventBus } from '../../workspaceEventBus';
+
 /** @deprecated Use {@link showDevicePanel} with `deviceType: 'crust'` instead. */
-export const showCrustPanel = inject({ eventBus })(
+export const showCrustPanel = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function showCrustPanel(deviceId: string | null): void {
             void eventBus.emit('panel.showCrust', { deviceId });

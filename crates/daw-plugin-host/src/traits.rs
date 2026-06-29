@@ -17,8 +17,8 @@ pub trait AudioPlugin: Send + Sync + Any {
     /// Get the opaque binary state of the plugin
     fn get_state(&self) -> Vec<u8>;
 
-    /// Set the opaque binary state of the plugin
-    fn set_state(&mut self, state: &[u8]);
+    /// Set the opaque binary state of the plugin.
+    fn set_state(&mut self, state: &[u8]) -> Result<(), String>;
 
     /// Upcast to Any for downcasting to concrete types.
     fn as_any(&self) -> &dyn Any;

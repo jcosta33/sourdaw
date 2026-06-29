@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -7,6 +6,8 @@ use tauri::State;
 
 use daw_collab::discovery::{LanDiscovery, NearbySession};
 use daw_collab::document_store::DocumentStore;
+
+use super::filesystem;
 
 /// Managed state for the CRDT collaboration layer.
 pub struct CollabState {
@@ -21,6 +22,18 @@ impl Default for CollabState {
             discovery: Mutex::new(None),
         }
     }
+}
+
+fn get_or_create_discovery(
+    guard: &mut Option<LanDiscovery>,
+) -> Result<&mut LanDiscovery, String> {
+    if guard.is_none() {
+        *guard = Some(LanDiscovery::new()?);
+    }
+
+    guard
+        .as_mut()
+        .ok_or_else(|| "Failed to initialize LAN discovery".to_string())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,7 +61,12 @@ pub fn collab_save_bundle(state: State<'_, CollabState>, path: String) -> Result
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
     let bundle = store.save_all();
-    daw_collab::save_sdaw_bundle(&bundle, &PathBuf::from(path))?;
+    let bundle_path = filesystem::require_extension(
+        filesystem::resolve_writable_file_path(&path)?,
+        "sdaw",
+        "Collaboration bundle",
+    )?;
+    daw_collab::save_sdaw_bundle(&bundle, &bundle_path)?;
     Ok(true)
 }
 
@@ -57,7 +75,12 @@ pub fn collab_load_bundle(
     state: State<'_, CollabState>,
     path: String,
 ) -> Result<HashMap<String, Vec<u8>>, String> {
-    let bundle = daw_collab::load_sdaw_bundle(&PathBuf::from(path))?;
+    let bundle_path = filesystem::require_extension(
+        filesystem::resolve_existing_file_path(&path)?,
+        "sdaw",
+        "Collaboration bundle",
+    )?;
+    let bundle = daw_collab::load_sdaw_bundle(&bundle_path)?;
     let store = DocumentStore::load_all(bundle.clone())?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     *guard = Some(store);
@@ -79,7 +102,12 @@ pub fn collab_merge_bundle(
     state: State<'_, CollabState>,
     path: String,
 ) -> Result<MergeResultResponse, String> {
-    let bundle = daw_collab::load_sdaw_bundle(&PathBuf::from(path))?;
+    let bundle_path = filesystem::require_extension(
+        filesystem::resolve_existing_file_path(&path)?,
+        "sdaw",
+        "Collaboration bundle",
+    )?;
+    let bundle = daw_collab::load_sdaw_bundle(&bundle_path)?;
     let mut guard = state.store.lock().map_err(|e| e.to_string())?;
     let store = guard.as_mut().ok_or("No CRDT project loaded")?;
     let result = store.merge_bundle(bundle)?;
@@ -115,7 +143,7 @@ pub fn collab_start_advertising(
     approval_required: bool,
 ) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    let discovery = get_or_create_discovery(&mut guard)?;
     discovery.advertise(
         &session_id,
         &host_name,
@@ -138,8 +166,17 @@ pub fn collab_stop_advertising(state: State<'_, CollabState>) -> Result<bool, St
 #[tauri::command]
 pub fn collab_start_browsing(state: State<'_, CollabState>) -> Result<bool, String> {
     let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
-    let discovery = guard.get_or_insert_with(|| LanDiscovery::new().expect("Failed to init mDNS"));
+    let discovery = get_or_create_discovery(&mut guard)?;
     discovery.start_browsing()?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn collab_stop_browsing(state: State<'_, CollabState>) -> Result<bool, String> {
+    let mut guard = state.discovery.lock().map_err(|e| e.to_string())?;
+    if let Some(discovery) = guard.as_mut() {
+        discovery.stop_browsing()?;
+    }
     Ok(true)
 }
 

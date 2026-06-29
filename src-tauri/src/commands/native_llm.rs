@@ -4,6 +4,7 @@ use mistralrs::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
@@ -66,9 +67,23 @@ pub struct ToolCallResult {
 // ── Model config ─────────────────────────────────────────────────────────
 
 const GGUF_REPO: &str = "Qwen/Qwen3-8B-GGUF";
-const GGUF_FILE: &str = "qwen3-8b-q4_k_m.gguf";
+const GGUF_FILE: &str = "Qwen3-8B-Q4_K_M.gguf";
 const GGUF_URL: &str =
-    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/qwen3-8b-q4_k_m.gguf";
+    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf";
+const GGUF_SHA256: &str = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785";
+const GGUF_SIZE_BYTES: u64 = 5_027_783_488;
+const GGUF_MODEL: model_download::ModelDownload = model_download::ModelDownload {
+    filename: GGUF_FILE,
+    url: GGUF_URL,
+    expected_sha256: GGUF_SHA256,
+    expected_size_bytes: GGUF_SIZE_BYTES,
+};
+
+#[derive(Debug, PartialEq, Eq)]
+struct VerifiedGgufLoadTarget {
+    model_id: String,
+    files: Vec<String>,
+}
 
 // ── Helper ───────────────────────────────────────────────────────────────
 
@@ -77,6 +92,31 @@ async fn get_model(state: &NativeLlmState) -> Result<Arc<mistralrs::Model>, Stri
     guard
         .clone()
         .ok_or_else(|| "No model loaded. Call init_native_llm first.".to_string())
+}
+
+fn verified_gguf_load_target(model_path: &Path) -> Result<VerifiedGgufLoadTarget, String> {
+    let file_name = model_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Verified GGUF path must include a UTF-8 file name".to_string())?;
+    if file_name != GGUF_FILE {
+        return Err(format!(
+            "Verified GGUF file mismatch: expected {GGUF_FILE}, got {file_name}"
+        ));
+    }
+
+    let model_dir = model_path
+        .parent()
+        .ok_or_else(|| "Verified GGUF path must include a parent directory".to_string())?;
+    let model_id = model_dir
+        .to_str()
+        .ok_or_else(|| "Verified GGUF parent directory must be UTF-8".to_string())?
+        .to_string();
+
+    Ok(VerifiedGgufLoadTarget {
+        model_id,
+        files: vec![GGUF_FILE.to_string()],
+    })
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────
@@ -110,8 +150,9 @@ pub async fn init_native_llm(
         serde_json::json!({ "progress": 0.0, "text": "Checking model cache…" }),
     );
 
-    let model_path = model_download::ensure_model(GGUF_FILE, GGUF_URL, None).await?;
+    let model_path = model_download::ensure_model(&GGUF_MODEL).await?;
     let model_path_str = model_path.to_string_lossy().to_string();
+    let gguf_load_target = verified_gguf_load_target(&model_path)?;
 
     let _ = app.emit(
         "llm-progress",
@@ -119,8 +160,12 @@ pub async fn init_native_llm(
     );
     eprintln!("[Native LLM] GGUF downloaded, loading from: {model_path_str}");
 
-    // Step 2: Load from local GGUF file
-    let model: mistralrs::Model = GgufModelBuilder::new(GGUF_REPO, vec![GGUF_FILE])
+    // Step 2: Load from the verified cache directory. mistralrs resolves GGUF
+    // files as `model_id` + `files`, so `model_id` must be the local directory.
+    let model: mistralrs::Model = GgufModelBuilder::new(
+        gguf_load_target.model_id,
+        gguf_load_target.files,
+    )
         .with_logging()
         .with_paged_attn(|| PagedAttentionMetaBuilder::default().build())
         .map_err(|e| format!("PagedAttention config error: {e}"))?
@@ -415,4 +460,40 @@ pub fn get_model_dir() -> Result<String, String> {
         .join("models");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model directory: {e}"))?;
     Ok(dir.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_build_gguf_target_from_verified_local_file() {
+        let model_dir = std::env::temp_dir().join("sourdaw-models");
+        let model_path = model_dir.join(GGUF_FILE);
+
+        let target = verified_gguf_load_target(&model_path).unwrap();
+
+        assert_eq!(
+            target,
+            VerifiedGgufLoadTarget {
+                model_id: model_dir.to_str().unwrap().to_string(),
+                files: vec![GGUF_FILE.to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn should_reject_gguf_target_with_unexpected_filename() {
+        let model_path = std::env::temp_dir()
+            .join("sourdaw-models")
+            .join("unverified.gguf");
+
+        let result = verified_gguf_load_target(&model_path);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Verified GGUF file mismatch: expected Qwen3-8B-Q4_K_M.gguf, got unverified.gguf"
+        );
+    }
 }

@@ -77,6 +77,39 @@ export type EditPlan = {
     dsos: Dso[];
 };
 
+export type DsoConfirmationTarget =
+    | {
+          op: 'remove_track';
+          label: string;
+          fingerprint: {
+              kind: 'track';
+              trackId: string;
+              trackName: string | null;
+          };
+      }
+    | {
+          op: 'remove_clip';
+          label: string;
+          fingerprint: {
+              kind: 'clip';
+              clipId: string;
+              clipName: string | null;
+              trackId: string | null;
+              trackName: string | null;
+          };
+      }
+    | {
+          op: 'remove_device';
+          label: string;
+          fingerprint: {
+              kind: 'device';
+              deviceId: string;
+              deviceName: string | null;
+              trackId: string | null;
+              trackName: string | null;
+          };
+      };
+
 // ── JSON Schema for the EditPlan ─────────────────────────────────────────────
 // This is passed to Constraint::JsonSchema for schema-constrained generation.
 

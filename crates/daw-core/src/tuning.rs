@@ -9,7 +9,21 @@ pub struct TuningTable {
 }
 
 impl Default for TuningTable {
-...
+    fn default() -> Self {
+        let mut frequencies = [0.0; 128];
+        let mut log2_frequencies = [0.0; 128];
+
+        for midi_note in 0..128 {
+            let freq = 440.0 * 2.0_f64.powf((midi_note as f64 - 69.0) / 12.0);
+            frequencies[midi_note] = freq;
+            log2_frequencies[midi_note] = freq.log2();
+        }
+
+        Self {
+            frequencies,
+            log2_frequencies,
+        }
+    }
 }
 
 impl TuningTable {
@@ -80,8 +94,8 @@ impl TuningManager {
 
     #[inline]
     pub fn update(&mut self) {
-        if self.tuning_output.has_changed() {
-            self.current_table = *self.tuning_output.read();
+        if self.tuning_output.update() {
+            self.current_table = *self.tuning_output.output_buffer();
         }
     }
 

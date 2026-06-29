@@ -1,10 +1,13 @@
+use crate::host::native_bridge::SharedClapPlugin;
 use daw_engine::audio_bridge::PluginAudioBridgeHandle;
 use daw_engine::EngineHandle;
 use daw_plugin_host::AudioPlugin;
 use daw_plugin_host::ClapWrapper;
+use daw_plugin_host::PluginParameter;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub struct PluginInstanceData {
     pub plugin: Box<dyn AudioPlugin>,
@@ -56,20 +59,35 @@ impl PluginInstanceData {
     }
 }
 
+pub struct EnginePluginInstanceData {
+    pub engine_plugin_id: usize,
+    pub runtime: Arc<SharedClapPlugin>,
+    pub name: String,
+    pub parameters: Vec<PluginParameter>,
+    pub has_gui: bool,
+}
+
 pub struct AppState {
+    /// Native audio engine handle (cpal thread + lock-free scheduler).
+    /// None until start_native_engine is called. Declared before engine-owned
+    /// runtime maps so app teardown drops the stream before active CLAP runtimes.
+    pub engine: Arc<Mutex<Option<EngineHandle>>>,
     /// Active plugin instances keyed by instance_id.
     pub plugins: Arc<Mutex<HashMap<String, PluginInstanceData>>>,
+    /// Engine-owned plugin instances keyed by UI/runtime instance_id.
+    pub engine_plugins: Arc<Mutex<HashMap<String, EnginePluginInstanceData>>>,
     /// Registry mapping plugin_id → (file_path, clap_plugin_id).
     /// Populated by scan_plugins so load_plugin can find the library.
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
     /// Open plugin GUI windows, keyed by instance_id → window label.
     pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
-    /// Native audio engine handle (cpal thread + lock-free scheduler).
-    /// None until start_native_engine is called.
-    pub engine: Arc<Mutex<Option<EngineHandle>>>,
     /// Audio bridge handles for each plugin instance (main thread side).
     /// Keyed by engine_plugin_id.
     pub audio_bridges: Arc<Mutex<HashMap<usize, PluginAudioBridgeHandle>>>,
+    /// Retired engine-owned runtimes kept alive after scheduler removal is
+    /// queued so the CPAL callback never final-drops a hosted plugin. Declared
+    /// after `engine` so app teardown drops the stream before these runtimes.
+    pub retired_engine_plugins: Arc<Mutex<Vec<Arc<SharedClapPlugin>>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -83,11 +101,99 @@ pub struct PluginRegistryEntry {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            engine: Arc::new(Mutex::new(None)),
             plugins: Arc::new(Mutex::new(HashMap::new())),
+            engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
             plugin_windows: Arc::new(Mutex::new(HashMap::new())),
-            engine: Arc::new(Mutex::new(None)),
             audio_bridges: Arc::new(Mutex::new(HashMap::new())),
+            retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+}
+
+fn retain_runtime_once<Runtime>(retired_runtimes: &mut Vec<Arc<Runtime>>, runtime: Arc<Runtime>) {
+    if retired_runtimes
+        .iter()
+        .any(|retired_runtime| Arc::ptr_eq(retired_runtime, &runtime))
+    {
+        return;
+    }
+
+    retired_runtimes.push(runtime);
+}
+
+impl AppState {
+    pub fn with_engine_plugin_control<ResultValue>(
+        &self,
+        instance_id: &str,
+        operation: impl FnOnce(&mut ClapWrapper) -> Result<ResultValue, String>,
+    ) -> Result<ResultValue, String> {
+        let runtime = {
+            let engine_plugins = self
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            engine_plugins
+                .get(instance_id)
+                .map(|instance| Arc::clone(&instance.runtime))
+                .ok_or_else(|| format!("No engine-owned plugin instance: {}", instance_id))?
+        };
+
+        runtime.with_control(Duration::from_secs(2), operation)
+    }
+
+    pub fn retain_retired_engine_plugin(&self, runtime: Arc<SharedClapPlugin>) {
+        match self.retired_engine_plugins.lock() {
+            Ok(mut retired_plugins) => {
+                retain_runtime_once(&mut retired_plugins, runtime);
+            }
+            Err(poisoned) => {
+                let mut retired_plugins = poisoned.into_inner();
+                retain_runtime_once(&mut retired_plugins, runtime);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retain_runtime_once_pushes_new_runtime() {
+        let runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+
+        assert_eq!(retired_runtimes.len(), 1);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &runtime));
+    }
+
+    #[test]
+    fn retain_runtime_once_dedupes_same_runtime_arc() {
+        let runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&runtime));
+
+        assert_eq!(retired_runtimes.len(), 1);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &runtime));
+    }
+
+    #[test]
+    fn retain_runtime_once_keeps_distinct_runtimes() {
+        let first_runtime = Arc::new(17_u32);
+        let second_runtime = Arc::new(17_u32);
+        let mut retired_runtimes = Vec::new();
+
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&first_runtime));
+        retain_runtime_once(&mut retired_runtimes, Arc::clone(&second_runtime));
+
+        assert_eq!(retired_runtimes.len(), 2);
+        assert!(Arc::ptr_eq(&retired_runtimes[0], &first_runtime));
+        assert!(Arc::ptr_eq(&retired_runtimes[1], &second_runtime));
     }
 }

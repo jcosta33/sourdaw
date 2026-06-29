@@ -1,7 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 
 import { VoiceButton } from '../VoiceButton';
 
@@ -19,22 +21,18 @@ vi.mock('#/modules/AiRuntime/presentations/views/VoiceCommandOverlay', () => ({
     isSpeechRecognitionAvailable: () => false,
 }));
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        emit: emitMock,
-        on: vi.fn(() => () => {}),
-    },
-    logger: {
-        info: vi.fn(),
-        error: vi.fn(),
-        warn: vi.fn(),
-        debug: vi.fn(),
-    },
-}));
+const mockEventBus = {
+    emit: emitMock,
+    on: vi.fn(() => () => {}),
+};
 
 describe('VoiceButton', () => {
+    beforeEach(() => {
+        injectDependencies(toggleVoiceInput, { eventBus: mockEventBus });
+        vi.clearAllMocks();
+    });
+
     it('should emit voice.toggle when clicked', () => {
-        emitMock.mockClear();
         render(
             <TooltipProvider delayDuration={0}>
                 <VoiceButton />

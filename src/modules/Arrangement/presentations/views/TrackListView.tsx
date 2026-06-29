@@ -365,7 +365,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                     <GitBranch className="size-3 text-[var(--color-accent-peach)]" />
                     Bus Track
                 </DropdownMenuItem>
-                {templates.length > 0 && (
+                {templates.length > 0 ? (
                     <>
                         <DropdownMenuSeparator className="border-border/50" />
                         <DawMenuSectionLabel>Templates</DawMenuSectionLabel>
@@ -380,7 +380,7 @@ const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
                             </DropdownMenuItem>
                         ))}
                     </>
-                )}
+                ) : null}
             </DropdownMenuContent>
         </DropdownMenu>
     );

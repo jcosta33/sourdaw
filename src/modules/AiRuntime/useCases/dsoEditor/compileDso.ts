@@ -1,17 +1,13 @@
 /**
- * DSO Compiler — compiles Domain-Specific Operations into concrete DAW store mutations.
+ * DSO Compiler — compiles Domain-Specific Operations into concrete DAW actions.
  *
- * Each DSO type maps to specific use case calls. Validation is performed
+ * Each DSO type maps to typed AppAction dispatch. Validation is performed
  * before execution. Human-readable summaries are generated for the action history.
  */
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addDevice, addTrack, removeTrack, setSend } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
 
 import { type Dso } from '../../models/DsoTypes';
 
@@ -141,6 +137,18 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
     metal: 'metal',
     punk: 'punk',
 };
+
+const VALID_TIME_SIGNATURE_DENOMINATORS: readonly number[] = [2, 4, 8, 16];
+
+function validateTimeSignatureParts(numerator: number, denominator: number): string | null {
+    if (numerator < 1 || numerator > 32) {
+        return `Time signature numerator ${numerator} out of range (1-32)`;
+    }
+    if (!VALID_TIME_SIGNATURE_DENOMINATORS.includes(denominator)) {
+        return `Time signature denominator ${denominator} must be one of 2, 4, 8, or 16`;
+    }
+    return null;
+}
 
 function toMelodyStyle(state: string): MelodyStyle {
     const resolved = MELODY_STYLE_MAP[state.toLowerCase()];
@@ -629,8 +637,16 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 }
                 break;
 
-            case 'add_track':
             case 'set_time_signature':
+                {
+                    const reason = validateTimeSignatureParts(dso.numerator, dso.denominator);
+                    if (reason) {
+                        errors.push({ dso, reason });
+                    }
+                }
+                break;
+
+            case 'add_track':
             case 'set_loop':
                 break;
         }
@@ -653,16 +669,18 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
 
     switch (dso.op) {
         case 'add_track': {
-            addTrack({
-                id: dso.track_id ?? '',
-                name: dso.name,
-                kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master',
-            });
+            await executeAppAction(
+                {
+                    type: 'addTrack',
+                    payload: { id: dso.track_id, name: dso.name, kind: dso.kind },
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'remove_track': {
-            removeTrack(dso.track_id);
+            await executeAppAction({ type: 'removeTrack', payload: { trackId: dso.track_id } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -731,13 +749,19 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'add_clip': {
-            addClip({
-                trackId: dso.track_id,
-                name: dso.name,
-                type: dso.type,
-                startBeat: dso.start_beats,
-                endBeat: dso.end_beats,
-            });
+            await executeAppAction(
+                {
+                    type: 'addClip',
+                    payload: {
+                        trackId: dso.track_id,
+                        name: dso.name,
+                        type: dso.type,
+                        startBeat: dso.start_beats,
+                        endBeat: dso.end_beats,
+                    },
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -774,14 +798,20 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
             const sourceClip = allClips.find((context1) => context1.id === dso.clip_id);
             if (sourceClip) {
                 const duration = sourceClip.endBeat - sourceClip.startBeat;
-                addClip({
-                    trackId: dso.destination_track_id,
-                    name: `${sourceClip.name} (copy)`,
-                    type: sourceClip.type ?? 'audio',
-                    startBeat: dso.destination_start_beats,
-                    endBeat: dso.destination_start_beats + duration,
-                    audioBufferId: sourceClip.audioBufferId,
-                });
+                await executeAppAction(
+                    {
+                        type: 'addClip',
+                        payload: {
+                            trackId: dso.destination_track_id,
+                            name: `${sourceClip.name} (copy)`,
+                            type: sourceClip.type ?? 'audio',
+                            startBeat: dso.destination_start_beats,
+                            endBeat: dso.destination_start_beats + duration,
+                            audioBufferId: sourceClip.audioBufferId,
+                        },
+                    },
+                    DSO_EXEC_OPTIONS
+                );
             }
             break;
         }
@@ -799,7 +829,10 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
             const track = state.tracks.find((time) => time.id === dso.track_id);
             const deviceCountBefore = track?.devices.length ?? 0;
 
-            addDevice(dso.track_id, dso.device_type);
+            await executeAppAction(
+                { type: 'addDevice', payload: { trackId: dso.track_id, deviceType: dso.device_type } },
+                DSO_EXEC_OPTIONS
+            );
 
             // Track the newly inserted device ID for "latest" resolution
             const updatedState = trackStore.value;
@@ -834,22 +867,25 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'set_time_signature': {
-            const ts = transportStore.value;
-            if (ts) {
-                transportStore.set({
-                    ...ts,
-                    timeSignatureNumerator: Math.max(1, Math.min(32, dso.numerator)),
-                    timeSignatureDenominator: Math.max(1, Math.min(32, dso.denominator)),
-                });
+            const reason = validateTimeSignatureParts(dso.numerator, dso.denominator);
+            if (reason) {
+                throw new Error(reason);
             }
+            await executeAppAction(
+                { type: 'setTimeSignature', payload: { numerator: dso.numerator, denominator: dso.denominator } },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'set_loop': {
             if (dso.enabled) {
-                setLoopRegion(dso.start_beats, dso.end_beats);
-            } else {
-                disableLooping();
+                await executeAppAction(
+                    { type: 'setLoopRegion', payload: { startBeat: dso.start_beats, endBeat: dso.end_beats } },
+                    DSO_EXEC_OPTIONS
+                );
+            } else if (transportStore.value?.isLooping) {
+                await executeAppAction({ type: 'toggleLoop' }, DSO_EXEC_OPTIONS);
             }
             break;
         }
@@ -871,33 +907,24 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'add_midi_notes': {
-            const ms = midiStore.value;
-            if (ms) {
-                // Find the clip's start beat so we can offset relative note positions to absolute
-                const clip = state.tracks.flatMap((time) => time.clips).find((context1) => context1.id === dso.clip_id);
-                const clipStartBeat = clip?.startBeat ?? 0;
+            const clip = state.tracks.flatMap((time) => time.clips).find((context1) => context1.id === dso.clip_id);
+            const clipStartBeat = clip?.startBeat ?? 0;
 
-                const existing = ms.notesByClipId[dso.clip_id] ?? [];
-                const newNotes = dso.notes.map(
-                    (
-                        node: { pitch: number; start_beat: number; duration: number; velocity: number },
-                        index: number
-                    ) => ({
-                        id: `note-ai-${Date.now()}-${index}`,
-                        pitch: Math.max(0, Math.min(127, node.pitch)),
-                        startBeat: Math.max(0, clipStartBeat + node.start_beat),
-                        duration: Math.max(0.01, node.duration),
-                        velocity: Math.max(1, Math.min(127, node.velocity)),
-                    })
-                );
-                midiStore.set({
-                    ...ms,
-                    notesByClipId: {
-                        ...ms.notesByClipId,
-                        [dso.clip_id]: [...existing, ...newNotes],
+            await executeAppAction(
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: dso.clip_id,
+                        notes: dso.notes.map((node) => ({
+                            pitch: Math.max(0, Math.min(127, node.pitch)),
+                            startBeat: Math.max(0, clipStartBeat + node.start_beat),
+                            duration: Math.max(0.01, node.duration),
+                            velocity: Math.max(1, Math.min(127, node.velocity)),
+                        })),
                     },
-                });
-            }
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
@@ -977,12 +1004,24 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'humanize_midi': {
-            humanizeNotes(dso.clip_id, dso.timing_amount, dso.velocity_amount);
+            await executeAppAction(
+                {
+                    type: 'humanizeNotes',
+                    payload: { clipId: dso.clip_id, amount: dso.timing_amount, velocityAmount: dso.velocity_amount },
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 
         case 'create_send': {
-            setSend(dso.from_track_id, dso.to_track_id, dso.gain);
+            await executeAppAction(
+                {
+                    type: 'setSend',
+                    payload: { trackId: dso.from_track_id, busId: dso.to_track_id, level: dso.gain },
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
     }

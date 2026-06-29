@@ -14,7 +14,7 @@ import { selectClip, setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
-import { CLIP_COLOR_OPTIONS } from '../../models/colorPalette';
+import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';

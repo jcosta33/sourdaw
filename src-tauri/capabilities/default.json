@@ -3,10 +3,12 @@
     "description": "Default capability for the main window",
     "windows": ["main"],
     "permissions": [
-        "core:default",
-        "core:event:default",
         "core:event:allow-listen",
         "core:event:allow-emit",
-        "shell:default"
+        "core:path:allow-join",
+        "core:path:allow-resolve-directory",
+        "allow-read-audio-file",
+        "allow-write-audio-file",
+        "allow-list-directory"
     ]
 }

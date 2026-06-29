@@ -1,11 +1,13 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { type MidiProcessor } from '../../models/MidiProcessor';
 import { getYeastRack } from '../../stores/yeastStore';
 import { removeYeastProcessor } from '../removeYeastProcessor';
+
+const eventBus = { emit: vi.fn() };
 
 const transport: TransportInfo = {
     sampleRate: 44100,
@@ -49,6 +51,7 @@ class PassthroughProcessor implements MidiProcessor {
 
 afterEach(() => {
     vi.restoreAllMocks();
+    eventBus.emit.mockClear();
     // Drain any processors a test left on the singleton rack.
     const rack = getYeastRack();
     for (const id of rack.getProcessorIds()) {
@@ -69,31 +72,31 @@ describe('removeYeastProcessor — routes hung-note offs downstream', () => {
             transport
         );
 
-        const emit = vi.spyOn(eventBus, 'emit');
+        injectDependencies(removeYeastProcessor, { eventBus });
 
         removeYeastProcessor('p-live');
 
         // The use case must EMIT the offs downstream — not silently discard the
         // value returned by rack.removeProcessor (the round-1 hung-note bug).
-        expect(emit).toHaveBeenCalledWith('yeast.notesOff', { notes: [60] });
+        expect(eventBus.emit).toHaveBeenCalledWith('yeast.notesOff', { notes: [60] });
     });
 
     it('does not emit when the removed processor had no sounding notes', () => {
         const rack = getYeastRack();
         rack.addProcessor(new PassthroughProcessor('p-idle'));
 
-        const emit = vi.spyOn(eventBus, 'emit');
+        injectDependencies(removeYeastProcessor, { eventBus });
 
         removeYeastProcessor('p-idle');
 
-        const notesOffEmits = emit.mock.calls.filter(([type]) => type === 'yeast.notesOff');
+        const notesOffEmits = eventBus.emit.mock.calls.filter(([type]) => type === 'yeast.notesOff');
         expect(notesOffEmits).toHaveLength(0);
     });
 
     it('does not emit when the id is unknown (no spurious offs)', () => {
-        const emit = vi.spyOn(eventBus, 'emit');
+        injectDependencies(removeYeastProcessor, { eventBus });
         removeYeastProcessor('not-a-real-id');
-        const notesOffEmits = emit.mock.calls.filter(([type]) => type === 'yeast.notesOff');
+        const notesOffEmits = eventBus.emit.mock.calls.filter(([type]) => type === 'yeast.notesOff');
         expect(notesOffEmits).toHaveLength(0);
     });
 });

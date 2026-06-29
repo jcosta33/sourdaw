@@ -1,21 +1,22 @@
 //! Tauri commands for plugin scanning, loading, and parameter management.
 
-use cpal::traits::{DeviceTrait, HostTrait};
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-
-use crate::host::native_bridge::ClapPluginSlot;
+use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
+use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
+use cpal::traits::{DeviceTrait, HostTrait};
+use daw_engine::audio_bridge::create_audio_bridge;
 use daw_engine::plugin_slot::{MidiNoteEvent, TransportState};
 use daw_engine::EngineHandle;
-use daw_plugin_host::scanner::{self, ScanResult, ScannedPlugin};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tauri::Manager;
+use daw_plugin_host::scanner::{self, ScanResult};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, Vst3Wrapper};
 
 // Re-export PluginParameter from daw-plugin-host for TypeScript binding generation
 pub use daw_plugin_host::PluginParameter;
-
-// Re-export for use by other modules
-pub use daw_plugin_host::ScannedPlugin as ScannedPluginInfo;
 
 // ── Types ───────────────────────────────────────────────────────────────
 use daw_core::{PluginId, PluginInstanceId};
@@ -28,6 +29,16 @@ pub struct PluginInstance {
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
     pub latency_samples: u32,
+    pub engine_plugin_id: Option<usize>,
+}
+
+fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
+    engine_plugins: &mut HashMap<String, EnginePluginRecord>,
+    instance_id: &str,
+    scheduler_removal_result: Result<(), String>,
+) -> Result<Option<EnginePluginRecord>, String> {
+    scheduler_removal_result?;
+    Ok(engine_plugins.remove(instance_id))
 }
 
 // ── Scanning commands ───────────────────────────────────────────────────
@@ -39,11 +50,17 @@ pub async fn scan_plugins(
     state: tauri::State<'_, AppState>,
 ) -> Result<ScanResult, String> {
     let start = std::time::Instant::now();
+    let scan_policy = PluginScanPolicy::platform_defaults();
     let mut plugins = Vec::new();
     let mut errors = Vec::new();
 
     for scan_path in &paths {
         let path = PathBuf::from(scan_path);
+        if let Err(error) = scan_policy.authorize_scan_root(&path) {
+            errors.push(error);
+            continue;
+        }
+
         if !path.is_dir() {
             errors.push(format!("Not a directory: {}", scan_path));
             continue;
@@ -83,39 +100,7 @@ pub async fn scan_plugins(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
-    let mut paths = Vec::new();
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let home = home.display();
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/VST3"));
-            paths.push("/Library/Audio/Plug-Ins/VST3".to_string());
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/CLAP"));
-            paths.push("/Library/Audio/Plug-Ins/CLAP".to_string());
-            paths.push(format!("{home}/Library/Audio/Plug-Ins/Components"));
-            paths.push("/Library/Audio/Plug-Ins/Components".to_string());
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        paths.push("C:\\Program Files\\Common Files\\VST3".to_string());
-        paths.push("C:\\Program Files\\Common Files\\CLAP".to_string());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(home) = dirs::home_dir() {
-            let home = home.display();
-            paths.push(format!("{home}/.vst3"));
-            paths.push(format!("{home}/.clap"));
-            paths.push("/usr/lib/vst3".to_string());
-            paths.push("/usr/lib/clap".to_string());
-        }
-    }
-
-    Ok(paths)
+    Ok(PluginScanPolicy::platform_defaults().allowed_roots_as_strings())
 }
 
 // ── Instance lifecycle commands ─────────────────────────────────────────
@@ -158,6 +143,7 @@ pub async fn load_plugin(
             let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
+            let has_gui = wrapper.has_gui();
 
             // Send the plugin to the native audio thread for real-time processing
             // and create an audio bridge for worklet ↔ Rust data transfer
@@ -167,18 +153,48 @@ pub async fn load_plugin(
                     .lock()
                     .map_err(|e| format!("Failed to lock engine: {}", e))?;
                 if let Some(ref mut engine) = *engine_guard {
-                    let slot = ClapPluginSlot::new(wrapper);
-                    let id = engine.add_plugin(Box::new(slot))?;
+                    if !wrapper.is_activated() {
+                        return Err(format!(
+                            "CLAP plugin '{}' failed to activate for engine-owned runtime",
+                            name
+                        ));
+                    }
 
-                    // Create ring-buffer audio bridge
-                    let bridge_handle = engine.create_audio_bridge(id)?;
+                    let id = engine.reserve_plugin_id();
+                    let (bridge, bridge_handle) = create_audio_bridge(id);
+                    let shared_plugin = Arc::new(SharedClapPlugin::new(wrapper));
+
                     let mut bridges = state
                         .audio_bridges
                         .lock()
                         .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
+                    let mut engine_plugins = state
+                        .engine_plugins
+                        .lock()
+                        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
                     bridges.insert(id, bridge_handle);
+                    engine_plugins.insert(
+                        instance_id.0.clone(),
+                        crate::state::EnginePluginInstanceData {
+                            engine_plugin_id: id,
+                            runtime: Arc::clone(&shared_plugin),
+                            name: name.clone(),
+                            parameters: params.clone(),
+                            has_gui,
+                        },
+                    );
 
-                    id
+                    if let Err(error) = engine.add_plugin_with_bridge(
+                        id,
+                        Box::new(ClapPluginSlot::new(shared_plugin)),
+                        bridge,
+                    ) {
+                        bridges.remove(&id);
+                        engine_plugins.remove(&instance_id.0);
+                        return Err(error);
+                    }
+
+                    Some(id)
                 } else {
                     eprintln!(
                         "[Plugin] Warning: native engine not running, plugin won't process audio"
@@ -193,7 +209,7 @@ pub async fn load_plugin(
                             plugin: Box::new(wrapper),
                         },
                     );
-                    0
+                    None
                 }
             };
 
@@ -204,6 +220,7 @@ pub async fn load_plugin(
                 parameters: params,
                 is_active: true,
                 latency_samples: 0,
+                engine_plugin_id,
             };
 
             Ok(instance)
@@ -232,6 +249,7 @@ pub async fn load_plugin(
                 parameters: params,
                 is_active: true,
                 latency_samples: 0,
+                engine_plugin_id: None,
             })
         }
         "au" => Err(
@@ -246,24 +264,115 @@ pub async fn load_plugin(
 #[specta::specta]
 pub async fn unload_plugin(
     instance_id: PluginInstanceId,
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    if plugins.remove(&instance_id.0).is_none() {
-        return Err(format!(
-            "No plugin instance found with id: {}",
-            instance_id.0
-        ));
+        if plugins.remove(&instance_id.0).is_some() {
+            return Ok(());
+        }
+    }
+
+    let engine_plugin = {
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        let engine_plugin = engine_plugins.get(&instance_id.0);
+        if let Some(instance) = engine_plugin {
+            instance.runtime.begin_unload();
+        }
+        engine_plugin.map(|instance| (instance.engine_plugin_id, Arc::clone(&instance.runtime)))
+    };
+
+    if let Some((engine_plugin_id, runtime)) = engine_plugin {
+        state
+            .inner()
+            .retain_retired_engine_plugin(Arc::clone(&runtime));
+
+        let close_result =
+            runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
+                plugin.close_gui();
+                Ok(())
+            });
+
+        let window_label = {
+            let mut windows = state
+                .plugin_windows
+                .lock()
+                .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+            windows.remove(&instance_id.0)
+        };
+
+        if let Some(label) = window_label {
+            if let Some(window) = app.get_window(&label) {
+                let _ = window.destroy();
+            }
+        }
+
+        let scheduler_removal_result = {
+            let mut engine_guard = state
+                .engine
+                .lock()
+                .map_err(|e| format!("Failed to lock engine: {}", e))?;
+            let engine = engine_guard.as_mut().ok_or("Native engine not running")?;
+            engine.remove_plugin(engine_plugin_id)
+        };
+
+        {
+            let mut engine_plugins = state
+                .engine_plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+            let _removed_engine_plugin = remove_engine_plugin_record_after_scheduler_removal(
+                &mut engine_plugins,
+                &instance_id.0,
+                scheduler_removal_result,
+            )?;
+        }
+
+        runtime.retire();
+
+        let mut bridges = state
+            .audio_bridges
+            .lock()
+            .map_err(|e| format!("Failed to lock audio_bridges: {}", e))?;
+        bridges.remove(&engine_plugin_id);
+
+        close_result?;
+        return Ok(());
+    }
+
+    Err(format!(
+        "No plugin instance found with id: {}",
+        instance_id.0
+    ))
+}
+
+// ── Parameter commands ──────────────────────────────────────────────────
+
+fn update_parameter_cache_after_enqueue(
+    parameters: &mut [PluginParameter],
+    param_id: u32,
+    value: f64,
+    enqueue_result: Result<(), String>,
+) -> Result<(), String> {
+    enqueue_result?;
+
+    if let Some(parameter) = parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == param_id)
+    {
+        parameter.value = value;
     }
 
     Ok(())
 }
-
-// ── Parameter commands ──────────────────────────────────────────────────
 
 #[tauri::command]
 #[specta::specta]
@@ -273,17 +382,35 @@ pub async fn set_plugin_parameter(
     value: f64,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get_mut(&instance_id.0) {
+            instance.plugin.set_parameter(param_id, value);
+            return Ok(());
+        }
+    }
+
+    let mut engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
+        let enqueue_result = instance.runtime.enqueue_parameter(param_id, value);
+        update_parameter_cache_after_enqueue(
+            &mut instance.parameters,
+            param_id,
+            value,
+            enqueue_result,
+        )?;
+        return Ok(());
+    }
+    drop(engine_plugins);
 
-    let instance = plugins
-        .get_mut(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    instance.plugin.set_parameter(param_id, value);
-    Ok(())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -292,16 +419,27 @@ pub async fn get_plugin_parameters(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<PluginParameter>, String> {
-    let plugins = state
-        .plugins
+    {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get(&instance_id.0) {
+            return Ok(instance.plugin.get_parameters());
+        }
+    }
+
+    let engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if let Some(instance) = engine_plugins.get(&instance_id.0) {
+        instance.runtime.ensure_public_control_allowed()?;
+        return Ok(instance.parameters.clone());
+    }
 
-    let instance = plugins
-        .get(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    Ok(instance.plugin.get_parameters())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -310,16 +448,31 @@ pub async fn get_plugin_state(
     instance_id: PluginInstanceId,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
-    let plugins = state
-        .plugins
-        .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+    {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-    let instance = plugins
-        .get(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
+        if let Some(instance) = plugins.get(&instance_id.0) {
+            return Ok(instance.plugin.get_state());
+        }
+    }
 
-    Ok(instance.plugin.get_state())
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| Arc::clone(&instance.runtime))
+    };
+    if let Some(runtime) = runtime {
+        return runtime.get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2));
+    }
+
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 #[tauri::command]
@@ -329,17 +482,33 @@ pub async fn set_plugin_state(
     plugin_state: Vec<u8>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let mut plugins = state
-        .plugins
+    {
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+
+        if let Some(instance) = plugins.get_mut(&instance_id.0) {
+            instance.plugin.set_state(&plugin_state)?;
+            return Ok(());
+        }
+    }
+
+    let mut engine_plugins = state
+        .engine_plugins
         .lock()
-        .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+        .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+    if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
+        let refreshed_parameters = instance.runtime.set_state_invalidating_pending_parameters(
+            std::time::Duration::from_secs(2),
+            &plugin_state,
+        )?;
+        instance.parameters = refreshed_parameters;
+        return Ok(());
+    }
+    drop(engine_plugins);
 
-    let instance = plugins
-        .get_mut(&instance_id.0)
-        .ok_or_else(|| format!("No plugin instance: {}", instance_id.0))?;
-
-    instance.plugin.set_state(&plugin_state);
-    Ok(())
+    Err(format!("No plugin instance: {}", instance_id.0))
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
@@ -359,10 +528,8 @@ pub async fn start_native_engine(state: tauri::State<'_, AppState>) -> Result<St
     let mut handle =
         EngineHandle::new().map_err(|e| format!("Failed to start native audio engine: {}", e))?;
 
-    // Create a triple-buffer for the global tuning table
-    // and register it with the MTS-ESP master bridge.
-    let (_, output) = triple_buffer::triple_buffer(&daw_core::tuning::TuningTable::default());
-    handle.register_mts_esp_master(output);
+    // Create the default tuning source inside daw-engine, which owns the triple-buffer dependency.
+    handle.register_default_mts_esp_master();
 
     eprintln!("[Engine] Native audio engine started with MTS-ESP support");
     *engine_guard = Some(handle);
@@ -393,6 +560,7 @@ pub async fn send_plugin_midi(
             velocity,
             channel,
             is_note_on,
+            probability: 1.0,
         },
     )
 }
@@ -475,7 +643,7 @@ pub async fn process_plugin_audio(
     }
 
     // Try to pop processed output
- (may be from previous block — 1 block latency)
+    // This may be from the previous block with one block of latency.
     if let Some(output) = bridge.pop_output() {
         // Re-interleave and encode as raw bytes
         let n = num_samples.min(128);
@@ -488,5 +656,229 @@ pub async fn process_plugin_audio(
     } else {
         // No output yet (first block) — return the dry input
         Ok(audio_bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::EnginePluginInstanceData;
+    use daw_core::PluginInstanceId;
+    use tauri::Manager;
+
+    fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
+        PluginParameter {
+            id,
+            name: format!("Param {id}"),
+            value,
+            default_value: 0.0,
+            min_value: 0.0,
+            max_value: 1.0,
+            unit: None,
+            is_automatable: true,
+        }
+    }
+
+    fn command_test_app() -> tauri::App<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .manage(AppState::default())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("test app should build")
+    }
+
+    fn insert_engine_owned_fixture(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+        state_bytes: Vec<u8>,
+    ) {
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Engine Owned Fixture",
+            state_bytes,
+            true,
+        );
+        let parameters = wrapper.get_parameters();
+        let runtime = Arc::new(SharedClapPlugin::new(wrapper));
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 17,
+                runtime,
+                name: "Engine Owned Fixture".to_string(),
+                parameters,
+                has_gui: true,
+            },
+        );
+    }
+
+    fn unique_temp_scan_root(test_name: &str) -> PathBuf {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "sourdaw-{test_name}-{}-{unique_suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn scan_plugins_rejects_arbitrary_renderer_raw_path_without_grant() {
+        let app = command_test_app();
+        let scan_root = unique_temp_scan_root("raw-plugin-scan-path");
+        std::fs::create_dir_all(&scan_root).expect("temp scan root should be created");
+
+        let result = tauri::async_runtime::block_on(scan_plugins(
+            vec![scan_root.display().to_string()],
+            app.state::<AppState>(),
+        ))
+        .expect("scan command should return policy errors in-band");
+        let _ = std::fs::remove_dir_all(&scan_root);
+
+        assert!(result.plugins.is_empty());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains("Unauthorized plugin scan path")),
+            "errors should reject the raw renderer path: {:?}",
+            result.errors
+        );
+
+        let state = app.state::<AppState>();
+        let registry = state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available");
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn get_default_plugin_paths_returns_authorized_native_scan_roots() {
+        let paths = tauri::async_runtime::block_on(get_default_plugin_paths())
+            .expect("default plugin paths should resolve");
+        let scan_policy = PluginScanPolicy::platform_defaults();
+
+        assert!(!paths.is_empty());
+        for path in paths {
+            assert_eq!(scan_policy.authorize_scan_root(Path::new(&path)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn get_plugin_state_reads_engine_owned_runtime_owner_through_command_state() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let result = tauri::async_runtime::block_on(get_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(result, Ok(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn set_plugin_state_writes_engine_owned_runtime_owner_through_command_state() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let set_result = tauri::async_runtime::block_on(set_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            vec![9, 8, 7],
+            app.state::<AppState>(),
+        ));
+        let get_result = tauri::async_runtime::block_on(get_plugin_state(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ));
+
+        assert_eq!(set_result, Ok(()));
+        assert_eq!(get_result, Ok(vec![9, 8, 7]));
+    }
+
+    #[test]
+    fn update_parameter_cache_after_enqueue_updates_only_after_success() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_enqueue(&mut parameters, 7, 0.75, Ok(()));
+
+        assert!(result.is_ok());
+        assert_eq!(parameters[0].value, 0.75);
+    }
+
+    #[test]
+    fn update_parameter_cache_after_enqueue_preserves_cache_when_queue_is_full() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_enqueue(
+            &mut parameters,
+            7,
+            0.75,
+            Err("Pending parameter queue full for plugin 'test'".to_string()),
+        );
+
+        assert_eq!(
+            result,
+            Err("Pending parameter queue full for plugin 'test'".to_string())
+        );
+        assert_eq!(parameters[0].value, 0.25);
+    }
+
+    #[test]
+    fn update_parameter_cache_after_enqueue_preserves_cache_when_runtime_is_unavailable() {
+        let mut parameters = vec![plugin_parameter(7, 0.25)];
+
+        let result = update_parameter_cache_after_enqueue(
+            &mut parameters,
+            7,
+            0.75,
+            Err("No engine-owned plugin instance: test".to_string()),
+        );
+
+        assert_eq!(
+            result,
+            Err("No engine-owned plugin instance: test".to_string())
+        );
+        assert_eq!(parameters[0].value, 0.25);
+    }
+
+    #[test]
+    fn remove_engine_plugin_record_after_scheduler_removal_preserves_record_on_queue_failure() {
+        let mut engine_plugins = std::collections::HashMap::from([(
+            "engine-owned-1".to_string(),
+            42_u32,
+        )]);
+
+        let result = remove_engine_plugin_record_after_scheduler_removal(
+            &mut engine_plugins,
+            "engine-owned-1",
+            Err("Audio command queue full".to_string()),
+        );
+
+        assert_eq!(result, Err("Audio command queue full".to_string()));
+        assert_eq!(engine_plugins.get("engine-owned-1"), Some(&42_u32));
+    }
+
+    #[test]
+    fn remove_engine_plugin_record_after_scheduler_removal_removes_record_after_acceptance() {
+        let mut engine_plugins = std::collections::HashMap::from([(
+            "engine-owned-1".to_string(),
+            42_u32,
+        )]);
+
+        let result = remove_engine_plugin_record_after_scheduler_removal(
+            &mut engine_plugins,
+            "engine-owned-1",
+            Ok(()),
+        );
+
+        assert_eq!(result, Ok(Some(42_u32)));
+        assert!(!engine_plugins.contains_key("engine-owned-1"));
     }
 }

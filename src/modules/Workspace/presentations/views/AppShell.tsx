@@ -375,14 +375,20 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     useEffect(() => {
         if (project.initialized && !project.loading && showLaunch && !launchExiting) {
             setLaunchExiting(true);
-            const t = setTimeout(() => {
-                setShowLaunch(false);
-                setLaunchExiting(false);
-            }, 700);
-            return () => clearTimeout(t);
         }
         return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
+
+    useEffect(() => {
+        if (!launchExiting) {
+            return undefined;
+        }
+        const timer = setTimeout(() => {
+            setShowLaunch(false);
+            setLaunchExiting(false);
+        }, 700);
+        return () => clearTimeout(timer);
+    }, [launchExiting]);
 
     // Bottom-dock tab id helpers. `id`/`aria-controls`/`aria-labelledby` wire
     // each tab to the single shared tabpanel so AT announces the dock as one

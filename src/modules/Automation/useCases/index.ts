@@ -11,6 +11,7 @@ export { setModulationDependencies } from './modulation/modulationDependencies';
 export type { ModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
+export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';
 export { setAutomationPointCurve } from './automation/setAutomationPointCurve';

@@ -1,8 +1,85 @@
 import { describe, it, expect } from 'vitest';
 
+import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
 
+type PayloadOf<ActionType extends RuntimeActionType> =
+    Extract<RuntimeAction, { type: ActionType }> extends { payload: infer Payload } ? Payload : undefined;
+
+type GuardedPayloadCase<ActionType extends RuntimeActionType> = {
+    actionType: ActionType;
+    validPayload: PayloadOf<ActionType>;
+    invalidPayloads: readonly unknown[];
+};
+
+function guardedPayloadCase<ActionType extends RuntimeActionType>(
+    payloadCase: GuardedPayloadCase<ActionType>
+): GuardedPayloadCase<ActionType> {
+    return payloadCase;
+}
+
+const guardedPayloadContractCases = [
+    guardedPayloadCase({
+        actionType: 'splitClip',
+        validPayload: { clipId: 'clip-1', beat: 4 },
+        invalidPayloads: [
+            { clipId: 'clip-1', splitBeat: 4 },
+            { clipId: 'clip-1' },
+            { clipId: 1, beat: 4 },
+            { clipId: 'clip-1', beat: Number.NaN },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'moveClip',
+        validPayload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 8 },
+        invalidPayloads: [
+            { clipId: 'clip-1', newTrackId: 'track-2', newStartBeat: 8 },
+            { clipId: 'clip-1', trackId: 'track-2' },
+            { clipId: 'clip-1', trackId: 2, startBeat: 8 },
+            { clipId: 'clip-1', trackId: 'track-2', startBeat: Number.POSITIVE_INFINITY },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'setDeviceParameter',
+        validPayload: { deviceId: 'device-1', paramId: 'gain', value: 0.75 },
+        invalidPayloads: [
+            { trackId: 'track-1', deviceId: 'device-1', paramId: 'gain' },
+            { deviceId: 'device-1', paramId: 'gain' },
+            { deviceId: 'device-1', paramId: 1, value: 0.75 },
+            { deviceId: 'device-1', paramId: 'gain', value: Number.NaN },
+        ],
+    }),
+] as const;
+
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
+    describe('declared RuntimeAction payload contracts', () => {
+        it.each(guardedPayloadContractCases)(
+            'should accept valid $actionType payloads',
+            ({ actionType, validPayload }) => {
+                const guard = PAYLOAD_VALIDATORS[actionType];
+                expect(guard).not.toBe('unchecked');
+                if (guard === 'unchecked') {
+                    return;
+                }
+                expect(guard(validPayload)).toBe(true);
+            }
+        );
+
+        it.each(guardedPayloadContractCases)(
+            'should reject malformed $actionType payloads',
+            ({ actionType, invalidPayloads }) => {
+                const guard = PAYLOAD_VALIDATORS[actionType];
+                expect(guard).not.toBe('unchecked');
+                if (guard === 'unchecked') {
+                    return;
+                }
+                for (const invalidPayload of invalidPayloads) {
+                    expect(guard(invalidPayload)).toBe(false);
+                }
+            }
+        );
+    });
+
     describe('removeTrack', () => {
         it('should accept a payload with trackId string', () => {
             const guard = PAYLOAD_VALIDATORS.removeTrack;
@@ -78,6 +155,57 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
             expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
             expect(guard({ clipId: 'clip-1' })).toBe(false);
+        });
+    });
+
+    describe('addNotes', () => {
+        it('should require clipId and a notes array with finite bounded note fields', () => {
+            const guard = PAYLOAD_VALIDATORS.addNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                })
+            ).toBe(true);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 0, startBeat: 0, duration: 0.01 }],
+                })
+            ).toBe(true);
+            expect(
+                guard({
+                    clipId: 'clip-1',
+                    notes: [{ pitch: 127, startBeat: 4, duration: 2, velocity: 127 }],
+                })
+            ).toBe(true);
+        });
+
+        it('should reject malformed addNotes payloads before they reach the MIDI handler', () => {
+            const guard = PAYLOAD_VALIDATORS.addNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ clipId: 1, notes: [] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: 'bad' })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: -1, startBeat: 0, duration: 1 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: -0.01, duration: 1 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 0 }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: Number.NaN }] })).toBe(false);
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 0 }] })).toBe(
+                false
+            );
+            expect(guard({ clipId: 'clip-1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 128 }] })).toBe(
+                false
+            );
         });
     });
 

@@ -1517,6 +1517,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "specta",
+ "triple_buffer",
 ]
 
 [[package]]
@@ -1538,6 +1539,7 @@ dependencies = [
  "daw-core",
  "daw-dsp",
  "rtrb",
+ "triple_buffer",
 ]
 
 [[package]]
@@ -7119,6 +7121,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-specta",
  "tokio",
+ "triple_buffer",
  "uuid 1.23.0",
  "vst3",
  "whisper-rs",
@@ -8570,6 +8573,15 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "triple_buffer"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e875ab7068a75b74f419da453927e05527c36f0001b3c7aad3ce443640683487"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]

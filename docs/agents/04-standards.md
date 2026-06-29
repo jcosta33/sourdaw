@@ -120,7 +120,7 @@ When writing audits, findings go in `## Findings` and `## Open issues`. When wri
 
 ## Handoffs
 
-A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and **`## Self-review`** so each task file is self-contained.
+A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and the closeout section (`## Run summary` in Corpus task packets, optional `## Self-review` in local scratch) so each task file is self-contained.
 
 Useful closure answers these questions:
 

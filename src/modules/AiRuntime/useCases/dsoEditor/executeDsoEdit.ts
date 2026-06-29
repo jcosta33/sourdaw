@@ -15,33 +15,31 @@
  */
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { commitActionUndoEntry } from '#/modules/Command/stores';
-import { generateGroupId } from '#/modules/Command/useCases';
-import { transactSnapshot } from '#/modules/CrdtDocument/useCases';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
+import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
-import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { proposePendingDsoConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 
-import { resolveDsoNames, validateDsos, executeDsos, type DsoExecutionResult } from './compileDso';
+import { commitDsoEditPlan } from './commitDsoEditPlan';
+import { resolveDsoNames, validateDsos, type DsoExecutionResult } from './compileDso';
 import { buildDsoPrompt } from './dsoPrompt';
-import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
-
-type ExecuteDsosFn = (dsos: Dso[]) => Promise<DsoExecutionResult>;
+import { getDsoConfirmationTargets } from './getDsoConfirmationTargets';
+import { serializeLogicalState, buildProjectSummary } from './serializeLogicalState';
 
 export type DsoEditResult = {
     success: boolean;
     plan: EditPlan | null;
     summaries: string[];
     error?: string;
+    pendingConfirmationId?: string;
 };
 
 /**
@@ -151,50 +149,55 @@ export const executeDsoEdit = inject({ logger })(
                 const classification = classifyEditPlan(plan);
 
                 if (classification === 'confirmation_required') {
-                    const { summaries, failures } = await commitDsos(
+                    const confirmationId = `dso-confirmation-${crypto.randomUUID()}`;
+                    const confirmationMetadata = getDsoConfirmationTargets({ dsos: plan.dsos });
+                    const confirmation = proposePendingDsoConfirmation({
+                        id: confirmationId,
+                        prompt: userRequest,
+                        assistantMessageId: assistantMsgId,
                         plan,
-                        userRequest,
-                        assistantMsgId,
+                        actionLabels: confirmationMetadata.actionLabels,
+                        confirmationTargets: confirmationMetadata.confirmationTargets,
                         reasoning,
-                        executeDsos
-                    );
-                    const descriptions = plan.dsos
-                        .filter((data) => data.op.startsWith('remove'))
-                        .map((data) => data.op.replaceAll('_', ' '));
-                    const failureText = formatFailures(failures);
+                    });
+                    if (!confirmation) {
+                        throw createAiRuntimeError('Could not create destructive edit confirmation request.');
+                    }
+
                     updateChatMessage(assistantMsgId, {
                         content:
-                            `Done (destructive): ${summaries.join('. ')}.\n\n` +
-                            `Removed: ${descriptions.join(', ')}. Use Ctrl+Z to undo.${failureText}`,
+                            `This destructive edit requires confirmation before execution:\n\n` +
+                            `Intent: ${plan.intent}\n\n` +
+                            `${confirmationMetadata.actionLabels.map((label) => `- ${label}`).join('\n')}`,
                         isStreaming: false,
                         reasoning,
-                        isDsoAction: failures.length === 0 ? true : undefined,
-                        error: failures.length > 0 ? failureText.trim() : undefined,
+                        isDsoAction: true,
+                        pendingActionConfirmationId: confirmation.id,
+                        pendingActionConfirmationStatus: 'proposed',
                     });
                     finish();
                     return {
-                        success: failures.length === 0,
+                        success: true,
                         plan,
-                        summaries,
-                        error: failures.length > 0 ? failureText.trim() : undefined,
+                        summaries: [],
+                        pendingConfirmationId: confirmation.id,
                     };
                 }
 
                 // 10. Execute with undo support
-                const { summaries, failures } = await commitDsos(
+                const { summaries, failures } = await commitDsoEditPlan({
                     plan,
                     userRequest,
-                    assistantMsgId,
+                    assistantMessageId: assistantMsgId,
                     reasoning,
-                    executeDsos
-                );
+                });
 
                 finish();
                 return {
                     success: failures.length === 0,
                     plan,
                     summaries,
-                    error: failures.length > 0 ? formatFailures(failures).trim() : undefined,
+                    error: failures.length > 0 ? formatResultFailures(failures) : undefined,
                 };
             } catch (error) {
                 const err = error instanceof Error ? error : new Error(String(error));
@@ -220,18 +223,11 @@ function finish(): void {
     llmStatusStore.set({ state: 'ready', modelId: 'qwen3-8b' });
 }
 
-/**
- * Build a human-readable suffix describing DSOs that threw during execution.
- * Returns an empty string when there were no failures.
- */
-function formatFailures(failures: DsoExecutionResult['failures']): string {
+function formatResultFailures(failures: DsoExecutionResult['failures']): string | undefined {
     if (failures.length === 0) {
-        return '';
+        return undefined;
     }
-    return (
-        ` However, ${failures.length} operation${failures.length === 1 ? '' : 's'} failed: ` +
-        `${failures.map((failure) => `${failure.op} (${failure.reason})`).join('; ')}.`
-    );
+    return failures.map((failure) => `${failure.op} (${failure.reason})`).join('; ');
 }
 
 /**
@@ -384,64 +380,6 @@ export function parseEditPlan(responseText: string): EditPlan {
     }
 
     throw createAiRuntimeError(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
-}
-
-async function commitDsos(
-    plan: EditPlan,
-    userRequest: string,
-    assistantMsgId: string,
-    reasoning: string | undefined,
-    runDsos: ExecuteDsosFn
-): Promise<DsoExecutionResult> {
-    // Execute and capture binary snapshots of ONLY the Automerge documents
-    // that were dirtied during the execution.
-    let summaries: string[] = [];
-    let failures: DsoExecutionResult['failures'] = [];
-    const { before: bundleBefore, after: bundleAfter } = await transactSnapshot(async () => {
-        const result = await runDsos(plan.dsos);
-        summaries = result.summaries;
-        failures = result.failures;
-    });
-
-    // Undo entry — typed ActionUndoEntry (serializable data, no anonymous closures)
-    const { groupId, groupLabel } = generateGroupId(userRequest);
-    commitActionUndoEntry({
-        label: `AI: ${plan.intent}`,
-        action: { type: 'restoreDsoSnapshot', payload: { bundle: bundleAfter } },
-        inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: bundleBefore } },
-        source: 'ai',
-        groupId,
-        groupLabel,
-    });
-
-    // Action history
-    pushAiActionGroup({
-        id: `dso-edit-${Date.now()}`,
-        prompt: userRequest,
-        actions: summaries.map((state) => ({ kind: 'jsonEdit' as const, label: state })),
-        groupId,
-        timestamp: Date.now(),
-        reverted: false,
-    });
-
-    // Log for future prompt context
-    for (const state of summaries) {
-        logEdit(state);
-    }
-
-    // Update chat — surface any per-DSO failures instead of an unconditional
-    // "Done!". A DSO that threw during execution is reported, not dropped.
-    const failureText = formatFailures(failures);
-    const appliedText = summaries.length > 0 ? `Done! ${summaries.join('. ')}.` : 'No changes were applied.';
-    updateChatMessage(assistantMsgId, {
-        content: `${appliedText}${failureText}`,
-        isStreaming: false,
-        reasoning,
-        isDsoAction: failures.length === 0 ? true : undefined,
-        error: failures.length > 0 ? failureText.trim() : undefined,
-    });
-
-    return { summaries, failures };
 }
 
 // ── LLM invocation per backend ───────────────────────────────────────────────

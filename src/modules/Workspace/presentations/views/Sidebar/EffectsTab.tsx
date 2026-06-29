@@ -248,7 +248,7 @@ export const EffectsTab = ({
             <div className="flex flex-col gap-1 animate-in fade-in duration-150">
                 <SearchSummary count={total} query={query} />
                 {total === 0 ? <EmptyState message="No effects found." /> : null}
-                {filteredEffects.length > 0 && (
+                {filteredEffects.length > 0 ? (
                     <>
                         <DawSectionDivider
                             label="Audio FX"
@@ -269,8 +269,8 @@ export const EffectsTab = ({
                             })}
                         </div>
                     </>
-                )}
-                {filteredFxPresets.length > 0 && (
+                ) : null}
+                {filteredFxPresets.length > 0 ? (
                     <>
                         <DawSectionDivider
                             label="FX Chain Presets"
@@ -292,7 +292,7 @@ export const EffectsTab = ({
                             ))}
                         </div>
                     </>
-                )}
+                ) : null}
                 <div className="px-1.5 mt-2">
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
                 </div>
@@ -383,7 +383,7 @@ export const EffectsTab = ({
                         />
                     );
                 })}
-                {uncategorized.length > 0 && (
+                {uncategorized.length > 0 ? (
                     <NavCard
                         icon={EFFECT_GROUPS[4]!.icon}
                         label="Other"
@@ -392,7 +392,7 @@ export const EffectsTab = ({
                         color="bg-gray-500/20 text-gray-400"
                         onClick={() => pushRoute({ id: 'effects-audiofx-other', title: 'Other' })}
                     />
-                )}
+                ) : null}
                 <div className="pt-1 border-t border-border/20 mt-1">
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
                 </div>
@@ -418,7 +418,7 @@ export const EffectsTab = ({
                 onClick={() => pushRoute({ id: 'effects-audiofx', title: 'Audio FX' })}
             />
 
-            {fxPresets.length > 0 && (
+            {fxPresets.length > 0 ? (
                 <NavCard
                     icon={Sparkles}
                     label="FX Chain Presets"
@@ -427,7 +427,7 @@ export const EffectsTab = ({
                     color="bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]"
                     onClick={() => pushRoute({ id: 'effects-fxpresets', title: 'FX Chain Presets' })}
                 />
-            )}
+            ) : null}
 
             <DawSectionDivider
                 label="Control & Routing"

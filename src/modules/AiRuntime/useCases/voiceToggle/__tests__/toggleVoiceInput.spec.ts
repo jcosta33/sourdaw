@@ -1,30 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { toggleVoiceInput } from '../toggleVoiceInput';
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        emit: vi.fn(),
-    },
-}));
+const mockEventBus = {
+    emit: vi.fn(),
+};
 
 describe('toggleVoiceInput', () => {
     beforeEach(() => {
+        injectDependencies(toggleVoiceInput, { eventBus: mockEventBus });
         vi.clearAllMocks();
     });
 
     it('emits voice.toggle with undefined active payload by default', () => {
         toggleVoiceInput();
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: undefined });
+        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: undefined });
     });
 
     it('emits voice.toggle with provided active state', () => {
         toggleVoiceInput(true);
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
+        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: true });
 
         toggleVoiceInput(false);
-        expect(eventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: false });
+        expect(mockEventBus.emit).toHaveBeenCalledWith('voice.toggle', { active: false });
     });
 });

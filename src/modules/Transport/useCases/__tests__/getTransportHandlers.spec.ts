@@ -20,6 +20,7 @@ describe('getTransportHandlers', () => {
             'togglePunch',
             'toggleCountIn',
             'setCountInBars',
+            'setTimeSignature',
             'addTimeSignatureChange',
             'removeTimeSignatureChange',
             'togglePreRoll',

@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+
+const LINK_IMPLEMENTATION_STATE: &str = "unsupported";
+const LINK_UNSUPPORTED_REASON: &str =
+    "Ableton Link native runtime integration is not implemented in this build";
 
 /// Ableton Link state managed across sessions.
 pub struct LinkState {
@@ -30,12 +34,29 @@ impl Default for LinkState {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LinkStatus {
+    pub supported: bool,
+    pub implementation: String,
     pub enabled: bool,
     pub tempo: f64,
     pub quantum: f64,
     pub beat: f64,
     pub phase: f64,
     pub num_peers: u32,
+    pub message: Option<String>,
+}
+
+fn status_from_session(session: &LinkSession) -> LinkStatus {
+    LinkStatus {
+        supported: false,
+        implementation: LINK_IMPLEMENTATION_STATE.to_string(),
+        enabled: false,
+        tempo: session.tempo,
+        quantum: session.quantum,
+        beat: session.beat,
+        phase: session.beat % session.quantum,
+        num_peers: session.num_peers,
+        message: Some(LINK_UNSUPPORTED_REASON.to_string()),
+    }
 }
 
 /// Enable Ableton Link sync.
@@ -43,19 +64,8 @@ pub struct LinkStatus {
 #[tauri::command]
 pub async fn enable_link(state: tauri::State<'_, LinkState>) -> Result<LinkStatus, String> {
     let mut session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
-    session.enabled = true;
-
-    // In production: rusty_link::AblLink::new(session.tempo)
-    // Then: link.enable(true); link.enable_start_stop_sync(true);
-
-    Ok(LinkStatus {
-        enabled: true,
-        tempo: session.tempo,
-        quantum: session.quantum,
-        beat: session.beat,
-        phase: session.beat % session.quantum,
-        num_peers: session.num_peers,
-    })
+    session.enabled = false;
+    Ok(status_from_session(&session))
 }
 
 /// Disable Ableton Link sync.
@@ -71,7 +81,6 @@ pub async fn disable_link(state: tauri::State<'_, LinkState>) -> Result<(), Stri
 pub async fn set_link_tempo(tempo: f64, state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let mut session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     session.tempo = tempo.clamp(20.0, 999.0);
-    // In production: link.capture_app_session_state() -> set_tempo -> commit
     Ok(())
 }
 
@@ -79,14 +88,7 @@ pub async fn set_link_tempo(tempo: f64, state: tauri::State<'_, LinkState>) -> R
 #[tauri::command]
 pub async fn get_link_status(state: tauri::State<'_, LinkState>) -> Result<LinkStatus, String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
-    Ok(LinkStatus {
-        enabled: session.enabled,
-        tempo: session.tempo,
-        quantum: session.quantum,
-        beat: session.beat,
-        phase: session.beat % session.quantum,
-        num_peers: session.num_peers,
-    })
+    Ok(status_from_session(&session))
 }
 
 /// Force-start playback across all Link peers.
@@ -94,9 +96,8 @@ pub async fn get_link_status(state: tauri::State<'_, LinkState>) -> Result<LinkS
 pub async fn link_start_playing(state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     if !session.enabled {
-        return Err("Link is not enabled".into());
+        return Err(LINK_UNSUPPORTED_REASON.to_string());
     }
-    // In production: session_state.set_is_playing_and_request_beat_at_time(true, ...)
     Ok(())
 }
 
@@ -105,8 +106,7 @@ pub async fn link_start_playing(state: tauri::State<'_, LinkState>) -> Result<()
 pub async fn link_stop_playing(state: tauri::State<'_, LinkState>) -> Result<(), String> {
     let session = state.inner.lock().map_err(|e| format!("Lock error: {e}"))?;
     if !session.enabled {
-        return Err("Link is not enabled".into());
+        return Err(LINK_UNSUPPORTED_REASON.to_string());
     }
-    // In production: session_state.set_is_playing(false)
     Ok(())
 }

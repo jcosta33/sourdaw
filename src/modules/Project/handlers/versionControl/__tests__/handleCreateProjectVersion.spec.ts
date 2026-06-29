@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { createVersionBranch } from '../../../useCases/versionControl/branching/createVersionBranch';
 import { createProjectVersion } from '../../../useCases/versionControl/createProjectVersion';
 import { restoreVersion } from '../../../useCases/versionControl/restoreVersion';
@@ -19,8 +22,13 @@ vi.mock('../../../useCases/versionControl/branching/createVersionBranch', () => 
     createVersionBranch: vi.fn(),
 }));
 
+const mockNotificationEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+};
+
 describe('version control handlers', () => {
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.mocked(createProjectVersion).mockClear();
         vi.mocked(restoreVersion).mockClear();
         vi.mocked(createVersionBranch).mockClear();

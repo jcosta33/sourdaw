@@ -2,6 +2,8 @@ use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use super::filesystem;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PostProcessRequest {
     pub input_path: String,
@@ -15,12 +17,12 @@ pub struct PostProcessRequest {
 /// normalize, and apply loop-friendly fades.
 #[tauri::command]
 pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String> {
-    let input = Path::new(&request.input_path);
-    let output = Path::new(&request.output_path);
+    let input = filesystem::resolve_existing_file_path(&request.input_path)?;
+    let output = filesystem::resolve_writable_file_path(&request.output_path)?;
     let beats_per_bar = request.beats_per_bar.unwrap_or(4);
 
     // 1. Read input WAV
-    let (mut audio, sample_rate, channels) = read_wav(input)?;
+    let (mut audio, sample_rate, channels) = read_wav(&input)?;
 
     // 2. Calculate target length in samples
     let seconds_per_bar = (beats_per_bar as f32 * 60.0) / request.target_bpm;
@@ -40,9 +42,9 @@ pub fn post_process_audio(request: PostProcessRequest) -> Result<String, String>
     apply_fade(&mut audio, fade_samples);
 
     // 6. Write output
-    write_wav(output, &audio, sample_rate, channels)?;
+    write_wav(&output, &audio, sample_rate, channels)?;
 
-    Ok(request.output_path)
+    Ok(output.to_string_lossy().into_owned())
 }
 
 // ── WAV I/O ──────────────────────────────────────────────────────────────

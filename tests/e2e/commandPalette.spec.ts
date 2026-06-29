@@ -13,6 +13,7 @@ test.describe('Command Palette', () => {
 
         // Wait for the workspace to initialize
         await expect(page.getByText('Baking')).toBeVisible({ timeout: 5000 });
+        await expect(launchScreen).not.toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
     });
 
@@ -33,6 +34,7 @@ test.describe('Command Palette', () => {
         // Wait for the list to filter
         const option = palette.getByRole('option', { name: /Add Audio Track/i });
         await expect(option).toBeVisible();
+        await expect(option).toHaveAttribute('aria-selected', 'true');
 
         // Execute by pressing Enter
         await page.keyboard.press('Enter');

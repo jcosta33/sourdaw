@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { zoomToFit } from '../zoomToFit';
 import { zoomToSelection } from '../zoomToSelection';
 
@@ -9,10 +11,6 @@ const mocks = vi.hoisted(() => ({
     trackStoreValue: {
         value: null as { tracks: { clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null,
     },
-}));
-
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: mocks.eventBus,
 }));
 
 vi.mock('../../../../repositories/getWorkspaceState', () => ({
@@ -28,7 +26,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 describe('Zoom Operations', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        injectDependencies(zoomToFit, { eventBus: mocks.eventBus });
+        vi.clearAllMocks();
+    });
 
     describe('zoomToFit', () => {
         it('emits zoom.toFit event', () => {

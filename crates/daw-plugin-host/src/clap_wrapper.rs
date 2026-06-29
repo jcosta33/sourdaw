@@ -10,6 +10,8 @@
 const MAX_BUFFER: usize = 4096;
 /// Maximum MIDI events processed per audio block. Events beyond this are silently dropped.
 const MAX_MIDI: usize = 64;
+/// Maximum parameter events processed per audio block. Extra pending values remain host-side.
+const MAX_PARAMETER_EVENTS: usize = 64;
 
 use crate::clap_host::create_host_descriptor;
 use crate::params::PluginParameter;
@@ -40,10 +42,16 @@ use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::ptr;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ClapParameterUpdate {
+    pub param_id: u32,
+    pub value: f64,
+}
+
 /// Holds a loaded CLAP plugin instance and its associated resources.
 pub struct ClapWrapper {
     /// The dynamically loaded shared library — must outlive the plugin instance.
-    _library: Library,
+    _library: Option<Library>,
     /// Pointer to the clap_plugin struct.
     plugin: *const clap_plugin,
     /// Host descriptor — must outlive the plugin.
@@ -68,6 +76,16 @@ pub struct ClapWrapper {
     output_scratch: Box<[[f32; MAX_BUFFER]; 2]>,
     /// Preallocated MIDI event scratch list. Cleared + refilled each block, never reallocated.
     midi_scratch: Vec<clap_event_note>,
+    /// Preallocated parameter event scratch list. Cleared + refilled each block, never reallocated.
+    parameter_scratch: Vec<clap_event_param_value>,
+    #[cfg(feature = "engine-owned-command-fixture")]
+    command_fixture: Option<EngineOwnedCommandFixture>,
+}
+
+#[cfg(feature = "engine-owned-command-fixture")]
+struct EngineOwnedCommandFixture {
+    state: Vec<u8>,
+    has_gui: bool,
 }
 
 // SAFETY: The clap_plugin is required to be thread-safe by the CLAP spec.
@@ -158,6 +176,14 @@ unsafe extern "C" fn istream_read(
 struct StreamCursor {
     data: Vec<u8>,
     pos: usize,
+}
+
+fn state_load_result(plugin_name: &str, loaded: bool) -> Result<(), String> {
+    if loaded {
+        return Ok(());
+    }
+
+    Err(format!("[CLAP] state.load() failed for {}", plugin_name))
 }
 
 impl ClapWrapper {
@@ -285,7 +311,7 @@ impl ClapWrapper {
             eprintln!("[CLAP] Loaded plugin: {} (activated={})", name, activated);
 
             Ok(Self {
-                _library: library,
+                _library: Some(library),
                 plugin,
                 host,
                 activated,
@@ -298,7 +324,36 @@ impl ClapWrapper {
                 input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 midi_scratch: Vec::with_capacity(MAX_MIDI),
+                parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+                #[cfg(feature = "engine-owned-command-fixture")]
+                command_fixture: None,
             })
+        }
+    }
+
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn new_engine_owned_command_fixture(
+        name: &str,
+        state: Vec<u8>,
+        has_gui: bool,
+    ) -> Self {
+        Self {
+            _library: None,
+            plugin: ptr::null(),
+            host: Box::new(create_host_descriptor()),
+            activated: true,
+            name: name.to_string(),
+            sample_rate: 0.0,
+            params_ext: ptr::null(),
+            state_ext: ptr::null(),
+            gui_ext: ptr::null(),
+            gui_open: false,
+            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            command_fixture: Some(EngineOwnedCommandFixture { state, has_gui }),
         }
     }
 
@@ -320,10 +375,20 @@ impl ClapWrapper {
         &self.name
     }
 
+    /// Returns true if the plugin was successfully activated.
+    pub fn is_activated(&self) -> bool {
+        self.activated
+    }
+
     // ── GUI support ─────────────────────────────────────────────────────
 
     /// Returns true if the plugin provides a custom GUI.
     pub fn has_gui(&self) -> bool {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.has_gui;
+        }
+
         !self.gui_ext.is_null()
     }
 
@@ -335,6 +400,15 @@ impl ClapWrapper {
     /// Get the preferred GUI size (width, height) if the plugin has a GUI.
     /// Must be called AFTER gui.create() for most plugins.
     pub fn get_gui_size(&self) -> Option<(u32, u32)> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return if fixture.has_gui {
+                Some((800, 600))
+            } else {
+                None
+            };
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() {
             return None;
         }
@@ -382,6 +456,19 @@ impl ClapWrapper {
     /// 5. gui.set_parent(window)
     /// 6. gui.show()
     pub fn open_gui(&mut self, handle_ptr: *mut c_void) -> Result<(u32, u32), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            if !fixture.has_gui {
+                return Err("Plugin does not support GUI".to_string());
+            }
+            if self.gui_open {
+                return Err("GUI is already open".to_string());
+            }
+
+            self.gui_open = true;
+            return Ok((800, 600));
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() {
             return Err("Plugin does not support GUI".to_string());
         }
@@ -469,6 +556,12 @@ impl ClapWrapper {
 
     /// Close (hide + destroy) the plugin GUI.
     pub fn close_gui(&mut self) {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if self.command_fixture.is_some() {
+            self.gui_open = false;
+            return;
+        }
+
         if self.gui_ext.is_null() || self.plugin.is_null() || !self.gui_open {
             return;
         }
@@ -499,7 +592,37 @@ impl ClapWrapper {
         num_samples: usize,
         midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
     ) {
-        if !self.activated || self.plugin.is_null() || midi_events.is_empty() {
+        self.process_with_midi_and_parameters(inputs, outputs, num_samples, midi_events, &[]);
+    }
+
+    /// Process audio with pending CLAP parameter value events.
+    pub fn process_with_parameter_updates(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        parameter_updates: &[ClapParameterUpdate],
+    ) {
+        self.process_with_midi_and_parameters(inputs, outputs, num_samples, &[], parameter_updates);
+    }
+
+    /// Process audio with MIDI and CLAP parameter events.
+    ///
+    /// RT-safe: reuses preallocated MIDI and parameter scratch vectors. Values beyond
+    /// the fixed capacities are ignored by this block; the engine-side pending queue
+    /// is sized to this same bound, so accepted parameter updates fit here.
+    pub fn process_with_midi_and_parameters(
+        &mut self,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+        num_samples: usize,
+        midi_events: &[(u8, u8, i16, bool)], // (note, velocity, channel, is_on)
+        parameter_updates: &[ClapParameterUpdate],
+    ) {
+        if !self.activated
+            || self.plugin.is_null()
+            || (midi_events.is_empty() && parameter_updates.is_empty())
+        {
             self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
             return;
         }
@@ -526,20 +649,43 @@ impl ClapWrapper {
                 velocity: vel as f64 / 127.0,
             });
         }
+        self.parameter_scratch.clear();
+        for update in parameter_updates.iter().take(MAX_PARAMETER_EVENTS) {
+            self.parameter_scratch.push(clap_event_param_value {
+                header: clap_event_header {
+                    size: mem::size_of::<clap_event_param_value>() as u32,
+                    time: 0,
+                    space_id: CLAP_CORE_EVENT_SPACE_ID,
+                    type_: CLAP_EVENT_PARAM_VALUE,
+                    flags: 0,
+                },
+                param_id: update.param_id,
+                cookie: ptr::null_mut(),
+                note_id: -1,
+                port_index: -1,
+                channel: -1,
+                key: -1,
+                value: update.value,
+            });
+        }
 
         // Raw pointer into the scratch vec — safe because process_audio_internal
-        // does not touch midi_scratch (it only uses input_scratch/output_scratch/plugin).
-        let events_ptr: *const clap_event_note = self.midi_scratch.as_ptr();
-        let events_count = self.midi_scratch.len() as u32;
+        // does not touch event scratch (it only uses input_scratch/output_scratch/plugin).
+        let midi_events_ptr: *const clap_event_note = self.midi_scratch.as_ptr();
+        let midi_events_count = self.midi_scratch.len() as u32;
+        let parameter_events_ptr: *const clap_event_param_value = self.parameter_scratch.as_ptr();
+        let parameter_events_count = self.parameter_scratch.len() as u32;
 
         struct EventListCtx {
-            events: *const clap_event_note,
-            count: u32,
+            midi_events: *const clap_event_note,
+            midi_count: u32,
+            parameter_events: *const clap_event_param_value,
+            parameter_count: u32,
         }
 
         unsafe extern "C" fn event_list_size(list: *const clap_input_events) -> u32 {
             let ctx = (*list).ctx as *const EventListCtx;
-            (*ctx).count
+            (*ctx).midi_count + (*ctx).parameter_count
         }
 
         unsafe extern "C" fn event_list_get(
@@ -547,15 +693,23 @@ impl ClapWrapper {
             index: u32,
         ) -> *const clap_event_header {
             let ctx = (*list).ctx as *const EventListCtx;
-            if index >= (*ctx).count {
+            if index < (*ctx).parameter_count {
+                return &(*(*ctx).parameter_events.add(index as usize)).header
+                    as *const clap_event_header;
+            }
+
+            let midi_index = index - (*ctx).parameter_count;
+            if midi_index >= (*ctx).midi_count {
                 return ptr::null();
             }
-            &(*(*ctx).events.add(index as usize)).header as *const clap_event_header
+            &(*(*ctx).midi_events.add(midi_index as usize)).header as *const clap_event_header
         }
 
         let mut ctx = EventListCtx {
-            events: events_ptr,
-            count: events_count,
+            midi_events: midi_events_ptr,
+            midi_count: midi_events_count,
+            parameter_events: parameter_events_ptr,
+            parameter_count: parameter_events_count,
         };
         let input_events = clap_input_events {
             ctx: &mut ctx as *mut EventListCtx as *mut c_void,
@@ -703,6 +857,11 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn get_parameters(&self) -> Vec<PluginParameter> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if self.command_fixture.is_some() {
+            return Vec::new();
+        }
+
         if self.params_ext.is_null() || self.plugin.is_null() {
             return vec![];
         }
@@ -763,6 +922,11 @@ impl AudioPlugin for ClapWrapper {
     }
 
     fn get_state(&self) -> Vec<u8> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_ref() {
+            return fixture.state.clone();
+        }
+
         if self.state_ext.is_null() || self.plugin.is_null() {
             return vec![];
         }
@@ -790,16 +954,22 @@ impl AudioPlugin for ClapWrapper {
         }
     }
 
-    fn set_state(&mut self, state_data: &[u8]) {
+    fn set_state(&mut self, state_data: &[u8]) -> Result<(), String> {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.state = state_data.to_vec();
+            return Ok(());
+        }
+
         if self.state_ext.is_null() || self.plugin.is_null() {
-            return;
+            return Ok(());
         }
 
         unsafe {
             let state = &*self.state_ext;
             let load_fn = match state.load {
                 Some(f) => f,
-                None => return,
+                None => return Ok(()),
             };
 
             let mut cursor = StreamCursor {
@@ -812,11 +982,10 @@ impl AudioPlugin for ClapWrapper {
                 read: Some(istream_read),
             };
 
-            let ok = load_fn(self.plugin, &istream);
-            if !ok {
-                eprintln!("[CLAP] state.load() failed for {}", self.name);
-            }
+            state_load_result(&self.name, load_fn(self.plugin, &istream))?;
         }
+
+        Ok(())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -825,6 +994,24 @@ impl AudioPlugin for ClapWrapper {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_load_result_returns_ok_when_clap_load_succeeds() {
+        assert_eq!(state_load_result("fixture", true), Ok(()));
+    }
+
+    #[test]
+    fn state_load_result_returns_error_when_clap_load_fails() {
+        assert_eq!(
+            state_load_result("fixture", false),
+            Err("[CLAP] state.load() failed for fixture".to_string())
+        );
     }
 }
 

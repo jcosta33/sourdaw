@@ -99,7 +99,7 @@ const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactElement => {
             role="img"
             aria-label="Sourdaw logo"
         >
-            {!paused && <style>{styleBlock}</style>}
+            {!paused ? <style>{styleBlock}</style> : null}
             <img
                 src={LOAF.src}
                 alt=""

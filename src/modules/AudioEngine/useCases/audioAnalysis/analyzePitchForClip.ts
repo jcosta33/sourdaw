@@ -1,14 +1,11 @@
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
-import { invoke } from '@tauri-apps/api/core';
-// eslint-disable-next-line @typescript-eslint/no-restricted-imports
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
 
+import { analyzeNativePitch } from '../../repositories/audioAnalysis/analyze-native-pitch';
+import { listenPitchAnalysisProgress } from '../../repositories/audioAnalysis/listen-pitch-analysis-progress';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 
 export type PitchPoint = {
@@ -29,10 +26,6 @@ export type PitchSegment = {
     start_time_ms: number;
     end_time_ms: number;
     shift_semitones: number;
-};
-
-type AnalysisProgress = {
-    progress: number;
 };
 
 type AnalyzePitchForClipOutput =
@@ -97,25 +90,27 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
         });
     }
 
-    let unlisten: UnlistenFn | null = null;
+    let unlisten: (() => void) | null = null;
 
     try {
         let contour: PitchContour;
 
         if (isTauri()) {
-            unlisten = await listen<AnalysisProgress>('pitch-analysis-progress', (event) => {
-                const currentState = kneadStore.value;
-                if (currentState) {
-                    kneadStore.set({
-                        ...currentState,
-                        analysisProgress: event.payload.progress,
-                    });
-                }
+            unlisten = await listenPitchAnalysisProgress({
+                onProgress: (progress) => {
+                    const currentState = kneadStore.value;
+                    if (currentState) {
+                        kneadStore.set({
+                            ...currentState,
+                            analysisProgress: progress,
+                        });
+                    }
+                },
             });
 
-            contour = (await invoke('analyze_pitch', {
+            contour = await analyzeNativePitch({
                 audioPath: targetClip.fileId ?? targetClip.audioBufferId,
-            })) as PitchContour;
+            });
         } else {
             // WASM fallback
             const buffer = getCachedAudioBuffer(targetClip);

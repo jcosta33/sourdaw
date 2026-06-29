@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type LibraryRoot, type SampleRecord, isAudioFile } from '../../models/LibraryTypes';
 import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
+import { readTauriDirectory } from '../../repositories/readTauriDirectory';
 import {
     addSamples,
     removeSamples,
@@ -234,50 +235,56 @@ export async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
     setScanProgress(true, 0);
 
     try {
-        const { readDir } = await import('@tauri-apps/plugin-fs');
         const batch: SampleRecord[] = [];
         const scanned = new Map<string, SampleRecord>();
         let totalFound = 0;
         const skippedDirs: string[] = [];
 
         async function scanDir(dirPath: string, relativePath: string): Promise<void> {
+            let entries: Awaited<ReturnType<typeof readTauriDirectory>>;
             try {
-                const entries = await readDir(dirPath);
-                for (const entry of entries) {
-                    if (signal.aborted) {
-                        return;
-                    }
-
-                    const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-
-                    if (entry.isDirectory) {
-                        if (root.settings.recursive) {
-                            await scanDir(`${dirPath}/${entry.name}`, entryRelPath);
-                        }
-                    } else if (isAudioFile(entry.name)) {
-                        totalFound++;
-                        // readDir exposes no mtime, so changed-file detection is
-                        // unavailable for Tauri roots; orphan removal still works.
-                        const record = createSampleRecord(root.id, entryRelPath, entry.name);
-                        scanned.set(record.id, record);
-                        batch.push(record);
-
-                        if (batch.length >= 100) {
-                            addSamples([...batch]);
-                            batch.length = 0;
-                            // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
-                            // The previous 0.95 cap made the bar plateau visibly for mid-size scans.
-                            setScanProgress(true, totalFound / (totalFound + 20));
-                        }
-                    }
-                }
+                entries = await readTauriDirectory({ path: dirPath });
             } catch (error) {
+                if (relativePath === '') {
+                    throw error;
+                }
+
                 // One unreadable subdirectory must not abort the whole scan, but it
                 // must not be invisible either: a permission-denied subtree would
                 // otherwise leave the root reporting "ready" while silently missing
                 // files. Record and log it; the caller surfaces a partial-scan notice.
-                skippedDirs.push(relativePath || root.name);
+                skippedDirs.push(relativePath);
                 logger.error(error instanceof Error ? error : new Error(String(error)));
+                return;
+            }
+
+            for (const entry of entries) {
+                if (signal.aborted) {
+                    return;
+                }
+
+                const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+                if (entry.isDirectory) {
+                    if (root.settings.recursive) {
+                        await scanDir(`${dirPath}/${entry.name}`, entryRelPath);
+                    }
+                } else if (isAudioFile(entry.name)) {
+                    totalFound++;
+                    // readDir exposes no mtime, so changed-file detection is
+                    // unavailable for Tauri roots; orphan removal still works.
+                    const record = createSampleRecord(root.id, entryRelPath, entry.name);
+                    scanned.set(record.id, record);
+                    batch.push(record);
+
+                    if (batch.length >= 100) {
+                        addSamples([...batch]);
+                        batch.length = 0;
+                        // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
+                        // The previous 0.95 cap made the bar plateau visibly for mid-size scans.
+                        setScanProgress(true, totalFound / (totalFound + 20));
+                    }
+                }
             }
         }
 

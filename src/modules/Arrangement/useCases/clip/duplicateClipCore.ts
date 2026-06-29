@@ -7,7 +7,25 @@ import { getWarpState, setWarpState } from '../../stores/warpStates';
 
 import { addClip } from './addClip';
 
-export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip) => number): void {
+type DuplicateClipCoreInput = {
+    clipId: string;
+    targetClipId?: string;
+    computeStartBeat: (clip: Clip) => number;
+};
+
+export function duplicateClipCore(input: DuplicateClipCoreInput): void;
+export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip) => number): void;
+export function duplicateClipCore(
+    input: DuplicateClipCoreInput | string,
+    legacyComputeStartBeat?: (clip: Clip) => number
+): void {
+    const clipId = typeof input === 'string' ? input : input.clipId;
+    const targetClipId = typeof input === 'string' ? undefined : input.targetClipId;
+    const computeStartBeat = typeof input === 'string' ? legacyComputeStartBeat : input.computeStartBeat;
+    if (!computeStartBeat) {
+        return;
+    }
+
     const state = getTrackState();
     if (!state) {
         return;
@@ -23,6 +41,7 @@ export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip)
             // passed, silently dropping fades, gain, mute, lock, color, offsets,
             // loop, and stretch settings.
             const newClip = addClip({
+                id: targetClipId,
                 trackId: track.id,
                 startBeat,
                 endBeat: startBeat + duration,

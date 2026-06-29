@@ -8,7 +8,7 @@ import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
-import { SECTION_COLORS } from '../../models/colorPalette';
+import { SECTION_COLORS } from '../../models/ColorPalette';
 import { type ArrangementSection } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { addSection } from '../../useCases/marker/sectionOperations/addSection';
@@ -397,10 +397,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                         top: contextMenu.y,
                     }}
                 >
-                    {contextMenu.kind === 'empty' && (
+                    {contextMenu.kind === 'empty' ? (
                         <DawMenuButton onClick={handleAddSection}>Add Section</DawMenuButton>
-                    )}
-                    {contextMenu.kind === 'section' && (
+                    ) : null}
+                    {contextMenu.kind === 'section' ? (
                         <>
                             <DawMenuButton onClick={handleStartRename}>Rename</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
@@ -441,7 +441,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 Delete
                             </DawMenuButton>
                         </>
-                    )}
+                    ) : null}
                 </div>
             ) : null}
         </TimelineChromeSurface>

@@ -708,6 +708,27 @@ module.exports = {
                     'src/setupTests',
                     'vite-env',
                     'src/routes/',
+                    // Dynamic Worker entrypoints referenced through
+                    // new Worker(new URL(..., import.meta.url)).
+                    '^src/modules/Transport/workers/schedulerWorker\\.ts$',
+                    '^src/modules/MIDI/workers/midiImportWorker\\.ts$',
+                    '^src/modules/BrowserAi/workers/tfjsInferenceWorker\\.ts$',
+                    '^src/modules/AudioEngine/workers/recordingWorker\\.ts$',
+                    // Module-root shared test fixtures imported only from spec
+                    // files, which dependency-cruiser excludes from this graph.
+                    '^src/modules/SoundLibrary/__tests__/createTestSample\\.ts$',
+                    '^src/modules/Arrangement/__tests__/TrackDummy\\.ts$',
+                    '^src/modules/Arrangement/__tests__/PluginDummy\\.ts$',
+                    '^src/modules/Arrangement/__tests__/ClipDummy\\.ts$',
+                    // Reachable type/helper files imported by runtime code, but
+                    // currently invisible to dependency-cruiser's orphan graph.
+                    '^src/utils/DOM/GestureEvent\\.ts$',
+                    '^src/modules/Workspace/presentations/views/Sidebar/SidebarTypes\\.ts$',
+                    '^src/modules/Project/useCases/dawProject/dawProjectTypes\\.ts$',
+                    '^src/modules/MIDI/useCases/grooveExtraction/helpers\\.ts$',
+                    '^src/modules/Collaboration/useCases/collaborationQueries\\.ts$',
+                    '^src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/helpers\\.ts$',
+                    '^src/infra/store/storage/LocalStorageKeys\\.ts$',
                 ],
             },
             to: {},

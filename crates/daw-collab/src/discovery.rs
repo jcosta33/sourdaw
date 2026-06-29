@@ -26,6 +26,7 @@ pub struct NearbySession {
 pub struct LanDiscovery {
     daemon: ServiceDaemon,
     advertised_fullname: Option<String>,
+    browsing: bool,
     discovered: Arc<Mutex<HashMap<String, NearbySession>>>,
 }
 
@@ -35,6 +36,7 @@ impl LanDiscovery {
         Ok(Self {
             daemon,
             advertised_fullname: None,
+            browsing: false,
             discovered: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -92,13 +94,19 @@ impl LanDiscovery {
     }
 
     /// Start browsing for nearby sessions. Discovered sessions are stored internally.
-    pub fn start_browsing(&self) -> Result<(), String> {
+    pub fn start_browsing(&mut self) -> Result<(), String> {
+        if self.browsing {
+            return Ok(());
+        }
+
         let receiver = self
             .daemon
             .browse(SERVICE_TYPE)
             .map_err(|e| format!("Failed to browse mDNS: {}", e))?;
 
         let discovered = self.discovered.clone();
+
+        self.browsing = true;
 
         std::thread::spawn(move || {
             while let Ok(event) = receiver.recv() {
@@ -134,10 +142,31 @@ impl LanDiscovery {
                             map.remove(&fullname);
                         }
                     }
+                    ServiceEvent::SearchStopped(_) => {
+                        break;
+                    }
                     _ => {}
                 }
             }
         });
+
+        Ok(())
+    }
+
+    /// Stop browsing for nearby sessions and clear stale discovery results.
+    pub fn stop_browsing(&mut self) -> Result<(), String> {
+        if !self.browsing {
+            return Ok(());
+        }
+
+        self.daemon
+            .stop_browse(SERVICE_TYPE)
+            .map_err(|e| format!("Failed to stop mDNS browsing: {}", e))?;
+
+        self.browsing = false;
+        if let Ok(mut map) = self.discovered.lock() {
+            map.clear();
+        }
 
         Ok(())
     }
@@ -151,7 +180,8 @@ impl LanDiscovery {
     }
 
     /// Shut down the mDNS daemon.
-    pub fn shutdown(self) -> Result<(), String> {
+    pub fn shutdown(mut self) -> Result<(), String> {
+        self.stop_browsing()?;
         self.daemon
             .shutdown()
             .map_err(|e| format!("Failed to shutdown mDNS: {}", e))?;

@@ -48,6 +48,9 @@ export const executeAppAction = inject({ logger })(
 
             try {
                 await handler.execute(action);
+            } catch (error) {
+                logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                throw error;
             } finally {
                 clearSemanticContext();
             }

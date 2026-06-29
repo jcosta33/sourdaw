@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PatternBrowser } from '../PatternBrowser';
 
 // Mock external dependencies
-vi.mock('../../../models/midiPatternLibrary', () => ({
+vi.mock('../../../models/MidiPatternLibrary', () => ({
     PATTERN_CATEGORIES: [
         { id: 'chords', label: 'Chords' },
         { id: 'bass', label: 'Bass' },

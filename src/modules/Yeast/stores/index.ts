@@ -1,4 +1,5 @@
 export { yeastStore, getYeastRack, getYeastWorkletNodeAsync } from './yeastStore';
+export { setYeastEventBus } from './yeastEventBus';
 // `YeastProcessorType` is re-exported deliberately: `YeastState.processors[].type`
 // carries it, so the store's public contract names the processor-kind union
 // explicitly rather than leaking the underlying use-case type transitively.

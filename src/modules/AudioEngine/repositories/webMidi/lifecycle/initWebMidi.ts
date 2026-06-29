@@ -1,4 +1,4 @@
-import { eventBus } from '#/app/registerDependencies';
+import { Container } from '#/infra/di/Container';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
@@ -15,6 +15,7 @@ import {
     setTauriMode,
     setTargetTrackId,
 } from '../state';
+import { WebMidiEventBus } from '../webMidiEventBus';
 
 import { attachInput, selectMidiInputTauri } from './helpers';
 
@@ -77,6 +78,7 @@ export async function initWebMidi(): Promise<boolean> {
     // each off to the current target track's instrument device node.
     if (!(initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub) {
         (initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub = true;
+        const eventBus = Container.get(WebMidiEventBus);
         eventBus.on('yeast.notesOff', ({ notes }) => {
             routeYeastNoteOffsForTargetTrack(notes, {
                 getTrackStoreState: () => trackStore.value,

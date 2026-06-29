@@ -1,27 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { onVoiceToggle } from '../onVoiceToggle';
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: {
-        on: vi.fn(),
-    },
-}));
+const mockEventBus = {
+    on: vi.fn(),
+};
 
 describe('onVoiceToggle', () => {
     beforeEach(() => {
+        injectDependencies(onVoiceToggle, { eventBus: mockEventBus });
         vi.clearAllMocks();
     });
 
     it('listens to voice.toggle event on the event bus', () => {
         const handler = vi.fn();
-        vi.mocked(eventBus.on).mockReturnValue(vi.fn<() => void>()); // mock unlisten
+        mockEventBus.on.mockReturnValue(vi.fn<() => void>()); // mock unlisten
 
         const unlisten = onVoiceToggle(handler);
 
-        expect(eventBus.on).toHaveBeenCalledWith('voice.toggle', handler);
+        expect(mockEventBus.on).toHaveBeenCalledWith('voice.toggle', handler);
         expect(typeof unlisten).toBe('function');
     });
 });

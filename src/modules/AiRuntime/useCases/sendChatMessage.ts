@@ -3,7 +3,7 @@ import { describeAction, executeAppAction, generateGroupId } from '#/modules/Com
 
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
-import { CHAT_SYSTEM_PROMPT } from '../models/chatSystemPrompt';
+import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
@@ -18,6 +18,7 @@ import {
     setChatGenerating,
     setActiveAborter,
 } from '../stores/chatStore';
+import { proposePendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { getProjectContext } from './getProjectContext';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
@@ -230,6 +231,27 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     timestamp: Date.now(),
                     isDsoAction: true,
                 });
+
+                if (result.requiresConfirmation) {
+                    const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
+                    const actionLabels = result.actions.map((action) => describeAction(action));
+                    proposePendingActionConfirmation({
+                        id: confirmationId,
+                        prompt: userText,
+                        assistantMessageId: assistantMsgId,
+                        actions: result.actions,
+                        actionLabels,
+                    });
+
+                    updateChatMessage(assistantMsgId, {
+                        isStreaming: false,
+                        pendingActionConfirmationId: confirmationId,
+                        pendingActionConfirmationStatus: 'proposed',
+                        content: `This prompt requires confirmation before execution:\n\n${result.actions.map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`).join('\n')}`,
+                    });
+                    return;
+                }
+
                 const group = generateGroupId(userText);
                 const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
 

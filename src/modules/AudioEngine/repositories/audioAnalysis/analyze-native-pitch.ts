@@ -1,0 +1,66 @@
+import { invoke } from '@tauri-apps/api/core';
+
+type AnalyzeNativePitchInput = {
+    audioPath: string;
+};
+
+type NativePitchPoint = {
+    time_ms: number;
+    frequency_hz: number;
+    confidence: number;
+    voiced: boolean;
+};
+
+type NativePitchContour = {
+    points: NativePitchPoint[];
+    sample_rate: number;
+    hop_size: number;
+    algorithm: string;
+};
+
+type AnalyzeNativePitchOutput = Promise<NativePitchContour>;
+
+function isNativePitchPoint(value: unknown): value is NativePitchPoint {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    return (
+        'time_ms' in value &&
+        Number.isFinite(value.time_ms) &&
+        'frequency_hz' in value &&
+        Number.isFinite(value.frequency_hz) &&
+        'confidence' in value &&
+        Number.isFinite(value.confidence) &&
+        'voiced' in value &&
+        typeof value.voiced === 'boolean'
+    );
+}
+
+function isNativePitchContour(value: unknown): value is NativePitchContour {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    return (
+        'points' in value &&
+        Array.isArray(value.points) &&
+        value.points.every(isNativePitchPoint) &&
+        'sample_rate' in value &&
+        Number.isFinite(value.sample_rate) &&
+        'hop_size' in value &&
+        Number.isFinite(value.hop_size) &&
+        'algorithm' in value &&
+        typeof value.algorithm === 'string'
+    );
+}
+
+export async function analyzeNativePitch({ audioPath }: AnalyzeNativePitchInput): AnalyzeNativePitchOutput {
+    const result = await invoke('analyze_pitch', { audioPath });
+
+    if (!isNativePitchContour(result)) {
+        throw new TypeError('analyze_pitch returned an invalid payload');
+    }
+
+    return result;
+}

@@ -40,10 +40,224 @@ type ServerMessage =
     | { type: 'state-update'; peerId: string; state: unknown }
     | { type: 'error'; message: string };
 
+type JsonObject = { [key: string]: unknown };
+
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
 
 const PORT = parseInt(process.env.PORT ?? '8787', 10);
+
+function is_json_object(value: unknown): value is JsonObject {
+    if (typeof value !== 'object') {
+        return false;
+    }
+
+    if (value === null) {
+        return false;
+    }
+
+    if (Array.isArray(value)) {
+        return false;
+    }
+
+    return true;
+}
+
+function has_field(input: { object_value: JsonObject; key: string }): boolean {
+    return Object.prototype.hasOwnProperty.call(input.object_value, input.key);
+}
+
+function get_string_field(input: { object_value: JsonObject; key: string }): string | null {
+    const value = input.object_value[input.key];
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    if (value.length === 0) {
+        return null;
+    }
+
+    return value;
+}
+
+function get_number_field(input: { object_value: JsonObject; key: string }): number | null {
+    const value = input.object_value[input.key];
+    if (typeof value !== 'number') {
+        return null;
+    }
+
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+
+    return value;
+}
+
+type GetPeerFieldsOutput = { peerId: string; sessionId: string } | null;
+
+function get_peer_fields(object_value: JsonObject): GetPeerFieldsOutput {
+    const peerId = get_string_field({ object_value, key: 'peerId' });
+    if (peerId === null) {
+        return null;
+    }
+
+    const sessionId = get_string_field({ object_value, key: 'sessionId' });
+    if (sessionId === null) {
+        return null;
+    }
+
+    return { peerId, sessionId };
+}
+
+type ParseCursorOutput = { trackId: string; beat: number } | null;
+
+function parse_cursor(value: unknown): ParseCursorOutput {
+    if (!is_json_object(value)) {
+        return null;
+    }
+
+    const trackId = get_string_field({ object_value: value, key: 'trackId' });
+    if (trackId === null) {
+        return null;
+    }
+
+    const beat = get_number_field({ object_value: value, key: 'beat' });
+    if (beat === null) {
+        return null;
+    }
+
+    return { trackId, beat };
+}
+
+type ParseClientMessageOutput = ClientMessage | null;
+
+function parse_client_message(value: unknown): ParseClientMessageOutput {
+    if (!is_json_object(value)) {
+        return null;
+    }
+
+    const type = get_string_field({ object_value: value, key: 'type' });
+    if (type === null) {
+        return null;
+    }
+
+    const peer_fields = get_peer_fields(value);
+    if (peer_fields === null) {
+        return null;
+    }
+
+    if (type === 'join') {
+        const name = get_string_field({ object_value: value, key: 'name' });
+        if (name === null) {
+            return null;
+        }
+
+        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId, name };
+    }
+
+    if (type === 'leave') {
+        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId };
+    }
+
+    if (type === 'action') {
+        const timestamp = get_number_field({ object_value: value, key: 'timestamp' });
+        if (timestamp === null) {
+            return null;
+        }
+
+        if (!has_field({ object_value: value, key: 'action' })) {
+            return null;
+        }
+
+        return {
+            type,
+            peerId: peer_fields.peerId,
+            sessionId: peer_fields.sessionId,
+            action: value.action,
+            timestamp,
+        };
+    }
+
+    if (type === 'cursor') {
+        const cursor = parse_cursor(value.cursor);
+        if (cursor === null) {
+            return null;
+        }
+
+        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId, cursor };
+    }
+
+    if (type === 'sync-request') {
+        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId };
+    }
+
+    if (type === 'sync-response') {
+        const targetPeerId = get_string_field({ object_value: value, key: 'targetPeerId' });
+        if (targetPeerId === null) {
+            return null;
+        }
+
+        if (!has_field({ object_value: value, key: 'state' })) {
+            return null;
+        }
+
+        return {
+            type,
+            peerId: peer_fields.peerId,
+            sessionId: peer_fields.sessionId,
+            targetPeerId,
+            state: value.state,
+        };
+    }
+
+    if (type === 'state-update') {
+        if (!has_field({ object_value: value, key: 'state' })) {
+            return null;
+        }
+
+        return {
+            type,
+            peerId: peer_fields.peerId,
+            sessionId: peer_fields.sessionId,
+            state: value.state,
+        };
+    }
+
+    return null;
+}
+
+type GetVerifiedSessionInput = {
+    ws: WebSocket;
+    msg: Exclude<ClientMessage, { type: 'join' }>;
+};
+
+type GetVerifiedSessionOutput = Session | null;
+
+function get_verified_session(input: GetVerifiedSessionInput): GetVerifiedSessionOutput {
+    const peer = peerToSession.get(input.ws);
+    if (!peer) {
+        sendTo(input.ws, { type: 'error', message: 'Peer not joined' });
+        return null;
+    }
+
+    if (peer.peerId !== input.msg.peerId || peer.sessionId !== input.msg.sessionId) {
+        sendTo(input.ws, { type: 'error', message: 'Peer/session mismatch' });
+        return null;
+    }
+
+    const session = sessions.get(input.msg.sessionId);
+    if (!session) {
+        sendTo(input.ws, { type: 'error', message: 'Session not found' });
+        return null;
+    }
+
+    if (session.peers.get(input.msg.peerId)?.ws !== input.ws) {
+        sendTo(input.ws, { type: 'error', message: 'Peer not in session' });
+        return null;
+    }
+
+    return session;
+}
 
 function sendTo(ws: WebSocket, msg: ServerMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
@@ -183,7 +397,14 @@ function handleStateUpdate(session: Session, msg: Extract<ClientMessage, { type:
 function handleMessage(ws: WebSocket, raw: string): void {
     let msg: ClientMessage;
     try {
-        msg = JSON.parse(raw) as ClientMessage;
+        const parsed: unknown = JSON.parse(raw);
+        const validated_msg = parse_client_message(parsed);
+        if (validated_msg === null) {
+            sendTo(ws, { type: 'error', message: 'Invalid message' });
+            return;
+        }
+
+        msg = validated_msg;
     } catch {
         sendTo(ws, { type: 'error', message: 'Invalid JSON' });
         return;
@@ -195,13 +416,16 @@ function handleMessage(ws: WebSocket, raw: string): void {
     }
 
     if (msg.type === 'leave') {
+        if (get_verified_session({ ws, msg }) === null) {
+            return;
+        }
+
         handleLeave(ws, msg.peerId, msg.sessionId);
         return;
     }
 
-    const session = sessions.get(msg.sessionId);
-    if (!session) {
-        sendTo(ws, { type: 'error', message: 'Session not found' });
+    const session = get_verified_session({ ws, msg });
+    if (session === null) {
         return;
     }
 

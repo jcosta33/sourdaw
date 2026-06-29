@@ -29,6 +29,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     setTrackPan: true,
     setTrackColor: true,
     setTempo: true,
+    setTimeSignature: true,
     togglePlayback: true,
     stopPlayback: true,
     toggleRecording: true,

@@ -7,7 +7,7 @@ import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/d
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
 
-import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/colorPalette';
+import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/ColorPalette';
 import { type Marker } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
@@ -285,12 +285,12 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         top: contextMenu.y,
                     }}
                 >
-                    {contextMenu.kind === 'empty' && (
+                    {contextMenu.kind === 'empty' ? (
                         <DawMenuButton onClick={handleAddMarker}>
                             Add Marker at Beat {Math.floor(contextMenu.beat)}
                         </DawMenuButton>
-                    )}
-                    {contextMenu.kind === 'marker' && (
+                    ) : null}
+                    {contextMenu.kind === 'marker' ? (
                         <>
                             <DawMenuButton onClick={handleStartRename}>Rename Marker</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
@@ -312,7 +312,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                 Delete Marker
                             </DawMenuButton>
                         </>
-                    )}
+                    ) : null}
                 </div>
             ) : null}
         </TimelineChromeSurface>

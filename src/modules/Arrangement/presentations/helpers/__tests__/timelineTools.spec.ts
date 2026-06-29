@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { addAutomationPoint } from '#/modules/Automation/useCases';
-
 import { trackStore } from '../../../stores/trackStore';
 import { splitClip } from '../../../useCases/clipEditing/splitClip';
 import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
@@ -20,9 +18,6 @@ vi.mock('../../../useCases/clip/addClip', () => ({ addClip: vi.fn() }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: vi.fn() }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: vi.fn() }));
 vi.mock('#/modules/Automation/useCases', () => ({
-    automationStore: { value: { lanes: [] } },
-    addAutomationPoint: vi.fn(),
-    addAutomationLane: vi.fn(),
     getAutomationLanes: vi.fn().mockReturnValue([]),
     invertAutomation: vi.fn(),
     reverseAutomation: vi.fn(),
@@ -31,7 +26,13 @@ vi.mock('#/modules/Automation/useCases', () => ({
     stretchAutomationTime: vi.fn(),
     thinAutomationPoints: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn() }));
+vi.mock('#/modules/Command/stores', () => ({ pushUndoEntry: vi.fn() }));
+vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteCreate', () => ({
+    commitInlineMidiNoteCreate: vi.fn(),
+}));
+vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteDelete', () => ({
+    commitInlineMidiNoteDelete: vi.fn(),
+}));
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: { value: { tracks: [] } },
 }));
@@ -77,7 +78,7 @@ describe('timelineTools', () => {
     });
 
     describe('handleAutomationTool', () => {
-        it('should add automation point if sub-lane is hit', () => {
+        it('should stage an automation point if sub-lane is hit', () => {
             const hit = { laneId: 'l1', trackId: 't1', beat: 4, value: 0.5 };
             vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
             const ref = { current: null };
@@ -85,8 +86,13 @@ describe('timelineTools', () => {
             const result = handleAutomationTool(10, 10, 4, 0, ref as any);
 
             expect(result).toBe(true);
-            expect(addAutomationPoint).toHaveBeenCalledWith('l1', expect.objectContaining({ beat: 4, value: 0.5 }));
-            expect(ref.current).toBeDefined();
+            expect(ref.current).toEqual({
+                laneId: 'l1',
+                trackId: 't1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }],
+            });
             expect(selectTrack).toHaveBeenCalledWith('t1');
         });
     });
@@ -98,7 +104,7 @@ describe('timelineTools', () => {
             expect(result).toBe(false);
         });
 
-        it('should paint and return true if sub-lane hit', () => {
+        it('should stage and return true if sub-lane hit', () => {
             const hit = { laneId: 'l1', trackId: 't1', beat: 2, value: 0.8 };
             vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
             const ref = { current: null };
@@ -106,7 +112,13 @@ describe('timelineTools', () => {
             const result = tryPaintSubLane(10, 10, ref as any);
 
             expect(result).toBe(true);
-            expect(addAutomationPoint).toHaveBeenCalledWith('l1', expect.objectContaining({ beat: 2, value: 0.8 }));
+            expect(ref.current).toEqual({
+                laneId: 'l1',
+                trackId: 't1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [{ beat: 2, value: 0.8, curve: 'linear', tension: 0 }],
+            });
         });
     });
 });

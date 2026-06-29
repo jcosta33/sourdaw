@@ -13,7 +13,48 @@ const createDummyLogger = (): Logger => ({
     setWriters: vi.fn(),
 });
 
+type PreferencesState = {
+    theme: 'dark' | 'light';
+    autoSave: boolean;
+};
+
+const defaultPreferences = {
+    theme: 'dark',
+    autoSave: true,
+} satisfies PreferencesState;
+
+const isPreferencesState = (value: unknown): value is PreferencesState => {
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        'theme' in value &&
+        'autoSave' in value &&
+        (value.theme === 'dark' || value.theme === 'light') &&
+        typeof value.autoSave === 'boolean'
+    );
+};
+
+const sanitizePreferences = (value: unknown): PreferencesState => {
+    if (isPreferencesState(value)) {
+        return value;
+    }
+
+    return defaultPreferences;
+};
+
 describe('createStore', () => {
+    it('should expose the store contract methods', () => {
+        const store = createStore({ initialData: { count: 0 } });
+
+        expect(typeof store.set).toBe('function');
+        expect(typeof store.update).toBe('function');
+        expect(typeof store.clear).toBe('function');
+        expect(typeof store.hydrate).toBe('function');
+        expect(typeof store.subscribe).toBe('function');
+        expect(typeof store.subscribeReact).toBe('function');
+        expect(typeof store.getSnapshot).toBe('function');
+    });
+
     it('should return null when created with no initial data', () => {
         const store = createStore<{ count: number }>();
         expect(store.value).toBeNull();
@@ -100,6 +141,38 @@ describe('createStore', () => {
         const store = createStore({ storage, initialData: { name: 'seeded' } });
 
         expect(store.value).toEqual({ name: 'seeded' });
+    });
+
+    it('should sanitize a present non-null persisted blob before exposing value', () => {
+        const storage = createMemoryStorage<unknown>();
+        storage.set({ theme: null, autoSave: 'yes' });
+
+        const store = createStore<unknown>({
+            storage,
+            initialData: defaultPreferences,
+            sanitize: sanitizePreferences,
+        });
+
+        expect(store.value).toEqual(defaultPreferences);
+        expect(storage.get()).toEqual(defaultPreferences);
+    });
+
+    it('should preserve valid persisted state when a sanitizer is configured', () => {
+        const storage = createMemoryStorage<unknown>();
+        const validPreferences = {
+            theme: 'light',
+            autoSave: false,
+        } satisfies PreferencesState;
+        storage.set(validPreferences);
+
+        const store = createStore<unknown>({
+            storage,
+            initialData: defaultPreferences,
+            sanitize: sanitizePreferences,
+        });
+
+        expect(store.value).toEqual(validPreferences);
+        expect(storage.get()).toEqual(validPreferences);
     });
 
     it('should fall back to memory storage when adapter reports unsupported', () => {
@@ -213,5 +286,17 @@ describe('createStore', () => {
 
         store.set({ count: 10 });
         expect(store.getSnapshot()).toEqual({ count: 10 });
+    });
+
+    it('should return the same value reference until a write replaces it', () => {
+        const store = createStore({ initialData: { count: 0 } });
+        const firstSnapshot = store.value;
+        const secondSnapshot = store.value;
+
+        expect(firstSnapshot).toBe(secondSnapshot);
+
+        store.set({ count: 1 });
+
+        expect(store.value).not.toBe(firstSnapshot);
     });
 });

@@ -1,0 +1,8 @@
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+  core-js: false
+  protobufjs: false
+  unrs-resolver: false

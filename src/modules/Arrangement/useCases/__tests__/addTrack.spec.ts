@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -15,29 +15,24 @@ vi.mock('../../repositories/track/getTrackState', () => ({
 vi.mock('../../repositories/track/setTrackState', () => ({
     setTrackState: vi.fn<typeof setTrackState>(),
 }));
-vi.mock('#/app/registerDependencies', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/app/registerDependencies')>();
-    return {
-        ...actual,
-        eventBus: {
-            ...actual.eventBus,
-            emit: vi.fn<typeof eventBus.emit>(),
-        },
-    };
-});
+
+const mockEventBus = {
+    emit: vi.fn(),
+};
 
 describe('addTrack', () => {
     beforeEach(() => {
+        injectDependencies(addTrack, { eventBus: mockEventBus });
         vi.mocked(getTrackState).mockReset();
         vi.mocked(setTrackState).mockReset();
-        vi.mocked(eventBus.emit).mockReset();
+        mockEventBus.emit.mockReset();
     });
 
     it('should return null and not emit when track state is missing', () => {
         vi.mocked(getTrackState).mockReturnValue(null);
 
         expect(addTrack({ name: 'Drums', kind: 'audio' as TrackKind })).toBeNull();
-        expect(eventBus.emit).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
         expect(setTrackState).not.toHaveBeenCalled();
     });
 
@@ -48,7 +43,7 @@ describe('addTrack', () => {
 
         expect(result).not.toBeNull();
         expect(setTrackState).toHaveBeenCalled();
-        expect(eventBus.emit).toHaveBeenCalledWith(
+        expect(mockEventBus.emit).toHaveBeenCalledWith(
             'track.added',
             expect.objectContaining({ name: 'Lead', kind: 'midi', trackId: result!.id })
         );

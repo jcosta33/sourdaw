@@ -13,7 +13,3 @@ daw-io = { path = "../daw-io" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
-
-[profile.release]
-opt-level = 3
-lto = true

@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactElement, useRef } from 'react';
+import { type MouseEvent, type ReactElement, useEffect, useRef } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -24,7 +24,10 @@ export const DragResizeHandle = ({ side, onResize, className }: DragResizeHandle
     const vertical = isVertical(side);
     // Always call the latest onResize — avoids stale closure jitter mid-drag
     const onResizeRef = useRef(onResize);
-    onResizeRef.current = onResize;
+
+    useEffect(() => {
+        onResizeRef.current = onResize;
+    }, [onResize]);
 
     const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
         event.preventDefault();

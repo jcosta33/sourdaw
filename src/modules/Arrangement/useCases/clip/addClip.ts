@@ -4,6 +4,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Clip, type FollowAction, type StretchMode } from '../../stores/trackStore';
 
 export function addClip(input: {
+    id?: string;
     trackId: string;
     startBeat: number;
     endBeat: number;
@@ -53,7 +54,7 @@ export function addClip(input: {
     const inferredType = input.type ?? (track.kind === 'midi' ? 'midi' : 'audio');
 
     const clip: Clip = {
-        id: getNextClipId(),
+        id: input.id ?? getNextClipId(),
         trackId: input.trackId,
         name: input.name,
         startBeat: input.startBeat,

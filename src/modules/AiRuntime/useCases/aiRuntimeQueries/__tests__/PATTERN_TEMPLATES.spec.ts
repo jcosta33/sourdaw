@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../../models/midiPatternLibrary';
+import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../../models/MidiPatternLibrary';
 import { PATTERN_TEMPLATES } from '../PATTERN_TEMPLATES';
 
 describe('PATTERN_TEMPLATES', () => {

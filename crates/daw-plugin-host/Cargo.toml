@@ -7,6 +7,9 @@ description = "Native plugin hosting: CLAP/VST3 scanning, loading, parameter acc
 [lib]
 crate-type = ["rlib"]
 
+[features]
+engine-owned-command-fixture = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 specta = { version = "2.0.0-rc.20", features = ["derive"] }

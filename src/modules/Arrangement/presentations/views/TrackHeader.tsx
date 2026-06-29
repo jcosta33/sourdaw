@@ -148,7 +148,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
             <div className="flex items-center gap-1 ml-2">
                 <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
                 <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
-                {isStale && (
+                {isStale ? (
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
@@ -158,7 +158,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         </TooltipTrigger>
                         <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
                     </Tooltip>
-                )}
+                ) : null}
             </div>
         );
     }

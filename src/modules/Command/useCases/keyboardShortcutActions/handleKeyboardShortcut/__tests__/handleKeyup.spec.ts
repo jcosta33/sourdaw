@@ -1,14 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { eventBus } from '#/app/registerDependencies';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { toolSwapStore } from '#/modules/Workspace/stores';
 import { setEditingTool } from '#/modules/Workspace/useCases';
 
 import { handleKeyup } from '../handleKeyup';
 
-vi.mock('#/app/registerDependencies', () => ({
-    eventBus: { emit: vi.fn(), on: vi.fn(() => () => undefined) },
-}));
+const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
 
 vi.mock('#/modules/Workspace/stores', () => ({
     toolSwapStore: { value: null, set: vi.fn() },
@@ -20,6 +18,7 @@ vi.mock('#/modules/Workspace/useCases', () => ({
 
 describe('handleKeyup', () => {
     beforeEach(() => {
+        injectDependencies(handleKeyup, { eventBus });
         vi.clearAllMocks();
         vi.mocked(toolSwapStore).value = null;
     });

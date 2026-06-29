@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     isTauri: vi.fn(),
     getAssetTransfer: vi.fn(),
     decodeAudioFile: vi.fn(),
+    readTauriLibrarySampleFile: vi.fn(),
     addClip: vi.fn(),
     addDevice: vi.fn(),
     addTrack: vi.fn(),
@@ -39,6 +40,10 @@ vi.mock('#/modules/SampleLibrary/stores', async (importOriginal) => ({
             return mocks.libraryStoreValue.value;
         },
     },
+}));
+
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
+    readTauriLibrarySampleFile: mocks.readTauriLibrarySampleFile,
 }));
 
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
@@ -99,6 +104,7 @@ describe('useTimelineFileDrop', () => {
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null } as any;
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.audioBufferCacheGet.mockReturnValue(undefined);
+        mocks.readTauriLibrarySampleFile.mockResolvedValue(new File(['audio'], 'sample.wav'));
         mocks.libraryStoreValue.value = { roots: [] } as any;
     });
 
@@ -218,6 +224,57 @@ describe('useTimelineFileDrop', () => {
         });
         // The cache short-circuit must skip the file decode path entirely.
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('reads a Tauri-root sample through the SampleLibrary use case before decoding', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+        mocks.isTauri.mockReturnValue(true);
+        mocks.libraryStoreValue.value = {
+            roots: [{ id: 'root1', provider: 'tauri', rootRef: '/Users/jose/Samples' }],
+        } as any;
+        mocks.readTauriLibrarySampleFile.mockResolvedValue(file);
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-tauri', buffer: { duration: 2 } });
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Kick',
+                              id: 'tauri-kick',
+                              path: 'Drums/Kick.wav',
+                              libraryRootId: 'root1',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.readTauriLibrarySampleFile).toHaveBeenCalledWith({
+                rootPath: '/Users/jose/Samples',
+                relativePath: 'Drums/Kick.wav',
+                fallbackName: 'Kick',
+            });
+        });
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 'new-track-id',
+                name: 'Kick',
+                type: 'audio',
+                audioBufferId: 'buf-tauri',
+                assetHash: 'hash',
+            })
+        );
     });
 
     it('handles external file drop (MIDI)', async () => {

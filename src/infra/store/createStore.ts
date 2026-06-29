@@ -5,10 +5,39 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
     const logger = options.logger;
     const storageCandidate = options.storage;
     const storage = storageCandidate?.isSupported() ? storageCandidate : createMemoryStorage<TData>();
+    const sanitize = options.sanitize;
+
+    const sanitizeStorageValue = (value: TData | null): boolean => {
+        if (!sanitize) {
+            return false;
+        }
+
+        let sanitized: TData | null;
+        try {
+            sanitized = sanitize(value);
+        } catch (error) {
+            if (logger) {
+                logger.error(new Error('Store sanitization failed', { cause: error }));
+            }
+            sanitized = options.initialData ?? null;
+        }
+
+        if (Object.is(sanitized, value)) {
+            return false;
+        }
+
+        storage.set(sanitized);
+        return true;
+    };
 
     // Seed initial data if the storage is empty
-    if (options.initialData !== undefined && storage.get() === null) {
-        storage.set(options.initialData);
+    const storedValue = storage.get();
+    if (storedValue === null) {
+        if (options.initialData !== undefined) {
+            storage.set(options.initialData);
+        }
+    } else {
+        sanitizeStorageValue(storedValue);
     }
 
     const subscribers = new Set<(value: TData | null) => void>();
@@ -69,6 +98,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
                     return;
                 }
                 if (changed) {
+                    sanitizeStorageValue(storage.get());
                     notify();
                 }
             }

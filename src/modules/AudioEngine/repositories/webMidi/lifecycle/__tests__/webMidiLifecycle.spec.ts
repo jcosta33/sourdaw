@@ -5,10 +5,12 @@ vi.stubGlobal('navigator', {
     requestMIDIAccess: vi.fn(),
 });
 
+import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import * as state from '../../state';
+import { setWebMidiEventBus } from '../../webMidiEventBus';
 import * as helpers from '../helpers';
 import { initWebMidi } from '../initWebMidi';
 
@@ -49,11 +51,19 @@ vi.mock('../helpers', () => ({
     selectMidiInputTauri: vi.fn(),
 }));
 
+const mockEventBus = {
+    emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
+};
+
 describe('initWebMidi', () => {
     beforeEach(() => {
+        Container.clear();
+        setWebMidiEventBus(mockEventBus);
         vi.clearAllMocks();
         // Reset the idempotent guard
         (initWebMidi as any)._trackStoreSub = false;
+        (initWebMidi as any)._yeastNotesOffSub = false;
     });
 
     it('should initialize via Web MIDI if supported', async () => {

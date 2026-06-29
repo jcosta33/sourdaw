@@ -5,7 +5,9 @@
  * Downloads VSCO-2-CE orchestral samples from GitHub (CC0 — public domain)
  * and generates manifest.json files for the Levain plugin.
  *
- * Usage: node scripts/download-levain-samples.mjs
+ * Usage:
+ *   node scripts/download-levain-samples.ts --print-asset-policy
+ *   SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD=1 node scripts/download-levain-samples.ts
  *
  * Source: https://github.com/sgossner/VSCO-2-CE
  * License: CC0 (public domain — no attribution required)
@@ -17,6 +19,31 @@ import { join } from 'node:path';
 
 const BASE_URL = 'https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master';
 const OUT_DIR = 'public/samples/levain';
+const PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV = 'SOURDAW_ALLOW_PUBLIC_SAMPLE_DOWNLOAD';
+const PRINT_ASSET_POLICY_FLAG = '--print-asset-policy';
+const PUBLIC_SAMPLE_ASSET_POLICY = [
+    'Sourdaw public sample asset policy:',
+    '- public/samples/levain is a large generated CC0 sample payload.',
+    '- Do not add, refresh, or expand this payload accidentally from an agent or CI run.',
+    '- Existing tracked files are not deleted or moved without explicit human instruction naming files.',
+    `- Set ${PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV}=1 only for an intentional sample-payload refresh.`,
+].join('\n');
+
+function shouldContinueWithPublicSampleDownload(): boolean {
+    if (process.argv.includes(PRINT_ASSET_POLICY_FLAG)) {
+        console.log(PUBLIC_SAMPLE_ASSET_POLICY);
+        return false;
+    }
+
+    if (process.env[PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV] === '1') {
+        return true;
+    }
+
+    console.error(PUBLIC_SAMPLE_ASSET_POLICY);
+    console.error(`\nRefusing to write ${OUT_DIR}; set ${PUBLIC_SAMPLE_DOWNLOAD_OPT_IN_ENV}=1 to continue.`);
+    process.exitCode = 1;
+    return false;
+}
 
 // ─── Note name → MIDI number ───────────────────────────────────────────────
 
@@ -389,6 +416,10 @@ async function processArticulation(vscoPath, artType, artId, loopMode, instrumen
 // ─── Main ─────────────────────────────────────────────────────────────────
 
 async function main() {
+    if (!shouldContinueWithPublicSampleDownload()) {
+        return;
+    }
+
     console.log('🎻 Levain Sample Downloader — VSCO-2-CE (CC0)\n');
 
     for (const instrument of INSTRUMENTS) {

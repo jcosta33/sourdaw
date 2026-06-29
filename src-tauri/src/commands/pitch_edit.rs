@@ -1,10 +1,11 @@
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
-use std::path::PathBuf;
-use hound::{WavReader, WavWriter, WavSpec};
 use daw_dsp::knead::yin::{yin_frame, YinConfig};
 use daw_dsp::knead::psola::{psola_process_offline_inplace, PsolaConfig};
-use daw_dsp::knead::pitch_edit::{CompiledDeltaMap, NoteSegment, PitchPoint, PitchContour, PitchCommitRequest};
+use daw_dsp::knead::pitch_edit::{CompiledDeltaMap, NoteSegment, PitchContour, PitchPoint};
+use hound::{WavReader, WavSpec, WavWriter};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+
+use super::filesystem;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AnalysisProgress {
@@ -16,6 +17,7 @@ pub async fn analyze_pitch(
     app: AppHandle,
     audio_path: String,
 ) -> Result<PitchContour, String> {
+    let audio_path = filesystem::resolve_existing_file_path(&audio_path)?;
     tokio::task::spawn_blocking(move || {
         let mut reader = WavReader::open(&audio_path)
             .map_err(|e| format!("Failed to open WAV: {}", e))?;
@@ -110,8 +112,10 @@ pub struct PitchCommitRequest {
 pub async fn commit_pitch_edit(
     request: PitchCommitRequest,
 ) -> Result<(), String> {
+    let input_audio_path = filesystem::resolve_existing_file_path(&request.input_audio_path)?;
+    let output_audio_path = filesystem::resolve_writable_file_path(&request.output_audio_path)?;
     tokio::task::spawn_blocking(move || {
-        let mut reader = WavReader::open(&request.input_audio_path)
+        let mut reader = WavReader::open(&input_audio_path)
             .map_err(|e| format!("Failed to open WAV: {}", e))?;
         
         let spec = reader.spec();
@@ -200,7 +204,7 @@ pub async fn commit_pitch_edit(
 
         // Write the output file
         let mut writer = WavWriter::create(
-            &request.output_audio_path,
+            &output_audio_path,
             WavSpec {
                 channels: 1,
                 sample_rate: spec.sample_rate,

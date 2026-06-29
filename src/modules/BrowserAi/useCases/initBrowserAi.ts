@@ -2,7 +2,7 @@
  * Use case: Initialize the BrowserAi module on app startup.
  *
  * Called once from bootstrap. Responsibilities:
- * 1. Detect browser capabilities (with localStorage cache)
+ * 1. Detect browser capabilities (fresh cold-start probe)
  * 2. Populate model registry with DDSP catalog + Kokoro model entry
  * 3. Check which models are already cached in OPFS and update status
  * 4. Request persistent storage if browser AI is supported
@@ -20,7 +20,7 @@ import {
     NSF_HIFIGAN_SIZE_BYTES,
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
-} from '../models/ddspInstrumentCatalog';
+} from '../models/DdspInstrumentCatalog';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { checkModelCached } from '../repositories/storageManager';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
@@ -64,7 +64,7 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
 
             // ── 1. Detect capabilities ──────────────────────────────────────
             try {
-                const report = await detectCapabilitiesRepo();
+                const report = await detectCapabilitiesRepo({ forceRefresh: true });
                 setCapabilityReport(report);
                 logger.info(`[BrowserAi] Capability: ${report.capability} / ${report.webGpuTier}`);
             } catch (error) {

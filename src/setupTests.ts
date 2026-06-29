@@ -1,6 +1,49 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 
+const createStorageShim = (): Storage => {
+    const values = new Map<string, string>();
+
+    return {
+        get length(): number {
+            return values.size;
+        },
+        clear(): void {
+            values.clear();
+        },
+        getItem(key: string): string | null {
+            return values.get(String(key)) ?? null;
+        },
+        key(index: number): string | null {
+            return [...values.keys()][index] ?? null;
+        },
+        removeItem(key: string): void {
+            values.delete(String(key));
+        },
+        setItem(key: string, value: string): void {
+            values.set(String(key), String(value));
+        },
+    };
+};
+
+const getWindowLocalStorage = (): Storage | null => {
+    try {
+        return window.localStorage ?? null;
+    } catch {
+        return null;
+    }
+};
+
+const localStorageShim = getWindowLocalStorage() ?? createStorageShim();
+Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: localStorageShim,
+});
+Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: localStorageShim,
+});
+
 // Radix UI (Slider, etc.) uses ResizeObserver in layout effects — jsdom does not provide it.
 globalThis.ResizeObserver = class ResizeObserver {
     observe(): void {}
@@ -222,110 +265,5 @@ vi.mock('#/modules/Workspace/presentations/hooks/useWorkspaceState', () => ({
         isSidebarOpen: true,
         isMixerOpen: true,
         isInspectorOpen: false,
-    })),
-}));
-
-// Global useStore mock. Historically returned a hardcoded blob covering
-// the shapes of a handful of specific stores; the branch-2 work that
-// moved many components from `store.value?.x` render-time reads to
-// proper `useStore` subscriptions (§52.1, §142.1, §195.3, §197.1,
-// §201.1, §202.1, §211.1, …) exposed several fields this mock never
-// returned (activeSlots, groups, tracks, selectedTrackId, envelopes,
-// routes, markers, sections, …). The right long-term fix is to drop
-// this global and let each test mock useStore explicitly, but that's a
-// 37-file cleanup for another session; for now, expand the blob with
-// the missing fields so the reactive-store conversions don't fail
-// render-time subscription tests.
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        // MIDI learn store
-        mappings: [],
-        isLearning: false,
-        learningTarget: null,
-        // Levain patch (wrapped in a Proxy to cover arbitrary accesses)
-        patch: new Proxy(
-            {
-                enabled: true,
-                processActive: true,
-                instrumentId: 'violin-1',
-                instrumentFamily: 'Strings',
-                articulations: [],
-                currentArticulation: 'long',
-                legato: { enabled: true },
-                expression: { dynamics: 0.5, vibrato: 0.5 },
-                humanize: { amount: 0.1 },
-                micPositions: [],
-                macros: [0, 0, 0, 0],
-                macroLabels: ['M1', 'M2', 'M3', 'M4'],
-                releaseTriggers: { enabled: true, dynamicScale: true },
-            },
-            {
-                get(target: any, prop: string | symbol) {
-                    if (prop in target) {
-                        return target[prop];
-                    }
-                    if (typeof prop === 'string') {
-                        if (prop === 'topology') {
-                            return 'glue';
-                        }
-                        if (prop === 'algorithm') {
-                            return 'delay';
-                        }
-                        if (prop === 'filter') {
-                            return { type: 'lowpass', cutoff: 1000, resonance: 0 };
-                        }
-                        if (
-                            prop === 'pads' ||
-                            prop === 'nodes' ||
-                            prop === 'channels' ||
-                            prop === 'tracks' ||
-                            prop === 'prePedals' ||
-                            prop === 'postPedals' ||
-                            prop === 'micPositions' ||
-                            prop === 'macros' ||
-                            prop === 'macroLabels' ||
-                            prop === 'articulations' ||
-                            prop === 'devices' ||
-                            prop === 'sends' ||
-                            prop === 'clips'
-                        ) {
-                            return [];
-                        }
-                        if (prop.includes('Id') || prop === 'name' || prop === 'label' || prop === 'category') {
-                            return 'mock';
-                        }
-                    }
-                    return 0;
-                },
-            }
-        ),
-        engineReady: true,
-        activeVoices: 0,
-        sampleLoadProgress: null,
-        currentArticulationDisplay: 'Long',
-        uiLevel: 1,
-        peakL: 0,
-        peakR: 0,
-        activePresetId: null,
-        attack: 0.1,
-        decay: 0.2,
-        sustain: 0.5,
-        release: 0.3,
-        pads: [],
-        channels: [],
-        past: [],
-        future: [],
-        // Reactive-store conversions landed in branch 2 read these fields
-        // directly via useStore. Adding them to the shared blob so that
-        // components migrated from render-time store.value? reads to
-        // proper subscriptions don't crash existing render tests.
-        activeSlots: {}, // SessionLaunchState (§142.1 SessionView)
-        tracks: [], // TrackStoreState (§52.1 GrandBoulePanel, §195.3 WaveformEditor)
-        selectedTrackId: null, // TrackStoreState
-        groups: [], // VcaGroupState (§202.1 TrackVcaSection)
-        routes: [], // SidechainStoreState (§201.1 RoutingGraph)
-        envelopes: {}, // GainEnvelopeStoreState (§197.1 ClipGainEnvelopeSection)
-        markers: [], // MarkerStoreState (§211.1 NearbyMarkerColorMenu)
-        sections: [], // MarkerStoreState
     })),
 }));

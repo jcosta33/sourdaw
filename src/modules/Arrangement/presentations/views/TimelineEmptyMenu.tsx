@@ -11,7 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
-import { MARKER_COLOR_PRESETS } from '../../models/colorPalette';
+import { MARKER_COLOR_PRESETS } from '../../models/ColorPalette';
 import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
