@@ -125,10 +125,7 @@ const validators = {
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
-        isObj(param) &&
-        isString(param.clipId) &&
-        isString(param.trackId) &&
-        isNumber(param.startBeat),
+        isObj(param) && isString(param.clipId) && isString(param.trackId) && isNumber(param.startBeat),
     duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
 
     // Device lifecycle
@@ -137,10 +134,7 @@ const validators = {
     removeDevice: (param): param is PayloadOf<'removeDevice'> =>
         isObj(param) && isString(param.trackId) && isString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
-        isObj(param) &&
-        isString(param.deviceId) &&
-        isString(param.paramId) &&
-        isNumber(param.value),
+        isObj(param) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
