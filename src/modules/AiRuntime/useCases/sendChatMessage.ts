@@ -3,7 +3,7 @@ import { describeAction, executeAppAction, generateGroupId } from '#/modules/Com
 
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
-import { CHAT_SYSTEM_PROMPT } from '../models/chatSystemPrompt';
+import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
