@@ -1,11 +1,90 @@
 use crate::plugin_slot::{MidiNoteEvent, TransportState};
 
+pub const MIDI_EVENT_BUFFER_CAPACITY: usize = 128;
+
+const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
+    note: 0,
+    velocity: 0,
+    channel: 0,
+    is_note_on: false,
+    probability: 0.0,
+};
+
+pub struct MidiEventBuffer {
+    events: [MidiNoteEvent; MIDI_EVENT_BUFFER_CAPACITY],
+    len: usize,
+}
+
+impl MidiEventBuffer {
+    pub fn new() -> Self {
+        Self {
+            events: [EMPTY_MIDI_EVENT; MIDI_EVENT_BUFFER_CAPACITY],
+            len: 0,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        MIDI_EVENT_BUFFER_CAPACITY
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn as_slice(&self) -> &[MidiNoteEvent] {
+        &self.events[..self.len]
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &MidiNoteEvent> {
+        self.as_slice().iter()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut MidiNoteEvent> {
+        self.events[..self.len].iter_mut()
+    }
+
+    pub fn try_push(&mut self, event: MidiNoteEvent) -> bool {
+        if self.len >= MIDI_EVENT_BUFFER_CAPACITY {
+            return false;
+        }
+
+        self.events[self.len] = event;
+        self.len += 1;
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    pub fn retain_mut<F>(&mut self, mut keep_event: F)
+    where
+        F: FnMut(&mut MidiNoteEvent) -> bool,
+    {
+        let mut write_index = 0;
+
+        for read_index in 0..self.len {
+            let mut event = self.events[read_index];
+            if keep_event(&mut event) {
+                self.events[write_index] = event;
+                write_index += 1;
+            }
+        }
+
+        self.len = write_index;
+    }
+}
+
 pub trait MidiFx: Send {
     /// Process MIDI events. This can add, remove, or modify events.
     /// Returns the modified list of MIDI events to be passed to the next stage.
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         transport: &TransportState,
         sample_rate: f32,
         num_samples: usize,
@@ -39,7 +118,7 @@ impl Default for VelocityScaler {
 impl MidiFx for VelocityScaler {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
@@ -100,13 +179,11 @@ impl Default for Arpeggiator {
 impl MidiFx for Arpeggiator {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
     ) {
-        let mut new_notes = Vec::new();
-
         // 1. Maintain active note list from incoming events
         for event in events.iter() {
             if event.is_note_on {
@@ -171,7 +248,7 @@ impl MidiFx for Arpeggiator {
 
                 // 4. Emit the note
                 let note = self.active_notes[self.current_step];
-                new_notes.push(MidiNoteEvent {
+                let _ = events.try_push(MidiNoteEvent {
                     note,
                     velocity: 100, // Default for now
                     channel: 0,
@@ -180,8 +257,6 @@ impl MidiFx for Arpeggiator {
                 });
             }
         }
-
-        *events = new_notes;
     }
 
     fn set_param(&mut self, name: &str, value: f32) {
@@ -220,7 +295,7 @@ impl Default for ProbabilityEvaluator {
 impl MidiFx for ProbabilityEvaluator {
     fn process_midi(
         &mut self,
-        events: &mut Vec<MidiNoteEvent>,
+        events: &mut MidiEventBuffer,
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
