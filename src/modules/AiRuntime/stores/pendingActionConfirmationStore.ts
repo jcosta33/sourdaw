@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type EditPlan } from '../models/DsoTypes';
 import { type RuntimeAction } from '../models/RuntimeAction';
 
 export type PendingActionExecution = {
@@ -8,11 +9,10 @@ export type PendingActionExecution = {
     label: string;
 };
 
-export type PendingActionConfirmation = {
+type PendingActionConfirmationBase = {
     id: string;
     prompt: string;
     assistantMessageId: string;
-    actions: RuntimeAction[];
     actionLabels: string[];
     executedActions: PendingActionExecution[];
     status: ChatActionConfirmationStatus;
@@ -20,6 +20,19 @@ export type PendingActionConfirmation = {
     createdAt: number;
     resolvedAt: number | null;
 };
+
+export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
+    kind: 'app_actions';
+    actions: RuntimeAction[];
+};
+
+export type PendingDsoEditConfirmation = PendingActionConfirmationBase & {
+    kind: 'dso_edit';
+    plan: EditPlan;
+    reasoning: string | undefined;
+};
+
+export type PendingActionConfirmation = PendingAppActionConfirmation | PendingDsoEditConfirmation;
 
 export type PendingActionConfirmationState = {
     confirmations: PendingActionConfirmation[];
@@ -47,11 +60,51 @@ export function proposePendingActionConfirmation(
         return null;
     }
 
-    const confirmation: PendingActionConfirmation = {
+    const confirmation: PendingAppActionConfirmation = {
+        kind: 'app_actions',
         id: input.id,
         prompt: input.prompt,
         assistantMessageId: input.assistantMessageId,
         actions: [...input.actions],
+        actionLabels: [...input.actionLabels],
+        executedActions: [],
+        status: 'proposed',
+        error: null,
+        createdAt: Date.now(),
+        resolvedAt: null,
+    };
+
+    pendingActionConfirmationStore.set({
+        confirmations: [...state.confirmations, confirmation].slice(-MAX_CONFIRMATIONS),
+    });
+
+    return confirmation;
+}
+
+type ProposePendingDsoConfirmationInput = {
+    id: string;
+    prompt: string;
+    assistantMessageId: string;
+    plan: EditPlan;
+    actionLabels: string[];
+    reasoning: string | undefined;
+};
+
+export function proposePendingDsoConfirmation(
+    input: ProposePendingDsoConfirmationInput
+): PendingDsoEditConfirmation | null {
+    const state = pendingActionConfirmationStore.value;
+    if (!state) {
+        return null;
+    }
+
+    const confirmation: PendingDsoEditConfirmation = {
+        kind: 'dso_edit',
+        id: input.id,
+        prompt: input.prompt,
+        assistantMessageId: input.assistantMessageId,
+        plan: input.plan,
+        reasoning: input.reasoning,
         actionLabels: [...input.actionLabels],
         executedActions: [],
         status: 'proposed',

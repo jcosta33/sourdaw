@@ -6,9 +6,11 @@ import { updateChatMessage } from '../stores/chatStore';
 import {
     getPendingActionConfirmation,
     recordPendingActionExecution,
+    type PendingDsoEditConfirmation,
     updatePendingActionConfirmationStatus,
 } from '../stores/pendingActionConfirmationStore';
 
+import { commitDsoEditPlan } from './dsoEditor/commitDsoEditPlan';
 import { notifyAiChange } from './notifyAiChange';
 
 type ConfirmPendingChatActionsInput = {
@@ -39,6 +41,10 @@ export async function confirmPendingChatActions(
         pendingActionConfirmationStatus: 'accepted',
         content: `Confirming:\n\n${confirmation.actionLabels.map((label) => `- ${label}`).join('\n')}`,
     });
+
+    if (confirmation.kind === 'dso_edit') {
+        return confirmPendingDsoEdit(confirmation);
+    }
 
     const group = generateGroupId(confirmation.prompt);
     const executedLabels: Array<{ actionType: string; label: string }> = [];
@@ -88,6 +94,63 @@ export async function confirmPendingChatActions(
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
         content: `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
+    });
+
+    return { status: 'executed' };
+}
+
+async function confirmPendingDsoEdit(
+    confirmation: PendingDsoEditConfirmation
+): ConfirmPendingChatActionsOutput {
+    let result: Awaited<ReturnType<typeof commitDsoEditPlan>>;
+    try {
+        result = await commitDsoEditPlan({
+            plan: confirmation.plan,
+            userRequest: confirmation.prompt,
+            assistantMessageId: confirmation.assistantMessageId,
+            reasoning: confirmation.reasoning,
+        });
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+            content: `Failed to execute confirmed DSO edit:\n\n${reason}`,
+        });
+        return { status: 'failed', reason };
+    }
+
+    for (const summary of result.summaries) {
+        recordPendingActionExecution({
+            confirmationId: confirmation.id,
+            execution: { actionType: 'dsoEdit', label: summary },
+        });
+    }
+
+    if (result.failures.length > 0) {
+        const reason = result.failures.map((failure) => `${failure.op} (${failure.reason})`).join('; ');
+        updatePendingActionConfirmationStatus({
+            confirmationId: confirmation.id,
+            status: 'failed',
+            error: reason,
+        });
+        updateChatMessage(confirmation.assistantMessageId, {
+            pendingActionConfirmationStatus: 'failed',
+            error: reason,
+        });
+        return { status: 'failed', reason };
+    }
+
+    notifyAiChange(`Confirmed: ${confirmation.prompt}`, ['dsoEdit']);
+
+    updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
+    updateChatMessage(confirmation.assistantMessageId, {
+        pendingActionConfirmationStatus: 'executed',
     });
 
     return { status: 'executed' };
