@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { toMcpTools, getMcpTools } from '../helpers';
 
-vi.mock('#/modules/AiRuntime/models/toolDefinitions', () => ({
+vi.mock('#/modules/AiRuntime/models/ToolDefinitions', () => ({
     DAW_TOOL_SCHEMAS: [
         {
             type: 'function',

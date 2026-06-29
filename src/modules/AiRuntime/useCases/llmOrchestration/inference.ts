@@ -4,7 +4,7 @@ import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
-import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
+import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
