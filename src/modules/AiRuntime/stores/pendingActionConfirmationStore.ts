@@ -1,7 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
-import { type EditPlan } from '../models/DsoTypes';
+import { type DsoConfirmationTarget, type EditPlan } from '../models/DsoTypes';
 import { type RuntimeAction } from '../models/RuntimeAction';
 
 export type PendingActionExecution = {
@@ -29,6 +29,7 @@ export type PendingAppActionConfirmation = PendingActionConfirmationBase & {
 export type PendingDsoEditConfirmation = PendingActionConfirmationBase & {
     kind: 'dso_edit';
     plan: EditPlan;
+    confirmationTargets: DsoConfirmationTarget[];
     reasoning: string | undefined;
 };
 
@@ -87,6 +88,7 @@ type ProposePendingDsoConfirmationInput = {
     assistantMessageId: string;
     plan: EditPlan;
     actionLabels: string[];
+    confirmationTargets: DsoConfirmationTarget[];
     reasoning: string | undefined;
 };
 
@@ -104,6 +106,7 @@ export function proposePendingDsoConfirmation(
         prompt: input.prompt,
         assistantMessageId: input.assistantMessageId,
         plan: input.plan,
+        confirmationTargets: [...input.confirmationTargets],
         reasoning: input.reasoning,
         actionLabels: [...input.actionLabels],
         executedActions: [],

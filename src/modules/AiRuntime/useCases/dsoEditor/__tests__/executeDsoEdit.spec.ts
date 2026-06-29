@@ -26,6 +26,19 @@ const mocks = vi.hoisted(() => ({
     setChatGenerating: vi.fn(),
     llmStatusSet: vi.fn(),
     logEdit: vi.fn(),
+    trackStoreState: {
+        value: {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [{ id: 'device-1', name: 'Synth', type: 'builtin-synth' }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        },
+    },
 }));
 
 vi.mock('../../llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
@@ -73,6 +86,14 @@ vi.mock('#/modules/Command/useCases', () => ({
     generateGroupId: mocks.generateGroupId,
 }));
 
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreState.value;
+        },
+    },
+}));
+
 vi.mock('../../../stores/aiActionHistoryStore', () => ({
     pushAiActionGroup: mocks.pushAiActionGroup,
 }));
@@ -108,6 +129,17 @@ describe('executeDsoEdit', () => {
         mocks.validateDsos.mockReturnValue([]);
         mocks.executeDsos.mockResolvedValue({ summaries: ['Changed track'], failures: [] });
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'AI edit' });
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [{ id: 'device-1', name: 'Synth', type: 'builtin-synth' }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
         mocks.transactSnapshot.mockImplementation(async (callback: () => Promise<void>) => {
             await callback();
             return { before: new Map(), after: new Map() };
@@ -162,7 +194,7 @@ describe('executeDsoEdit', () => {
                 prompt: 'delete drums',
                 assistantMessageId: expect.any(String),
                 status: 'proposed',
-                actionLabels: ['remove track: track-1'],
+                actionLabels: ['Remove track "Drums"'],
             }),
         ]);
         expect(mocks.updateChatMessage).toHaveBeenCalledWith(
@@ -171,6 +203,50 @@ describe('executeDsoEdit', () => {
                 pendingActionConfirmationId: expect.stringMatching(/^dso-confirmation-/),
                 pendingActionConfirmationStatus: 'proposed',
                 content: expect.stringContaining('requires confirmation'),
+            })
+        );
+    });
+
+    it('should describe destructive DSO confirmation labels from project metadata', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.streamNativeCompletion.mockImplementation(
+            async (
+                _messages: Array<{ role: string; content: string }>,
+                onToken: (text: string) => void
+            ): Promise<void> => {
+                onToken(
+                    JSON.stringify({
+                        kind: 'edit_plan',
+                        moderation: 'allow',
+                        intent: 'remove drums, chorus, and synth',
+                        dsos: [
+                            { op: 'remove_track', track_id: 'track-1' },
+                            { op: 'remove_clip', clip_id: 'clip-1' },
+                            { op: 'remove_device', track_id: 'track-1', device_id: 'device-1' },
+                        ],
+                    })
+                );
+            }
+        );
+
+        const result = await executeDsoEdit('delete destructive targets');
+
+        expect(result.pendingConfirmationId).toEqual(expect.stringMatching(/^dso-confirmation-/));
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
+            expect.objectContaining({
+                actionLabels: [
+                    'Remove track "Drums"',
+                    'Remove clip "Chorus"',
+                    'Remove device "Synth" on track "Drums"',
+                ],
+            }),
+        ]);
+        expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+                content: expect.stringContaining('Intent: remove drums, chorus, and synth'),
             })
         );
     });

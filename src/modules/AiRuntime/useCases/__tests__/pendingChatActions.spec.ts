@@ -26,6 +26,19 @@ const mocks = vi.hoisted(() => ({
         return { before: new Map(), after: new Map() };
     }),
     logEdit: vi.fn(),
+    trackStoreState: {
+        value: {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [{ id: 'device-1', name: 'Synth', type: 'builtin-synth' }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        },
+    },
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -40,6 +53,14 @@ vi.mock('#/modules/Command/stores', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     transactSnapshot: mocks.transactSnapshot,
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreState.value;
+        },
+    },
 }));
 
 vi.mock('../../stores/aiActionHistoryStore', () => ({
@@ -81,6 +102,17 @@ describe('pending chat action confirmation', () => {
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.validateDsos.mockReturnValue([]);
         mocks.executeDsos.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Drums',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [{ id: 'device-1', name: 'Synth', type: 'builtin-synth' }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
         mocks.transactSnapshot.mockImplementation(async (callback: () => Promise<void>) => {
             await callback();
             return { before: new Map(), after: new Map() };
@@ -132,7 +164,14 @@ describe('pending chat action confirmation', () => {
             prompt: 'delete drums',
             assistantMessageId: 'assistant-1',
             plan: pendingDsoPlan,
-            actionLabels: ['remove track: track-1'],
+            actionLabels: ['Remove track "Drums"'],
+            confirmationTargets: [
+                {
+                    op: 'remove_track',
+                    label: 'Remove track "Drums"',
+                    fingerprint: { kind: 'track', trackId: 'track-1', trackName: 'Drums' },
+                },
+            ],
             reasoning: 'track removal is destructive',
         });
 
@@ -166,6 +205,57 @@ describe('pending chat action confirmation', () => {
         expect(getPendingActionConfirmation('confirm-dso-1')?.executedActions).toEqual([
             { actionType: 'dsoEdit', label: 'Removed track' },
         ]);
+    });
+
+    it('should fail safely when a destructive DSO target identity changed before confirmation', async () => {
+        proposePendingDsoConfirmation({
+            id: 'confirm-dso-stale',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            plan: pendingDsoPlan,
+            actionLabels: ['Remove track "Drums"'],
+            confirmationTargets: [
+                {
+                    op: 'remove_track',
+                    label: 'Remove track "Drums"',
+                    fingerprint: { kind: 'track', trackId: 'track-1', trackName: 'Drums' },
+                },
+            ],
+            reasoning: 'track removal is destructive',
+        });
+        mocks.trackStoreState.value = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    name: 'Percussion',
+                    clips: [{ id: 'clip-1', name: 'Chorus', trackId: 'track-1' }],
+                    devices: [{ id: 'device-1', name: 'Synth', type: 'builtin-synth' }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        };
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-dso-stale' });
+
+        expect(result).toEqual({
+            status: 'failed',
+            reason: 'The destructive edit target changed: Remove track "Drums"',
+        });
+        expect(mocks.validateDsos).not.toHaveBeenCalled();
+        expect(mocks.executeDsos).not.toHaveBeenCalled();
+        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation('confirm-dso-stale')?.status).toBe('failed');
+        expect(getPendingActionConfirmation('confirm-dso-stale')?.error).toBe(
+            'The destructive edit target changed: Remove track "Drums"'
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'failed',
+                content: expect.stringContaining('Project state changed'),
+            })
+        );
     });
 
     it('should cancel proposed actions without executing them', () => {

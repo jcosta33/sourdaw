@@ -18,7 +18,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
+import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
@@ -31,6 +31,7 @@ import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isD
 import { commitDsoEditPlan } from './commitDsoEditPlan';
 import { resolveDsoNames, validateDsos, type DsoExecutionResult } from './compileDso';
 import { buildDsoPrompt } from './dsoPrompt';
+import { getDsoConfirmationTargets } from './getDsoConfirmationTargets';
 import { serializeLogicalState, buildProjectSummary } from './serializeLogicalState';
 
 export type DsoEditResult = {
@@ -149,13 +150,15 @@ export const executeDsoEdit = inject({ logger })(
 
                 if (classification === 'confirmation_required') {
                     const confirmationId = `dso-confirmation-${crypto.randomUUID()}`;
-                    const actionLabels = plan.dsos.map((dso) => describeDsoForConfirmation(dso));
+                    const confirmationTargets = getDsoConfirmationTargets({ dsos: plan.dsos });
+                    const actionLabels = confirmationTargets.map((target) => target.label);
                     const confirmation = proposePendingDsoConfirmation({
                         id: confirmationId,
                         prompt: userRequest,
                         assistantMessageId: assistantMsgId,
                         plan,
                         actionLabels,
+                        confirmationTargets,
                         reasoning,
                     });
                     if (!confirmation) {
@@ -165,6 +168,7 @@ export const executeDsoEdit = inject({ logger })(
                     updateChatMessage(assistantMsgId, {
                         content:
                             `This destructive edit requires confirmation before execution:\n\n` +
+                            `Intent: ${plan.intent}\n\n` +
                             `${actionLabels.map((label) => `- ${label}`).join('\n')}`,
                         isStreaming: false,
                         reasoning,
@@ -225,20 +229,6 @@ function formatResultFailures(failures: DsoExecutionResult['failures']): string 
         return undefined;
     }
     return failures.map((failure) => `${failure.op} (${failure.reason})`).join('; ');
-}
-
-function describeDsoForConfirmation(dso: Dso): string {
-    const action = dso.op.replaceAll('_', ' ');
-    if ('track_id' in dso) {
-        return `${action}: ${dso.track_id}`;
-    }
-    if ('clip_id' in dso) {
-        return `${action}: ${dso.clip_id}`;
-    }
-    if ('device_id' in dso) {
-        return `${action}: ${dso.device_id}`;
-    }
-    return action;
 }
 
 /**
