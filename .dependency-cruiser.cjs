@@ -499,23 +499,25 @@ module.exports = {
             name: 'tauri-ipc-only-in-repositories',
             // WARN pending the IPC→repositories refactor: the resolved-path fix
             // below (was '^@tauri-apps/', which never matched the pnpm-resolved
-            // path so the rule silently never fired) surfaces 14 real violations
-            // — IPC used directly from useCases/ and presentation hooks. Landing
-            // this at 'error' would block until that 14-site refactor (backlogged)
+            // path so the rule silently never fired) plus the tauriBridge target
+            // below surface real violations — IPC used directly from useCases/,
+            // presentation hooks, and shared utilities. Landing this at 'error'
+            // would block until that refactor (backlogged)
             // is done; until then it stays 'warn' so the violations are visible.
             severity: 'warn',
             comment:
                 'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
-                'Currently warn pending the backlogged IPC→repositories refactor (14 sites in useCases/hooks).',
+                'Currently warn pending the backlogged IPC→repositories refactor.',
             from: {
-                path: '^(src/modules/)(?!.*repositories/).*' + SOURCE_FILE_RE,
+                path: '^(src/modules/|src/utils/).*' + SOURCE_FILE_RE,
+                pathNot: ['^src/modules/.*repositories/', '^src/utils/tauriBridge\\.ts$'],
             },
             to: {
                 // Resolved-path match: the pnpm store resolves @tauri-apps/* to a
                 // path containing /@tauri-apps/. The old '^@tauri-apps/' bare-
-                // specifier pattern never matched a resolved path.
-                path: '/@tauri-apps/',
-                dependencyTypes: ['npm'],
+                // specifier pattern never matched a resolved path. The bridge
+                // path catches callers that launder IPC through src/utils.
+                path: '(/@tauri-apps/|^src/utils/tauriBridge\\.ts$)',
             },
         },
 
