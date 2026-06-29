@@ -5,6 +5,7 @@ import { type StorageAdapter } from './storage/types';
 export type StoreOptions<TData> = {
     storage?: StorageAdapter<TData>;
     initialData?: TData;
+    sanitize?: (value: unknown) => TData | null;
     logger?: Logger;
 };
 
