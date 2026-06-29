@@ -20,7 +20,7 @@ export const readTauriLibrarySampleFile = inject({ readTauriAudioFileBytes })(
         }: ReadTauriLibrarySampleFileInput): ReadTauriLibrarySampleFileOutput {
             const trimmedRootPath = rootPath.replace(/[\\/]+$/, '');
             const pathSeparator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/';
-            const normalizedRelativePath = relativePath.replace(/^[\\/]+/, '').replace(/[\\/]+/g, pathSeparator);
+            const normalizedRelativePath = relativePath.replace(/^[\\/]+/, '').replaceAll(/[\\/]+/g, pathSeparator);
 
             let absolutePath = trimmedRootPath;
             if (normalizedRelativePath.length > 0) {

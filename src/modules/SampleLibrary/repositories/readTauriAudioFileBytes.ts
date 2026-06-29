@@ -6,9 +6,7 @@ type ReadTauriAudioFileBytesInput = {
 
 type ReadTauriAudioFileBytesOutput = Promise<Uint8Array>;
 
-export async function readTauriAudioFileBytes({
-    path,
-}: ReadTauriAudioFileBytesInput): ReadTauriAudioFileBytesOutput {
+export async function readTauriAudioFileBytes({ path }: ReadTauriAudioFileBytesInput): ReadTauriAudioFileBytesOutput {
     const rawBytes: unknown = await invoke('read_audio_file', { path });
 
     if (!Array.isArray(rawBytes)) {
