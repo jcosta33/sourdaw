@@ -708,6 +708,12 @@ module.exports = {
                     'src/setupTests',
                     'vite-env',
                     'src/routes/',
+                    // Dynamic Worker entrypoints referenced through
+                    // new Worker(new URL(..., import.meta.url)).
+                    '^src/modules/Transport/workers/schedulerWorker\\.ts$',
+                    '^src/modules/MIDI/workers/midiImportWorker\\.ts$',
+                    '^src/modules/BrowserAi/workers/tfjsInferenceWorker\\.ts$',
+                    '^src/modules/AudioEngine/workers/recordingWorker\\.ts$',
                 ],
             },
             to: {},
