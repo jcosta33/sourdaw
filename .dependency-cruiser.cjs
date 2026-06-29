@@ -720,6 +720,15 @@ module.exports = {
                     '^src/modules/Arrangement/__tests__/TrackDummy\\.ts$',
                     '^src/modules/Arrangement/__tests__/PluginDummy\\.ts$',
                     '^src/modules/Arrangement/__tests__/ClipDummy\\.ts$',
+                    // Reachable type/helper files imported by runtime code, but
+                    // currently invisible to dependency-cruiser's orphan graph.
+                    '^src/utils/DOM/GestureEvent\\.ts$',
+                    '^src/modules/Workspace/presentations/views/Sidebar/SidebarTypes\\.ts$',
+                    '^src/modules/Project/useCases/dawProject/dawProjectTypes\\.ts$',
+                    '^src/modules/MIDI/useCases/grooveExtraction/helpers\\.ts$',
+                    '^src/modules/Collaboration/useCases/collaborationQueries\\.ts$',
+                    '^src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/helpers\\.ts$',
+                    '^src/infra/store/storage/LocalStorageKeys\\.ts$',
                 ],
             },
             to: {},
