@@ -48,8 +48,8 @@ describe('preferencesStore — present-but-corrupt persisted blob', () => {
         // null") would otherwise leave these raw values in `.value`.
         window.localStorage.setItem(STORAGE_KEY, stringify({ theme: null, autoSave: 'yes', uiScale: 1.5 }));
 
-        // The singleton is built at module init; force a fresh instance so its
-        // loadPreferences() runs against the corrupt blob we just seeded.
+        // The singleton is built at module init; force a fresh instance so
+        // createStore sanitizes the corrupt blob we just seeded.
         vi.resetModules();
         const fresh = (await import('../preferencesStore')).preferencesStore;
 
