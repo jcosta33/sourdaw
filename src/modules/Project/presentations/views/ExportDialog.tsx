@@ -19,6 +19,10 @@ import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/store
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
+import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
+import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
+import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNativeAudioMixdownFile';
+import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
 import {
     renderOffline,
     exportStems,
@@ -259,21 +263,16 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         if (mode !== 'render-to-clip') {
             try {
                 if (isTauri()) {
-                    const { save, open } = await import('@tauri-apps/plugin-dialog');
                     if (mode === 'stems') {
-                        tauriDirPath = (await open({
-                            directory: true,
-                            multiple: false,
-                            title: 'Select Output Folder for Slices (Stems)',
-                        })) as string | null;
+                        tauriDirPath = await selectNativeAudioExportDirectory();
                         if (!tauriDirPath) {
                             return;
                         } // User cancelled
                     } else {
                         const primaryExt = Array.from(formats)[0] || 'wav';
-                        tauriFilePath = await save({
-                            defaultPath: `${baseName}.${primaryExt}`,
-                            filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
+                        tauriFilePath = await selectNativeAudioExportFile({
+                            formats: Array.from(formats),
+                            suggestedName: `${baseName}.${primaryExt}`,
                         });
                         if (!tauriFilePath) {
                             return;
@@ -372,16 +371,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const finalFileName = `${name}.${freq}`;
 
                     if (isTauri()) {
-                        const { writeFile } = await import('@tauri-apps/plugin-fs');
-                        // Use join from api if available, or just a simple slash for stems dict
-                        const { join } = await import('@tauri-apps/api/path');
                         if (mode === 'stems' && tauriDirPath) {
-                            const fullPath = await join(tauriDirPath, finalFileName);
-                            await writeFile(fullPath, uint8Data);
+                            await writeNativeAudioStemFile({
+                                bytes: uint8Data,
+                                directoryPath: tauriDirPath,
+                                fileName: finalFileName,
+                            });
                         } else if (tauriFilePath) {
-                            // Single fallback mapping for mixdown
-                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${freq}`);
-                            await writeFile(adjustedPath, uint8Data);
+                            await writeNativeAudioMixdownFile({
+                                bytes: uint8Data,
+                                format: freq,
+                                selectedFilePath: tauriFilePath,
+                            });
                         }
                     } else {
                         // Web: Pack into the zip directory for later synchronous fflate compression
