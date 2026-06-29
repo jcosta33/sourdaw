@@ -4,7 +4,7 @@
  * pattern-template filtering.
  *
  * No state, no I/O. Templates and types live in `models/MidiPatternType.ts`;
- * the aggregated catalog lives in `models/midiPatternLibrary.ts`.
+ * the aggregated catalog lives in `models/MidiPatternLibrary.ts`.
  */
 
 import {

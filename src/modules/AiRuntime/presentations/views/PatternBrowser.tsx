@@ -33,7 +33,7 @@ import {
     type KeyName,
     type ScaleType,
     type GenerationParams,
-} from '../../models/midiPatternLibrary';
+} from '../../models/MidiPatternLibrary';
 
 // ── Mini piano-roll preview ──
 
