@@ -1,6 +1,6 @@
 # File types
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo. Skill and Task types are still authored in this repo; the Audit, Spec, and Research definitions below describe artifacts that now live in the workspace.
+> **Superseded — this repo adopted Suspec.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Suspec workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo. Skill and Task types are still authored in this repo; the Audit, Spec, and Research definitions below describe artifacts that now live in the workspace.
 
 Definitions, placement rules, required sections, and completion criteria for each document type used in this repo.
 
@@ -241,7 +241,7 @@ Task files are the agent's working memory for one session. They record context, 
 
 **When to create one:**
 At the start of any non-trivial agent session. Task packets and worktrees are now
-owned by the Corpus workspace (`../sourdaw-works`) + Claude Code (the pre-Corpus `agents:*`
+owned by the Suspec workspace (`../sourdaw-works`) + Claude Code (the pre-Suspec `agents:*`
 launcher has been retired); worktree-local task scratch lives at `.agents/tasks/`.
 
 **Where it lives:** `.agents/tasks/<slug>.md` — gitignored, local to the worktree
@@ -286,7 +286,7 @@ Anything preventing progress.
 Concrete starting points for the next session if this one ends incomplete.
 
 ## Run summary
-Mandatory changed-file summary, verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.), out-of-scope edits, and blocked questions. Worktree-local scratch may also include `## Self-review`, but the assigned Corpus task packet closes with `## Run summary`. The task file is self-contained — there is no separate Handoff section. Use Decisions, Findings, and Next steps for narrative the next reader needs.
+Mandatory changed-file summary, verification outputs (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.), out-of-scope edits, and blocked questions. Worktree-local scratch may also include `## Self-review`, but the assigned Suspec task packet closes with `## Run summary`. The task file is self-contained — there is no separate Handoff section. Use Decisions, Findings, and Next steps for narrative the next reader needs.
 ```
 
 **What "done" looks like:**

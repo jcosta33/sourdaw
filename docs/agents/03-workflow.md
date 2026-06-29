@@ -1,6 +1,6 @@
 # Agent workflow
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Suspec.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Suspec workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 Step-by-step execution flow for agent sessions in this repo.
 
@@ -9,7 +9,7 @@ Step-by-step execution flow for agent sessions in this repo.
 ## 1. Start a sandbox
 
 > **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
-> worktrees and task delegation are now owned by the Corpus workspace
+> worktrees and task delegation are now owned by the Suspec workspace
 > (`../sourdaw-works`) + Claude Code — start from the task packet you were given in
 > `../sourdaw-works/tasks/` (see `../sourdaw-works/AGENTS.md`). Worktree-local task scratch
 > still lives at `.agents/tasks/`.
@@ -126,7 +126,7 @@ An audit that still lists fixed issues as open, or omits new problems discovered
 
 ## 9. Close out the task file
 
-Complete `## Run summary` in the assigned Corpus task packet before ending the session (changed files, verification outputs, out-of-scope edits, and blocked questions pasted). Worktree-local scratch may additionally include `## Self-review`. Task templates do not use a separate `## Handoff` section — the file is self-contained. Capture what was done, what was not, risks, and doc updates in **Decisions**, **Findings**, **Next steps**, and the closeout section so the next session can start from the task file without reconstructing context.
+Complete `## Run summary` in the assigned Suspec task packet before ending the session (changed files, verification outputs, out-of-scope edits, and blocked questions pasted). Worktree-local scratch may additionally include `## Self-review`. Task templates do not use a separate `## Handoff` section — the file is self-contained. Capture what was done, what was not, risks, and doc updates in **Decisions**, **Findings**, **Next steps**, and the closeout section so the next session can start from the task file without reconstructing context.
 
 ---
 

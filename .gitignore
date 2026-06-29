@@ -32,7 +32,7 @@ test-results/
 # Agent UI Scripts
 .agents/ui-scripts/*.png
 
-# Corpus — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
+# Suspec — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
 .agents/tmp/
 tmp/
-.corpus/
+.suspec/

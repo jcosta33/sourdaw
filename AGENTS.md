@@ -4,15 +4,15 @@ This document provides the canonical instructions and architectural rules that Y
 
 ---
 
-## Corpus workspace
+## Suspec workspace
 
-Corpus workspace: `../sourdaw-works` — read the task packet you are given before coding. Specs, audits, research, tasks, reviews, findings, decisions, and the board live there, not in this repo. This repo keeps only its domain skills (`.agents/skills/`) and worktree-local task scratch (`.agents/tasks/`).
+Suspec workspace: `../sourdaw-works` — read the task packet you are given before coding. Specs, audits, research, tasks, reviews, findings, decisions, and the board live there, not in this repo. This repo keeps only its domain skills (`.agents/skills/`) and worktree-local task scratch (`.agents/tasks/`).
 
 ---
 
 ## Documentation-first workflow
 
-**Canonical process is Corpus.** Work is driven by a task packet from
+**Canonical process is Suspec.** Work is driven by a task packet from
 `../sourdaw-works/tasks/`, written against a spec in
 `../sourdaw-works/specs/<feature>/spec.md`; the loop (Pull → Spec → Task → Run →
 Review → Close) and its guides live in the workspace (`../sourdaw-works/AGENTS.md`
@@ -32,9 +32,9 @@ Before starting significant implementation work, read the shared process documen
 | `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
-| `../sourdaw-works/templates/`     | Ready-to-use Corpus artifact templates (specs, tasks, reviews, etc.)                                                      |
+| `../sourdaw-works/templates/`     | Ready-to-use Suspec artifact templates (specs, tasks, reviews, etc.)                                                      |
 
-Working artifacts live in the Corpus workspace (`../sourdaw-works`), except the domain
+Working artifacts live in the Suspec workspace (`../sourdaw-works`), except the domain
 skills and worktree task scratch that stay in this repo:
 
 | Directory                        | Contains                                                                 |
@@ -53,23 +53,23 @@ skills and worktree task scratch that stay in this repo:
 **Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
 1. Read the task packet you were given in `../sourdaw-works/tasks/` and the spec it links (`../sourdaw-works/specs/<feature>/spec.md`) — follow its scope. Load the workspace guide `../sourdaw-works/.agents/skills/implement-task/SKILL.md`.
-2. In a Corpus worktree session, track session state in a matching worktree task scratch file under `.agents/tasks/`: fill in **Objective** and **Plan** before editing. In regular sessions, or when only unrelated stale scratch files exist, use the Corpus task packet as the active task record.
+2. In a Suspec worktree session, track session state in a matching worktree task scratch file under `.agents/tasks/`: fill in **Objective** and **Plan** before editing. In regular sessions, or when only unrelated stale scratch files exist, use the Suspec task packet as the active task record.
 3. Read the spec and any co-located `audit.md` / `research.md` under `../sourdaw-works/specs/<feature>/`. If no spec exists for non-trivial work, stop — a spec is authored in the workspace first (guide: `../sourdaw-works/.agents/skills/write-spec/SKILL.md`).
 4. Read the module's brownfield map in `../sourdaw-works/inventory/<Module>.md` for present-state context before refactoring; check `../sourdaw-works/intake/` for captured sources and deferred-gap items relevant to the feature.
 5. Load every relevant domain skill from `.agents/skills/` by reading the `description` field at the top of each `SKILL.md`. Read in full any skill whose description matches the domain you're about to touch.
 6. Run every item under the task's `## Verify` and paste the real command output — a claim without output counts as unverified. Save durable lessons at Close to `../sourdaw-works/findings/`.
 
-**Session completion — evidence is mandatory.** Corpus task packets close with `## Run summary`; worktree-local scratch may additionally include `## Self-review`. A task is not complete until the active task record includes written answers and pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.) for the required verification. Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, `## Run summary`, and related sections so the file stands alone for the next reader. Checkboxes alone do not count — the closeout must leave a written trace.
+**Session completion — evidence is mandatory.** Suspec task packets close with `## Run summary`; worktree-local scratch may additionally include `## Self-review`. A task is not complete until the active task record includes written answers and pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.) for the required verification. Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, `## Run summary`, and related sections so the file stands alone for the next reader. Checkboxes alone do not count — the closeout must leave a written trace.
 
-Agent sandboxes (isolated worktrees) and task delegation are owned by the Corpus
-workspace (`../sourdaw-works`) + Claude Code. The pre-Corpus in-repo `agents:*` launcher
+Agent sandboxes (isolated worktrees) and task delegation are owned by the Suspec
+workspace (`../sourdaw-works`) + Claude Code. The pre-Suspec in-repo `agents:*` launcher
 has been retired.
 
 ---
 
 ## 📋 Your task file (worktree sessions only)
 
-This section only applies in a Corpus worktree session (an isolated worktree spun up for parallel work). In a regular session, or when `.agents/tasks/` contains only unrelated stale scratch, use the assigned Corpus task packet as the active task record.
+This section only applies in a Suspec worktree session (an isolated worktree spun up for parallel work). In a regular session, or when `.agents/tasks/` contains only unrelated stale scratch, use the assigned Suspec task packet as the active task record.
 
 If `.agents/tasks/` contains a file whose slug matches your assigned session, that is **your** local scratch file. Read it before editing. It contains your spec reference, objective, plan, and checklist.
 
@@ -77,7 +77,7 @@ If `.agents/tasks/` contains a file whose slug matches your assigned session, th
 - Fill in **Linked docs** with every spec, audit, and skill you loaded.
 - Check off the **Progress checklist** steps as you complete them.
 - Log **Decisions** and **Findings** as they emerge — these are how the next reader understands what you did and why.
-- Complete the active task record before ending the session: Corpus packets use `## Run summary`; local scratch files may use `## Self-review`. Every required verification command's output must be pasted in.
+- Complete the active task record before ending the session: Suspec packets use `## Run summary`; local scratch files may use `## Self-review`. Every required verification command's output must be pasted in.
 
 ---
 

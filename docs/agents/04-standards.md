@@ -1,6 +1,6 @@
 # Standards
 
-> **Superseded — this repo adopted Corpus.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Corpus workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+> **Superseded — this repo adopted Suspec.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Suspec workspace (`../sourdaw-works`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-works/AGENTS.md` and `../sourdaw-works/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
 
 Writing and execution standards for all agents working in this repo.
 
@@ -120,7 +120,7 @@ When writing audits, findings go in `## Findings` and `## Open issues`. When wri
 
 ## Handoffs
 
-A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and the closeout section (`## Run summary` in Corpus task packets, optional `## Self-review` in local scratch) so each task file is self-contained.
+A handoff is a transfer of context between sessions. Its purpose is to make the next session productive immediately, without reconstructing context from scratch. Task files do **not** use a dedicated `## Handoff` section — put this information in **Decisions**, **Findings**, **Next steps**, and the closeout section (`## Run summary` in Suspec task packets, optional `## Self-review` in local scratch) so each task file is self-contained.
 
 Useful closure answers these questions:
 

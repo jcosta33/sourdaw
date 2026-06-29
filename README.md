@@ -7,7 +7,7 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 
 ## Agent workflow
 
-Development work is driven by the sibling Corpus workspace at
+Development work is driven by the sibling Suspec workspace at
 `../sourdaw-works`. Start with the assigned task packet in
 `../sourdaw-works/tasks/`, read the linked process/spec material there, and
 follow the repository rules in `AGENTS.md` before editing code.
