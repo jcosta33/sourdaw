@@ -4,6 +4,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { libraryStore } from '#/modules/SampleLibrary/stores';
+import { readTauriLibrarySampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -187,14 +188,11 @@ export const useTimelineFileDrop = ({
                     if (audioBufferId) {
                         // Already resolved from cache — skip the file-read/decode path.
                     } else if (isTauri() && root?.provider === 'tauri' && root.rootRef) {
-                        // Tauri: resolve the absolute path and pass as a File-like object
-                        const { invoke } = await import('@tauri-apps/api/core');
-                        const absPath = `${root.rootRef}/${sample.path}`;
-                        const bytes = (await invoke('read_audio_file', { path: absPath })) as number[];
-                        const file = new File(
-                            [new Uint8Array(bytes as ArrayLike<number>)],
-                            sample.path.split('/').pop() ?? sample.name
-                        );
+                        const file = await readTauriLibrarySampleFile({
+                            rootPath: root.rootRef,
+                            relativePath: sample.path,
+                            fallbackName: sample.name,
+                        });
                         const result = await decodeAudioFile(file);
                         audioBufferId = result.id;
                         durationBeats = Math.max(
