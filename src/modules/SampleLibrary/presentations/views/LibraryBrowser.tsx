@@ -34,6 +34,7 @@ import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLi
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { projectSpatialMap } from '../../useCases/projectSpatialMap';
+import { readTauriLibrarySampleFile } from '../../useCases/readTauriLibrarySampleFile';
 import { requestPermission } from '../../useCases/requestPermission';
 import { toggleFavorite } from '../../useCases/toggleFavorite';
 import { LibraryRootCard } from '../components/LibraryRootCard';
@@ -211,13 +212,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         try {
             let file: File;
             if (isTauri() && root.provider === 'tauri' && root.rootRef) {
-                // Tauri root: no browser handle exists — read the absolute path
-                // through the native command and wrap the bytes as a File.
-                const { invoke } = await import('@tauri-apps/api/core');
-                const absPath = `${root.rootRef}/${sample.relativePath}`;
-                const bytes = (await invoke('read_audio_file', { path: absPath })) as number[];
-                const fileName = sample.relativePath.split('/').pop() ?? sample.displayName;
-                file = new File([new Uint8Array(bytes as ArrayLike<number>)], fileName);
+                file = await readTauriLibrarySampleFile({
+                    rootPath: root.rootRef,
+                    relativePath: sample.relativePath,
+                    fallbackName: sample.displayName,
+                });
             } else if (root.handle) {
                 // Browser FileSystem Access API: walk the directory handle, but
                 // memoize each resolved sub-handle so previewing several clips in
