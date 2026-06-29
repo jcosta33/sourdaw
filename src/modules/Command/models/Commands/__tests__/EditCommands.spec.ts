@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { editCommands } from '../editCommands';
+import { editCommands } from '../EditCommands';
 
 /**
  * Regression coverage for audit #18/#52: the "Deselect All" palette entry

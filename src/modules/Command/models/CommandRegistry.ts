@@ -1,17 +1,17 @@
 import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
 
 import { type CommandEntry } from './CommandEntry';
-import { aiCommands } from './commands/aiCommands';
-import { automationCommands } from './commands/automationCommands';
-import { clipCommands } from './commands/clipCommands';
-import { editCommands } from './commands/editCommands';
-import { elasticCommands } from './commands/elasticCommands';
-import { midiCommands } from './commands/midiCommands';
-import { miscCommands } from './commands/miscCommands';
-import { projectCommands } from './commands/projectCommands';
-import { trackCommands } from './commands/trackCommands';
-import { transportCommands } from './commands/transportCommands';
-import { viewCommands } from './commands/viewCommands';
+import { aiCommands } from './Commands/AiCommands';
+import { automationCommands } from './Commands/AutomationCommands';
+import { clipCommands } from './Commands/ClipCommands';
+import { editCommands } from './Commands/EditCommands';
+import { elasticCommands } from './Commands/ElasticCommands';
+import { midiCommands } from './Commands/MidiCommands';
+import { miscCommands } from './Commands/MiscCommands';
+import { projectCommands } from './Commands/ProjectCommands';
+import { trackCommands } from './Commands/TrackCommands';
+import { transportCommands } from './Commands/TransportCommands';
+import { viewCommands } from './Commands/ViewCommands';
 
 /**
  * Command registry — aggregates all commands from per-category sub-files.
