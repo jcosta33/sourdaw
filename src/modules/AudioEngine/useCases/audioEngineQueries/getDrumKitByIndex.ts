@@ -1,4 +1,4 @@
-import { getDrumKitByIndex as getDrumKitByIndexFromFactory } from '../../models/factoryDrumKits';
+import { getDrumKitByIndex as getDrumKitByIndexFromFactory } from '../../models/FactoryDrumKits';
 
 import { toDrumKit } from './helpers';
 

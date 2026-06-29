@@ -1,4 +1,4 @@
-import { getDrumKitByIndex } from '../models/factoryDrumKits';
+import { getDrumKitByIndex } from '../models/FactoryDrumKits';
 import { type DrumKit } from '../models/SynthModels';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 

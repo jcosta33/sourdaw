@@ -29,7 +29,7 @@ import {
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 
-import { getDrumKitByIndex } from '../../models/factoryDrumKits';
+import { getDrumKitByIndex } from '../../models/FactoryDrumKits';
 import {
     MIDI_NOTE_ON,
     MIDI_NOTE_OFF,
