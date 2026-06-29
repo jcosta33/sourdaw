@@ -123,12 +123,12 @@ const validators = {
         isString(param.name),
     removeClip: hasClipId as PayloadValidator<'removeClip'>,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
+        isObj(param) && isString(param.clipId) && isNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
         isObj(param) &&
         isString(param.clipId) &&
-        isNumber(param.newStartBeat) &&
-        isOptional(param.newTrackId, isString),
+        isString(param.trackId) &&
+        isNumber(param.startBeat),
     duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
 
     // Device lifecycle
@@ -138,7 +138,6 @@ const validators = {
         isObj(param) && isString(param.trackId) && isString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
         isObj(param) &&
-        isString(param.trackId) &&
         isString(param.deviceId) &&
         isString(param.paramId) &&
         isNumber(param.value),
