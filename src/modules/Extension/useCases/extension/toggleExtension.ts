@@ -1,13 +1,16 @@
 import { extensionStore } from '../../stores/extension';
 
 export function toggleExtension(extensionId: string): void {
-    const state = extensionStore.value;
-    if (!state) {
-        return;
-    }
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
 
-    extensionStore.set({
-        ...state,
-        installed: state.installed.map((e) => (e.manifest.id === extensionId ? { ...e, enabled: !e.enabled } : e)),
+        return {
+            ...state,
+            installed: state.installed.map((extension) =>
+                extension.manifest.id === extensionId ? { ...extension, enabled: !extension.enabled } : extension
+            ),
+        };
     });
 }

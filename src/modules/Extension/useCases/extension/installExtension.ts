@@ -1,25 +1,26 @@
 import { extensionStore, type ExtensionManifest, type InstalledExtension } from '../../stores/extension';
 
 export function installExtension(manifest: ExtensionManifest): void {
-    const state = extensionStore.value;
-    if (!state) {
-        return;
-    }
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
 
-    if (state.installed.some((e) => e.manifest.id === manifest.id)) {
-        return;
-    }
+        if (state.installed.some((extension) => extension.manifest.id === manifest.id)) {
+            return state;
+        }
 
-    const ext: InstalledExtension = {
-        manifest,
-        enabled: true,
-        installedAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString(),
-        state: {},
-    };
+        const installedExtension: InstalledExtension = {
+            manifest,
+            enabled: true,
+            installedAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+            state: {},
+        };
 
-    extensionStore.set({
-        ...state,
-        installed: [...state.installed, ext],
+        return {
+            ...state,
+            installed: [...state.installed, installedExtension],
+        };
     });
 }

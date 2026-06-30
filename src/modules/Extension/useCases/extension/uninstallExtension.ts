@@ -1,14 +1,15 @@
 import { extensionStore } from '../../stores/extension';
 
 export function uninstallExtension(extensionId: string): void {
-    const state = extensionStore.value;
-    if (!state) {
-        return;
-    }
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
 
-    extensionStore.set({
-        ...state,
-        installed: state.installed.filter((e) => e.manifest.id !== extensionId),
-        commands: state.commands.filter((c) => c.extensionId !== extensionId),
+        return {
+            ...state,
+            installed: state.installed.filter((extension) => extension.manifest.id !== extensionId),
+            commands: state.commands.filter((command) => command.extensionId !== extensionId),
+        };
     });
 }

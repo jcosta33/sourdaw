@@ -3,12 +3,37 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { toggleScriptEditor } from '../toggleScriptEditor';
 
-const mocks = vi.hoisted(() => ({
-    extensionStore: {
-        value: null as import('../../../stores/extension').ExtensionMarketplaceState | null,
-        set: vi.fn(),
-    },
-}));
+const mocks = vi.hoisted(() => {
+    type State = import('../../../stores/extension').ExtensionMarketplaceState;
+    let currentState: State | null = null;
+    let valueSnapshot: State | null = null;
+
+    const extensionStore = {
+        get value(): State | null {
+            return valueSnapshot;
+        },
+        set: vi.fn<(state: State | null) => void>((state) => {
+            currentState = state;
+            valueSnapshot = state;
+        }),
+        update: vi.fn<(updater: (current: State | null) => State | null) => void>((updater) => {
+            currentState = updater(currentState);
+            valueSnapshot = currentState;
+        }),
+    };
+
+    return {
+        extensionStore,
+        setCurrentState: (state: State | null) => {
+            currentState = state;
+            valueSnapshot = state;
+        },
+        setValueSnapshot: (state: State | null) => {
+            valueSnapshot = state;
+        },
+        getCurrentState: () => currentState,
+    };
+});
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../stores/extension')>();
@@ -26,16 +51,65 @@ function baseState(overrides: Partial<ExtensionMarketplaceState> = {}): Extensio
     };
 }
 
+function currentState(): ExtensionMarketplaceState {
+    const state = mocks.getCurrentState();
+    if (!state) {
+        throw new Error('Expected extension store state');
+    }
+    return state;
+}
+
 describe('toggleScriptEditor', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.setCurrentState(baseState());
     });
 
-    it('flips editorOpen', () => {
-        mocks.extensionStore.value = baseState({ editorOpen: false });
+    it('should flip editorOpen', () => {
+        mocks.setCurrentState(baseState({ editorOpen: false }));
 
         toggleScriptEditor();
 
-        expect(mocks.extensionStore.set).toHaveBeenCalledWith(expect.objectContaining({ editorOpen: true }));
+        expect(mocks.extensionStore.update).toHaveBeenCalledTimes(1);
+        expect(currentState().editorOpen).toBe(true);
+    });
+
+    it('should toggle from the current state and preserve unrelated fields when the value snapshot is stale', () => {
+        const current = baseState({
+            installed: [
+                {
+                    manifest: {
+                        id: 'ext-a',
+                        name: 'A',
+                        version: '1',
+                        description: 'd',
+                        author: 'a',
+                        minDawVersion: '0',
+                        main: 'main.js',
+                        permissions: [],
+                        category: 'utilities',
+                        license: 'MIT',
+                    },
+                    enabled: true,
+                    installedAt: 'installed',
+                    lastUpdatedAt: 'updated',
+                    state: {},
+                },
+            ],
+            consoleLog: [{ timestamp: 'now', level: 'info', message: 'current log' }],
+            editorOpen: false,
+            editorContent: 'current editor',
+        });
+
+        mocks.setCurrentState(current);
+        mocks.setValueSnapshot(baseState({ editorOpen: true }));
+
+        toggleScriptEditor();
+
+        const next = currentState();
+        expect(next.editorOpen).toBe(true);
+        expect(next.installed).toEqual(current.installed);
+        expect(next.consoleLog).toEqual(current.consoleLog);
+        expect(next.editorContent).toBe('current editor');
     });
 });

@@ -20,16 +20,18 @@ import { extensionStore } from '../stores/extension';
  * Append a log entry to the extension console (keeps last 100 entries).
  */
 export function appendLog(level: 'info' | 'warn' | 'error', message: string): void {
-    const state = extensionStore.value;
-    if (!state) {
-        return;
-    }
-    extensionStore.set({
-        ...state,
-        consoleLog: [
-            ...state.consoleLog.slice(-99), // Keep last 100 entries
-            { timestamp: new Date().toISOString(), level, message },
-        ],
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+
+        return {
+            ...state,
+            consoleLog: [
+                ...state.consoleLog.slice(-99), // Keep last 100 entries
+                { timestamp: new Date().toISOString(), level, message },
+            ],
+        };
     });
 }
 
