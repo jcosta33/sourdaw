@@ -537,11 +537,6 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         resetIntegrated: result.resetIntegrated,
                     },
                 });
-                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
-                // Queued params are flat project truth or direct param writes; replay them last so they win.
-                for (const [name, value] of pendingParams) {
-                    result.setParam(name, value);
-                }
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -564,6 +559,11 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                // Queued params are flat project truth or direct param writes; replay them last so they win.
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
                 return;
             })
             .catch((error) => {
