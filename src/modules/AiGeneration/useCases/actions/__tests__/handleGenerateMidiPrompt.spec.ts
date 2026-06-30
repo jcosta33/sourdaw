@@ -2,11 +2,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleGenerateMidiPrompt, buildSeedNotesFromPrompt } from '../handleGenerateMidiPrompt';
 
+type UndoCallback = () => void;
+
+type PushUndoEntryMock = (
+    label: string,
+    undoFn: UndoCallback,
+    redoFn: UndoCallback,
+    options?: { source?: string; groupId?: string; groupLabel?: string }
+) => void;
+
 const {
     updateTaskMock,
     addTrackMock,
     addClipMock,
+    batchAddMidiNotesMock,
+    setTrackStoreStateMock,
+    setMidiStoreStateMock,
     pushUndoEntryMock,
+    selectClipMock,
     trackStoreMock,
     midiStoreMock,
     workspaceStoreMock,
@@ -15,7 +28,11 @@ const {
     updateTaskMock: vi.fn(),
     addTrackMock: vi.fn(),
     addClipMock: vi.fn(),
-    pushUndoEntryMock: vi.fn(),
+    batchAddMidiNotesMock: vi.fn(),
+    setTrackStoreStateMock: vi.fn<(state: unknown) => void>(),
+    setMidiStoreStateMock: vi.fn<(state: unknown) => void>(),
+    pushUndoEntryMock: vi.fn<PushUndoEntryMock>(),
+    selectClipMock: vi.fn(),
     trackStoreMock: {
         value: { tracks: [] as Array<{ id: string; kind: string }>, selectedTrackId: null as string | null },
         set: vi.fn(),
@@ -40,6 +57,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         ...actual,
         addTrack: addTrackMock,
         addClip: addClipMock,
+        setTrackStoreState: setTrackStoreStateMock,
     };
 });
 
@@ -67,11 +85,16 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Workspace/useCases', () => ({
+    selectClip: selectClipMock,
+}));
+
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
         ...actual,
-        batchAddMidiNotes: vi.fn(),
+        batchAddMidiNotes: batchAddMidiNotesMock,
+        setMidiStoreState: setMidiStoreStateMock,
     };
 });
 
@@ -107,24 +130,44 @@ describe('handleGenerateMidiPrompt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStoreMock.value = { tracks: [], selectedTrackId: null };
+        workspaceStoreMock.value = { selectedClipId: null };
         generateMidiViaLlmMock.mockResolvedValue([]);
     });
 
-    it('records an error task when generation yields no notes', async () => {
+    it('should record an error task when generation yields no notes', async () => {
         await handleGenerateMidiPrompt('hello');
 
         expect(updateTaskMock).toHaveBeenCalledWith(
             'task-1',
             expect.objectContaining({
                 status: 'error',
+                error: 'No notes generated — try rephrasing the prompt',
             })
         );
+        expect(addTrackMock).not.toHaveBeenCalled();
+        expect(addClipMock).not.toHaveBeenCalled();
+        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+        expect(selectClipMock).not.toHaveBeenCalled();
     });
 
-    it('registers an undo entry and reports error when the clip cannot be created on a freshly added track', async () => {
+    it('should register an undo entry and report error when the clip cannot be created on a freshly added track', async () => {
+        const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
+        const trackSnapshotAfter = {
+            tracks: [{ id: 'new-midi-track', kind: 'midi' }],
+            selectedTrackId: 'new-midi-track',
+        };
+        const midiSnapshotBefore = { notesByClipId: {} };
+        const midiSnapshotAfter = midiSnapshotBefore;
+        trackStoreMock.value = trackSnapshotBefore;
+        midiStoreMock.value = midiSnapshotBefore;
+
         // Notes generated, a new track is created, but addClip fails (returns null).
         generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
-        addTrackMock.mockReturnValue({ id: 'new-midi-track' });
+        addTrackMock.mockImplementation(() => {
+            trackStoreMock.value = trackSnapshotAfter;
+            return { id: 'new-midi-track' };
+        });
         addClipMock.mockReturnValue(null);
 
         await handleGenerateMidiPrompt('a melody');
@@ -132,8 +175,50 @@ describe('handleGenerateMidiPrompt', () => {
         // The orphan track is rolled-back-able: an undo entry was registered
         // even though no clip (and therefore no note batch) was inserted.
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
+        expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
+        expect(selectClipMock).not.toHaveBeenCalled();
         // And the task is surfaced as an error, not a false success.
-        expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'error' }));
+        expect(updateTaskMock).toHaveBeenCalledWith(
+            'task-1',
+            expect.objectContaining({
+                status: 'error',
+                error: 'MIDI generation failed: could not create a clip for the notes',
+            })
+        );
+
+        const undoEntryCall = pushUndoEntryMock.mock.calls[0];
+        expect(undoEntryCall).toBeDefined();
+        if (!undoEntryCall) {
+            throw new Error('Expected clip-create failure to register an undo entry');
+        }
+        const [, undoCallback, redoCallback] = undoEntryCall;
+
+        undoCallback();
+        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotBefore);
+        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotBefore);
+
+        setTrackStoreStateMock.mockClear();
+        setMidiStoreStateMock.mockClear();
+
+        redoCallback();
+        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotAfter);
+        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
+    });
+
+    it('should delegate generated clip selection through the Workspace use case', async () => {
+        generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
+        addTrackMock.mockReturnValue({ id: 'new-midi-track' });
+        addClipMock.mockReturnValue({ id: 'generated-clip' });
+
+        await handleGenerateMidiPrompt('a melody');
+
+        expect(batchAddMidiNotesMock).toHaveBeenCalledWith('generated-clip', [
+            { pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+        ]);
+        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
+        expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+        expect(selectClipMock).toHaveBeenCalledWith('generated-clip');
+        expect(workspaceStoreMock.set).not.toHaveBeenCalled();
     });
 });
 
