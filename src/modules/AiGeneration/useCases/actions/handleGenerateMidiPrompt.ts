@@ -5,7 +5,7 @@ import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { batchAddMidiNotes, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { selectClip } from '#/modules/Workspace/useCases';
 
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
@@ -173,10 +173,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                         { source: 'ai' }
                     );
 
-                    const ws = workspaceStore.value;
-                    if (ws) {
-                        workspaceStore.set({ ...ws, selectedClipId: clip.id });
-                    }
+                    selectClip(clip.id);
                 } else if (createdNewTrack) {
                     // addClip failed but we already created a track for this
                     // generation. Register an undo entry so the orphan track can

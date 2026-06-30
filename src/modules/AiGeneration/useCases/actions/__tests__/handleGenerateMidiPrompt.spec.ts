@@ -6,7 +6,9 @@ const {
     updateTaskMock,
     addTrackMock,
     addClipMock,
+    batchAddMidiNotesMock,
     pushUndoEntryMock,
+    selectClipMock,
     trackStoreMock,
     midiStoreMock,
     workspaceStoreMock,
@@ -15,7 +17,9 @@ const {
     updateTaskMock: vi.fn(),
     addTrackMock: vi.fn(),
     addClipMock: vi.fn(),
+    batchAddMidiNotesMock: vi.fn(),
     pushUndoEntryMock: vi.fn(),
+    selectClipMock: vi.fn(),
     trackStoreMock: {
         value: { tracks: [] as Array<{ id: string; kind: string }>, selectedTrackId: null as string | null },
         set: vi.fn(),
@@ -67,11 +71,15 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Workspace/useCases', () => ({
+    selectClip: selectClipMock,
+}));
+
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
         ...actual,
-        batchAddMidiNotes: vi.fn(),
+        batchAddMidiNotes: batchAddMidiNotesMock,
     };
 });
 
@@ -107,6 +115,7 @@ describe('handleGenerateMidiPrompt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStoreMock.value = { tracks: [], selectedTrackId: null };
+        workspaceStoreMock.value = { selectedClipId: null };
         generateMidiViaLlmMock.mockResolvedValue([]);
     });
 
@@ -134,6 +143,22 @@ describe('handleGenerateMidiPrompt', () => {
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         // And the task is surfaced as an error, not a false success.
         expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'error' }));
+    });
+
+    it('should delegate generated clip selection through the Workspace use case', async () => {
+        generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
+        addTrackMock.mockReturnValue({ id: 'new-midi-track' });
+        addClipMock.mockReturnValue({ id: 'generated-clip' });
+
+        await handleGenerateMidiPrompt('a melody');
+
+        expect(batchAddMidiNotesMock).toHaveBeenCalledWith('generated-clip', [
+            { pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+        ]);
+        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
+        expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
+        expect(selectClipMock).toHaveBeenCalledWith('generated-clip');
+        expect(workspaceStoreMock.set).not.toHaveBeenCalled();
     });
 });
 
