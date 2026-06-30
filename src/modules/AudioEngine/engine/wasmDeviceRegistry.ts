@@ -523,9 +523,6 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
-                for (const [name, value] of pendingParams) {
-                    result.setParam(name, value);
-                }
                 result.onLatencyChanged((latency) => {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
@@ -540,6 +537,11 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         resetIntegrated: result.resetIntegrated,
                     },
                 });
+                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                // Queued params are flat project truth or direct param writes; replay them last so they win.
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
                 onLoaded({
                     deviceId,
                     type: deviceType,
@@ -562,10 +564,6 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                // Queued params are restored flat project truth; a default ProofPatch replay would clobber them.
-                if (pendingParams.length === 0) {
-                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
-                }
                 return;
             })
             .catch((error) => {

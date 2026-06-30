@@ -35,6 +35,9 @@ const REGISTERED_WASM_DEVICE_TYPES = [
     'grand-boule',
 ] as const;
 
+type RegistryAudioContext = ReturnType<typeof createMockAudioContext> & AudioContext;
+type RegistryAudioWorkletNode = ReturnType<typeof createMockAudioNode<'audio-worklet'>> & AudioWorkletNode;
+
 describe('findWasmDescriptor', () => {
     beforeEach(() => {
         proofNodeMocks.createProofNode.mockReset();
@@ -65,7 +68,7 @@ describe('findWasmDescriptor', () => {
         expect(findWasmDescriptor('')).toBeUndefined();
     });
 
-    it('should not sync a default Proof patch over queued restored flat params', async () => {
+    it('should replay queued restored flat params after Proof patch sync', async () => {
         const syncProofPatch = vi.fn(() => {
             proofNodeMocks.setParam('lim_ceiling', -0.1);
         });
@@ -79,7 +82,7 @@ describe('findWasmDescriptor', () => {
         }
 
         const { placeholder, loadPromise } = desc.create({
-            context: createMockAudioContext() as unknown as AudioContext,
+            context: createRegistryAudioContext(),
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded: vi.fn(),
@@ -93,9 +96,45 @@ describe('findWasmDescriptor', () => {
         await loadPromise;
 
         expect(registerProofDevice).toHaveBeenCalledTimes(1);
-        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(1);
-        expect(proofNodeMocks.setParam).toHaveBeenCalledWith('lim_ceiling', -1.5);
-        expect(syncProofPatch).not.toHaveBeenCalled();
+        expect(syncProofPatch).toHaveBeenCalledTimes(1);
+        expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
+        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(2);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', -0.1);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -1.5);
+    });
+
+    it('should preserve real Proof patch sync when direct flat params are queued', async () => {
+        const syncProofPatch = vi.fn(() => {
+            proofNodeMocks.setParam('input_gain', 3);
+            proofNodeMocks.setParam('lim_ceiling', -0.1);
+        });
+        proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
+        setAudioDeviceRuntimeSink({ syncProofPatch });
+
+        const desc = findWasmDescriptor('proof');
+        if (!desc) {
+            throw new Error('Expected proof descriptor to be registered');
+        }
+
+        const { placeholder, loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'proof-1',
+            deviceType: 'proof',
+            onLoaded: vi.fn(),
+        });
+
+        if (!placeholder.nativeDspControls) {
+            throw new Error('Expected proof placeholder to expose native DSP controls');
+        }
+        placeholder.nativeDspControls.setParam('lim_ceiling', -1.5);
+
+        await loadPromise;
+
+        expect(syncProofPatch).toHaveBeenCalledTimes(1);
+        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(3);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'input_gain', 3);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -0.1);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(3, 'lim_ceiling', -1.5);
     });
 
     it('should still sync a real in-memory Proof patch when no flat params are queued', async () => {
@@ -109,7 +148,7 @@ describe('findWasmDescriptor', () => {
         }
 
         const { loadPromise } = desc.create({
-            context: createMockAudioContext() as unknown as AudioContext,
+            context: createRegistryAudioContext(),
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded: vi.fn(),
@@ -121,6 +160,14 @@ describe('findWasmDescriptor', () => {
         expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
     });
 });
+
+function createRegistryAudioContext(): AudioContext {
+    return createMockAudioContext() as RegistryAudioContext;
+}
+
+function createRegistryAudioWorkletNode(): AudioWorkletNode {
+    return createMockAudioNode('audio-worklet') as RegistryAudioWorkletNode;
+}
 
 function createProofNodeResult(): ProofNodeResult {
     return {
@@ -134,6 +181,6 @@ function createProofNodeResult(): ProofNodeResult {
         resetIntegrated: proofNodeMocks.resetIntegrated,
         setBypass: proofNodeMocks.setBypass,
         setParam: proofNodeMocks.setParam,
-        workletNode: createMockAudioNode('audio-worklet') as unknown as AudioWorkletNode,
+        workletNode: createRegistryAudioWorkletNode(),
     };
 }
