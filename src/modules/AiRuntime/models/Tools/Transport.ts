@@ -1,4 +1,4 @@
-import { tool, type ToolSchema } from './types';
+import { tool, type ToolSchema } from './Types';
 
 export const transportTools: readonly ToolSchema[] = [
     tool('setTempo', 'Set the project tempo in BPM. Range: 20–300.', { bpm: { type: 'number' } }, ['bpm']),

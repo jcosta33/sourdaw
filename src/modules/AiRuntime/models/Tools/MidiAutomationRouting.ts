@@ -1,4 +1,4 @@
-import { tool, type ToolSchema } from './types';
+import { tool, type ToolSchema } from './Types';
 
 export const midiTools: readonly ToolSchema[] = [
     tool(

@@ -5,7 +5,7 @@
  */
 
 import { type RuntimeActionType } from '../models/RuntimeAction';
-import { type ToolSchema } from '../models/tools/types';
+import { type ToolSchema } from '../models/Tools/Types';
 
 const MAX_TOOLS = 30;
 

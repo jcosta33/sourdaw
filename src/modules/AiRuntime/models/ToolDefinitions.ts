@@ -7,16 +7,16 @@
  * These are serialized as JSON inside `<tools>` XML in the system prompt —
  * NOT passed via the OpenAI `tools` API parameter.
  *
- * Domain-specific arrays live in ./tools/*.ts.
+ * Domain-specific arrays live in ./Tools/*.ts.
  */
 
-import { clipTools, deviceTools } from './tools/clipAndDevice';
-import { generationTools, markerTools, timeTools, workspaceTools } from './tools/generationAndView';
-import { midiTools, automationTools, routingTools } from './tools/midiAutomationRouting';
-import { trackTools } from './tools/track';
-import { transportTools } from './tools/transport';
+import { clipTools, deviceTools } from './Tools/ClipAndDevice';
+import { generationTools, markerTools, timeTools, workspaceTools } from './Tools/GenerationAndView';
+import { midiTools, automationTools, routingTools } from './Tools/MidiAutomationRouting';
+import { trackTools } from './Tools/Track';
+import { transportTools } from './Tools/Transport';
 
-export type { ToolSchema } from './tools/types';
+export type { ToolSchema } from './Tools/Types';
 
 /** All tool schemas exposed to the LLM via the system prompt. */
 export const DAW_TOOL_SCHEMAS = [
