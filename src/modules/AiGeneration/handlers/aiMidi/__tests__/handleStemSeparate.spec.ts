@@ -12,22 +12,15 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn(),
     separateStems: vi.fn(),
     audioBufferToWav: vi.fn(),
-    trackStoreValue: { value: null } as any,
+    getTrackStoreState: vi.fn(),
     notifyUser: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
+    getTrackStoreState: mocks.getTrackStoreState,
     removeTrack: mocks.removeTrack,
-}));
-
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value() {
-            return mocks.trackStoreValue.value;
-        },
-    },
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -53,11 +46,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 describe('handleStemSeparate', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.trackStoreValue.value = null;
+        mocks.getTrackStoreState.mockReturnValue(null);
     });
 
     it('bails if clip cannot be found', async () => {
-        mocks.trackStoreValue.value = { tracks: [] };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
         await expect(
             handleStemSeparate.execute({
@@ -67,11 +60,12 @@ describe('handleStemSeparate', () => {
         ).rejects.toThrow('Clip not found');
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Stem separation failed: clip not found', 'error');
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(1);
         expect(mocks.separateStems).not.toHaveBeenCalled();
     });
 
     it('bails if clip is not audio or missing buffer', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     clips: [
@@ -80,7 +74,7 @@ describe('handleStemSeparate', () => {
                     ],
                 },
             ],
-        };
+        });
 
         await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow();
         expect(mocks.notifyUser).toHaveBeenCalledWith('Stem separation failed: clip has no audio buffer', 'error');
@@ -89,9 +83,9 @@ describe('handleStemSeparate', () => {
     });
 
     it('bails if buffer cannot be loaded from cache', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
-        };
+        });
         mocks.cacheGet.mockReturnValue(null);
 
         await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow();
@@ -103,7 +97,7 @@ describe('handleStemSeparate', () => {
     });
 
     it('separates stems, creates tracks, and adds clips', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     clips: [
@@ -118,7 +112,7 @@ describe('handleStemSeparate', () => {
                     ],
                 },
             ],
-        };
+        });
 
         const mockBuffer = {} as AudioBuffer;
         mocks.cacheGet.mockReturnValue(mockBuffer);
@@ -138,6 +132,7 @@ describe('handleStemSeparate', () => {
         });
 
         expect(mocks.separateStems).toHaveBeenCalledWith(expect.any(ArrayBuffer), ['vocals', 'drums']);
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
         expect(mocks.addTrack).toHaveBeenCalledTimes(2);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — drums', kind: 'audio' });
@@ -160,9 +155,9 @@ describe('handleStemSeparate', () => {
     });
 
     it('rejects unknown stem names at the boundary before calling separateStems', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 }] }],
-        };
+        });
 
         await expect(
             handleStemSeparate.execute({
@@ -178,7 +173,7 @@ describe('handleStemSeparate', () => {
 
     it('removes a prior stem track of the same name before re-creating it (no duplicate accumulation)', async () => {
         // A previous separation already produced a "Vocals — vocals" track (t-old).
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     id: 'src',
@@ -188,7 +183,7 @@ describe('handleStemSeparate', () => {
                 },
                 { id: 't-old', name: 'Vocals — vocals', clips: [] },
             ],
-        };
+        });
 
         mocks.cacheGet.mockReturnValue({} as AudioBuffer);
         mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
@@ -200,15 +195,16 @@ describe('handleStemSeparate', () => {
             payload: { clipId: 'c1', stems: ['vocals'] },
         });
 
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
         expect(mocks.removeTrack).toHaveBeenCalledWith('t-old');
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
     });
 
     it('logs warning if separation throws', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
-        };
+        });
         mocks.cacheGet.mockReturnValue({} as AudioBuffer);
         mocks.separateStems.mockRejectedValue(new Error('Oops'));
 

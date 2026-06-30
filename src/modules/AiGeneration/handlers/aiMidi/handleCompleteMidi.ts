@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip } from '#/modules/Arrangement/useCases';
+import { addClip, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -30,7 +29,7 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
         const notes = await llmGenerateNotes(generateToolCalls, instruction, existing, alpha.payload.clipId);
 
         if (direction === 'backward') {
-            const trackState = trackStore.value;
+            const trackState = getTrackStoreState();
             const refTrack = trackState?.tracks.find((t) => t.clips.some((c) => c.id === alpha.payload.clipId));
             const refClip = refTrack?.clips.find((c) => c.id === alpha.payload.clipId);
 
