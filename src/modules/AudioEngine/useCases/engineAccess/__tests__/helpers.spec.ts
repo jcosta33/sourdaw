@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../helpers';
+import { disableLink } from '../disableLink';
+import { enableLink } from '../enableLink';
+import { getLinkStatus } from '../getLinkStatus';
 
-describe('helpers', () => {
-    it('should load the module', () => {
-        expect(subject).toBeDefined();
+describe('link use cases', () => {
+    it('should export callable Link controls', () => {
+        expect(typeof disableLink).toBe('function');
+        expect(typeof enableLink).toBe('function');
+        expect(typeof getLinkStatus).toBe('function');
     });
 });

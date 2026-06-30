@@ -1,1 +1,0 @@
-export { DEVICE_FACTORIES } from '../../repositories/deviceNodeFactory';

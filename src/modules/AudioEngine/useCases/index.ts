@@ -77,7 +77,9 @@ export { setSend } from './engineAccess/setSend';
 export { removeSend } from './engineAccess/removeSend';
 export { wireSidechainRoute } from './engineAccess/wireSidechainRoute';
 export { unwireSidechainRoute } from './engineAccess/unwireSidechainRoute';
-export { enableLink, disableLink } from './engineAccess/helpers';
+export { enableLink } from './engineAccess/enableLink';
+export { disableLink } from './engineAccess/disableLink';
+export { getLinkStatus } from './engineAccess/getLinkStatus';
 
 export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 

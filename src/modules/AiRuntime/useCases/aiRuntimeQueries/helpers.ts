@@ -93,12 +93,4 @@ export function toPromptPreset(preset: (typeof PRESET_ACTIONS)[number]): PromptP
 }
 
 export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo } from '../../models/ModelInfo';
-export { getActiveModelId } from '../../repositories/webLlm/engineLifecycle';
-
-// ─── Cross-module re-exports ───────────────────────────────────────────────────
-
-export { streamCloudChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-export { generateWebLlmCompletion } from '../../repositories/webLlm/engineLifecycle';
-export { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
-export { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 export { isComplexPrompt } from '../../transformers/promptParser/parsing';

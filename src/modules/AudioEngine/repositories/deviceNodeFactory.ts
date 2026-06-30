@@ -3,7 +3,7 @@
  * DAW effects. Each device type is implemented in ./devices/*.ts.
  *
  * Public surface:
- *   - `DEVICE_FACTORIES` — map of deviceType → factory function
+ *   - `createOfflineDeviceNode` — resolve and create a built-in device node
  *   - `applyParams` — apply a parameter map to an existing device node
  *   - `OfflineDeviceNode` — shared node-graph descriptor
  */
@@ -51,7 +51,7 @@ export type { OfflineDeviceNode };
 
 // ── Factory map ──────────────────────────────────────────────────────────
 
-export const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => OfflineDeviceNode> = {
+const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => OfflineDeviceNode> = {
     'builtin-eq': createEq,
     'builtin-compressor': createCompressor,
     'builtin-sidechain-compressor': createSidechainCompressorFallback,
@@ -72,6 +72,25 @@ export const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => Offline
     'builtin-autopan': createAutoPan,
     'builtin-stereo-widener': createStereoWidener,
 };
+
+type CreateOfflineDeviceNodeInput = {
+    context: BaseAudioContext;
+    deviceType: string;
+};
+
+type CreateOfflineDeviceNodeOutput = OfflineDeviceNode | null;
+
+export function createOfflineDeviceNode({
+    context,
+    deviceType,
+}: CreateOfflineDeviceNodeInput): CreateOfflineDeviceNodeOutput {
+    const factory = DEVICE_FACTORIES[deviceType];
+    if (!factory) {
+        return null;
+    }
+
+    return factory(context);
+}
 
 // ── Parameter application dispatch ───────────────────────────────────────
 

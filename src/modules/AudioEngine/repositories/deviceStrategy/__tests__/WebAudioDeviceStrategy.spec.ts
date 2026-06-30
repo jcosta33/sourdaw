@@ -2,13 +2,17 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../deviceNodeFactory', () => ({
     applyParams: vi.fn(),
-    DEVICE_FACTORIES: {
-        'builtin-gain': vi.fn(() => ({
-            inputNode: {} as AudioNode,
-            outputNode: {} as AudioNode,
-            nodes: [],
-        })),
-    },
+    createOfflineDeviceNode: vi.fn(({ deviceType }: { deviceType: string }) => {
+        if (deviceType === 'builtin-gain') {
+            return {
+                inputNode: {} as AudioNode,
+                outputNode: {} as AudioNode,
+                nodes: [],
+            };
+        }
+
+        return null;
+    }),
 }));
 
 import { type Device } from '../../../models/TrackViewTypes';
@@ -31,7 +35,7 @@ describe('WebAudioDeviceStrategy', () => {
 });
 
 describe('createWebAudioDevice', () => {
-    it('should build a strategy from DEVICE_FACTORIES and apply initial params', () => {
+    it('should build a strategy from the offline device resolver and apply initial params', () => {
         const ctx = {} as BaseAudioContext;
         const device: Device = {
             id: 'd1',

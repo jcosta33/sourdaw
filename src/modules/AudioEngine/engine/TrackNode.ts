@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
+import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
@@ -396,9 +396,8 @@ export class TrackNode {
             // Set once settled and never rejects meaningfully.
             void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else {
-            const factory = DEVICE_FACTORIES[deviceType];
-            if (factory) {
-                const factoryNode = factory(context);
+            const factoryNode = createBuiltinDeviceNode({ context, deviceType });
+            if (factoryNode) {
                 dn = {
                     deviceId,
                     type: deviceType,

@@ -1,5 +1,5 @@
 import { type Device } from '../../models/TrackViewTypes';
-import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../deviceNodeFactory';
+import { type OfflineDeviceNode, applyParams, createOfflineDeviceNode } from '../deviceNodeFactory';
 
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
@@ -15,11 +15,13 @@ export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
 }
 
 export function createWebAudioDevice(ctx: BaseAudioContext, device: Device): WebAudioDeviceStrategy {
-    const factory = DEVICE_FACTORIES[device.type];
-    if (!factory) {
+    const node = createOfflineDeviceNode({
+        context: ctx,
+        deviceType: device.type,
+    });
+    if (!node) {
         throw new Error(`Unknown WebAudio device type: ${device.type}`);
     }
-    const node = factory(ctx);
     applyParams(node, device.type, device.parameterValues);
     return new WebAudioDeviceStrategy(node, device.type);
 }
