@@ -1,26 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-import { setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Transport & Engine', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
-
-        // Bypass the Launch Screen
-        const launchScreen = page.getByLabel('Sourdaw — start a project');
-        await launchScreen.waitFor({ state: 'visible' });
-        await page.locator('#launch-new-project').click();
-        
-        // Ensure the click was registered and the animation starts
-        await expect(page.getByText('Baking')).toBeVisible({ timeout: 5000 });
-
-        // We don't wait for LaunchScreen to unmount because it might stay in the DOM 
-        // with opacity: 0 if the exit animation timeout is cancelled by store updates.
-        // Playwright will automatically wait until it stops intercepting pointer events.
-        
-        // Wait for the main workspace to load
-        // Transport controls are in the main app shell
-        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+        await launch_new_project(page);
     });
 
     test('Toggling play/pause updates UI state and playhead position', async ({ page }) => {

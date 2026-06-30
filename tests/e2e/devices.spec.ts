@@ -1,23 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-import { setupWorkspace } from './e2eUtils';
+import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 test.describe('Devices & Routing', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
-
-        // Load the EDM template to guarantee we have tracks to work with
-        const launchScreen = page.getByLabel('Sourdaw — start a project');
-        await launchScreen.waitFor({ state: 'visible' });
-        await page.locator('#launch-from-template').click();
-        
-        const edmTemplateButton = page.getByRole('button', { name: /EDM/i });
-        await edmTemplateButton.waitFor({ state: 'visible' });
-        await edmTemplateButton.click();
-        
-        // Wait for the workspace to initialize
-        await expect(page.getByText('Baking')).toBeVisible({ timeout: 5000 });
-        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+        await launch_from_template({ page, template_name: /EDM/i });
     });
 
     test('Inserting a device adds it to the track chain and updates the UI', async ({ page }) => {
