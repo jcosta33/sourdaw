@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { defaultPreferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
-import { setSoloMode } from '../togglePanel/panelToggles/setSoloMode';
 import { resetPreferences } from '../resetPreferences';
+import { setSoloMode } from '../togglePanel/panelToggles/setSoloMode';
 
 const mocks = vi.hoisted(() => ({
     preferencesStoreSet: vi.fn(),
