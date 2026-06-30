@@ -9,7 +9,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri as isTauriAvailable } from '#/utils/tauriBridge';
 
 import { voiceStatusStore } from '../../stores/voiceStatusStore';
 import { injectPromptCommand } from '../../useCases/promptInjection';
@@ -17,6 +16,7 @@ import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperR
 import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 import { startDictation } from '../../useCases/voiceDictation/startDictation';
 import { stopDictation } from '../../useCases/voiceDictation/stopDictation';
+import { resolveVoiceInputMode, type VoiceInputMode } from '../../useCases/voiceInput/resolveVoiceInputMode';
 import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -32,8 +32,6 @@ type SpeechRecognitionInstance = {
     onerror: ((event: { error: string }) => void) | null;
     onend: (() => void) | null;
 };
-
-type VoiceMode = 'browser' | 'whisper' | null;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -52,18 +50,7 @@ const getSpeechRecognition = (): SpeechRecognitionInstance | null => {
 };
 
 export const isSpeechRecognitionAvailable = (): boolean => {
-    const w = window as WindowWithSpeechRecognition;
-    return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
-};
-
-const resolveVoiceMode = (): VoiceMode => {
-    if (isSpeechRecognitionAvailable()) {
-        return 'browser';
-    }
-    if (isTauriAvailable()) {
-        return 'whisper';
-    }
-    return null;
+    return resolveVoiceInputMode() === 'browser';
 };
 
 /** Ensure the Whisper model is downloaded and loaded before first use. */
@@ -79,7 +66,7 @@ export type VoiceRecordingState = {
     finalText: string;
     transcribing: boolean;
     errorText: string;
-    voiceMode: VoiceMode;
+    voiceMode: VoiceInputMode;
     stopListening: () => void;
     toggleListening: () => void;
 };
@@ -105,10 +92,10 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
     };
 
-    const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
+    const [voiceMode, setVoiceMode] = useState<VoiceInputMode>(null);
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
     const dictationUnlistenRef = useRef<(() => void) | null>(null);
-    const modeRef = useRef<VoiceMode>(null);
+    const modeRef = useRef<VoiceInputMode>(null);
     const isListeningRef = useRef(false);
     const isMountedRef = useRef(true);
 
@@ -229,7 +216,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 hadError = true;
                 recognitionRef.current = null;
                 showError('Microphone access denied. Allow mic in browser settings.');
-                if (isTauriAvailable()) {
+                if (resolveVoiceInputMode({ browserMode: 'disabled' }) === 'whisper') {
                     modeRef.current = 'whisper';
                     setVoiceMode('whisper');
                     void startWhisperRecording();
@@ -288,11 +275,11 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     };
 
     const startListening = (): void => {
-        const mode = resolveVoiceMode();
+        const mode = resolveVoiceInputMode();
 
         if (mode === 'browser') {
             const started = startBrowserRecognition();
-            if (!started && isTauriAvailable()) {
+            if (!started && resolveVoiceInputMode({ browserMode: 'disabled' }) === 'whisper') {
                 void startWhisperRecording();
             }
             return;

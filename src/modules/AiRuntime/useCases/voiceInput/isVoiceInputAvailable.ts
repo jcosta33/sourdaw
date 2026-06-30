@@ -1,10 +1,5 @@
-import { isBrowserSpeechRecognitionAvailable } from '../../repositories/voiceInput/isBrowserSpeechRecognitionAvailable';
-import { isNativeVoiceInputAvailable } from '../../repositories/voiceInput/isNativeVoiceInputAvailable';
+import { resolveVoiceInputMode } from './resolveVoiceInputMode';
 
 export function isVoiceInputAvailable(): boolean {
-    if (isBrowserSpeechRecognitionAvailable()) {
-        return true;
-    }
-
-    return isNativeVoiceInputAvailable();
+    return resolveVoiceInputMode() !== null;
 }

@@ -1,37 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isBrowserSpeechRecognitionAvailable } from '../../../repositories/voiceInput/isBrowserSpeechRecognitionAvailable';
-import { isNativeVoiceInputAvailable } from '../../../repositories/voiceInput/isNativeVoiceInputAvailable';
 import { isVoiceInputAvailable } from '../isVoiceInputAvailable';
+import { resolveVoiceInputMode } from '../resolveVoiceInputMode';
 
-vi.mock('../../../repositories/voiceInput/isBrowserSpeechRecognitionAvailable', () => ({
-    isBrowserSpeechRecognitionAvailable: vi.fn(),
-}));
-
-vi.mock('../../../repositories/voiceInput/isNativeVoiceInputAvailable', () => ({
-    isNativeVoiceInputAvailable: vi.fn(),
+vi.mock('../resolveVoiceInputMode', () => ({
+    resolveVoiceInputMode: vi.fn(),
 }));
 
 describe('isVoiceInputAvailable', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isBrowserSpeechRecognitionAvailable).mockReturnValue(false);
-        vi.mocked(isNativeVoiceInputAvailable).mockReturnValue(false);
+        vi.mocked(resolveVoiceInputMode).mockReturnValue(null);
     });
 
     it('should return true when browser speech recognition is available', () => {
-        vi.mocked(isBrowserSpeechRecognitionAvailable).mockReturnValue(true);
+        vi.mocked(resolveVoiceInputMode).mockReturnValue('browser');
 
         expect(isVoiceInputAvailable()).toBe(true);
+        expect(resolveVoiceInputMode).toHaveBeenCalledWith();
     });
 
     it('should return true when native desktop voice input is available', () => {
-        vi.mocked(isNativeVoiceInputAvailable).mockReturnValue(true);
+        vi.mocked(resolveVoiceInputMode).mockReturnValue('whisper');
 
         expect(isVoiceInputAvailable()).toBe(true);
+        expect(resolveVoiceInputMode).toHaveBeenCalledWith();
     });
 
     it('should return false when neither browser speech nor native desktop voice input is available', () => {
         expect(isVoiceInputAvailable()).toBe(false);
+        expect(resolveVoiceInputMode).toHaveBeenCalledWith();
     });
 });
