@@ -13,7 +13,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setNotesForClip: mocks.setNotesForClip,
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

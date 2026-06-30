@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
 type CommitInlineMidiNoteCreateInput = {

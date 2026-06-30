@@ -24,7 +24,11 @@ export type { Macro } from './macro/recording/stopMacroRecording';
 
 export { undo, redo } from './undoRedo';
 export { revertActionGroup } from './revertActionGroup';
+export { clearUndoHistory } from './clearUndoHistory';
+export { pushUndoEntry } from './pushUndoEntry';
+export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitPitchEditCommand } from './pitch/commitPitchEdit';
+export { setPitchEditDependencies } from './pitch/pitchEditDependencies';
 
 export { setShortcutMapping } from './setShortcutMapping';
 export { resetShortcutMappings } from './resetShortcutMappings';

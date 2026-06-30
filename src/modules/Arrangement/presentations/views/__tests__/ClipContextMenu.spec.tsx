@@ -51,7 +51,7 @@ vi.mock('../../../useCases/clipEditing/renameClip', () => ({
     renameClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases/pushUndoEntry', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 

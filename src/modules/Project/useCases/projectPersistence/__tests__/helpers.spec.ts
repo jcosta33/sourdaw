@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { clearUndoHistory } from '#/modules/Command/stores';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 import { type ProjectData } from '../../../models/ProjectData';
@@ -10,7 +9,6 @@ import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefaul
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
 const mocks = vi.hoisted(() => ({
-    undoStoreSet: vi.fn(),
     trackStoreSet: vi.fn(),
     markerStoreSet: vi.fn(),
     takeLaneStoreSet: vi.fn(),
@@ -21,10 +19,6 @@ const mocks = vi.hoisted(() => ({
     midiStoreSet: vi.fn(),
     setSidechainRoutes: vi.fn(),
     notifyUser: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/stores/undoStore', () => ({
-    undoStore: { value: { past: [1], future: [2] }, set: mocks.undoStoreSet },
 }));
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
@@ -70,18 +64,6 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
-
-describe('clearUndoHistory', () => {
-    beforeEach(() => {
-        Container.clear();
-        vi.clearAllMocks();
-    });
-
-    it('clears undo stacks', () => {
-        clearUndoHistory();
-        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
-    });
-});
 
 describe('resetModuleStoresToDefault', () => {
     beforeEach(() => {

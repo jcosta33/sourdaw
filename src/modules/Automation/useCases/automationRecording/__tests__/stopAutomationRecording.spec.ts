@@ -60,8 +60,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Command/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/stores')>();
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...actual,
         pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {

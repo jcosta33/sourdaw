@@ -21,8 +21,8 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     getAssetTransfer: mocks.getAssetTransfer,
 }));
 
-vi.mock('#/modules/Command/stores', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

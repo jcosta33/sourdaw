@@ -44,7 +44,7 @@ vi.mock('#/modules/Workspace/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
 }));
 

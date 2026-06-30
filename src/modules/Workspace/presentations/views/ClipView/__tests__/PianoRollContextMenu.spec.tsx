@@ -52,7 +52,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases/pushUndoEntry', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 

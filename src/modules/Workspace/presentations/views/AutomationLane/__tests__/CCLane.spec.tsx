@@ -34,7 +34,7 @@ vi.mock('#/modules/MIDI/stores/midiStore', () => ({
     midiStore: { value: { ccByClipId: {} } },
 }));
 
-vi.mock('#/modules/Command/useCases/pushUndoEntry', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 

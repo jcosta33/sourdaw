@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { clearUndoHistory } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,

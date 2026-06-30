@@ -1,6 +1,6 @@
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

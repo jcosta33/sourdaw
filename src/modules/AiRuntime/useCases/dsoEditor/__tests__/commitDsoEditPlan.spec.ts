@@ -34,9 +34,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     generateGroupId: mocks.generateGroupId,
-}));
-
-vi.mock('#/modules/Command/stores', () => ({
     commitActionUndoEntry: mocks.commitActionUndoEntry,
 }));
 

@@ -81,12 +81,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     transactSnapshot: mocks.transactSnapshot,
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
-    commitActionUndoEntry: mocks.commitActionUndoEntry,
-}));
-
 vi.mock('#/modules/Command/useCases', () => ({
     generateGroupId: mocks.generateGroupId,
+    commitActionUndoEntry: mocks.commitActionUndoEntry,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

@@ -1,6 +1,6 @@
 import { addClip, addTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { batchAddMidiNotes, getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { selectClip } from '#/modules/Workspace/useCases';

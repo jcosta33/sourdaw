@@ -25,6 +25,7 @@ import {
     getAudioContext,
     getCompensationDelay,
     getFinalFeatureHandlers,
+    processPitchEditWasm,
     configureAudioDeviceRuntimeSink,
     setWebMidiRuntimeEventBus,
 } from '#/modules/AudioEngine/useCases';
@@ -38,7 +39,12 @@ import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
-import { getMacroHandlers, getUndoTreeHandlers, setCommandEventBus } from '#/modules/Command/useCases';
+import {
+    getMacroHandlers,
+    getUndoTreeHandlers,
+    setCommandEventBus,
+    setPitchEditDependencies,
+} from '#/modules/Command/useCases';
 import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
@@ -106,6 +112,10 @@ setStopPlaybackCallback(stopPlayback);
 setAutomationRecordingDependencies({
     getAudioContext,
     getCompensationDelay,
+});
+
+setPitchEditDependencies({
+    processPitchEditWasm,
 });
 
 setModulationDependencies({

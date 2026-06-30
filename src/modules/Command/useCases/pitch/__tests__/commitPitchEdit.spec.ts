@@ -7,13 +7,13 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../../commandQueries';
 import { commitUndoEntry } from '../../commitUndoEntry';
 import { commitPitchEditCommand } from '../commitPitchEdit';
+import { setPitchEditDependencies } from '../pitchEditDependencies';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
@@ -49,13 +49,11 @@ vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
-    commit_pitch_edit_wasm: vi.fn(),
-}));
-
 const mockNotificationEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
 };
+
+const processPitchEditWasmMock = vi.fn();
 
 describe('commitPitchEditCommand', () => {
     const AudioBufferMock = vi.fn(function AudioBufferMock(this: { copyToChannel: ReturnType<typeof vi.fn> }) {
@@ -65,6 +63,9 @@ describe('commitPitchEditCommand', () => {
     beforeEach(() => {
         injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.clearAllMocks();
+        setPitchEditDependencies({
+            processPitchEditWasm: processPitchEditWasmMock,
+        });
         vi.mocked(isTauri).mockReturnValue(true);
         vi.stubGlobal('AudioBuffer', AudioBufferMock);
 
@@ -129,19 +130,43 @@ describe('commitPitchEditCommand', () => {
         vi.mocked(isTauri).mockReturnValue(false);
         const contour = { test: true };
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
+        let renderedBuffer: AudioBuffer | null = null;
+
+        processPitchEditWasmMock.mockImplementation(
+            (
+                originalBuffer: AudioBuffer,
+                segmentsArgument: unknown[],
+                contourArgument: unknown,
+                outputAudioPath: string
+            ) => {
+                expect(segmentsArgument).toBe(segments);
+                expect(contourArgument).toBe(contour);
+                renderedBuffer = new AudioBuffer({
+                    length: originalBuffer.length,
+                    numberOfChannels: 1,
+                    sampleRate: originalBuffer.sampleRate,
+                });
+                audioBufferCache.set(outputAudioPath, renderedBuffer);
+            }
+        );
 
         vi.mocked(audioBufferCache.get).mockReturnValue({
+            length: 100,
             sampleRate: 44100,
             getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         } as any);
 
-        vi.mocked(commit_pitch_edit_wasm).mockReturnValue(new Float32Array(100));
-
         await commitPitchEditCommand('c1', segments, contour);
 
         expect(invoke).not.toHaveBeenCalled();
-        expect(commit_pitch_edit_wasm).toHaveBeenCalled();
-        expect(audioBufferCache.set).toHaveBeenCalledWith('test_pitch.wav', expect.any(Object));
+        expect(processPitchEditWasmMock).toHaveBeenCalledWith(
+            expect.objectContaining({ sampleRate: 44100 }),
+            segments,
+            contour,
+            'test_pitch.wav'
+        );
+        expect(renderedBuffer).not.toBeNull();
+        expect(audioBufferCache.set).toHaveBeenCalledWith('test_pitch.wav', renderedBuffer);
         expect(commitUndoEntry).toHaveBeenCalled();
     });
 

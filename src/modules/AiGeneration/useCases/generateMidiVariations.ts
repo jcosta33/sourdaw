@@ -11,7 +11,7 @@ import {
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
 import { type VariationNote } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getMidiStoreState as getMidiState, getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';

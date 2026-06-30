@@ -16,7 +16,7 @@ import {
     renameMixerSnapshot,
     restoreMixerChannels,
 } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type ChannelStripWidth } from '../../models/WorkspaceState';
