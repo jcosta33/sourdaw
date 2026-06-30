@@ -1,9 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
@@ -46,13 +44,6 @@ function findAudioClip(clipId: string): PitchEditClip | null {
     return null;
 }
 
-function getCachedAudioBuffer(clip: PitchEditClip): AudioBuffer | null {
-    if (!clip.audioBufferId) {
-        return null;
-    }
-    return audioBufferCache.get(clip.audioBufferId) ?? null;
-}
-
 export async function commitPitchEditCommand(
     clipId: string,
     segments: NoteSegment[],
@@ -68,24 +59,14 @@ export async function commitPitchEditCommand(
     const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
 
     try {
-        if (isTauri()) {
-            await tauriInvoke('commit_pitch_edit', {
-                request: {
-                    inputAudioPath: originalFileId,
-                    outputAudioPath,
-                    segments,
-                    contour,
-                },
-            });
-        } else {
-            // WASM fallback
-            const buffer = getCachedAudioBuffer(targetClip);
-            if (!buffer) {
-                throw new Error('Could not get audio buffer for clip');
-            }
-            const { processPitchEditWasm } = getPitchEditDependencies();
-            processPitchEditWasm(buffer, segments, contour, outputAudioPath);
-        }
+        const { commitPitchEdit } = getPitchEditDependencies();
+        await commitPitchEdit({
+            inputAudioPath: originalFileId,
+            outputAudioPath,
+            audioBufferId: targetClip.audioBufferId,
+            segments,
+            contour,
+        });
 
         function setClipFileId(fileId: string): void {
             updateClipInStore(clipId, (clip) => ({ ...clip, fileId }));

@@ -118,6 +118,7 @@ export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
+export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';
 export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 
