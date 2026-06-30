@@ -1,6 +1,10 @@
 import { extensionStore } from '../../stores/extension';
 
 export function uninstallExtension(extensionId: string): void {
+    if (!extensionStore.value) {
+        return;
+    }
+
     extensionStore.update((state) => {
         if (!state) {
             return state;

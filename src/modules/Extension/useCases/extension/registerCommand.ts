@@ -7,6 +7,10 @@ export function registerCommand(
     description: string,
     handler: () => void | Promise<void>
 ): void {
+    if (!extensionStore.value) {
+        return;
+    }
+
     const command: ScriptCommand = { id: `${extensionId}.${id}`, extensionId, label, description, handler };
 
     extensionStore.update((state) => {

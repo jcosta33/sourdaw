@@ -20,6 +20,10 @@ import { extensionStore } from '../stores/extension';
  * Append a log entry to the extension console (keeps last 100 entries).
  */
 export function appendLog(level: 'info' | 'warn' | 'error', message: string): void {
+    if (!extensionStore.value) {
+        return;
+    }
+
     extensionStore.update((state) => {
         if (!state) {
             return state;

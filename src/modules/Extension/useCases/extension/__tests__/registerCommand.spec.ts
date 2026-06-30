@@ -71,6 +71,15 @@ describe('registerCommand', () => {
 
     it('should preserve current installed, editor, and log state when the value snapshot is stale', () => {
         const handler = vi.fn();
+        const unrelatedHandler = vi.fn();
+        const previousHandler = vi.fn();
+        const unrelatedCommand = {
+            id: 'other.keep',
+            extensionId: 'other',
+            label: 'Keep',
+            description: 'Unrelated command',
+            handler: unrelatedHandler,
+        };
         const current = baseState({
             installed: [
                 {
@@ -92,6 +101,16 @@ describe('registerCommand', () => {
                     state: {},
                 },
             ],
+            commands: [
+                unrelatedCommand,
+                {
+                    id: 'myext.doit',
+                    extensionId: 'myext',
+                    label: 'Old',
+                    description: 'Old description',
+                    handler: previousHandler,
+                },
+            ],
             consoleLog: [{ timestamp: 'now', level: 'info', message: 'current log' }],
             editorOpen: true,
             editorContent: 'current editor',
@@ -103,7 +122,15 @@ describe('registerCommand', () => {
         registerCommand('myext', 'doit', 'Do', 'Desc', handler);
 
         const next = currentState();
-        expect(next.commands.map((command) => command.id)).toEqual(['myext.doit']);
+        expect(next.commands.map((command) => command.id)).toEqual(['other.keep', 'myext.doit']);
+        expect(next.commands[0]).toEqual(unrelatedCommand);
+        expect(next.commands[1]).toEqual({
+            id: 'myext.doit',
+            extensionId: 'myext',
+            label: 'Do',
+            description: 'Desc',
+            handler,
+        });
         expect(next.installed).toEqual(current.installed);
         expect(next.consoleLog).toEqual(current.consoleLog);
         expect(next.editorOpen).toBe(true);

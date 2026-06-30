@@ -1,6 +1,15 @@
 import { extensionStore, type ExtensionManifest, type InstalledExtension } from '../../stores/extension';
 
 export function installExtension(manifest: ExtensionManifest): void {
+    const snapshot = extensionStore.value;
+    if (!snapshot) {
+        return;
+    }
+
+    if (snapshot.installed.some((extension) => extension.manifest.id === manifest.id)) {
+        return;
+    }
+
     extensionStore.update((state) => {
         if (!state) {
             return state;

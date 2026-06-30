@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     type State = import('../../../stores/extension').ExtensionMarketplaceState;
     let currentState: State | null = null;
     let valueSnapshot: State | null = null;
+    const notifySubscribers = vi.fn<() => void>();
 
     const extensionStore = {
         get value(): State | null {
@@ -15,15 +16,18 @@ const mocks = vi.hoisted(() => {
         set: vi.fn<(state: State | null) => void>((state) => {
             currentState = state;
             valueSnapshot = state;
+            notifySubscribers();
         }),
         update: vi.fn<(updater: (current: State | null) => State | null) => void>((updater) => {
             currentState = updater(currentState);
             valueSnapshot = currentState;
+            notifySubscribers();
         }),
     };
 
     return {
         extensionStore,
+        notifySubscribers,
         setCurrentState: (state: State | null) => {
             currentState = state;
             valueSnapshot = state;
@@ -91,7 +95,15 @@ describe('installExtension', () => {
 
     it('should preserve current commands, console log, and editor state when the value snapshot is stale', () => {
         const handler = vi.fn<() => void>();
+        const existingExtension = {
+            manifest: minimalManifest('existing-ext'),
+            enabled: false,
+            installedAt: 'already-installed',
+            lastUpdatedAt: 'already-updated',
+            state: { saved: true },
+        };
         const current = baseState({
+            installed: [existingExtension],
             commands: [{ id: 'current.command', extensionId: 'current', label: 'Current', description: 'd', handler }],
             consoleLog: [{ timestamp: 'now', level: 'warn', message: 'current log' }],
             editorOpen: true,
@@ -104,14 +116,15 @@ describe('installExtension', () => {
         installExtension(minimalManifest('ext-a'));
 
         const next = currentState();
-        expect(next.installed.map((extension) => extension.manifest.id)).toEqual(['ext-a']);
+        expect(next.installed.map((extension) => extension.manifest.id)).toEqual(['existing-ext', 'ext-a']);
+        expect(next.installed[0]).toEqual(existingExtension);
         expect(next.commands).toEqual(current.commands);
         expect(next.consoleLog).toEqual(current.consoleLog);
         expect(next.editorOpen).toBe(true);
         expect(next.editorContent).toBe('current editor');
     });
 
-    it('should ignore duplicate installs from the current store state', () => {
+    it('should not notify subscribers or call update for a duplicate install', () => {
         const existing = {
             manifest: minimalManifest('ext-a'),
             enabled: false,
@@ -121,10 +134,11 @@ describe('installExtension', () => {
         };
 
         mocks.setCurrentState(baseState({ installed: [existing] }));
-        mocks.setValueSnapshot(baseState());
 
         installExtension(minimalManifest('ext-a'));
 
+        expect(mocks.extensionStore.update).not.toHaveBeenCalled();
+        expect(mocks.notifySubscribers).not.toHaveBeenCalled();
         expect(currentState().installed).toEqual([existing]);
     });
 });
