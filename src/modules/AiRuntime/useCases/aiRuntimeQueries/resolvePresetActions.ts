@@ -1,4 +1,4 @@
-import { PRESET_ACTIONS } from '../../models/presetActions/registry';
+import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 
 import type { PresetSearchContext } from './helpers';
 

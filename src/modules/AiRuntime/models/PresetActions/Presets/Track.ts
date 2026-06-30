@@ -1,4 +1,4 @@
-import { type PresetAction, trackAction } from './types';
+import { type PresetAction, trackAction } from './Types';
 
 export const trackPresets: readonly PresetAction[] = [
     // ─── Creation ───────────────────────────────────────────────────────

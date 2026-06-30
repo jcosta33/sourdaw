@@ -1,4 +1,4 @@
-import { type PresetAction } from './types';
+import { type PresetAction } from './Types';
 
 export const generatePresets: readonly PresetAction[] = [
     // ─── Drum patterns ──────────────────────────────────────────────────

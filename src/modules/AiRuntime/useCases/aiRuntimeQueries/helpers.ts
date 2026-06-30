@@ -1,5 +1,5 @@
 import { type PATTERN_TEMPLATES as modelPatternTemplates, resolveTemplateScale } from '../../models/MidiPatternLibrary';
-import { type PRESET_ACTIONS } from '../../models/presetActions/registry';
+import { type PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 
 export type MixIssue = {
     severity: 'info' | 'warning' | 'critical';

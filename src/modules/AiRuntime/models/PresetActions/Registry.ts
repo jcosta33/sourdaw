@@ -1,22 +1,22 @@
 /**
  * Preset Action Registry.
  *
- * Category implementations live in ./presets/*.ts. This file assembles
+ * Category implementations live in ./Presets/*.ts. This file assembles
  * them into the PRESET_ACTIONS array and exposes the shared PresetContext /
- * PresetAction / PresetCategory types from ./presets/types.
+ * PresetAction / PresetCategory types from ./Presets/Types.
  */
 
-import { clipPresets } from './presets/clip';
-import { devicePresets } from './presets/device';
-import { filePresets, collaborationPresets } from './presets/fileAndCollaboration';
-import { generatePresets } from './presets/generate';
-import { midiPresets } from './presets/midi';
-import { mixPresets, automationPresets } from './presets/mixAndAutomation';
-import { trackPresets } from './presets/track';
-import { transportPresets } from './presets/transport';
-import { workspacePresets } from './presets/workspace';
+import { clipPresets } from './Presets/Clip';
+import { devicePresets } from './Presets/Device';
+import { filePresets, collaborationPresets } from './Presets/FileAndCollaboration';
+import { generatePresets } from './Presets/Generate';
+import { midiPresets } from './Presets/Midi';
+import { mixPresets, automationPresets } from './Presets/MixAndAutomation';
+import { trackPresets } from './Presets/Track';
+import { transportPresets } from './Presets/Transport';
+import { workspacePresets } from './Presets/Workspace';
 
-export type { PresetContext, PresetAction, PresetCategory } from './presets/types';
+export type { PresetContext, PresetAction, PresetCategory } from './Presets/Types';
 
 // ── The Registry ────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import {
     type PresetAction,
     type PresetContext,
     type PresetCategory,
-} from '../models/presetActions/registry';
+} from '../models/PresetActions/Registry';
 
 export type FuzzyResult = {
     preset: PresetAction;
