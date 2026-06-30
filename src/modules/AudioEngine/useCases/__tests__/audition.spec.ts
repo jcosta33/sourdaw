@@ -23,6 +23,8 @@ const { mocks } = vi.hoisted(() => {
     const cancelScheduledValues = vi.fn();
     const setTargetAtTime = vi.fn();
     const stop = vi.fn();
+    const audioContext = { currentTime: 0 };
+    const synthParams = { release: 0.3 };
     const defaultTrackStrip: MockTrackStrip = {
         gainNode: {} as AudioNode,
         deviceNodes: [],
@@ -33,14 +35,15 @@ const { mocks } = vi.hoisted(() => {
     return {
         mocks: {
             trackStoreValue: null as unknown,
+            audioContext,
+            synthParams,
+            defaultTrackStrip,
             trackStrips,
             ensureTrackStrip,
             cancelScheduledValues,
             setTargetAtTime,
             stop,
-            getSynthParamsFromDevices: vi.fn(() => ({
-                release: 0.3,
-            })),
+            getSynthParamsFromDevices: vi.fn(() => synthParams),
             // scheduleNote always attaches the amplitude-envelope GainNode as
             // `_env` (see builtinSynth). The audition note-off applies the
             // exponential smooth release through it.
@@ -58,7 +61,7 @@ const { mocks } = vi.hoisted(() => {
 vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
         ensureTrackStrip: mocks.ensureTrackStrip,
-        context: { currentTime: 0 },
+        context: mocks.audioContext,
     },
 }));
 
@@ -104,15 +107,30 @@ describe('playAuditionNote', () => {
     it('falls back to scheduled note when track is missing', () => {
         mocks.trackStoreValue = null;
         playAuditionNote('track-a', 60, 100);
-        expect(mocks.scheduleNote).toHaveBeenCalled();
+        expect(mocks.scheduleNote).toHaveBeenCalledWith(
+            mocks.audioContext,
+            mocks.defaultTrackStrip.gainNode,
+            60,
+            0,
+            60,
+            100,
+            mocks.synthParams
+        );
     });
 
     it('uses track devices to derive synth params when track exists', () => {
+        const trackDevices = [
+            {
+                id: 'synth-device',
+                type: 'builtin-poly-synth',
+                parameterValues: { attack: 0.1, release: 0.2 },
+            },
+        ];
         mocks.trackStoreValue = {
-            tracks: [{ id: 'track-a', devices: [], parentId: null }],
+            tracks: [{ id: 'track-a', devices: trackDevices, parentId: null }],
         };
         playAuditionNote('track-a', 60, 100);
-        expect(mocks.getSynthParamsFromDevices).toHaveBeenCalledWith([]);
+        expect(mocks.getSynthParamsFromDevices).toHaveBeenCalledWith(trackDevices);
     });
 
     it('applies the exponential smooth release through _env on note-off (not a hard stop)', () => {
@@ -178,7 +196,7 @@ describe('playAuditionNote', () => {
             deviceNodes: [
                 {
                     deviceId: 'other-device',
-                    type: 'synth',
+                    type: 'toaster',
                     toasterControls: {
                         ready: true,
                         noteOn: decoyNoteOn,

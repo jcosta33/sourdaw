@@ -77,9 +77,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
         const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
 
-        const dn = parentStrip.deviceNodes.find(
-            (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
-        );
+        const exactDeviceNode = parentStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id);
+        const dn = exactDeviceNode ?? parentStrip.deviceNodes.find((data) => data.type === 'toaster');
 
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;
