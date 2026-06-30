@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { aiStore } from '../../../stores/aiStore';
 import { addTask } from '../addTask';
@@ -8,6 +8,11 @@ describe('addTask', () => {
         vi.useFakeTimers();
         vi.setSystemTime(1000);
         aiStore.set({ tasks: [], isPanelOpen: false });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
     });
 
     it('adds a new task with generated id and timestamp', () => {
@@ -20,6 +25,41 @@ describe('addTask', () => {
             type: 'audio-generation',
             status: 'processing',
             timestamp: 1000,
+        });
+    });
+
+    it('preserves an unrelated current task when a stale snapshot is observed', () => {
+        aiStore.set({
+            tasks: [
+                {
+                    id: 'current-task',
+                    type: 'midi-generation',
+                    status: 'processing',
+                    timestamp: 900,
+                },
+            ],
+            isPanelOpen: true,
+        });
+        vi.spyOn(aiStore, 'value', 'get').mockReturnValueOnce({ tasks: [], isPanelOpen: false });
+
+        const id = addTask({ type: 'audio-generation', status: 'processing' });
+
+        expect(aiStore.getSnapshot()).toEqual({
+            tasks: [
+                {
+                    id,
+                    type: 'audio-generation',
+                    status: 'processing',
+                    timestamp: 1000,
+                },
+                {
+                    id: 'current-task',
+                    type: 'midi-generation',
+                    status: 'processing',
+                    timestamp: 900,
+                },
+            ],
+            isPanelOpen: true,
         });
     });
 

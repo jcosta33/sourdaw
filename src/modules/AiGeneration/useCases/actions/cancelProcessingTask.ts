@@ -1,4 +1,4 @@
-import { aiStore, getAiSnapshot, type AiTaskType } from '../../stores/aiStore';
+import { aiStore, type AiTaskType } from '../../stores/aiStore';
 
 /**
  * Force-fail all tasks of the given type that are stuck in 'processing'.
@@ -9,13 +9,15 @@ import { aiStore, getAiSnapshot, type AiTaskType } from '../../stores/aiStore';
  * This is intentional: a late success is better than a permanently blocked UI.
  */
 export function cancelProcessingTask(type: AiTaskType): void {
-    const snapshot = getAiSnapshot();
-    aiStore.set({
-        ...snapshot,
-        tasks: snapshot.tasks.map((time) =>
-            time.type === type && time.status === 'processing'
-                ? { ...time, status: 'error' as const, error: 'Stopped by user' }
-                : time
-        ),
+    aiStore.update((current) => {
+        const state = current ?? { tasks: [], isPanelOpen: false };
+        return {
+            ...state,
+            tasks: state.tasks.map((task) =>
+                task.type === type && task.status === 'processing'
+                    ? { ...task, status: 'error' as const, error: 'Stopped by user' }
+                    : task
+            ),
+        };
     });
 }

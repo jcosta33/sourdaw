@@ -1,4 +1,4 @@
-import { aiStore, getAiSnapshot, type AiTaskResult } from '../../stores/aiStore';
+import { aiStore, type AiTaskResult } from '../../stores/aiStore';
 
 /** Maximum number of task rows kept in the history. */
 const MAX_TASKS = 50;
@@ -31,9 +31,11 @@ export function addTask(task: Omit<AiTaskResult, 'id' | 'timestamp'>): string {
     const id = `ai-task-${crypto.randomUUID()}`;
 
     const fullTask: AiTaskResult = { ...task, id, timestamp: Date.now() };
-    const snapshot = getAiSnapshot();
 
-    aiStore.set({ ...snapshot, tasks: capTasks([fullTask, ...snapshot.tasks]) });
+    aiStore.update((current) => {
+        const state = current ?? { tasks: [], isPanelOpen: false };
+        return { ...state, tasks: capTasks([fullTask, ...state.tasks]) };
+    });
 
     return id;
 }
