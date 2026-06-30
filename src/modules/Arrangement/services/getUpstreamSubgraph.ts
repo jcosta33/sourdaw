@@ -1,6 +1,9 @@
-import { type SidechainRoute } from '#/modules/Routing/models/SidechainRoute';
-
 import { type Track } from '../models/Track';
+
+type SidechainRouteInput = {
+    sourceTrackId: string;
+    targetTrackId: string;
+};
 
 /**
  * Finds all tracks that are upstream of the given trackId.
@@ -12,7 +15,7 @@ import { type Track } from '../models/Track';
 export function getUpstreamSubgraph(
     trackId: string,
     allTracks: Track[],
-    allSidechainRoutes: SidechainRoute[]
+    allSidechainRoutes: SidechainRouteInput[]
 ): Set<string> {
     const upstream = new Set<string>();
     const toProcess = [trackId];
@@ -42,10 +45,10 @@ export function getUpstreamSubgraph(
         }
 
         // 3. Check sidechains: which tracks sidechain into currentId?
-        for (const r of allSidechainRoutes) {
-            if (r.targetTrackId === currentId) {
-                upstream.add(r.sourceTrackId);
-                toProcess.push(r.sourceTrackId);
+        for (const route of allSidechainRoutes) {
+            if (route.targetTrackId === currentId) {
+                upstream.add(route.sourceTrackId);
+                toProcess.push(route.sourceTrackId);
             }
         }
     }
