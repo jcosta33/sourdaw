@@ -562,7 +562,10 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                // Queued params are restored flat project truth; a default ProofPatch replay would clobber them.
+                if (pendingParams.length === 0) {
+                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                }
                 return;
             })
             .catch((error) => {
