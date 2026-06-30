@@ -1,7 +1,10 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
-
 import { hasToasterDevice } from './hasToasterDevice';
 
-export function shouldCreateOfflineStrip(track: Track): boolean {
+type ShouldCreateOfflineStripInput = {
+    kind: string;
+    devices: readonly { type: string }[];
+};
+
+export function shouldCreateOfflineStrip(track: ShouldCreateOfflineStripInput): boolean {
     return track.kind !== 'folder' || hasToasterDevice(track);
 }

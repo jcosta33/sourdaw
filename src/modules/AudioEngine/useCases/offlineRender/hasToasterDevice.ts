@@ -1,5 +1,7 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
+type HasToasterDeviceInput = {
+    devices: readonly { type: string }[];
+};
 
-export function hasToasterDevice(track: Track): boolean {
+export function hasToasterDevice(track: HasToasterDeviceInput): boolean {
     return track.devices.some((device) => device.type === 'toaster');
 }
