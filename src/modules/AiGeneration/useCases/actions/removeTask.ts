@@ -1,9 +1,11 @@
-import { aiStore, getAiSnapshot, type AiTaskResult } from '../../stores/aiStore';
+import { aiStore, type AiTaskResult } from '../../stores/aiStore';
 
 export function removeTask(id: string) {
-    const snapshot = getAiSnapshot();
-    aiStore.set({
-        ...snapshot,
-        tasks: snapshot.tasks.filter((time: AiTaskResult) => time.id !== id),
+    aiStore.update((current) => {
+        const state = current ?? { tasks: [], isPanelOpen: false };
+        return {
+            ...state,
+            tasks: state.tasks.filter((task: AiTaskResult) => task.id !== id),
+        };
     });
 }
