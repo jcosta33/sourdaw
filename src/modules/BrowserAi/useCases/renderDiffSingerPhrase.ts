@@ -11,7 +11,6 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { DEFAULT_EN_PHONEME_MAP } from '../models/PhonemeMap';
 import { type RenderProvenance, type RenderQuality, RENDER_QUALITY_STEPS } from '../models/RenderProgress';
@@ -152,14 +151,12 @@ export const renderDiffSingerPhrase = inject({
             try {
                 updateRenderStatus(phraseId, 'rendering-browser');
 
-                // Check Tauri non-Chrome platform — should have been caught at UI level.
-                // Consult the capability store (the single source of truth populated by
-                // capability detection at init) rather than re-probing navigator.gpu, which
-                // would duplicate and drift from that decision.
+                // Consult the capability store populated by capability detection instead of
+                // re-probing platform/runtime details in the render path.
                 const capabilityState = capabilityStore.value;
                 const platformUnsupported =
                     capabilityState?.phase === 'done' && capabilityState.report.capability === 'unsupported-platform';
-                if (isTauri() && platformUnsupported) {
+                if (platformUnsupported) {
                     throw new Error(
                         'DiffSinger browser rendering not available on this platform. Use native rendering.'
                     );

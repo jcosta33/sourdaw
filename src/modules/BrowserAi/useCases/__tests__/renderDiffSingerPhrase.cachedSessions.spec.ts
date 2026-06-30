@@ -29,6 +29,7 @@ const readModel = vi.hoisted(() => vi.fn());
 const readRenderCache = vi.hoisted(() => vi.fn());
 const writeRenderCache = vi.hoisted(() => vi.fn());
 const computeRenderCacheKey = vi.hoisted(() => vi.fn<() => Promise<string>>());
+const capabilityStore = vi.hoisted<{ value: CapabilityState }>(() => ({ value: { phase: 'idle' } }));
 
 vi.mock('../../repositories/inferenceWorkerBridge', () => ({
     inferenceWorkerBridge: {
@@ -51,9 +52,10 @@ vi.mock('../../services/phonemizer', () => ({
 }));
 
 vi.mock('../../stores/capabilityStore', () => ({
-    capabilityStore: { value: { phase: 'idle' } },
+    capabilityStore,
 }));
 
+import { type CapabilityState } from '../../stores/capabilityStore';
 import { renderDiffSingerPhrase } from '../renderDiffSingerPhrase';
 
 const VOICEBANK_ID = 'opencpop-test';
@@ -91,6 +93,31 @@ describe('renderDiffSingerPhrase — cached-session re-read skip (item #13)', ()
         readRenderCache.mockReset().mockResolvedValue(null); // force a real render (cache miss)
         writeRenderCache.mockReset().mockResolvedValue(undefined);
         computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
+        capabilityStore.value = { phase: 'idle' };
+    });
+
+    it('should reject unsupported platform before model reads or worker calls', async () => {
+        capabilityStore.value = {
+            phase: 'done',
+            report: {
+                capability: 'unsupported-platform',
+                webGpuTier: 'unavailable',
+                sharedArrayBuffer: false,
+                opfsAvailable: false,
+                chromeVersion: null,
+                benchmarkMs: null,
+                detectedAt: 123,
+            },
+        };
+
+        await expect(callRender()).rejects.toThrow(
+            'DiffSinger browser rendering not available on this platform. Use native rendering.'
+        );
+
+        expect(getLoadedOnnxSessions).not.toHaveBeenCalled();
+        expect(readModel).not.toHaveBeenCalled();
+        expect(loadOnnxSession).not.toHaveBeenCalled();
+        expect(runDiffSingerPhrase).not.toHaveBeenCalled();
     });
 
     it('skips readModel + loadOnnxSession for every session the worker already holds (no 115–160MB re-transfer)', async () => {
