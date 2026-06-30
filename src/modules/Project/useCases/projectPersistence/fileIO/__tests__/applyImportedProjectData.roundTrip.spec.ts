@@ -23,7 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => ({}) as AudioContext,
     resetAudioGraph: vi.fn(),
 }));
-vi.mock('#/modules/Command/stores', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are

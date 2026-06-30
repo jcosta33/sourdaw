@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess/resetAudioGraph';
-import { clearUndoHistory } from '#/modules/Command/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
 import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
@@ -36,7 +36,7 @@ vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
 }));
 

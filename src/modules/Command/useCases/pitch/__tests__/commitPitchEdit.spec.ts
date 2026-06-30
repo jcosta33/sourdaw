@@ -130,8 +130,28 @@ describe('commitPitchEditCommand', () => {
         vi.mocked(isTauri).mockReturnValue(false);
         const contour = { test: true };
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
+        let renderedBuffer: AudioBuffer | null = null;
+
+        processPitchEditWasmMock.mockImplementation(
+            (
+                originalBuffer: AudioBuffer,
+                segmentsArgument: unknown[],
+                contourArgument: unknown,
+                outputAudioPath: string
+            ) => {
+                expect(segmentsArgument).toBe(segments);
+                expect(contourArgument).toBe(contour);
+                renderedBuffer = new AudioBuffer({
+                    length: originalBuffer.length,
+                    numberOfChannels: 1,
+                    sampleRate: originalBuffer.sampleRate,
+                });
+                audioBufferCache.set(outputAudioPath, renderedBuffer);
+            }
+        );
 
         vi.mocked(audioBufferCache.get).mockReturnValue({
+            length: 100,
             sampleRate: 44100,
             getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         } as any);
@@ -145,6 +165,8 @@ describe('commitPitchEditCommand', () => {
             contour,
             'test_pitch.wav'
         );
+        expect(renderedBuffer).not.toBeNull();
+        expect(audioBufferCache.set).toHaveBeenCalledWith('test_pitch.wav', renderedBuffer);
         expect(commitUndoEntry).toHaveBeenCalled();
     });
 

@@ -6,7 +6,6 @@ export type { MacroStoreState } from './macroStore';
 
 export { undoStore, pushUndo } from './undoStore';
 export type { UndoStoreState } from './undoStore';
-export { clearUndoHistory } from './clearUndoHistory';
 
 export { shortcutStore } from './shortcutStore';
 export type { ShortcutStoreState, ShortcutDefinition, ShortcutAction } from './shortcutStore';

@@ -51,7 +51,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(),
 }));
-vi.mock('#/modules/Command/stores', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
 }));
