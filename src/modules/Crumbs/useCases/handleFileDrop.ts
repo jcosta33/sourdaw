@@ -5,8 +5,9 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
 
+import { getDroppedCrumbsFilePath } from '../repositories/get-dropped-crumbs-file-path';
+import { isCrumbsNativeAvailable } from '../repositories/is-crumbs-native-available';
 import { crumbsStore } from '../stores/crumbsStore';
 
 import { loadSampleFromPath } from './loadSample';
@@ -49,22 +50,14 @@ export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent)
         return;
     }
 
-    if (!isTauri()) {
+    if (!isCrumbsNativeAvailable()) {
         logger.warn(
             '[Crumbs] File drop is only supported in the desktop app. Use the sample browser to load audio on web.'
         );
         return;
     }
 
-    let filePath: string | null = null;
-
-    if ('path' in file) {
-        filePath = (file as File & { path: string }).path;
-    }
-
-    if (!filePath) {
-        filePath = file.webkitRelativePath || file.name;
-    }
+    const filePath = getDroppedCrumbsFilePath({ file });
 
     if (filePath) {
         await loadSampleFromPath(instanceId, filePath);
