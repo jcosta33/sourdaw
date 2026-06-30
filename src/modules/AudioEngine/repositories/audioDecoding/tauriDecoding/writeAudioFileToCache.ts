@@ -1,3 +1,5 @@
+import { isTauri } from '#/utils/tauriBridge';
+
 type WriteAudioFileToCacheInput = {
     fileName: string;
     contents: ArrayBuffer;
@@ -11,6 +13,9 @@ type WriteAudioFileToCacheOutput = Promise<
     | {
           kind: 'unavailable';
           error: unknown;
+      }
+    | {
+          kind: 'skipped';
       }
 >;
 
@@ -26,6 +31,10 @@ export async function writeAudioFileToCache({
     fileName,
     contents,
 }: WriteAudioFileToCacheInput): WriteAudioFileToCacheOutput {
+    if (!isTauri()) {
+        return { kind: 'skipped' };
+    }
+
     let invoke: typeof import('@tauri-apps/api/core').invoke;
     try {
         ({ invoke } = await import('@tauri-apps/api/core'));

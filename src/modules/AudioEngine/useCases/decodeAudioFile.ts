@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { createDecodeError } from '../errors/DecodeError';
 import { samplesToAudioBuffer } from '../repositories/audioDecoding/samplesToAudioBuffer';
@@ -24,36 +23,34 @@ import { audioBufferCache } from '../stores/audioBufferCache';
 export async function decodeAudioFile(file: File): Promise<{ id: string; buffer: AudioBuffer }> {
     const arrayBuffer = await file.arrayBuffer();
 
-    if (isTauri()) {
-        try {
-            const cachedFile = await writeAudioFileToCache({ fileName: file.name, contents: arrayBuffer });
+    try {
+        const cachedFile = await writeAudioFileToCache({ fileName: file.name, contents: arrayBuffer });
 
-            if (cachedFile.kind === 'unavailable') {
-                logger.warn('[decodeAudioFile] Tauri unavailable — falling back to browser decoder:', cachedFile.error);
-            }
+        if (cachedFile.kind === 'unavailable') {
+            logger.warn('[decodeAudioFile] Tauri unavailable — falling back to browser decoder:', cachedFile.error);
+        }
 
-            if (cachedFile.kind === 'ready') {
-                const decoded = await nativeDecodeAudioFile(cachedFile.path);
-                if (decoded) {
-                    const ctx = audioEngine.context;
-                    const buffer = samplesToAudioBuffer(decoded, ctx);
-                    const id = `audio-${crypto.randomUUID()}`;
-                    audioBufferCache.set(id, buffer);
-                    return { id, buffer };
-                }
-                // `decoded` was null/empty — native decoder produced nothing usable.
-                logger.warn(
-                    `[decodeAudioFile] Tauri decoder returned no samples for "${file.name}" — falling back to browser decoder.`
-                );
+        if (cachedFile.kind === 'ready') {
+            const decoded = await nativeDecodeAudioFile(cachedFile.path);
+            if (decoded) {
+                const ctx = audioEngine.context;
+                const buffer = samplesToAudioBuffer(decoded, ctx);
+                const id = `audio-${crypto.randomUUID()}`;
+                audioBufferCache.set(id, buffer);
+                return { id, buffer };
             }
-        } catch (error) {
-            // The IPC commands or symphonia decoder threw — surface it rather
-            // than silently masking a Tauri-side decoder/misconfig failure.
+            // `decoded` was null/empty — native decoder produced nothing usable.
             logger.warn(
-                `[decodeAudioFile] Tauri decoder failed for "${file.name}" — falling back to browser decoder:`,
-                error
+                `[decodeAudioFile] Tauri decoder returned no samples for "${file.name}" — falling back to browser decoder.`
             );
         }
+    } catch (error) {
+        // The IPC commands or symphonia decoder threw — surface it rather
+        // than silently masking a Tauri-side decoder/misconfig failure.
+        logger.warn(
+            `[decodeAudioFile] Tauri decoder failed for "${file.name}" — falling back to browser decoder:`,
+            error
+        );
     }
 
     // Browser path: native first — off-thread, fast, handles WAV/MP3/FLAC/OGG/AAC.

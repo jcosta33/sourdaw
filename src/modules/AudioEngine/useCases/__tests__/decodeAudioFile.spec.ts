@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as subject from '../decodeAudioFile';
 
 const mocks = vi.hoisted(() => ({
-    isTauri: vi.fn(() => false),
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     writeAudioFileToCache: vi.fn(),
     nativeDecode: vi.fn(),
@@ -11,10 +10,6 @@ const mocks = vi.hoisted(() => ({
     decodeAudioBytesWasm: vi.fn(),
     wasmDecodedToAudioBuffer: vi.fn(),
     bufferCacheSet: vi.fn(),
-}));
-
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.isTauri,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -57,14 +52,45 @@ function makeFile(name: string): File {
     return new File([new Uint8Array(8)], name);
 }
 
-describe('decodeAudioFile — Tauri path', () => {
+describe('decodeAudioFile — native decode path', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.isTauri.mockReturnValue(true);
         mocks.writeAudioFileToCache.mockResolvedValue({ kind: 'ready', path: '/app/models/../cache/song.flac' });
         mocks.nativeDecode.mockResolvedValue(null);
         mocks.decodeAudioBytesWasm.mockResolvedValue({ sampleRate: 48_000, channels: [new Float32Array(4)] });
         mocks.wasmDecodedToAudioBuffer.mockReturnValue({} as AudioBuffer);
+    });
+
+    it('does not log a "Tauri unavailable" warning when the repository skips native decode outside Tauri', async () => {
+        mocks.writeAudioFileToCache.mockResolvedValue({ kind: 'skipped' });
+
+        const result = await subject.decodeAudioFile(makeFile('song.flac'));
+
+        expect(result).toBeDefined();
+        expect(mocks.nativeDecode).not.toHaveBeenCalled();
+        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('returns decoded native samples when cache write and native decode succeed', async () => {
+        const nativeBuffer = {} as AudioBuffer;
+        mocks.nativeDecode.mockResolvedValue({
+            samples: [0.1, 0.2],
+            sampleRate: 48_000,
+            channels: 2,
+            durationMs: 1,
+            totalFrames: 2,
+        });
+        mocks.samplesToAudioBuffer.mockReturnValue(nativeBuffer);
+
+        const result = await subject.decodeAudioFile(makeFile('song.flac'));
+
+        expect(mocks.writeAudioFileToCache).toHaveBeenCalled();
+        expect(mocks.nativeDecode).toHaveBeenCalledWith('/app/models/../cache/song.flac');
+        expect(mocks.samplesToAudioBuffer).toHaveBeenCalled();
+        expect(result.buffer).toBe(nativeBuffer);
+        expect(mocks.bufferCacheSet).toHaveBeenCalledWith(expect.stringMatching(/^audio-/), nativeBuffer);
+        expect(mocks.decodeAudioBytesWasm).not.toHaveBeenCalled();
     });
 
     it('logs a "Tauri unavailable" warning when the bridge cannot load, then falls back', async () => {
