@@ -2,11 +2,22 @@ import { getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stor
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
 
-import type { WarpMarker } from '#/modules/Arrangement/models/WarpMarker';
-
 export type QuantizeTransientsResult =
     | { ok: true; moved: number }
     | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_MARKERS' };
+
+type QuantizableClip = {
+    id: string;
+    type: 'audio' | 'midi';
+};
+
+type QuantizedMarker = {
+    id: string;
+    originalBeat: number;
+    warpedBeat: number;
+    origin?: 'user' | 'transient-auto' | 'grid-snap';
+    locked?: boolean;
+};
 
 function snapBeat(beat: number, gridDivisionBeats: number): number {
     if (gridDivisionBeats <= 0) {
@@ -15,9 +26,10 @@ function snapBeat(beat: number, gridDivisionBeats: number): number {
     return Math.round(beat / gridDivisionBeats) * gridDivisionBeats;
 }
 
-function findClip(clipId: string): import('#/modules/Arrangement/models/Track').Clip | null {
+function findClip(clipId: string): QuantizableClip | null {
     for (const track of trackStore.value?.tracks ?? []) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clips: readonly QuantizableClip[] = track.clips;
+        const clip = clips.find((candidate) => candidate.id === clipId);
         if (clip) {
             return clip;
         }
@@ -48,7 +60,7 @@ export function quantizeTransients(clipId: string): QuantizeTransientsResult {
         return { ok: false, reason: 'NO_MARKERS' };
     }
 
-    const after: WarpMarker[] = before.markers.map((m) => {
+    const after: QuantizedMarker[] = before.markers.map((m) => {
         if (m.locked) {
             return m;
         }
