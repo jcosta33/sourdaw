@@ -511,21 +511,23 @@ const proofDescriptor: WasmDeviceDescriptor = {
     create({ context, deviceId, deviceType, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        placeholder.nativeDspControls = {
+        const loadingControls: {
+            setParam(name: string, value: number): void;
+            setBypass(bypassed: boolean): void;
+        } = {
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
             setBypass: () => {},
         };
+        placeholder.nativeDspControls = loadingControls;
+        placeholder.controller = loadingControls;
         const loadPromise = createProofNode(context)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await result.ready;
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
-                for (const [name, value] of pendingParams) {
-                    result.setParam(name, value);
-                }
                 result.onLatencyChanged((latency) => {
                     reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
@@ -562,7 +564,14 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                try {
+                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
+                } finally {
+                    // Queued params are flat project truth or direct param writes; replay them last so they win.
+                    for (const [name, value] of pendingParams) {
+                        result.setParam(name, value);
+                    }
+                }
                 return;
             })
             .catch((error) => {
