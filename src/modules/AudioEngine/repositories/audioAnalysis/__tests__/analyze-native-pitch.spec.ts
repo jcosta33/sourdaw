@@ -2,15 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { isTauri } from '#/utils/tauriBridge';
+
 import { analyzeNativePitch } from '../analyze-native-pitch';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
 }));
 
+vi.mock('#/utils/tauriBridge', () => ({
+    isTauri: vi.fn(() => true),
+}));
+
 describe('analyzeNativePitch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(isTauri).mockReturnValue(true);
     });
 
     it('should invoke the native pitch command with the audio path', async () => {
@@ -41,5 +48,14 @@ describe('analyzeNativePitch', () => {
         await expect(analyzeNativePitch({ audioPath: 'clip-audio.wav' })).rejects.toThrow(
             'analyze_pitch returned an invalid payload'
         );
+    });
+
+    it('should return null without invoking native analysis outside Tauri', async () => {
+        vi.mocked(isTauri).mockReturnValue(false);
+
+        const result = await analyzeNativePitch({ audioPath: 'clip-audio.wav' });
+
+        expect(result).toBeNull();
+        expect(invoke).not.toHaveBeenCalled();
     });
 });

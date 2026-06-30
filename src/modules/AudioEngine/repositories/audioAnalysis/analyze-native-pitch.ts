@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+import { isTauri } from '#/utils/tauriBridge';
+
 type AnalyzeNativePitchInput = {
     audioPath: string;
 };
@@ -18,7 +20,7 @@ type NativePitchContour = {
     algorithm: string;
 };
 
-type AnalyzeNativePitchOutput = Promise<NativePitchContour>;
+type AnalyzeNativePitchOutput = Promise<NativePitchContour | null>;
 
 function isNativePitchPoint(value: unknown): value is NativePitchPoint {
     if (typeof value !== 'object' || value === null) {
@@ -56,6 +58,10 @@ function isNativePitchContour(value: unknown): value is NativePitchContour {
 }
 
 export async function analyzeNativePitch({ audioPath }: AnalyzeNativePitchInput): AnalyzeNativePitchOutput {
+    if (!isTauri()) {
+        return null;
+    }
+
     const result = await invoke('analyze_pitch', { audioPath });
 
     if (!isNativePitchContour(result)) {

@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { analyzeNativePitch } from '../../repositories/audioAnalysis/analyze-native-pitch';
 import { listenPitchAnalysisProgress } from '../../repositories/audioAnalysis/listen-pitch-analysis-progress';
@@ -69,6 +68,31 @@ function getCachedAudioBuffer(clip: PitchAnalysisClip): AudioBuffer | null {
     return audioBufferCache.get(clip.audioBufferId) ?? null;
 }
 
+function setAnalysisProgress(progress: number): void {
+    const state = kneadStore.value;
+    if (state) {
+        kneadStore.set({ ...state, analysisProgress: progress });
+    }
+}
+
+async function analyzePitchWithWasm(targetClip: PitchAnalysisClip): Promise<PitchContour> {
+    const buffer = getCachedAudioBuffer(targetClip);
+    if (!buffer) {
+        throw new Error('Could not get audio buffer for clip');
+    }
+
+    // Artificial progress steps to keep UI somewhat responsive.
+    const progressSteps = [0.2, 0.5, 0.8];
+    for (const step of progressSteps) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        setAnalysisProgress(step);
+    }
+
+    const channelData = buffer.getChannelData(0);
+    const jsonStr = analyze_pitch_wasm(channelData, buffer.sampleRate);
+    return JSON.parse(jsonStr) as PitchContour;
+}
+
 /**
  * Runs the offline native pitch analysis on a full audio clip via Tauri IPC or WASM fallback.
  */
@@ -91,46 +115,22 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
     }
 
     let unlisten: (() => void) | null = null;
+    let didAnalyze = false;
 
     try {
-        let contour: PitchContour;
+        unlisten = await listenPitchAnalysisProgress({
+            onProgress: setAnalysisProgress,
+        });
 
-        if (isTauri()) {
-            unlisten = await listenPitchAnalysisProgress({
-                onProgress: (progress) => {
-                    const currentState = kneadStore.value;
-                    if (currentState) {
-                        kneadStore.set({
-                            ...currentState,
-                            analysisProgress: progress,
-                        });
-                    }
-                },
-            });
-
+        let contour: PitchContour | null = null;
+        if (unlisten) {
             contour = await analyzeNativePitch({
                 audioPath: targetClip.fileId ?? targetClip.audioBufferId,
             });
-        } else {
-            // WASM fallback
-            const buffer = getCachedAudioBuffer(targetClip);
-            if (!buffer) {
-                throw new Error('Could not get audio buffer for clip');
-            }
+        }
 
-            // Artificial progress steps to keep UI somewhat responsive
-            const progressSteps = [0.2, 0.5, 0.8];
-            for (const step of progressSteps) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-                const state = kneadStore.value;
-                if (state) {
-                    kneadStore.set({ ...state, analysisProgress: step });
-                }
-            }
-
-            const channelData = buffer.getChannelData(0);
-            const jsonStr = analyze_pitch_wasm(channelData, buffer.sampleRate);
-            contour = JSON.parse(jsonStr) as PitchContour;
+        if (!contour) {
+            contour = await analyzePitchWithWasm(targetClip);
         }
 
         // Store the raw contour for the faint background trace in the editor.
@@ -144,6 +144,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
                 },
             });
         }
+        didAnalyze = true;
 
         // Blob ingestion is the Knead side's responsibility: the Knead-side
         // orchestrator (`analyzeClipPitch`) feeds this contour into
@@ -163,7 +164,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             kneadStore.set({
                 ...endState,
                 isAnalyzing: false,
-                analysisProgress: 1,
+                analysisProgress: didAnalyze ? 1 : 0,
             });
         }
     }

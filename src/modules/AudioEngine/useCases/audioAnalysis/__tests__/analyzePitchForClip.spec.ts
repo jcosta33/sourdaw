@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { analyzeNativePitch } from '../../../repositories/audioAnalysis/analyze-native-pitch';
 import { listenPitchAnalysisProgress } from '../../../repositories/audioAnalysis/listen-pitch-analysis-progress';
@@ -16,10 +15,6 @@ vi.mock('../../../repositories/audioAnalysis/analyze-native-pitch', () => ({
 
 vi.mock('../../../repositories/audioAnalysis/listen-pitch-analysis-progress', () => ({
     listenPitchAnalysisProgress: vi.fn(),
-}));
-
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(() => true),
 }));
 
 vi.mock('../../../stores/audioBufferCache', () => ({
@@ -35,7 +30,6 @@ vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
 describe('analyzePitchForClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(isTauri).mockReturnValue(true);
 
         // Setup mock stores
         trackStore.set({
@@ -151,10 +145,10 @@ describe('analyzePitchForClip', () => {
         expect(analyzeNativePitch).toHaveBeenCalledWith({ audioPath: 'buffer-c1' });
     });
 
-    it('should fallback to WASM when isTauri is false', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+    it('should fallback to WASM when native progress listening is unavailable', async () => {
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 
+        vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(null);
         vi.mocked(audioBufferCache.get).mockReturnValue({
             sampleRate: 44100,
             getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
@@ -164,6 +158,7 @@ describe('analyzePitchForClip', () => {
 
         const result = await analyzePitchForClip('c1');
 
+        expect(listenPitchAnalysisProgress).toHaveBeenCalledWith({ onProgress: expect.any(Function) });
         expect(analyzeNativePitch).not.toHaveBeenCalled();
         expect(analyze_pitch_wasm).toHaveBeenCalled();
         expect(result).toEqual({ status: 'analyzed', contour: mockContour });
@@ -172,13 +167,36 @@ describe('analyzePitchForClip', () => {
     });
 
     it('should throw error in WASM mode if buffer is missing', async () => {
-        vi.mocked(isTauri).mockReturnValue(false);
+        vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(null);
         vi.mocked(audioBufferCache.get).mockReturnValue(undefined);
 
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         await expect(analyzePitchForClip('c1')).rejects.toThrow('Could not get audio buffer for clip');
         expect(consoleSpy).toHaveBeenCalled();
+        expect(kneadStore.value.isAnalyzing).toBe(false);
+        expect(kneadStore.value.analysisProgress).toBe(0);
         consoleSpy.mockRestore();
+    });
+
+    it('should fallback to WASM and clean up native progress listening when native analysis is unavailable', async () => {
+        const unlistenMock = vi.fn();
+        const wasmContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
+        vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(unlistenMock);
+        vi.mocked(analyzeNativePitch).mockResolvedValue(null);
+        vi.mocked(audioBufferCache.get).mockReturnValue({
+            sampleRate: 44100,
+            getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
+        } as any);
+        vi.mocked(analyze_pitch_wasm).mockReturnValue(JSON.stringify(wasmContour));
+
+        const result = await analyzePitchForClip('c1');
+
+        expect(analyzeNativePitch).toHaveBeenCalledWith({ audioPath: 'test.wav' });
+        expect(analyze_pitch_wasm).toHaveBeenCalled();
+        expect(result).toEqual({ status: 'analyzed', contour: wasmContour });
+        expect(unlistenMock).toHaveBeenCalledTimes(1);
+        expect(kneadStore.value.isAnalyzing).toBe(false);
+        expect(kneadStore.value.analysisProgress).toBe(1);
     });
 
     it('should handle errors and restore state', async () => {
@@ -196,7 +214,7 @@ describe('analyzePitchForClip', () => {
 
         // Should restore analyzing state
         expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(1);
+        expect(kneadStore.value.analysisProgress).toBe(0);
         expect(unlistenMock).toHaveBeenCalled();
     });
 
