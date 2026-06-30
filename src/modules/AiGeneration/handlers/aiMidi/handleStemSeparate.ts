@@ -1,6 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack, removeTrack } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, getTrackStoreState, removeTrack } from '#/modules/Arrangement/useCases';
 import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
@@ -34,7 +33,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
 
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${alpha.payload.clipId}`);
 
-        const state = trackStore.value;
+        const state = getTrackStoreState();
         const track = state?.tracks.find((time) => time.clips.some((context) => context.id === alpha.payload.clipId));
         if (!track) {
             notifyUser('Stem separation failed: clip not found', 'error');
@@ -64,7 +63,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
                 // names, so drop any prior stem track of this name before
                 // creating the replacement. Without this, re-running stem
                 // separation on the same clip accumulates duplicate tracks.
-                const existingStemTracks = (trackStore.value?.tracks ?? []).filter(
+                const existingStemTracks = (getTrackStoreState()?.tracks ?? []).filter(
                     (existing) => existing.name === stemTrackName
                 );
                 for (const existing of existingStemTracks) {

@@ -10,30 +10,17 @@ const mocks = vi.hoisted(() => ({
     info: vi.fn(),
     addClip: vi.fn(),
     notifyUser: vi.fn(),
-    trackStore: {
-        value: {
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [{ id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }],
-                },
-            ],
-        },
-    },
+    getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: mocks.trackStore,
-}));
-
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addClip: mocks.addClip,
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
@@ -58,12 +45,12 @@ vi.mock('#/infra/logger/appLogger', () => ({
 describe('handleCompleteMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // Reset the shared track store to the default fixture so tests that
-        // mutate `mocks.trackStore.value` (missing-clip, clamping) don't leak
+        // Reset the shared track-state fixture so tests that change the getter
+        // result (missing-clip, clamping) do not leak
         // into the others regardless of declaration order.
-        mocks.trackStore.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }] }],
-        };
+        });
     });
 
     it('generates forward completion notes', async () => {
@@ -83,6 +70,7 @@ describe('handleCompleteMidi', () => {
         );
 
         expect(mocks.addMidiNote).toHaveBeenCalledWith('c1', 62, 4, 1, 90);
+        expect(mocks.getTrackStoreState).not.toHaveBeenCalled();
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Completed 1 notes'));
     });
 
@@ -114,13 +102,14 @@ describe('handleCompleteMidi', () => {
 
         // Note is shifted relative to its minimum startBeat (-4)
         // Shifted start = -4 - (-4) = 0
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(1);
         expect(mocks.addMidiNote).toHaveBeenCalledWith('new-clip-id', 58, 0, 1, 80);
     });
 
     it('clamps backward notes so they never overflow the prepended clip bounds', async () => {
-        mocks.trackStore.value = {
+        mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }] }],
-        };
+        });
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 4 }]);
         // bars:1 → durationBeats 4, newStartBeat max(0, 4-4)=0, clipLength 4.
         // Notes the LLM emitted span the whole window plus one overflowing note.
@@ -142,7 +131,7 @@ describe('handleCompleteMidi', () => {
     });
 
     it('surfaces an error (and skips the success log) when the source clip is not found on backward completion', async () => {
-        mocks.trackStore.value = { tracks: [] };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
         mocks.getNotesForClip.mockReturnValue([]);
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 58, startBeat: -4, duration: 1, velocity: 80 }]);
 
@@ -154,6 +143,7 @@ describe('handleCompleteMidi', () => {
         ).rejects.toThrow(/source clip not found/i);
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Complete MIDI failed: source clip not found', 'error');
+        expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.info).not.toHaveBeenCalled();
     });
