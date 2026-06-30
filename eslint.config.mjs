@@ -661,12 +661,32 @@ const nonModuleImporterFolders = new Set(['app', 'infra', 'routes']);
  * @param {string} filename
  * @returns {string | null}
  */
+function getSourceRelativePath(filename) {
+    const normalized = normalizeFilePath(filename);
+    const sourceMarker = '/src/';
+    const sourceIndex = normalized.lastIndexOf(sourceMarker);
+
+    if (sourceIndex >= 0) {
+        return normalized.slice(sourceIndex + sourceMarker.length);
+    }
+
+    if (normalized.startsWith('src/')) {
+        return normalized.slice('src/'.length);
+    }
+
+    return null;
+}
+
+/**
+ * @param {string} filename
+ * @returns {string | null}
+ */
 function getNonModuleImporterFolder(filename) {
     const normalized = normalizeFilePath(filename);
     if (!isProductionSourceFile(normalized)) return null;
 
-    const match = /(?:^|\/)src\/([^/]+)(?:\/|$)/.exec(normalized);
-    const sourceFolder = match?.[1];
+    const sourceRelativePath = getSourceRelativePath(normalized);
+    const sourceFolder = sourceRelativePath?.split('/')[0];
     if (!sourceFolder) return null;
     if (!nonModuleImporterFolders.has(sourceFolder)) return null;
 
@@ -709,6 +729,18 @@ function getNonModulePrivateImportTarget(importPath) {
     }
 
     return getDeepContractImportFolder(importPath);
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getLiteralStringValue(node) {
+    if (node?.type === 'Literal' && typeof node.value === 'string') {
+        return node.value;
+    }
+
+    return null;
 }
 
 /**
@@ -1045,16 +1077,19 @@ const sourdawPlugin = {
                 /**
                  * @param {any} node
                  * @param {string} source
+                 * @param {boolean} includePrivateFolders
                  * @returns {void}
                  */
-                function reportIfPrivateModuleImport(node, source) {
+                function reportIfPrivateModuleImport(node, source, includePrivateFolders) {
                     const importedModule = getModuleImportLocation(context.filename, source);
                     if (!importedModule) return;
 
                     const importerModule = getModuleLocation(context.filename);
                     if (importerModule?.moduleName === importedModule.moduleName) return;
 
-                    const target = getNonModulePrivateImportTarget(importedModule.importPath);
+                    const target = includePrivateFolders
+                        ? getNonModulePrivateImportTarget(importedModule.importPath)
+                        : getDeepContractImportFolder(importedModule.importPath);
                     if (!target) return;
 
                     context.report({
@@ -1067,12 +1102,38 @@ const sourdawPlugin = {
                 return {
                     /** @param {any} node */
                     ImportDeclaration(node) {
-                        if (isTypeOnlyImportDeclaration(node)) return;
-
                         const value = node.source.value;
                         if (typeof value !== 'string') return;
 
-                        reportIfPrivateModuleImport(node, value);
+                        reportIfPrivateModuleImport(node, value, !isTypeOnlyImportDeclaration(node));
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    ImportExpression(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, false);
                     },
                 };
             },
