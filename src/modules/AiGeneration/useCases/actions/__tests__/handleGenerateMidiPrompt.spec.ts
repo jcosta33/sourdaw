@@ -16,31 +16,39 @@ const {
     addTrackMock,
     addClipMock,
     batchAddMidiNotesMock,
+    getTrackStoreStateMock,
+    getMidiStoreStateMock,
     setTrackStoreStateMock,
     setMidiStoreStateMock,
     pushUndoEntryMock,
     selectClipMock,
-    trackStoreMock,
-    midiStoreMock,
+    trackStateMock,
+    midiStateMock,
     workspaceStoreMock,
     generateMidiViaLlmMock,
-} = vi.hoisted(() => ({
-    updateTaskMock: vi.fn(),
-    addTrackMock: vi.fn(),
-    addClipMock: vi.fn(),
-    batchAddMidiNotesMock: vi.fn(),
-    setTrackStoreStateMock: vi.fn<(state: unknown) => void>(),
-    setMidiStoreStateMock: vi.fn<(state: unknown) => void>(),
-    pushUndoEntryMock: vi.fn<PushUndoEntryMock>(),
-    selectClipMock: vi.fn(),
-    trackStoreMock: {
+} = vi.hoisted(() => {
+    const trackStateMock = {
         value: { tracks: [] as Array<{ id: string; kind: string }>, selectedTrackId: null as string | null },
-        set: vi.fn(),
-    },
-    midiStoreMock: { value: {} as Record<string, unknown>, set: vi.fn() },
-    workspaceStoreMock: { value: { selectedClipId: null as string | null }, set: vi.fn() },
-    generateMidiViaLlmMock: vi.fn().mockResolvedValue([]),
-}));
+    };
+    const midiStateMock: { value: unknown } = { value: {} };
+
+    return {
+        updateTaskMock: vi.fn(),
+        addTrackMock: vi.fn(),
+        addClipMock: vi.fn(),
+        batchAddMidiNotesMock: vi.fn(),
+        getTrackStoreStateMock: vi.fn<() => unknown>(() => trackStateMock.value),
+        getMidiStoreStateMock: vi.fn<() => unknown>(() => midiStateMock.value),
+        setTrackStoreStateMock: vi.fn<(state: unknown) => void>(),
+        setMidiStoreStateMock: vi.fn<(state: unknown) => void>(),
+        pushUndoEntryMock: vi.fn<PushUndoEntryMock>(),
+        selectClipMock: vi.fn(),
+        trackStateMock,
+        midiStateMock,
+        workspaceStoreMock: { value: { selectedClipId: null as string | null }, set: vi.fn() },
+        generateMidiViaLlmMock: vi.fn().mockResolvedValue([]),
+    };
+});
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
@@ -57,23 +65,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         ...actual,
         addTrack: addTrackMock,
         addClip: addClipMock,
+        getTrackStoreState: getTrackStoreStateMock,
         setTrackStoreState: setTrackStoreStateMock,
-    };
-});
-
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...actual,
-        trackStore: trackStoreMock,
-    };
-});
-
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
-    return {
-        ...actual,
-        midiStore: midiStoreMock,
     };
 });
 
@@ -94,6 +87,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     return {
         ...actual,
         batchAddMidiNotes: batchAddMidiNotesMock,
+        getMidiStoreState: getMidiStoreStateMock,
         setMidiStoreState: setMidiStoreStateMock,
     };
 });
@@ -129,7 +123,8 @@ vi.mock('../updateTask', () => ({
 describe('handleGenerateMidiPrompt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        trackStoreMock.value = { tracks: [], selectedTrackId: null };
+        trackStateMock.value = { tracks: [], selectedTrackId: null };
+        midiStateMock.value = {};
         workspaceStoreMock.value = { selectedClipId: null };
         generateMidiViaLlmMock.mockResolvedValue([]);
     });
@@ -159,13 +154,13 @@ describe('handleGenerateMidiPrompt', () => {
         };
         const midiSnapshotBefore = { notesByClipId: {} };
         const midiSnapshotAfter = midiSnapshotBefore;
-        trackStoreMock.value = trackSnapshotBefore;
-        midiStoreMock.value = midiSnapshotBefore;
+        trackStateMock.value = trackSnapshotBefore;
+        midiStateMock.value = midiSnapshotBefore;
 
         // Notes generated, a new track is created, but addClip fails (returns null).
         generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
         addTrackMock.mockImplementation(() => {
-            trackStoreMock.value = trackSnapshotAfter;
+            trackStateMock.value = trackSnapshotAfter;
             return { id: 'new-midi-track' };
         });
         addClipMock.mockReturnValue(null);
@@ -206,9 +201,35 @@ describe('handleGenerateMidiPrompt', () => {
     });
 
     it('should delegate generated clip selection through the Workspace use case', async () => {
+        const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
+        const trackSnapshotAfter = {
+            tracks: [{ id: 'new-midi-track', kind: 'midi' }],
+            selectedTrackId: 'new-midi-track',
+        };
+        const midiSnapshotBefore = { notesByClipId: {} };
+        const midiSnapshotAfter = {
+            notesByClipId: {
+                'generated-clip': [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+            },
+        };
+        trackStateMock.value = trackSnapshotBefore;
+        midiStateMock.value = midiSnapshotBefore;
+
         generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
-        addTrackMock.mockReturnValue({ id: 'new-midi-track' });
-        addClipMock.mockReturnValue({ id: 'generated-clip' });
+        addTrackMock.mockImplementation(() => {
+            trackStateMock.value = {
+                tracks: [{ id: 'new-midi-track', kind: 'midi' }],
+                selectedTrackId: 'new-midi-track',
+            };
+            return { id: 'new-midi-track' };
+        });
+        addClipMock.mockImplementation(() => {
+            trackStateMock.value = trackSnapshotAfter;
+            return { id: 'generated-clip' };
+        });
+        batchAddMidiNotesMock.mockImplementation(() => {
+            midiStateMock.value = midiSnapshotAfter;
+        });
 
         await handleGenerateMidiPrompt('a melody');
 
@@ -219,6 +240,24 @@ describe('handleGenerateMidiPrompt', () => {
         expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
         expect(selectClipMock).toHaveBeenCalledWith('generated-clip');
         expect(workspaceStoreMock.set).not.toHaveBeenCalled();
+
+        const undoEntryCall = pushUndoEntryMock.mock.calls[0];
+        expect(undoEntryCall).toBeDefined();
+        if (!undoEntryCall) {
+            throw new Error('Expected successful generation to register an undo entry');
+        }
+        const [, undoCallback, redoCallback] = undoEntryCall;
+
+        undoCallback();
+        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotBefore);
+        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotBefore);
+
+        setTrackStoreStateMock.mockClear();
+        setMidiStoreStateMock.mockClear();
+
+        redoCallback();
+        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotAfter);
+        expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
     });
 });
 

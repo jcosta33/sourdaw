@@ -5,24 +5,32 @@ const { streamCloudChatCompletionMock, resolveBackendMock } = vi.hoisted(() => (
     resolveBackendMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
-const { getTrackStoreStateMock, createAlternativeClipsMock, setTrackStoreStateMock } = vi.hoisted(() => ({
-    getTrackStoreStateMock: vi.fn<(...args: unknown[]) => unknown>().mockReturnValue(null),
-    createAlternativeClipsMock: vi.fn<(...args: unknown[]) => unknown>(),
-    setTrackStoreStateMock: vi.fn<(value: unknown) => void>(),
-}));
+const { getTrackStoreStateMock, createAlternativeClipsMock, setTrackStoreStateMock, trackStateMock } = vi.hoisted(
+    () => {
+        const trackStateMock: { value: unknown } = { value: null };
 
-const { getNotesForClipMock, setMidiStoreStateMock } = vi.hoisted(() => ({
-    getNotesForClipMock: vi.fn<(...args: unknown[]) => unknown>(),
-    setMidiStoreStateMock: vi.fn<(value: unknown) => void>(),
-}));
+        return {
+            getTrackStoreStateMock: vi.fn<() => unknown>(() => trackStateMock.value),
+            createAlternativeClipsMock: vi.fn<(...args: unknown[]) => unknown>(),
+            setTrackStoreStateMock: vi.fn<(value: unknown) => void>(),
+            trackStateMock,
+        };
+    }
+);
+
+const { getMidiStoreStateMock, getNotesForClipMock, setMidiStoreStateMock, midiStateMock } = vi.hoisted(() => {
+    const midiStateMock: { value: unknown } = { value: null };
+
+    return {
+        getMidiStoreStateMock: vi.fn<() => unknown>(() => midiStateMock.value),
+        getNotesForClipMock: vi.fn<(...args: unknown[]) => unknown>(),
+        setMidiStoreStateMock: vi.fn<(value: unknown) => void>(),
+        midiStateMock,
+    };
+});
 
 const { pushUndoEntryMock } = vi.hoisted(() => ({
     pushUndoEntryMock: vi.fn<(...args: unknown[]) => unknown>(),
-}));
-
-const { trackStoreMock, midiStoreMock } = vi.hoisted(() => ({
-    trackStoreMock: { value: null as unknown, set: vi.fn<(value: unknown) => void>() },
-    midiStoreMock: { value: null as unknown, set: vi.fn<(value: unknown) => void>() },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -40,6 +48,7 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    getMidiStoreState: getMidiStoreStateMock,
     getNotesForClip: getNotesForClipMock,
     setMidiStoreState: setMidiStoreStateMock,
 }));
@@ -47,16 +56,6 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/stores')>()),
     pushUndoEntry: pushUndoEntryMock,
-}));
-
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: trackStoreMock,
-}));
-
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
-    midiStore: midiStoreMock,
 }));
 
 import { generateMidiVariations } from '../generateMidiVariations';
@@ -81,11 +80,10 @@ const validVariationsJson = JSON.stringify({
 describe('generateMidiVariations', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        getTrackStoreStateMock.mockReturnValue(null);
+        trackStateMock.value = null;
+        midiStateMock.value = null;
         resolveBackendMock.mockReturnValue('cloud');
         getNotesForClipMock.mockReturnValue(validNotes);
-        trackStoreMock.value = null;
-        midiStoreMock.value = null;
     });
 
     it('throws when track state is unavailable', async () => {
@@ -94,18 +92,21 @@ describe('generateMidiVariations', () => {
     });
 
     it('parses variations, creates alternative clips, and pushes a restorable undo entry', async () => {
-        getTrackStoreStateMock.mockReturnValue(midiClipState);
+        trackStateMock.value = midiClipState;
         streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
             onToken(validVariationsJson);
             return Promise.resolve();
         });
 
         // Distinct before/after snapshots so we can prove the right one is restored on each side.
-        trackStoreMock.value = { snapshot: 'track-before' };
-        midiStoreMock.value = { snapshot: 'midi-before' };
+        const trackSnapshotBefore = midiClipState;
+        const midiSnapshotBefore = { snapshot: 'midi-before' };
+        const trackSnapshotAfter = { snapshot: 'track-after' };
+        const midiSnapshotAfter = { snapshot: 'midi-after' };
+        midiStateMock.value = midiSnapshotBefore;
         createAlternativeClipsMock.mockImplementation(() => {
-            trackStoreMock.value = { snapshot: 'track-after' };
-            midiStoreMock.value = { snapshot: 'midi-after' };
+            trackStateMock.value = trackSnapshotAfter;
+            midiStateMock.value = midiSnapshotAfter;
         });
 
         const count = await generateMidiVariations('clip-1');
@@ -130,17 +131,17 @@ describe('generateMidiVariations', () => {
         // ran, routed through the owning modules' write-path use-cases (not a direct
         // foreign-store.set).
         undoFn();
-        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'track-before' });
-        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'midi-before' });
+        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith(trackSnapshotBefore);
+        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith(midiSnapshotBefore);
 
         // Redo restores the post-mutation snapshots, also through the owning use-cases.
         redoFn();
-        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'track-after' });
-        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith({ snapshot: 'midi-after' });
+        expect(setTrackStoreStateMock).toHaveBeenLastCalledWith(trackSnapshotAfter);
+        expect(setMidiStoreStateMock).toHaveBeenLastCalledWith(midiSnapshotAfter);
     });
 
     it('drops out-of-range and non-finite variation notes before creating clips', async () => {
-        getTrackStoreStateMock.mockReturnValue(midiClipState);
+        trackStateMock.value = midiClipState;
         // First variation is valid; second carries an out-of-range pitch and must be rejected.
         const mixedJson = JSON.stringify({
             variations: [
@@ -163,7 +164,7 @@ describe('generateMidiVariations', () => {
     });
 
     it('extracts the variations object from a multi-object response, skipping a preamble', async () => {
-        getTrackStoreStateMock.mockReturnValue(midiClipState);
+        trackStateMock.value = midiClipState;
         // A leading "thinking" object (with brace-containing string), then the real
         // variations object, then trailing junk. A greedy /\{[\s\S]*\}/ would span
         // from the first { to the last } and merge all three into one unparseable blob.
@@ -183,13 +184,13 @@ describe('generateMidiVariations', () => {
     });
 
     it('rejects a clip whose duration computes to NaN before prompting the model', async () => {
-        getTrackStoreStateMock.mockReturnValue({
+        trackStateMock.value = {
             tracks: [
                 {
                     clips: [{ id: 'clip-1', type: 'midi', startBeat: Number.NaN, endBeat: 4 }],
                 },
             ],
-        });
+        };
 
         await expect(generateMidiVariations('clip-1')).rejects.toThrow(/zero or negative duration/);
         expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
