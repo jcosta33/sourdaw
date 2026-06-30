@@ -88,10 +88,11 @@ describe('findWasmDescriptor', () => {
             onLoaded: vi.fn(),
         });
 
-        if (!placeholder.nativeDspControls) {
-            throw new Error('Expected proof placeholder to expose native DSP controls');
+        if (!placeholder.controller) {
+            throw new Error('Expected proof placeholder to expose loading controller');
         }
-        placeholder.nativeDspControls.setParam('lim_ceiling', -1.5);
+        expect(placeholder.nativeDspControls).toBe(placeholder.controller);
+        placeholder.controller.setParam('lim_ceiling', -1.5);
 
         await loadPromise;
 
@@ -123,10 +124,10 @@ describe('findWasmDescriptor', () => {
             onLoaded: vi.fn(),
         });
 
-        if (!placeholder.nativeDspControls) {
-            throw new Error('Expected proof placeholder to expose native DSP controls');
+        if (!placeholder.controller) {
+            throw new Error('Expected proof placeholder to expose loading controller');
         }
-        placeholder.nativeDspControls.setParam('lim_ceiling', -1.5);
+        placeholder.controller.setParam('lim_ceiling', -1.5);
 
         await loadPromise;
 
@@ -150,18 +151,31 @@ describe('findWasmDescriptor', () => {
             throw new Error('Expected proof descriptor to be registered');
         }
 
-        const { loadPromise } = desc.create({
+        const { placeholder, loadPromise } = desc.create({
             context: createRegistryAudioContext(),
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded,
         });
 
+        if (!placeholder.controller) {
+            throw new Error('Expected proof placeholder to expose loading controller');
+        }
+        placeholder.controller.setParam('lim_ceiling', -1.5);
+
         await loadPromise;
 
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
         expect(onLoaded).toHaveBeenCalledTimes(1);
         expect(onLoaded).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'proof-1', type: 'proof' }));
+        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(1);
+        expect(proofNodeMocks.setParam).toHaveBeenCalledWith('lim_ceiling', -1.5);
+        const syncCallOrder = syncProofPatch.mock.invocationCallOrder[0];
+        const replayCallOrder = proofNodeMocks.setParam.mock.invocationCallOrder[0];
+        if (syncCallOrder === undefined || replayCallOrder === undefined) {
+            throw new Error('Expected sync and replay call order to be recorded');
+        }
+        expect(replayCallOrder).toBeGreaterThan(syncCallOrder);
     });
 
     it('should still sync a real in-memory Proof patch when no flat params are queued', async () => {
