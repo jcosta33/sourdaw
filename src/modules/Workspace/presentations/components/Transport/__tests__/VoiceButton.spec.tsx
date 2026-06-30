@@ -2,43 +2,83 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 
 import { VoiceButton } from '../VoiceButton';
 
-const { emitMock } = vi.hoisted(() => ({ emitMock: vi.fn() }));
+const voiceButtonMocks = vi.hoisted(() => ({
+    isVoiceInputAvailable: vi.fn(),
+    toggleVoiceInput: vi.fn(),
+    voiceStatus: {
+        current: { isListening: false, transcribing: false },
+    },
+}));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: () => ({ isListening: false, transcribing: false }),
+    useStore: () => voiceButtonMocks.voiceStatus.current,
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: () => true,
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    voiceStatusStore: {},
 }));
 
-vi.mock('#/modules/AiRuntime/presentations/views/VoiceCommandOverlay', () => ({
-    isSpeechRecognitionAvailable: () => false,
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    isVoiceInputAvailable: voiceButtonMocks.isVoiceInputAvailable,
+    toggleVoiceInput: voiceButtonMocks.toggleVoiceInput,
 }));
-
-const mockEventBus = {
-    emit: emitMock,
-    on: vi.fn(() => () => {}),
-};
 
 describe('VoiceButton', () => {
     beforeEach(() => {
-        injectDependencies(toggleVoiceInput, { eventBus: mockEventBus });
         vi.clearAllMocks();
+        voiceButtonMocks.voiceStatus.current = { isListening: false, transcribing: false };
+        voiceButtonMocks.isVoiceInputAvailable.mockReturnValue(false);
     });
 
-    it('should emit voice.toggle when clicked', () => {
+    it('should render when AiRuntime reports browser voice input availability', () => {
+        voiceButtonMocks.isVoiceInputAvailable.mockReturnValue(true);
+
         render(
             <TooltipProvider delayDuration={0}>
                 <VoiceButton />
             </TooltipProvider>
         );
+
+        expect(screen.getByRole('button', { name: 'Voice command (hold V)' })).toBeInTheDocument();
+    });
+
+    it('should hide when AiRuntime reports no voice input availability', () => {
+        render(
+            <TooltipProvider delayDuration={0}>
+                <VoiceButton />
+            </TooltipProvider>
+        );
+
+        expect(screen.queryByRole('button', { name: /Voice command/ })).not.toBeInTheDocument();
+    });
+
+    it('should render active state from voiceStatusStore', () => {
+        voiceButtonMocks.isVoiceInputAvailable.mockReturnValue(true);
+        voiceButtonMocks.voiceStatus.current = { isListening: true, transcribing: false };
+
+        render(
+            <TooltipProvider delayDuration={0}>
+                <VoiceButton />
+            </TooltipProvider>
+        );
+
+        expect(screen.getByRole('button', { name: 'Stop voice command' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('should emit voice.toggle when clicked', () => {
+        voiceButtonMocks.isVoiceInputAvailable.mockReturnValue(true);
+
+        render(
+            <TooltipProvider delayDuration={0}>
+                <VoiceButton />
+            </TooltipProvider>
+        );
+
         fireEvent.click(screen.getByRole('button', { name: /Voice command/ }));
-        expect(emitMock).toHaveBeenCalledWith('voice.toggle', { active: undefined });
+
+        expect(voiceButtonMocks.toggleVoiceInput).toHaveBeenCalledTimes(1);
     });
 });

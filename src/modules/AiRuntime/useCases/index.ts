@@ -48,5 +48,6 @@ export { onPromptInjection, injectPromptCommand } from './promptInjection';
 export { runAiActionWithToast } from './runAiActionWithToast';
 export type { AiActionToastMessages } from './runAiActionWithToast';
 
+export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
 export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
