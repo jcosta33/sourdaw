@@ -9,10 +9,17 @@ export type DetectTransientsResult =
     | { ok: true; added: number; kept: number; removed: number }
     | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_BUFFER' | 'NO_TEMPO' };
 
-function findClip(clipId: string): { clip: import('#/modules/Arrangement/models/Track').Clip } | null {
+type DetectableClip = {
+    id: string;
+    type: 'audio' | 'midi';
+    audioBufferId?: string;
+};
+
+function findClip(clipId: string): { clip: DetectableClip } | null {
     const tracks = trackStore.value?.tracks ?? [];
     for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clips: readonly DetectableClip[] = track.clips;
+        const clip = clips.find((candidate) => candidate.id === clipId);
         if (clip) {
             return { clip };
         }
