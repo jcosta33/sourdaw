@@ -268,16 +268,45 @@ function isProductionUseCaseFile(filename) {
     );
 }
 
+const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
+
+/**
+ * @param {string} modulePath
+ * @returns {{ moduleName: string; importPath: string } | null}
+ */
+function parseModulePath(modulePath) {
+    const segments = modulePath.split('/').filter(Boolean);
+    if (segments.length === 0) return null;
+
+    const [firstSegment, secondSegment] = segments;
+    if (moduleSubgroupFolders.has(firstSegment)) {
+        if (!secondSegment) return null;
+
+        return {
+            moduleName: `${firstSegment}/${secondSegment}`,
+            importPath: segments.slice(2).join('/'),
+        };
+    }
+
+    return {
+        moduleName: firstSegment,
+        importPath: segments.slice(1).join('/'),
+    };
+}
+
 /**
  * @param {string} filename
  * @returns {{ moduleName: string; moduleRoot: string } | null}
  */
 function getModuleLocation(filename) {
     const normalizedFilename = normalizeFilePath(filename);
-    const match = /^(.*\/src\/modules\/([^/]+))\//.exec(normalizedFilename);
+    const match = /^(.*\/src\/modules\/)(.+)$/.exec(normalizedFilename);
     if (!match) return null;
 
-    return { moduleName: match[2], moduleRoot: match[1] };
+    const modulePath = parseModulePath(match[2]);
+    if (!modulePath) return null;
+
+    return { moduleName: modulePath.moduleName, moduleRoot: `${match[1]}${modulePath.moduleName}` };
 }
 
 /**
@@ -327,18 +356,18 @@ function isSameModuleRepositoryReexportPath(filename, source) {
  * @returns {{ moduleName: string; importPath: string } | null}
  */
 function getModuleImportLocation(filename, source) {
-    const aliasMatch = /^#\/modules\/([^/]+)(?:\/(.+))?$/.exec(source);
+    const aliasMatch = /^#\/modules\/(.+)$/.exec(source);
     if (aliasMatch) {
-        return { moduleName: aliasMatch[1], importPath: aliasMatch[2] ?? '' };
+        return parseModulePath(aliasMatch[1]);
     }
 
     if (!source.startsWith('.')) return null;
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
-    const relativeMatch = /\/src\/modules\/([^/]+)(?:\/(.+))?$/.exec(resolvedSource);
+    const relativeMatch = /\/src\/modules\/(.+)$/.exec(resolvedSource);
     if (!relativeMatch) return null;
 
-    return { moduleName: relativeMatch[1], importPath: relativeMatch[2] ?? '' };
+    return parseModulePath(relativeMatch[1]);
 }
 
 const privateModuleFolders = new Set([
@@ -392,6 +421,26 @@ function isTypeOnlyImportDeclaration(node) {
         specifiers.length > 0 &&
         specifiers.every((specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type')
     );
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getTypeQueryImportSource(node) {
+    const argument = node.argument;
+    if (argument?.type === 'Literal' && typeof argument.value === 'string') {
+        return argument.value;
+    }
+
+    if (argument?.type === 'TSLiteralType' && argument.literal?.type === 'Literal') {
+        const value = argument.literal.value;
+        if (typeof value === 'string') {
+            return value;
+        }
+    }
+
+    return null;
 }
 
 const sourdawPlugin = {
@@ -628,6 +677,28 @@ const sourdawPlugin = {
             create(context) {
                 if (!isProductionSourceFile(context.filename)) return {};
 
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @returns {void}
+                 */
+                function reportIfPrivateTypeImport(node, source) {
+                    const importedModule = getModuleImportLocation(context.filename, source);
+                    if (!importedModule) return;
+
+                    const importerModule = getModuleLocation(context.filename);
+                    if (importerModule?.moduleName === importedModule.moduleName) return;
+
+                    const folder = getPrivateImportFolder(importedModule.importPath);
+                    if (!folder) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noTypeOnlyPrivateModuleImport',
+                        data: { folder },
+                    });
+                }
+
                 return {
                     /** @param {any} node */
                     ImportDeclaration(node) {
@@ -636,20 +707,14 @@ const sourdawPlugin = {
                         const value = node.source.value;
                         if (typeof value !== 'string') return;
 
-                        const importedModule = getModuleImportLocation(context.filename, value);
-                        if (!importedModule) return;
+                        reportIfPrivateTypeImport(node, value);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
 
-                        const importerModule = getModuleLocation(context.filename);
-                        if (importerModule?.moduleName === importedModule.moduleName) return;
-
-                        const folder = getPrivateImportFolder(importedModule.importPath);
-                        if (!folder) return;
-
-                        context.report({
-                            node,
-                            messageId: 'noTypeOnlyPrivateModuleImport',
-                            data: { folder },
-                        });
+                        reportIfPrivateTypeImport(node, value);
                     },
                 };
             },
