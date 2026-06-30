@@ -1,7 +1,7 @@
 /**
  * MIDI Pattern Library — aggregated catalog of pattern templates.
  *
- * Templates are split by category under `./patterns/`. The shared types and
+ * Templates are split by category under `./Patterns/`. The shared types and
  * key/scale tables live in `./MidiPatternType.ts`. Pure music-theory helpers
  * (scale generation, chord building, filtering) live in
  * `../services/scaleTheory.ts`. This file only owns the aggregation.
@@ -13,10 +13,10 @@
 import { filterTemplates as filterTemplatesImpl } from '../services/scaleTheory';
 
 import { type PatternTemplate, type PatternFilters } from './MidiPatternType';
-import { bassPatterns } from './patterns/bassPatterns';
-import { chordPatterns } from './patterns/chordPatterns';
-import { drumPatterns } from './patterns/drumPatterns';
-import { melodyPatterns } from './patterns/melodyPatterns';
+import { bassPatterns } from './Patterns/BassPatterns';
+import { chordPatterns } from './Patterns/ChordPatterns';
+import { drumPatterns } from './Patterns/DrumPatterns';
+import { melodyPatterns } from './Patterns/MelodyPatterns';
 
 // ── Re-exports for in-module consumers (presentations, useCases, services) ──
 
