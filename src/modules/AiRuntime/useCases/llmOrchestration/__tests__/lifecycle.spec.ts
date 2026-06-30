@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
-import { initNativeEngine } from '../../../repositories/nativeEngine/lifecycle';
-import { initWebLlmEngine } from '../../../repositories/webLlm/engineLifecycle';
+import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
+import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { resolveBackend } from '../backendResolution/helpers';
 import { initEngine } from '../lifecycle/initEngine';
@@ -27,15 +27,12 @@ vi.mock('../../../stores/llmStatusStore', () => ({
     },
 }));
 
-vi.mock('../../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../../repositories/nativeEngine/initNativeEngine', () => ({
     initNativeEngine: vi.fn(),
-    stopNativeEngine: vi.fn(),
-    isNativeEngineReady: vi.fn(() => false),
 }));
 
-vi.mock('../../../repositories/webLlm/engineLifecycle', () => ({
+vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({
     initWebLlmEngine: vi.fn(() => Promise.resolve({})),
-    unloadWebLlmEngine: vi.fn(),
 }));
 
 vi.mock('../../../repositories/cloudLlm/keyManagement', () => ({

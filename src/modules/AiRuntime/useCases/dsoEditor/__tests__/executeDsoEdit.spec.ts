@@ -49,7 +49,7 @@ vi.mock('../../llmOrchestration/backendResolution/helpers', () => ({
     resolveBackend: () => mocks.backend.value,
 }));
 
-vi.mock('../../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: () => mocks.nativeEngineReady.value,
 }));
 
@@ -57,8 +57,11 @@ vi.mock('../../../repositories/nativeEngine/streaming', () => ({
     streamNativeCompletion: mocks.streamNativeCompletion,
 }));
 
-vi.mock('../../../repositories/webLlm/engineLifecycle', () => ({
+vi.mock('../../../repositories/webLlm/getActiveModelId', () => ({
     getActiveModelId: () => 'test-model',
+}));
+
+vi.mock('../../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: () => null,
 }));
 

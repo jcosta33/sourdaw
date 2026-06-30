@@ -19,9 +19,10 @@ import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
-import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
+import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
-import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
+import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
+import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
 import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { proposePendingDsoConfirmation } from '../../stores/pendingActionConfirmationStore';

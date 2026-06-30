@@ -1,4 +1,4 @@
-import { generateWebLlmCompletion as generateWebCompletion } from '../../repositories/webLlm/engineLifecycle';
+import { generateWebLlmCompletion as generateWebCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 
 export async function generateWebLlmCompletion(
     systemPrompt: string,

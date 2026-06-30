@@ -24,7 +24,7 @@ vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
     resolveBackend: vi.fn(() => 'native'),
 }));
 
-vi.mock('../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: vi.fn(() => true),
 }));
 

@@ -2,8 +2,8 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../../errors/AiRuntimeError';
 import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
-import { initNativeEngine } from '../../../repositories/nativeEngine/lifecycle';
-import { initWebLlmEngine } from '../../../repositories/webLlm/engineLifecycle';
+import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
+import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { resolveBackend } from '../backendResolution/helpers';
 

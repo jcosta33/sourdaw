@@ -9,12 +9,15 @@ const mocks = vi.hoisted(() => ({
     unloadWebLlmEngine: vi.fn(),
 }));
 
-vi.mock('../../../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: mocks.isNativeEngineReady,
+}));
+
+vi.mock('../../../../repositories/nativeEngine/stopNativeEngine', () => ({
     stopNativeEngine: mocks.stopNativeEngine,
 }));
 
-vi.mock('../../../../repositories/webLlm/engineLifecycle', () => ({
+vi.mock('../../../../repositories/webLlm/unloadWebLlmEngine', () => ({
     unloadWebLlmEngine: mocks.unloadWebLlmEngine,
 }));
 
