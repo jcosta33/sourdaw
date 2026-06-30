@@ -202,8 +202,26 @@ describe('handleGenerateMidiPrompt', () => {
 
     it('should delegate generated clip selection through the Workspace use case', async () => {
         const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
-        const trackSnapshotAfter = {
-            tracks: [{ id: 'new-midi-track', kind: 'midi' }],
+        const trackOnlySnapshot = {
+            tracks: [{ id: 'new-midi-track', kind: 'midi', clips: [] }],
+            selectedTrackId: 'new-midi-track',
+        };
+        const postClipSnapshot = {
+            tracks: [
+                {
+                    id: 'new-midi-track',
+                    kind: 'midi',
+                    clips: [
+                        {
+                            id: 'generated-clip',
+                            startBeat: 0,
+                            endBeat: 1,
+                            name: 'AI: a melody',
+                            type: 'midi',
+                        },
+                    ],
+                },
+            ],
             selectedTrackId: 'new-midi-track',
         };
         const midiSnapshotBefore = { notesByClipId: {} };
@@ -217,14 +235,11 @@ describe('handleGenerateMidiPrompt', () => {
 
         generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
         addTrackMock.mockImplementation(() => {
-            trackStateMock.value = {
-                tracks: [{ id: 'new-midi-track', kind: 'midi' }],
-                selectedTrackId: 'new-midi-track',
-            };
+            trackStateMock.value = trackOnlySnapshot;
             return { id: 'new-midi-track' };
         });
         addClipMock.mockImplementation(() => {
-            trackStateMock.value = trackSnapshotAfter;
+            trackStateMock.value = postClipSnapshot;
             return { id: 'generated-clip' };
         });
         batchAddMidiNotesMock.mockImplementation(() => {
@@ -256,7 +271,8 @@ describe('handleGenerateMidiPrompt', () => {
         setMidiStoreStateMock.mockClear();
 
         redoCallback();
-        expect(setTrackStoreStateMock).toHaveBeenCalledWith(trackSnapshotAfter);
+        expect(setTrackStoreStateMock).toHaveBeenCalledWith(postClipSnapshot);
+        expect(setTrackStoreStateMock).not.toHaveBeenCalledWith(trackOnlySnapshot);
         expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
     });
 });

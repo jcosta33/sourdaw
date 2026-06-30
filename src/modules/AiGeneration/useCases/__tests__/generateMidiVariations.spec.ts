@@ -92,18 +92,28 @@ describe('generateMidiVariations', () => {
     });
 
     it('parses variations, creates alternative clips, and pushes a restorable undo entry', async () => {
-        trackStateMock.value = midiClipState;
-        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
-            onToken(validVariationsJson);
-            return Promise.resolve();
-        });
-
-        // Distinct before/after snapshots so we can prove the right one is restored on each side.
-        const trackSnapshotBefore = midiClipState;
+        const trackLookupState = midiClipState;
+        const trackSnapshotBefore = {
+            tracks: [
+                {
+                    clips: [{ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 4 }],
+                    name: 'Edited while AI generated',
+                },
+            ],
+        };
         const midiSnapshotBefore = { snapshot: 'midi-before' };
         const trackSnapshotAfter = { snapshot: 'track-after' };
         const midiSnapshotAfter = { snapshot: 'midi-after' };
+        trackStateMock.value = trackLookupState;
         midiStateMock.value = midiSnapshotBefore;
+        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
+            onToken(validVariationsJson);
+            trackStateMock.value = trackSnapshotBefore;
+            return Promise.resolve();
+        });
+
+        // Distinct lookup/before/after snapshots prove undo reads the owner getter
+        // after the async model response, not the stale initial lookup state.
         createAlternativeClipsMock.mockImplementation(() => {
             trackStateMock.value = trackSnapshotAfter;
             midiStateMock.value = midiSnapshotAfter;
