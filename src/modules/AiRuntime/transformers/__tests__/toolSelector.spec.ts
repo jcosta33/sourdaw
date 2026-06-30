@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
-import { type ToolSchema } from '../../models/tools/types';
+import { type ToolSchema } from '../../models/Tools/Types';
 import { selectToolsForPrompt } from '../toolSelector';
 
 describe('toolSelector', () => {

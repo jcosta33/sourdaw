@@ -1,4 +1,4 @@
-import { tool, type ToolSchema } from './types';
+import { tool, type ToolSchema } from './Types';
 
 const DEVICE_TYPES = [
     'EQ',
