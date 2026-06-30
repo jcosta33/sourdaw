@@ -229,6 +229,33 @@ function normalizeFilePath(value) {
  * @param {string} filename
  * @returns {boolean}
  */
+function isTestFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    return (
+        normalized.includes('/__tests__/') ||
+        normalized.endsWith('/setupTests.ts') ||
+        normalized.endsWith('.mock.ts') ||
+        /\.(spec|test)\.[cm]?[jt]sx?$/.test(normalized)
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isProductionSourceFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    return (
+        (normalized.includes('/src/') || normalized.startsWith('src/')) &&
+        !normalized.endsWith('.d.ts') &&
+        !isTestFile(normalized)
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
 function isProductionUseCaseFile(filename) {
     const normalized = normalizeFilePath(filename);
     return (
@@ -241,16 +268,45 @@ function isProductionUseCaseFile(filename) {
     );
 }
 
+const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
+
+/**
+ * @param {string} modulePath
+ * @returns {{ moduleName: string; importPath: string } | null}
+ */
+function parseModulePath(modulePath) {
+    const segments = modulePath.split('/').filter(Boolean);
+    if (segments.length === 0) return null;
+
+    const [firstSegment, secondSegment] = segments;
+    if (moduleSubgroupFolders.has(firstSegment)) {
+        if (!secondSegment) return null;
+
+        return {
+            moduleName: `${firstSegment}/${secondSegment}`,
+            importPath: segments.slice(2).join('/'),
+        };
+    }
+
+    return {
+        moduleName: firstSegment,
+        importPath: segments.slice(1).join('/'),
+    };
+}
+
 /**
  * @param {string} filename
  * @returns {{ moduleName: string; moduleRoot: string } | null}
  */
 function getModuleLocation(filename) {
     const normalizedFilename = normalizeFilePath(filename);
-    const match = /^(.*\/src\/modules\/([^/]+))\//.exec(normalizedFilename);
+    const match = /^(.*\/src\/modules\/)(.+)$/.exec(normalizedFilename);
     if (!match) return null;
 
-    return { moduleName: match[2], moduleRoot: match[1] };
+    const modulePath = parseModulePath(match[2]);
+    if (!modulePath) return null;
+
+    return { moduleName: modulePath.moduleName, moduleRoot: `${match[1]}${modulePath.moduleName}` };
 }
 
 /**
@@ -292,6 +348,99 @@ function isSameModuleRepositoryReexportPath(filename, source) {
 
     if (!source.startsWith('.')) return false;
     return isSameModuleRepositoryRelativePath(filename, moduleLocation, source);
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {{ moduleName: string; importPath: string } | null}
+ */
+function getModuleImportLocation(filename, source) {
+    const aliasMatch = /^#\/modules\/(.+)$/.exec(source);
+    if (aliasMatch) {
+        return parseModulePath(aliasMatch[1]);
+    }
+
+    if (!source.startsWith('.')) return null;
+
+    const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
+    const relativeMatch = /\/src\/modules\/(.+)$/.exec(resolvedSource);
+    if (!relativeMatch) return null;
+
+    return parseModulePath(relativeMatch[1]);
+}
+
+const privateModuleFolders = new Set([
+    'engine',
+    'errors',
+    'handlers',
+    'models',
+    'repositories',
+    'runtime',
+    'services',
+    'transformers',
+    'validators',
+    'worklets',
+]);
+
+const privatePresentationFolders = new Set(['components', 'context', 'hooks', 'renderers', 'stores']);
+
+/**
+ * @param {string} importPath
+ * @returns {string | null}
+ */
+function getPrivateImportFolder(importPath) {
+    const [firstSegment, secondSegment] = importPath.split('/');
+
+    if (privateModuleFolders.has(firstSegment)) {
+        return firstSegment;
+    }
+
+    if (firstSegment !== 'presentations' || !secondSegment) {
+        return null;
+    }
+
+    if (privatePresentationFolders.has(secondSegment)) {
+        return `presentations/${secondSegment}`;
+    }
+
+    return null;
+}
+
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function isTypeOnlyImportDeclaration(node) {
+    if (node.importKind === 'type') {
+        return true;
+    }
+
+    const specifiers = node.specifiers ?? [];
+    return (
+        specifiers.length > 0 &&
+        specifiers.every((specifier) => specifier.type === 'ImportSpecifier' && specifier.importKind === 'type')
+    );
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getTypeQueryImportSource(node) {
+    const argument = node.argument;
+    if (argument?.type === 'Literal' && typeof argument.value === 'string') {
+        return argument.value;
+    }
+
+    if (argument?.type === 'TSLiteralType' && argument.literal?.type === 'Literal') {
+        const value = argument.literal.value;
+        if (typeof value === 'string') {
+            return value;
+        }
+    }
+
+    return null;
 }
 
 const sourdawPlugin = {
@@ -507,6 +656,65 @@ const sourdawPlugin = {
                                 messageId: 'noReactInDomainLogic',
                             });
                         }
+                    },
+                };
+            },
+        },
+
+        'no-type-only-private-module-import': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description: 'Warn on type-only imports from another module private folder.',
+                },
+                schema: [],
+                messages: {
+                    noTypeOnlyPrivateModuleImport:
+                        'Do not import types from another module private folder (`{{folder}}`). Use an events contract, public value contract derivation, or a local consumer-owned type.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionSourceFile(context.filename)) return {};
+
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @returns {void}
+                 */
+                function reportIfPrivateTypeImport(node, source) {
+                    const importedModule = getModuleImportLocation(context.filename, source);
+                    if (!importedModule) return;
+
+                    const importerModule = getModuleLocation(context.filename);
+                    if (importerModule?.moduleName === importedModule.moduleName) return;
+
+                    const folder = getPrivateImportFolder(importedModule.importPath);
+                    if (!folder) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noTypeOnlyPrivateModuleImport',
+                        data: { folder },
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        if (!isTypeOnlyImportDeclaration(node)) return;
+
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        reportIfPrivateTypeImport(node, value);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfPrivateTypeImport(node, value);
                     },
                 };
             },
@@ -886,6 +1094,7 @@ export default defineConfig(
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
             'sourdaw/no-namespace-import': 'error',
+            'sourdaw/no-type-only-private-module-import': 'warn',
             'sourdaw/no-type-assertion-escape': 'error',
 
             // AGENTS.md L150: No single-letter variable names.
