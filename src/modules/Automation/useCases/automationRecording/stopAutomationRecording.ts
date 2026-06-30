@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';

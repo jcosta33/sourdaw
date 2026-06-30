@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { getNextPunchId } from '../../repositories/punchRecordingIdCounter/getNextPunchId';
 import { punchRecordingStore, type PunchRecordingState, type PunchRegion } from '../../stores/punchRecordingStore';

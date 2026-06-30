@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayou
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 

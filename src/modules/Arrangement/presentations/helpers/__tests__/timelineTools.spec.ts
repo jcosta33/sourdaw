@@ -26,7 +26,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     stretchAutomationTime: vi.fn(),
     thinAutomationPoints: vi.fn(),
 }));
-vi.mock('#/modules/Command/stores', () => ({ pushUndoEntry: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn() }));
 vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteCreate', () => ({
     commitInlineMidiNoteCreate: vi.fn(),
 }));

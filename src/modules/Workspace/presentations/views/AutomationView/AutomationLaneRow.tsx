@@ -13,7 +13,7 @@ import {
     zoomToUsedRange,
     toggleVirginTerritory,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';

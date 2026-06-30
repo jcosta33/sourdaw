@@ -27,7 +27,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { set: mocks.audioBufferCacheSet },
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

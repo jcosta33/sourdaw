@@ -53,8 +53,8 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     setMidiStoreState: setMidiStoreStateMock,
 }));
 
-vi.mock('#/modules/Command/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/stores')>()),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: pushUndoEntryMock,
 }));
 

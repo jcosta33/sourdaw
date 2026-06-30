@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../models/Automation';
 import { automationStore, type AutomationStoreState } from '../stores/automationStore';

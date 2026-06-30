@@ -2,7 +2,7 @@ import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 're
 
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';

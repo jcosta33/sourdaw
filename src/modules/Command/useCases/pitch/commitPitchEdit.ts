@@ -1,13 +1,14 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
 import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
+
+import { getPitchEditDependencies } from './pitchEditDependencies';
 
 type NoteSegment = {
     start_time_ms: number;
@@ -82,6 +83,7 @@ export async function commitPitchEditCommand(
             if (!buffer) {
                 throw new Error('Could not get audio buffer for clip');
             }
+            const { processPitchEditWasm } = getPitchEditDependencies();
             processPitchEditWasm(buffer, segments, contour, outputAudioPath);
         }
 

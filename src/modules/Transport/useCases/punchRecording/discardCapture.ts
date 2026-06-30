@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { punchRecordingStore, type PunchRecordingState } from '../../stores/punchRecordingStore';
 

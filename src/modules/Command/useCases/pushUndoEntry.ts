@@ -1,5 +1,17 @@
-// Single source of truth for "build a callback undo entry and commit it" lives in
-// the public `stores/pushUndoEntry`. This module re-exports it so the intra-module
-// keyboard-shortcut callers (and the tests that mock this path) keep one
-// implementation rather than a second, drift-prone copy.
-export { pushUndoEntry } from '../stores/pushUndoEntry';
+import { type UndoSource } from '../models/UndoEntry';
+import { pushUndoEntry as pushUndoEntryToStore } from '../stores/pushUndoEntry';
+
+type PushUndoEntryOptions = {
+    groupId?: string;
+    groupLabel?: string;
+    source?: UndoSource;
+};
+
+export function pushUndoEntry(
+    label: string,
+    undoFn: () => void,
+    redoFn: () => void,
+    options?: PushUndoEntryOptions
+): void {
+    pushUndoEntryToStore(label, undoFn, redoFn, options);
+}

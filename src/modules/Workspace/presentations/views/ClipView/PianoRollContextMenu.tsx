@@ -9,7 +9,7 @@ import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/componen
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,

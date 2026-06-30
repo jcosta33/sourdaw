@@ -21,7 +21,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     replaceAutomationLanePoints: mocks.replaceAutomationLanePoints,
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 

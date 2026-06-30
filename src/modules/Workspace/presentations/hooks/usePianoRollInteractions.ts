@@ -18,7 +18,7 @@ import {
 } from 'react';
 
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { stepRecordStore } from '#/modules/MIDI/stores';
 import {
     addMidiNote,

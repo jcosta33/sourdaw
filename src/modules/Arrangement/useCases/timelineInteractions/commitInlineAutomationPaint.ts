@@ -5,7 +5,7 @@ import {
     removeAutomationLane,
     replaceAutomationLanePoints,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/stores';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 

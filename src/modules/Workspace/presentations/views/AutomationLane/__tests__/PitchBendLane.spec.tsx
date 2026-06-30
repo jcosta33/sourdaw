@@ -34,7 +34,7 @@ vi.mock('#/modules/MIDI/stores/midiStore', () => ({
     midiStore: { value: { pitchBendByClipId: {} } },
 }));
 
-vi.mock('#/modules/Command/useCases/pushUndoEntry', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 
