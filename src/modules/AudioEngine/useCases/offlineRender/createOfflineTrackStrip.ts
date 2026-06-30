@@ -1,12 +1,18 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
-
+import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain } from '../buildDeviceChain';
 
 import { type OfflineTrackStrip } from './types';
 
+type CreateOfflineTrackStripTrackInput = {
+    gain: number;
+    muted: boolean;
+    pan: number;
+    devices: Device[];
+};
+
 export async function createOfflineTrackStrip(
     offlineCtx: OfflineAudioContext,
-    track: Track
+    track: CreateOfflineTrackStripTrackInput
 ): Promise<OfflineTrackStrip> {
     const inputNode = offlineCtx.createGain();
     inputNode.gain.value = 1;
