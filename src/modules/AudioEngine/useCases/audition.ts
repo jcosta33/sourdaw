@@ -1,4 +1,3 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     scheduleNote,
@@ -11,11 +10,29 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { startFaustNote } from './faustScheduler/startFaustNote';
 
+type AuditionDeviceParameterValues = Record<string, number> & {
+    kit?: number;
+    kitId?: number;
+};
+
+type AuditionDevice = {
+    id: string;
+    type: string;
+    parameterValues: AuditionDeviceParameterValues;
+};
+
+type AuditionTrack = {
+    id: string;
+    parentId?: string | null;
+    devices: AuditionDevice[];
+};
+
 export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
 
-    const track = trackStore.value?.tracks.find((t) => t.id === trackId);
+    const trackCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
+    const track = trackCandidates?.find((candidate) => candidate.id === trackId);
     const drumDevice = track?.devices.find(
         (data) =>
             data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
@@ -43,9 +60,10 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     }
 
     let isToasterChild = false;
-    let toasterParentTrack: Track | undefined;
+    let toasterParentTrack: AuditionTrack | undefined;
     if (track?.parentId) {
-        toasterParentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.parentId);
+        const parentCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
+        toasterParentTrack = parentCandidates?.find((candidate) => candidate.id === track.parentId);
         if (toasterParentTrack?.devices.some((data) => data.type === 'toaster')) {
             isToasterChild = true;
         }
@@ -67,8 +85,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
             let pad = pitch - 36;
 
             if (isToasterChild && toasterParentTrack) {
-                const children =
-                    trackStore.value?.tracks.filter((time) => time.parentId === toasterParentTrack.id) || [];
+                const childCandidates: AuditionTrack[] | undefined = trackStore.value?.tracks;
+                const children = childCandidates?.filter((time) => time.parentId === toasterParentTrack.id) || [];
                 const childPad = children.findIndex((time) => time.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;
