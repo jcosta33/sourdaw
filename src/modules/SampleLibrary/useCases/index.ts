@@ -2,6 +2,7 @@ export { buildFolderTree } from './buildFolderTree';
 export { requestPermission } from './requestPermission';
 export { readTauriLibrarySampleFile } from './readTauriLibrarySampleFile';
 export { restoreLibrary } from './restoreLibrary';
+export { searchSamples } from './searchSamples';
 export { analyzeSample } from './analyzeSample';
 export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';

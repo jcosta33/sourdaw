@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     searchSamples: vi.fn(),
 }));
 
-vi.mock('#/modules/SoundLibrary/useCases', () => ({
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
     searchSamples: mocks.searchSamples,
 }));
 
@@ -15,7 +15,7 @@ describe('handleSearchSamples', () => {
         vi.clearAllMocks();
     });
 
-    it('executes searchSamples from SoundLibrary module with query', () => {
+    it('executes searchSamples from SampleLibrary module with query', () => {
         void handleSearchSamples.execute({ type: 'searchSamples', payload: { query: 'kick drum' } });
         expect(mocks.searchSamples).toHaveBeenCalledWith('kick drum');
     });
