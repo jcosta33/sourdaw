@@ -1,19 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-import { setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Mixer & Routing', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
-
-        // Load the empty project
-        const launchScreen = page.getByLabel('Sourdaw — start a project');
-        await launchScreen.waitFor({ state: 'visible' });
-        await page.locator('#launch-new-project').click();
-        
-        // Wait for the workspace to initialize
-        await expect(page.getByText('Baking')).toBeVisible({ timeout: 5000 });
-        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+        await launch_new_project(page);
 
         // Add a track using the empty state button to have a channel strip
         const emptyStateAudioButton = page.locator('button').filter({ hasText: 'Audio' }).filter({ hasText: 'Record' });
