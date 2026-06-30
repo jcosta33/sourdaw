@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { resolvePresetActions } from '../resolvePresetActions';
 
-vi.mock('#/modules/AiRuntime/models/presetActions/registry', () => ({
+vi.mock('#/modules/AiRuntime/models/PresetActions/Registry', () => ({
     PRESET_ACTIONS: [
         {
             id: 'single-action',

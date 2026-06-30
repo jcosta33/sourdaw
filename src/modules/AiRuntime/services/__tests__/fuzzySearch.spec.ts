@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { type PresetAction } from '../../models/presetActions/registry';
+import { type PresetAction } from '../../models/PresetActions/Registry';
 import { searchPresets, findBestMatch, getAvailablePresets } from '../fuzzySearch';
 
 // We mock the registry to have a stable set of presets for testing
-vi.mock('../../models/presetActions/registry', () => ({
+vi.mock('../../models/PresetActions/Registry', () => ({
     CATEGORY_ORDER: ['Track', 'Clip', 'Global'],
     PRESET_ACTIONS: [
         {

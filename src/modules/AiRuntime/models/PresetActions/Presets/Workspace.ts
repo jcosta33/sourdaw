@@ -1,6 +1,6 @@
 import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 
-import { type PresetAction } from './types';
+import { type PresetAction } from './Types';
 
 export const workspacePresets: readonly PresetAction[] = [
     {

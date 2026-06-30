@@ -1,6 +1,6 @@
 import { redo, undo } from '#/modules/Command/useCases';
 
-import { type PresetAction } from './types';
+import { type PresetAction } from './Types';
 
 export const filePresets: readonly PresetAction[] = [
     {

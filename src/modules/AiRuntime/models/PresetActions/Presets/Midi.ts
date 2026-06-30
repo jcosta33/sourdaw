@@ -1,4 +1,4 @@
-import { type PresetAction, clipAction } from './types';
+import { type PresetAction, clipAction } from './Types';
 
 export const midiPresets: readonly PresetAction[] = [
     // ─── MIDI operations ────────────────────────────────────────────────
