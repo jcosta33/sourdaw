@@ -1,4 +1,16 @@
-import { type Clip, type Track } from '#/modules/Arrangement/models/Track';
+type FollowAction = 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
+
+type FollowActionClip = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    followAction?: FollowAction;
+    loopEnabled?: boolean;
+};
+
+type FollowActionTrack = {
+    clips: readonly FollowActionClip[];
+};
 
 /**
  * Deterministic pseudo-random number from a clip id + position seed.
@@ -35,7 +47,7 @@ export type FollowActionResult = {
  * @param nextPosition  Playhead position after the tick delta was applied.
  */
 export function evaluateFollowActions(
-    tracks: readonly Track[],
+    tracks: readonly FollowActionTrack[],
     prevPosition: number,
     nextPosition: number
 ): FollowActionResult {
@@ -48,12 +60,18 @@ export function evaluateFollowActions(
     // full implications of conflicting follow actions across tracks.
     for (const track of tracks) {
         for (const clip of track.clips) {
-            if (clip.followAction && !clip.loopEnabled && prevPosition < clip.endBeat && nextPosition >= clip.endBeat) {
-                if (clip.followAction === 'stop') {
+            if (!clip.followAction || clip.loopEnabled || prevPosition >= clip.endBeat || nextPosition < clip.endBeat) {
+                continue;
+            }
+
+            switch (clip.followAction) {
+                case 'stop': {
                     shouldStop = true;
-                } else if (clip.followAction === 'play_next') {
+                    break;
+                }
+                case 'play_next': {
                     // Single-pass: find the clip with the smallest startBeat >= clip.endBeat
-                    let nearest: Clip | null = null;
+                    let nearest: FollowActionClip | null = null;
                     for (const context of track.clips) {
                         if (context.id !== clip.id && context.startBeat >= clip.endBeat) {
                             if (nearest === null || context.startBeat < nearest.startBeat) {
@@ -64,9 +82,11 @@ export function evaluateFollowActions(
                     if (nearest) {
                         jumpToPosition = nearest.startBeat;
                     }
-                } else if (clip.followAction === 'play_previous') {
+                    break;
+                }
+                case 'play_previous': {
                     // Single-pass: find the clip with the largest startBeat where endBeat <= clip.startBeat
-                    let nearest: Clip | null = null;
+                    let nearest: FollowActionClip | null = null;
                     for (const context of track.clips) {
                         if (context.id !== clip.id && context.endBeat <= clip.startBeat) {
                             if (nearest === null || context.startBeat > nearest.startBeat) {
@@ -77,9 +97,11 @@ export function evaluateFollowActions(
                     if (nearest) {
                         jumpToPosition = nearest.startBeat;
                     }
-                } else if (clip.followAction === 'play_first') {
+                    break;
+                }
+                case 'play_first': {
                     // Single-pass: find the clip with the smallest startBeat
-                    let first: Clip | null = null;
+                    let first: FollowActionClip | null = null;
                     for (const context of track.clips) {
                         if (first === null || context.startBeat < first.startBeat) {
                             first = context;
@@ -88,9 +110,11 @@ export function evaluateFollowActions(
                     if (first) {
                         jumpToPosition = first.startBeat;
                     }
-                } else if (clip.followAction === 'play_last') {
+                    break;
+                }
+                case 'play_last': {
                     // Single-pass: find the clip with the largest startBeat
-                    let last: Clip | null = null;
+                    let last: FollowActionClip | null = null;
                     for (const context of track.clips) {
                         if (last === null || context.startBeat > last.startBeat) {
                             last = context;
@@ -99,7 +123,9 @@ export function evaluateFollowActions(
                     if (last) {
                         jumpToPosition = last.startBeat;
                     }
-                } else if (clip.followAction === 'play_random') {
+                    break;
+                }
+                case 'play_random': {
                     // Two-pass without allocation: count eligible clips, then pick the Nth
                     let count = 0;
                     for (const context of track.clips) {
@@ -119,6 +145,7 @@ export function evaluateFollowActions(
                             }
                         }
                     }
+                    break;
                 }
             }
         }
