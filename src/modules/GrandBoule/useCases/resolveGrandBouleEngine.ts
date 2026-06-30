@@ -1,4 +1,3 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
@@ -7,6 +6,15 @@ import {
     type GrandBouleEngineHandle,
 } from '../repositories/grandBouleEngineHandle';
 
+type GrandBouleResolverDevice = {
+    id: string;
+};
+
+type GrandBouleResolverTrack = {
+    id: string;
+    devices: readonly GrandBouleResolverDevice[];
+};
+
 type ResolveGrandBouleEngineInput = {
     deviceId: string;
     /**
@@ -14,35 +22,38 @@ type ResolveGrandBouleEngineInput = {
      * the React Compiler can memoize this derivation against the track
      * store. Non-render callers can omit this; we fall back to a live read.
      */
-    tracks?: readonly Track[];
+    tracks?: readonly GrandBouleResolverTrack[];
 };
 
 export type ResolvedGrandBouleEngine = GrandBouleEngineHandle;
 
 export function resolveGrandBouleEngine(input: ResolveGrandBouleEngineInput): ResolvedGrandBouleEngine {
     const tracks = input.tracks ?? getAllTracks();
-    const track = tracks.find((t) => t.devices.some((d) => d.id === input.deviceId));
+    const track = tracks.find((candidateTrack) =>
+        candidateTrack.devices.some((device) => device.id === input.deviceId)
+    );
     if (track === undefined) {
         return createDisconnectedGrandBouleEngineHandle();
     }
 
     const strip = ensureTrackStrip(track.id);
-    const dn = strip.deviceNodes.find((d) => d.grandBouleControls?.ready);
-    if (dn?.grandBouleControls === undefined) {
+    const deviceNode = strip.deviceNodes.find((candidateNode) => candidateNode.grandBouleControls?.ready);
+    if (deviceNode?.grandBouleControls === undefined) {
         return createDisconnectedGrandBouleEngineHandle();
     }
 
-    const controls = dn.grandBouleControls;
+    const controls = deviceNode.grandBouleControls;
     return {
-        noteOn: (i) => controls.noteOn(i.midiNote, i.velocity),
-        noteOff: (i) => controls.noteOff(i.midiNote),
-        noteOnMidi2: (i) => controls.noteOnMidi2(i.midiNote, i.velocity16bit, i.pitchOffsetQ24),
-        setParam: (i) => controls.setParam(i.name, i.value),
-        setSustain: (i) => controls.setSustain(i.position),
-        setUnaCorda: (i) => controls.setUnaCorda(i.engaged),
-        setSostenuto: (i) => controls.setSostenuto(i.engaged),
-        setTemperament: (i) => controls.setTemperament(i.index),
-        loadAttackClip: (i) => controls.loadAttackClip(i.key, i.samples),
+        noteOn: (noteInput) => controls.noteOn(noteInput.midiNote, noteInput.velocity),
+        noteOff: (noteInput) => controls.noteOff(noteInput.midiNote),
+        noteOnMidi2: (noteInput) =>
+            controls.noteOnMidi2(noteInput.midiNote, noteInput.velocity16bit, noteInput.pitchOffsetQ24),
+        setParam: (paramInput) => controls.setParam(paramInput.name, paramInput.value),
+        setSustain: (pedalInput) => controls.setSustain(pedalInput.position),
+        setUnaCorda: (pedalInput) => controls.setUnaCorda(pedalInput.engaged),
+        setSostenuto: (pedalInput) => controls.setSostenuto(pedalInput.engaged),
+        setTemperament: (temperamentInput) => controls.setTemperament(temperamentInput.index),
+        loadAttackClip: (clipInput) => controls.loadAttackClip(clipInput.key, clipInput.samples),
         allNotesOff: () => controls.allNotesOff(),
         isReady: () => true,
         getAnalyserNode: () => strip.analyserNode,
