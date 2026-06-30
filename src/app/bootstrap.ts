@@ -25,7 +25,7 @@ import {
     getAudioContext,
     getCompensationDelay,
     getFinalFeatureHandlers,
-    processPitchEditWasm,
+    commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     setWebMidiRuntimeEventBus,
 } from '#/modules/AudioEngine/useCases';
@@ -115,7 +115,7 @@ setAutomationRecordingDependencies({
 });
 
 setPitchEditDependencies({
-    processPitchEditWasm,
+    commitPitchEdit,
 });
 
 setModulationDependencies({

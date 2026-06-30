@@ -6,13 +6,16 @@ type PitchEditSegment = {
     shift_semitones: number;
 };
 
+type CommitPitchEditInput = {
+    inputAudioPath: string;
+    outputAudioPath: string;
+    audioBufferId?: string;
+    segments: PitchEditSegment[];
+    contour: PitchContour;
+};
+
 type PitchEditDependencies = {
-    processPitchEditWasm: (
-        originalBuffer: AudioBuffer,
-        segments: PitchEditSegment[],
-        contour: PitchContour,
-        outputAudioPath: string
-    ) => void;
+    commitPitchEdit: (input: CommitPitchEditInput) => Promise<void>;
 };
 
 let dependencies: PitchEditDependencies | null = null;
