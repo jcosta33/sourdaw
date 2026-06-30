@@ -88,13 +88,16 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [errorText, setErrorText] = useState('');
 
     // Sync to voiceStatusStore so VoiceButton can reflect state
+    const setVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
+        setIsListening(value.isListening);
+        setTranscribing(value.transcribing);
+        voiceStatusStore.set(value);
+    };
     const setListening = (value: boolean): void => {
-        setIsListening(value);
-        voiceStatusStore.set({ isListening: value, transcribing: voiceStatusStore.value?.transcribing ?? false });
+        setVoiceStatus({ isListening: value, transcribing: voiceStatusStore.value?.transcribing ?? false });
     };
     const setTranscribingAndStore = (value: boolean): void => {
-        setTranscribing(value);
-        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
+        setVoiceStatus({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
     };
 
     const [voiceMode, setVoiceMode] = useState<VoiceInputMode>(null);
@@ -141,8 +144,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                     setFinalText(text);
                     injectPromptCommand(text);
                 }
-                setTranscribing(false);
-                setIsListening(false);
+                setVoiceStatus({ isListening: false, transcribing: false });
                 releaseDictationListener();
             });
             // If the component unmounted while we awaited the listener
@@ -241,7 +243,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             if (hadError) {
                 return;
             }
-            setIsListening(false);
+            setListening(false);
 
             const text = accumulated.trim();
             if (text) {

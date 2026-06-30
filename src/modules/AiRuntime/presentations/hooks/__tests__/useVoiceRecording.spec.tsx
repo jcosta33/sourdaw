@@ -355,6 +355,7 @@ describe('useVoiceRecording', () => {
 
         expect(mocks.injectPromptCommand).toHaveBeenCalledWith('build a drum loop');
         expect(result.current.isListening).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 
     it('should inject native dictation text when a Whisper result arrives', async () => {
@@ -372,6 +373,13 @@ describe('useVoiceRecording', () => {
             throw new Error('Expected native dictation result listener to be registered');
         }
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.stopListening();
+        });
+
+        expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: true });
+
         act(() => {
             handler({ text: ' make the bass wider ', durationMs: 1200 });
         });
@@ -379,5 +387,7 @@ describe('useVoiceRecording', () => {
         expect(mocks.injectPromptCommand).toHaveBeenCalledWith('make the bass wider');
         expect(result.current.finalText).toBe('make the bass wider');
         expect(result.current.isListening).toBe(false);
+        expect(result.current.transcribing).toBe(false);
+        expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 });
