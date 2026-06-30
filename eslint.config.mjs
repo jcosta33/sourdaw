@@ -243,19 +243,55 @@ function isProductionUseCaseFile(filename) {
 
 /**
  * @param {string} filename
+ * @returns {{ moduleName: string; moduleRoot: string } | null}
+ */
+function getModuleLocation(filename) {
+    const normalizedFilename = normalizeFilePath(filename);
+    const match = /^(.*\/src\/modules\/([^/]+))\//.exec(normalizedFilename);
+    if (!match) return null;
+
+    return { moduleName: match[2], moduleRoot: match[1] };
+}
+
+/**
+ * @param {{ moduleName: string; moduleRoot: string }} moduleLocation
  * @param {string} source
  * @returns {boolean}
  */
-function isSameModuleRepositoryRelativePath(filename, source) {
-    if (!source.startsWith('.')) return false;
+function isSameModuleRepositoryAliasPath(moduleLocation, source) {
+    const repositoryPath = `#/modules/${moduleLocation.moduleName}/repositories`;
+    return source === repositoryPath || source.startsWith(`${repositoryPath}/`);
+}
 
-    const normalizedFilename = normalizeFilePath(filename);
-    const moduleRootMatch = /^(.*\/src\/modules\/[^/]+)\//.exec(normalizedFilename);
-    if (!moduleRootMatch) return false;
-
-    const moduleRoot = moduleRootMatch[1];
+/**
+ * @param {string} filename
+ * @param {{ moduleName: string; moduleRoot: string }} moduleLocation
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isSameModuleRepositoryRelativePath(filename, moduleLocation, source) {
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
-    return resolvedSource === `${moduleRoot}/repositories` || resolvedSource.startsWith(`${moduleRoot}/repositories/`);
+    return (
+        resolvedSource === `${moduleLocation.moduleRoot}/repositories` ||
+        resolvedSource.startsWith(`${moduleLocation.moduleRoot}/repositories/`)
+    );
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isSameModuleRepositoryReexportPath(filename, source) {
+    const moduleLocation = getModuleLocation(filename);
+    if (!moduleLocation) return false;
+
+    if (source.startsWith('#/modules/')) {
+        return isSameModuleRepositoryAliasPath(moduleLocation, source);
+    }
+
+    if (!source.startsWith('.')) return false;
+    return isSameModuleRepositoryRelativePath(filename, moduleLocation, source);
 }
 
 const sourdawPlugin = {
@@ -500,7 +536,7 @@ const sourdawPlugin = {
                 function reportIfRepositoryReexport(node) {
                     const value = node.source?.value;
                     if (typeof value !== 'string') return;
-                    if (!isSameModuleRepositoryRelativePath(context.filename, value)) return;
+                    if (!isSameModuleRepositoryReexportPath(context.filename, value)) return;
 
                     context.report({
                         node,
