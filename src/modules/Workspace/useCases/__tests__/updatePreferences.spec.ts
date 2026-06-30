@@ -1,0 +1,54 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { defaultPreferences, type Preferences } from '../../models/Preferences';
+import { preferencesStore } from '../../stores/preferencesStore';
+import { setSoloMode } from '../togglePanel/panelToggles/setSoloMode';
+import { updatePreferences } from '../updatePreferences';
+
+const mocks = vi.hoisted(() => ({
+    preferencesStoreValue: { value: null as Preferences | null },
+    preferencesStoreSet: vi.fn(),
+    setSoloMode: vi.fn(),
+}));
+
+vi.mock('../../stores/preferencesStore', () => ({
+    preferencesStore: {
+        get value() {
+            return mocks.preferencesStoreValue.value;
+        },
+        set: mocks.preferencesStoreSet,
+    },
+}));
+
+vi.mock('../togglePanel/panelToggles/setSoloMode', () => ({
+    setSoloMode: mocks.setSoloMode,
+}));
+
+describe('updatePreferences', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.preferencesStoreValue.value = { ...defaultPreferences, theme: 'dark', soloMode: 'sip' };
+    });
+
+    it('should merge the patch into preferencesStore', () => {
+        updatePreferences({ patch: { theme: 'light' } });
+
+        expect(preferencesStore.set).toHaveBeenCalledWith({
+            ...defaultPreferences,
+            theme: 'light',
+            soloMode: 'sip',
+        });
+        expect(setSoloMode).not.toHaveBeenCalled();
+    });
+
+    it('should synchronize Workspace soloMode when the patch changes soloMode', () => {
+        updatePreferences({ patch: { soloMode: 'pfl' } });
+
+        expect(preferencesStore.set).toHaveBeenCalledWith({
+            ...defaultPreferences,
+            theme: 'dark',
+            soloMode: 'pfl',
+        });
+        expect(setSoloMode).toHaveBeenCalledWith('pfl');
+    });
+});
