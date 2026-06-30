@@ -4,14 +4,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { voiceStatusStore } from '../../../stores/voiceStatusStore';
 import { useVoiceRecording } from '../useVoiceRecording';
 
+type MockVoiceInputMode = 'browser' | 'whisper' | null;
+type MockResolveVoiceInputModeInput = {
+    browserMode?: 'allowed' | 'disabled';
+};
+type MockDictationResult = {
+    text: string;
+    durationMs: number;
+};
+
 const mocks = vi.hoisted(() => ({
     onVoiceToggle: vi.fn<() => () => void>(() => () => {}),
-    resolveVoiceInputMode: vi.fn<() => 'browser' | 'whisper' | null>(() => null),
-    injectPromptCommand: vi.fn<() => void>(),
+    resolveVoiceInputMode: vi.fn<(input?: MockResolveVoiceInputModeInput) => MockVoiceInputMode>(() => null),
+    injectPromptCommand: vi.fn<(text: string) => void>(),
     ensureWhisperReady: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     startDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     stopDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    onDictationResult: vi.fn<() => Promise<() => void>>().mockResolvedValue(() => {}),
+    onDictationResult: vi
+        .fn<(handler: (result: MockDictationResult) => void) => Promise<() => void>>()
+        .mockResolvedValue(() => {}),
 }));
 
 vi.mock('../../../useCases/voiceToggle/onVoiceToggle', () => ({
@@ -49,9 +60,22 @@ type MockSpeechRecognition = {
     start: ReturnType<typeof vi.fn<() => void>>;
     stop: ReturnType<typeof vi.fn<() => void>>;
     abort: ReturnType<typeof vi.fn<() => void>>;
-    onresult: ((event: { results: SpeechRecognitionResultList }) => void) | null;
+    onresult: ((event: MockSpeechRecognitionEvent) => void) | null;
     onerror: ((event: { error: string }) => void) | null;
     onend: (() => void) | null;
+};
+
+type MockSpeechRecognitionEvent = {
+    results: {
+        length: number;
+        [index: number]:
+            | {
+                  length: number;
+                  isFinal: boolean;
+                  [index: number]: { transcript: string } | undefined;
+              }
+            | undefined;
+    };
 };
 
 const createSpeechRecognition = (input: { startFails: boolean } = { startFails: false }): MockSpeechRecognition => ({
@@ -75,6 +99,23 @@ const installSpeechRecognition = (recognition: MockSpeechRecognition): void => {
         return recognition;
     });
     Object.defineProperty(window, 'SpeechRecognition', { value: SpeechRecognition, configurable: true });
+};
+
+const createSpeechRecognitionEvent = (input: { transcript: string; isFinal: boolean }): MockSpeechRecognitionEvent => ({
+    results: {
+        length: 1,
+        0: {
+            length: 1,
+            isFinal: input.isFinal,
+            0: { transcript: input.transcript },
+        },
+    },
+});
+
+const flushMicrotasks = async (): Promise<void> => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 };
 
 describe('useVoiceRecording', () => {
@@ -234,6 +275,43 @@ describe('useVoiceRecording', () => {
         expect(result.current.voiceMode).toBe('whisper');
     });
 
+    it('should keep Whisper listening after the microphone denial message expires', async () => {
+        vi.useFakeTimers();
+
+        try {
+            const recognition = createSpeechRecognition();
+            installSpeechRecognition(recognition);
+            mocks.resolveVoiceInputMode.mockReturnValueOnce('browser').mockReturnValueOnce('whisper');
+
+            const { result } = renderHook(() => useVoiceRecording());
+
+            // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+            await act(async () => {
+                result.current.toggleListening();
+            });
+
+            await act(async () => {
+                recognition.onerror?.({ error: 'not-allowed' });
+                await flushMicrotasks();
+            });
+
+            expect(result.current.errorText).toBe('Microphone access denied. Allow mic in browser settings.');
+            expect(result.current.voiceMode).toBe('whisper');
+            expect(result.current.isListening).toBe(true);
+
+            act(() => {
+                vi.advanceTimersByTime(3000);
+            });
+
+            expect(result.current.errorText).toBe('');
+            expect(result.current.voiceMode).toBe('whisper');
+            expect(result.current.isListening).toBe(true);
+            expect(voiceStatusStore.value?.isListening).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('should show microphone denial without Whisper fallback when native desktop voice is unavailable', async () => {
         const recognition = createSpeechRecognition();
         installSpeechRecognition(recognition);
@@ -256,5 +334,50 @@ describe('useVoiceRecording', () => {
         expect(mocks.ensureWhisperReady).not.toHaveBeenCalled();
         expect(mocks.startDictation).not.toHaveBeenCalled();
         expect(result.current.voiceMode).toBe('browser');
+    });
+
+    it('should inject browser speech text when recognition ends', async () => {
+        const recognition = createSpeechRecognition();
+        installSpeechRecognition(recognition);
+        mocks.resolveVoiceInputMode.mockReturnValue('browser');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        act(() => {
+            recognition.onresult?.(createSpeechRecognitionEvent({ transcript: ' build a drum loop ', isFinal: true }));
+            recognition.onend?.();
+        });
+
+        expect(mocks.injectPromptCommand).toHaveBeenCalledWith('build a drum loop');
+        expect(result.current.isListening).toBe(false);
+    });
+
+    it('should inject native dictation text when a Whisper result arrives', async () => {
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        const handler = mocks.onDictationResult.mock.calls[0]?.[0];
+        if (!handler) {
+            throw new Error('Expected native dictation result listener to be registered');
+        }
+
+        act(() => {
+            handler({ text: ' make the bass wider ', durationMs: 1200 });
+        });
+
+        expect(mocks.injectPromptCommand).toHaveBeenCalledWith('make the bass wider');
+        expect(result.current.finalText).toBe('make the bass wider');
+        expect(result.current.isListening).toBe(false);
     });
 });

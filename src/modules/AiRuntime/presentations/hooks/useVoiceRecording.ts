@@ -71,6 +71,11 @@ export type VoiceRecordingState = {
     toggleListening: () => void;
 };
 
+type ShowErrorInput = {
+    message: string;
+    keepListening?: boolean;
+};
+
 /**
  * Manages voice recording lifecycle: browser SpeechRecognition or native Whisper.
  * Injects transcribed text into the prompt bar via `injectPromptCommand`.
@@ -164,12 +169,14 @@ export const useVoiceRecording = (): VoiceRecordingState => {
 
     // ── Browser SpeechRecognition ────────────────────────────────────────
 
-    const showError = (msg: string): void => {
-        setErrorText(msg);
+    const showError = (input: ShowErrorInput): void => {
+        setErrorText(input.message);
         setListening(true);
         setTimeout(() => {
             setErrorText('');
-            setListening(false);
+            if (!input.keepListening) {
+                setListening(false);
+            }
         }, 3000);
     };
 
@@ -215,8 +222,12 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
                 hadError = true;
                 recognitionRef.current = null;
-                showError('Microphone access denied. Allow mic in browser settings.');
-                if (resolveVoiceInputMode({ browserMode: 'disabled' }) === 'whisper') {
+                const fallbackMode = resolveVoiceInputMode({ browserMode: 'disabled' });
+                showError({
+                    message: 'Microphone access denied. Allow mic in browser settings.',
+                    keepListening: fallbackMode === 'whisper',
+                });
+                if (fallbackMode === 'whisper') {
                     modeRef.current = 'whisper';
                     setVoiceMode('whisper');
                     void startWhisperRecording();
@@ -290,7 +301,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             return;
         }
 
-        showError('Voice input not available in this browser');
+        showError({ message: 'Voice input not available in this browser' });
     };
 
     const toggleListening = (): void => {
