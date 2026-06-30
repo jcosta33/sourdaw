@@ -3,15 +3,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleCrumbsFileDrop } from '../handleFileDrop';
 
 const mocks = vi.hoisted(() => ({
-    isTauri: vi.fn<() => boolean>(),
-    loadSampleFromPath: vi.fn<() => Promise<void>>(),
-    switchCrumbsMode: vi.fn<() => void>(),
-    crumbsStore: { value: null as unknown as Record<string, import('../../stores/crumbsStore').CrumbsState> | null },
+    isCrumbsNativeAvailable: vi.fn<() => boolean>(),
+    getDroppedCrumbsFilePath: vi.fn<(input: { file: File }) => string | null>(),
+    loadSampleFromPath: vi.fn<(instanceId: string, filePath: string) => Promise<void>>(),
+    switchCrumbsMode:
+        vi.fn<(instanceId: string, mode: import('../../models/CrumbsTypes').CrumbsMode) => Promise<void>>(),
+    crumbsStore: {
+        value: null as unknown as Record<
+            string,
+            { activeSample: { category: import('../../models/CrumbsTypes').SampleCategory } | null }
+        > | null,
+    },
     logger: { warn: vi.fn<() => void>() },
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.isTauri,
+vi.mock('../../repositories/is-crumbs-native-available', () => ({
+    isCrumbsNativeAvailable: mocks.isCrumbsNativeAvailable,
+}));
+
+vi.mock('../../repositories/get-dropped-crumbs-file-path', () => ({
+    getDroppedCrumbsFilePath: mocks.getDroppedCrumbsFilePath,
 }));
 
 vi.mock('../loadSample', () => ({
@@ -30,25 +41,50 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: mocks.logger,
 }));
 
+function createDropEvent(file: File): DragEvent {
+    const event = new Event('drop') as DragEvent;
+    Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });
+    return event;
+}
+
 describe('handleCrumbsFileDrop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('does not load when not running in Tauri', async () => {
-        mocks.isTauri.mockReturnValue(false);
+    it('should not load and should warn when native Crumbs file drops are unavailable', async () => {
+        mocks.isCrumbsNativeAvailable.mockReturnValue(false);
         mocks.crumbsStore.value = null;
 
         const file = new File([], 'clip.wav', { type: 'audio/wav' });
-        const event = {
-            preventDefault: vi.fn<() => void>(),
-            stopPropagation: vi.fn<() => void>(),
-            dataTransfer: { files: [file] as unknown as FileList },
-        } as unknown as DragEvent;
+        const event = createDropEvent(file);
 
         await handleCrumbsFileDrop('instance-1', event);
 
+        expect(mocks.getDroppedCrumbsFilePath).not.toHaveBeenCalled();
         expect(mocks.loadSampleFromPath).not.toHaveBeenCalled();
         expect(mocks.logger.warn).toHaveBeenCalled();
+    });
+
+    it('should load the desktop path and switch to the suggested mode', async () => {
+        mocks.isCrumbsNativeAvailable.mockReturnValue(true);
+        mocks.getDroppedCrumbsFilePath.mockReturnValue('/Users/me/Loops/clip.wav');
+        mocks.loadSampleFromPath.mockResolvedValue(undefined);
+        mocks.switchCrumbsMode.mockResolvedValue(undefined);
+        mocks.crumbsStore.value = {
+            'instance-1': {
+                activeSample: { category: 'loop' },
+            },
+        };
+
+        const file = new File([], 'clip.wav', { type: 'audio/wav' });
+        const event = createDropEvent(file);
+
+        await handleCrumbsFileDrop('instance-1', event);
+
+        expect(mocks.getDroppedCrumbsFilePath).toHaveBeenCalledWith({ file });
+        expect(mocks.loadSampleFromPath).toHaveBeenCalledWith('instance-1', '/Users/me/Loops/clip.wav');
+        expect(mocks.switchCrumbsMode).toHaveBeenCalledWith('instance-1', 'slice');
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
     });
 });
