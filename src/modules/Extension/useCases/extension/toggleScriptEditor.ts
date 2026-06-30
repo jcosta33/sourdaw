@@ -1,9 +1,15 @@
 import { extensionStore } from '../../stores/extension';
 
 export function toggleScriptEditor(): void {
-    const state = extensionStore.value;
-    if (!state) {
+    if (!extensionStore.value) {
         return;
     }
-    extensionStore.set({ ...state, editorOpen: !state.editorOpen });
+
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+
+        return { ...state, editorOpen: !state.editorOpen };
+    });
 }

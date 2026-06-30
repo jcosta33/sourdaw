@@ -3,12 +3,41 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type ExtensionManifest, type ExtensionMarketplaceState } from '../../../stores/extension';
 import { installExtension } from '../installExtension';
 
-const mocks = vi.hoisted(() => ({
-    extensionStore: {
-        value: null as unknown as ExtensionMarketplaceState,
-        set: vi.fn<(state: ExtensionMarketplaceState) => void>(),
-    },
-}));
+const mocks = vi.hoisted(() => {
+    type State = import('../../../stores/extension').ExtensionMarketplaceState;
+    let currentState: State | null = null;
+    let valueSnapshot: State | null = null;
+    const notifySubscribers = vi.fn<() => void>();
+
+    const extensionStore = {
+        get value(): State | null {
+            return valueSnapshot;
+        },
+        set: vi.fn<(state: State | null) => void>((state) => {
+            currentState = state;
+            valueSnapshot = state;
+            notifySubscribers();
+        }),
+        update: vi.fn<(updater: (current: State | null) => State | null) => void>((updater) => {
+            currentState = updater(currentState);
+            valueSnapshot = currentState;
+            notifySubscribers();
+        }),
+    };
+
+    return {
+        extensionStore,
+        notifySubscribers,
+        setCurrentState: (state: State | null) => {
+            currentState = state;
+            valueSnapshot = state;
+        },
+        setValueSnapshot: (state: State | null) => {
+            valueSnapshot = state;
+        },
+        getCurrentState: () => currentState,
+    };
+});
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../../stores/extension')>();
@@ -41,19 +70,75 @@ function minimalManifest(id: string): ExtensionManifest {
     };
 }
 
+function currentState(): ExtensionMarketplaceState {
+    const state = mocks.getCurrentState();
+    if (!state) {
+        throw new Error('Expected extension store state');
+    }
+    return state;
+}
+
 describe('installExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.setCurrentState(baseState());
     });
 
-    it('adds to installed', () => {
-        mocks.extensionStore.value = baseState();
+    it('should add to installed', () => {
+        installExtension(minimalManifest('ext-a'));
+
+        expect(mocks.extensionStore.update).toHaveBeenCalledTimes(1);
+        const next = currentState();
+        expect(next.installed).toHaveLength(1);
+        expect(next.installed.map((extension) => extension.manifest.id)).toEqual(['ext-a']);
+    });
+
+    it('should preserve current commands, console log, and editor state when the value snapshot is stale', () => {
+        const handler = vi.fn<() => void>();
+        const existingExtension = {
+            manifest: minimalManifest('existing-ext'),
+            enabled: false,
+            installedAt: 'already-installed',
+            lastUpdatedAt: 'already-updated',
+            state: { saved: true },
+        };
+        const current = baseState({
+            installed: [existingExtension],
+            commands: [{ id: 'current.command', extensionId: 'current', label: 'Current', description: 'd', handler }],
+            consoleLog: [{ timestamp: 'now', level: 'warn', message: 'current log' }],
+            editorOpen: true,
+            editorContent: 'current editor',
+        });
+
+        mocks.setCurrentState(current);
+        mocks.setValueSnapshot(baseState());
 
         installExtension(minimalManifest('ext-a'));
 
-        expect(mocks.extensionStore.set).toHaveBeenCalledTimes(1);
-        const next = mocks.extensionStore.set.mock.calls[0]![0];
-        expect(next.installed).toHaveLength(1);
-        expect(next.installed[0]!.manifest.id).toBe('ext-a');
+        const next = currentState();
+        expect(next.installed.map((extension) => extension.manifest.id)).toEqual(['existing-ext', 'ext-a']);
+        expect(next.installed[0]).toEqual(existingExtension);
+        expect(next.commands).toEqual(current.commands);
+        expect(next.consoleLog).toEqual(current.consoleLog);
+        expect(next.editorOpen).toBe(true);
+        expect(next.editorContent).toBe('current editor');
+    });
+
+    it('should not notify subscribers or call update for a duplicate install', () => {
+        const existing = {
+            manifest: minimalManifest('ext-a'),
+            enabled: false,
+            installedAt: 'already-installed',
+            lastUpdatedAt: 'already-updated',
+            state: { saved: true },
+        };
+
+        mocks.setCurrentState(baseState({ installed: [existing] }));
+
+        installExtension(minimalManifest('ext-a'));
+
+        expect(mocks.extensionStore.update).not.toHaveBeenCalled();
+        expect(mocks.notifySubscribers).not.toHaveBeenCalled();
+        expect(currentState().installed).toEqual([existing]);
     });
 });

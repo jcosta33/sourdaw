@@ -1,9 +1,15 @@
 import { extensionStore } from '../../stores/extension';
 
 export function setEditorContent(content: string): void {
-    const state = extensionStore.value;
-    if (!state) {
+    if (!extensionStore.value) {
         return;
     }
-    extensionStore.set({ ...state, editorContent: content });
+
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+
+        return { ...state, editorContent: content };
+    });
 }

@@ -7,15 +7,20 @@ export function registerCommand(
     description: string,
     handler: () => void | Promise<void>
 ): void {
-    const state = extensionStore.value;
-    if (!state) {
+    if (!extensionStore.value) {
         return;
     }
 
     const command: ScriptCommand = { id: `${extensionId}.${id}`, extensionId, label, description, handler };
 
-    extensionStore.set({
-        ...state,
-        commands: [...state.commands.filter((c) => c.id !== command.id), command],
+    extensionStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+
+        return {
+            ...state,
+            commands: [...state.commands.filter((registeredCommand) => registeredCommand.id !== command.id), command],
+        };
     });
 }
