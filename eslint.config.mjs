@@ -655,6 +655,94 @@ function getPrivateImportFolder(importPath) {
     return null;
 }
 
+const nonModuleImporterFolders = new Set(['app', 'infra', 'routes']);
+
+/**
+ * @param {string} filename
+ * @returns {string | null}
+ */
+function getSourceRelativePath(filename) {
+    const normalized = normalizeFilePath(filename);
+    const sourceMarker = '/src/';
+    const sourceIndex = normalized.lastIndexOf(sourceMarker);
+
+    if (sourceIndex >= 0) {
+        return normalized.slice(sourceIndex + sourceMarker.length);
+    }
+
+    if (normalized.startsWith('src/')) {
+        return normalized.slice('src/'.length);
+    }
+
+    return null;
+}
+
+/**
+ * @param {string} filename
+ * @returns {string | null}
+ */
+function getNonModuleImporterFolder(filename) {
+    const normalized = normalizeFilePath(filename);
+    if (!isProductionSourceFile(normalized)) return null;
+
+    const sourceRelativePath = getSourceRelativePath(normalized);
+    const sourceFolder = sourceRelativePath?.split('/')[0];
+    if (!sourceFolder) return null;
+    if (!nonModuleImporterFolders.has(sourceFolder)) return null;
+
+    return sourceFolder;
+}
+
+const moduleContractFolders = new Set(['events', 'stores', 'useCases']);
+
+/**
+ * @param {string} importPath
+ * @returns {string | null}
+ */
+function getDeepContractImportFolder(importPath) {
+    const segments = importPath.split('/').filter(Boolean);
+    const [firstSegment, secondSegment] = segments;
+
+    if (moduleContractFolders.has(firstSegment)) {
+        if (segments.length > 1) {
+            return firstSegment;
+        }
+
+        return null;
+    }
+
+    if (firstSegment === 'presentations' && secondSegment === 'views' && segments.length > 2) {
+        return 'presentations/views';
+    }
+
+    return null;
+}
+
+/**
+ * @param {string} importPath
+ * @returns {string | null}
+ */
+function getNonModulePrivateImportTarget(importPath) {
+    const privateFolder = getPrivateImportFolder(importPath);
+    if (privateFolder) {
+        return privateFolder;
+    }
+
+    return getDeepContractImportFolder(importPath);
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getLiteralStringValue(node) {
+    if (node?.type === 'Literal' && typeof node.value === 'string') {
+        return node.value;
+    }
+
+    return null;
+}
+
 /**
  * @param {any} node
  * @returns {boolean}
@@ -963,6 +1051,89 @@ const sourdawPlugin = {
                         if (!value) return;
 
                         reportIfPrivateTypeImport(node, value);
+                    },
+                };
+            },
+        },
+
+        'no-nonmodule-private-module-import': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when non-module production files import module private folders or deep contract files.',
+                },
+                schema: [],
+                messages: {
+                    noNonmodulePrivateModuleImport:
+                        'Do not import module private folders or deep contract files (`{{target}}`) from `src/{{sourceFolder}}/`. Import from the module contract-folder barrel instead.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                const sourceFolder = getNonModuleImporterFolder(context.filename);
+                if (!sourceFolder) return {};
+
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @param {boolean} includePrivateFolders
+                 * @returns {void}
+                 */
+                function reportIfPrivateModuleImport(node, source, includePrivateFolders) {
+                    const importedModule = getModuleImportLocation(context.filename, source);
+                    if (!importedModule) return;
+
+                    const importerModule = getModuleLocation(context.filename);
+                    if (importerModule?.moduleName === importedModule.moduleName) return;
+
+                    const target = includePrivateFolders
+                        ? getNonModulePrivateImportTarget(importedModule.importPath)
+                        : getDeepContractImportFolder(importedModule.importPath);
+                    if (!target) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noNonmodulePrivateModuleImport',
+                        data: { sourceFolder, target },
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        reportIfPrivateModuleImport(node, value, !isTypeOnlyImportDeclaration(node));
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    ImportExpression(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, true);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfPrivateModuleImport(node, value, false);
                     },
                 };
             },
@@ -1561,6 +1732,7 @@ export default defineConfig(
             'sourdaw/no-enum': 'error',
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
+            'sourdaw/no-nonmodule-private-module-import': 'warn',
             'sourdaw/no-type-only-private-module-import': 'warn',
             'sourdaw/no-type-assertion-escape': 'error',
 
