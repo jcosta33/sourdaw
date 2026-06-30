@@ -2,15 +2,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { isTauri } from '#/utils/tauriBridge';
+
 import { writeAudioFileToCache } from '../writeAudioFileToCache';
 
 vi.mock('@tauri-apps/api/core', () => ({
     invoke: vi.fn(),
 }));
 
+vi.mock('#/utils/tauriBridge', () => ({
+    isTauri: vi.fn(),
+}));
+
 describe('writeAudioFileToCache', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(isTauri).mockReturnValue(true);
+    });
+
+    it('should skip cache writes in browser without invoking Tauri', async () => {
+        const contents = new Uint8Array([0]).buffer;
+        vi.mocked(isTauri).mockReturnValue(false);
+
+        const result = await writeAudioFileToCache({ fileName: 'track.wav', contents });
+
+        expect(result).toEqual({ kind: 'skipped' });
+        expect(invoke).not.toHaveBeenCalled();
     });
 
     it('should write bytes to the native cache path and return the path', async () => {
