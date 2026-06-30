@@ -6,7 +6,8 @@ import {
     type DawProjectTempoChange,
     type DawProjectTimeSignatureChange,
 } from './dawProjectTypes';
-import { parseXml, wrap, type XmlQuery } from './xmlHelpers';
+import { parseXml } from './parse-xml';
+import { wrap, type XmlQuery } from './xmlHelpers';
 
 type ParseContext = {
     /** Map from track XML id to our own stable id. */

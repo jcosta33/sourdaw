@@ -1,5 +1,6 @@
 import { type DawProjectMeta } from './dawProjectTypes';
-import { parseXml, wrap } from './xmlHelpers';
+import { parseXml } from './parse-xml';
+import { wrap } from './xmlHelpers';
 
 export function parseMetadataXml(xml: string): DawProjectMeta {
     try {
