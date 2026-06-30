@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
@@ -55,7 +55,6 @@ vi.mock('#/modules/SampleLibrary/useCases', () => ({
 vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), getTransportState: vi.fn(() => null) }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('#/utils/tauriBridge', () => ({ isTauri: vi.fn(() => false) }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 // Path resolves (from this __tests__ dir) to Workspace/stores/preferencesStore —
 // the exact module the hook imports, so the mock actually intercepts it.
@@ -221,5 +220,48 @@ describe('useAppInitialization — launch state preservation', () => {
                 expect.objectContaining({ loading: false, initialized: true })
             );
         });
+    });
+});
+
+describe('useAppInitialization — first-load shortcut hint', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.useFakeTimers();
+        projectStoreMock.current = null;
+        mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
+        vi.mocked(resumeEngine).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        try {
+            localStorage.removeItem('wd:first-load-hint-shown');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        try {
+            localStorage.removeItem('wd:first-load-hint-shown');
+        } catch {
+            // ignore: localStorage may be unavailable
+        }
+    });
+
+    it('shows neutral shortcut copy after the first-load delay and persists the shown flag', () => {
+        renderHook(() => useAppInitialization());
+
+        act(() => {
+            vi.advanceTimersByTime(2999);
+        });
+
+        expect(notifyUser).not.toHaveBeenCalledWith('Press ? for shortcuts · Cmd/Ctrl+K to search commands', 'info');
+
+        act(() => {
+            vi.advanceTimersByTime(1);
+        });
+
+        expect(notifyUser).toHaveBeenCalledWith('Press ? for shortcuts · Cmd/Ctrl+K to search commands', 'info');
+        expect(localStorage.getItem('wd:first-load-hint-shown')).toBe('1');
     });
 });

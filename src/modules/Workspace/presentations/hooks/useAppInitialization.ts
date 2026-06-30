@@ -20,7 +20,6 @@ import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useC
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { preferencesStore } from '../../stores/preferencesStore';
 
@@ -176,9 +175,8 @@ export const useAppInitialization = (): void => {
             return undefined;
         }
 
-        const modKey = isTauri() ? 'Ctrl' : '⌘';
         const timeout = setTimeout(() => {
-            notifyUser(`Press ? for shortcuts · ${modKey}K to search commands`, 'info');
+            notifyUser('Press ? for shortcuts · Cmd/Ctrl+K to search commands', 'info');
             try {
                 localStorage.setItem(FIRST_LOAD_HINT_KEY, '1');
             } catch {

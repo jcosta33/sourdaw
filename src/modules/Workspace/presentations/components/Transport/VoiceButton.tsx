@@ -5,18 +5,14 @@ import { Mic } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { isSpeechRecognitionAvailable } from '#/modules/AiRuntime/presentations/views';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
+import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { cn } from '#/utils/Styles/cn';
-import { isTauri } from '#/utils/tauriBridge';
-
-const isVoiceAvailable = (): boolean => isSpeechRecognitionAvailable() || isTauri();
 
 export const VoiceButton = (): ReactElement | null => {
     const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
 
-    if (!isVoiceAvailable()) {
+    if (!isVoiceInputAvailable()) {
         return null;
     }
 
