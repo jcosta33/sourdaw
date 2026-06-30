@@ -411,6 +411,7 @@ function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
 
     for (const statement of program.body ?? []) {
         if (statement.type !== 'ExportAllDeclaration') continue;
+        if (statement.exportKind === 'type') continue;
 
         const value = statement.source?.value;
         if (typeof value !== 'string') continue;
@@ -1197,6 +1198,8 @@ const sourdawPlugin = {
                     },
                     /** @param {any} node */
                     ExportAllDeclaration(node) {
+                        if (node.exportKind === 'type') return;
+
                         const value = node.source?.value;
                         if (typeof value !== 'string') return;
 
