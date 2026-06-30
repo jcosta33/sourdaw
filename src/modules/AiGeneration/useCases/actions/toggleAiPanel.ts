@@ -1,6 +1,8 @@
-import { aiStore, getAiSnapshot } from '../../stores/aiStore';
+import { aiStore } from '../../stores/aiStore';
 
 export function toggleAiPanel() {
-    const snapshot = getAiSnapshot();
-    aiStore.set({ ...snapshot, isPanelOpen: !snapshot.isPanelOpen });
+    aiStore.update((current) => {
+        const state = current ?? { tasks: [], isPanelOpen: false };
+        return { ...state, isPanelOpen: !state.isPanelOpen };
+    });
 }
