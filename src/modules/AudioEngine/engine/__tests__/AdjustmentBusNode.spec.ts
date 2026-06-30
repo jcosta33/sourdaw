@@ -95,6 +95,26 @@ describe('AdjustmentBusNode', () => {
         expect(calls.at(-1)?.[0]).toBeCloseTo(-1, 3);
     });
 
+    it('resolves volume adjustments through the built-in device use case', () => {
+        const bus = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'volume',
+            parameters: { Gain: -6 },
+        });
+
+        const gainNodes = vi.mocked(ctx.createGain).mock.results.map((result) => result.value);
+        const deviceGain = gainNodes.at(-1);
+        expect(deviceGain).toBeDefined();
+        if (!deviceGain) {
+            throw new Error('expected volume adjustment to create a built-in gain node');
+        }
+
+        expect(ctx.createGain).toHaveBeenCalledTimes(5);
+        expect(deviceGain.gain.value).toBeCloseTo(10 ** (-6 / 20), 6);
+        expect(bus.inputNode.connect).toHaveBeenCalledWith(deviceGain);
+        expect(deviceGain.connect).toHaveBeenCalled();
+    });
+
     it('disconnects nodes on dispose', () => {
         const bus = new AdjustmentBusNode({
             context: asBaseAudioContext(ctx),

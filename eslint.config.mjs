@@ -7,6 +7,8 @@
 // - local Sourdaw-specific rules for agentic drift
 // - stronger TypeScript promise/import enforcement
 
+import { dirname, resolve } from 'node:path';
+
 import eslint from '@eslint/js';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
@@ -213,6 +215,83 @@ function isDomainLogicFile(filename) {
         normalized.includes('/validators/') ||
         normalized.includes('/transformers/')
     );
+}
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeFilePath(value) {
+    return value.replaceAll('\\', '/');
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isProductionUseCaseFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    return (
+        normalized.includes('/src/modules/') &&
+        normalized.includes('/useCases/') &&
+        normalized.endsWith('.ts') &&
+        !normalized.includes('/__tests__/') &&
+        !normalized.endsWith('.spec.ts') &&
+        !normalized.endsWith('.test.ts')
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {{ moduleName: string; moduleRoot: string } | null}
+ */
+function getModuleLocation(filename) {
+    const normalizedFilename = normalizeFilePath(filename);
+    const match = /^(.*\/src\/modules\/([^/]+))\//.exec(normalizedFilename);
+    if (!match) return null;
+
+    return { moduleName: match[2], moduleRoot: match[1] };
+}
+
+/**
+ * @param {{ moduleName: string; moduleRoot: string }} moduleLocation
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isSameModuleRepositoryAliasPath(moduleLocation, source) {
+    const repositoryPath = `#/modules/${moduleLocation.moduleName}/repositories`;
+    return source === repositoryPath || source.startsWith(`${repositoryPath}/`);
+}
+
+/**
+ * @param {string} filename
+ * @param {{ moduleName: string; moduleRoot: string }} moduleLocation
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isSameModuleRepositoryRelativePath(filename, moduleLocation, source) {
+    const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
+    return (
+        resolvedSource === `${moduleLocation.moduleRoot}/repositories` ||
+        resolvedSource.startsWith(`${moduleLocation.moduleRoot}/repositories/`)
+    );
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isSameModuleRepositoryReexportPath(filename, source) {
+    const moduleLocation = getModuleLocation(filename);
+    if (!moduleLocation) return false;
+
+    if (source.startsWith('#/modules/')) {
+        return isSameModuleRepositoryAliasPath(moduleLocation, source);
+    }
+
+    if (!source.startsWith('.')) return false;
+    return isSameModuleRepositoryRelativePath(filename, moduleLocation, source);
 }
 
 const sourdawPlugin = {
@@ -428,6 +507,51 @@ const sourdawPlugin = {
                                 messageId: 'noReactInDomainLogic',
                             });
                         }
+                    },
+                };
+            },
+        },
+
+        'no-usecase-repository-reexport': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Disallow laundering same-module repository exports through production use-case files.',
+                },
+                schema: [],
+                messages: {
+                    noUsecaseRepositoryReexport:
+                        'Do not re-export repositories from use-case files. Write a use-case function that imports the repository privately.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionUseCaseFile(context.filename)) return {};
+
+                /**
+                 * @param {any} node
+                 * @returns {void}
+                 */
+                function reportIfRepositoryReexport(node) {
+                    const value = node.source?.value;
+                    if (typeof value !== 'string') return;
+                    if (!isSameModuleRepositoryReexportPath(context.filename, value)) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noUsecaseRepositoryReexport',
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        reportIfRepositoryReexport(node);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        reportIfRepositoryReexport(node);
                     },
                 };
             },
@@ -929,6 +1053,7 @@ export default defineConfig(
         rules: {
             'func-style': ['warn', 'declaration', { allowArrowFunctions: false }],
             'sourdaw/no-react-in-domain-logic': 'error',
+            'sourdaw/no-usecase-repository-reexport': 'error',
         },
     },
 

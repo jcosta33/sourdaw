@@ -1,7 +1,7 @@
 import { type AdjustmentEffectType } from '#/modules/Arrangement/stores';
 
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
+import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
 import type { OfflineDeviceNode } from '../repositories/devices/types';
 
@@ -153,14 +153,13 @@ export class AdjustmentBusNode {
             return { deviceNode: null, panNode: null };
         }
 
-        const factory = DEVICE_FACTORIES[deviceType];
-        if (!factory) {
+        const deviceNode = createBuiltinDeviceNode({ context: this.context, deviceType });
+        if (!deviceNode) {
             this.inputNode.connect(this.wetGain);
             this.wetGain.connect(this.outputNode);
             return { deviceNode: null, panNode: null };
         }
 
-        const deviceNode = factory(this.context);
         const translated = translateParams(this.effectType, parameters);
         applyParams(deviceNode, deviceType, translated);
 

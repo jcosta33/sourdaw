@@ -106,6 +106,25 @@ describe('TrackNode', () => {
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
     });
 
+    it('adds a built-in device through the use-case resolver and wires it into the track chain', () => {
+        const track = new TrackNode('track-1', deps);
+        vi.mocked(ctx.createGain).mockClear();
+
+        track.addDevice('gain-1', 'builtin-gain');
+
+        const device = track.strip.deviceNodes.find((candidate) => candidate.deviceId === 'gain-1');
+        expect(device).toBeDefined();
+        if (!device) {
+            throw new Error('expected builtin-gain device to be added');
+        }
+
+        expect(device.type).toBe('builtin-gain');
+        expect(device.inputNode).toBe(device.outputNode);
+        expect(ctx.createGain).toHaveBeenCalledTimes(1);
+        expect(track.strip.gainNode.connect).toHaveBeenCalledWith(device.inputNode);
+        expect(device.outputNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
+    });
+
     // ── Fix 8: the per-track meter SAB is one Float32 and the init message must
     // NOT claim `channels: 2` — that implied per-channel peaks the 1-float buffer
     // cannot hold. The meter is a single combined-peak readout. ──
