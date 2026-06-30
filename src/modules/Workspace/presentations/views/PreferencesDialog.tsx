@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { KeyboardMusic, AudioLines, Keyboard, Palette, Cpu, Sparkles, Settings, LayoutTemplate } from 'lucide-react';
 
@@ -14,7 +14,8 @@ import { cn } from '#/utils/Styles/cn';
 
 import { defaultPreferences, type Preferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
-import { setSoloMode } from '../../useCases/togglePanel/panelToggles/setSoloMode';
+import { resetPreferences } from '../../useCases/resetPreferences';
+import { updatePreferences } from '../../useCases/updatePreferences';
 
 import { AiSection } from './preferences/AiSection';
 import { AppearanceSection } from './preferences/AppearanceSection';
@@ -64,15 +65,8 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
     const prefs = useStore<Preferences>(preferencesStore, defaultPreferences);
     const [section, setSection] = useState<PreferencesSection>('general');
 
-    const prefsRef = useRef(prefs);
-    prefsRef.current = prefs;
-
     const update = (partial: Partial<Preferences>): void => {
-        preferencesStore.set({ ...prefsRef.current, ...partial });
-        // Keep workspaceStore in sync for features that read soloMode directly
-        if (partial.soloMode !== undefined) {
-            setSoloMode(partial.soloMode);
-        }
+        updatePreferences({ patch: partial });
     };
 
     return (
@@ -118,7 +112,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                     variant="ghost"
                                     size="sm"
                                     className="w-full justify-start text-xs text-muted-foreground"
-                                    onClick={() => preferencesStore.set(defaultPreferences)}
+                                    onClick={() => resetPreferences()}
                                 >
                                     Reset Defaults
                                 </Button>
