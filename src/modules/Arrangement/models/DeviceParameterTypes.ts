@@ -4,7 +4,7 @@
  * Pure types only — no catalog data, no helpers. The aggregated catalog
  * (`BUILTIN_PLUGINS`), variant builders, and query helpers live in
  * `DeviceParameter.ts`. Per-family descriptor data lives in
- * `./pluginDescriptors/*.ts`; those files import this module rather than
+ * `./PluginDescriptors/*.ts`; those files import this module rather than
  * the aggregator to avoid circular dependencies.
  */
 
