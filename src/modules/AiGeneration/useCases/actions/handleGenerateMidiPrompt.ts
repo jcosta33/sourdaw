@@ -1,9 +1,7 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { batchAddMidiNotes, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { batchAddMidiNotes, getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { selectClip } from '#/modules/Workspace/useCases';
 
@@ -96,10 +94,10 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             // Snapshot state before for undo support. §77.1 — stores are
             // immutable-via-set so capturing the reference is equivalent
             // to structuredClone without the deep-copy jank.
-            const trackSnapshotBefore = trackStore.value;
-            const midiSnapshotBefore = midiStore.value;
+            const trackSnapshotBefore = getTrackStoreState();
+            const midiSnapshotBefore = getMidiStoreState();
 
-            const tState = trackStore.value;
+            const tState = trackSnapshotBefore;
             const selectedTrackId = tState?.selectedTrackId;
 
             // Prefer selected MIDI track → create new one if selected isn't MIDI or nothing selected
@@ -149,8 +147,8 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     );
 
                     // Register undo entry for the entire generation
-                    const trackSnapshotAfter = trackStore.value;
-                    const midiSnapshotAfter = midiStore.value;
+                    const trackSnapshotAfter = getTrackStoreState();
+                    const midiSnapshotAfter = getMidiStoreState();
 
                     pushUndoEntry(
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
@@ -180,8 +178,8 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     // be rolled back (the before-snapshot predates the track),
                     // mirroring the success path's undo. Without this the empty
                     // track is stranded with no way to undo it.
-                    const trackSnapshotAfter = trackStore.value;
-                    const midiSnapshotAfter = midiStore.value;
+                    const trackSnapshotAfter = getTrackStoreState();
+                    const midiSnapshotAfter = getMidiStoreState();
                     pushUndoEntry(
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'} (no clip)`,
                         () => {

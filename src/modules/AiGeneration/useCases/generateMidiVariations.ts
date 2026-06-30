@@ -5,7 +5,6 @@ import {
     generateWebLlmCompletion,
     isNativeEngineReady,
 } from '#/modules/AiRuntime/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
 import {
     createAlternativeClips,
     getTrackStoreState as getTrackState,
@@ -13,8 +12,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { type VariationNote } from '#/modules/Arrangement/useCases';
 import { pushUndoEntry } from '#/modules/Command/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { getMidiStoreState as getMidiState, getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
 import { readBalancedObject } from '../services/readBalancedObject';
@@ -186,13 +184,13 @@ ONLY output raw JSON, no markdown blocks.`;
     }
 
     // Snapshot both stores before mutation so the undo entry can restore them
-    const trackSnapshotBefore = trackStore.value;
-    const midiSnapshotBefore = midiStore.value;
+    const trackSnapshotBefore = getTrackState();
+    const midiSnapshotBefore = getMidiState();
 
     createAlternativeClips(targetClip.id, variations);
 
-    const trackSnapshotAfter = trackStore.value;
-    const midiSnapshotAfter = midiStore.value;
+    const trackSnapshotAfter = getTrackState();
+    const midiSnapshotAfter = getMidiState();
 
     pushUndoEntry(
         `AI Variations: ${clipId}`,
