@@ -1,25 +1,25 @@
 import { type PluginDescriptor } from './DeviceParameterTypes';
-import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
-import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
-import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
-import { CRUMBS_DESCRIPTOR } from './pluginDescriptors/crumbsDescriptor';
-import { CRUST_DESCRIPTOR } from './pluginDescriptors/crustDescriptor';
-import { FAUST_EFFECT_DESCRIPTORS } from './pluginDescriptors/faustEffectDescriptors';
-import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
-import { GLUTEN_DESCRIPTOR } from './pluginDescriptors/glutenDescriptor';
-import { GRAND_BOULE_DESCRIPTOR } from './pluginDescriptors/grandBouleDescriptor';
-import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
-import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
-import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors';
-import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
-import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
-import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
+import { BACTERIA_DESCRIPTOR } from './PluginDescriptors/BacteriaDescriptor';
+import { BUILTIN_EFFECT_DESCRIPTORS } from './PluginDescriptors/BuiltinEffectDescriptors';
+import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './PluginDescriptors/BuiltinInstrumentDescriptors';
+import { CRUMBS_DESCRIPTOR } from './PluginDescriptors/CrumbsDescriptor';
+import { CRUST_DESCRIPTOR } from './PluginDescriptors/CrustDescriptor';
+import { FAUST_EFFECT_DESCRIPTORS } from './PluginDescriptors/FaustEffectDescriptors';
+import { FERMENTER_DESCRIPTOR } from './PluginDescriptors/FermenterDescriptor';
+import { GLUTEN_DESCRIPTOR } from './PluginDescriptors/GlutenDescriptor';
+import { GRAND_BOULE_DESCRIPTOR } from './PluginDescriptors/GrandBouleDescriptor';
+import { GRINDER_DESCRIPTOR } from './PluginDescriptors/GrinderDescriptor';
+import { LEVAIN_DESCRIPTOR } from './PluginDescriptors/LevainDescriptor';
+import { NATIVE_DSP_DESCRIPTORS } from './PluginDescriptors/NativeDspDescriptors';
+import { PROOF_DESCRIPTOR } from './PluginDescriptors/ProofDescriptor';
+import { TOASTER_DESCRIPTOR } from './PluginDescriptors/ToasterDescriptor';
+import { YEAST_DESCRIPTOR } from './PluginDescriptors/YeastDescriptor';
 
 /**
  * Built-in plugin catalog and aggregation helpers.
  *
  * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
- * split by family in `./pluginDescriptors/`. This file only owns the
+ * split by family in `./PluginDescriptors/`. This file only owns the
  * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
  * platform/availability helpers. It re-exports the shared types so existing
  * in-module callers do not need to update their import paths.

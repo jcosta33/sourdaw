@@ -1,7 +1,7 @@
 /**
  * Crust — limiter/saturator patch model.
  * Patch shape and defaults. The flat DeviceParameter descriptor lives in the
- * Arrangement module (models/pluginDescriptors/crustDescriptor.ts).
+ * Arrangement module (models/PluginDescriptors/CrustDescriptor.ts).
  */
 
 export type CrustAlgorithm = 'transparent' | 'punchy' | 'dynamic' | 'allround' | 'aggressive' | 'bus' | 'safe' | 'wall';

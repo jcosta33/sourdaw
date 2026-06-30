@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GLUTEN_DESCRIPTOR } from '../glutenDescriptor';
+import { GLUTEN_DESCRIPTOR } from '../GlutenDescriptor';
 
 /**
  * Regression guard: every Gluten parameter the GlutenPanel exposes as an
