@@ -1,5 +1,6 @@
-import { isNativeEngineReady, stopNativeEngine } from '../../../repositories/nativeEngine/lifecycle';
-import { unloadWebLlmEngine } from '../../../repositories/webLlm/engineLifecycle';
+import { isNativeEngineReady } from '../../../repositories/nativeEngine/isNativeEngineReady';
+import { stopNativeEngine } from '../../../repositories/nativeEngine/stopNativeEngine';
+import { unloadWebLlmEngine } from '../../../repositories/webLlm/unloadWebLlmEngine';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
 
 /**

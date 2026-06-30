@@ -1,6 +1,6 @@
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
-import { BASE_URL } from './lifecycle';
+import { BASE_URL } from './lifecycleState';
 
 /**
  * Non-streaming completion.

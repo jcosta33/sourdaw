@@ -7,9 +7,9 @@ import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
-import { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
+import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngineReady';
 import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
-import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
+import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
 import {
     chatStore,

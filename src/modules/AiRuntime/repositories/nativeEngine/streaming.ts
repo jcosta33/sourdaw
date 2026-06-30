@@ -1,6 +1,6 @@
 import { isTauri, tauriInvoke, createChannel } from '#/utils/tauriBridge';
 
-import { BASE_URL } from './lifecycle';
+import { BASE_URL } from './lifecycleState';
 
 type LlmStreamEvent =
     | { event: 'token'; data: { text: string } }

@@ -16,11 +16,11 @@ vi.mock('../../backendResolution/helpers', () => ({
     resolveBackend: mocks.resolveBackend,
 }));
 
-vi.mock('../../../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../../../repositories/nativeEngine/initNativeEngine', () => ({
     initNativeEngine: mocks.initNativeEngine,
 }));
 
-vi.mock('../../../../repositories/webLlm/engineLifecycle', () => ({
+vi.mock('../../../../repositories/webLlm/initWebLlmEngine', () => ({
     initWebLlmEngine: mocks.initWebLlmEngine,
 }));
 

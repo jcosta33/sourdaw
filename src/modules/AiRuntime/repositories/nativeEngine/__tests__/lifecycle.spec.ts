@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { initNativeEngine, stopNativeEngine } from '../lifecycle';
+import { initNativeEngine } from '../initNativeEngine';
+import { stopNativeEngine } from '../stopNativeEngine';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {

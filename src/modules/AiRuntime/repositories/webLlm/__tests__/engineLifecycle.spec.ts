@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { initWebLlmEngine, unloadWebLlmEngine } from '../engineLifecycle';
+import { initWebLlmEngine } from '../initWebLlmEngine';
+import { unloadWebLlmEngine } from '../unloadWebLlmEngine';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {

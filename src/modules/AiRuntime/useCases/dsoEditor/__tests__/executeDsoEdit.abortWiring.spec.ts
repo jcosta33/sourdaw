@@ -19,7 +19,7 @@ vi.mock('../../llmOrchestration/backendResolution/isDsoBackendAvailable', () => 
 vi.mock('../../llmOrchestration/backendResolution/helpers', () => ({
     resolveBackend: () => 'native' as const,
 }));
-vi.mock('../../../repositories/nativeEngine/lifecycle', () => ({
+vi.mock('../../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: () => true,
 }));
 vi.mock('#/utils/tauriBridge', () => ({
