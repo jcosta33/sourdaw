@@ -7,6 +7,7 @@
 // - local Sourdaw-specific rules for agentic drift
 // - stronger TypeScript promise/import enforcement
 
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import eslint from '@eslint/js';
@@ -81,6 +82,31 @@ function isReactEffectCall(node) {
  */
 function isFunctionLike(node) {
     return node?.type === 'ArrowFunctionExpression' || node?.type === 'FunctionExpression';
+}
+
+/**
+ * @param {any} node
+ * @param {Set<string>} injectBindings
+ * @returns {boolean}
+ */
+function isInjectCallExpression(node, injectBindings) {
+    if (node?.type !== 'CallExpression') return false;
+
+    let callee = node.callee;
+    while (callee?.type === 'CallExpression') {
+        callee = callee.callee;
+    }
+
+    return callee?.type === 'Identifier' && injectBindings.has(callee.name);
+}
+
+/**
+ * @param {any} node
+ * @param {Set<string>} injectBindings
+ * @returns {boolean}
+ */
+function isFunctionValue(node, injectBindings) {
+    return isFunctionLike(node) || isInjectCallExpression(node, injectBindings);
 }
 
 /**
@@ -227,6 +253,212 @@ function normalizeFilePath(value) {
 
 /**
  * @param {string} filename
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isInjectImportSource(filename, source) {
+    if (source === '#/infra/di/inject') return true;
+    if (!source.startsWith('.')) return false;
+
+    const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
+    return resolvedSource.endsWith('/src/infra/di/inject') || resolvedSource.endsWith('/src/infra/di/inject.ts');
+}
+
+/**
+ * @param {any} node
+ * @param {string} filename
+ * @param {Set<string>} injectBindings
+ * @returns {void}
+ */
+function collectInjectBindings(node, filename, injectBindings) {
+    const value = node.source?.value;
+    if (typeof value !== 'string') return;
+    if (!isInjectImportSource(filename, value)) return;
+
+    for (const specifier of node.specifiers ?? []) {
+        if (
+            specifier.type === 'ImportSpecifier' &&
+            specifier.imported?.type === 'Identifier' &&
+            specifier.imported.name === 'inject'
+        ) {
+            injectBindings.add(specifier.local.name);
+        }
+    }
+}
+
+/**
+ * @param {string} filename
+ * @returns {string | null}
+ */
+function getSourceRoot(filename) {
+    const normalized = normalizeFilePath(filename);
+    const match = /^(.*\/src)(?:\/|$)/.exec(normalized);
+    return match?.[1] ?? null;
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {string | null}
+ */
+function resolveSourceExportFile(filename, source) {
+    let basePath;
+    if (source.startsWith('.')) {
+        basePath = resolve(dirname(filename), source);
+    } else if (source.startsWith('#/')) {
+        const sourceRoot = getSourceRoot(filename);
+        if (!sourceRoot) return null;
+
+        basePath = resolve(sourceRoot, source.slice(2));
+    } else {
+        return null;
+    }
+
+    const normalizedBasePath = normalizeFilePath(basePath);
+    const candidates = normalizedBasePath.endsWith('.ts')
+        ? [normalizedBasePath]
+        : [`${normalizedBasePath}.ts`, `${normalizedBasePath}/index.ts`];
+
+    return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+/** @type {Map<string, Set<string>>} */
+const exportedFunctionNamesCache = new Map();
+
+/**
+ * @param {any} program
+ * @param {string} filename
+ * @param {Set<string>} seenFiles
+ * @returns {Set<string>}
+ */
+function collectExportedFunctionNamesFromProgram(program, filename, seenFiles) {
+    /** @type {Map<string, any>} */
+    const localFunctionValues = new Map();
+    /** @type {Set<string>} */
+    const exportedFunctionNames = new Set();
+    /** @type {Set<string>} */
+    const injectBindings = new Set();
+
+    for (const statement of program.body ?? []) {
+        if (statement.type === 'ImportDeclaration') {
+            collectInjectBindings(statement, filename, injectBindings);
+        }
+    }
+
+    for (const statement of program.body ?? []) {
+        if (statement.type === 'FunctionDeclaration') {
+            if (statement.id?.name) {
+                localFunctionValues.set(statement.id.name, statement);
+            }
+            continue;
+        }
+
+        if (statement.type === 'VariableDeclaration') {
+            for (const declarator of statement.declarations ?? []) {
+                if (declarator.id?.type !== 'Identifier') continue;
+                if (!isFunctionValue(declarator.init, injectBindings)) continue;
+
+                localFunctionValues.set(declarator.id.name, declarator.id);
+            }
+            continue;
+        }
+
+        if (statement.type !== 'ExportNamedDeclaration') continue;
+        if (statement.exportKind === 'type') continue;
+
+        if (statement.declaration?.type === 'FunctionDeclaration') {
+            if (statement.declaration.id?.name) {
+                exportedFunctionNames.add(statement.declaration.id.name);
+            }
+            continue;
+        }
+
+        if (statement.declaration?.type === 'VariableDeclaration') {
+            for (const declarator of statement.declaration.declarations ?? []) {
+                if (declarator.id?.type !== 'Identifier') continue;
+                if (!isFunctionValue(declarator.init, injectBindings)) continue;
+
+                exportedFunctionNames.add(declarator.id.name);
+            }
+            continue;
+        }
+
+        if (statement.source) {
+            const value = statement.source.value;
+            if (typeof value !== 'string') continue;
+
+            const sourceFunctionNames = getExportedFunctionNamesFromSource(filename, value, seenFiles);
+            for (const specifier of statement.specifiers ?? []) {
+                if (specifier.exportKind === 'type') continue;
+                if (specifier.local?.type !== 'Identifier') continue;
+                if (!sourceFunctionNames.has(specifier.local.name)) continue;
+
+                const exportedName = specifier.exported?.name ?? specifier.local.name;
+                exportedFunctionNames.add(exportedName);
+            }
+            continue;
+        }
+
+        for (const specifier of statement.specifiers ?? []) {
+            if (specifier.exportKind === 'type') continue;
+            if (specifier.local?.type !== 'Identifier') continue;
+            if (!localFunctionValues.has(specifier.local.name)) continue;
+
+            const exportedName = specifier.exported?.name ?? specifier.local.name;
+            exportedFunctionNames.add(exportedName);
+        }
+    }
+
+    for (const statement of program.body ?? []) {
+        if (statement.type !== 'ExportAllDeclaration') continue;
+        if (statement.exportKind === 'type') continue;
+
+        const value = statement.source?.value;
+        if (typeof value !== 'string') continue;
+
+        const sourceFunctionNames = getExportedFunctionNamesFromSource(filename, value, seenFiles);
+        for (const name of sourceFunctionNames) {
+            exportedFunctionNames.add(name);
+        }
+    }
+
+    return exportedFunctionNames;
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @param {Set<string>} seenFiles
+ * @returns {Set<string>}
+ */
+function getExportedFunctionNamesFromSource(filename, source, seenFiles) {
+    const sourceFile = resolveSourceExportFile(filename, source);
+    if (!sourceFile) return new Set();
+    if (seenFiles.has(sourceFile)) return new Set();
+
+    const cached = exportedFunctionNamesCache.get(sourceFile);
+    if (cached) return cached;
+
+    seenFiles.add(sourceFile);
+    try {
+        const text = readFileSync(sourceFile, 'utf8');
+        const parsed = tseslint.parser.parseForESLint(text, {
+            filePath: sourceFile,
+            sourceType: 'module',
+            ecmaVersion: 'latest',
+        });
+        const exportedFunctionNames = collectExportedFunctionNamesFromProgram(parsed.ast, sourceFile, seenFiles);
+        exportedFunctionNamesCache.set(sourceFile, exportedFunctionNames);
+        return exportedFunctionNames;
+    } catch {
+        return new Set();
+    } finally {
+        seenFiles.delete(sourceFile);
+    }
+}
+
+/**
+ * @param {string} filename
  * @returns {boolean}
  */
 function isTestFile(filename) {
@@ -265,6 +497,22 @@ function isProductionUseCaseFile(filename) {
         !normalized.includes('/__tests__/') &&
         !normalized.endsWith('.spec.ts') &&
         !normalized.endsWith('.test.ts')
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isProductionUseCaseOrRepositoryFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    const isModuleSource = normalized.includes('/src/modules/') || normalized.startsWith('src/modules/');
+    return (
+        isProductionSourceFile(normalized) &&
+        isModuleSource &&
+        (normalized.includes('/useCases/') || normalized.includes('/repositories/')) &&
+        normalized.endsWith('.ts') &&
+        !normalized.endsWith('/index.ts')
     );
 }
 
@@ -765,6 +1013,224 @@ const sourdawPlugin = {
             },
         },
 
+        'no-multiple-function-exports': {
+            meta: {
+                type: 'suggestion',
+                docs: {
+                    description:
+                        'Warn when production use-case or repository files export more than one function value.',
+                },
+                schema: [],
+                messages: {
+                    noMultipleFunctionExports:
+                        'Use-case and repository files must export at most one function value. Found {{count}} exported functions: {{names}}.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionUseCaseOrRepositoryFile(context.filename)) return {};
+
+                /** @type {Map<string, any>} */
+                const localFunctionValues = new Map();
+                /** @type {Map<string, any>} */
+                const sourceExportedFunctionValues = new Map();
+                /** @type {Set<string>} */
+                const directlyExportedNames = new Set();
+                /** @type {Set<string>} */
+                const explicitlyExportedNames = new Set();
+                /** @type {Set<string>} */
+                const injectBindings = new Set();
+
+                /**
+                 * @param {any} node
+                 * @param {string | null | undefined} name
+                 * @returns {void}
+                 */
+                function registerFunctionValue(node, name) {
+                    if (!name) return;
+                    localFunctionValues.set(name, node);
+                }
+
+                /**
+                 * @param {any} node
+                 * @param {string | null | undefined} name
+                 * @returns {void}
+                 */
+                function registerDirectExport(node, name) {
+                    registerFunctionValue(node, name);
+                    if (!name) return;
+                    directlyExportedNames.add(name);
+                }
+
+                /**
+                 * @param {any} node
+                 * @param {string | null | undefined} name
+                 * @returns {void}
+                 */
+                function registerSourceExport(node, name) {
+                    if (!name) return;
+                    sourceExportedFunctionValues.set(name, node);
+                }
+
+                /**
+                 * @param {any} declarator
+                 * @returns {void}
+                 */
+                function registerVariableFunctionValue(declarator) {
+                    if (declarator.id?.type !== 'Identifier') return;
+                    if (!isFunctionValue(declarator.init, injectBindings)) return;
+
+                    registerFunctionValue(declarator.id, declarator.id.name);
+                }
+
+                /**
+                 * @param {any} declarator
+                 * @returns {void}
+                 */
+                function registerExportedVariableFunctionValue(declarator) {
+                    if (declarator.id?.type !== 'Identifier') return;
+                    if (!isFunctionValue(declarator.init, injectBindings)) return;
+
+                    registerDirectExport(declarator.id, declarator.id.name);
+                }
+
+                /**
+                 * @returns {Array<{ name: string; node: any }>}
+                 */
+                function getExportedFunctionValues() {
+                    /** @type {Array<{ name: string; node: any }>} */
+                    const exportedFunctionValues = [];
+                    const seenNames = new Set();
+
+                    for (const name of directlyExportedNames) {
+                        const node = localFunctionValues.get(name);
+                        if (!node || seenNames.has(name)) continue;
+
+                        exportedFunctionValues.push({ name, node });
+                        seenNames.add(name);
+                    }
+
+                    for (const name of explicitlyExportedNames) {
+                        const node = localFunctionValues.get(name);
+                        if (!node || seenNames.has(name)) continue;
+
+                        exportedFunctionValues.push({ name, node });
+                        seenNames.add(name);
+                    }
+
+                    for (const [name, node] of sourceExportedFunctionValues) {
+                        if (!node || seenNames.has(name)) continue;
+
+                        exportedFunctionValues.push({ name, node });
+                        seenNames.add(name);
+                    }
+
+                    return exportedFunctionValues;
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        collectInjectBindings(node, context.filename, injectBindings);
+                    },
+                    /** @param {any} node */
+                    FunctionDeclaration(node) {
+                        const parentType = node.parent?.type;
+                        if (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration') return;
+
+                        registerFunctionValue(node, node.id?.name);
+                    },
+                    /** @param {any} node */
+                    VariableDeclarator(node) {
+                        const declaration = node.parent;
+                        const parentType = declaration?.parent?.type;
+                        if (
+                            declaration?.type !== 'VariableDeclaration' ||
+                            (parentType !== 'Program' && parentType !== 'ExportNamedDeclaration')
+                        ) {
+                            return;
+                        }
+
+                        registerVariableFunctionValue(node);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        if (node.exportKind === 'type') return;
+
+                        if (node.source) {
+                            const value = node.source.value;
+                            if (typeof value !== 'string') return;
+
+                            const sourceFunctionNames = getExportedFunctionNamesFromSource(
+                                context.filename,
+                                value,
+                                new Set()
+                            );
+                            for (const specifier of node.specifiers ?? []) {
+                                if (specifier.exportKind === 'type') continue;
+                                if (specifier.local?.type !== 'Identifier') continue;
+                                if (!sourceFunctionNames.has(specifier.local.name)) continue;
+
+                                const exportedName = specifier.exported?.name ?? specifier.local.name;
+                                registerSourceExport(specifier, exportedName);
+                            }
+                            return;
+                        }
+
+                        if (node.declaration?.type === 'FunctionDeclaration') {
+                            registerDirectExport(node.declaration, node.declaration.id?.name);
+                            return;
+                        }
+
+                        if (node.declaration?.type === 'VariableDeclaration') {
+                            for (const declarator of node.declaration.declarations ?? []) {
+                                registerExportedVariableFunctionValue(declarator);
+                            }
+                            return;
+                        }
+
+                        for (const specifier of node.specifiers ?? []) {
+                            if (specifier.exportKind === 'type') continue;
+                            if (specifier.local?.type !== 'Identifier') continue;
+
+                            explicitlyExportedNames.add(specifier.local.name);
+                        }
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        if (node.exportKind === 'type') return;
+
+                        const value = node.source?.value;
+                        if (typeof value !== 'string') return;
+
+                        const sourceFunctionNames = getExportedFunctionNamesFromSource(
+                            context.filename,
+                            value,
+                            new Set()
+                        );
+                        for (const name of sourceFunctionNames) {
+                            registerSourceExport(node, name);
+                        }
+                    },
+                    /** @param {any} node */
+                    'Program:exit'(node) {
+                        const exportedFunctionValues = getExportedFunctionValues();
+                        if (exportedFunctionValues.length <= 1) return;
+
+                        const reportTarget = exportedFunctionValues[1]?.node ?? node;
+                        context.report({
+                            node: reportTarget,
+                            messageId: 'noMultipleFunctionExports',
+                            data: {
+                                count: String(exportedFunctionValues.length),
+                                names: exportedFunctionValues.map((value) => value.name).join(', '),
+                            },
+                        });
+                    },
+                };
+            },
+        },
+
         // AGENTS.md L147: Prefer `as const` objects over `enum`.
         'no-enum': {
             meta: {
@@ -1093,6 +1559,7 @@ export default defineConfig(
 
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
+            'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-type-only-private-module-import': 'warn',
             'sourdaw/no-type-assertion-escape': 'error',
