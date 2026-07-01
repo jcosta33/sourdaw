@@ -16,7 +16,6 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { useStore } from '#/infra/store/useStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { type FolderNode, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 import {
@@ -32,6 +31,7 @@ import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLibraryRoot';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
+import { isNativeSampleLibraryRuntimeAvailable } from '../../useCases/isNativeSampleLibraryRuntimeAvailable';
 import { projectSpatialMap } from '../../useCases/projectSpatialMap';
 import { readTauriLibrarySampleFile } from '../../useCases/readTauriLibrarySampleFile';
 import { requestPermission } from '../../useCases/requestPermission';
@@ -103,6 +103,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
     const { roots, samples, currentFolder, searchQuery, favoritesOnly, scanning, scanProgress } = state;
 
     const activeRoot = roots.find((r) => r.id === activeRootId);
+    const nativeRuntimeAvailable = isNativeSampleLibraryRuntimeAvailable();
+    const showBrowserDecodeWarnings = !nativeRuntimeAvailable;
 
     // All samples for the active root
     const rootSamples = activeRootId ? samples.filter((s) => s.libraryRootId === activeRootId) : [];
@@ -207,7 +209,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         // Warn before attempting formats the browser commonly cannot decode, so a
         // failed preview is explained rather than appearing to do nothing. The
         // native (Tauri) build decodes these fine, so the warning is browser-only.
-        if (!isTauri() && isBrowserDecodeRisky(sample.ext)) {
+        if (showBrowserDecodeWarnings && isBrowserDecodeRisky(sample.ext)) {
             notifyUser(
                 `"${sample.displayName}" is a .${sample.ext} file — your browser may not be able to preview it.`,
                 'warning'
@@ -216,7 +218,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
         try {
             let file: File;
-            if (isTauri() && root.provider === 'tauri' && root.rootRef) {
+            if (nativeRuntimeAvailable && root.provider === 'tauri' && root.rootRef) {
                 file = await readTauriLibrarySampleFile({
                     rootPath: root.rootRef,
                     relativePath: sample.relativePath,
@@ -527,6 +529,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     key={sample.id}
                                     sample={sample}
                                     isPlaying={preview.playingId === sample.id}
+                                    showBrowserDecodeWarnings={showBrowserDecodeWarnings}
                                     tabIndex={index === listCursor ? 0 : -1}
                                     onKeyDown={onOptionKeyDown(index)}
                                     onPlay={() => {

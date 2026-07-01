@@ -6,13 +6,13 @@ import { type ReactElement } from 'react';
 import { File, Star, SearchCode, AlertTriangle, Plus } from 'lucide-react';
 
 import { cn } from '#/utils/Styles/cn';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { type SampleRecord, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 
 type SampleRowProps = {
     sample: SampleRecord;
     isPlaying: boolean;
+    showBrowserDecodeWarnings: boolean;
     onPlay: () => void;
     onStop: () => void;
     onToggleFavorite: () => void;
@@ -62,6 +62,7 @@ function formatSize(bytes?: number): string {
 export const SampleRow = ({
     sample,
     isPlaying,
+    showBrowserDecodeWarnings,
     onPlay,
     onStop,
     onToggleFavorite,
@@ -139,7 +140,7 @@ export const SampleRow = ({
         {/* Format-unsupported badge: in the browser, flag extensions the platform
             commonly cannot decode (AIFF/FLAC/AAC/M4A) so a failed preview is
             explained up front. The native build decodes these, so it is hidden there. */}
-        {!isTauri() && isBrowserDecodeRisky(sample.ext) ? (
+        {showBrowserDecodeWarnings && isBrowserDecodeRisky(sample.ext) ? (
             <span title={`${sample.ext.toUpperCase()} may not preview in your browser`} className="shrink-0">
                 <AlertTriangle className="size-2.5 text-amber-500/70" />
             </span>
