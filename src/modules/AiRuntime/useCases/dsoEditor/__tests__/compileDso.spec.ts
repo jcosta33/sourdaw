@@ -229,6 +229,203 @@ describe('executeDsos', () => {
         );
     });
 
+    it('should preserve generation style alias payload mappings', async () => {
+        mocks.trackStoreValue.value = trackState([{ id: 'track-1', name: 'Generator' }]);
+
+        await executeDsos([
+            {
+                op: 'generate_melody',
+                track_id: 'track-1',
+                start_beat: 8,
+                style: 'AMBIENT',
+                key: 'C',
+                scale: 'WHOLE-TONE',
+                octave: 4,
+                bars: 2,
+                density: 0.75,
+            },
+            {
+                op: 'generate_chords',
+                track_id: 'track-1',
+                start_beat: 4,
+                key: 'D',
+                progression: 'ii-V-I',
+                bars: 4,
+                voicing: 'drop2',
+            },
+            {
+                op: 'generate_chords',
+                track_id: 'track-1',
+                key: 'E',
+                progression: 'I-IV-V-I',
+                bars: 8,
+                voicing: 'basic',
+            },
+            { op: 'generate_drums', track_id: 'track-1', start_beat: 12, style: 'hiphop', bars: 1, density: 0.5 },
+            { op: 'generate_drums', track_id: 'track-1', style: 'funk', bars: 1, density: 0.5 },
+        ]);
+
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            1,
+            {
+                type: 'generateMelody',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'ambient',
+                    key: 60,
+                    scale: 'whole-tone',
+                    octave: 4,
+                    bars: 2,
+                    density: 0.75,
+                    startBeat: 8,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'generateChordProgression',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'jazz',
+                    key: 62,
+                    scale: 'major',
+                    bars: 4,
+                    voicing: 'open',
+                    startBeat: 4,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            3,
+            {
+                type: 'generateChordProgression',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'blues',
+                    key: 64,
+                    scale: 'major',
+                    bars: 8,
+                    voicing: 'close',
+                    startBeat: 0,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            4,
+            {
+                type: 'generateDrumPattern',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'trap',
+                    bars: 1,
+                    density: 0.5,
+                    startBeat: 12,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            5,
+            {
+                type: 'generateDrumPattern',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'breakbeat',
+                    bars: 1,
+                    density: 0.5,
+                    startBeat: 0,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+    });
+
+    it('should default unknown generation style values before dispatch', async () => {
+        mocks.trackStoreValue.value = trackState([{ id: 'track-1', name: 'Generator' }]);
+
+        await executeDsos([
+            {
+                op: 'generate_melody',
+                track_id: 'track-1',
+                style: 'sparkle',
+                key: 'C',
+                scale: 'cosmic',
+                octave: 4,
+                bars: 2,
+                density: 0.75,
+            },
+            {
+                op: 'generate_chords',
+                track_id: 'track-1',
+                key: 'C',
+                progression: 'space-jam',
+                bars: 4,
+                voicing: 'galaxy',
+            },
+            { op: 'generate_drums', track_id: 'track-1', style: 'marching', bars: 1, density: 0.5 },
+        ]);
+
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            1,
+            {
+                type: 'generateMelody',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'simple',
+                    key: 60,
+                    scale: 'major',
+                    octave: 4,
+                    bars: 2,
+                    density: 0.75,
+                    startBeat: 0,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            2,
+            {
+                type: 'generateChordProgression',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'pop',
+                    key: 60,
+                    scale: 'major',
+                    bars: 4,
+                    voicing: 'close',
+                    startBeat: 0,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            3,
+            {
+                type: 'generateDrumPattern',
+                payload: {
+                    trackId: 'track-1',
+                    style: 'rock',
+                    bars: 1,
+                    density: 0.5,
+                    startBeat: 0,
+                },
+            },
+            expect.objectContaining({ source: 'ai', skipUndo: true })
+        );
+        expect(mocks.warn).toHaveBeenNthCalledWith(1, 'DSO: unknown melody style "sparkle", defaulting to "simple".');
+        expect(mocks.warn).toHaveBeenNthCalledWith(2, 'DSO: unknown scale type "cosmic", defaulting to "major".');
+        expect(mocks.warn).toHaveBeenNthCalledWith(
+            3,
+            'DSO: unknown chord progression style "space-jam", defaulting to "pop".'
+        );
+        expect(mocks.warn).toHaveBeenNthCalledWith(4, 'DSO: unknown chord voicing "galaxy", defaulting to "close".');
+        expect(mocks.warn).toHaveBeenNthCalledWith(5, 'DSO: unknown drum style "marching", defaulting to "rock".');
+    });
+
     it('should reject time signature denominators unsupported by Transport validation', () => {
         mocks.trackStoreValue.value = trackState([]);
         const dso: Dso = { op: 'set_time_signature', numerator: 7, denominator: 3 };

@@ -11,20 +11,6 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { type Dso } from '../../models/DsoTypes';
 
-// Shared style unions live in `AiGeneration/models/GenerationStyles` — a leaf
-// module with no runtime imports. Using `import type` keeps this file free of
-// any runtime dependency on `AiGeneration/useCases`, which would otherwise
-// close a module-init circular dependency. The unions are the single source
-// of truth for both the algorithms in `AiGeneration` and the Record-based
-// lookup maps below.
-import type {
-    ChordProgressionStyle,
-    ChordVoicing,
-    DrumPatternStyle,
-    MelodyStyle,
-    ScaleType,
-} from '#/modules/AiGeneration/models/GenerationStyles';
-
 // ── Safe enum mapping ────────────────────────────────────────────────────────
 
 const NOTE_NAME_TO_MIDI: Record<string, number> = {
@@ -58,6 +44,58 @@ function noteNameToMidi(name: string): number {
 
 // Record-based lookups — values are typed literals, keys are strings the LLM might produce.
 // No casts needed: the Record values ARE the correct types.
+type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
+
+type ScaleType =
+    | 'major'
+    | 'minor'
+    | 'pentatonic'
+    | 'minor-pentatonic'
+    | 'blues'
+    | 'dorian'
+    | 'mixolydian'
+    | 'lydian'
+    | 'phrygian'
+    | 'locrian'
+    | 'harmonic-minor'
+    | 'melodic-minor'
+    | 'whole-tone'
+    | 'chromatic';
+
+type ChordProgressionStyle =
+    | 'pop'
+    | 'jazz'
+    | 'classical'
+    | 'edm'
+    | 'blues'
+    | 'rnb'
+    | 'folk'
+    | 'cinematic'
+    | 'neo-soul'
+    | 'gospel'
+    | 'rock'
+    | 'lofi';
+
+type ChordVoicing = 'close' | 'open' | 'spread' | 'power';
+
+type DrumPatternStyle =
+    | 'four-on-floor'
+    | 'breakbeat'
+    | 'trap'
+    | 'jazz'
+    | 'latin'
+    | 'rock'
+    | 'dnb'
+    | 'half-time'
+    | 'blues'
+    | 'reggae'
+    | 'lofi'
+    | 'house'
+    | 'techno'
+    | 'synthwave'
+    | 'afrobeat'
+    | 'metal'
+    | 'punk';
 
 const MELODY_STYLE_MAP: Record<string, MelodyStyle> = {
     simple: 'simple',
