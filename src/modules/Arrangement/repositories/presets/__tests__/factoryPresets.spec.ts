@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { type SoundPreset } from '../../models/SoundPreset';
+import { type SoundPreset } from '../../../models/SoundPreset';
 import { bassPresets } from '../bassPresets';
 import { FACTORY_PRESETS } from '../factoryPresets';
 import { keysPresets } from '../keysPresets';
@@ -31,5 +31,15 @@ describe('Factory Presets', () => {
         const categories = new Set(FACTORY_PRESETS.map((param) => param.category));
         expect(categories.has('bass')).toBe(true);
         expect(categories.has('keys')).toBe(true);
+    });
+
+    it('FACTORY_PRESETS should stay Arrangement-local and exclude Fermenter presets', () => {
+        expect(
+            FACTORY_PRESETS.some((preset) => {
+                return (
+                    preset.id.startsWith('fermenter-') || preset.devices.some((device) => device.type === 'fermenter')
+                );
+            })
+        ).toBe(false);
     });
 });
