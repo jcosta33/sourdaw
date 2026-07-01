@@ -1,6 +1,5 @@
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioEngine } from '../createWebAudioEngine';
 
 type InputMonitoringSession = {
@@ -13,17 +12,16 @@ const session = createHmrPersistentState<InputMonitoringSession>('audioEngine.in
     monitorSource: null,
 }));
 
-export async function startInputMonitoring(trackId: string, inputId?: string | null): Promise<boolean> {
+export async function startInputMonitoring(trackId: string, inputId: string | null = null): Promise<boolean> {
     try {
         if (!session.monitorSource) {
-            const selectedInputId = inputId ?? getSelectedInputId();
             const audioConstraints: MediaTrackConstraints = {
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false,
             };
-            if (selectedInputId) {
-                audioConstraints.deviceId = { exact: selectedInputId };
+            if (inputId) {
+                audioConstraints.deviceId = { exact: inputId };
             }
             session.monitorStream = await navigator.mediaDevices.getUserMedia({
                 audio: audioConstraints,

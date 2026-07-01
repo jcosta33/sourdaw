@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { getSelectedInputId } from '../../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioEngine } from '../../createWebAudioEngine';
 import { startAudioRecording, stopAudioRecording } from '../recording';
 
@@ -29,13 +28,8 @@ vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
     },
 }));
 
-vi.mock('../../../useCases/audioDeviceSelection/getSelectedInputId', () => ({
-    getSelectedInputId: vi.fn(() => null),
-}));
-
 describe('startAudioRecording', () => {
     beforeEach(() => {
-        vi.mocked(getSelectedInputId).mockReturnValue(null);
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockRejectedValue(new Error('mic denied')),
@@ -82,7 +76,6 @@ describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () =>
     beforeEach(() => {
         vi.useFakeTimers();
         FakeWorker.last = null;
-        vi.mocked(getSelectedInputId).mockReturnValue(null);
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockResolvedValue({
@@ -106,8 +99,8 @@ describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () =>
         vi.unstubAllGlobals();
     });
 
-    async function startAndArm(trackId: string): Promise<FakeWorker> {
-        const started = startAudioRecording(trackId, vi.fn());
+    async function startAndArm(trackId: string, inputId?: string | null): Promise<FakeWorker> {
+        const started = startAudioRecording(trackId, vi.fn(), inputId);
         await Promise.resolve();
         await Promise.resolve();
         const worker = FakeWorker.last;
@@ -119,6 +112,23 @@ describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () =>
         await started;
         return worker;
     }
+
+    it('requests an explicitly provided input device', async () => {
+        const worker = await startAndArm('track-explicit', 'dev-123');
+
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                deviceId: { exact: 'dev-123' },
+            },
+        });
+
+        stopAudioRecording();
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        await Promise.resolve();
+    });
 
     it('terminates a worker that never flushes after stop, freeing the track to re-record', async () => {
         const worker = await startAndArm('track-stall');
