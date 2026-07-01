@@ -117,6 +117,23 @@ describe('handleGenerateBassline', () => {
         expect(mocks.llmGenerateNotes).not.toHaveBeenCalled();
     });
 
+    it('should not append generated notes to the source clip when the new clip cannot be created', async () => {
+        mocks.getNotesForClip.mockReturnValueOnce([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+        mocks.addTrack.mockReturnValueOnce({ id: 't2' });
+        mocks.addClip.mockReturnValueOnce(null);
+        mocks.llmGenerateNotes.mockResolvedValueOnce([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
+
+        await expect(
+            handleGenerateBassline.execute({
+                type: 'generateBassline',
+                payload: { clipId: 'c1' },
+            })
+        ).rejects.toThrow(/could not create clip/i);
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Bassline generation failed: could not create clip', 'error');
+        expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    });
+
     it('uses provided trackId instead of creating one', async () => {
         mocks.llmGenerateNotes.mockResolvedValue([]);
 
