@@ -770,6 +770,343 @@ function isUseCaseImportPath(importPath) {
 
 /**
  * @param {string} importPath
+ * @returns {boolean}
+ */
+function isStoresContractImportPath(importPath) {
+    const segments = importPath.split('/').filter(Boolean);
+    const [firstSegment, secondSegment] = segments;
+    if (firstSegment !== 'stores') return false;
+
+    return segments.length === 1 || (segments.length === 2 && /^index(?:\.[cm]?tsx?)?$/.test(secondSegment));
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {{ moduleName: string; importPath: string } | null}
+ */
+function getForeignStoresContractImportLocation(filename, source) {
+    const importedModule = getModuleImportLocation(filename, source);
+    if (!importedModule) return null;
+    if (!isStoresContractImportPath(importedModule.importPath)) return null;
+
+    const importerModule = getModuleLocation(filename);
+    if (importerModule?.moduleName === importedModule.moduleName) return null;
+
+    return importedModule;
+}
+
+/**
+ * @param {any} specifier
+ * @returns {string | null}
+ */
+function getImportSpecifierImportedName(specifier) {
+    if (specifier.imported?.type === 'Identifier') {
+        return specifier.imported.name;
+    }
+
+    if (specifier.imported?.type === 'Literal' && typeof specifier.imported.value === 'string') {
+        return specifier.imported.value;
+    }
+
+    return null;
+}
+
+/**
+ * @param {any} specifier
+ * @returns {string | null}
+ */
+function getExportSpecifierLocalName(specifier) {
+    if (specifier.local?.type === 'Identifier') {
+        return specifier.local.name;
+    }
+
+    if (specifier.local?.type === 'Literal' && typeof specifier.local.value === 'string') {
+        return specifier.local.value;
+    }
+
+    return null;
+}
+
+/**
+ * @param {any} specifier
+ * @returns {string | null}
+ */
+function getExportSpecifierExportedName(specifier) {
+    if (specifier.exported?.type === 'Identifier') {
+        return specifier.exported.name;
+    }
+
+    if (specifier.exported?.type === 'Literal' && typeof specifier.exported.value === 'string') {
+        return specifier.exported.value;
+    }
+
+    return getExportSpecifierLocalName(specifier);
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isCreateStoreImportSource(filename, source) {
+    if (source === '#/infra/store/createStore') return true;
+    if (!source.startsWith('.')) return false;
+
+    const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
+    return (
+        resolvedSource.endsWith('/src/infra/store/createStore') ||
+        resolvedSource.endsWith('/src/infra/store/createStore.ts')
+    );
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isStoreConstructorImportSource(filename, source) {
+    if (source === '#/helpers/Store/Store' || source === '#/infra/store/Store') return true;
+    if (!source.startsWith('.')) return false;
+
+    const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
+    return (
+        resolvedSource.endsWith('/src/helpers/Store/Store') ||
+        resolvedSource.endsWith('/src/helpers/Store/Store.ts') ||
+        resolvedSource.endsWith('/src/infra/store/Store') ||
+        resolvedSource.endsWith('/src/infra/store/Store.ts')
+    );
+}
+
+/**
+ * @param {any} node
+ * @returns {any}
+ */
+function unwrapTypeScriptExpression(node) {
+    let current = node;
+    while (
+        current?.type === 'TSAsExpression' ||
+        current?.type === 'TSTypeAssertion' ||
+        current?.type === 'TSNonNullExpression' ||
+        current?.type === 'TSInstantiationExpression' ||
+        current?.type === 'TSSatisfiesExpression'
+    ) {
+        current = current.expression;
+    }
+
+    return current;
+}
+
+/** @type {Map<string, Set<string>>} */
+const exportedStoreInstanceNamesCache = new Map();
+
+/**
+ * @param {any} program
+ * @param {string} filename
+ * @param {Set<string>} seenFiles
+ * @returns {Set<string>}
+ */
+function collectExportedStoreInstanceNamesFromProgram(program, filename, seenFiles) {
+    /** @type {Set<string>} */
+    const createStoreBindings = new Set();
+    /** @type {Set<string>} */
+    const storeConstructorBindings = new Set();
+    /** @type {Set<string>} */
+    const localStoreInstanceNames = new Set();
+    /** @type {Set<string>} */
+    const exportedStoreInstanceNames = new Set();
+
+    for (const statement of program.body ?? []) {
+        if (statement.type !== 'ImportDeclaration') continue;
+
+        const value = statement.source?.value;
+        if (typeof value !== 'string') continue;
+
+        for (const specifier of statement.specifiers ?? []) {
+            if (specifier.type === 'ImportSpecifier' && isCreateStoreImportSource(filename, value)) {
+                const importedName = getImportSpecifierImportedName(specifier);
+                if (importedName === 'createStore') {
+                    createStoreBindings.add(specifier.local.name);
+                }
+                continue;
+            }
+
+            if (isStoreConstructorImportSource(filename, value)) {
+                if (specifier.type === 'ImportDefaultSpecifier') {
+                    storeConstructorBindings.add(specifier.local.name);
+                    continue;
+                }
+
+                if (specifier.type === 'ImportSpecifier') {
+                    const importedName = getImportSpecifierImportedName(specifier);
+                    if (importedName === 'Store') {
+                        storeConstructorBindings.add(specifier.local.name);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param {any} expression
+     * @returns {boolean}
+     */
+    function isStoreInstanceExpression(expression) {
+        const unwrappedExpression = unwrapTypeScriptExpression(expression);
+        if (
+            unwrappedExpression?.type === 'CallExpression' &&
+            unwrappedExpression.callee?.type === 'Identifier' &&
+            createStoreBindings.has(unwrappedExpression.callee.name)
+        ) {
+            return true;
+        }
+
+        return (
+            unwrappedExpression?.type === 'NewExpression' &&
+            unwrappedExpression.callee?.type === 'Identifier' &&
+            storeConstructorBindings.has(unwrappedExpression.callee.name)
+        );
+    }
+
+    /**
+     * @param {any} declaration
+     * @returns {void}
+     */
+    function collectLocalStoreInstanceNames(declaration) {
+        if (declaration?.type !== 'VariableDeclaration') return;
+
+        for (const declarator of declaration.declarations ?? []) {
+            if (declarator.id?.type !== 'Identifier') continue;
+            if (!isStoreInstanceExpression(declarator.init)) continue;
+
+            localStoreInstanceNames.add(declarator.id.name);
+        }
+    }
+
+    for (const statement of program.body ?? []) {
+        if (statement.type === 'VariableDeclaration') {
+            collectLocalStoreInstanceNames(statement);
+            continue;
+        }
+
+        if (statement.type === 'ExportNamedDeclaration') {
+            collectLocalStoreInstanceNames(statement.declaration);
+        }
+    }
+
+    for (const statement of program.body ?? []) {
+        if (statement.type === 'ExportNamedDeclaration') {
+            if (statement.exportKind === 'type') continue;
+
+            if (statement.declaration?.type === 'VariableDeclaration') {
+                for (const declarator of statement.declaration.declarations ?? []) {
+                    if (declarator.id?.type === 'Identifier' && localStoreInstanceNames.has(declarator.id.name)) {
+                        exportedStoreInstanceNames.add(declarator.id.name);
+                    }
+                }
+                continue;
+            }
+
+            if (statement.source) {
+                const value = statement.source.value;
+                if (typeof value !== 'string') continue;
+
+                const sourceStoreInstanceNames = getExportedStoreInstanceNamesFromSource(filename, value, seenFiles);
+                for (const specifier of statement.specifiers ?? []) {
+                    if (specifier.exportKind === 'type') continue;
+
+                    const localName = getExportSpecifierLocalName(specifier);
+                    const exportedName = getExportSpecifierExportedName(specifier);
+                    if (!localName || !exportedName) continue;
+                    if (!sourceStoreInstanceNames.has(localName)) continue;
+
+                    exportedStoreInstanceNames.add(exportedName);
+                }
+                continue;
+            }
+
+            for (const specifier of statement.specifiers ?? []) {
+                if (specifier.exportKind === 'type') continue;
+
+                const localName = getExportSpecifierLocalName(specifier);
+                const exportedName = getExportSpecifierExportedName(specifier);
+                if (!localName || !exportedName) continue;
+                if (!localStoreInstanceNames.has(localName)) continue;
+
+                exportedStoreInstanceNames.add(exportedName);
+            }
+            continue;
+        }
+
+        if (statement.type !== 'ExportAllDeclaration') continue;
+        if (statement.exportKind === 'type') continue;
+
+        const value = statement.source?.value;
+        if (typeof value !== 'string') continue;
+
+        const sourceStoreInstanceNames = getExportedStoreInstanceNamesFromSource(filename, value, seenFiles);
+        for (const name of sourceStoreInstanceNames) {
+            exportedStoreInstanceNames.add(name);
+        }
+    }
+
+    return exportedStoreInstanceNames;
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @param {Set<string>} seenFiles
+ * @returns {Set<string>}
+ */
+function getExportedStoreInstanceNamesFromSource(filename, source, seenFiles) {
+    const sourceFile = resolveSourceExportFile(filename, source);
+    if (!sourceFile) return new Set();
+    if (seenFiles.has(sourceFile)) return new Set();
+
+    const cached = exportedStoreInstanceNamesCache.get(sourceFile);
+    if (cached) return cached;
+
+    seenFiles.add(sourceFile);
+    try {
+        const text = readFileSync(sourceFile, 'utf8');
+        const parsed = tseslint.parser.parseForESLint(text, {
+            filePath: sourceFile,
+            sourceType: 'module',
+            ecmaVersion: 'latest',
+        });
+        const exportedStoreInstanceNames = collectExportedStoreInstanceNamesFromProgram(
+            parsed.ast,
+            sourceFile,
+            seenFiles
+        );
+        exportedStoreInstanceNamesCache.set(sourceFile, exportedStoreInstanceNames);
+        return exportedStoreInstanceNames;
+    } catch {
+        return new Set();
+    } finally {
+        seenFiles.delete(sourceFile);
+    }
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getStaticMemberPropertyName(node) {
+    if (node?.property?.type === 'Identifier' && !node.computed) {
+        return node.property.name;
+    }
+
+    if (node?.property?.type === 'Literal' && typeof node.property.value === 'string') {
+        return node.property.value;
+    }
+
+    return null;
+}
+
+/**
+ * @param {string} importPath
  * @returns {string | null}
  */
 function getNonModulePrivateImportTarget(importPath) {
@@ -1257,6 +1594,137 @@ const sourdawPlugin = {
                         if (!value) return;
 
                         reportIfUseCaseImport(node, value);
+                    },
+                };
+            },
+        },
+
+        'no-foreign-store-write': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when production code writes directly to a store imported from another module stores contract.',
+                },
+                schema: [],
+                messages: {
+                    noForeignStoreWrite:
+                        'Do not call `{{method}}` on `{{storeName}}` from `{{moduleName}}/stores`. Route writes through the owning module use-case or action boundary.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
+
+                const sourceCode = context.sourceCode;
+
+                /** @type {Map<any, { storeName: string; moduleName: string }>} */
+                const foreignStoreBindings = new Map();
+
+                /**
+                 * @param {any} specifier
+                 * @returns {any | null}
+                 */
+                function getImportVariable(specifier) {
+                    const variables = sourceCode.getDeclaredVariables(specifier);
+                    return variables.find((variable) => variable.name === specifier.local?.name) ?? null;
+                }
+
+                /**
+                 * @param {any} identifier
+                 * @returns {any | null}
+                 */
+                function getResolvedVariable(identifier) {
+                    let scope = sourceCode.getScope(identifier);
+                    while (scope) {
+                        const variable = scope.set.get(identifier.name);
+                        if (variable) {
+                            return variable;
+                        }
+
+                        scope = scope.upper;
+                    }
+
+                    return null;
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        if (isTypeOnlyImportDeclaration(node)) return;
+
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        const importedModule = getForeignStoresContractImportLocation(context.filename, value);
+                        if (!importedModule) return;
+
+                        const storeExportNames = getExportedStoreInstanceNamesFromSource(
+                            context.filename,
+                            value,
+                            new Set()
+                        );
+
+                        for (const specifier of node.specifiers ?? []) {
+                            if (specifier.type !== 'ImportSpecifier') continue;
+                            if (specifier.importKind === 'type') continue;
+                            if (specifier.local?.type !== 'Identifier') continue;
+
+                            const storeName = getImportSpecifierImportedName(specifier);
+                            if (!storeName) continue;
+                            if (!storeExportNames.has(storeName)) continue;
+
+                            const importedVariable = getImportVariable(specifier);
+                            if (!importedVariable) continue;
+
+                            foreignStoreBindings.set(importedVariable, {
+                                storeName,
+                                moduleName: importedModule.moduleName,
+                            });
+                        }
+                    },
+                    /** @param {any} node */
+                    VariableDeclarator(node) {
+                        if (node.parent?.kind !== 'const') return;
+                        if (node.id?.type !== 'Identifier') return;
+                        if (node.init?.type !== 'Identifier') return;
+
+                        const sourceVariable = getResolvedVariable(node.init);
+                        if (!sourceVariable) return;
+
+                        const binding = foreignStoreBindings.get(sourceVariable);
+                        if (!binding) return;
+
+                        const variables = sourceCode.getDeclaredVariables(node);
+                        const aliasVariable = variables.find((variable) => variable.name === node.id.name);
+                        if (!aliasVariable) return;
+
+                        foreignStoreBindings.set(aliasVariable, binding);
+                    },
+                    /** @param {any} node */
+                    CallExpression(node) {
+                        const callee = node.callee;
+                        if (callee?.type !== 'MemberExpression') return;
+
+                        const method = getStaticMemberPropertyName(callee);
+                        if (method !== 'set' && method !== 'update') return;
+                        if (callee.object?.type !== 'Identifier') return;
+
+                        const resolvedVariable = getResolvedVariable(callee.object);
+                        if (!resolvedVariable) return;
+
+                        const binding = foreignStoreBindings.get(resolvedVariable);
+                        if (!binding) return;
+
+                        context.report({
+                            node,
+                            messageId: 'noForeignStoreWrite',
+                            data: {
+                                method,
+                                storeName: binding.storeName,
+                                moduleName: binding.moduleName,
+                            },
+                        });
                     },
                 };
             },
@@ -1853,6 +2321,7 @@ export default defineConfig(
 
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
+            'sourdaw/no-foreign-store-write': 'warn',
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-nonmodule-private-module-import': 'warn',
