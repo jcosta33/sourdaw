@@ -21,7 +21,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioEngine } from '../createWebAudioEngine';
 
 export { audioRecordingStore };
@@ -94,7 +93,7 @@ export const startAudioRecording = inject({ logger })(
         async function startAudioRecording(
             trackId: string,
             onComplete: (buffer: AudioBuffer) => void,
-            inputId?: string | null
+            inputId: string | null = null
         ): Promise<boolean> {
             try {
                 if (activeSessions.has(trackId)) {
@@ -102,14 +101,13 @@ export const startAudioRecording = inject({ logger })(
                     return false;
                 }
 
-                const selectedInputId = inputId ?? getSelectedInputId();
                 const audioConstraints: MediaTrackConstraints = {
                     echoCancellation: false,
                     noiseSuppression: false,
                     autoGainControl: false,
                 };
-                if (selectedInputId) {
-                    audioConstraints.deviceId = { exact: selectedInputId };
+                if (inputId) {
+                    audioConstraints.deviceId = { exact: inputId };
                 }
 
                 const mediaStream = await acquireSharedMediaStream(audioConstraints);

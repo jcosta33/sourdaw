@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { getSelectedInputId } from '../../../useCases/audioDeviceSelection/getSelectedInputId';
 import { audioEngine } from '../../createWebAudioEngine';
 import { startInputMonitoring, stopInputMonitoring } from '../inputMonitoring';
 
@@ -11,10 +10,6 @@ vi.mock('../../createWebAudioEngine', () => ({
         },
         ensureTrackStrip: vi.fn(),
     },
-}));
-
-vi.mock('../../../useCases/audioDeviceSelection/getSelectedInputId', () => ({
-    getSelectedInputId: vi.fn(),
 }));
 
 describe('inputMonitoring', () => {
@@ -54,7 +49,6 @@ describe('inputMonitoring', () => {
         vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
         vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
         vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
-        vi.mocked(getSelectedInputId).mockReturnValue(null);
 
         const result = await startInputMonitoring('t1');
 
@@ -67,7 +61,7 @@ describe('inputMonitoring', () => {
         expect(mockSourceNode.connect).toHaveBeenCalledWith(mockStrip.gainNode);
     });
 
-    it('should use selected device id if available', async () => {
+    it('should use explicit device id when provided', async () => {
         const mockStream = { getTracks: vi.fn(() => []) };
         const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
         const mockStrip = { gainNode: {} };
@@ -75,9 +69,8 @@ describe('inputMonitoring', () => {
         vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
         vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
         vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
-        vi.mocked(getSelectedInputId).mockReturnValue('dev-123');
 
-        await startInputMonitoring('t1');
+        await startInputMonitoring('t1', 'dev-123');
 
         expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
             audio: {
@@ -86,6 +79,22 @@ describe('inputMonitoring', () => {
                 autoGainControl: false,
                 deviceId: { exact: 'dev-123' },
             },
+        });
+    });
+
+    it('should use default-device constraints when input id is null', async () => {
+        const mockStream = { getTracks: vi.fn(() => []) };
+        const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
+        const mockStrip = { gainNode: {} };
+
+        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
+        vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
+
+        await startInputMonitoring('t1', null);
+
+        expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
     });
 
