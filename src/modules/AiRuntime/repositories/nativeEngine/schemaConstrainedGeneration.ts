@@ -2,7 +2,7 @@ import { isTauri, tauriInvoke, createChannel } from '#/utils/tauriBridge';
 
 type SchemaConstrainedStreamEvent =
     | { event: 'token'; data: { text: string } }
-    | { event: 'done'; data: { totalTokens: number } }
+    | { event: 'done' }
     | { event: 'error'; data: { message: string } };
 
 const DEFAULT_NATIVE_SCHEMA_TIMEOUT_MS = 120_000;
@@ -85,8 +85,8 @@ function narrowSchemaConstrainedStreamEvent(event: unknown): SchemaConstrainedSt
     if (eventName === 'token' && typeof data.text === 'string') {
         return { event: 'token', data: { text: data.text } };
     }
-    if (eventName === 'done' && typeof data.totalTokens === 'number') {
-        return { event: 'done', data: { totalTokens: data.totalTokens } };
+    if (eventName === 'done') {
+        return { event: 'done' };
     }
     if (eventName === 'error' && typeof data.message === 'string') {
         return { event: 'error', data: { message: data.message } };
