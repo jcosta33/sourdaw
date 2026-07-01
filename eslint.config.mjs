@@ -516,6 +516,22 @@ function isProductionUseCaseOrRepositoryFile(filename) {
     );
 }
 
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isProductionRepositoryFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    const isModuleSource = normalized.includes('/src/modules/') || normalized.startsWith('src/modules/');
+    return (
+        isProductionSourceFile(normalized) &&
+        isModuleSource &&
+        normalized.includes('/repositories/') &&
+        /\.(ts|tsx)$/.test(normalized) &&
+        !normalized.endsWith('/index.ts')
+    );
+}
+
 const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
 
 /**
@@ -716,6 +732,15 @@ function getDeepContractImportFolder(importPath) {
     }
 
     return null;
+}
+
+/**
+ * @param {string} importPath
+ * @returns {boolean}
+ */
+function isUseCaseImportPath(importPath) {
+    const [firstSegment] = importPath.split('/').filter(Boolean);
+    return firstSegment === 'useCases';
 }
 
 /**
@@ -1134,6 +1159,79 @@ const sourdawPlugin = {
                         if (!value) return;
 
                         reportIfPrivateModuleImport(node, value, false);
+                    },
+                };
+            },
+        },
+
+        'no-repository-usecase-import': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when production repository files import or re-export use-case layer APIs.',
+                },
+                schema: [],
+                messages: {
+                    noRepositoryUsecaseImport:
+                        'Do not import use cases from repository files. Repositories are I/O internals called by use cases, not callers of them.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionRepositoryFile(context.filename)) return {};
+
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @returns {void}
+                 */
+                function reportIfUseCaseImport(node, source) {
+                    const importedModule = getModuleImportLocation(context.filename, source);
+                    if (!importedModule) return;
+                    if (!isUseCaseImportPath(importedModule.importPath)) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noRepositoryUsecaseImport',
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        reportIfUseCaseImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfUseCaseImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfUseCaseImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ImportExpression(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfUseCaseImport(node, value);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfUseCaseImport(node, value);
                     },
                 };
             },
@@ -1733,6 +1831,7 @@ export default defineConfig(
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-nonmodule-private-module-import': 'warn',
+            'sourdaw/no-repository-usecase-import': 'warn',
             'sourdaw/no-type-only-private-module-import': 'warn',
             'sourdaw/no-type-assertion-escape': 'error',
 
