@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
+import { createStore } from '../../createStore';
 import { configureAutomergeStoragePort, createAutomergeStorage } from '../createAutomergeStorage';
 
 type TestDoc = {
@@ -76,6 +77,28 @@ describe('createAutomergeStorage', () => {
         expect(() => storage.clear()).not.toThrow();
         expect(storage.get()).toBeNull();
         expect(storage.hydrate?.()).toBe(false);
+    });
+
+    it('should preserve store initial data until late CRDT port registration hydrates it', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        const store = createStore({
+            storage,
+            initialData: { count: 7 },
+        });
+
+        expect(store.value).toEqual({ count: 7 });
+        expect(frameCallback).not.toBeNull();
+
+        frameCallback?.(100);
+
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+
+        store.hydrate();
+
+        expect(store.value).toEqual({ count: 7 });
+        expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
+        expect(doc.state).toEqual({ count: 7 });
     });
 
     it('should coalesce frame writes while keeping the first semantic message', () => {
