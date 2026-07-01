@@ -583,8 +583,9 @@ function isApprovedReactImportFile(filename) {
 
     if (sourceRelativePath.startsWith('components/')) return true;
     if (sourceRelativePath === 'app/App.tsx') return true;
+    if (sourceRelativePath === 'app/main.tsx') return true;
     if (/^routes\/.+\.tsx?$/.test(sourceRelativePath)) return true;
-    if (/^modules\/.+\/presentations\/(?:views|components|hooks)\//.test(sourceRelativePath)) return true;
+    if (/^modules\/.+\/presentations\/(?:views|components|hooks|helpers)\//.test(sourceRelativePath)) return true;
     if (sourceRelativePath === 'infra/store/useStore.ts') return true;
     if (sourceRelativePath === 'infra/store/useStoreSelector.ts') return true;
 
@@ -1242,6 +1243,50 @@ function getTypeQueryImportSource(node) {
     return null;
 }
 
+/**
+ * @param {(node: any, source: string) => void} reportSource
+ * @returns {import('eslint').Rule.RuleListener}
+ */
+function createReactImportSourceVisitors(reportSource) {
+    return {
+        /** @param {any} node */
+        ImportDeclaration(node) {
+            const value = node.source.value;
+            if (typeof value !== 'string') return;
+
+            reportSource(node, value);
+        },
+        /** @param {any} node */
+        ExportAllDeclaration(node) {
+            const value = getLiteralStringValue(node.source);
+            if (!value) return;
+
+            reportSource(node, value);
+        },
+        /** @param {any} node */
+        ExportNamedDeclaration(node) {
+            const value = getLiteralStringValue(node.source);
+            if (!value) return;
+
+            reportSource(node, value);
+        },
+        /** @param {any} node */
+        ImportExpression(node) {
+            const value = getLiteralStringValue(node.source);
+            if (!value) return;
+
+            reportSource(node, value);
+        },
+        /** @param {any} node */
+        TSImportType(node) {
+            const value = getTypeQueryImportSource(node);
+            if (!value) return;
+
+            reportSource(node, value);
+        },
+    };
+}
+
 const sourdawPlugin = {
     meta: {
         name: 'eslint-plugin-sourdaw',
@@ -1436,27 +1481,21 @@ const sourdawPlugin = {
                 schema: [],
                 messages: {
                     noReactInDomainLogic:
-                        'Do not import React into domain logic layers. Move UI concerns outward or extract pure domain code.',
+                        'Do not import or re-export React/ReactDOM APIs in domain logic layers. Move UI concerns outward or extract pure domain code.',
                 },
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 if (!isDomainLogicFile(context.filename)) return {};
 
-                return {
-                    /** @param {any} node */
-                    ImportDeclaration(node) {
-                        const value = node.source.value;
-                        if (typeof value !== 'string') return;
+                return createReactImportSourceVisitors((node, source) => {
+                    if (!isReactImportSource(source)) return;
 
-                        if (value === 'react' || value.startsWith('react/')) {
-                            context.report({
-                                node,
-                                messageId: 'noReactInDomainLogic',
-                            });
-                        }
-                    },
-                };
+                    context.report({
+                        node,
+                        messageId: 'noReactInDomainLogic',
+                    });
+                });
             },
         },
 
@@ -1470,12 +1509,13 @@ const sourdawPlugin = {
                 schema: [],
                 messages: {
                     noReactImportOutsideUi:
-                        'Do not import or re-export `{{source}}` outside approved UI/adaptor files. Keep React APIs in presentation, route, app, store adapter, or UI utility code.',
+                        'Do not import or re-export `{{source}}` outside approved UI/adaptor files. Keep React APIs in presentation, route, approved app entrypoint, store adapter, or UI utility code.',
                 },
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
                 if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
+                if (isDomainLogicFile(context.filename)) return {};
                 if (isApprovedReactImportFile(context.filename)) return {};
 
                 /**
@@ -1493,43 +1533,7 @@ const sourdawPlugin = {
                     });
                 }
 
-                return {
-                    /** @param {any} node */
-                    ImportDeclaration(node) {
-                        const value = node.source.value;
-                        if (typeof value !== 'string') return;
-
-                        reportIfReactImport(node, value);
-                    },
-                    /** @param {any} node */
-                    ExportAllDeclaration(node) {
-                        const value = getLiteralStringValue(node.source);
-                        if (!value) return;
-
-                        reportIfReactImport(node, value);
-                    },
-                    /** @param {any} node */
-                    ExportNamedDeclaration(node) {
-                        const value = getLiteralStringValue(node.source);
-                        if (!value) return;
-
-                        reportIfReactImport(node, value);
-                    },
-                    /** @param {any} node */
-                    ImportExpression(node) {
-                        const value = getLiteralStringValue(node.source);
-                        if (!value) return;
-
-                        reportIfReactImport(node, value);
-                    },
-                    /** @param {any} node */
-                    TSImportType(node) {
-                        const value = getTypeQueryImportSource(node);
-                        if (!value) return;
-
-                        reportIfReactImport(node, value);
-                    },
-                };
+                return createReactImportSourceVisitors(reportIfReactImport);
             },
         },
 
