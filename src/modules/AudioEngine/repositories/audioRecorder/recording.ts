@@ -27,6 +27,7 @@ import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
 import { activeSessions, SAB_BYTES, type RecordingSession } from './recordingSession';
+import { releaseSharedMediaStream } from './releaseSharedMediaStream';
 import { terminateRecordingWorker } from './terminateRecordingWorker';
 
 export { audioRecordingStore };
@@ -39,6 +40,10 @@ export const startAudioRecording = inject({ logger })(
             onComplete: (buffer: AudioBuffer) => void,
             inputId: string | null = null
         ): Promise<boolean> {
+            let mediaStream: MediaStream | null = null;
+            let sourceNode: MediaStreamAudioSourceNode | null = null;
+            let recordingNode: AudioWorkletNode | null = null;
+            let recordingWorker: Worker | null = null;
             try {
                 if (activeSessions.has(trackId)) {
                     logger.warn(`[startAudioRecording] Track ${trackId} is already recording.`);
@@ -54,9 +59,9 @@ export const startAudioRecording = inject({ logger })(
                     audioConstraints.deviceId = { exact: inputId };
                 }
 
-                const mediaStream = await acquireSharedMediaStream(audioConstraints);
+                mediaStream = await acquireSharedMediaStream(audioConstraints);
                 const ctx = audioEngine.context;
-                const sourceNode = ctx.createMediaStreamSource(mediaStream);
+                sourceNode = ctx.createMediaStreamSource(mediaStream);
 
                 // Monitor via the track strip (same as before).
                 const strip = audioEngine.ensureTrackStrip(trackId);
@@ -66,7 +71,7 @@ export const startAudioRecording = inject({ logger })(
                 const sab = new SharedArrayBuffer(SAB_BYTES);
 
                 // ── AudioWorkletNode (recording-processor) ───────────────────────────
-                const recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
+                recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
                     numberOfInputs: 1,
                     numberOfOutputs: 0,
                     channelCount: 1,
@@ -77,16 +82,18 @@ export const startAudioRecording = inject({ logger })(
                 sourceNode.connect(recordingNode);
 
                 // ── OPFS Worker ──────────────────────────────────────────────────────
-                const recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
+                recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
                     type: 'module',
                 });
+                const readyRecordingNode = recordingNode;
+                const readyRecordingWorker = recordingWorker;
 
                 const session: RecordingSession = {
                     trackId,
                     mediaStream,
                     sourceNode,
-                    recordingNode,
-                    recordingWorker,
+                    recordingNode: readyRecordingNode,
+                    recordingWorker: readyRecordingWorker,
                     onRecordingComplete: onComplete,
                     stopFlushTimer: null,
                 };
@@ -101,8 +108,8 @@ export const startAudioRecording = inject({ logger })(
 
                     if (msg.type === 'ready') {
                         // Both sides are initialised — begin capture.
-                        recordingNode.port.postMessage({ type: 'start' });
-                        recordingWorker.postMessage({ type: 'start' });
+                        readyRecordingNode.port.postMessage({ type: 'start' });
+                        readyRecordingWorker.postMessage({ type: 'start' });
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
@@ -125,7 +132,14 @@ export const startAudioRecording = inject({ logger })(
                 return true;
             } catch (error) {
                 logger.error(new Error(`Failed to start recording on track ${trackId}`, { cause: error }));
+                const sessionWasRegistered = activeSessions.has(trackId);
                 cleanupRecordingNode(trackId);
+                if (!sessionWasRegistered && mediaStream) {
+                    recordingWorker?.terminate();
+                    recordingNode?.disconnect();
+                    sourceNode?.disconnect();
+                    releaseSharedMediaStream();
+                }
                 return false;
             }
         }

@@ -50,12 +50,16 @@ describe('startAudioRecording', () => {
 });
 
 describe('startAudioRecording', () => {
+    let media_track_stop: ReturnType<typeof vi.fn>;
+
     beforeEach(() => {
         vi.useFakeTimers();
+        vi.clearAllMocks();
+        media_track_stop = vi.fn();
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockResolvedValue({
-                    getTracks: () => [{ stop: vi.fn() }],
+                    getTracks: () => [{ stop: media_track_stop }],
                 }),
             },
             configurable: true,
@@ -107,5 +111,19 @@ describe('startAudioRecording', () => {
                 deviceId: { exact: 'dev-123' },
             },
         });
+    });
+
+    it('should release the shared stream when start fails after microphone acquisition', async () => {
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockImplementationOnce(() => {
+            throw new Error('source creation failed');
+        });
+
+        await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(false);
+
+        expect(media_track_stop).toHaveBeenCalledTimes(1);
+        expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
+
+        await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(true);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     });
 });
