@@ -527,8 +527,7 @@ function isProductionRepositoryFile(filename) {
         isProductionSourceFile(normalized) &&
         isModuleSource &&
         normalized.includes('/repositories/') &&
-        /\.(ts|tsx)$/.test(normalized) &&
-        !normalized.endsWith('/index.ts')
+        /\.(ts|tsx)$/.test(normalized)
     );
 }
 
