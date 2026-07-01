@@ -10,74 +10,10 @@
 
 import { audioEngine } from '../createWebAudioEngine';
 
-import { getTargetTrackId } from './state';
+import { resolveInstrumentTrack } from './resolveInstrumentTrack';
+import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
-import type { TrackChannelStrip } from '../../models/AudioEngineState';
-
-type Track = NonNullable<TrackStoreState['tracks']>[number];
-
-/**
- * Resolve the instrument-bearing track for the current MIDI target track.
- *
- * Mirrors the resolution `handleNoteOff` performs: a child track whose parent
- * carries a `toaster` device routes to the parent. Returns null when there is
- * no target track or the store is empty.
- */
-export function resolveInstrumentTrack(trackState: TrackStoreState | null): Track | null {
-    const targetTrackId = getTargetTrackId();
-    if (!targetTrackId || !trackState) {
-        return null;
-    }
-    const targetTrack = trackState.tracks.find((time) => time.id === targetTrackId);
-    if (!targetTrack) {
-        return null;
-    }
-    if (targetTrack.parentId) {
-        const parent = trackState.tracks.find((time) => time.id === targetTrack.parentId);
-        if (parent?.devices.some((data) => data.type === 'toaster')) {
-            return parent;
-        }
-    }
-    return targetTrack;
-}
-
-/**
- * Deliver one Note Off to whichever instrument device node the given track
- * hosts (fermenter / grand-boule / levain). The first matching device wins,
- * matching the priority `handleNoteOff` uses. A no-op if the track has no
- * supported instrument or the strip/control is not ready.
- *
- * `releaseVelocity` (normalized 0..1) is the MIDI note-off velocity; it is
- * forwarded to the Grand Boule control so the release dynamic survives the
- * rack-routed path.
- */
-export function routeYeastNoteOffToInstrument(
-    instrumentTrack: Track,
-    strip: TrackChannelStrip | undefined,
-    note: number,
-    releaseVelocity: number,
-    emitGrandBouleEvent: (deviceId: string, midiNote: number) => void
-): void {
-    const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
-    if (fDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'fermenter');
-        dn?.fermenterControls?.noteOff(note);
-        return;
-    }
-    const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
-    if (gbDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
-        dn?.grandBouleControls?.noteOff(note, undefined, releaseVelocity);
-        emitGrandBouleEvent(gbDev.id, note);
-        return;
-    }
-    const lDev = instrumentTrack.devices.find((data) => data.type === 'levain');
-    if (lDev) {
-        const dn = strip?.deviceNodes.find((data) => data.type === 'levain');
-        dn?.levainControls?.noteOff(note);
-    }
-}
 
 /**
  * Route a batch of Note Off note numbers (e.g. the offs a removed Yeast

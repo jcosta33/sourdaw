@@ -42,7 +42,7 @@ import {
 import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { audioEngine } from '../createWebAudioEngine';
 
-import { routeYeastNoteOffToInstrument } from './routeYeastNoteOff';
+import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
 import { WebMidiEventBus } from './webMidiEventBus';
 
