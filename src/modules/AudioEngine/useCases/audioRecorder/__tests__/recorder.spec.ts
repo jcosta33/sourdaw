@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../repositories/audioRecorder/recording', () => ({
     startAudioRecording: mocks.startAudioRecordingRepo,
+}));
+
+vi.mock('../../../repositories/audioRecorder/stopAudioRecording', () => ({
     stopAudioRecording: mocks.stopAudioRecordingRepo,
 }));
 
