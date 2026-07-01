@@ -669,10 +669,17 @@ function getModuleImportLocation(filename, source) {
     if (!source.startsWith('.')) return null;
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
-    const relativeMatch = /\/src\/modules\/(.+)$/.exec(resolvedSource);
-    if (!relativeMatch) return null;
+    const sourceRoot = getSourceRoot(filename);
+    const moduleRoot = sourceRoot ? `${sourceRoot}/modules/` : null;
+    if (moduleRoot && resolvedSource.startsWith(moduleRoot)) {
+        return parseModulePath(resolvedSource.slice(moduleRoot.length));
+    }
 
-    return parseModulePath(relativeMatch[1]);
+    const moduleMarker = '/src/modules/';
+    const moduleMarkerIndex = resolvedSource.lastIndexOf(moduleMarker);
+    if (moduleMarkerIndex < 0) return null;
+
+    return parseModulePath(resolvedSource.slice(moduleMarkerIndex + moduleMarker.length));
 }
 
 const privateModuleFolders = new Set([
@@ -1153,6 +1160,19 @@ function getNonModulePrivateImportTarget(importPath) {
 function getLiteralStringValue(node) {
     if (node?.type === 'Literal' && typeof node.value === 'string') {
         return node.value;
+    }
+
+    if (node?.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis.length === 1) {
+        const [quasi] = node.quasis;
+        const cooked = quasi.value?.cooked;
+        if (typeof cooked === 'string') {
+            return cooked;
+        }
+
+        const raw = quasi.value?.raw;
+        if (typeof raw === 'string') {
+            return raw;
+        }
     }
 
     return null;
