@@ -1,5 +1,6 @@
 import { type Device } from '../../models/TrackViewTypes';
-import { type OfflineDeviceNode, applyParams, createOfflineDeviceNode } from '../deviceNodeFactory';
+import { applyParams } from '../applyParams';
+import { type OfflineDeviceNode, createOfflineDeviceNode } from '../deviceNodeFactory';
 
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
