@@ -1,3 +1,5 @@
+import { type ReactNode } from 'react';
+
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
@@ -20,8 +22,9 @@ vi.mock('#/components/ui/tooltip', () => ({
     ),
 }));
 
-vi.mock('#/modules/Workspace/presentations/components/ErrorBoundary', () => ({
-    ErrorBoundary: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
+vi.mock('#/modules/Workspace/presentations/views', () => ({
+    WorkspaceAppBoundary: ({ children }: { children: ReactNode }) => <div data-testid="error-boundary">{children}</div>,
+    WorkspaceProjectLoadingFallback: () => <div data-testid="project-loading-fallback" />,
 }));
 
 vi.mock('../queryClient', () => ({

@@ -4,22 +4,21 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { ErrorBoundary } from '#/modules/Workspace/presentations/components/ErrorBoundary';
-import { ProjectLoadingOverlay } from '#/modules/Workspace/presentations/components/ProjectLoadingOverlay';
+import { WorkspaceAppBoundary, WorkspaceProjectLoadingFallback } from '#/modules/Workspace/presentations/views';
 
 import { queryClient } from './queryClient';
 import { router } from './router';
 
 export const App = (): ReactElement => {
     return (
-        <ErrorBoundary>
+        <WorkspaceAppBoundary>
             <QueryClientProvider client={queryClient}>
                 <TooltipProvider>
-                    <Suspense fallback={<ProjectLoadingOverlay />}>
+                    <Suspense fallback={<WorkspaceProjectLoadingFallback />}>
                         <RouterProvider router={router} />
                     </Suspense>
                 </TooltipProvider>
             </QueryClientProvider>
-        </ErrorBoundary>
+        </WorkspaceAppBoundary>
     );
 };
