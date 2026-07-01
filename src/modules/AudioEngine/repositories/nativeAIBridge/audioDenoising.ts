@@ -1,4 +1,4 @@
-import { invokeAI } from './isTauri';
+import { invokeAI } from './invokeAI';
 
 export type DenoiseResult = {
     samples: number[];
