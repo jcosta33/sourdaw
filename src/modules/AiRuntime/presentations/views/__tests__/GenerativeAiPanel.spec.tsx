@@ -8,9 +8,14 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: vi.fn(() => false),
-}));
+vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
+
+    return {
+        ...actual,
+        isAudioGenerationAvailable: vi.fn(() => false),
+    };
+});
 
 vi.mock('#/modules/AiGeneration/stores/aiStore', () => ({
     aiStore: { name: 'aiStore' },
@@ -71,6 +76,7 @@ vi.mock('../PatternBrowser', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
+const { isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases');
 
 // Mock store states
 const mockAiState = { isPanelOpen: true, tasks: [] };
@@ -93,6 +99,7 @@ vi.mocked(useStore).mockImplementation((store: any) => {
 describe('GenerativeAiPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(isAudioGenerationAvailable).mockReturnValue(false);
         mockAiState.isPanelOpen = true;
         mockAiState.tasks = [];
         mockWorkspaceState.selectedClipId = null;
@@ -133,6 +140,28 @@ describe('GenerativeAiPanel', () => {
         fireEvent.click(stemsTab);
         // Use getAllByText and check length
         expect(screen.getAllByText(/Select an audio clip on the timeline/i).length).toBeGreaterThan(0);
+    });
+
+    it('should render desktop-only notice when audio generation is unavailable', () => {
+        render(<GenerativeAiPanel />);
+
+        fireEvent.click(screen.getByText('Audio'));
+
+        expect(screen.getByText(/requires the Sourdaw desktop app/i)).toBeInTheDocument();
+        expect(screen.queryByText('Describe the Sound')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /generate audio/i })).not.toBeInTheDocument();
+    });
+
+    it('should render audio prompt controls when audio generation is available', () => {
+        vi.mocked(isAudioGenerationAvailable).mockReturnValue(true);
+
+        render(<GenerativeAiPanel />);
+
+        fireEvent.click(screen.getByText('Audio'));
+
+        expect(screen.queryByText(/requires the Sourdaw desktop app/i)).not.toBeInTheDocument();
+        expect(screen.getByText('Describe the Sound')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /generate audio/i })).toBeInTheDocument();
     });
 
     it('should render PatternBrowser by default in MIDI tab', () => {

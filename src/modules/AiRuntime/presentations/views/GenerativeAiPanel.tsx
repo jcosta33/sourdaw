@@ -20,10 +20,10 @@ import {
     cancelProcessingTask,
 } from '#/modules/AiGeneration/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
@@ -101,7 +101,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
         return null;
     }
 
-    const isDesktop = isTauri();
+    const isAudioGenerationEnabled = isAudioGenerationAvailable();
 
     // In-flight detection — disable the Generate button while a task of the matching
     // type is already processing. This prevents double-submits and gives clear feedback.
@@ -291,7 +291,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
                 {activeTab === 'audio' ? (
                     <div className="p-3 space-y-4">
-                        {!isDesktop ? (
+                        {!isAudioGenerationEnabled ? (
                             <DesktopOnlyNotice feature="Audio generation" />
                         ) : (
                             <div className="space-y-3">
