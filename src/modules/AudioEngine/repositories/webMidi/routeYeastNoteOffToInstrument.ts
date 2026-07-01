@@ -11,8 +11,9 @@ type YeastInstrumentStrip = { deviceNodes: YeastInstrumentDeviceNode[] };
 /**
  * Deliver one Note Off to whichever instrument device node the given track
  * hosts (fermenter / grand-boule / levain). The first matching device wins,
- * matching the priority `handleNoteOff` uses. A no-op if the track has no
- * supported instrument or the strip/control is not ready.
+ * matching the priority `handleNoteOff` uses. Fermenter and Levain only call a
+ * ready strip control. Grand Boule also emits its MIDI note-off event whenever
+ * the track has a Grand Boule device, even when the strip/control is not ready.
  *
  * `releaseVelocity` (normalized 0..1) is the MIDI note-off velocity; it is
  * forwarded to the Grand Boule control so the release dynamic survives the
