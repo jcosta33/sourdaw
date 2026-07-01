@@ -45,7 +45,7 @@ import {
     setCommandEventBus,
     setPitchEditDependencies,
 } from '#/modules/Command/useCases';
-import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
+import { getDsoSnapshotHandlers, registerCrdtStorageRuntime } from '#/modules/CrdtDocument/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -82,6 +82,7 @@ import { eventBus, logger } from './registerDependencies';
 
 logCapabilities();
 
+registerCrdtStorageRuntime();
 setRuntimeLogger(logger);
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
