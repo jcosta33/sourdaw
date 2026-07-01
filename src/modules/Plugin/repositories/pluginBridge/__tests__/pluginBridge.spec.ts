@@ -64,7 +64,7 @@ describe('pluginBridge repository', () => {
     describe('setPluginParameter', () => {
         it('should invoke tauri in desktop', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            await setPluginParameter('i1', 0, 0.5);
+            await setPluginParameter({ instanceId: 'i1', paramId: 0, value: 0.5 });
             expect(tauriInvoke).toHaveBeenCalledWith('set_plugin_parameter', {
                 instanceId: 'i1',
                 paramId: 0,
@@ -85,45 +85,53 @@ describe('pluginBridge repository', () => {
     });
 
     describe('processAudioIPC', () => {
-        it('returns the input unchanged outside the desktop app', async () => {
+        it('returns no processed bytes outside the desktop app', async () => {
             vi.mocked(isTauri).mockReturnValue(false);
-            const input = new Float32Array([0.1, -0.2, 0.3]);
-            const result = await processAudioIPC('i1', input);
-            expect(result).toBe(input);
+            const audioBytes = new Uint8Array([1, 2, 3]);
+            const result = await processAudioIPC({ enginePluginId: 17, audioBytes });
+            expect(result).toBeNull();
             expect(tauriInvoke).not.toHaveBeenCalled();
         });
 
-        it('sends a view with a nonzero byteOffset verbatim, not from the buffer start', async () => {
+        it('sends native plugin audio bytes to the registered bridge command', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(tauriInvoke).mockResolvedValue(new Uint8Array(new Float32Array([0]).buffer));
+            const processedBytes = new Uint8Array([4, 5, 6]);
+            vi.mocked(tauriInvoke).mockResolvedValue(processedBytes);
 
-            // A Float32Array windowed into a larger pooled buffer at frame 2.
-            const pool = new Float32Array([9, 9, 1.5, -2.5, 0.25]);
-            const view = pool.subarray(2); // bytes 8..20, byteOffset === 8
+            const pool = new Uint8Array([9, 9, 1, 2, 3]);
+            const audioBytes = pool.subarray(2);
 
-            await processAudioIPC('i1', view);
+            const result = await processAudioIPC({ enginePluginId: 17, audioBytes });
 
-            const body = vi.mocked(tauriInvoke).mock.calls[0]?.[1] as { body: Uint8Array };
-            // The bytes sent must be exactly the view's three samples, not the
-            // leading pool samples that share the backing buffer.
-            const sent = new Float32Array(body.body.buffer, body.body.byteOffset, body.body.byteLength / 4);
-            expect(Array.from(sent)).toEqual([1.5, -2.5, 0.25]);
+            expect(tauriInvoke).toHaveBeenCalledWith('process_plugin_audio', {
+                enginePluginId: 17,
+                audioBytes,
+            });
+            expect(result).toBe(processedBytes);
         });
 
-        it('reconstitutes samples from a response view with a nonzero byteOffset', async () => {
+        it('returns no processed bytes when the native response is not binary', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue([1, 2, 3]);
 
-            // Rust returns a Uint8Array that is a window into a larger buffer:
-            // four leading padding bytes, then the real Float32 payload.
-            const payload = new Float32Array([0.5, -0.75, 1.25]);
-            const backing = new Uint8Array(4 + payload.byteLength);
-            backing.set(new Uint8Array(payload.buffer), 4);
-            const responseView = backing.subarray(4); // byteOffset === 4
-            vi.mocked(tauriInvoke).mockResolvedValue(responseView);
+            const result = await processAudioIPC({
+                enginePluginId: 17,
+                audioBytes: new Uint8Array([1, 2, 3]),
+            });
 
-            const result = await processAudioIPC('i1', new Float32Array([0, 0, 0]));
+            expect(result).toBeNull();
+        });
 
-            expect(Array.from(result)).toEqual([0.5, -0.75, 1.25]);
+        it('returns no processed bytes when the native command fails', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockRejectedValue(new Error('native failed'));
+
+            const result = await processAudioIPC({
+                enginePluginId: 17,
+                audioBytes: new Uint8Array([1, 2, 3]),
+            });
+
+            expect(result).toBeNull();
         });
     });
 });

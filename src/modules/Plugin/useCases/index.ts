@@ -12,6 +12,8 @@ export { getPluginHostHandlers } from './getPluginHostHandlers';
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
 export { unloadPlugin } from './pluginLifecycle/unloadPlugin';
 export { openPluginGui } from './pluginLifecycle/openPluginGui';
+export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
+export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 
 export { MIDI_EFFECT_FACTORIES } from './pluginQueries';
 

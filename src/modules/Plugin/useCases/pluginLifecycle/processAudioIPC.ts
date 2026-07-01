@@ -2,8 +2,15 @@ import { processAudioIPC as processAudioIPCRepo } from '../../repositories/plugi
 
 /**
  * Process an audio block through a plugin instance (IPC bridge).
- * Sends Float32Array to Rust and returns processed audio.
+ * Sends raw audio bytes to Rust and returns processed bytes when available.
  */
-export function processAudioIPC(instanceId: string, audioData: Float32Array): ReturnType<typeof processAudioIPCRepo> {
-    return processAudioIPCRepo(instanceId, audioData);
+type ProcessAudioIPCInput = {
+    enginePluginId: number;
+    audioBytes: Uint8Array;
+};
+
+type ProcessAudioIPCOutput = Promise<Uint8Array | null>;
+
+export function processAudioIPC(input: ProcessAudioIPCInput): ProcessAudioIPCOutput {
+    return processAudioIPCRepo(input);
 }
