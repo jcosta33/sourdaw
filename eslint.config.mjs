@@ -475,11 +475,36 @@ function isTestFile(filename) {
  * @param {string} filename
  * @returns {boolean}
  */
+function isDeclarationFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    return /\.d\.[cm]?ts$/.test(normalized);
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isFixtureFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    return (
+        normalized.includes('/__fixtures__/') ||
+        normalized.includes('/fixtures/') ||
+        normalized.includes('/__mocks__/') ||
+        normalized.includes('/mocks/') ||
+        normalized.includes('/mock/') ||
+        /\.(fixture|fixtures|mock)\.[cm]?[jt]sx?$/.test(normalized)
+    );
+}
+
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
 function isProductionSourceFile(filename) {
     const normalized = normalizeFilePath(filename);
     return (
         (normalized.includes('/src/') || normalized.startsWith('src/')) &&
-        !normalized.endsWith('.d.ts') &&
+        !isDeclarationFile(normalized) &&
         !isTestFile(normalized)
     );
 }
@@ -527,7 +552,8 @@ function isProductionRepositoryFile(filename) {
         isProductionSourceFile(normalized) &&
         isModuleSource &&
         normalized.includes('/repositories/') &&
-        /\.(ts|tsx)$/.test(normalized)
+        !isFixtureFile(normalized) &&
+        /\.[cm]?tsx?$/.test(normalized)
     );
 }
 
