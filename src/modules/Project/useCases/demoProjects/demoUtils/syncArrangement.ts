@@ -1,11 +1,10 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
 import { markerStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 
-import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
+import { arrangementStore, defaultArrangementId, type ProjectTrack } from '../../../stores/arrangementStore';
 
-export function syncArrangement(tracks: Track[]) {
+export function syncArrangement<TrackInput extends ProjectTrack>(tracks: TrackInput[]): void {
     arrangementStore.set({
         arrangements: [
             {
