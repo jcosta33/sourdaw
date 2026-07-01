@@ -17,7 +17,6 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
@@ -34,6 +33,7 @@ import {
     getAutoDetectedTailSeconds,
     renderToClip,
 } from '../../useCases/exportActions';
+import { isNativeProjectRuntimeAvailable } from '../../useCases/isNativeProjectRuntimeAvailable';
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
@@ -262,7 +262,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         // ── 1. SECURE THE DESTINATION EARLY ──
         if (mode !== 'render-to-clip') {
             try {
-                if (isTauri()) {
+                if (isNativeProjectRuntimeAvailable()) {
                     if (mode === 'stems') {
                         tauriDirPath = await selectNativeAudioExportDirectory();
                         if (!tauriDirPath) {
@@ -370,7 +370,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
                     const finalFileName = `${name}.${freq}`;
 
-                    if (isTauri()) {
+                    if (isNativeProjectRuntimeAvailable()) {
                         if (mode === 'stems' && tauriDirPath) {
                             await writeNativeAudioStemFile({
                                 bytes: uint8Data,
@@ -540,7 +540,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             // ── 3. FINALIZE WEB SAVES ──
-            if (!isTauri() && Object.keys(zipDirectory).length > 0) {
+            if (!isNativeProjectRuntimeAvailable() && Object.keys(zipDirectory).length > 0) {
                 setStatusText('Serving hot audio...');
                 const isSingleFile = Object.keys(zipDirectory).length === 1 && mode !== 'stems';
 
@@ -655,7 +655,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         }
         return (
             <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+                {isNativeProjectRuntimeAvailable() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
             </div>
         );
     };
@@ -1016,7 +1016,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     <DawDialogSection
                         tone="warm"
                         title="Oven Status"
-                        detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
+                        detail={isNativeProjectRuntimeAvailable() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
                         <div className="h-10">{renderOvenStatus()}</div>
                     </DawDialogSection>
