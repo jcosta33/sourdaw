@@ -1,3 +1,3 @@
-import { FERMENTER_PRESETS as repositoryFermenterPresets } from '../../repositories/fermenterPresets';
+import { getFermenterFactoryPresets } from '../getFermenterFactoryPresets';
 
-export const FERMENTER_PRESETS = repositoryFermenterPresets;
+export const FERMENTER_PRESETS = getFermenterFactoryPresets();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { type SoundPreset } from '../../models/SoundPreset';
+import { type SoundPreset } from '../../../models/SoundPreset';
 import { bassPresets } from '../bassPresets';
 import { FACTORY_PRESETS } from '../factoryPresets';
 import { keysPresets } from '../keysPresets';
