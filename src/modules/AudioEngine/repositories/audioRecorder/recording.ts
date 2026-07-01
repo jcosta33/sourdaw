@@ -18,75 +18,20 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
 import { audioEngine } from '../createWebAudioEngine';
 
+import { acquireSharedMediaStream } from './acquireSharedMediaStream';
+import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
+import { cleanupRecordingNode } from './cleanupRecordingNode';
+import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
+import { activeSessions, SAB_BYTES, type RecordingSession } from './recordingSession';
+import { releaseSharedMediaStream } from './releaseSharedMediaStream';
+import { terminateRecordingWorker } from './terminateRecordingWorker';
+
 export { audioRecordingStore };
 export type { AudioRecordingState } from '../../stores/audioRecordingStore';
-
-// ── Ring buffer sizing ────────────────────────────────────────────────────────
-// 2^19 floats = 524 288 samples ≈ 10.9 s @ 48 kHz.
-// The OPFS worker drains every 50 ms (~2 400 samples) so the ring stays nearly
-// empty under normal conditions. The extra headroom covers transient stalls.
-const RING_FLOATS = 524_288;
-const SAB_BYTES = 4 + RING_FLOATS * Float32Array.BYTES_PER_ELEMENT; // 4-byte writeHead + ring
-
-type RecordingSession = {
-    trackId: string;
-    mediaStream: MediaStream | null;
-    sourceNode: MediaStreamAudioSourceNode | null;
-    recordingNode: AudioWorkletNode | null;
-    recordingWorker: Worker | null;
-    onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
-    /** Guard timer armed at stop() to force teardown if the worker never flushes. */
-    stopFlushTimer: ReturnType<typeof setTimeout> | null;
-};
-
-// On stop() the OPFS worker is expected to flush and post back a final `wav`
-// message, which drives decode + teardown. If it never replies (a silent flush
-// stall, or a worker that exits without posting), the Worker and the
-// activeSessions entry would leak — and startAudioRecording early-returns on
-// activeSessions.has(trackId), permanently blocking re-recording that track.
-// This bound forces teardown so a stalled worker cannot wedge the track.
-const STOP_FLUSH_TIMEOUT_MS = 5_000;
-
-// Use a Map to support multi-track simultaneous recording.
-const activeSessions = createHmrPersistentState<Map<string, RecordingSession>>(
-    'audioRecorder.activeSessions',
-    () => new Map()
-);
-
-// Keep track of the shared media stream to avoid multiple getUserMedia prompts
-// when arming multiple tracks.
-const sharedStreamState = createHmrPersistentState<{
-    stream: MediaStream | null;
-    usageCount: number;
-}>('audioRecorder.sharedStreamState', () => ({
-    stream: null,
-    usageCount: 0,
-}));
-
-async function acquireSharedMediaStream(constraints: MediaTrackConstraints): Promise<MediaStream> {
-    if (!sharedStreamState.stream) {
-        sharedStreamState.stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
-    }
-    sharedStreamState.usageCount++;
-    return sharedStreamState.stream;
-}
-
-function releaseSharedMediaStream(): void {
-    if (sharedStreamState.usageCount > 0) {
-        sharedStreamState.usageCount--;
-    }
-    if (sharedStreamState.usageCount === 0 && sharedStreamState.stream) {
-        for (const track of sharedStreamState.stream.getTracks()) {
-            track.stop();
-        }
-        sharedStreamState.stream = null;
-    }
-}
 
 export const startAudioRecording = inject({ logger })(
     ({ logger }) =>
@@ -95,6 +40,10 @@ export const startAudioRecording = inject({ logger })(
             onComplete: (buffer: AudioBuffer) => void,
             inputId: string | null = null
         ): Promise<boolean> {
+            let mediaStream: MediaStream | null = null;
+            let sourceNode: MediaStreamAudioSourceNode | null = null;
+            let recordingNode: AudioWorkletNode | null = null;
+            let recordingWorker: Worker | null = null;
             try {
                 if (activeSessions.has(trackId)) {
                     logger.warn(`[startAudioRecording] Track ${trackId} is already recording.`);
@@ -110,9 +59,9 @@ export const startAudioRecording = inject({ logger })(
                     audioConstraints.deviceId = { exact: inputId };
                 }
 
-                const mediaStream = await acquireSharedMediaStream(audioConstraints);
+                mediaStream = await acquireSharedMediaStream(audioConstraints);
                 const ctx = audioEngine.context;
-                const sourceNode = ctx.createMediaStreamSource(mediaStream);
+                sourceNode = ctx.createMediaStreamSource(mediaStream);
 
                 // Monitor via the track strip (same as before).
                 const strip = audioEngine.ensureTrackStrip(trackId);
@@ -122,7 +71,7 @@ export const startAudioRecording = inject({ logger })(
                 const sab = new SharedArrayBuffer(SAB_BYTES);
 
                 // ── AudioWorkletNode (recording-processor) ───────────────────────────
-                const recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
+                recordingNode = new AudioWorkletNode(ctx, 'recording-processor', {
                     numberOfInputs: 1,
                     numberOfOutputs: 0,
                     channelCount: 1,
@@ -133,16 +82,18 @@ export const startAudioRecording = inject({ logger })(
                 sourceNode.connect(recordingNode);
 
                 // ── OPFS Worker ──────────────────────────────────────────────────────
-                const recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
+                recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
                     type: 'module',
                 });
+                const readyRecordingNode = recordingNode;
+                const readyRecordingWorker = recordingWorker;
 
                 const session: RecordingSession = {
                     trackId,
                     mediaStream,
                     sourceNode,
-                    recordingNode,
-                    recordingWorker,
+                    recordingNode: readyRecordingNode,
+                    recordingWorker: readyRecordingWorker,
                     onRecordingComplete: onComplete,
                     stopFlushTimer: null,
                 };
@@ -157,23 +108,23 @@ export const startAudioRecording = inject({ logger })(
 
                     if (msg.type === 'ready') {
                         // Both sides are initialised — begin capture.
-                        recordingNode.port.postMessage({ type: 'start' });
-                        recordingWorker.postMessage({ type: 'start' });
+                        readyRecordingNode.port.postMessage({ type: 'start' });
+                        readyRecordingWorker.postMessage({ type: 'start' });
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
                         void decodeAndDeliver(trackId, msg.buffer, ctx);
-                    } else if (msg.type === 'error') {
+                    } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
-                        cleanupNode(trackId);
-                        checkAllStopped();
+                        cleanupRecordingNode(trackId);
+                        checkAllRecordingsStopped();
                     }
                 };
 
                 recordingWorker.onerror = (event): void => {
                     logger.error(new Error(`Recording worker crashed on track ${trackId}`, { cause: event }));
-                    cleanupNode(trackId);
-                    checkAllStopped();
+                    cleanupRecordingNode(trackId);
+                    checkAllRecordingsStopped();
                 };
 
                 recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
@@ -181,51 +132,18 @@ export const startAudioRecording = inject({ logger })(
                 return true;
             } catch (error) {
                 logger.error(new Error(`Failed to start recording on track ${trackId}`, { cause: error }));
-                cleanupNode(trackId);
+                const sessionWasRegistered = activeSessions.has(trackId);
+                cleanupRecordingNode(trackId);
+                if (!sessionWasRegistered && mediaStream) {
+                    recordingWorker?.terminate();
+                    recordingNode?.disconnect();
+                    sourceNode?.disconnect();
+                    releaseSharedMediaStream();
+                }
                 return false;
             }
         }
 );
-
-export function stopAudioRecording(): void {
-    for (const session of activeSessions.values()) {
-        session.recordingNode?.port.postMessage({ type: 'stop' });
-        session.recordingWorker?.postMessage({ type: 'stop' });
-        cleanupNodesForSession(session);
-        armStopFlushTimer(session);
-    }
-
-    audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
-}
-
-// After stop() we wait for the worker's final `wav` flush, but bound the wait:
-// if it never arrives, force-terminate the worker and drop the session so the
-// track is not permanently blocked from re-recording.
-function armStopFlushTimer(session: RecordingSession): void {
-    const { trackId } = session;
-    session.stopFlushTimer = setTimeout(() => {
-        const stalled = activeSessions.get(trackId);
-        if (!stalled) {
-            return;
-        }
-        logger.error(
-            new Error(
-                `Recording worker did not flush within ${STOP_FLUSH_TIMEOUT_MS}ms on track ${trackId}; forcing teardown`
-            )
-        );
-        stalled.onRecordingComplete = null;
-        terminateWorker(stalled);
-        activeSessions.delete(trackId);
-        checkAllStopped();
-    }, STOP_FLUSH_TIMEOUT_MS);
-}
-
-function clearStopFlushTimer(session: RecordingSession): void {
-    if (session.stopFlushTimer !== null) {
-        clearTimeout(session.stopFlushTimer);
-        session.stopFlushTimer = null;
-    }
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -236,15 +154,15 @@ async function decodeAndDeliver(trackId: string, wavBuffer: ArrayBuffer, ctx: Au
     }
 
     // The worker flushed in time — cancel the stop-flush guard.
-    clearStopFlushTimer(session);
+    clearRecordingStopFlushTimer(session);
 
     const cb = session.onRecordingComplete;
     session.onRecordingComplete = null;
 
     if (!cb || wavBuffer.byteLength <= 44) {
-        terminateWorker(session);
+        terminateRecordingWorker(session);
         activeSessions.delete(trackId);
-        checkAllStopped();
+        checkAllRecordingsStopped();
         return;
     }
 
@@ -255,43 +173,7 @@ async function decodeAndDeliver(trackId: string, wavBuffer: ArrayBuffer, ctx: Au
         logger.error(new Error(`Failed to decode recorded audio for track ${trackId}`, { cause: error }));
     }
 
-    terminateWorker(session);
+    terminateRecordingWorker(session);
     activeSessions.delete(trackId);
-    checkAllStopped();
-}
-
-function terminateWorker(session: RecordingSession): void {
-    clearStopFlushTimer(session);
-    session.recordingWorker?.terminate();
-    session.recordingWorker = null;
-}
-
-function cleanupNode(trackId: string): void {
-    const session = activeSessions.get(trackId);
-    if (session) {
-        cleanupNodesForSession(session);
-        activeSessions.delete(trackId);
-    }
-}
-
-function cleanupNodesForSession(session: RecordingSession): void {
-    clearStopFlushTimer(session);
-    if (session.recordingNode) {
-        session.recordingNode.disconnect();
-        session.recordingNode = null;
-    }
-    if (session.sourceNode) {
-        session.sourceNode.disconnect();
-        session.sourceNode = null;
-    }
-    if (session.mediaStream) {
-        releaseSharedMediaStream();
-        session.mediaStream = null;
-    }
-}
-
-function checkAllStopped(): void {
-    if (activeSessions.size === 0) {
-        audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
-    }
+    checkAllRecordingsStopped();
 }

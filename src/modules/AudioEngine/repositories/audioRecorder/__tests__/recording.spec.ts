@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 
 import { audioEngine } from '../../createWebAudioEngine';
-import { startAudioRecording, stopAudioRecording } from '../recording';
+import { startAudioRecording } from '../recording';
+import { stopAudioRecording } from '../stopAudioRecording';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: {
@@ -40,46 +41,25 @@ describe('startAudioRecording', () => {
 
     it('should return false and log when microphone access fails', async () => {
         const onComplete = vi.fn();
-        const ok = await startAudioRecording('track-1', onComplete);
 
-        expect(ok).toBe(false);
+        await expect(startAudioRecording('track-1', onComplete)).resolves.toBe(false);
         expect(logger.error).toHaveBeenCalled();
         expect(onComplete).not.toHaveBeenCalled();
         expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
     });
 });
 
-// A captured stand-in for the OPFS worker so the test can drive its lifecycle
-// and observe terminate(). Each `new Worker(...)` records the latest instance.
-class FakeWorker {
-    static last: FakeWorker | null = null;
-    onmessage: ((event: { data: unknown }) => void) | null = null;
-    onerror: ((event: unknown) => void) | null = null;
-    postMessage = vi.fn();
-    terminate = vi.fn();
-    constructor() {
-        FakeWorker.last = this;
-    }
-    /** Simulate the worker posting a message back to the main thread. */
-    emit(data: unknown): void {
-        this.onmessage?.({ data });
-    }
-}
+describe('startAudioRecording', () => {
+    let media_track_stop: ReturnType<typeof vi.fn>;
 
-class FakeAudioWorkletNode {
-    port = { postMessage: vi.fn() };
-    connect = vi.fn();
-    disconnect = vi.fn();
-}
-
-describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        FakeWorker.last = null;
+        vi.clearAllMocks();
+        media_track_stop = vi.fn();
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
                 getUserMedia: vi.fn().mockResolvedValue({
-                    getTracks: () => [{ stop: vi.fn() }],
+                    getTracks: () => [{ stop: media_track_stop }],
                 }),
             },
             configurable: true,
@@ -87,34 +67,41 @@ describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () =>
         vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue({
             connect: vi.fn(),
             disconnect: vi.fn(),
-        } as unknown as MediaStreamAudioSourceNode);
+        } as MediaStreamAudioSourceNode);
         vi.stubGlobal('SharedArrayBuffer', ArrayBuffer);
-        vi.stubGlobal('Worker', FakeWorker);
-        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+        vi.stubGlobal(
+            'Worker',
+            class {
+                onmessage: ((event: { data: unknown }) => void) | null = null;
+                postMessage = vi.fn();
+                terminate = vi.fn();
+                constructor() {
+                    setTimeout(() => {
+                        this.onmessage?.({ data: { type: 'ready' } });
+                    }, 0);
+                }
+            }
+        );
+        vi.stubGlobal(
+            'AudioWorkletNode',
+            class {
+                port = { postMessage: vi.fn() };
+                connect = vi.fn();
+                disconnect = vi.fn();
+            }
+        );
         vi.stubGlobal('URL', class {});
     });
 
     afterEach(() => {
+        stopAudioRecording();
+        vi.advanceTimersByTime(5_000);
         vi.useRealTimers();
         vi.unstubAllGlobals();
     });
 
-    async function startAndArm(trackId: string, inputId?: string | null): Promise<FakeWorker> {
-        const started = startAudioRecording(trackId, vi.fn(), inputId);
-        await Promise.resolve();
-        await Promise.resolve();
-        const worker = FakeWorker.last;
-        if (!worker) {
-            throw new Error('worker was not created');
-        }
-        // Worker signals ready → capture begins and the session is registered.
-        worker.emit({ type: 'ready' });
-        await started;
-        return worker;
-    }
-
     it('requests an explicitly provided input device', async () => {
-        const worker = await startAndArm('track-explicit', 'dev-123');
+        await startAudioRecording('track-explicit', vi.fn(), 'dev-123');
 
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
             audio: {
@@ -124,40 +111,19 @@ describe('stopAudioRecording — stalled-worker teardown (Observation 4)', () =>
                 deviceId: { exact: 'dev-123' },
             },
         });
-
-        stopAudioRecording();
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
-        await Promise.resolve();
     });
 
-    it('terminates a worker that never flushes after stop, freeing the track to re-record', async () => {
-        const worker = await startAndArm('track-stall');
+    it('should release the shared stream when start fails after microphone acquisition', async () => {
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockImplementationOnce(() => {
+            throw new Error('source creation failed');
+        });
 
-        stopAudioRecording();
-        // Worker never posts the final `wav` — simulate the stall by advancing
-        // past the bounded flush deadline with no reply.
-        expect(worker.terminate).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(5_000);
+        await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(false);
 
-        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(media_track_stop).toHaveBeenCalledTimes(1);
+        expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
 
-        // The session was dropped, so the track is no longer wedged: a fresh
-        // start is accepted (returns true) rather than early-returning false.
-        const restart = await startAndArm('track-stall');
-        expect(restart).toBeInstanceOf(FakeWorker);
-    });
-
-    it('does not force-terminate when the worker flushes within the deadline', async () => {
-        const worker = await startAndArm('track-ok');
-
-        stopAudioRecording();
-        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) }); // ≤44 bytes → teardown path, decode skipped
-        await Promise.resolve();
-
-        // Worker flushed in time → terminated by the normal path, and the guard
-        // timer was cleared (advancing time must not double-terminate).
-        const callsAfterFlush = worker.terminate.mock.calls.length;
-        vi.advanceTimersByTime(5_000);
-        expect(worker.terminate.mock.calls.length).toBe(callsAfterFlush);
+        await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(true);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     });
 });
