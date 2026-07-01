@@ -770,6 +770,66 @@ function isUseCaseImportPath(importPath) {
 
 /**
  * @param {string} importPath
+ * @returns {boolean}
+ */
+function isStoresContractImportPath(importPath) {
+    const segments = importPath.split('/').filter(Boolean);
+    const [firstSegment, secondSegment] = segments;
+    if (firstSegment !== 'stores') return false;
+
+    return segments.length === 1 || (segments.length === 2 && /^index(?:\.[cm]?tsx?)?$/.test(secondSegment));
+}
+
+/**
+ * @param {string} filename
+ * @param {string} source
+ * @returns {{ moduleName: string; importPath: string } | null}
+ */
+function getForeignStoresContractImportLocation(filename, source) {
+    const importedModule = getModuleImportLocation(filename, source);
+    if (!importedModule) return null;
+    if (!isStoresContractImportPath(importedModule.importPath)) return null;
+
+    const importerModule = getModuleLocation(filename);
+    if (importerModule?.moduleName === importedModule.moduleName) return null;
+
+    return importedModule;
+}
+
+/**
+ * @param {any} specifier
+ * @returns {string | null}
+ */
+function getImportSpecifierImportedName(specifier) {
+    if (specifier.imported?.type === 'Identifier') {
+        return specifier.imported.name;
+    }
+
+    if (specifier.imported?.type === 'Literal' && typeof specifier.imported.value === 'string') {
+        return specifier.imported.value;
+    }
+
+    return null;
+}
+
+/**
+ * @param {any} node
+ * @returns {string | null}
+ */
+function getStaticMemberPropertyName(node) {
+    if (node?.property?.type === 'Identifier' && !node.computed) {
+        return node.property.name;
+    }
+
+    if (node?.property?.type === 'Literal' && typeof node.property.value === 'string') {
+        return node.property.value;
+    }
+
+    return null;
+}
+
+/**
+ * @param {string} importPath
  * @returns {string | null}
  */
 function getNonModulePrivateImportTarget(importPath) {
@@ -1257,6 +1317,77 @@ const sourdawPlugin = {
                         if (!value) return;
 
                         reportIfUseCaseImport(node, value);
+                    },
+                };
+            },
+        },
+
+        'no-foreign-store-write': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when production code writes directly to a store imported from another module stores contract.',
+                },
+                schema: [],
+                messages: {
+                    noForeignStoreWrite:
+                        'Do not call `{{method}}` on `{{storeName}}` from `{{moduleName}}/stores`. Route writes through the owning module use-case or action boundary.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
+
+                /** @type {Map<string, { storeName: string; moduleName: string }>} */
+                const foreignStoreBindings = new Map();
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        if (isTypeOnlyImportDeclaration(node)) return;
+
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        const importedModule = getForeignStoresContractImportLocation(context.filename, value);
+                        if (!importedModule) return;
+
+                        for (const specifier of node.specifiers ?? []) {
+                            if (specifier.type !== 'ImportSpecifier') continue;
+                            if (specifier.importKind === 'type') continue;
+                            if (specifier.local?.type !== 'Identifier') continue;
+
+                            const storeName = getImportSpecifierImportedName(specifier);
+                            if (!storeName) continue;
+
+                            foreignStoreBindings.set(specifier.local.name, {
+                                storeName,
+                                moduleName: importedModule.moduleName,
+                            });
+                        }
+                    },
+                    /** @param {any} node */
+                    CallExpression(node) {
+                        const callee = node.callee;
+                        if (callee?.type !== 'MemberExpression') return;
+
+                        const method = getStaticMemberPropertyName(callee);
+                        if (method !== 'set' && method !== 'update') return;
+                        if (callee.object?.type !== 'Identifier') return;
+
+                        const binding = foreignStoreBindings.get(callee.object.name);
+                        if (!binding) return;
+
+                        context.report({
+                            node,
+                            messageId: 'noForeignStoreWrite',
+                            data: {
+                                method,
+                                storeName: binding.storeName,
+                                moduleName: binding.moduleName,
+                            },
+                        });
                     },
                 };
             },
@@ -1853,6 +1984,7 @@ export default defineConfig(
 
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
+            'sourdaw/no-foreign-store-write': 'warn',
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-nonmodule-private-module-import': 'warn',
