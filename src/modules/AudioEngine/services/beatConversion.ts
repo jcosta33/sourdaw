@@ -1,6 +1,9 @@
-import { type TempoChange } from '#/modules/Transport/useCases';
+type BeatToSecondsTempoChange = {
+    beat: number;
+    tempo: number;
+};
 
-export function beatToSeconds(beat: number, defaultTempo: number, changes: TempoChange[]): number {
+export function beatToSeconds(beat: number, defaultTempo: number, changes: BeatToSecondsTempoChange[]): number {
     if (changes.length === 0) {
         return (beat / defaultTempo) * 60;
     }
