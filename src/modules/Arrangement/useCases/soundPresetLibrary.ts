@@ -1,3 +1,5 @@
+import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
+
 import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
 import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '../repositories/presets/factoryPresets';
@@ -43,7 +45,7 @@ export function getFactoryPresets(): GetFactoryPresetsOutput {
     const key = currentPlatformKey();
     if (!cachedEntry || cachedEntry.platformKey !== key) {
         cachedEntry = {
-            presets: [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS].filter(isPresetCompatible),
+            presets: [...FACTORY_PRESETS, ...DRUM_KIT_PRESETS, ...FERMENTER_PRESETS].filter(isPresetCompatible),
             platformKey: key,
         };
     }

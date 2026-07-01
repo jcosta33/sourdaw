@@ -8,8 +8,6 @@
  * To add a new preset, add it to the appropriate category file under ./presets/.
  */
 
-import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
-
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 
 import { bassPresets } from './bassPresets';
@@ -107,7 +105,6 @@ export const FACTORY_PRESETS: SoundPreset[] = [
     ...EXPANDED_SYNTH_PRESETS,
     ...FAUST_INSTRUMENT_PRESETS,
     ...FAUST_EFFECT_PRESETS,
-    ...FERMENTER_PRESETS,
 ];
 
 export { DRUM_KIT_PRESETS };

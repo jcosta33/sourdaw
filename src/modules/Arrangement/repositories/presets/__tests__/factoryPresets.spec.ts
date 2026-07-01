@@ -32,4 +32,14 @@ describe('Factory Presets', () => {
         expect(categories.has('bass')).toBe(true);
         expect(categories.has('keys')).toBe(true);
     });
+
+    it('FACTORY_PRESETS should stay Arrangement-local and exclude Fermenter presets', () => {
+        expect(
+            FACTORY_PRESETS.some((preset) => {
+                return (
+                    preset.id.startsWith('fermenter-') || preset.devices.some((device) => device.type === 'fermenter')
+                );
+            })
+        ).toBe(false);
+    });
 });
