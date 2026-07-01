@@ -107,12 +107,38 @@ describe('pluginBridge repository', () => {
                 enginePluginId: 17,
                 audioBytes,
             });
-            expect(result).toBe(processedBytes);
+            expect(result).toEqual(processedBytes);
         });
 
-        it('returns no processed bytes when the native response is not binary', async () => {
+        it('normalizes byte arrays returned by the registered bridge command', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(tauriInvoke).mockResolvedValue([1, 2, 3]);
+
+            const result = await processAudioIPC({
+                enginePluginId: 17,
+                audioBytes: new Uint8Array([1, 2, 3]),
+            });
+
+            expect(result).toEqual(new Uint8Array([1, 2, 3]));
+        });
+
+        it('normalizes typed-array views returned by the registered bridge command', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            const backing = new Uint8Array([9, 9, 4, 5, 6]);
+            vi.mocked(tauriInvoke).mockResolvedValue(backing.subarray(2));
+
+            const result = await processAudioIPC({
+                enginePluginId: 17,
+                audioBytes: new Uint8Array([1, 2, 3]),
+            });
+
+            expect(result).toEqual(new Uint8Array([4, 5, 6]));
+            expect(result?.buffer.byteLength).toBe(3);
+        });
+
+        it('returns no processed bytes when the native response is not audio bytes', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue([1, -1, 300]);
 
             const result = await processAudioIPC({
                 enginePluginId: 17,

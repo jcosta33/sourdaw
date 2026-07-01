@@ -66,10 +66,8 @@ export async function createNativePluginBridgeNode(
             });
 
             if (resultBytes) {
-                const processedBuffer = resultBytes.buffer;
-                if (processedBuffer instanceof ArrayBuffer) {
-                    node.port.postMessage({ type: 'processed', audio: processedBuffer }, [processedBuffer]);
-                }
+                const processedBuffer = new Uint8Array(resultBytes).buffer;
+                node.port.postMessage({ type: 'processed', audio: processedBuffer }, [processedBuffer]);
             }
         } catch {
             // If Rust processing fails, the worklet falls back to passthrough

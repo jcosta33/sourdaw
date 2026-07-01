@@ -106,6 +106,18 @@ describe('createNativePluginBridgeNode', () => {
         ]);
     });
 
+    it('should post exactly the processed byte view returned by the Plugin use-case', async () => {
+        const backing = new Uint8Array([9, 9, 4, 5, 6]);
+        vi.mocked(processAudioIPC).mockResolvedValue(backing.subarray(2));
+        await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
+        const node = getCreatedNode();
+
+        await dispatchProcessMessage(node, createAudioBuffer([1, 2, 3]));
+
+        const postedMessage = node.port.postMessage.mock.calls[1]?.[0] as { audio?: ArrayBuffer };
+        expect(Array.from(new Uint8Array(postedMessage.audio ?? new ArrayBuffer(0)))).toEqual([4, 5, 6]);
+    });
+
     it('should not post processed audio when the Plugin use-case returns no bytes', async () => {
         vi.mocked(processAudioIPC).mockResolvedValue(null);
         await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
