@@ -3,10 +3,8 @@ import { type DragEvent, useState } from 'react';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { libraryStore } from '#/modules/SampleLibrary/stores';
-import { readTauriLibrarySampleFile } from '#/modules/SampleLibrary/useCases';
+import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 
 import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
@@ -170,9 +168,9 @@ export const useTimelineFileDrop = ({
                 // Factory (and any already-decoded) samples keep their AudioBuffer
                 // in the cache under the sample id — there is no file to re-read and
                 // the factory root is handle-less ('browser' shim, empty rootRef),
-                // so the handle/Tauri branches below would both miss and leave
-                // audioBufferId undefined → a silent clip in playback/export. Resolve
-                // the buffer id straight from the cache before attempting any decode.
+                // so the SampleLibrary file resolver would have nothing to resolve.
+                // Resolve the buffer id straight from the cache before attempting
+                // any file access or decode.
                 const cachedBuffer = audioBufferCache.get(sample.id);
                 if (cachedBuffer) {
                     audioBufferId = sample.id;
@@ -183,46 +181,32 @@ export const useTimelineFileDrop = ({
                 }
 
                 try {
-                    const root = libraryStore.value?.roots.find((r) => r.id === sample.libraryRootId);
-
-                    if (audioBufferId) {
-                        // Already resolved from cache — skip the file-read/decode path.
-                    } else if (isTauri() && root?.provider === 'tauri' && root.rootRef) {
-                        const file = await readTauriLibrarySampleFile({
-                            rootPath: root.rootRef,
+                    if (!audioBufferId) {
+                        const resolvedSampleFile = await resolveDroppedSampleFile({
+                            libraryRootId: sample.libraryRootId,
                             relativePath: sample.path,
                             fallbackName: sample.name,
                         });
-                        const result = await decodeAudioFile(file);
-                        audioBufferId = result.id;
-                        durationBeats = Math.max(
-                            1,
-                            Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
-                        );
-                        assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
-                    } else if (!isTauri() && root?.provider === 'browser' && root.handle) {
-                        // Browser FileSystem Access API: walk the directory handle to the file
-                        const pathParts = sample.path.split('/');
-                        const fileName = pathParts.pop()!;
-                        let dirHandle: FileSystemDirectoryHandle = root.handle;
-                        for (const part of pathParts) {
-                            dirHandle = await dirHandle.getDirectoryHandle(part);
-                        }
-                        const fileHandle = await dirHandle.getFileHandle(fileName);
-                        const file = await fileHandle.getFile();
-                        try {
-                            const result = await decodeAudioFile(file);
-                            audioBufferId = result.id;
-                            durationBeats = Math.max(
-                                1,
-                                Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
-                            );
-                            assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
-                        } catch {
-                            notifyUser(
-                                `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
-                                'warning'
-                            );
+                        if (resolvedSampleFile.status === 'resolved') {
+                            const { file } = resolvedSampleFile;
+                            try {
+                                const result = await decodeAudioFile(file);
+                                audioBufferId = result.id;
+                                durationBeats = Math.max(
+                                    1,
+                                    Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
+                                );
+                                assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
+                            } catch (error) {
+                                if (resolvedSampleFile.provider === 'browser') {
+                                    notifyUser(
+                                        `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
+                                        'warning'
+                                    );
+                                } else {
+                                    throw error;
+                                }
+                            }
                         }
                     }
                 } catch {
