@@ -301,6 +301,98 @@ describe('useTimelineFileDrop', () => {
         );
     });
 
+    it('warns with the decode message when a Tauri-root sample file cannot be decoded', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
+        mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Broken Kick',
+                              id: 'tauri-broken-kick',
+                              path: 'Drums/Broken Kick.wav',
+                              libraryRootId: 'root-tauri',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"Broken Kick" could not be decoded — the file may be DRM-protected or corrupt.',
+                'warning'
+            );
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'Broken Kick',
+                type: 'audio',
+                audioBufferId: undefined,
+                assetHash: undefined,
+            })
+        );
+    });
+
+    it('keeps the decode warning for browser-root sample files that cannot be decoded', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
+        mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Broken Clap',
+                              id: 'browser-broken-clap',
+                              path: 'Drums/Broken Clap.wav',
+                              libraryRootId: 'root-browser',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"Broken Clap" could not be decoded — the file may be DRM-protected or corrupt.',
+                'warning'
+            );
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'Broken Clap',
+                type: 'audio',
+                audioBufferId: undefined,
+                assetHash: undefined,
+            })
+        );
+    });
+
     it('handles external file drop (MIDI)', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 

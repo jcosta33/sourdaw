@@ -197,15 +197,11 @@ export const useTimelineFileDrop = ({
                                     Math.ceil((result.buffer.duration / 60) * buildTimelineRenderModel().tempo)
                                 );
                                 assetHash = await getAssetTransfer()?.addLocalAsset(file, file.name);
-                            } catch (error) {
-                                if (resolvedSampleFile.provider === 'browser') {
-                                    notifyUser(
-                                        `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
-                                        'warning'
-                                    );
-                                } else {
-                                    throw error;
-                                }
+                            } catch {
+                                notifyUser(
+                                    `"${sample.name}" could not be decoded — the file may be DRM-protected or corrupt.`,
+                                    'warning'
+                                );
                             }
                         }
                     }
