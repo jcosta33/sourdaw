@@ -34,10 +34,7 @@ export function routeYeastNoteOffToInstrument(
     const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
     if (gbDev) {
         const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
-        if (!dn?.grandBouleControls) {
-            return;
-        }
-        dn.grandBouleControls.noteOff(note, undefined, releaseVelocity);
+        dn?.grandBouleControls?.noteOff(note, undefined, releaseVelocity);
         emitGrandBouleEvent(gbDev.id, note);
         return;
     }

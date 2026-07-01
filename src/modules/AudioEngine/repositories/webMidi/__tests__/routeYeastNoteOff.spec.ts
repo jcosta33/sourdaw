@@ -242,7 +242,7 @@ describe('routeYeastNoteOffToInstrument', () => {
         expect(emit_grand_boule_event).not.toHaveBeenCalled();
     });
 
-    it('should be a no-op when the Grand Boule strip control is missing', () => {
+    it('should still emit a Grand Boule event when the strip control is missing', () => {
         const instrument_track = create_track({
             id: 'instrument-track',
             devices: [create_device({ id: 'gb-1', type: 'grand-boule' })],
@@ -258,6 +258,6 @@ describe('routeYeastNoteOffToInstrument', () => {
         );
 
         expect(grand_boule_note_off).not.toHaveBeenCalled();
-        expect(emit_grand_boule_event).not.toHaveBeenCalled();
+        expect(emit_grand_boule_event).toHaveBeenCalledWith('gb-1', 67);
     });
 });
