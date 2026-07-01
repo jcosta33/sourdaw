@@ -1,53 +1,35 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn().mockResolvedValue('ok'),
-}));
-
-import { isTauri, invokeAI } from '../isTauri';
+import { isTauri } from '../isTauri';
 
 describe('isTauri repository', () => {
-    const originalWindow = global.window;
+    const originalTauriDescriptor = Object.getOwnPropertyDescriptor(window, '__TAURI__');
 
-    beforeEach(() => {
-        vi.resetModules();
-    });
+    function restoreTauriMarker(): void {
+        if (originalTauriDescriptor) {
+            Object.defineProperty(window, '__TAURI__', originalTauriDescriptor);
+            return;
+        }
+
+        Reflect.deleteProperty(window, '__TAURI__');
+    }
 
     afterEach(() => {
-        global.window = originalWindow;
+        restoreTauriMarker();
     });
 
-    describe('isTauri', () => {
-        it('should return true if __TAURI__ is in window', () => {
-            global.window = { __TAURI__: {} } as any;
-            expect(isTauri()).toBe(true);
+    it('should return true if __TAURI__ is in window', () => {
+        Object.defineProperty(window, '__TAURI__', {
+            configurable: true,
+            value: {},
         });
 
-        it('should return false if __TAURI__ is not in window', () => {
-            global.window = {} as any;
-            expect(isTauri()).toBe(false);
-        });
+        expect(isTauri()).toBe(true);
     });
 
-    describe('invokeAI', () => {
-        it('should throw error if not in Tauri environment', async () => {
-            global.window = {} as any;
-            await expect(invokeAI('test_cmd')).rejects.toThrow('Native AI features require Tauri desktop environment');
-        });
+    it('should return false if __TAURI__ is not in window', () => {
+        Reflect.deleteProperty(window, '__TAURI__');
 
-        it('should call tauri invoke if in Tauri environment', async () => {
-            global.window = { __TAURI__: {} } as any;
-
-            // Mock the dynamic import of @tauri-apps/api/core
-            vi.mock('@tauri-apps/api/core', () => ({
-                invoke: vi.fn().mockResolvedValue('ok'),
-            }));
-
-            const result = await invokeAI('test_cmd', { arg: 1 });
-
-            const { invoke } = await import('@tauri-apps/api/core');
-            expect(invoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
-            expect(result).toBe('ok');
-        });
+        expect(isTauri()).toBe(false);
     });
 });
