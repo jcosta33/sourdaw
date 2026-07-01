@@ -1,11 +1,33 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import * as subject from '../resetAudioGraph';
+import { externalLatencyRegistry } from '../../latencyCompensation/compensation/externalLatencyRegistry';
+import { resetAudioGraph } from '../resetAudioGraph';
+
+const resetGraphMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../repositories/createWebAudioEngine', () => ({
+    audioEngine: {
+        resetGraph: resetGraphMock,
+    },
+}));
 
 describe('resetAudioGraph', () => {
-    it('should export resetAudioGraph', () => {
-        expect(subject.resetAudioGraph).toBeDefined();
-        const time = typeof subject.resetAudioGraph;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        externalLatencyRegistry.clear();
+        resetGraphMock.mockClear();
+    });
+
+    it('should reset the live engine graph before clearing reported external latency', () => {
+        externalLatencyRegistry.set('dev-a', 5);
+        externalLatencyRegistry.set('dev-b', 12);
+
+        resetGraphMock.mockImplementationOnce(() => {
+            expect(externalLatencyRegistry.size).toBe(2);
+        });
+
+        resetAudioGraph();
+
+        expect(resetGraphMock).toHaveBeenCalledTimes(1);
+        expect(externalLatencyRegistry.size).toBe(0);
     });
 });

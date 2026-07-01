@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
-import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AudioEngine } from '../../models/AudioEngineState';
@@ -791,27 +790,6 @@ describe('AudioEngine', () => {
                 (c) => (c[0] as { type?: string })?.type === 'noteOff'
             );
             expect(fermNoteOffs.length).toBe(0);
-        });
-    });
-
-    // ── Fix 5: resetGraph clears the external latency registry ───────────────────
-    //
-    // The registry is a module-level Map that grew unbounded across project
-    // switches because per-device clearReportedLatency only fires on a device's
-    // destroy(). resetGraph must drop every entry when a project is torn down.
-    describe('resetGraph clears reported latency', () => {
-        beforeEach(() => {
-            externalLatencyRegistry.clear();
-        });
-
-        it('empties externalLatencyRegistry on resetGraph', () => {
-            externalLatencyRegistry.set('dev-a', 5);
-            externalLatencyRegistry.set('dev-b', 12);
-            expect(externalLatencyRegistry.size).toBe(2);
-
-            engine.resetGraph();
-
-            expect(externalLatencyRegistry.size).toBe(0);
         });
     });
 
