@@ -1,6 +1,7 @@
 import { getMidiAccess, getTauriMode, setState } from '../state';
 
-import { attachInput, selectMidiInputTauri } from './helpers';
+import { attachInput } from './helpers';
+import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 export function selectMidiInput(deviceId: string): void {
     if (getTauriMode()) {

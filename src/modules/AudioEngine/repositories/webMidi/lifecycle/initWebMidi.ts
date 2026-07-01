@@ -17,7 +17,8 @@ import {
 } from '../state';
 import { WebMidiEventBus } from '../webMidiEventBus';
 
-import { attachInput, selectMidiInputTauri } from './helpers';
+import { attachInput } from './helpers';
+import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 type TauriMidiDevice = { index: number; name: string };
 
