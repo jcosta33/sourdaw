@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../deviceNodeFactory', () => ({
+vi.mock('../../applyParams', () => ({
     applyParams: vi.fn(),
+}));
+
+vi.mock('../../deviceNodeFactory', () => ({
     createOfflineDeviceNode: vi.fn(({ deviceType }: { deviceType: string }) => {
         if (deviceType === 'builtin-gain') {
             return {
@@ -16,7 +19,7 @@ vi.mock('../../deviceNodeFactory', () => ({
 }));
 
 import { type Device } from '../../../models/TrackViewTypes';
-import { applyParams } from '../../deviceNodeFactory';
+import { applyParams } from '../../applyParams';
 import { WebAudioDeviceStrategy, createWebAudioDevice } from '../WebAudioDeviceStrategy';
 
 describe('WebAudioDeviceStrategy', () => {
