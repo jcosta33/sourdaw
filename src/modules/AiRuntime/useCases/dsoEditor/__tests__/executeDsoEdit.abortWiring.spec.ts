@@ -8,11 +8,12 @@ import { executeDsoEdit } from '../executeDsoEdit';
 // so options.signal was always undefined and the early-break never fired.
 
 const mocks = vi.hoisted(() => ({
+    generateSchemaConstrainedNativeCompletion: vi.fn(),
     streamNativeCompletion: vi.fn(),
 }));
 
 // Force the dev-mode native fallback branch of invokeLlm:
-//   backend === 'native' && isNativeEngineReady() && !isTauri()
+//   backend === 'native' && isNativeEngineReady() && schema generation unavailable
 vi.mock('../../llmOrchestration/backendResolution/isDsoBackendAvailable', () => ({
     isDsoBackendAvailable: () => true,
 }));
@@ -22,10 +23,9 @@ vi.mock('../../llmOrchestration/backendResolution/helpers', () => ({
 vi.mock('../../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: () => true,
 }));
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: () => false,
-    tauriInvoke: vi.fn(),
-    createChannel: vi.fn(),
+
+vi.mock('../../../repositories/nativeEngine/schemaConstrainedGeneration', () => ({
+    generateSchemaConstrainedNativeCompletion: mocks.generateSchemaConstrainedNativeCompletion,
 }));
 
 // The unit under test: capture what the caller passes through.
@@ -62,6 +62,7 @@ vi.mock('../../../stores/llmStatusStore', () => ({
 
 describe('executeDsoEdit abort wiring (FIX #10)', () => {
     beforeEach(() => {
+        mocks.generateSchemaConstrainedNativeCompletion.mockResolvedValue(null);
         mocks.streamNativeCompletion.mockClear();
     });
 

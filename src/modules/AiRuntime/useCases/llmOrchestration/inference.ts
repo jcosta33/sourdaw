@@ -1,6 +1,5 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
@@ -8,6 +7,7 @@ import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
+import { generateNativeToolCalls as generateNativeStructuredToolCalls } from '../../repositories/nativeEngine/nativeToolCalling';
 import { initWebLlmEngine } from '../../repositories/webLlm/initWebLlmEngine';
 import { isWebLlmLoaded } from '../../repositories/webLlm/isWebLlmLoaded';
 import { generateWebLlmToolCalls } from '../../repositories/webLlm/toolCalling';
@@ -28,30 +28,27 @@ import { getBackendChain } from './backendResolution/getBackendChain';
  */
 export const generateToolCalls = inject({ logger })(({ logger }) => {
     async function generateNativeToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
-        // Try structured tool calling first (Tauri only)
-        if (isTauri()) {
-            try {
-                const tools = DAW_TOOL_SCHEMAS.map((time) => ({
-                    name: time.function.name,
-                    description: time.function.description,
-                    parameters: time.function.parameters,
-                }));
+        try {
+            const tools = DAW_TOOL_SCHEMAS.map((tool) => ({
+                name: tool.function.name,
+                description: tool.function.description,
+                parameters: tool.function.parameters,
+            }));
 
-                const results = (await tauriInvoke('native_tool_calling', {
-                    systemPrompt,
-                    userMessage,
-                    tools,
-                    temperature: 0.1,
-                })) as Array<{ name: string; arguments: Record<string, unknown> }>;
+            const results = await generateNativeStructuredToolCalls({
+                systemPrompt,
+                userMessage,
+                tools,
+                temperature: 0.1,
+            });
 
-                if (results.length > 0) {
-                    logger.info(`[AI Engine] (native/structured) ${String(results.length)} tool call(s)`);
-                    return results;
-                }
-            } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                logger.warn(`[AI Engine] Structured tool calling failed, falling back to text: ${msg}`);
+            if (results !== null && results.length > 0) {
+                logger.info(`[AI Engine] (native/structured) ${String(results.length)} tool call(s)`);
+                return results;
             }
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            logger.warn(`[AI Engine] Structured tool calling failed, falling back to text: ${msg}`);
         }
 
         // Fallback: text completion + XML/JSON parsing

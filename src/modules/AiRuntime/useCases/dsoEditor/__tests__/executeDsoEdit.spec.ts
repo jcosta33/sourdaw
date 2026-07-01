@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     dsoBackendAvailable: { value: false },
     backend: { value: 'none' },
     nativeEngineReady: { value: false },
+    generateSchemaConstrainedNativeCompletion: vi.fn(),
     streamNativeCompletion: vi.fn(),
     resolveDsoNames: vi.fn(() => []),
     validateDsos: vi.fn(() => []),
@@ -53,6 +54,10 @@ vi.mock('../../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: () => mocks.nativeEngineReady.value,
 }));
 
+vi.mock('../../../repositories/nativeEngine/schemaConstrainedGeneration', () => ({
+    generateSchemaConstrainedNativeCompletion: mocks.generateSchemaConstrainedNativeCompletion,
+}));
+
 vi.mock('../../../repositories/nativeEngine/streaming', () => ({
     streamNativeCompletion: mocks.streamNativeCompletion,
 }));
@@ -63,12 +68,6 @@ vi.mock('../../../repositories/webLlm/getActiveModelId', () => ({
 
 vi.mock('../../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: () => null,
-}));
-
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: () => false,
-    tauriInvoke: vi.fn(),
-    createChannel: vi.fn(),
 }));
 
 vi.mock('../compileDso', () => ({
@@ -125,6 +124,7 @@ describe('executeDsoEdit', () => {
         mocks.dsoBackendAvailable.value = false;
         mocks.backend.value = 'none';
         mocks.nativeEngineReady.value = false;
+        mocks.generateSchemaConstrainedNativeCompletion.mockResolvedValue(null);
         mocks.resolveDsoNames.mockReturnValue([]);
         mocks.validateDsos.mockReturnValue([]);
         mocks.executeDsos.mockResolvedValue({ summaries: ['Changed track'], failures: [] });
@@ -160,6 +160,33 @@ describe('executeDsoEdit', () => {
         expect(result.success).toBe(false);
         expect(result.error).toMatch(/DSO-capable backend/);
         expect(result.plan).toBeNull();
+    });
+
+    it('should prefer repository-owned native schema generation before dev-mode stream fallback', async () => {
+        mocks.dsoBackendAvailable.value = true;
+        mocks.backend.value = 'native';
+        mocks.nativeEngineReady.value = true;
+        mocks.generateSchemaConstrainedNativeCompletion.mockResolvedValue(
+            JSON.stringify({ kind: 'edit_plan', moderation: 'allow', intent: 'noop', dsos: [] })
+        );
+        const aborter = new AbortController();
+
+        const result = await executeDsoEdit('make it louder', aborter.signal);
+
+        expect(result.success).toBe(true);
+        expect(result.plan?.intent).toBe('noop');
+        expect(mocks.generateSchemaConstrainedNativeCompletion).toHaveBeenCalledWith(
+            expect.objectContaining({
+                systemPrompt: 'system',
+                userMessage: 'user',
+                jsonSchema: expect.stringContaining('"edit_plan"'),
+                temperature: 0.1,
+                maxTokens: 2048,
+                signal: aborter.signal,
+                onToken: expect.any(Function),
+            })
+        );
+        expect(mocks.streamNativeCompletion).not.toHaveBeenCalled();
     });
 
     it('should leave destructive DSO plans pending without mutating before confirmation', async () => {
