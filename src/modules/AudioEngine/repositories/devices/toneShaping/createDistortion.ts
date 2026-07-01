@@ -1,6 +1,6 @@
 import { type OfflineDeviceNode } from '../types';
 
-import { makeDistortionCurve } from './helpers';
+import { makeDistortionCurve } from './makeDistortionCurve';
 
 export function createDistortion(ctx: BaseAudioContext): OfflineDeviceNode {
     const splitter = ctx.createGain();

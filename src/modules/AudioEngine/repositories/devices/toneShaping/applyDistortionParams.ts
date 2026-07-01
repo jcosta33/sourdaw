@@ -1,6 +1,6 @@
 import { type OfflineDeviceNode } from '../types';
 
-import { makeDistortionCurve } from './helpers';
+import { makeDistortionCurve } from './makeDistortionCurve';
 
 export function applyDistortionParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const dryDist = dn.nodes[1] as GainNode;
