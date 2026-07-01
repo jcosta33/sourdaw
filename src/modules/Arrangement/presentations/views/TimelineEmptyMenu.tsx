@@ -4,11 +4,11 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
+import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isTauri } from '#/utils/tauriBridge';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { MARKER_COLOR_PRESETS } from '../../models/ColorPalette';
@@ -136,6 +136,8 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
         onClose();
     };
 
+    const isAudioGenerationEnabled = isAudioGenerationAvailable();
+
     return (
         <DawContextMenuSurface
             ref={menuRef}
@@ -187,7 +189,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 <span className="inline-block size-2.5 rounded-full bg-[var(--color-accent-lavender)]/60" />
                 AI Generate
             </DawMenuMutedRow>
-            {isTauri() ? (
+            {isAudioGenerationEnabled ? (
                 <DawMenuButton
                     role="menuitem"
                     onClick={act(() => {
