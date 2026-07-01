@@ -573,6 +573,34 @@ function isProductionModelFile(filename) {
     );
 }
 
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isApprovedReactImportFile(filename) {
+    const sourceRelativePath = getSourceRelativePath(filename);
+    if (!sourceRelativePath) return false;
+
+    if (sourceRelativePath.startsWith('components/')) return true;
+    if (sourceRelativePath === 'app/App.tsx') return true;
+    if (/^routes\/.+\.tsx?$/.test(sourceRelativePath)) return true;
+    if (/^modules\/.+\/presentations\/(?:views|components|hooks)\//.test(sourceRelativePath)) return true;
+    if (sourceRelativePath === 'infra/store/useStore.ts') return true;
+    if (sourceRelativePath === 'infra/store/useStoreSelector.ts') return true;
+
+    return sourceRelativePath === 'utils/UI/useContextMenuDismiss.ts';
+}
+
+/**
+ * @param {string} source
+ * @returns {boolean}
+ */
+function isReactImportSource(source) {
+    return (
+        source === 'react' || source.startsWith('react/') || source === 'react-dom' || source.startsWith('react-dom/')
+    );
+}
+
 const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
 
 /**
@@ -1427,6 +1455,79 @@ const sourdawPlugin = {
                                 messageId: 'noReactInDomainLogic',
                             });
                         }
+                    },
+                };
+            },
+        },
+
+        'no-react-import-outside-ui': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when production files import or re-export React/ReactDOM outside approved UI/adaptor files.',
+                },
+                schema: [],
+                messages: {
+                    noReactImportOutsideUi:
+                        'Do not import or re-export `{{source}}` outside approved UI/adaptor files. Keep React APIs in presentation, route, app, store adapter, or UI utility code.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
+                if (isApprovedReactImportFile(context.filename)) return {};
+
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @returns {void}
+                 */
+                function reportIfReactImport(node, source) {
+                    if (!isReactImportSource(source)) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noReactImportOutsideUi',
+                        data: { source },
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        reportIfReactImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfReactImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfReactImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ImportExpression(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfReactImport(node, value);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfReactImport(node, value);
                     },
                 };
             },
@@ -2334,6 +2435,7 @@ export default defineConfig(
             'import-x/first': 'error',
             'import-x/newline-after-import': 'error',
             'import-x/no-duplicates': 'error',
+            'sourdaw/no-react-import-outside-ui': 'warn',
             'import-x/order': [
                 'error',
                 {
