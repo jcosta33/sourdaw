@@ -15,7 +15,6 @@ import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react'
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { useStore } from '#/infra/store/useStore';
-import { type PreviewHandle } from '#/modules/Workspace/presentations/hooks/usePreviewAudio';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -42,8 +41,14 @@ import { SampleRow } from '../components/SampleRow';
 
 import { SpatialMapRenderer } from './SpatialMapRenderer';
 
+type LibraryPreview = {
+    playingId: string | null;
+    playFile: (id: string, file: File) => Promise<void>;
+    stop: () => void;
+};
+
 type LibraryBrowserProps = {
-    preview: PreviewHandle;
+    preview: LibraryPreview;
     selectedTrackId: string | null;
 };
 
