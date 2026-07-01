@@ -1,3 +1,5 @@
 // Workspace/presentations/views — public contract surface for cross-module views.
-// No cross-module view exports are currently consumed.
-export {};
+export { AppShell } from './AppShell';
+export { WorkspaceAppBoundary } from './WorkspaceAppBoundary';
+export { WorkspaceProjectLoadingFallback } from './WorkspaceProjectLoadingFallback';
+export { WorkspaceRouteView } from './WorkspaceRouteView';

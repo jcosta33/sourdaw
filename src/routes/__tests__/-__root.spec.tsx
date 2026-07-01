@@ -1,3 +1,5 @@
+import { type ReactNode } from 'react';
+
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
@@ -10,8 +12,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 // Mock AppShell
-vi.mock('#/modules/Workspace/presentations/views/AppShell', () => ({
-    AppShell: ({ children }: { children: React.ReactNode }) => <div data-testid="app-shell">{children}</div>,
+vi.mock('#/modules/Workspace/presentations/views', () => ({
+    AppShell: ({ children }: { children: ReactNode }) => <div data-testid="app-shell">{children}</div>,
 }));
 
 describe('RootLayout', () => {
