@@ -1,6 +1,6 @@
-import { isTauri } from '#/utils/tauriBridge';
-
 import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+
+import { isNativeAiRuntimeAvailable } from './isNativeAiRuntimeAvailable';
 
 export type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
 
@@ -16,7 +16,7 @@ export type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
  * No automatic fallback between model families.
  */
 export function resolveBackend(): AiBackend {
-    if (isTauri()) {
+    if (isNativeAiRuntimeAvailable()) {
         return 'native';
     }
     if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
