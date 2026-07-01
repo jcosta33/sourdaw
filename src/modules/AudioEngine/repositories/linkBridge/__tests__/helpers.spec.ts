@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { isTauri, invokeLink } from '../helpers';
+import { isTauri } from '../helpers';
+import { invokeLink } from '../invokeLink';
 
 describe('linkBridge/helpers', () => {
     describe('isTauri', () => {
