@@ -1,78 +1,111 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
-import { audioEngine } from '../../createWebAudioEngine';
-import { startInputMonitoring, stopInputMonitoring } from '../inputMonitoring';
+import { startInputMonitoring } from '../inputMonitoring';
+import { stopInputMonitoring } from '../stopInputMonitoring';
+
+type MockMediaStreamTrack = {
+    stop: Mock<() => void>;
+};
+
+type MockMediaStream = {
+    getTracks: Mock<() => MockMediaStreamTrack[]>;
+};
+
+type MockMediaStreamAudioSourceNode = {
+    connect: Mock<(destination: unknown) => void>;
+    disconnect: Mock<() => void>;
+};
+
+type MockTrackStrip = {
+    gainNode: unknown;
+};
+
+type GetUserMedia = (constraints: MediaStreamConstraints) => Promise<MockMediaStream>;
+type CreateMediaStreamSource = (stream: MockMediaStream) => MockMediaStreamAudioSourceNode;
+type EnsureTrackStrip = (trackId: string) => MockTrackStrip;
+
+const getUserMedia = vi.hoisted(() => vi.fn<GetUserMedia>());
+const createMediaStreamSource = vi.hoisted(() => vi.fn<CreateMediaStreamSource>());
+const ensureTrackStrip = vi.hoisted(() => vi.fn<EnsureTrackStrip>());
+const originalMediaDevices = globalThis.navigator.mediaDevices;
 
 vi.mock('../../createWebAudioEngine', () => ({
     audioEngine: {
         context: {
-            createMediaStreamSource: vi.fn(),
+            createMediaStreamSource,
         },
-        ensureTrackStrip: vi.fn(),
+        ensureTrackStrip,
     },
 }));
 
+function createMockStream(tracks: MockMediaStreamTrack[] = []): MockMediaStream {
+    return { getTracks: vi.fn(() => tracks) };
+}
+
+function createMockSourceNode(): MockMediaStreamAudioSourceNode {
+    return {
+        connect: vi.fn<(destination: unknown) => void>(),
+        disconnect: vi.fn<() => void>(),
+    };
+}
+
+function createMockStrip(gainNode: unknown = {}): MockTrackStrip {
+    return { gainNode };
+}
+
 describe('inputMonitoring', () => {
-    let originalGetUserMedia: any;
-
     beforeEach(() => {
-        vi.clearAllMocks();
+        Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+            value: { getUserMedia },
+            configurable: true,
+        });
 
-        // Mock navigator.mediaDevices.getUserMedia
-        originalGetUserMedia = navigator.mediaDevices?.getUserMedia;
-
-        if (!global.navigator) {
-            (global as any).navigator = {};
-        }
-        if (!global.navigator.mediaDevices) {
-            (global as any).navigator.mediaDevices = {};
-        }
-
-        global.navigator.mediaDevices.getUserMedia = vi.fn();
-
-        // Make sure state is clear (module variables)
         stopInputMonitoring();
-        vi.clearAllMocks();
+
+        getUserMedia.mockReset();
+        createMediaStreamSource.mockReset();
+        ensureTrackStrip.mockReset();
     });
 
     afterEach(() => {
-        if (originalGetUserMedia) {
-            global.navigator.mediaDevices.getUserMedia = originalGetUserMedia;
-        }
+        Object.defineProperty(globalThis.navigator, 'mediaDevices', {
+            value: originalMediaDevices,
+            configurable: true,
+        });
     });
 
     it('should start input monitoring', async () => {
-        const mockStream = { getTracks: vi.fn(() => []) };
-        const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
-        const mockStrip = { gainNode: {} };
+        const mockStream = createMockStream();
+        const mockSourceNode = createMockSourceNode();
+        const mockStrip = createMockStrip();
 
-        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
-        vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
+        getUserMedia.mockResolvedValue(mockStream);
+        createMediaStreamSource.mockReturnValue(mockSourceNode);
+        ensureTrackStrip.mockReturnValue(mockStrip);
 
         const result = await startInputMonitoring('t1');
 
         expect(result).toBe(true);
-        expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+        expect(getUserMedia).toHaveBeenCalledWith({
             audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
-        expect(audioEngine.context.createMediaStreamSource).toHaveBeenCalledWith(mockStream);
-        expect(audioEngine.ensureTrackStrip).toHaveBeenCalledWith('t1');
+        expect(createMediaStreamSource).toHaveBeenCalledWith(mockStream);
+        expect(ensureTrackStrip).toHaveBeenCalledWith('t1');
         expect(mockSourceNode.connect).toHaveBeenCalledWith(mockStrip.gainNode);
     });
 
     it('should use explicit device id when provided', async () => {
-        const mockStream = { getTracks: vi.fn(() => []) };
-        const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
-        const mockStrip = { gainNode: {} };
+        const mockStream = createMockStream();
+        const mockSourceNode = createMockSourceNode();
+        const mockStrip = createMockStrip();
 
-        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
-        vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
+        getUserMedia.mockResolvedValue(mockStream);
+        createMediaStreamSource.mockReturnValue(mockSourceNode);
+        ensureTrackStrip.mockReturnValue(mockStrip);
 
         await startInputMonitoring('t1', 'dev-123');
 
-        expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+        expect(getUserMedia).toHaveBeenCalledWith({
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
@@ -83,44 +116,45 @@ describe('inputMonitoring', () => {
     });
 
     it('should use default-device constraints when input id is null', async () => {
-        const mockStream = { getTracks: vi.fn(() => []) };
-        const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
-        const mockStrip = { gainNode: {} };
+        const mockStream = createMockStream();
+        const mockSourceNode = createMockSourceNode();
+        const mockStrip = createMockStrip();
 
-        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
-        vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
+        getUserMedia.mockResolvedValue(mockStream);
+        createMediaStreamSource.mockReturnValue(mockSourceNode);
+        ensureTrackStrip.mockReturnValue(mockStrip);
 
         await startInputMonitoring('t1', null);
 
-        expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+        expect(getUserMedia).toHaveBeenCalledWith({
             audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
     });
 
-    it('should return false on getUserMedia failure', async () => {
-        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockRejectedValue(new Error('denied'));
-        const result = await startInputMonitoring('t1');
-        expect(result).toBe(false);
+    it('should reuse the monitor source when connecting a later track strip', async () => {
+        const mockStream = createMockStream();
+        const mockSourceNode = createMockSourceNode();
+        const firstMockStrip = createMockStrip({ id: 'gain-1' });
+        const secondMockStrip = createMockStrip({ id: 'gain-2' });
+
+        getUserMedia.mockResolvedValue(mockStream);
+        createMediaStreamSource.mockReturnValue(mockSourceNode);
+        ensureTrackStrip.mockReturnValueOnce(firstMockStrip).mockReturnValueOnce(secondMockStrip);
+
+        await startInputMonitoring('t1');
+        await startInputMonitoring('t2');
+
+        expect(getUserMedia).toHaveBeenCalledTimes(1);
+        expect(createMediaStreamSource).toHaveBeenCalledTimes(1);
+        expect(ensureTrackStrip).toHaveBeenNthCalledWith(1, 't1');
+        expect(ensureTrackStrip).toHaveBeenNthCalledWith(2, 't2');
+        expect(mockSourceNode.connect).toHaveBeenNthCalledWith(1, firstMockStrip.gainNode);
+        expect(mockSourceNode.connect).toHaveBeenNthCalledWith(2, secondMockStrip.gainNode);
     });
 
-    it('should stop monitoring and disconnect nodes', async () => {
-        const mockTrack = { stop: vi.fn() };
-        const mockStream = { getTracks: vi.fn(() => [mockTrack]) };
-        const mockSourceNode = { connect: vi.fn(), disconnect: vi.fn() };
-        const mockStrip = { gainNode: {} };
-
-        vi.mocked(global.navigator.mediaDevices.getUserMedia).mockResolvedValue(mockStream as any);
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(mockSourceNode as any);
-        vi.mocked(audioEngine.ensureTrackStrip).mockReturnValue(mockStrip as any);
-
-        // Start first to set up the module state
-        await startInputMonitoring('t1');
-
-        // Now stop
-        stopInputMonitoring();
-
-        expect(mockSourceNode.disconnect).toHaveBeenCalled();
-        expect(mockTrack.stop).toHaveBeenCalled();
+    it('should return false on getUserMedia failure', async () => {
+        getUserMedia.mockRejectedValue(new Error('denied'));
+        const result = await startInputMonitoring('t1');
+        expect(result).toBe(false);
     });
 });
