@@ -1,6 +1,6 @@
 import { type OfflineDeviceNode } from '../types';
 
-import { makeBitcrusherCurve } from './helpers';
+import { makeBitcrusherCurve } from './makeBitcrusherCurve';
 
 export function createBitcrusher(ctx: BaseAudioContext): OfflineDeviceNode {
     const splitter = ctx.createGain();

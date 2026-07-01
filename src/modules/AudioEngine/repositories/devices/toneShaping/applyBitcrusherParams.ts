@@ -1,6 +1,6 @@
 import { type OfflineDeviceNode } from '../types';
 
-import { makeBitcrusherCurve } from './helpers';
+import { makeBitcrusherCurve } from './makeBitcrusherCurve';
 
 export function applyBitcrusherParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const dryBC = dn.nodes[1] as GainNode;
