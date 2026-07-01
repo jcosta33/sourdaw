@@ -557,6 +557,22 @@ function isProductionRepositoryFile(filename) {
     );
 }
 
+/**
+ * @param {string} filename
+ * @returns {boolean}
+ */
+function isProductionModelFile(filename) {
+    const normalized = normalizeFilePath(filename);
+    const isModuleSource = normalized.includes('/src/modules/') || normalized.startsWith('src/modules/');
+    return (
+        isProductionSourceFile(normalized) &&
+        isModuleSource &&
+        normalized.includes('/models/') &&
+        !isFixtureFile(normalized) &&
+        /\.[cm]?tsx?$/.test(normalized)
+    );
+}
+
 const moduleSubgroupFolders = new Set(['Common', 'Supporting']);
 
 /**
@@ -653,10 +669,17 @@ function getModuleImportLocation(filename, source) {
     if (!source.startsWith('.')) return null;
 
     const resolvedSource = normalizeFilePath(resolve(dirname(filename), source));
-    const relativeMatch = /\/src\/modules\/(.+)$/.exec(resolvedSource);
-    if (!relativeMatch) return null;
+    const sourceRoot = getSourceRoot(filename);
+    const moduleRoot = sourceRoot ? `${sourceRoot}/modules/` : null;
+    if (moduleRoot && resolvedSource.startsWith(moduleRoot)) {
+        return parseModulePath(resolvedSource.slice(moduleRoot.length));
+    }
 
-    return parseModulePath(relativeMatch[1]);
+    const moduleMarker = '/src/modules/';
+    const moduleMarkerIndex = resolvedSource.lastIndexOf(moduleMarker);
+    if (moduleMarkerIndex < 0) return null;
+
+    return parseModulePath(resolvedSource.slice(moduleMarkerIndex + moduleMarker.length));
 }
 
 const privateModuleFolders = new Set([
@@ -766,6 +789,18 @@ function getDeepContractImportFolder(importPath) {
 function isUseCaseImportPath(importPath) {
     const [firstSegment] = importPath.split('/').filter(Boolean);
     return firstSegment === 'useCases';
+}
+
+/**
+ * @param {string} importPath
+ * @returns {string | null}
+ */
+function getModelLayerImportTarget(importPath) {
+    const [firstSegment] = importPath.split('/').filter(Boolean);
+    if (firstSegment === 'useCases') return 'useCases';
+    if (firstSegment === 'stores') return 'stores';
+
+    return null;
 }
 
 /**
@@ -1125,6 +1160,19 @@ function getNonModulePrivateImportTarget(importPath) {
 function getLiteralStringValue(node) {
     if (node?.type === 'Literal' && typeof node.value === 'string') {
         return node.value;
+    }
+
+    if (node?.type === 'TemplateLiteral' && node.expressions.length === 0 && node.quasis.length === 1) {
+        const [quasi] = node.quasis;
+        const cooked = quasi.value?.cooked;
+        if (typeof cooked === 'string') {
+            return cooked;
+        }
+
+        const raw = quasi.value?.raw;
+        if (typeof raw === 'string') {
+            return raw;
+        }
     }
 
     return null;
@@ -1594,6 +1642,82 @@ const sourdawPlugin = {
                         if (!value) return;
 
                         reportIfUseCaseImport(node, value);
+                    },
+                };
+            },
+        },
+
+        'no-model-layer-upward-import': {
+            meta: {
+                type: 'problem',
+                docs: {
+                    description:
+                        'Warn when production model files import or re-export use-case or store layer APIs.',
+                },
+                schema: [],
+                messages: {
+                    noModelLayerUpwardImport:
+                        'Do not import `{{target}}` from model files. Models must stay below stores/use cases; move orchestration to use cases or local consumer-owned types.',
+                },
+            },
+            /** @param {import('eslint').Rule.RuleContext} context */
+            create(context) {
+                if (!isProductionModelFile(context.filename)) return {};
+
+                /**
+                 * @param {any} node
+                 * @param {string} source
+                 * @returns {void}
+                 */
+                function reportIfModelLayerImport(node, source) {
+                    const importedModule = getModuleImportLocation(context.filename, source);
+                    if (!importedModule) return;
+
+                    const target = getModelLayerImportTarget(importedModule.importPath);
+                    if (!target) return;
+
+                    context.report({
+                        node,
+                        messageId: 'noModelLayerUpwardImport',
+                        data: { target },
+                    });
+                }
+
+                return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        const value = node.source.value;
+                        if (typeof value !== 'string') return;
+
+                        reportIfModelLayerImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportAllDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfModelLayerImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ExportNamedDeclaration(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfModelLayerImport(node, value);
+                    },
+                    /** @param {any} node */
+                    ImportExpression(node) {
+                        const value = getLiteralStringValue(node.source);
+                        if (!value) return;
+
+                        reportIfModelLayerImport(node, value);
+                    },
+                    /** @param {any} node */
+                    TSImportType(node) {
+                        const value = getTypeQueryImportSource(node);
+                        if (!value) return;
+
+                        reportIfModelLayerImport(node, value);
                     },
                 };
             },
@@ -2322,6 +2446,7 @@ export default defineConfig(
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
             'sourdaw/no-foreign-store-write': 'warn',
+            'sourdaw/no-model-layer-upward-import': 'warn',
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-nonmodule-private-module-import': 'warn',
