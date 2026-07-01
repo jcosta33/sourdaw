@@ -6,13 +6,11 @@ import { useTimelineFileDrop } from '../useTimelineFileDrop';
 const mocks = vi.hoisted(() => ({
     hitTestTrack: vi.fn(),
     trackStoreValue: { value: { tracks: [], selectedTrackId: null } },
-    libraryStoreValue: { value: { roots: [] } },
     buildTimelineRenderModel: vi.fn(),
     notifyUser: vi.fn(),
-    isTauri: vi.fn(),
     getAssetTransfer: vi.fn(),
     decodeAudioFile: vi.fn(),
-    readTauriLibrarySampleFile: vi.fn(),
+    resolveDroppedSampleFile: vi.fn(),
     addClip: vi.fn(),
     addDevice: vi.fn(),
     addTrack: vi.fn(),
@@ -33,17 +31,8 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/SampleLibrary/stores', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    libraryStore: {
-        get value() {
-            return mocks.libraryStoreValue.value;
-        },
-    },
-}));
-
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
-    readTauriLibrarySampleFile: mocks.readTauriLibrarySampleFile,
+    resolveDroppedSampleFile: mocks.resolveDroppedSampleFile,
 }));
 
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
@@ -52,10 +41,6 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
-}));
-
-vi.mock('#/utils/tauriBridge', () => ({
-    isTauri: mocks.isTauri,
 }));
 
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
@@ -98,14 +83,12 @@ describe('useTimelineFileDrop', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.isTauri.mockReturnValue(false);
         mocks.buildTimelineRenderModel.mockReturnValue({ tempo: 120 });
         mocks.getAssetTransfer.mockReturnValue({ addLocalAsset: vi.fn().mockResolvedValue('hash') });
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null } as any;
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.audioBufferCacheGet.mockReturnValue(undefined);
-        mocks.readTauriLibrarySampleFile.mockResolvedValue(new File(['audio'], 'sample.wav'));
-        mocks.libraryStoreValue.value = { roots: [] } as any;
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
     });
 
     it('handles plugin drop', async () => {
@@ -186,9 +169,6 @@ describe('useTimelineFileDrop', () => {
     it('resolves a factory clip audioBufferId from the buffer cache (no handle, no decode)', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
-        mocks.libraryStoreValue.value = {
-            roots: [{ id: 'factory', provider: 'browser', rootRef: '', handle: undefined }],
-        } as any;
         // Buffer present in the cache keyed by the sample id.
         mocks.audioBufferCacheGet.mockImplementation((id: string) =>
             id === 'factory-kick' ? ({ duration: 2 } as AudioBuffer) : undefined
@@ -223,17 +203,14 @@ describe('useTimelineFileDrop', () => {
             );
         });
         // The cache short-circuit must skip the file decode path entirely.
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
 
-    it('reads a Tauri-root sample through the SampleLibrary use case before decoding', async () => {
+    it('reads a Tauri-root sample through the SampleLibrary resolver before decoding', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
         const file = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
-        mocks.isTauri.mockReturnValue(true);
-        mocks.libraryStoreValue.value = {
-            roots: [{ id: 'root1', provider: 'tauri', rootRef: '/Users/jose/Samples' }],
-        } as any;
-        mocks.readTauriLibrarySampleFile.mockResolvedValue(file);
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-tauri', buffer: { duration: 2 } });
         mocks.hitTestTrack.mockReturnValue(null);
         mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
@@ -259,8 +236,8 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.readTauriLibrarySampleFile).toHaveBeenCalledWith({
-                rootPath: '/Users/jose/Samples',
+            expect(mocks.resolveDroppedSampleFile).toHaveBeenCalledWith({
+                libraryRootId: 'root1',
                 relativePath: 'Drums/Kick.wav',
                 fallbackName: 'Kick',
             });
@@ -273,6 +250,145 @@ describe('useTimelineFileDrop', () => {
                 type: 'audio',
                 audioBufferId: 'buf-tauri',
                 assetHash: 'hash',
+            })
+        );
+    });
+
+    it('resolves a browser-root sample through the SampleLibrary resolver before decoding', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['audio'], 'clap.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-browser', buffer: { duration: 1.5 } });
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Clap',
+                              id: 'browser-clap',
+                              path: 'Drums/Clap.wav',
+                              libraryRootId: 'root-browser',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.resolveDroppedSampleFile).toHaveBeenCalledWith({
+                libraryRootId: 'root-browser',
+                relativePath: 'Drums/Clap.wav',
+                fallbackName: 'Clap',
+            });
+        });
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(file);
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'Clap',
+                type: 'audio',
+                audioBufferId: 'buf-browser',
+                assetHash: 'hash',
+            })
+        );
+    });
+
+    it('warns with the decode message when a Tauri-root sample file cannot be decoded', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'tauri', file });
+        mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Broken Kick',
+                              id: 'tauri-broken-kick',
+                              path: 'Drums/Broken Kick.wav',
+                              libraryRootId: 'root-tauri',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"Broken Kick" could not be decoded — the file may be DRM-protected or corrupt.',
+                'warning'
+            );
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'Broken Kick',
+                type: 'audio',
+                audioBufferId: undefined,
+                assetHash: undefined,
+            })
+        );
+    });
+
+    it('keeps the decode warning for browser-root sample files that cannot be decoded', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        const file = new File(['not-audio'], 'broken.wav', { type: 'audio/wav' });
+        mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'resolved', provider: 'browser', file });
+        mocks.decodeAudioFile.mockRejectedValue(new Error('decode failed'));
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Broken Clap',
+                              id: 'browser-broken-clap',
+                              path: 'Drums/Broken Clap.wav',
+                              libraryRootId: 'root-browser',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                '"Broken Clap" could not be decoded — the file may be DRM-protected or corrupt.',
+                'warning'
+            );
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Could not access'), 'warning');
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                name: 'Broken Clap',
+                type: 'audio',
+                audioBufferId: undefined,
+                assetHash: undefined,
             })
         );
     });
