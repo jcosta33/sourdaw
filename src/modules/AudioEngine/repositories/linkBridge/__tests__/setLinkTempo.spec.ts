@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const invokeLink = vi.fn();
+type InvokeLink = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
 
-vi.mock('../helpers', () => ({
-    invokeLink: (...args: unknown[]) => invokeLink(...args),
+const invokeLink = vi.fn<InvokeLink>();
+
+vi.mock('../invokeLink', () => ({
+    invokeLink: (...args: Parameters<InvokeLink>): ReturnType<InvokeLink> => invokeLink(...args),
 }));
 
 import { setLinkTempo } from '../setLinkTempo';

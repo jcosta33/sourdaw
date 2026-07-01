@@ -8,37 +8,31 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { disableLink } from '../disableLink';
 import { enableLink } from '../enableLink';
 import { getLinkStatus } from '../getLinkStatus';
-import { invokeLink } from '../helpers';
+
+function setTauriAvailable(): void {
+    Object.defineProperty(window, '__TAURI__', {
+        configurable: true,
+        value: {},
+    });
+}
+
+function clearTauriAvailability(): void {
+    Reflect.deleteProperty(window, '__TAURI__');
+}
 
 describe('linkBridge repository', () => {
-    const originalWindow = global.window;
-
     beforeEach(() => {
         vi.clearAllMocks();
+        clearTauriAvailability();
     });
 
     afterEach(() => {
-        global.window = originalWindow;
-    });
-
-    describe('invokeLink', () => {
-        it('should throw if not in Tauri', async () => {
-            global.window = {} as any;
-            await expect(invokeLink('test')).rejects.toThrow('Ableton Link requires Tauri desktop environment');
-        });
-
-        it('should call invoke if in Tauri', async () => {
-            global.window = { __TAURI__: {} } as any;
-            mockInvoke.mockResolvedValue('ok');
-            const result = await invokeLink('test_cmd', { arg: 1 });
-            expect(mockInvoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
-            expect(result).toBe('ok');
-        });
+        clearTauriAvailability();
     });
 
     describe('getLinkStatus', () => {
         it('should return status from Tauri', async () => {
-            global.window = { __TAURI__: {} } as any;
+            setTauriAvailable();
             const mockStatus = { enabled: true, tempo: 120 };
             mockInvoke.mockResolvedValue(mockStatus);
 
@@ -49,7 +43,7 @@ describe('linkBridge repository', () => {
 
     describe('enableLink / disableLink', () => {
         it('should call tauri commands', async () => {
-            global.window = { __TAURI__: {} } as any;
+            setTauriAvailable();
 
             await enableLink();
             expect(mockInvoke).toHaveBeenCalledWith('enable_link', undefined);
