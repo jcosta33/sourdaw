@@ -14,7 +14,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { isTauri } from './tauriBridge';
+import { isTauri } from './tauriRuntime';
 
 export { isTauri };
 

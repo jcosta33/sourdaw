@@ -23,7 +23,7 @@ describe('getPlatformCapabilities', () => {
     });
 
     it('should reflect desktop when isTauri is true', async () => {
-        vi.doMock('#/utils/tauriBridge', () => ({
+        vi.doMock('../tauriRuntime', () => ({
             isTauri: () => true,
         }));
         const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');

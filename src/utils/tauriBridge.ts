@@ -11,11 +11,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen as tauriListenRaw } from '@tauri-apps/api/event';
 
-/**
- * Whether we're running inside a Tauri webview.
- * Uses the official Tauri v2 internal marker.
- */
-export const isTauri = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+import { isTauri } from './tauriRuntime';
+
+export { isTauri };
 
 /**
  * Invoke a Tauri command. Wrapper around the official @tauri-apps/api invoke.
