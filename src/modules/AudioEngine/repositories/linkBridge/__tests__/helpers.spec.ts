@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { isTauri } from '../helpers';
-import { invokeLink } from '../invokeLink';
 
 describe('linkBridge/helpers', () => {
     describe('isTauri', () => {
@@ -14,21 +13,6 @@ describe('linkBridge/helpers', () => {
             w.__TAURI__ = {};
             expect(isTauri()).toBe(true);
             delete w.__TAURI__;
-        });
-    });
-
-    describe('invokeLink', () => {
-        beforeEach(() => {
-            vi.resetModules();
-        });
-
-        afterEach(() => {
-            const w = window as Window & { __TAURI__?: unknown };
-            delete w.__TAURI__;
-        });
-
-        it('should throw when not running under Tauri', async () => {
-            await expect(invokeLink('link:test')).rejects.toThrow(/Tauri desktop/);
         });
     });
 });

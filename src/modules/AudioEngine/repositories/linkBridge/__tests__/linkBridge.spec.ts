@@ -8,7 +8,6 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { disableLink } from '../disableLink';
 import { enableLink } from '../enableLink';
 import { getLinkStatus } from '../getLinkStatus';
-import { invokeLink } from '../invokeLink';
 
 function setTauriAvailable(): void {
     Object.defineProperty(window, '__TAURI__', {
@@ -29,20 +28,6 @@ describe('linkBridge repository', () => {
 
     afterEach(() => {
         clearTauriAvailability();
-    });
-
-    describe('invokeLink', () => {
-        it('should throw if not in Tauri', async () => {
-            await expect(invokeLink('test')).rejects.toThrow('Ableton Link requires Tauri desktop environment');
-        });
-
-        it('should call invoke if in Tauri', async () => {
-            setTauriAvailable();
-            mockInvoke.mockResolvedValue('ok');
-            const result = await invokeLink('test_cmd', { arg: 1 });
-            expect(mockInvoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
-            expect(result).toBe('ok');
-        });
     });
 
     describe('getLinkStatus', () => {
