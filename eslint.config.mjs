@@ -1685,7 +1685,7 @@ const sourdawPlugin = {
                     },
                     /** @param {any} node */
                     VariableDeclarator(node) {
-                        if (node.parent?.kind !== 'const' && node.parent?.kind !== 'let') return;
+                        if (node.parent?.kind !== 'const') return;
                         if (node.id?.type !== 'Identifier') return;
                         if (node.init?.type !== 'Identifier') return;
 
