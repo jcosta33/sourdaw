@@ -14,22 +14,34 @@ describe('getPlatformCapabilities', () => {
         expect(a).toBe(b);
     });
 
-    it('should expose boolean capability flags', async () => {
+    it('should expose browser capability flags when isTauri is false', async () => {
+        vi.doMock('../tauriRuntime', () => ({
+            isTauri: () => false,
+        }));
         const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
         const caps = getCaps();
-        expect(typeof caps.hasNativePlugins).toBe('boolean');
+        expect(caps.isDesktopApp).toBe(false);
+        expect(caps.hasNativePlugins).toBe(false);
+        expect(caps.hasPluginScanning).toBe(false);
+        expect(caps.hasNativeFileDialogs).toBe(false);
+        expect(caps.hasMultiTrackRecording).toBe(false);
         expect(typeof caps.hasMidiInput).toBe('boolean');
-        expect(typeof caps.isDesktopApp).toBe('boolean');
+        expect(typeof caps.hasVoiceCommands).toBe('boolean');
     });
 
-    it('should reflect desktop when isTauri is true', async () => {
-        vi.doMock('#/utils/tauriBridge', () => ({
+    it('should expose desktop capability flags when isTauri is true', async () => {
+        vi.doMock('../tauriRuntime', () => ({
             isTauri: () => true,
         }));
         const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
         const caps = getCaps();
         expect(caps.isDesktopApp).toBe(true);
         expect(caps.hasNativePlugins).toBe(true);
+        expect(caps.hasPluginScanning).toBe(true);
+        expect(caps.hasNativeFileDialogs).toBe(true);
+        expect(caps.hasMultiTrackRecording).toBe(true);
+        expect(caps.hasMidiInput).toBe(true);
+        expect(caps.hasVoiceCommands).toBe(true);
     });
 });
 
