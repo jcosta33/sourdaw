@@ -15,11 +15,11 @@
  */
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/isNativeEngineReady';
+import { generateSchemaConstrainedNativeCompletion } from '../../repositories/nativeEngine/schemaConstrainedGeneration';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../../repositories/webLlm/getLlmEngine';
@@ -401,13 +401,22 @@ async function invokeLlm(
         }
     }
 
-    // Native (Tauri + mistral.rs): use schema-constrained generation
-    if (backend === 'native' && isNativeEngineReady() && isTauri()) {
-        return invokeNativeSchemaConstrained(system, user, onProgress);
-    }
-
-    // Native fallback (dev mode llama-server): use regular streaming
     if (backend === 'native' && isNativeEngineReady()) {
+        // Native Tauri: use schema-constrained generation.
+        const schemaConstrainedResponse = await generateSchemaConstrainedNativeCompletion({
+            systemPrompt: system,
+            userMessage: user,
+            jsonSchema: EDIT_PLAN_JSON_SCHEMA,
+            temperature: 0.1,
+            maxTokens: 2048,
+            onToken: onProgress,
+            signal,
+        });
+        if (schemaConstrainedResponse !== null) {
+            return schemaConstrainedResponse;
+        }
+
+        // Native fallback (dev mode llama-server): use regular streaming.
         let result = '';
         const messages = [
             { role: 'system' as const, content: system },
@@ -505,46 +514,4 @@ async function invokeLlm(
     }
 
     throw createAiRuntimeError(`No available backend for DSO generation`);
-}
-
-/**
- * Invoke mistral.rs with Constraint::JsonSchema for schema-guaranteed output.
- * Uses the schema_constrained_generation Tauri command with a Tauri Channel.
- */
-async function invokeNativeSchemaConstrained(system: string, user: string, onProgress: () => void): Promise<string> {
-    const { createChannel } = await import('#/utils/tauriBridge');
-
-    type StreamEvent =
-        | { event: 'token'; data: { text: string } }
-        | { event: 'done'; data: { totalTokens: number } }
-        | { event: 'error'; data: { message: string } };
-
-    let result = '';
-    let streamError: string | null = null;
-
-    const channel = await createChannel<StreamEvent>();
-    channel.onmessage = (event: StreamEvent) => {
-        if (event.event === 'token') {
-            result += event.data.text;
-            onProgress();
-        }
-        if (event.event === 'error') {
-            streamError = event.data.message;
-        }
-    };
-
-    await tauriInvoke('schema_constrained_generation', {
-        systemPrompt: system,
-        userMessage: user,
-        jsonSchema: EDIT_PLAN_JSON_SCHEMA,
-        temperature: 0.1,
-        maxTokens: 2048,
-        onEvent: channel,
-    });
-
-    if (streamError) {
-        throw createAiRuntimeError(streamError);
-    }
-
-    return result;
 }

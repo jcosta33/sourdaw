@@ -1,0 +1,64 @@
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
+type NativeToolDefinition = {
+    name: string;
+    description: string;
+    parameters: unknown;
+};
+
+type NativeToolCallResult = {
+    name: string;
+    arguments: Record<string, unknown>;
+};
+
+type GenerateNativeToolCallsInput = {
+    systemPrompt: string;
+    userMessage: string;
+    tools: NativeToolDefinition[];
+    temperature: number;
+};
+
+type GenerateNativeToolCallsOutput = Promise<NativeToolCallResult[] | null>;
+
+export async function generateNativeToolCalls(input: GenerateNativeToolCallsInput): GenerateNativeToolCallsOutput {
+    if (!isTauri()) {
+        return null;
+    }
+
+    const response = await tauriInvoke('native_tool_calling', {
+        systemPrompt: input.systemPrompt,
+        userMessage: input.userMessage,
+        tools: input.tools,
+        temperature: input.temperature,
+    });
+
+    return narrowNativeToolCallResults(response);
+}
+
+function narrowNativeToolCallResults(response: unknown): NativeToolCallResult[] {
+    if (!Array.isArray(response)) {
+        throw new TypeError('Invalid native_tool_calling response: expected an array');
+    }
+
+    return response.map((item, index) => {
+        if (!isRecord(item)) {
+            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} is not an object`);
+        }
+
+        const name = item.name;
+        const args = item.arguments;
+
+        if (typeof name !== 'string' || name.length === 0) {
+            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} has no name`);
+        }
+        if (!isRecord(args)) {
+            throw new TypeError(`Invalid native_tool_calling response: item ${String(index)} has invalid arguments`);
+        }
+
+        return { name, arguments: args };
+    });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
