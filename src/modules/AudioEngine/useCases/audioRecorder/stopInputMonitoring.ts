@@ -1,4 +1,4 @@
-import { stopInputMonitoring as stopInputMonitoringRepo } from '../../repositories/audioRecorder/inputMonitoring';
+import { stopInputMonitoring as stopInputMonitoringRepo } from '../../repositories/audioRecorder/stopInputMonitoring';
 
 export function stopInputMonitoring(): void {
     stopInputMonitoringRepo();
