@@ -2,7 +2,6 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { type RuntimeAction } from '#/modules/AiRuntime/models/RuntimeAction';
 import { llmStatusStore, pushAiActionGroup } from '#/modules/AiRuntime/stores';
 import {
     parsePromptToActions,
@@ -56,7 +55,7 @@ export type PromptFuzzyResult = {
     score: number;
 };
 
-type PromptAction = RuntimeAction;
+type PromptAction = ReturnType<typeof resolvePresetActions>[number];
 
 type PromptPreview = {
     actions: PromptAction[];
