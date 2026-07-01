@@ -1339,8 +1339,37 @@ const sourdawPlugin = {
             create(context) {
                 if (!isProductionSourceFile(context.filename) || isFixtureFile(context.filename)) return {};
 
-                /** @type {Map<string, { storeName: string; moduleName: string }>} */
+                const sourceCode = context.sourceCode;
+
+                /** @type {Map<any, { storeName: string; moduleName: string }>} */
                 const foreignStoreBindings = new Map();
+
+                /**
+                 * @param {any} specifier
+                 * @returns {any | null}
+                 */
+                function getImportVariable(specifier) {
+                    const variables = sourceCode.getDeclaredVariables(specifier);
+                    return variables.find((variable) => variable.name === specifier.local?.name) ?? null;
+                }
+
+                /**
+                 * @param {any} identifier
+                 * @returns {any | null}
+                 */
+                function getResolvedVariable(identifier) {
+                    let scope = sourceCode.getScope(identifier);
+                    while (scope) {
+                        const variable = scope.set.get(identifier.name);
+                        if (variable) {
+                            return variable;
+                        }
+
+                        scope = scope.upper;
+                    }
+
+                    return null;
+                }
 
                 return {
                     /** @param {any} node */
@@ -1361,7 +1390,10 @@ const sourdawPlugin = {
                             const storeName = getImportSpecifierImportedName(specifier);
                             if (!storeName) continue;
 
-                            foreignStoreBindings.set(specifier.local.name, {
+                            const importedVariable = getImportVariable(specifier);
+                            if (!importedVariable) continue;
+
+                            foreignStoreBindings.set(importedVariable, {
                                 storeName,
                                 moduleName: importedModule.moduleName,
                             });
@@ -1376,7 +1408,10 @@ const sourdawPlugin = {
                         if (method !== 'set' && method !== 'update') return;
                         if (callee.object?.type !== 'Identifier') return;
 
-                        const binding = foreignStoreBindings.get(callee.object.name);
+                        const resolvedVariable = getResolvedVariable(callee.object);
+                        if (!resolvedVariable) return;
+
+                        const binding = foreignStoreBindings.get(resolvedVariable);
                         if (!binding) return;
 
                         context.report({
