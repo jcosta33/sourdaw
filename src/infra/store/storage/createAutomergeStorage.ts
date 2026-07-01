@@ -1,26 +1,45 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
-// Cross the CrdtDocument boundary via individual use-case files rather than
-// the package barrel. The barrel also re-exports `projectProjection`, which
-// transitively imports stores that themselves call `createAutomergeStorage()`
-// at module scope. Going through the barrel forms a temporal cycle where this
-// function is still `undefined` when those store modules evaluate.
-//
-// These deep paths match the pre-existing `semanticChangeContext` import style
-// in this file and stay within the `useCases/` area (not the private
-// `repositories/` path the previous revision of this file reached into).
-import { getSemanticContext } from '#/modules/CrdtDocument/stores/semanticChangeContext';
-import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
-import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
-import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
 
 import { type StorageAdapter } from './types';
+
+type AutomergeStorageDocId = string;
+
+type AutomergeStorageReadableDoc = {
+    readonly [key: string]: unknown;
+};
+
+type AutomergeStorageMutableDoc = {
+    [key: string]: unknown;
+};
+
+type AutomergeStorageMutationInput = {
+    docId: AutomergeStorageDocId;
+    changeFn: (doc: AutomergeStorageMutableDoc) => void;
+    message?: string;
+};
+
+type AutomergeStoragePort = {
+    getSemanticMessage(): string | undefined;
+    hasDoc(docId: AutomergeStorageDocId): boolean;
+    getDoc(docId: AutomergeStorageDocId): AutomergeStorageReadableDoc | undefined;
+    mutateDoc(input: AutomergeStorageMutationInput): void;
+};
 
 type AutomergeStorageOptions<TData> = {
     /** Optional function to strip ephemeral fields before writing to CRDT. */
     toCrdt?: (value: TData) => Partial<TData>;
     /** Optional function to normalize incoming data on hydrate (e.g. fill missing fields from older schemas). */
     fromCrdt?: (value: TData) => TData;
+};
+
+let automergeStoragePort: AutomergeStoragePort | null = null;
+
+export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
+    automergeStoragePort = port;
+}
+
+const getAutomergeStoragePort = (): AutomergeStoragePort | null => {
+    return automergeStoragePort;
 };
 
 /**
@@ -47,7 +66,7 @@ type AutomergeStorageOptions<TData> = {
  * values. `toDocSafe()` strips both via a JSON round-trip.
  */
 export const createAutomergeStorage = <TData>(
-    docId: DocId,
+    docId: AutomergeStorageDocId,
     key: string,
     options?: AutomergeStorageOptions<TData>
 ): StorageAdapter<TData> => {
@@ -66,14 +85,19 @@ export const createAutomergeStorage = <TData>(
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
     const writeToCrdt = (value: TData | null, message?: string): void => {
-        if (!hasCrdtDoc(docId)) {
+        const port = getAutomergeStoragePort();
+        if (!port) {
+            return;
+        }
+
+        if (!port.hasDoc(docId)) {
             return;
         }
 
         const crdtValue = value !== null && toCrdt ? toCrdt(value) : value;
 
-        mutateCrdtDoc<Record<string, unknown>>({
-            id: docId,
+        port.mutateDoc({
+            docId,
             changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
@@ -83,6 +107,10 @@ export const createAutomergeStorage = <TData>(
             },
             message,
         });
+    };
+
+    const getSemanticMessage = (): string | undefined => {
+        return getAutomergeStoragePort()?.getSemanticMessage();
     };
 
     return {
@@ -100,7 +128,7 @@ export const createAutomergeStorage = <TData>(
                 // cleared the context in its `finally`, so reading it inside the
                 // RAF would always see `null` and record `message: undefined`.
                 // The first `set()` of a frame owns the coalesced write's message.
-                const message = getSemanticContext()?.message;
+                const message = getSemanticMessage();
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     try {
@@ -117,7 +145,7 @@ export const createAutomergeStorage = <TData>(
             // Flush immediately on clear rather than batching. The write is
             // synchronous here, so the caller's semantic context (set by
             // `executeAppAction`) is still live and can annotate the change.
-            const message = getSemanticContext()?.message;
+            const message = getSemanticMessage();
             if (rafId !== null) {
                 cancelAnimationFrame(rafId);
                 rafId = null;
@@ -134,12 +162,12 @@ export const createAutomergeStorage = <TData>(
         },
 
         hydrate(): boolean {
-            const doc = getCrdtDoc<Record<string, unknown>>(docId);
+            const doc = getAutomergeStoragePort()?.getDoc(docId);
             if (!doc) {
                 return false;
             }
 
-            const value = (doc as Record<string, unknown>)[key];
+            const value = doc[key];
             if (value !== undefined) {
                 // §119.1 — single strip pass via one JSON round-trip (the
                 // Automerge proxy deref + undefined strip are unavoidable).
