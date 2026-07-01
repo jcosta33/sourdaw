@@ -1,3 +1,5 @@
+import { pickFiles } from '#/modules/Project/useCases';
+
 import { type GrinderImportedNeuralModel } from '../models/GrinderPatch';
 import { persistGrinderNeuralLibrary } from '../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary';
 import { pickGrinderNeuralModelFiles } from '../repositories/neuralLibraryPersistence/pickGrinderNeuralModelFiles';
@@ -13,7 +15,7 @@ import {
 export async function importGrinderNeuralModels(): Promise<GrinderImportedNeuralModel[]> {
     setGrinderNeuralLibraryState({ loading: true, error: null });
 
-    const files = await pickGrinderNeuralModelFiles();
+    const files = await pickGrinderNeuralModelFiles({ pick_files: pickFiles });
     if (!files || files.length === 0) {
         setGrinderNeuralLibraryState({ loading: false });
         return [];
