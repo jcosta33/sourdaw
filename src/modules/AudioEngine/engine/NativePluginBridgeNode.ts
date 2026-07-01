@@ -11,7 +11,7 @@
  * recent available block in the meantime.
  */
 
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+import { processAudioIPC, setPluginParameter } from '#/modules/Plugin/useCases';
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;
@@ -44,40 +44,46 @@ export async function createNativePluginBridgeNode(
 
     // Relay audio between worklet and Rust
     node.port.onmessage = async (event: MessageEvent<WorkletMessage>) => {
-        if (event.data.type === 'process' && isTauri()) {
-            if (pendingBlock) {
-                return;
-            } // Drop block — previous round-trip still in flight
-            pendingBlock = true;
+        if (event.data.type !== 'process') {
+            return;
+        }
 
-            const audioBuffer = event.data.audio as ArrayBuffer;
+        if (pendingBlock) {
+            return;
+        } // Drop block — previous round-trip still in flight
 
-            try {
-                const resultBytes = (await tauriInvoke('process_plugin_audio', {
-                    enginePluginId,
-                    audioBytes: new Uint8Array(audioBuffer),
-                })) as Uint8Array;
+        const audioBuffer = event.data.audio;
+        if (!audioBuffer) {
+            return;
+        }
 
-                // resultBytes is already a Uint8Array (binary IPC), so we can use its buffer directly.
-                node.port.postMessage({ type: 'processed', audio: resultBytes.buffer }, [resultBytes.buffer]);
-            } catch {
-                // If Rust processing fails, the worklet falls back to passthrough
-            } finally {
-                pendingBlock = false;
+        pendingBlock = true;
+
+        try {
+            const resultBytes = await processAudioIPC({
+                enginePluginId,
+                audioBytes: new Uint8Array(audioBuffer),
+            });
+
+            if (resultBytes) {
+                const processedBuffer = new Uint8Array(resultBytes).buffer;
+                node.port.postMessage({ type: 'processed', audio: processedBuffer }, [processedBuffer]);
             }
+        } catch {
+            // If Rust processing fails, the worklet falls back to passthrough
+        } finally {
+            pendingBlock = false;
         }
     };
 
     return {
         workletNode: node,
         setParam(paramId: number, value: number) {
-            if (isTauri()) {
-                tauriInvoke('set_plugin_parameter', {
-                    instanceId,
-                    paramId,
-                    value,
-                }).catch(() => {});
-            }
+            void setPluginParameter({
+                instanceId,
+                paramId,
+                value,
+            }).catch(() => {});
         },
         setBypass(_bypassed: boolean) {
             // TODO: Send bypass command to native engine
