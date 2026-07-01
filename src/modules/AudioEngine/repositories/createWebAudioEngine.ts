@@ -7,7 +7,6 @@ import { BusNode } from '../engine/BusNode';
 import { TrackNode } from '../engine/TrackNode';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
-import { clearAllReportedLatency } from '../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 
 import type {
     AdjustmentLayerTickInput,
@@ -906,11 +905,6 @@ class AudioEngineImpl implements AudioEngine {
             this.removeTrackStrip(id);
         }
         this.pendingDevicePromises.clear();
-        // Drop every reported-latency entry for the torn-down project. Per-device
-        // clearReportedLatency only fires from a device's destroy(), so devices
-        // without that path (and any whose teardown was skipped) would otherwise
-        // leak entries that accumulate across project switches without bound.
-        clearAllReportedLatency();
     }
 
     public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
