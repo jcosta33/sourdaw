@@ -2,13 +2,7 @@
  * Shared generation-style type unions.
  *
  * These unions are the single source of truth for the melody / chord /
- * drum style identifiers accepted by both the `AiGeneration` algorithm
- * implementations and the `AiRuntime` DSO compiler (`compileDso.ts`).
- *
- * Keeping them in `AiGeneration/models/` — a leaf module with no runtime
- * imports from either use-case surface — lets `AiRuntime/useCases/dsoEditor`
- * reference them via `import type` without introducing a module-init
- * circular dependency with `AiGeneration/useCases`.
+ * drum style identifiers accepted by `AiGeneration` algorithm implementations.
  */
 
 export type MelodyStyle = 'simple' | 'arpeggiated' | 'stepwise' | 'rhythmic' | 'ambient';
