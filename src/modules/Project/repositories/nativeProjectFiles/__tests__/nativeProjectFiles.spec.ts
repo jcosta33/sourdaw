@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getProjectDirectory } from '../getProjectDirectory';
-import { tauriInvoke, isTauriAvailable } from '../helpers';
+import { isTauriAvailable } from '../helpers';
 import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
+import { tauriInvoke } from '../tauriInvoke';
 
 vi.mock('../helpers', () => ({
-    tauriInvoke: vi.fn(),
     isTauriAvailable: vi.fn(),
+}));
+
+vi.mock('../tauriInvoke', () => ({
+    tauriInvoke: vi.fn(),
 }));
 
 describe('nativeProjectFiles repository', () => {
