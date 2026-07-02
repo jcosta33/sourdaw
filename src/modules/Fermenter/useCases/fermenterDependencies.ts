@@ -10,15 +10,10 @@ export type FermenterDependencies = {
     getAllTracks: () => Track[];
 };
 
-let dependencies: FermenterDependencies | null = null;
+export const fermenterDependenciesHolder: { current: FermenterDependencies | null } = {
+    current: null,
+};
 
 export function setFermenterDependencies(deps: FermenterDependencies): void {
-    dependencies = deps;
-}
-
-export function getFermenterDependencies(): FermenterDependencies {
-    if (!dependencies) {
-        throw new Error('Fermenter dependencies not initialized');
-    }
-    return dependencies;
+    fermenterDependenciesHolder.current = deps;
 }

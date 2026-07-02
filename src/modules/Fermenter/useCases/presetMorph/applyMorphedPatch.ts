@@ -2,8 +2,8 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
-import { getFermenterDependencies } from '../fermenterDependencies';
 import { createFindDeviceRef } from '../fermenterParamBridge/helpers';
+import { getFermenterDependencies } from '../getFermenterDependencies';
 
 import type { DeviceRef } from '../fermenterParamBridge/helpers';
 
