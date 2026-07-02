@@ -1,4 +1,4 @@
-import { tauriInvoke } from './helpers';
+import { tauriInvoke } from './tauriInvoke';
 
 /**
  * List project files in a directory.

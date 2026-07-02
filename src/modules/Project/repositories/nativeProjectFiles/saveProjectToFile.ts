@@ -1,6 +1,6 @@
 import { type ProjectData } from '../../models/ProjectData';
 
-import { tauriInvoke } from './helpers';
+import { tauriInvoke } from './tauriInvoke';
 
 /**
  * Save a project to the native filesystem.

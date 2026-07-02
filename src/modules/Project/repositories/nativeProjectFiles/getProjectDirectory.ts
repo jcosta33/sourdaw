@@ -1,4 +1,4 @@
-import { tauriInvoke } from './helpers';
+import { tauriInvoke } from './tauriInvoke';
 
 /**
  * Get the default project directory path.
