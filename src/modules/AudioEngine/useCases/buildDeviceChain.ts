@@ -1,10 +1,12 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
 
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
-import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
+import { createDeviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
+import { createFaustDevice } from '../repositories/faustDeviceFactory';
 
 export type DeviceNodeEntry = {
     deviceId: string;
@@ -24,6 +26,17 @@ export type DeviceNodeEntry = {
 };
 
 export type BuildDeviceChainOutput = DeviceNodeEntry[];
+
+const deviceRegistry = createDeviceRegistry({
+    faustModuleMatcher: isFaustModule,
+    createFaustDevice: ({ ctx, faustModuleId }) =>
+        createFaustDevice({
+            ctx,
+            faustModuleId,
+            compileFaustDSP,
+            createFaustNode,
+        }),
+});
 
 /**
  * Build an audio device chain, connecting devices between input and output nodes.

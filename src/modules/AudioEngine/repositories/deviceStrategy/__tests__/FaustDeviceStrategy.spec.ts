@@ -1,11 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../faustDeviceFactory', () => ({
-    createFaustDevice: vi.fn(),
-}));
-
 import { type Device } from '../../../models/TrackViewTypes';
-import { createFaustDevice } from '../../faustDeviceFactory';
 import { FaustDeviceStrategy, createFaustStrategy } from '../FaustDeviceStrategy';
 
 describe('FaustDeviceStrategy', () => {
@@ -36,12 +31,14 @@ describe('FaustDeviceStrategy', () => {
 });
 
 describe('createFaustStrategy', () => {
+    const createFaustDevice = vi.fn();
+
     beforeEach(() => {
-        vi.mocked(createFaustDevice).mockReset();
+        createFaustDevice.mockReset();
     });
 
     it('should throw when createFaustDevice returns null', async () => {
-        vi.mocked(createFaustDevice).mockResolvedValue(null);
+        createFaustDevice.mockResolvedValue(null);
         const device: Device = {
             id: 'd1',
             name: 'F',
@@ -49,9 +46,13 @@ describe('createFaustStrategy', () => {
             bypassed: false,
             parameterValues: {},
         };
-        await expect(createFaustStrategy({} as BaseAudioContext, device)).rejects.toThrow(
-            /Failed to create Faust device/
-        );
+        await expect(
+            createFaustStrategy({
+                ctx: {} as BaseAudioContext,
+                device,
+                createFaustDevice,
+            })
+        ).rejects.toThrow(/Failed to create Faust device/);
     });
 
     it('should apply initial parameter values on the Faust node', async () => {
@@ -62,7 +63,7 @@ describe('createFaustStrategy', () => {
             outputNode: faustNode as unknown as AudioNode,
             nodes: [faustNode as unknown as AudioNode],
         };
-        vi.mocked(createFaustDevice).mockResolvedValue(offlineNode as never);
+        createFaustDevice.mockResolvedValue(offlineNode);
         const device: Device = {
             id: 'd1',
             name: 'F',
@@ -70,7 +71,9 @@ describe('createFaustStrategy', () => {
             bypassed: false,
             parameterValues: { gain: 0.25 },
         };
-        await createFaustStrategy({} as BaseAudioContext, device);
+        const ctx = {} as BaseAudioContext;
+        await createFaustStrategy({ ctx, device, createFaustDevice });
+        expect(createFaustDevice).toHaveBeenCalledWith({ ctx, faustModuleId: 'faust-x' });
         expect(setParamValue).toHaveBeenCalledWith('gain', 0.25);
     });
 });

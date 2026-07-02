@@ -11,13 +11,19 @@
 import { type IFaustMonoWebAudioNode, type IFaustPolyWebAudioNode } from '@grame/faustwasm';
 
 import { logger } from '#/infra/logger/appLogger';
-import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
 
 import { type OfflineDeviceNode } from './deviceNodeFactory';
 
-export { isFaustModule };
-
 type FaustNode = IFaustMonoWebAudioNode | IFaustPolyWebAudioNode;
+
+type CreateFaustNode = (faustModuleId: string, ctx: BaseAudioContext) => Promise<FaustNode | null>;
+
+type CreateFaustDeviceInput = {
+    ctx: BaseAudioContext;
+    faustModuleId: string;
+    compileFaustDSP: (faustModuleId: string) => Promise<boolean>;
+    createFaustNode: CreateFaustNode;
+};
 
 /**
  * Create a Faust device node for the device chain.
@@ -26,10 +32,12 @@ type FaustNode = IFaustMonoWebAudioNode | IFaustPolyWebAudioNode;
  * Returns null if compilation or node creation fails — the chain builder
  * should skip this device gracefully.
  */
-export async function createFaustDevice(
-    ctx: BaseAudioContext,
-    faustModuleId: string
-): Promise<OfflineDeviceNode | null> {
+export async function createFaustDevice({
+    ctx,
+    faustModuleId,
+    compileFaustDSP,
+    createFaustNode,
+}: CreateFaustDeviceInput): Promise<OfflineDeviceNode | null> {
     const compiled = await compileFaustDSP(faustModuleId);
     if (!compiled) {
         logger.warn(`[FaustDevice] Failed to compile ${faustModuleId}`);

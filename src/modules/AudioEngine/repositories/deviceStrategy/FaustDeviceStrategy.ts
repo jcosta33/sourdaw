@@ -2,13 +2,17 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
-import { createFaustDevice } from '../faustDeviceFactory';
 
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
 type FaustNodeLike = AudioNode & {
     setParamValue(name: string, value: number): void;
 };
+
+type FaustDeviceCreator = (input: {
+    ctx: BaseAudioContext;
+    faustModuleId: string;
+}) => Promise<OfflineDeviceNode | null>;
 
 export class FaustDeviceStrategy implements AudioDeviceStrategy {
     constructor(
@@ -25,8 +29,18 @@ export class FaustDeviceStrategy implements AudioDeviceStrategy {
     }
 }
 
-export async function createFaustStrategy(ctx: BaseAudioContext, device: Device): Promise<FaustDeviceStrategy> {
-    const node = await createFaustDevice(ctx, device.type);
+type CreateFaustStrategyInput = {
+    ctx: BaseAudioContext;
+    device: Device;
+    createFaustDevice: FaustDeviceCreator;
+};
+
+export async function createFaustStrategy({
+    ctx,
+    device,
+    createFaustDevice,
+}: CreateFaustStrategyInput): Promise<FaustDeviceStrategy> {
+    const node = await createFaustDevice({ ctx, faustModuleId: device.type });
     if (!node) {
         throw new Error(`Failed to create Faust device: ${device.type}`);
     }
