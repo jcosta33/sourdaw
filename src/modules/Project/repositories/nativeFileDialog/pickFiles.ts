@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { basename_from_path } from '#/utils/path-basename';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { openViaTauri } from './helpers';
+import { openViaTauri } from './openViaTauri';
 
 import type { OpenFileOptions } from './helpers';
 

@@ -1,6 +1,7 @@
 import { isTauri } from '#/utils/tauriBridge';
 
-import { openViaBrowser, openViaTauri } from './helpers';
+import { openViaBrowser } from './helpers';
+import { openViaTauri } from './openViaTauri';
 
 import type { OpenFileOptions } from './helpers';
 

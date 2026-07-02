@@ -5,8 +5,9 @@ import { save } from '@tauri-apps/plugin-dialog';
 
 import { isTauri } from '#/utils/tauriBridge';
 
-import * as helpers from '../helpers';
+import { openViaBrowser } from '../helpers';
 import { openFileDialog } from '../openFileDialog';
+import { openViaTauri } from '../openViaTauri';
 import { pickFiles } from '../pickFiles';
 import { saveFileDialog } from '../saveFileDialog';
 
@@ -16,6 +17,9 @@ vi.mock('#/utils/tauriBridge', () => ({
 
 vi.mock('../helpers', () => ({
     openViaBrowser: vi.fn(),
+}));
+
+vi.mock('../openViaTauri', () => ({
     openViaTauri: vi.fn(),
 }));
 
@@ -35,20 +39,20 @@ describe('nativeFileDialog', () => {
     describe('openFileDialog', () => {
         it('should use openViaTauri when in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/file.wav']);
+            vi.mocked(openViaTauri).mockResolvedValue(['/path/file.wav']);
 
             const result = await openFileDialog();
             expect(result).toEqual(['/path/file.wav']);
-            expect(helpers.openViaTauri).toHaveBeenCalled();
+            expect(openViaTauri).toHaveBeenCalled();
         });
 
         it('should use openViaBrowser when not in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(false);
-            vi.mocked(helpers.openViaBrowser).mockResolvedValue(['file.wav']);
+            vi.mocked(openViaBrowser).mockResolvedValue(['file.wav']);
 
             const result = await openFileDialog();
             expect(result).toEqual(['file.wav']);
-            expect(helpers.openViaBrowser).toHaveBeenCalled();
+            expect(openViaBrowser).toHaveBeenCalled();
         });
     });
 
@@ -71,7 +75,7 @@ describe('nativeFileDialog', () => {
     describe('pickFiles', () => {
         it('should return File objects in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/test.wav']);
+            vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
 
             const result = await pickFiles();
             expect(result).toHaveLength(1);
@@ -82,7 +86,7 @@ describe('nativeFileDialog', () => {
 
         it('should derive File names from native Windows Tauri paths', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(helpers.openViaTauri).mockResolvedValue(['C:\\Users\\jose\\Samples\\kick.wav']);
+            vi.mocked(openViaTauri).mockResolvedValue(['C:\\Users\\jose\\Samples\\kick.wav']);
 
             const result = await pickFiles();
 
@@ -93,7 +97,7 @@ describe('nativeFileDialog', () => {
 
         it('should reject native read failures after a Tauri selection without opening a browser picker', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/test.wav']);
+            vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
             vi.mocked(invoke).mockRejectedValue(new Error('native read denied'));
             const createElementSpy = vi.spyOn(document, 'createElement');
 
