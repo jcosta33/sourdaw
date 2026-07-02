@@ -1,5 +1,6 @@
+import { getActiveInput } from '../getActiveInput';
 import { onMidiMessage } from '../messageHandlers';
-import { getActiveInput, setActiveInput } from '../state';
+import { setActiveInput } from '../setActiveInput';
 
 export function attachInput(input: MIDIInput): void {
     const current = getActiveInput();

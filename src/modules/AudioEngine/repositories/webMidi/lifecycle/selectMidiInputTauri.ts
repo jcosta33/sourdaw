@@ -1,7 +1,8 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
+import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
 import { onMidiMessage } from '../messageHandlers';
-import { getTauriEventUnlisten, setTauriEventUnlisten } from '../state';
+import { setTauriEventUnlisten } from '../setTauriEventUnlisten';
 
 type TauriMidiMessageEvent = {
     payload: {

@@ -19,13 +19,20 @@ const { fermenterNoteOff, getTrackStrip, ensureTrackStrip } = vi.hoisted(() => (
 }));
 
 // NOTE: mock specifiers are resolved against this test file's location; the
-// module-under-test (`../messageHandlers`) imports `./state` and
-// `../createWebAudioEngine`, which from here are `../state` and
-// `../../createWebAudioEngine`.
+// module-under-test (`../messageHandlers`) imports `./state`,
+// `./getMpeEnabled`, `./getTargetTrackId`, and `../createWebAudioEngine`,
+// which from here are `../state`, `../getMpeEnabled`,
+// `../getTargetTrackId`, and `../../createWebAudioEngine`.
 vi.mock('../state', () => ({
     activeNotes: new Map<number, { channel: number; startTime: number; startBeat: number }>(),
     channelToNote: new Map<number, number>(),
+}));
+
+vi.mock('../getMpeEnabled', () => ({
     getMpeEnabled: () => false,
+}));
+
+vi.mock('../getTargetTrackId', () => ({
     getTargetTrackId: () => 'track-1',
 }));
 

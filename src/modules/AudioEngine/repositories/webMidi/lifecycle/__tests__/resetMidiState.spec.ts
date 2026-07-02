@@ -15,7 +15,13 @@ const { activeNotes, channelToNote } = vi.hoisted(() => ({
 vi.mock('../../state', () => ({
     activeNotes,
     channelToNote,
+}));
+
+vi.mock('../../getMidiAccess', () => ({
     getMidiAccess: () => null,
+}));
+
+vi.mock('../../getActiveInput', () => ({
     getActiveInput: () => null,
 }));
 

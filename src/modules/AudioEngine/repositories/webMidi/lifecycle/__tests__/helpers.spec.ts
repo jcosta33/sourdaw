@@ -4,8 +4,11 @@ const getActiveInputMock = vi.hoisted(() => vi.fn<MIDIInput | null, []>());
 const setActiveInputMock = vi.hoisted(() => vi.fn<void, [MIDIInput | null]>());
 const onMidiMessageMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../state', () => ({
+vi.mock('../../getActiveInput', () => ({
     getActiveInput: () => getActiveInputMock(),
+}));
+
+vi.mock('../../setActiveInput', () => ({
     setActiveInput: (input: MIDIInput | null) => setActiveInputMock(input),
 }));
 

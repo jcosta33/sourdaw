@@ -18,7 +18,7 @@ const { fermenter_note_off, grand_boule_note_off, levain_note_off, get_track_str
     })
 );
 
-vi.mock('../state', () => ({
+vi.mock('../getTargetTrackId', () => ({
     getTargetTrackId: get_target_track_id,
 }));
 
