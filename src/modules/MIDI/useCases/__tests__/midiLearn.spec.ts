@@ -8,7 +8,7 @@ import { midiLearnStore } from '../../stores/midiLearnStore';
 import { type MidiLearnState } from '../../stores/midiLearnStore';
 import { completeMidiLearn } from '../midiLearn/completeMidiLearn';
 import { findMappingForTarget } from '../midiLearn/findMappingForTarget';
-import { scaleMidiValue } from '../midiLearn/handleMidiMessage';
+import { scaleMidiValue } from '../midiLearn/scaleMidiValue';
 import { startMidiLearn } from '../midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
 
@@ -66,12 +66,13 @@ describe('midiLearn injectables', () => {
         });
 
         expect(logger.info).toHaveBeenCalled();
-        expect(midiLearnStore.set).toHaveBeenCalledWith(
-            expect.objectContaining({
-                isLearning: true,
-                learningTarget: expect.objectContaining({ paramId: 'p1' }),
-            })
-        );
+        expect(midiLearnStore.set).toHaveBeenCalledOnce();
+        expect(midiLearnStore.value?.isLearning).toBe(true);
+        expect(midiLearnStore.value?.learningTarget).toEqual({
+            targetType: 'fermenterGlobalParam',
+            trackId: 'global',
+            paramId: 'p1',
+        });
     });
 
     it('should clear learning state when stopMidiLearn runs', () => {

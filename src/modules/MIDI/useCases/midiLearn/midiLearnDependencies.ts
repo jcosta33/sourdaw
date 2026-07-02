@@ -20,15 +20,10 @@ export type MidiLearnDependencies = {
     getAllTracks: () => Track[];
 };
 
-let dependencies: MidiLearnDependencies | null = null;
+export const midiLearnDependenciesHolder: { current: MidiLearnDependencies | null } = {
+    current: null,
+};
 
 export function setMidiLearnDependencies(deps: MidiLearnDependencies): void {
-    dependencies = deps;
-}
-
-export function getMidiLearnDependencies(): MidiLearnDependencies {
-    if (!dependencies) {
-        throw new Error('MIDI learn dependencies not initialized');
-    }
-    return dependencies;
+    midiLearnDependenciesHolder.current = deps;
 }
