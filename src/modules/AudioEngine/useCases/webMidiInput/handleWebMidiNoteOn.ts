@@ -116,17 +116,15 @@ export const handleWebMidiNoteOn = inject({
                             continue;
                         }
                         const synthParams = deps.getSynthParamsForTrack(instrumentTrackId);
-                        if (synthParams) {
-                            deps.scheduleNote(
-                                engine.context,
-                                strip.gainNode,
-                                eventNote,
-                                now,
-                                0.5,
-                                eventVelocity,
-                                synthParams
-                            );
-                        }
+                        deps.scheduleNote(
+                            engine.context,
+                            strip.gainNode,
+                            eventNote,
+                            now,
+                            0.5,
+                            eventVelocity,
+                            synthParams
+                        );
                     } else if (event.kind.type === 'noteOff') {
                         const eventNote = event.kind.note;
                         const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');

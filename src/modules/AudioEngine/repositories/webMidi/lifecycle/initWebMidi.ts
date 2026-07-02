@@ -4,17 +4,16 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
-import { getActiveInput } from '../getActiveInput';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
-import { setActiveInput } from '../setActiveInput';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
 import { setTauriMode } from '../setTauriMode';
 import { WebMidiEventBus } from '../webMidiEventBus';
 
+import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
@@ -43,10 +42,8 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
     const state = getState();
     const selectedStillExists = inputs.some((index) => index.id === state.selectedInputId);
 
-    const currentInput = getActiveInput();
-    if (!selectedStillExists && currentInput) {
-        currentInput.onmidimessage = null;
-        setActiveInput(null);
+    if (!selectedStillExists) {
+        detachActiveInput();
     }
 
     const currentAccess = getMidiAccess();

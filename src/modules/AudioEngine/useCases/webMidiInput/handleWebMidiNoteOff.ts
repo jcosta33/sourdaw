@@ -88,9 +88,9 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     context.sampleRate
                 );
                 const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-                const emitGrandBouleOff = (deviceId: string, midiNote: number): void => {
+                function emitGrandBouleOff(deviceId: string, midiNote: number): void {
                     void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
-                };
+                }
                 for (const event of processedEvents) {
                     if (event.kind.type !== 'noteOff') {
                         continue;

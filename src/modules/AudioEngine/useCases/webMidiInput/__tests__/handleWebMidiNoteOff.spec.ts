@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MidiEvent } from '#/modules/Yeast/useCases';
+
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
 const get_track_strip = vi.hoisted(() => vi.fn());
@@ -101,6 +103,113 @@ describe('handleWebMidiNoteOff', () => {
         expect(append_recorded_midi_note).toHaveBeenCalledWith({
             clipId: 'clip-1',
             note: recorded_note,
+        });
+    });
+
+    it('should route Yeast note-off events through the rack to the instrument', () => {
+        const fermenter_note_off = vi.fn<void, [number]>();
+        const process_realtime_midi_input = vi.fn((): MidiEvent[] => [
+            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+        ]);
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput: process_realtime_midi_input,
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: { noteOff: fermenter_note_off } },
+            ],
+        });
+        activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0 });
+
+        fn(0, 60);
+
+        expect(process_realtime_midi_input).toHaveBeenCalledTimes(1);
+        expect(fermenter_note_off).toHaveBeenCalledWith(67);
+    });
+
+    it('should release a live synth oscillator through its envelope', () => {
+        const set_target_at_time = vi.fn<void, [number, number, number]>();
+        const cancel_scheduled_values = vi.fn<void, [number]>();
+        const stop = vi.fn<void, [number]>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [] }],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                getSynthParamsForTrack: () => ({ release: 0.6 }),
+            })
+        );
+        activeNotes.set(64, {
+            channel: 0,
+            startTime: 0,
+            startBeat: 0,
+            osc: {
+                _env: {
+                    gain: {
+                        cancelScheduledValues: cancel_scheduled_values,
+                        setTargetAtTime: set_target_at_time,
+                    },
+                },
+                stop,
+            } as unknown as OscillatorNode & { _env?: GainNode },
+        });
+
+        fn(0, 64);
+
+        expect(cancel_scheduled_values).toHaveBeenCalledWith(2);
+        expect(set_target_at_time).toHaveBeenCalledWith(0, 2, 0.6 / 3);
+        expect(stop).toHaveBeenCalledWith(2 + 0.6 + 0.05);
+    });
+
+    it('should pass Grand Boule release velocity to controls and event payloads', () => {
+        const grand_boule_note_off = vi.fn<void, [number, number | undefined, number]>();
+        const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'gb-1', type: 'grand-boule' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                eventBus: {
+                    emit: (type: string, payload: Record<string, unknown>) => {
+                        emitted.push({ type, payload });
+                        return Promise.resolve();
+                    },
+                    on: () => () => {},
+                },
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOff: grand_boule_note_off } },
+            ],
+        });
+        activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0, grandBouleDeviceId: 'gb-1' });
+
+        fn(0, 60, 96 / 127);
+
+        expect(grand_boule_note_off).toHaveBeenCalledWith(60, undefined, 96 / 127);
+        expect(emitted).toContainEqual({
+            type: 'midi.noteOff',
+            payload: { deviceId: 'gb-1', midiNote: 60, releaseVelocity: 96 / 127 },
         });
     });
 });
