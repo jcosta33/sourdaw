@@ -1,4 +1,4 @@
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Save all CRDT documents to a native .sdaw file. */
 export async function nativeSaveBundle(path: string): Promise<boolean> {

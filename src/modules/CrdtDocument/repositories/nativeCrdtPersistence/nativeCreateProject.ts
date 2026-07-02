@@ -1,4 +1,4 @@
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Create a new CRDT project via the native backend. */
 export async function nativeCreateProject(name: string, sampleRate: number): Promise<boolean> {

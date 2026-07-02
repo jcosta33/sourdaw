@@ -1,6 +1,6 @@
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Load CRDT documents from a native .sdaw file. */
 export async function nativeLoadBundle(path: string): Promise<DocumentBundle | null> {
