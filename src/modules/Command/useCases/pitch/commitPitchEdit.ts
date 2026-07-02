@@ -6,7 +6,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
 
-import { getPitchEditDependencies } from './pitchEditDependencies';
+import { getPitchEditDependencies } from './getPitchEditDependencies';
 
 type NoteSegment = {
     start_time_ms: number;
