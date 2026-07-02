@@ -2,7 +2,7 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
-import { getFermenterDependencies } from '../fermenterDependencies';
+import { getFermenterDependencies } from '../getFermenterDependencies';
 
 import { createFindDeviceRef } from './helpers';
 import { mapFermenterPatchToDspPatch } from './mapFermenterPatchToDspPatch';
