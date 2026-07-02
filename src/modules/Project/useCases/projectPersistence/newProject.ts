@@ -11,8 +11,9 @@ import { removeProjectJson } from '../../repositories/project/storageOperations'
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 
-import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
+import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
+import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export function newProject(name = 'Untitled Project'): void {
     // Stop any in-flight playback and tear down the previous project's audio
