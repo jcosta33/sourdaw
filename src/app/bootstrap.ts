@@ -41,6 +41,7 @@ import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,
+    getUndoRedoHandlers,
     getUndoTreeHandlers,
     setCommandEventBus,
     setPitchEditDependencies,
@@ -190,6 +191,7 @@ registerHandlerMap(getMidiLearnHandlers());
 registerHandlerMap(getScratchPadHandlers());
 registerHandlerMap(getPatternInstanceHandlers());
 registerHandlerMap(getMacroHandlers());
+registerHandlerMap(getUndoRedoHandlers());
 registerHandlerMap(getUndoTreeHandlers());
 registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());

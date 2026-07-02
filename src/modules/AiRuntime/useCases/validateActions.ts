@@ -58,6 +58,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     createFolder: true,
     setSend: true,
     setWorkspaceMode: true,
+    openPreferencesDialog: true,
     openMixer: true,
     closeMixer: true,
     toggleSidebar: true,
@@ -213,6 +214,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     playMacro: true,
     previousSetlistItem: true,
     quantizeTransients: true,
+    redo: true,
     removeChordEvent: true,
     removeFromVca: true,
     restoreAutomationLanePoints: true,
@@ -241,6 +243,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     toggleScratchPad: true,
     toggleUndoTree: true,
     triggerScene: true,
+    undo: true,
     variationMidi: true,
 } as const satisfies Record<RuntimeActionType, true>;
 

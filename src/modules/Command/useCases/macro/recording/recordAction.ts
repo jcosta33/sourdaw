@@ -3,6 +3,8 @@ import { type AppAction } from '../../commandQueries';
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */
 const EXCLUDED_ACTIONS = new Set([
+    'undo',
+    'redo',
     'startMacroRecording',
     'stopMacroRecording',
     'playMacro',

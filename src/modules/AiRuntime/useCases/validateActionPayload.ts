@@ -202,6 +202,7 @@ const validators = {
     leaveCollabSession: 'unchecked',
 
     // UI / workspace toggles — no payload validation needed (view state only)
+    openPreferencesDialog: 'unchecked',
     openMixer: 'unchecked',
     closeMixer: 'unchecked',
     toggleSidebar: 'unchecked',
@@ -417,6 +418,8 @@ const validators = {
     stopMacroRecording: 'unchecked',
     playMacro: 'unchecked',
     deleteMacro: 'unchecked',
+    undo: 'unchecked',
+    redo: 'unchecked',
     toggleUndoTree: 'unchecked',
     labelUndoBranch: 'unchecked',
 

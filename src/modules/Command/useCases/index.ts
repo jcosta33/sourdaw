@@ -11,6 +11,7 @@ export { executeAppAction } from './executeAppAction';
 export type { ExecuteOptions } from './executeAppAction';
 
 export { getMacroHandlers } from './getMacroHandlers';
+export { getUndoRedoHandlers } from './getUndoRedoHandlers';
 export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
 // `playMacro` / `deleteMacro` / `renameMacro` are invoked through

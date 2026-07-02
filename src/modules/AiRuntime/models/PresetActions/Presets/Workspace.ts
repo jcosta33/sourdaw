@@ -1,5 +1,3 @@
-import { openPreferencesDialog } from '#/modules/Workspace/useCases';
-
 import { type PresetAction } from './Types';
 
 export const workspacePresets: readonly PresetAction[] = [
@@ -78,9 +76,6 @@ export const workspacePresets: readonly PresetAction[] = [
         label: 'Open Preferences',
         keywords: ['preferences', 'settings', 'options', 'config'],
         category: 'Workspace',
-        buildAction: () => {
-            openPreferencesDialog();
-            return [];
-        },
+        buildAction: () => ({ type: 'openPreferencesDialog' }),
     },
 ];

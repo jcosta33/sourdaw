@@ -1,5 +1,3 @@
-import { redo, undo } from '#/modules/Command/useCases';
-
 import { type PresetAction } from './Types';
 
 export const filePresets: readonly PresetAction[] = [
@@ -50,20 +48,14 @@ export const filePresets: readonly PresetAction[] = [
         label: 'Undo',
         keywords: ['undo', 'ctrl z', 'cmd z'],
         category: 'File',
-        buildAction: () => {
-            void undo();
-            return [];
-        },
+        buildAction: () => ({ type: 'undo' }),
     },
     {
         id: 'redo',
         label: 'Redo',
         keywords: ['redo', 'ctrl shift z', 'cmd shift z'],
         category: 'File',
-        buildAction: () => {
-            void redo();
-            return [];
-        },
+        buildAction: () => ({ type: 'redo' }),
     },
 ];
 

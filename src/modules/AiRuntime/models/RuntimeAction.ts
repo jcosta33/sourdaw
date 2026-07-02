@@ -1,6 +1,6 @@
-import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
-
 export type RuntimeTrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+
+type RuntimeDocumentBundle = Map<string, Uint8Array>;
 
 export type RuntimeAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: RuntimeTrackKind } }
@@ -100,6 +100,7 @@ export type RuntimeAction =
     | { type: 'createFolder'; payload: { name: string } }
     | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }
     | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
+    | { type: 'openPreferencesDialog'; payload?: undefined }
     | { type: 'openMixer'; payload?: undefined }
     | { type: 'closeMixer'; payload?: undefined }
     | { type: 'toggleSidebar'; payload?: undefined }
@@ -327,6 +328,8 @@ export type RuntimeAction =
     | { type: 'stopMacroRecording'; payload: { name: string } }
     | { type: 'playMacro'; payload: { macroId: string } }
     | { type: 'deleteMacro'; payload: { macroId: string } }
+    | { type: 'undo'; payload?: undefined }
+    | { type: 'redo'; payload?: undefined }
     | { type: 'toggleUndoTree'; payload?: undefined }
     | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
     | { type: 'detectSongStructure'; payload: { trackId?: string } }
@@ -361,6 +364,6 @@ export type RuntimeAction =
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: DocumentBundle } };
+    | { type: 'restoreDsoSnapshot'; payload: { bundle: RuntimeDocumentBundle } };
 
 export type RuntimeActionType = RuntimeAction['type'];

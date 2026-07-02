@@ -31,6 +31,8 @@ describe('recordAction', () => {
         startRecording();
 
         const meta: AppAction[] = [
+            { type: 'undo' },
+            { type: 'redo' },
             { type: 'startMacroRecording' },
             { type: 'stopMacroRecording' },
             { type: 'playMacro', payload: { macroId: 'm1' } },
