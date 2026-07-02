@@ -10,8 +10,9 @@ import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 
-import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
+import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
+import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
     const current = projectStore.value;

@@ -7,15 +7,10 @@
  * which meant `newProject → loadProject` would leak the first auto-save loop.
  */
 
-let stopAutoSave: (() => void) | null = null;
+export const autoSaveHandle = {
+    stopAutoSave: null as (() => void) | null,
+};
 
 export function setAutoSaveHandle(handle: (() => void) | null): void {
-    stopAutoSave = handle;
-}
-
-export function stopActiveAutoSave(): void {
-    if (stopAutoSave) {
-        stopAutoSave();
-        stopAutoSave = null;
-    }
+    autoSaveHandle.stopAutoSave = handle;
 }
