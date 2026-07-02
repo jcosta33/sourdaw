@@ -14,11 +14,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: mocks.logger,
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => ({
-    compileFaustDSP: mocks.compileFaustDSP,
-    createFaustNode: mocks.createFaustNode,
-    isFaustModule: vi.fn(),
-}));
+vi.mock('#/modules/Plugin/useCases', () => {
+    throw new Error('faustDeviceFactory must receive Plugin Faust operations by injection');
+});
 
 describe('createFaustDevice', () => {
     beforeEach(() => {
@@ -31,11 +29,24 @@ describe('createFaustDevice', () => {
         mocks.compileFaustDSP.mockResolvedValue(false);
 
         const ctx = {} as BaseAudioContext;
-        const result = await createFaustDevice(ctx, 'faust-test');
+        const result = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust-test' });
 
         expect(result).toBeNull();
+        expect(mocks.compileFaustDSP).toHaveBeenCalledWith('faust-test');
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to compile'));
         expect(mocks.createFaustNode).not.toHaveBeenCalled();
+    });
+
+    it('should return null and warn when node creation fails', async () => {
+        mocks.compileFaustDSP.mockResolvedValue(true);
+        mocks.createFaustNode.mockResolvedValue(null);
+
+        const ctx = {} as BaseAudioContext;
+        const result = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust-missing-node' });
+
+        expect(result).toBeNull();
+        expect(mocks.createFaustNode).toHaveBeenCalledWith('faust-missing-node', ctx);
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to create node'));
     });
 
     it('should return offline nodes when compilation and node creation succeed', async () => {
@@ -44,13 +55,28 @@ describe('createFaustDevice', () => {
         mocks.createFaustNode.mockResolvedValue(fakeNode);
 
         const ctx = {} as BaseAudioContext;
-        const result = await createFaustDevice(ctx, 'faust-ok');
+        const result = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust-ok' });
 
         expect(result).not.toBeNull();
+        expect(mocks.createFaustNode).toHaveBeenCalledWith('faust-ok', ctx);
         expect(result?.inputNode).toBe(fakeNode);
         expect(result?.outputNode).toBe(fakeNode);
     });
 });
+
+type CreateFaustDeviceForTestInput = {
+    ctx: BaseAudioContext;
+    faustModuleId: string;
+};
+
+function createFaustDeviceForTest({ ctx, faustModuleId }: CreateFaustDeviceForTestInput) {
+    return createFaustDevice({
+        ctx,
+        faustModuleId,
+        compileFaustDSP: mocks.compileFaustDSP,
+        createFaustNode: mocks.createFaustNode,
+    });
+}
 
 /** A Faust node stub exposing keyOn/keyOff so scheduleCall has something to fire. */
 function makeKeyNode(): {
@@ -107,7 +133,7 @@ describe('createFaustDevice — offline note scheduling (suspend batching)', () 
         const node = makeKeyNode();
         mocks.createFaustNode.mockResolvedValue(node);
 
-        const device = await createFaustDevice(ctx, 'faust');
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
         const controls = device!.wamControls!;
 
         // Two note-ons at the same target time (same sample frame).
@@ -130,7 +156,7 @@ describe('createFaustDevice — offline note scheduling (suspend batching)', () 
         const node = makeKeyNode();
         mocks.createFaustNode.mockResolvedValue(node);
 
-        const device = await createFaustDevice(ctx, 'faust');
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
         const controls = device!.wamControls!;
 
         // Three notes across two distinct frames (1s and 2s).
@@ -176,7 +202,7 @@ describe('createFaustDevice — live note scheduling (sample-frame-sorted queue)
         node.keyOn.mockImplementation(() => order.push('on'));
         node.keyOff.mockImplementation(() => order.push('off'));
 
-        const device = await createFaustDevice(ctx, 'faust');
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
         const controls = device!.wamControls!;
 
         // Schedule the LATER note-on first, then an EARLIER note-off: the queue
@@ -197,7 +223,7 @@ describe('createFaustDevice — live note scheduling (sample-frame-sorted queue)
         node.keyOn.mockImplementation(() => order.push('on'));
         node.keyOff.mockImplementation(() => order.push('off'));
 
-        const device = await createFaustDevice(ctx, 'faust');
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
         const controls = device!.wamControls!;
 
         controls.keyOn!(0, 60, 100, 0.3);

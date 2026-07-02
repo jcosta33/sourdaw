@@ -1,4 +1,12 @@
+import { compileFaustDSP, createFaustNode } from '#/modules/Plugin/useCases';
+
+import { createFaustDevice } from '../../repositories/faustDeviceFactory';
+
 export async function createFaustDeviceNode(ctx: BaseAudioContext, pluginId: string) {
-    const { createFaustDevice } = await import('../../repositories/faustDeviceFactory');
-    return createFaustDevice(ctx, pluginId);
+    return createFaustDevice({
+        ctx,
+        faustModuleId: pluginId,
+        compileFaustDSP,
+        createFaustNode,
+    });
 }

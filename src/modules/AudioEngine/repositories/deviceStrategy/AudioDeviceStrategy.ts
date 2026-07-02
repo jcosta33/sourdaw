@@ -32,5 +32,3 @@ export class DeviceFactoryRegistry {
         throw new Error(`No device factory registered for type: ${device.type}`);
     }
 }
-
-export const deviceRegistry = new DeviceFactoryRegistry();
