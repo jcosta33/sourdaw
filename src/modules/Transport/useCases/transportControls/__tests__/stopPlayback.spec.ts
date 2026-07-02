@@ -65,10 +65,18 @@ describe('stopPlayback', () => {
             isPlaying: true,
             isRecording: true,
         });
+        const order: string[] = [];
+        vi.mocked(stopActiveRecording).mockImplementation(() => {
+            order.push('stopActiveRecording');
+        });
+        vi.mocked(stopPlayheadScheduler).mockImplementation(() => {
+            order.push('stopPlayheadScheduler');
+        });
 
         stopPlayback();
 
         expect(stopActiveRecording).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['stopActiveRecording', 'stopPlayheadScheduler']);
     });
 
     it('should not call stopActiveRecording when not recording', () => {
