@@ -11,7 +11,7 @@ const getStateMock = vi.hoisted(() =>
     }))
 );
 
-vi.mock('../../state', () => ({
+vi.mock('../../getState', () => ({
     getState: getStateMock,
 }));
 

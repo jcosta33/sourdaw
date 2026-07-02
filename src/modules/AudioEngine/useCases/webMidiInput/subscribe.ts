@@ -1,4 +1,4 @@
-import { subscribe as subscribeToWebMidiState } from '../../repositories/webMidi/state';
+import { subscribe as subscribeToWebMidiState } from '../../repositories/webMidi/subscribe';
 
 /**
  * Public contract for Web MIDI state and lifecycle operations.

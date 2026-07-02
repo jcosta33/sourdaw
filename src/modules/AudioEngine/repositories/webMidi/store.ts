@@ -5,7 +5,8 @@ import { createStore } from '#/infra/store/createStore';
 
 import { type WebMidiState } from '../../models/WebMidiTypes';
 
-import { getState, subscribe } from './state';
+import { getState } from './getState';
+import { subscribe } from './subscribe';
 
 const defaultWebMidiState: WebMidiState = {
     isSupported: false,

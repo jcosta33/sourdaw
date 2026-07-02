@@ -1,4 +1,4 @@
-import { getTargetTrackId } from './state';
+import { getTargetTrackId } from './getTargetTrackId';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 

@@ -4,17 +4,15 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
+import { getActiveInput } from '../getActiveInput';
+import { getMidiAccess } from '../getMidiAccess';
+import { getState } from '../getState';
 import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
-import {
-    getMidiAccess,
-    getActiveInput,
-    setState,
-    getState,
-    setMidiAccess,
-    setActiveInput,
-    setTauriMode,
-    setTargetTrackId,
-} from '../state';
+import { setActiveInput } from '../setActiveInput';
+import { setMidiAccess } from '../setMidiAccess';
+import { setState } from '../setState';
+import { setTargetTrackId } from '../setTargetTrackId';
+import { setTauriMode } from '../setTauriMode';
 import { WebMidiEventBus } from '../webMidiEventBus';
 
 import { attachInput } from './helpers';

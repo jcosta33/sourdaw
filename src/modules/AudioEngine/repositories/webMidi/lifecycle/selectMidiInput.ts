@@ -1,4 +1,6 @@
-import { getMidiAccess, getTauriMode, setState } from '../state';
+import { getMidiAccess } from '../getMidiAccess';
+import { getTauriMode } from '../getTauriMode';
+import { setState } from '../setState';
 
 import { attachInput } from './helpers';
 import { selectMidiInputTauri } from './selectMidiInputTauri';

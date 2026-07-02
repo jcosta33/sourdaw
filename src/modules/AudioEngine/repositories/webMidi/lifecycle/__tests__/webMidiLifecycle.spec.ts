@@ -1,7 +1,14 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 const getMidiAccessMock = vi.hoisted(() => vi.fn<unknown, []>());
+const getActiveInputMock = vi.hoisted(() => vi.fn<MIDIInput | null, []>());
+const getStateMock = vi.hoisted(() => vi.fn(() => ({ isSupported: true, inputs: [], selectedInputId: null })));
 const requestMidiAccessMock = vi.hoisted(() => vi.fn<Promise<unknown>, []>());
+const setActiveInputMock = vi.hoisted(() => vi.fn<void, [MIDIInput | null]>());
+const setMidiAccessMock = vi.hoisted(() => vi.fn<void, [MIDIAccess]>());
+const setStateMock = vi.hoisted(() => vi.fn<void, [Record<string, unknown>]>());
+const setTargetTrackIdMock = vi.hoisted(() => vi.fn<void, [string | null]>());
+const setTauriModeMock = vi.hoisted(() => vi.fn<void, [boolean]>());
 
 // Must stub before importing the subject
 vi.stubGlobal('navigator', {
@@ -12,7 +19,6 @@ import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
-import * as state from '../../state';
 import { setWebMidiEventBus } from '../../webMidiEventBus';
 import { attachInput } from '../helpers';
 import { initWebMidi } from '../initWebMidi';
@@ -42,19 +48,36 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('../../state', () => ({
+vi.mock('../../getMidiAccess', () => ({
     getMidiAccess: () => getMidiAccessMock(),
-    getActiveInput: vi.fn(),
-    setState: vi.fn(),
-    getState: vi.fn(() => ({ isSupported: true, inputs: [], selectedInputId: null })),
-    subscribe: vi.fn(() => vi.fn()),
-    getSnapshot: vi.fn(() => ({ isSupported: true, inputs: [], selectedInputId: null })),
-    setMidiAccess: vi.fn(),
-    setActiveInput: vi.fn(),
-    setTauriMode: vi.fn(),
-    setTargetTrackId: vi.fn(),
-    getTauriEventUnlisten: vi.fn(),
-    setTauriEventUnlisten: vi.fn(),
+}));
+
+vi.mock('../../getActiveInput', () => ({
+    getActiveInput: () => getActiveInputMock(),
+}));
+
+vi.mock('../../getState', () => ({
+    getState: () => getStateMock(),
+}));
+
+vi.mock('../../setActiveInput', () => ({
+    setActiveInput: (input: MIDIInput | null) => setActiveInputMock(input),
+}));
+
+vi.mock('../../setMidiAccess', () => ({
+    setMidiAccess: (access: MIDIAccess) => setMidiAccessMock(access),
+}));
+
+vi.mock('../../setState', () => ({
+    setState: (next: Record<string, unknown>) => setStateMock(next),
+}));
+
+vi.mock('../../setTargetTrackId', () => ({
+    setTargetTrackId: (id: string | null) => setTargetTrackIdMock(id),
+}));
+
+vi.mock('../../setTauriMode', () => ({
+    setTauriMode: (enabled: boolean) => setTauriModeMock(enabled),
 }));
 
 vi.mock('../helpers', () => ({
@@ -92,7 +115,7 @@ describe('initWebMidi', () => {
 
         expect(result).toBe(true);
         expect(navigator.requestMIDIAccess).toHaveBeenCalled();
-        expect(state.setMidiAccess).toHaveBeenCalledWith(mockAccess);
+        expect(setMidiAccessMock).toHaveBeenCalledWith(mockAccess);
         expect(attachInput).toHaveBeenCalled();
     });
 
@@ -105,7 +128,7 @@ describe('initWebMidi', () => {
         const result = await initWebMidi();
 
         expect(result).toBe(true);
-        expect(state.setTauriMode).toHaveBeenCalledWith(true);
+        expect(setTauriModeMock).toHaveBeenCalledWith(true);
         expect(tauriInvoke).toHaveBeenCalledWith('list_midi_inputs');
         expect(selectMidiInputTauri).toHaveBeenCalled();
     });
@@ -117,7 +140,7 @@ describe('initWebMidi', () => {
         const result = await initWebMidi();
 
         expect(result).toBe(false);
-        expect(state.setState).toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
     });
 
     it('should subscribe to trackStore once', async () => {

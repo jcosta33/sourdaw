@@ -42,8 +42,10 @@ import {
 import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { audioEngine } from '../createWebAudioEngine';
 
+import { getMpeEnabled } from './getMpeEnabled';
+import { getTargetTrackId } from './getTargetTrackId';
 import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
-import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
+import { activeNotes, channelToNote } from './state';
 import { WebMidiEventBus } from './webMidiEventBus';
 
 function getTrackStoreState(): TrackStoreState | null {

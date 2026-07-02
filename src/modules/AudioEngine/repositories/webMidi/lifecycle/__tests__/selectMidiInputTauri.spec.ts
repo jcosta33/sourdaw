@@ -15,8 +15,11 @@ vi.mock('../../messageHandlers', () => ({
     onMidiMessage: onMidiMessageMock,
 }));
 
-vi.mock('../../state', () => ({
+vi.mock('../../getTauriEventUnlisten', () => ({
     getTauriEventUnlisten: () => getTauriEventUnlistenMock(),
+}));
+
+vi.mock('../../setTauriEventUnlisten', () => ({
     setTauriEventUnlisten: (unlisten: (() => void) | null) => setTauriEventUnlistenMock(unlisten),
 }));
 

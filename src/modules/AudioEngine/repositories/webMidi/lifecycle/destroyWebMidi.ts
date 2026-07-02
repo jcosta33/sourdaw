@@ -1,20 +1,16 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
-import {
-    getMidiAccess,
-    getActiveInput,
-    getTauriMode,
-    getTauriEventUnlisten,
-    activeNotes,
-    channelToNote,
-    midiLearn,
-    setState,
-    setMidiAccess,
-    setActiveInput,
-    setTauriMode,
-    setTauriEventUnlisten,
-    setTargetTrackId,
-} from '../state';
+import { getActiveInput } from '../getActiveInput';
+import { getMidiAccess } from '../getMidiAccess';
+import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
+import { getTauriMode } from '../getTauriMode';
+import { setActiveInput } from '../setActiveInput';
+import { setMidiAccess } from '../setMidiAccess';
+import { setState } from '../setState';
+import { setTargetTrackId } from '../setTargetTrackId';
+import { setTauriEventUnlisten } from '../setTauriEventUnlisten';
+import { setTauriMode } from '../setTauriMode';
+import { activeNotes, channelToNote, midiLearn } from '../state';
 
 export function destroyWebMidi(): void {
     const input = getActiveInput();
