@@ -5,7 +5,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
 
-import { stopActiveRecording } from './recordingLifecycle';
+import { stopActiveRecording } from './stopActiveRecording';
 
 export function seekPlayhead(beat: number): void {
     const state = getTransportState();

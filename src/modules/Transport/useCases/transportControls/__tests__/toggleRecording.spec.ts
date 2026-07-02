@@ -30,6 +30,8 @@ vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrack
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('../recordingLifecycle', () => ({
     setCountInTimerId: vi.fn(),
+}));
+vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: vi.fn(),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({

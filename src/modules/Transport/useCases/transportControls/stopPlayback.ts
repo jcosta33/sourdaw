@@ -5,7 +5,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
-import { stopActiveRecording } from './recordingLifecycle';
+import { stopActiveRecording } from './stopActiveRecording';
 
 export function stopPlayback(): void {
     const state = getTransportState();
