@@ -1,23 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { setPlayheadFromClick } from '../setPlayheadFromClick';
 
-const mocks = vi.hoisted(() => ({
-    transportStoreValue: null as unknown,
-    transportStoreSet: vi.fn(),
-    timelineViewValue: null as unknown,
+type TimelineViewStateMock = {
+    pixelsPerBeat: number;
+    scrollX: number;
+    scrollY: number;
+};
+
+type SetPlayheadFromClickMocks = {
+    seekPlayhead: Mock<(beat: number) => void>;
+    timelineViewValue: TimelineViewStateMock | null;
+};
+
+const mocks = vi.hoisted<SetPlayheadFromClickMocks>(() => ({
+    seekPlayhead: vi.fn(),
+    timelineViewValue: null,
 }));
 
-vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-    transportStore: {
-        get value() {
-            return mocks.transportStoreValue;
-        },
-        set: mocks.transportStoreSet,
-    },
+vi.mock('#/modules/Transport/useCases', () => ({
+    seekPlayhead: mocks.seekPlayhead,
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
@@ -30,26 +32,29 @@ vi.mock('../../../stores/timelineViewStore', () => ({
 
 describe('setPlayheadFromClick', () => {
     beforeEach(() => {
-        mocks.transportStoreValue = null;
-        mocks.transportStoreSet.mockReset();
+        mocks.seekPlayhead.mockReset();
         mocks.timelineViewValue = null;
     });
 
-    it('does not update transport when transport snapshot is null', () => {
-        mocks.timelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        mocks.transportStoreValue = null;
-
+    it('should not seek when timeline view state is missing', () => {
         setPlayheadFromClick(100);
 
-        expect(mocks.transportStoreSet).not.toHaveBeenCalled();
+        expect(mocks.seekPlayhead).not.toHaveBeenCalled();
     });
 
-    it('maps canvas x to playhead beats using timeline view state', () => {
+    it('should map canvas x to playhead beats using timeline view state', () => {
+        mocks.timelineViewValue = { pixelsPerBeat: 12, scrollX: 6, scrollY: 0 };
+
+        setPlayheadFromClick(18);
+
+        expect(mocks.seekPlayhead).toHaveBeenCalledWith(2);
+    });
+
+    it('should clamp negative playhead beats to zero', () => {
         mocks.timelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        mocks.transportStoreValue = defaultTransportState;
 
-        setPlayheadFromClick(24);
+        setPlayheadFromClick(-24);
 
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith(expect.objectContaining({ playheadPosition: 2 }));
+        expect(mocks.seekPlayhead).toHaveBeenCalledWith(0);
     });
 });
