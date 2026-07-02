@@ -1,32 +1,6 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
-export function createNoiseBurst(
-    ctx: OfflineAudioContext,
-    time: number,
-    duration: number,
-    vol: number,
-    filterType: BiquadFilterType,
-    freq: number
-) {
-    const noise = ctx.createBufferSource();
-    const noiseBuf = ctx.createBuffer(1, Math.ceil(duration * 44100), 44100);
-    const data = noiseBuf.getChannelData(0);
-    for (let index = 0; index < data.length; index++) {
-        data[index] = Math.random() * 2 - 1;
-    }
-    noise.buffer = noiseBuf;
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(vol, time);
-    env.gain.exponentialRampToValueAtTime(0.001, time + duration);
-    const filter = ctx.createBiquadFilter();
-    filter.type = filterType;
-    filter.frequency.value = freq;
-    noise.connect(filter);
-    filter.connect(env);
-    env.connect(ctx.destination);
-    noise.start(time);
-    noise.stop(time + duration + 0.1);
-}
+import { createNoiseBurst } from './createNoiseBurst';
 
 export async function generateDemoDrumBuffer(
     bufferId: string,
@@ -47,7 +21,14 @@ export async function generateDemoDrumBuffer(
             if (style === 'shaker') {
                 if (step % 2 === 0) {
                     const vol = step % 4 === 0 ? 0.3 : 0.15;
-                    createNoiseBurst(ctx, time, 0.05, vol, 'highpass', 4000);
+                    createNoiseBurst({
+                        ctx,
+                        time,
+                        duration: 0.05,
+                        vol,
+                        filterType: 'highpass',
+                        freq: 4000,
+                    });
                 }
                 continue;
             }
@@ -93,7 +74,14 @@ export async function generateDemoDrumBuffer(
                 osc.stop(time + 0.3);
             }
             if (isSnare) {
-                createNoiseBurst(ctx, time, 0.15, 0.6, 'highpass', 2000);
+                createNoiseBurst({
+                    ctx,
+                    time,
+                    duration: 0.15,
+                    vol: 0.6,
+                    filterType: 'highpass',
+                    freq: 2000,
+                });
                 const osc2 = ctx.createOscillator();
                 const env2 = ctx.createGain();
                 osc2.frequency.value = 200;
@@ -119,7 +107,14 @@ export async function generateDemoDrumBuffer(
                     osc.start(time);
                     osc.stop(time + 0.15);
                 } else {
-                    createNoiseBurst(ctx, time, 0.04, 0.22, 'highpass', 9000);
+                    createNoiseBurst({
+                        ctx,
+                        time,
+                        duration: 0.04,
+                        vol: 0.22,
+                        filterType: 'highpass',
+                        freq: 9000,
+                    });
                 }
             }
         }
