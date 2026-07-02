@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { preferencesStore } from '#/modules/Workspace/stores';
 import { defaultPreferences } from '#/modules/Workspace/useCases/workspaceQueries/helpers';
 
-import { getGridSnap } from '../snapToGrid';
+import { getGridSnap } from '../getGridSnap';
 
 describe('getGridSnap', () => {
     beforeEach(() => {
