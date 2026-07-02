@@ -9,13 +9,36 @@ import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset'
 import { type GrandBouleState } from '../../../stores/grandBouleStore';
 import { clamp, updateCalibration } from '../helpers';
 
-// Mock store to satisfy the interface
-const mockStore = {
-    value: null as GrandBouleState | null,
-    set(val: GrandBouleState | null) {
-        this.value = val;
-    },
-} as unknown as Store<GrandBouleState>;
+function createMockGrandBouleStore(): Store<GrandBouleState> {
+    let value: GrandBouleState | null = null;
+
+    return {
+        get value() {
+            return value;
+        },
+        set(nextValue: GrandBouleState | null) {
+            value = nextValue;
+        },
+        update(updater: (current: GrandBouleState | null) => GrandBouleState | null) {
+            value = updater(value);
+        },
+        clear() {
+            value = null;
+        },
+        hydrate() {},
+        subscribe() {
+            return () => {};
+        },
+        subscribeReact() {
+            return () => {};
+        },
+        getSnapshot() {
+            return value;
+        },
+    };
+}
+
+const mockStore = createMockGrandBouleStore();
 
 function resetGrandBouleStore(): void {
     mockStore.set({
