@@ -4,7 +4,8 @@ import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import { setBacteriaParam } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { createFindDeviceRef, createFlushParam, encodePatchValue, paramBatcher } from './helpers';
+import { createFlushParam } from './createFlushParam';
+import { createFindDeviceRef, encodePatchValue, paramBatcher } from './helpers';
 
 /**
  * Set a Bacteria global parameter — updates UI store immediately,
