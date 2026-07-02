@@ -4,7 +4,7 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
-import { stopActiveRecording } from './recordingLifecycle';
+import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
     const state = getTransportState();

@@ -8,7 +8,7 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler';
-import { stopActiveRecording } from '../recordingLifecycle';
+import { stopActiveRecording } from '../stopActiveRecording';
 import { stopPlayback } from '../stopPlayback';
 
 vi.mock('../../playheadScheduler', () => ({
@@ -26,9 +26,8 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
-vi.mock('../recordingLifecycle', () => ({
+vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: vi.fn(),
-    setCountInTimerId: vi.fn(),
 }));
 
 describe('stopPlayback', () => {

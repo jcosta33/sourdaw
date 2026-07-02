@@ -8,12 +8,12 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { stopPlayheadScheduler } from '../../playheadScheduler';
 import { pausePlayback } from '../pausePlayback';
-import { stopActiveRecording } from '../recordingLifecycle';
+import { stopActiveRecording } from '../stopActiveRecording';
 
 vi.mock('../../playheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
-vi.mock('../recordingLifecycle', () => ({
+vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({

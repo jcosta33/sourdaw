@@ -16,8 +16,9 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
-import { setCountInTimerId, stopActiveRecording } from './recordingLifecycle';
+import { setCountInTimerId } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
+import { stopActiveRecording } from './stopActiveRecording';
 
 function beginActualRecording(): void {
     const clips = startRecording();
