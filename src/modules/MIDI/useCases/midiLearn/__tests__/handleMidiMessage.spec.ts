@@ -1,18 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../handleMidiMessage';
-
-const { scaleMidiValue } = subject;
+import { handleMidiMessage } from '../handleMidiMessage';
+import { scaleMidiValue } from '../scaleMidiValue';
 
 describe('handleMidiMessage', () => {
     it('should export handleMidiMessage', () => {
-        expect(subject.handleMidiMessage).toBeDefined();
-        const time = typeof subject.handleMidiMessage;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export scaleMidiValue', () => {
-        expect(subject.scaleMidiValue).toBeDefined();
-        const time = typeof subject.scaleMidiValue;
+        expect(handleMidiMessage).toBeDefined();
+        const time = typeof handleMidiMessage;
         expect(time === 'function' || time === 'object').toBe(true);
     });
 });
