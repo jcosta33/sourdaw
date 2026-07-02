@@ -1,4 +1,4 @@
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Get a JSON snapshot of a document from the native backend. */
 export async function nativeGetDocumentState(docId: string): Promise<unknown> {

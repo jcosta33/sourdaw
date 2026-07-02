@@ -1,4 +1,4 @@
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Apply a serialized Automerge change to a document. */
 export async function nativeApplyChange(docId: string, changeBytes: number[]): Promise<boolean> {

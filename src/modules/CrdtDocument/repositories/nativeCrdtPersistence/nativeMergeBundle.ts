@@ -1,4 +1,4 @@
-import { invokeCommand } from './helpers';
+import { invokeCommand } from './invokeCommand';
 
 /** Merge an external .sdaw bundle into the current project. */
 export async function nativeMergeBundle(path: string): Promise<{ mergedDocIds: string[]; newDocIds: string[] } | null> {
