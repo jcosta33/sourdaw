@@ -11,15 +11,8 @@ export type AutomationRecordingDependencies = {
     getCompensationDelay: (trackId: string) => number;
 };
 
-let dependencies: AutomationRecordingDependencies | null = null;
+export let dependencies: AutomationRecordingDependencies | null = null;
 
 export function setAutomationRecordingDependencies(deps: AutomationRecordingDependencies): void {
     dependencies = deps;
-}
-
-export function getAutomationRecordingDependencies(): AutomationRecordingDependencies {
-    if (!dependencies) {
-        throw new Error('Automation recording dependencies not initialized');
-    }
-    return dependencies;
 }
