@@ -16,15 +16,8 @@ export type ModulationDependencies = {
     ) => { min: number; max: number; defaultValue: number } | null;
 };
 
-let dependencies: ModulationDependencies | null = null;
+export let dependencies: ModulationDependencies | null = null;
 
 export function setModulationDependencies(deps: ModulationDependencies): void {
     dependencies = deps;
-}
-
-export function getModulationDependencies(): ModulationDependencies {
-    if (!dependencies) {
-        throw new Error('Modulation dependencies not initialized');
-    }
-    return dependencies;
 }

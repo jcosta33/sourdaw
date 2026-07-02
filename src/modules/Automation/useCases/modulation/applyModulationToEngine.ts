@@ -7,7 +7,7 @@ import { getAutomationValueAtBeat } from '../automation/getAutomationValueAtBeat
 import { isRecordingAutomation } from '../automationRecording/isRecordingAutomation';
 
 import { computeModulatorValue } from './computeModulatorValue';
-import { getModulationDependencies } from './modulationDependencies';
+import { getModulationDependencies } from './getModulationDependencies';
 
 /**
  * Per-(track,device,param) exponential slew state for the modulation→engine
