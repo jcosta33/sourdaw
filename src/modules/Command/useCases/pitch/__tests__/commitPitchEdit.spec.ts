@@ -20,13 +20,17 @@ vi.mock('../../commitUndoEntry', () => ({
 }));
 
 vi.mock('../../commandQueries', () => ({
-    createCallbackUndoEntry: vi.fn().mockImplementation((label, undo, redo, source) => ({
-        label,
-        undo,
-        redo,
-        source,
-        kind: 'callback',
-    })),
+    createCallbackUndoEntry: vi
+        .fn()
+        .mockImplementation(
+            (label: string, undo: () => void, redo: () => void, source: 'manual' | 'prompt' | 'voice' | 'ai') => ({
+                label,
+                undo,
+                redo,
+                source,
+                kind: 'callback',
+            })
+        ),
 }));
 
 const mockNotificationEventBus = {

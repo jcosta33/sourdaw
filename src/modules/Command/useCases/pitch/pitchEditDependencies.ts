@@ -14,20 +14,12 @@ type CommitPitchEditInput = {
     contour: PitchContour;
 };
 
-type PitchEditDependencies = {
+export type PitchEditDependencies = {
     commitPitchEdit: (input: CommitPitchEditInput) => Promise<void>;
 };
 
-let dependencies: PitchEditDependencies | null = null;
+export let dependencies: PitchEditDependencies | null = null;
 
 export function setPitchEditDependencies(deps: PitchEditDependencies): void {
     dependencies = deps;
-}
-
-export function getPitchEditDependencies(): PitchEditDependencies {
-    if (!dependencies) {
-        throw new Error('Pitch edit dependencies not initialized');
-    }
-
-    return dependencies;
 }
