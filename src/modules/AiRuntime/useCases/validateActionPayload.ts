@@ -62,6 +62,10 @@ function isOptional<Value>(value: unknown, check: (value: unknown) => value is V
     return value === undefined || check(value);
 }
 
+function hasNoPayload(value: unknown): value is undefined {
+    return value === undefined;
+}
+
 // ── Validators (destructive / high-risk actions) ─────────────────────────
 
 function hasTrackId(param: unknown): param is { trackId: string } {
@@ -201,7 +205,10 @@ const validators = {
         isObj(param) && isString(param.inviteString) && isString(param.peerName),
     leaveCollabSession: 'unchecked',
 
-    // UI / workspace toggles — no payload validation needed (view state only)
+    // UI / workspace toggles — no payload validation needed for legacy view
+    // state only actions. New payloadless AI-reachable meta actions still get
+    // an explicit undefined guard so malformed model output is rejected.
+    openPreferencesDialog: hasNoPayload as PayloadValidator<'openPreferencesDialog'>,
     openMixer: 'unchecked',
     closeMixer: 'unchecked',
     toggleSidebar: 'unchecked',
@@ -417,6 +424,8 @@ const validators = {
     stopMacroRecording: 'unchecked',
     playMacro: 'unchecked',
     deleteMacro: 'unchecked',
+    undo: hasNoPayload as PayloadValidator<'undo'>,
+    redo: hasNoPayload as PayloadValidator<'redo'>,
     toggleUndoTree: 'unchecked',
     labelUndoBranch: 'unchecked',
 

@@ -274,6 +274,24 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('payloadless prompt meta actions', () => {
+        it.each(['openPreferencesDialog', 'undo', 'redo'] as const)(
+            'should accept only undefined payload for %s',
+            (actionType) => {
+                const guard = PAYLOAD_VALIDATORS[actionType];
+                expect(guard).not.toBe('unchecked');
+                if (guard === 'unchecked') {
+                    return;
+                }
+
+                expect(guard(undefined)).toBe(true);
+                expect(guard({ arbitrary: true })).toBe(false);
+                expect(guard(null)).toBe(false);
+                expect(guard('')).toBe(false);
+            }
+        );
+    });
+
     describe('unchecked sentinels', () => {
         it('should mark openMixer as unchecked', () => {
             expect(PAYLOAD_VALIDATORS.openMixer).toBe('unchecked');

@@ -135,6 +135,7 @@ export type AppAction =
     | { type: 'createFolder'; payload: { name: string } }
     | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }
     | { type: 'setWorkspaceMode'; payload: { mode: 'arrange' | 'clip' } }
+    | { type: 'openPreferencesDialog'; payload?: undefined }
     | { type: 'openMixer'; payload?: undefined }
     | { type: 'closeMixer'; payload?: undefined }
     | { type: 'toggleSidebar'; payload?: undefined }
@@ -379,6 +380,8 @@ export type AppAction =
     | { type: 'playMacro'; payload: { macroId: string } }
     | { type: 'deleteMacro'; payload: { macroId: string } }
     | { type: 'renameMacro'; payload: { macroId: string; name: string } }
+    | { type: 'undo'; payload?: undefined }
+    | { type: 'redo'; payload?: undefined }
     | { type: 'toggleUndoTree'; payload?: undefined }
     | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
     | { type: 'detectSongStructure'; payload: { trackId?: string } }

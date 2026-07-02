@@ -1,26 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { resolvePresetActions } from '../resolvePresetActions';
-
-vi.mock('#/modules/AiRuntime/models/PresetActions/Registry', () => ({
-    PRESET_ACTIONS: [
-        {
-            id: 'single-action',
-            buildAction: () => ({ type: 'testAction1', payload: {} }),
-        },
-        {
-            id: 'multi-action',
-            buildAction: () => [
-                { type: 'testAction1', payload: {} },
-                { type: 'testAction2', payload: {} },
-            ],
-        },
-        {
-            id: 'null-action',
-            buildAction: () => null,
-        },
-    ],
-}));
 
 describe('resolvePresetActions', () => {
     const context = {
@@ -35,21 +15,23 @@ describe('resolvePresetActions', () => {
         expect(result).toEqual([]);
     });
 
+    it('wraps a single preset action in an array', () => {
+        const result = resolvePresetActions({ presetId: 'save', context });
+        expect(result).toEqual([{ type: 'saveProject' }]);
+    });
+
     it('returns an empty array if buildAction returns null', () => {
-        const result = resolvePresetActions({ presetId: 'null-action', context });
+        const result = resolvePresetActions({ presetId: 'invert-auto', context });
         expect(result).toEqual([]);
     });
 
-    it('wraps a single action in an array', () => {
-        const result = resolvePresetActions({ presetId: 'single-action', context });
-        expect(result).toHaveLength(1);
-        expect(result[0]!.type).toBe('testAction1');
+    it('returns undo and redo as structured actions', () => {
+        expect(resolvePresetActions({ presetId: 'undo', context })).toEqual([{ type: 'undo' }]);
+        expect(resolvePresetActions({ presetId: 'redo', context })).toEqual([{ type: 'redo' }]);
     });
 
-    it('returns multiple actions as-is', () => {
-        const result = resolvePresetActions({ presetId: 'multi-action', context });
-        expect(result).toHaveLength(2);
-        expect(result[0]!.type).toBe('testAction1');
-        expect(result[1]!.type).toBe('testAction2');
+    it('returns preferences as a Workspace-owned structured action', () => {
+        const result = resolvePresetActions({ presetId: 'preferences', context });
+        expect(result).toEqual([{ type: 'openPreferencesDialog' }]);
     });
 });

@@ -26,6 +26,7 @@ export const ACTION_LABELS: Record<string, string> = {
     setTrackPan: 'Set pan',
     setTrackColor: 'Set color',
     setWorkspaceMode: 'Switch view',
+    openPreferencesDialog: 'Open preferences',
     toggleSidebar: 'Toggle sidebar',
     toggleInspector: 'Toggle inspector',
     setEditingTool: 'Set tool',
@@ -44,6 +45,8 @@ export const ACTION_LABELS: Record<string, string> = {
     renameSection: 'Rename section',
     addAutomationLane: 'Add automation',
     addAutomationPoint: 'Set automation',
+    undo: 'Undo',
+    redo: 'Redo',
 };
 
 // Domain acronyms that must survive camelCase→words humanization with their

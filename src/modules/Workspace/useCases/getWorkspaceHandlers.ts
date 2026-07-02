@@ -4,6 +4,7 @@ import { handleImportAudioFile } from '../handlers/workspace/handleImportAudioFi
 import { handleImportMidiFile } from '../handlers/workspace/handleImportMidiFile';
 import { handleNewProject } from '../handlers/workspace/handleNewProject';
 import { handleOpenMixer } from '../handlers/workspace/handleOpenMixer';
+import { handleOpenPreferencesDialog } from '../handlers/workspace/handleOpenPreferencesDialog';
 import { handleSaveProject } from '../handlers/workspace/handleSaveProject';
 import { handleSetEditingTool } from '../handlers/workspace/handleSetEditingTool';
 import { handleSetMarqueeSelection } from '../handlers/workspace/handleSetMarqueeSelection';
@@ -22,6 +23,7 @@ export type WorkspaceHandlersMap = {
     importMidiFile: typeof handleImportMidiFile;
     newProject: typeof handleNewProject;
     openMixer: typeof handleOpenMixer;
+    openPreferencesDialog: typeof handleOpenPreferencesDialog;
     saveProject: typeof handleSaveProject;
     setEditingTool: typeof handleSetEditingTool;
     setMarqueeSelection: typeof handleSetMarqueeSelection;
@@ -40,6 +42,7 @@ export type WorkspaceHandlersMap = {
 export function getWorkspaceHandlers(): WorkspaceHandlersMap {
     return {
         setWorkspaceMode: handleSetWorkspaceMode,
+        openPreferencesDialog: handleOpenPreferencesDialog,
         openMixer: handleOpenMixer,
         closeMixer: handleCloseMixer,
         toggleSidebar: handleToggleSidebar,
