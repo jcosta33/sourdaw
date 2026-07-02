@@ -4,7 +4,7 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
 
-import { getAutomationRecordingDependencies } from './recordingDependencies';
+import { getAutomationRecordingDependencies } from './getAutomationRecordingDependencies';
 import { RECORDING_MODES, activeRecording, pendingPoints, touchActive, makeKey } from './recordingSessionState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
