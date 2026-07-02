@@ -21,6 +21,7 @@ export { updateChordEvent } from './chordTrack/updateChordEvent';
 export { getChordTrackHandlers } from './getChordTrackHandlers';
 
 // ── Note Creation ─────────────────────────────────────────────────────────────
+export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────

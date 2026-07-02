@@ -7,8 +7,8 @@
  * @param note    - MIDI note number (0–127)
  * @param velocity - Note velocity (1–127)
  */
-import { handleNoteOn } from '../repositories/webMidi/messageHandlers';
+import { handleWebMidiNoteOn } from './webMidiInput/handleWebMidiNoteOn';
 
 export function triggerLiveNoteOn(channel: number, note: number, velocity: number): void {
-    handleNoteOn(channel, note, velocity);
+    handleWebMidiNoteOn(channel, note, velocity);
 }

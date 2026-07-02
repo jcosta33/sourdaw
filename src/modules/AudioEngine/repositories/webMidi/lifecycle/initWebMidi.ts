@@ -4,21 +4,21 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
-import { getActiveInput } from '../getActiveInput';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
-import { setActiveInput } from '../setActiveInput';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
 import { setTauriMode } from '../setTauriMode';
 import { WebMidiEventBus } from '../webMidiEventBus';
 
+import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
 import { selectMidiInputTauri } from './selectMidiInputTauri';
 
 type TauriMidiDevice = { index: number; name: string };
+type WebMidiMessageCallback = (event: MIDIMessageEvent) => void;
 
 function enumerateInputs(): MidiInputInfo[] {
     const access = getMidiAccess();
@@ -33,15 +33,17 @@ function enumerateInputs(): MidiInputInfo[] {
     }));
 }
 
-function onStateChange(): void {
+type OnStateChangeInput = {
+    onMidiMessage: WebMidiMessageCallback;
+};
+
+function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
     const inputs = enumerateInputs();
     const state = getState();
     const selectedStillExists = inputs.some((index) => index.id === state.selectedInputId);
 
-    const currentInput = getActiveInput();
-    if (!selectedStillExists && currentInput) {
-        currentInput.onmidimessage = null;
-        setActiveInput(null);
+    if (!selectedStillExists) {
+        detachActiveInput();
     }
 
     const currentAccess = getMidiAccess();
@@ -49,7 +51,7 @@ function onStateChange(): void {
         const first = inputs[0]!;
         const input = currentAccess.inputs.get(first.id);
         if (input) {
-            attachInput(input);
+            attachInput({ input, onMidiMessage });
             setState({ inputs, selectedInputId: first.id });
             return;
         }
@@ -61,7 +63,11 @@ function onStateChange(): void {
     });
 }
 
-export async function initWebMidi(): Promise<boolean> {
+type InitWebMidiInput = {
+    onMidiMessage: WebMidiMessageCallback;
+};
+
+export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<boolean> {
     const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
     const state = getState();
 
@@ -116,7 +122,7 @@ export async function initWebMidi(): Promise<boolean> {
         try {
             const access = await navigator.requestMIDIAccess({ sysex: false });
             setMidiAccess(access);
-            access.onstatechange = onStateChange;
+            access.onstatechange = () => onStateChange({ onMidiMessage });
 
             const inputs = enumerateInputs();
             setState({ inputs });
@@ -128,7 +134,7 @@ export async function initWebMidi(): Promise<boolean> {
                 const targetId = state.selectedInputId ?? inputs[0]!.id;
                 const input = access.inputs.get(targetId) ?? access.inputs.get(inputs[0]!.id);
                 if (input) {
-                    attachInput(input);
+                    attachInput({ input, onMidiMessage });
                     setState({ selectedInputId: input.id });
                 }
             }
@@ -156,7 +162,7 @@ export async function initWebMidi(): Promise<boolean> {
                 // the Tauri IPC port has NOT been opened yet for this session.
                 const targetId = state.selectedInputId ?? inputs[0]!.id;
                 const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
-                await selectMidiInputTauri(Number(targetInput.id));
+                await selectMidiInputTauri({ portIndex: Number(targetInput.id), onMidiMessage });
                 setState({ selectedInputId: targetInput.id });
             }
 

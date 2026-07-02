@@ -23,6 +23,7 @@ export const midiLearn: MidiLearnState = {
 export const webMidiRuntime = {
     midiAccess: null as MIDIAccess | null,
     activeInput: null as MIDIInput | null,
+    midiMessageListener: null as EventListener | null,
     targetTrackId: null as string | null,
     mpeEnabled: false,
     tauriMode: false,

@@ -8,8 +8,8 @@
  * @param releaseVelocity - Normalized (0..1) note-off velocity; defaults to 0
  *                          (no release dynamic) for callers without one.
  */
-import { handleNoteOff } from '../repositories/webMidi/messageHandlers';
+import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
 
 export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): void {
-    handleNoteOff(channel, note, releaseVelocity);
+    handleWebMidiNoteOff(channel, note, releaseVelocity);
 }

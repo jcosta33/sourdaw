@@ -1,0 +1,279 @@
+import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
+import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
+
+import { type ActiveNoteData } from '../../models/WebMidiTypes';
+import { audioEngine } from '../../repositories/createWebAudioEngine';
+import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
+
+import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
+import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+
+export const handleWebMidiNoteOn = inject({
+    ...midiMessageHandlerDependencies,
+    handleWebMidiNoteOff,
+})(
+    ({ handleWebMidiNoteOff, ...deps }) =>
+        function handleWebMidiNoteOn(channel: number, note: number, velocity: number): void {
+            if (velocity === 0) {
+                handleWebMidiNoteOff(channel, note, 0);
+                return;
+            }
+
+            deps.stepRecordNoteOn(note, velocity);
+
+            const targetTrackId = getTargetTrackId();
+            if (!targetTrackId) {
+                logger.warn('[MIDI] No target track set — select a MIDI track first');
+                return;
+            }
+
+            const transport = deps.getTransportStoreValue();
+            const engine = audioEngine;
+            const now = engine.context.currentTime;
+
+            const noteData: ActiveNoteData = {
+                startTime: now,
+                startBeat: transport ? deps.playheadPositionRef.current : 0,
+                channel,
+            };
+            activeNotes.set(note, noteData);
+
+            if (getMpeEnabled() && channel >= 1) {
+                channelToNote.set(channel, note);
+            }
+
+            const trackState = deps.getTrackStoreState();
+            const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
+
+            let instrumentTrackId = targetTrackId;
+            let instrumentTrack = track;
+            let toasterChildPad: number | null = null;
+
+            if (track && track.parentId && trackState) {
+                let parent: typeof track | undefined;
+                let padIndex = 0;
+                for (const candidate of trackState.tracks) {
+                    if (candidate.id === track.parentId) {
+                        parent = candidate;
+                    } else if (candidate.parentId === track.parentId) {
+                        if (candidate.id === track.id) {
+                            toasterChildPad = padIndex;
+                        }
+                        padIndex++;
+                    }
+                }
+                if (parent?.devices.some((device) => device.type === 'toaster')) {
+                    instrumentTrackId = parent.id;
+                    instrumentTrack = parent;
+                } else {
+                    toasterChildPad = null;
+                }
+            }
+
+            const strip = engine.ensureTrackStrip(instrumentTrackId);
+
+            const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
+            if (hasYeast) {
+                const sampleTime = Math.round(now * engine.context.sampleRate);
+                const processedEvents = deps.processRealtimeMidiInput(
+                    note,
+                    velocity,
+                    channel,
+                    true,
+                    sampleTime,
+                    engine.context.sampleRate
+                );
+                for (const event of processedEvents) {
+                    if (event.kind.type === 'noteOn') {
+                        const eventNote = event.kind.note;
+                        const eventVelocity = event.kind.velocity;
+                        const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
+                        if (fermenterDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'fermenter');
+                            deviceNode?.fermenterControls?.noteOn(eventNote, eventVelocity);
+                            continue;
+                        }
+                        const grandBouleDevice = instrumentTrack?.devices.find(
+                            (device) => device.type === 'grand-boule'
+                        );
+                        if (grandBouleDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'grand-boule');
+                            deviceNode?.grandBouleControls?.noteOn(eventNote, eventVelocity / 127);
+                            void deps.eventBus.emit('midi.noteOn', {
+                                deviceId: grandBouleDevice.id,
+                                midiNote: eventNote,
+                                velocity: eventVelocity / 127,
+                            });
+                            continue;
+                        }
+                        const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
+                        if (levainDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'levain');
+                            deviceNode?.levainControls?.noteOn(eventNote, eventVelocity);
+                            continue;
+                        }
+                        const synthParams = deps.getSynthParamsForTrack(instrumentTrackId);
+                        deps.scheduleNote(
+                            engine.context,
+                            strip.gainNode,
+                            eventNote,
+                            now,
+                            0.5,
+                            eventVelocity,
+                            synthParams
+                        );
+                    } else if (event.kind.type === 'noteOff') {
+                        const eventNote = event.kind.note;
+                        const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
+                        if (fermenterDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'fermenter');
+                            deviceNode?.fermenterControls?.noteOff(eventNote);
+                            continue;
+                        }
+                        const grandBouleDevice = instrumentTrack?.devices.find(
+                            (device) => device.type === 'grand-boule'
+                        );
+                        if (grandBouleDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'grand-boule');
+                            deviceNode?.grandBouleControls?.noteOff(eventNote);
+                            void deps.eventBus.emit('midi.noteOff', {
+                                deviceId: grandBouleDevice.id,
+                                midiNote: eventNote,
+                            });
+                            continue;
+                        }
+                        const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
+                        if (levainDevice) {
+                            const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'levain');
+                            deviceNode?.levainControls?.noteOff(eventNote);
+                            continue;
+                        }
+                    }
+                }
+                return;
+            }
+
+            const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
+            if (fermenterDevice) {
+                const deviceNode = strip.deviceNodes.find(
+                    (candidate) => candidate.deviceId === fermenterDevice.id || candidate.type === 'fermenter'
+                );
+                if (deviceNode?.fermenterControls?.ready) {
+                    deviceNode.fermenterControls.noteOn(note, velocity);
+                    noteData.fermenterDeviceId = fermenterDevice.id;
+                }
+                return;
+            }
+
+            const toasterDevice = instrumentTrack?.devices.find((device) => device.type === 'toaster');
+            if (toasterDevice) {
+                const deviceNode = strip.deviceNodes.find(
+                    (candidate) => candidate.deviceId === toasterDevice.id || candidate.type === 'toaster'
+                );
+                if (deviceNode?.toasterControls) {
+                    let pad = toasterChildPad;
+                    let pitchNote = note;
+
+                    if (pad === null || pad === -1) {
+                        pad = note - 36;
+                        if (pad >= 24 && pad <= 39) {
+                            pad = pad - 24;
+                        }
+                        pitchNote = 60;
+                    }
+                    if (pad >= 0 && pad < 16) {
+                        deviceNode.toasterControls.noteOn(pad, velocity, pitchNote);
+                        noteData.toasterDeviceId = toasterDevice.id;
+                    }
+                }
+                return;
+            }
+
+            const grandBouleDevice = instrumentTrack?.devices.find((device) => device.type === 'grand-boule');
+            if (grandBouleDevice) {
+                const deviceNode = strip.deviceNodes.find(
+                    (candidate) => candidate.deviceId === grandBouleDevice.id || candidate.type === 'grand-boule'
+                );
+                if (deviceNode?.grandBouleControls?.ready) {
+                    const grandBouleStore = createGrandBouleStore(grandBouleDevice.id);
+                    const calibration = grandBouleStore.value?.midiCalibration;
+                    const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
+                    deviceNode.grandBouleControls.noteOn(note, finalVelocity);
+                    noteData.grandBouleDeviceId = grandBouleDevice.id;
+                    void deps.eventBus.emit('midi.noteOn', {
+                        deviceId: grandBouleDevice.id,
+                        midiNote: note,
+                        velocity: finalVelocity,
+                    });
+                }
+                return;
+            }
+
+            const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
+            if (levainDevice) {
+                const deviceNode = strip.deviceNodes.find(
+                    (candidate) => candidate.deviceId === levainDevice.id || candidate.type === 'levain'
+                );
+                if (deviceNode?.levainControls?.ready) {
+                    deviceNode.levainControls.noteOn(note, velocity);
+                    noteData.levainDeviceId = levainDevice.id;
+                    return;
+                }
+                return;
+            }
+
+            let oscillator: (OscillatorNode & { _env?: GainNode }) | null = null;
+            const synthDevice = instrumentTrack?.devices.find(
+                (device) =>
+                    device.type === 'builtin-drum-kit' ||
+                    device.type.startsWith('builtin-drum-machine') ||
+                    device.type.startsWith('builtin-synth')
+            );
+
+            if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
+                const kitIndex = synthDevice.parameterValues.kit ?? 0;
+                const kitDefinition = deps.getDrumKitDefByIndex(kitIndex);
+                if (kitDefinition) {
+                    deps.scheduleDrumKitNote(
+                        engine.context,
+                        strip.gainNode,
+                        kitDefinition,
+                        note,
+                        engine.context.currentTime,
+                        velocity
+                    );
+                } else {
+                    const kit = deps.getDrumKitByIndex(kitIndex);
+                    if (kit) {
+                        oscillator = deps.scheduleKitNote(
+                            engine.context,
+                            strip.gainNode,
+                            kit,
+                            note,
+                            engine.context.currentTime,
+                            60,
+                            velocity
+                        ) as OscillatorNode & { _env?: GainNode };
+                    }
+                }
+            } else {
+                const synthParams = deps.getSynthParamsForTrack(targetTrackId);
+                oscillator = deps.scheduleNote(
+                    engine.context,
+                    strip.gainNode,
+                    note,
+                    engine.context.currentTime,
+                    60,
+                    velocity,
+                    synthParams
+                );
+            }
+
+            if (oscillator) {
+                noteData.osc = oscillator;
+            }
+        }
+);

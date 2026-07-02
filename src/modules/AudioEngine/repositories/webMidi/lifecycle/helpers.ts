@@ -1,12 +1,23 @@
 import { getActiveInput } from '../getActiveInput';
-import { onMidiMessage } from '../messageHandlers';
 import { setActiveInput } from '../setActiveInput';
+import { webMidiRuntime } from '../state';
 
-export function attachInput(input: MIDIInput): void {
+type AttachInputInput = {
+    input: MIDIInput;
+    onMidiMessage: (event: MIDIMessageEvent) => void;
+};
+
+export function attachInput({ input, onMidiMessage }: AttachInputInput): void {
     const current = getActiveInput();
-    if (current && current !== input) {
-        current.removeEventListener('midimessage', onMidiMessage as EventListener);
+    const listener = onMidiMessage as EventListener;
+    if (
+        current &&
+        webMidiRuntime.midiMessageListener &&
+        (current !== input || webMidiRuntime.midiMessageListener !== listener)
+    ) {
+        current.removeEventListener('midimessage', webMidiRuntime.midiMessageListener);
     }
     setActiveInput(input);
-    input.addEventListener('midimessage', onMidiMessage as EventListener);
+    webMidiRuntime.midiMessageListener = listener;
+    input.addEventListener('midimessage', listener);
 }

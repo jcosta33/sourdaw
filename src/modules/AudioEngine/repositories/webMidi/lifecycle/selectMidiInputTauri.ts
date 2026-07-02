@@ -1,7 +1,6 @@
 import { tauriInvoke } from '#/utils/tauriBridge';
 
 import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
-import { onMidiMessage } from '../messageHandlers';
 import { setTauriEventUnlisten } from '../setTauriEventUnlisten';
 
 type TauriMidiMessageEvent = {
@@ -39,7 +38,12 @@ function isTauriMidiMessageEvent(event: unknown): event is TauriMidiMessageEvent
     return isNumberArray(payload.data);
 }
 
-export async function selectMidiInputTauri(portIndex: number): Promise<void> {
+type SelectMidiInputTauriInput = {
+    portIndex: number;
+    onMidiMessage: (event: MIDIMessageEvent) => void;
+};
+
+export async function selectMidiInputTauri({ portIndex, onMidiMessage }: SelectMidiInputTauriInput): Promise<void> {
     const currentUnlisten = getTauriEventUnlisten();
     if (currentUnlisten) {
         currentUnlisten();
