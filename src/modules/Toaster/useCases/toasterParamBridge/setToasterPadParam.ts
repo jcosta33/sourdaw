@@ -4,9 +4,7 @@ import { type PadState } from '../../models/ToasterKit';
 import { updatePad } from '../../stores/toasterStore';
 
 import { findDeviceRef } from './helpers';
-
-const padPending = new Map<string, number>();
-const padLatest = new Map<string, { pad: number; name: string; value: number }>();
+import { padLatest, padPending } from './toasterPadParamQueue';
 
 const STRING_FIELDS = new Set(['engineType', 'name', 'color']);
 
@@ -22,26 +20,11 @@ function flushPadParam(cacheKey: string, trackId: string): void {
     if (!strip) {
         return;
     }
-    const dn = strip.deviceNodes.find((data) => data.toasterControls && data.toasterControls.ready !== undefined);
-    if (dn?.toasterControls) {
-        dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
-    }
-}
-
-/**
- * Cancel any rAF coalescing in flight for a device and drop its queued
- * pad-param writes. Called on device teardown so a frame scheduled before
- * destroy() cannot fire after the device is gone (no resurrect, no stray
- * worklet write to a detached node).
- */
-export function cancelPendingToasterPadParams(deviceId: string): void {
-    const prefix = `${deviceId}_`;
-    for (const [cacheKey, rafId] of padPending) {
-        if (cacheKey.startsWith(prefix)) {
-            cancelAnimationFrame(rafId);
-            padPending.delete(cacheKey);
-            padLatest.delete(cacheKey);
-        }
+    const toasterControls = strip.deviceNodes.find(
+        (data) => data.toasterControls?.ready !== undefined
+    )?.toasterControls;
+    if (toasterControls) {
+        toasterControls.setPadParam(entry.pad, entry.name, entry.value);
     }
 }
 
