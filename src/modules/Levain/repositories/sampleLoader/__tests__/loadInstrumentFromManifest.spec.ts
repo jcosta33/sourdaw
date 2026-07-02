@@ -6,10 +6,8 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-vi.mock('../helpers', async () => {
-    const actual = await vi.importActual<typeof import('../helpers')>('../helpers');
+vi.mock('../fetchAndDecode', () => {
     return {
-        ...actual,
         fetchAndDecode: vi.fn().mockResolvedValue({
             data: new Float32Array([0, 0]),
             frameCount: 1,

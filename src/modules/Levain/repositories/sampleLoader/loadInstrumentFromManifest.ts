@@ -2,9 +2,8 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type ArticulationType } from '../../models/LevainPatch';
 
-import { fetchAndDecode } from './helpers';
-
-import type { SampleLodConfig } from './helpers';
+import { fetchAndDecode } from './fetchAndDecode';
+import { type SampleLodConfig } from './helpers';
 
 export type ManifestZone = {
     file: string;
