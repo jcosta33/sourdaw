@@ -1,0 +1,18 @@
+import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
+
+export function handleWebMidiChannelPressure(channel: number, pressure: number): void {
+    if (!getMpeEnabled() || channel < 1) {
+        return;
+    }
+
+    const noteForChannel = channelToNote.get(channel);
+    if (noteForChannel === undefined) {
+        return;
+    }
+
+    const noteData = activeNotes.get(noteForChannel);
+    if (noteData) {
+        noteData.pressure = pressure;
+    }
+}

@@ -104,6 +104,7 @@ describe('initWebMidi', () => {
     });
 
     it('should initialize via Web MIDI if supported', async () => {
+        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
         const mockAccess = {
             inputs: new Map([['in-1', { id: 'in-1', name: 'Keyboard' }]]),
             onstatechange: null,
@@ -111,41 +112,48 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
 
-        const result = await initWebMidi();
+        const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
         expect(navigator.requestMIDIAccess).toHaveBeenCalled();
         expect(setMidiAccessMock).toHaveBeenCalledWith(mockAccess);
-        expect(attachInput).toHaveBeenCalled();
+        expect(attachInput).toHaveBeenCalledWith({
+            input: expect.objectContaining({ id: 'in-1' }),
+            onMidiMessage,
+        });
     });
 
     it('should fallback to Tauri if Web MIDI fails', async () => {
+        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
         // Force failure of browser MIDI
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
         vi.mocked(tauriInvoke).mockResolvedValue([{ index: 0, name: 'Tauri MIDI' }]);
 
-        const result = await initWebMidi();
+        const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
         expect(setTauriModeMock).toHaveBeenCalledWith(true);
         expect(tauriInvoke).toHaveBeenCalledWith('list_midi_inputs');
-        expect(selectMidiInputTauri).toHaveBeenCalled();
+        expect(selectMidiInputTauri).toHaveBeenCalledWith({ portIndex: 0, onMidiMessage });
     });
 
     it('should return false if neither is supported', async () => {
+        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(false);
 
-        const result = await initWebMidi();
+        const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(false);
         expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
     });
 
     it('should subscribe to trackStore once', async () => {
-        await initWebMidi();
-        await initWebMidi();
+        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
+
+        await initWebMidi({ onMidiMessage });
+        await initWebMidi({ onMidiMessage });
 
         expect(trackStore.subscribe).toHaveBeenCalledTimes(1);
     });

@@ -45,10 +45,11 @@ vi.mock('../../createWebAudioEngine', () => ({
 }));
 
 // Import after mocks so the handler binds to the mocked singletons.
-const { handleNoteOff, handleNoteOn } = await import('../messageHandlers');
+const { handleWebMidiNoteOff } = await import('../../../useCases/webMidiInput/handleWebMidiNoteOff');
+const { handleWebMidiNoteOn } = await import('../../../useCases/webMidiInput/handleWebMidiNoteOn');
 const { activeNotes } = await import('../state');
 
-type Deps = Parameters<typeof handleNoteOff._factory>[0];
+type Deps = Parameters<typeof handleWebMidiNoteOff._factory>[0];
 
 const yeastTrack = {
     id: 'track-1',
@@ -100,7 +101,7 @@ describe('handleNoteOff — Yeast-track Note Off through the rack (CRITICAL #62)
         const processRealtimeMidiInput = vi.fn((): MidiEvent[] => [
             { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
         ]);
-        const fn = handleNoteOff._factory(makeDeps(processRealtimeMidiInput));
+        const fn = handleWebMidiNoteOff._factory(makeDeps(processRealtimeMidiInput));
 
         // A note must be tracked as active for handleNoteOff to proceed.
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0 });
@@ -118,7 +119,7 @@ describe('handleNoteOff — Yeast-track Note Off through the rack (CRITICAL #62)
         const processRealtimeMidiInput = vi.fn((): MidiEvent[] => [
             { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 60 } },
         ]);
-        const fn = handleNoteOff._factory(makeDeps(processRealtimeMidiInput));
+        const fn = handleWebMidiNoteOff._factory(makeDeps(processRealtimeMidiInput));
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0 });
 
         fn(0, 60);
@@ -146,7 +147,7 @@ describe('handleNoteOff — built-in synth smooth release via osc._env', () => {
         const setTargetAtTime = vi.fn();
         const cancelScheduledValues = vi.fn();
         const stop = vi.fn();
-        const fn = handleNoteOff._factory(makeSynthDeps());
+        const fn = handleWebMidiNoteOff._factory(makeSynthDeps());
 
         // scheduleNote attaches the amplitude-envelope GainNode as `_env`; the
         // live-MIDI Note Off must drive the smooth release through it. Before the
@@ -212,7 +213,7 @@ describe('GrandBoule midi.note* emits carry deviceId (panel-filter isolation)', 
             ],
         });
 
-        const fn = handleNoteOff._factory(deps);
+        const fn = handleWebMidiNoteOff._factory(deps);
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0, grandBouleDeviceId: GB_DEVICE_ID });
 
         // 96/127 — the normalized value onMidiMessage would compute from data[2]=96.
@@ -243,7 +244,7 @@ describe('GrandBoule midi.note* emits carry deviceId (panel-filter isolation)', 
             deviceNodes: [{ type: 'grand-boule', deviceId: GB_DEVICE_ID, grandBouleControls: { noteOff: vi.fn() } }],
         });
 
-        const fn = handleNoteOff._factory(deps);
+        const fn = handleWebMidiNoteOff._factory(deps);
         // The note was sounded on this GrandBoule device, so its id is tracked.
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0, grandBouleDeviceId: GB_DEVICE_ID });
 
@@ -281,7 +282,7 @@ describe('GrandBoule midi.note* emits carry deviceId (panel-filter isolation)', 
             deviceNodes: [{ type: 'grand-boule', deviceId: GB_DEVICE_ID, grandBouleControls: { noteOn: vi.fn() } }],
         });
 
-        const fn = handleNoteOn._factory(deps);
+        const fn = handleWebMidiNoteOn._factory(deps);
         fn(0, 60, 100);
 
         const on = emitted.find((event) => event.type === 'midi.noteOn');
