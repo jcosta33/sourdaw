@@ -39,11 +39,9 @@ export function setToasterPadParam(deviceId: string, padIndex: number, key: keyo
     }
 
     const cacheKey = `${deviceId}_${padIndex}_${key}`;
-    padLatest.set(cacheKey, { pad: padIndex, name: key, value });
+    padLatest.set(cacheKey, { deviceId, pad: padIndex, name: key, value });
     if (!padPending.has(cacheKey)) {
-        padPending.set(
-            cacheKey,
-            requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId))
-        );
+        const rafId = requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId));
+        padPending.set(cacheKey, { deviceId, rafId });
     }
 }

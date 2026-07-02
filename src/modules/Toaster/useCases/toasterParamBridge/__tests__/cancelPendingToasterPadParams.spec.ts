@@ -46,6 +46,8 @@ describe('cancelPendingToasterPadParams', () => {
     let canceledCallbacks: FrameRequestCallback[];
     let requestAnimationFrameSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'requestAnimationFrame'>>;
     let cancelAnimationFrameSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'cancelAnimationFrame'>>;
+    let setPadParamDev: ReturnType<typeof vi.fn<SetPadParam>>;
+    let setPadParamDevUnderscore: ReturnType<typeof vi.fn<SetPadParam>>;
     let setPadParamDev1: ReturnType<typeof vi.fn<SetPadParam>>;
     let setPadParamDev2: ReturnType<typeof vi.fn<SetPadParam>>;
 
@@ -70,6 +72,8 @@ describe('cancelPendingToasterPadParams', () => {
         nextRafId = 1;
         rafCallbacks = new Map();
         canceledCallbacks = [];
+        setPadParamDev = vi.fn<SetPadParam>();
+        setPadParamDevUnderscore = vi.fn<SetPadParam>();
         setPadParamDev1 = vi.fn<SetPadParam>();
         setPadParamDev2 = vi.fn<SetPadParam>();
 
@@ -89,6 +93,12 @@ describe('cancelPendingToasterPadParams', () => {
 
         mockFindDeviceRef.mockImplementation((deviceId) => ({ trackId: `track-${deviceId}`, deviceId }));
         mockGetTrackStrip.mockImplementation((trackId) => {
+            if (trackId === 'track-dev') {
+                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev } }] };
+            }
+            if (trackId === 'track-dev_1') {
+                return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDevUnderscore } }] };
+            }
             if (trackId === 'track-dev-1') {
                 return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev1 } }] };
             }
@@ -100,6 +110,8 @@ describe('cancelPendingToasterPadParams', () => {
     });
 
     afterEach(() => {
+        cancelPendingToasterPadParams('dev');
+        cancelPendingToasterPadParams('dev_1');
         cancelPendingToasterPadParams('dev-1');
         cancelPendingToasterPadParams('dev-2');
         requestAnimationFrameSpy.mockRestore();
@@ -130,6 +142,19 @@ describe('cancelPendingToasterPadParams', () => {
         expect(setPadParamDev1).not.toHaveBeenCalled();
         expect(setPadParamDev2).toHaveBeenCalledTimes(1);
         expect(setPadParamDev2).toHaveBeenCalledWith(0, 'tone', 0.7);
+    });
+
+    it('should not cancel a queued write for a similarly prefixed device id', () => {
+        setToasterPadParam('dev', 0, 'tune', 1);
+        setToasterPadParam('dev_1', 0, 'tone', 0.7);
+
+        cancelPendingToasterPadParams('dev');
+        flushCanceledFrames();
+        flushScheduledFrames();
+
+        expect(setPadParamDev).not.toHaveBeenCalled();
+        expect(setPadParamDevUnderscore).toHaveBeenCalledTimes(1);
+        expect(setPadParamDevUnderscore).toHaveBeenCalledWith(0, 'tone', 0.7);
     });
 
     it('should prevent a post-destroy worklet write after a queued value changes', () => {

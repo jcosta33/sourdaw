@@ -6,10 +6,9 @@ import { padLatest, padPending } from './toasterPadParamQueue';
  * destroy() cannot fire after the device is gone.
  */
 export function cancelPendingToasterPadParams(deviceId: string): void {
-    const prefix = `${deviceId}_`;
-    for (const [cacheKey, rafId] of padPending) {
-        if (cacheKey.startsWith(prefix)) {
-            cancelAnimationFrame(rafId);
+    for (const [cacheKey, pending] of padPending) {
+        if (pending.deviceId === deviceId) {
+            cancelAnimationFrame(pending.rafId);
             padPending.delete(cacheKey);
             padLatest.delete(cacheKey);
         }
