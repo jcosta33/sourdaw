@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { persistDeviceParam } from '#/modules/Arrangement/stores';
+
 import { getProofState, proofStore } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { setProofParamWithPatch } from '../setProofParamWithPatch';
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    persistDeviceParam: vi.fn(),
+}));
 
 function makeBridge(): ProofAudioBridge & {
     setParam: ReturnType<typeof vi.fn>;
@@ -19,19 +25,26 @@ describe('setProofParamWithPatch', () => {
     beforeEach(() => {
         bridges.clear();
         proofStore.set({});
+        vi.clearAllMocks();
     });
 
-    it('updates the stored patch and forwards the mapped engine param', () => {
+    it('updates the stored patch and persists the mapped scalar engine param', () => {
         const bridge = makeBridge();
+        const persisted_patch_values: Array<number | undefined> = [];
         bridges.set('dev-1', bridge);
+        vi.mocked(persistDeviceParam).mockImplementation((device_id) => {
+            persisted_patch_values.push(getProofState(device_id).patch.limCeiling);
+        });
 
         setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: -2 });
 
         expect(getProofState('dev-1').patch.limCeiling).toBe(-2);
         expect(bridge.setParam).toHaveBeenCalledWith('lim_ceiling', -2);
+        expect(persistDeviceParam).toHaveBeenCalledWith('dev-1', 'lim_ceiling', -2);
+        expect(persisted_patch_values).toEqual([-2]);
     });
 
-    it('maps a boolean bypass field to the 0/1 engine convention', () => {
+    it('persists a boolean bypass field with the same 0/1 engine convention', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
 
@@ -39,6 +52,26 @@ describe('setProofParamWithPatch', () => {
 
         expect(getProofState('dev-1').patch.eqBypassed).toBe(true);
         expect(bridge.setParam).toHaveBeenCalledWith('eq_bypass', 1);
+        expect(persistDeviceParam).toHaveBeenCalledWith('dev-1', 'eq_bypass', 1);
+
+        vi.clearAllMocks();
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'eqBypassed', value: false });
+
+        expect(getProofState('dev-1').patch.eqBypassed).toBe(false);
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_bypass', 0);
+        expect(persistDeviceParam).toHaveBeenCalledWith('dev-1', 'eq_bypass', 0);
+    });
+
+    it('persists dither mode with the shared engine integer mapping', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'ditherMode', value: 'noise_shaped' });
+
+        expect(getProofState('dev-1').patch.ditherMode).toBe('noise_shaped');
+        expect(bridge.setParam).toHaveBeenCalledWith('dither_mode', 2);
+        expect(persistDeviceParam).toHaveBeenCalledWith('dev-1', 'dither_mode', 2);
     });
 
     it('forwards a chain-order change through reorderModules', () => {
@@ -49,10 +82,23 @@ describe('setProofParamWithPatch', () => {
 
         expect(getProofState('dev-1').patch.chainOrder).toEqual([4, 3, 2, 1, 0]);
         expect(bridge.reorderModules).toHaveBeenCalledWith([4, 3, 2, 1, 0]);
+        expect(persistDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('still updates the store when no bridge is registered', () => {
+    it('does not persist target fields in the scalar persistence slice', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'targetLufs', value: -16 });
+
+        expect(getProofState('dev-1').patch.targetLufs).toBe(-16);
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('still updates the store and persists mapped params when no bridge is registered', () => {
         setProofParamWithPatch({ deviceId: 'no-bridge', key: 'outputGain', value: 5 });
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);
+        expect(persistDeviceParam).toHaveBeenCalledWith('no-bridge', 'output_gain', 5);
     });
 });
