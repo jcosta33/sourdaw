@@ -14,7 +14,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 
-import { persistCrdtProject } from './crdtProjectLifecycle';
+import { persistCrdtProject } from './persistCrdtProject';
 
 const DEBOUNCE_MS = 2_000;
 
@@ -37,13 +37,14 @@ export function startCrdtAutoSave(): () => void {
                 })
                 .catch((error) => {
                     autoSaveHealth.consecutiveFailures++;
+                    const errorMessage = error instanceof Error ? error.message : String(error);
                     if (autoSaveHealth.consecutiveFailures <= 3) {
                         logger.warn('[CrdtAutoSave] Incremental persist failed:', error);
                     } else {
                         logger.error(
                             new Error(
                                 `[CrdtAutoSave] Auto-save has failed ${autoSaveHealth.consecutiveFailures} times consecutively. ` +
-                                    `Recent edits may not survive a browser restart. Check storage quota. Last error: ${error}`
+                                    `Recent edits may not survive a browser restart. Check storage quota. Last error: ${errorMessage}`
                             )
                         );
                     }

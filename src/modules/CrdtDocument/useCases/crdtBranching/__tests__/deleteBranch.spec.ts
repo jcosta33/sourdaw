@@ -25,7 +25,7 @@ vi.mock('../../../stores/branchStore', () => ({
     },
     MAIN_BRANCH_ID: 'main',
 }));
-vi.mock('../../crdtProjectLifecycle', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 
 describe('deleteBranch', () => {
     beforeEach(() => {

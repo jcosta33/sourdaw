@@ -6,7 +6,7 @@ import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
-import { compactProject } from '../crdtProjectLifecycle';
+import { compactProject } from '../compactProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 /**

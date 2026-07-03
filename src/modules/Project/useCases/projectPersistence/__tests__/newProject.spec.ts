@@ -4,8 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess/resetAudioGraph';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
-import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
+import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
@@ -20,11 +19,8 @@ vi.mock('#/modules/AudioEngine/useCases/engineAccess/resetAudioGraph', () => ({
     resetAudioGraph: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases/crdtProjectLifecycle', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
     createCrdtProject: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('#/modules/CrdtDocument/useCases/startCrdtAutoSave', () => ({
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
 }));
 

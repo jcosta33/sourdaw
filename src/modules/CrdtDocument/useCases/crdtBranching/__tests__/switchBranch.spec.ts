@@ -34,7 +34,7 @@ vi.mock('../../../stores/branchStore', () => ({
     },
 }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
-vi.mock('../../crdtProjectLifecycle', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 
 describe('switchBranch', () => {
     beforeEach(() => {

@@ -1,5 +1,3 @@
-import { type DocumentBundle } from '#/modules/CrdtDocument/useCases';
-
 /**
  * Structural snapshot shapes carried by inverse actions (`restoreTrack` / `restoreClip`).
  * See `Command/models/AppAction.ts` for full rationale — these are structural types the
@@ -38,6 +36,7 @@ export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
     readonly shiftedClips: readonly RippleShiftSnapshot[];
 };
+type CommandDocumentBundle = Map<string, Uint8Array>;
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
@@ -437,7 +436,7 @@ export type AppAction =
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: DocumentBundle } };
+    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentBundle } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
