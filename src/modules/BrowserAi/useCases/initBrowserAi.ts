@@ -4,7 +4,7 @@
  * Called once from bootstrap. Responsibilities:
  * 1. Detect browser capabilities (fresh cold-start probe)
  * 2. Populate model registry with DDSP catalog + Kokoro model entry
- * 3. Check which models are already cached in OPFS and update status
+ * 3. Check which downloadable models are already cached in OPFS and update status
  * 4. Request persistent storage if browser AI is supported
  */
 
@@ -84,12 +84,12 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             }
 
             // ── 3. Build DDSP instrument entries from catalog ──────────────
-            // DDSP models are TF.js GraphModels loaded from CDN URL — no OPFS storage.
-            // TF.js caches them via IndexedDB. All instruments are always available.
+            // DDSP browser rendering is unavailable in this build because the TF.js
+            // worker is a stub; keep the catalog visible without advertising readiness.
             const ddspInstruments: DdspInstrument[] = DDSP_INSTRUMENT_CATALOG.map((cat) => ({
                 ...cat,
-                status: 'ready' as const,
-                downloadProgress: 1,
+                status: 'error' as const,
+                downloadProgress: 0,
             }));
 
             // ── 3. Check Kokoro model cache status ─────────────────────────
