@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type UndoEntry } from '../models/UndoEntry';
+import { type UndoEntry } from '../useCases/commandQueries';
 import { isActionEntry } from '../useCases/isActionEntry';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';

@@ -1,6 +1,5 @@
 import { type AppAction } from '../models/AppAction';
-import { type UndoSource } from '../models/UndoEntry';
-import { createUndoEntry } from '../useCases/commandQueries';
+import { createUndoEntry, type UndoSource } from '../models/UndoEntry';
 import { commitUndoEntry } from '../useCases/commitUndoEntry';
 
 type CommitActionUndoEntryInput = {

@@ -1,4 +1,4 @@
-import { type CallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
+import { type CallbackUndoEntry, type UndoSource } from './commandQueries';
 
 type CreateCallbackUndoEntryInput = {
     label: string;
