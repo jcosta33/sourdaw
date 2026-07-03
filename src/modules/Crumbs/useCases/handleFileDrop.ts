@@ -57,7 +57,7 @@ export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent)
         return;
     }
 
-    const filePath = getDroppedCrumbsFilePath({ file });
+    const filePath = await getDroppedCrumbsFilePath({ file });
 
     if (filePath) {
         await loadSampleFromPath(instanceId, filePath);
