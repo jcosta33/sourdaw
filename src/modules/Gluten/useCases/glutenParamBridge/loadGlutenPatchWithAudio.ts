@@ -3,7 +3,10 @@ import { logger } from '#/infra/logger/appLogger';
 import { clampOversampling, type GlutenPatch } from '../../models/GlutenPatch';
 import { loadGlutenPatch } from '../../stores/glutenStore';
 
-import { encodeGlutenValue, findDeviceRefGluten, pushParamImmediately } from './helpers';
+import { createFlushHandlers } from './createFlushHandlers';
+import { bridgeDeps, encodeGlutenValue, findDeviceRefGluten } from './helpers';
+
+const { pushParamImmediately } = createFlushHandlers(bridgeDeps);
 
 export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch): void {
     // Snap oversampling to a supported factor (1/2/4) before it reaches the store

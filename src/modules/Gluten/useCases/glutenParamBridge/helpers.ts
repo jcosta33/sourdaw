@@ -21,22 +21,7 @@ export type BridgeDeps = {
     persistDeviceParam: typeof persistDeviceParam;
 };
 
-export function createFlushHandlers(deps: BridgeDeps) {
-    function flushParam(_compositeKey: string, entry: GlutenBatchEntry): void {
-        deps.updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        deps.persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
-    }
-
-    function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
-        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-        deps.persistDeviceParam(ref.deviceId, key, value);
-    }
-
-    return { flushParam, pushParamImmediately };
-}
-
 export const bridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
-export const { flushParam, pushParamImmediately } = createFlushHandlers(bridgeDeps);
 export const findDeviceRefGluten = createFindDeviceRef(getAllTracks);
 
 export const TOPOLOGY_INDEX = {
