@@ -37,7 +37,7 @@ describe('commandQueries (undo helpers)', () => {
     it('should build a callback undo entry with undo/redo fns', () => {
         const undo = vi.fn();
         const redo = vi.fn();
-        const entry = createCallbackUndoEntry('cb', undo, redo, 'ai');
+        const entry = createCallbackUndoEntry({ label: 'cb', undo, redo, source: 'ai' });
         expect(entry.kind).toBe('callback');
         expect(entry.undo).toBe(undo);
         expect(entry.redo).toBe(redo);
@@ -60,11 +60,11 @@ describe('commandQueries (undo helpers)', () => {
 
     it('should narrow action entries with isActionEntry', () => {
         const actionEntry = createUndoEntry('a', { type: 'toggleLoop' }, null);
-        const cbEntry = createCallbackUndoEntry(
-            'b',
-            () => {},
-            () => {}
-        );
+        const cbEntry = createCallbackUndoEntry({
+            label: 'b',
+            undo: vi.fn(),
+            redo: vi.fn(),
+        });
         expect(isActionEntry(actionEntry)).toBe(true);
         expect(isActionEntry(cbEntry)).toBe(false);
     });

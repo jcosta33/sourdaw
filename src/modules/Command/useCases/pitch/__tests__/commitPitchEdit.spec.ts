@@ -7,9 +7,13 @@ import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { commitUndoEntry } from '../../commitUndoEntry';
-import { createCallbackUndoEntry } from '../../createCallbackUndoEntry';
+import { type createCallbackUndoEntry } from '../../createCallbackUndoEntry';
 import { commitPitchEditCommand } from '../commitPitchEdit';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
+
+const createCallbackUndoEntryCalls = vi.hoisted<{
+    inputs: Parameters<typeof createCallbackUndoEntry>[0][];
+}>(() => ({ inputs: [] }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn() },
@@ -20,17 +24,19 @@ vi.mock('../../commitUndoEntry', () => ({
 }));
 
 vi.mock('../../createCallbackUndoEntry', () => ({
-    createCallbackUndoEntry: vi
-        .fn()
-        .mockImplementation(
-            (label: string, undo: () => void, redo: () => void, source: 'manual' | 'prompt' | 'voice' | 'ai') => ({
-                label,
-                undo,
-                redo,
-                source,
-                kind: 'callback',
-            })
-        ),
+    createCallbackUndoEntry: vi.fn().mockImplementation((input: Parameters<typeof createCallbackUndoEntry>[0]) => {
+        createCallbackUndoEntryCalls.inputs.push(input);
+        const { label, undo, redo, source = 'manual' } = input;
+        return {
+            id: 'undo-test',
+            label,
+            undo,
+            redo,
+            timestamp: 1,
+            source,
+            kind: 'callback',
+        };
+    }),
 }));
 
 const mockNotificationEventBus = {
@@ -120,6 +126,7 @@ describe('commitPitchEditCommand', () => {
             commitPitchEdit: commitPitchEditMock,
         });
         commitPitchEditMock.mockResolvedValue(undefined);
+        createCallbackUndoEntryCalls.inputs = [];
 
         const state = {
             tracks: [
@@ -158,22 +165,22 @@ describe('commitPitchEditCommand', () => {
             contour,
         });
 
-        expect(createCallbackUndoEntry).toHaveBeenCalledWith(
-            'Commit Pitch Edit',
-            expect.any(Function),
-            expect.any(Function),
-            'manual'
-        );
+        expect(createCallbackUndoEntryCalls.inputs).toHaveLength(1);
+        expect(createCallbackUndoEntryCalls.inputs[0]?.label).toBe('Commit Pitch Edit');
+        expect(createCallbackUndoEntryCalls.inputs[0]?.source).toBe('manual');
         expect(commitUndoEntry).toHaveBeenCalled();
 
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
 
-        const undoFn = vi.mocked(createCallbackUndoEntry).mock.calls[0][1] as () => void;
-        undoFn();
+        const committedEntry = vi.mocked(commitUndoEntry).mock.calls[0][0];
+        if (committedEntry.kind !== 'callback') {
+            throw new Error('Expected callback undo entry');
+        }
+
+        committedEntry.undo();
         expect(getFirstClipFileId()).toBe('test.wav');
 
-        const redoFn = vi.mocked(createCallbackUndoEntry).mock.calls[0][2] as () => void;
-        redoFn();
+        committedEntry.redo();
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
     });
 

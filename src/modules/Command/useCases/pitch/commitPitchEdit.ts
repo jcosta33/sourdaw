@@ -82,7 +82,12 @@ export async function commitPitchEditCommand(
 
         redoFn();
 
-        const entry = createCallbackUndoEntry('Commit Pitch Edit', undoFn, redoFn, 'manual');
+        const entry = createCallbackUndoEntry({
+            label: 'Commit Pitch Edit',
+            undo: undoFn,
+            redo: redoFn,
+            source: 'manual',
+        });
         commitUndoEntry(entry);
     } catch (error) {
         // Previously the failure was swallowed into `console.error` only, so a

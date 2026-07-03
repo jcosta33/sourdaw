@@ -1,17 +1,24 @@
-import { type CallbackUndoEntry, type UndoSource } from './commandQueries';
+import { type CallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
 
-export function createCallbackUndoEntry(
-    label: string,
-    undoFn: () => void,
-    redoFn: () => void,
-    source: UndoSource = 'manual'
-): CallbackUndoEntry {
+type CreateCallbackUndoEntryInput = {
+    label: string;
+    undo: () => void;
+    redo: () => void;
+    source?: UndoSource;
+};
+
+export function createCallbackUndoEntry({
+    label,
+    undo,
+    redo,
+    source = 'manual',
+}: CreateCallbackUndoEntryInput): CallbackUndoEntry {
     return {
         id: `undo-${crypto.randomUUID().slice(0, 8)}`,
         kind: 'callback',
         label,
-        undo: undoFn,
-        redo: redoFn,
+        undo,
+        redo,
         timestamp: Date.now(),
         source,
     };
