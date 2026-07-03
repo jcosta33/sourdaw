@@ -13,7 +13,7 @@ describe('VUMeter', () => {
         const vu = new VUMeter();
         const loud = new Float32Array(64).fill(0.8);
         vu.update(loud, 0.1);
-        expect(vu.level).toBeGreaterThan(0);
+        expect(vu.level).toBeCloseTo(0.2268, 4);
         expect(vu.level).toBeLessThanOrEqual(1);
     });
 

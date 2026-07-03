@@ -8,6 +8,7 @@ export { setElasticSensitivity } from './elasticAudio/setElasticSensitivity';
 export { computeMomentaryLUFS } from './advancedMetering/lufs/computeMomentaryLUFS';
 export { ShortTermLUFS } from './advancedMetering/lufs/ShortTermLUFS';
 export { IntegratedLUFS } from './advancedMetering/lufs/IntegratedLUFS';
+export { VUMeter } from './advancedMetering/vuMeter';
 
 export { PhaseCorrelationMeter } from './advancedMetering/phaseCorrelation';
 

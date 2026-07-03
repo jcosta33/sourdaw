@@ -1,7 +1,7 @@
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
+import { getTrackPeakLevel, getMasterPeakLevel, VUMeter } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -14,7 +14,6 @@ type LevelMeterProps = {
 
 const DB_MARKS = [0, -6, -12, -24, -48] as const;
 const MIN_DB = -60;
-const RMS_BUFFER_SIZE = 30;
 const PEAK_HOLD_DURATION_MS = 1500;
 const PEAK_HOLD_FALL_RATE = 0.02;
 
@@ -28,15 +27,11 @@ const linearToDb = (linear: number): number => {
 const dbToPercent = (db: number): number => Math.max(0, Math.min(100, ((db - MIN_DB) / (0 - MIN_DB)) * 100));
 
 export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelMeterProps): ReactElement => {
-    const id = crypto.randomUUID();
+    const [schedulerId] = useState(() => `meter-${crypto.randomUUID()}`);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    // §160.x — ring buffer for RMS history avoids Array.shift() on every
-    // frame. Fixed-size Float32Array + head index + fill counter gives
-    // O(1) per push and zero allocation on the hot path.
-    const rmsBufferRef = useRef<Float32Array>(new Float32Array(RMS_BUFFER_SIZE));
-    const rmsHeadRef = useRef(0);
-    const rmsFilledRef = useRef(0);
+    const vuMeterRef = useRef(new VUMeter());
+    const vuSampleRef = useRef<Float32Array>(new Float32Array(1));
     const peakHoldRef = useRef(0);
     const peakHoldTimeRef = useRef(0);
 
@@ -97,34 +92,19 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             return safe;
         };
 
-        rmsBufferRef.current.fill(0);
-        rmsHeadRef.current = 0;
-        rmsFilledRef.current = 0;
+        vuMeterRef.current.reset();
+        vuSampleRef.current[0] = 0;
         peakHoldRef.current = 0;
         peakHoldTimeRef.current = 0;
 
-        const tick = () => {
-            const now = performance.now();
+        const tick = (currentTime: DOMHighResTimeStamp, deltaMs: number) => {
             const rawPeak = trackId ? getTrackPeakLevel(trackId) : getMasterPeakLevel();
-
-            const buf = rmsBufferRef.current;
-            buf[rmsHeadRef.current] = rawPeak * rawPeak;
-            rmsHeadRef.current = (rmsHeadRef.current + 1) % RMS_BUFFER_SIZE;
-            if (rmsFilledRef.current < RMS_BUFFER_SIZE) {
-                rmsFilledRef.current++;
-            }
-
-            let sumSquares = 0;
-            const filled = rmsFilledRef.current;
-            for (let index = 0; index < filled; index++) {
-                sumSquares += buf[index]!;
-            }
-            const rawRms = filled > 0 ? Math.sqrt(sumSquares / filled) : 0;
-
+            vuSampleRef.current[0] = rawPeak;
+            const rawRms = vuMeterRef.current.update(vuSampleRef.current, Math.max(0, deltaMs) / 1000);
             if (rawPeak >= peakHoldRef.current) {
                 peakHoldRef.current = rawPeak;
-                peakHoldTimeRef.current = now;
-            } else if (now - peakHoldTimeRef.current > PEAK_HOLD_DURATION_MS) {
+                peakHoldTimeRef.current = currentTime;
+            } else if (currentTime - peakHoldTimeRef.current > PEAK_HOLD_DURATION_MS) {
                 peakHoldRef.current = Math.max(0, peakHoldRef.current - PEAK_HOLD_FALL_RATE);
             }
 
@@ -171,13 +151,13 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             }
         };
 
-        animationScheduler.register(`meter-${id}`, tick);
+        animationScheduler.register(schedulerId, tick);
 
         return () => {
-            animationScheduler.unregister(`meter-${id}`);
+            animationScheduler.unregister(schedulerId);
             resizeObserver.disconnect();
         };
-    }, [trackId]);
+    }, [schedulerId, trackId]);
 
     return (
         <div
