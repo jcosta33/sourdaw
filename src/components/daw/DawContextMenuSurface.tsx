@@ -44,7 +44,14 @@ export const DawContextMenuSurface = ({
 
     const surface = (
         <>
-            {backdrop && onClose ? <div className="fixed inset-0 z-40" onClick={onClose} /> : null}
+            {backdrop && onClose ? (
+                <button
+                    aria-label="Close context menu"
+                    className="fixed inset-0 z-40 cursor-default appearance-none border-0 bg-transparent p-0"
+                    onClick={onClose}
+                    type="button"
+                />
+            ) : null}
             <div
                 className={cn('daw-floating-surface fixed z-50 rounded-md py-1', className)}
                 style={{ ...positionStyle, ...style }}
