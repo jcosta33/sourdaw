@@ -30,6 +30,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
+import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { PitchEditor } from './PitchEditor';
@@ -52,6 +53,114 @@ type WaveformEditorProps = {
     clipId: string;
 };
 
+type DrawWaveformInput = {
+    canvas: HTMLCanvasElement;
+    container: HTMLDivElement;
+    clipId: string;
+    zoom: number;
+    warpState: WarpState;
+    beatWidth: number;
+};
+
+const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }: DrawWaveformInput): void => {
+    const canvasContext = canvas.getContext('2d');
+    if (!canvasContext) {
+        return;
+    }
+
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const width = container.clientWidth * zoom;
+    const height = container.clientHeight;
+    canvas.width = width * devicePixelRatio;
+    canvas.height = height * devicePixelRatio;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    canvasContext.scale(devicePixelRatio, devicePixelRatio);
+
+    canvasContext.fillStyle = resolveToken('--color-bg-overlay', '#151515');
+    canvasContext.fillRect(0, 0, width, height);
+
+    const middleY = height / 2;
+    canvasContext.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    canvasContext.beginPath();
+    canvasContext.moveTo(0, middleY);
+    canvasContext.lineTo(width, middleY);
+    canvasContext.stroke();
+
+    const peaks = audioBufferCache.getWaveformPeaks(clipId, Math.floor(width));
+
+    const hasRealData = peaks.some((value) => value > 0);
+
+    if (hasRealData) {
+        canvasContext.fillStyle = 'rgba(90, 150, 115, 0.5)';
+        canvasContext.beginPath();
+        canvasContext.moveTo(0, middleY);
+        for (let peakIndex = 0; peakIndex < peaks.length; peakIndex++) {
+            canvasContext.lineTo(peakIndex, middleY - peaks[peakIndex]! * middleY * 0.9);
+        }
+        canvasContext.lineTo(peaks.length - 1, middleY);
+        for (let peakIndex = peaks.length - 1; peakIndex >= 0; peakIndex--) {
+            canvasContext.lineTo(peakIndex, middleY + peaks[peakIndex]! * middleY * 0.9);
+        }
+        canvasContext.closePath();
+        canvasContext.fill();
+    } else {
+        canvasContext.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        const numberOfBars = Math.floor(width / 3);
+        for (let barIndex = 0; barIndex < numberOfBars; barIndex++) {
+            const normalizedTime = barIndex / numberOfBars;
+            const amplitude =
+                Math.abs(Math.sin(normalizedTime * Math.PI * 8) * Math.cos(normalizedTime * Math.PI * 3)) * 0.6 + 0.05;
+            const barHeight = amplitude * height * 0.4;
+            canvasContext.fillRect(barIndex * 3, middleY - barHeight, 2, barHeight * 2);
+        }
+        canvasContext.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        canvasContext.font = '11px system-ui, sans-serif';
+        canvasContext.textAlign = 'center';
+        canvasContext.fillText('Audio clip — drop an audio file to load waveform', width / 2, middleY - height * 0.35);
+    }
+
+    for (let beatIndex = 0; beatIndex < width / beatWidth; beatIndex++) {
+        const beatX = beatIndex * beatWidth;
+        canvasContext.strokeStyle = beatIndex % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
+        canvasContext.beginPath();
+        canvasContext.moveTo(beatX, 0);
+        canvasContext.lineTo(beatX, height);
+        canvasContext.stroke();
+    }
+
+    if (warpState.enabled) {
+        for (const marker of warpState.markers) {
+            const markerX = marker.warpedBeat * beatWidth;
+            if (markerX < 0 || markerX > width) {
+                continue;
+            }
+            canvasContext.strokeStyle = 'rgba(176, 128, 48, 0.75)';
+            canvasContext.lineWidth = 2;
+            canvasContext.setLineDash([4, 3]);
+            canvasContext.beginPath();
+            canvasContext.moveTo(markerX, 0);
+            canvasContext.lineTo(markerX, height);
+            canvasContext.stroke();
+            canvasContext.setLineDash([]);
+            canvasContext.lineWidth = 1;
+
+            canvasContext.fillStyle = 'rgba(176, 128, 48, 0.85)';
+            canvasContext.beginPath();
+            canvasContext.moveTo(markerX - 5, 0);
+            canvasContext.lineTo(markerX + 5, 0);
+            canvasContext.lineTo(markerX, 8);
+            canvasContext.closePath();
+            canvasContext.fill();
+
+            canvasContext.font = '9px system-ui';
+            canvasContext.fillStyle = 'rgba(176, 128, 48, 0.7)';
+            canvasContext.textAlign = 'center';
+            canvasContext.fillText(marker.originalBeat.toFixed(1), markerX, height - 4);
+        }
+    }
+};
+
 export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement => {
     // §195.3 — reactive subscription; component used to read trackStore.value
     // during render and show stale data after clip/track mutations.
@@ -65,9 +174,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
-    const draggingMarker = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
+    const draggingMarkerRef = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
-    const didDrag = useRef(false);
+    const didDragRef = useRef(false);
 
     const refreshWarp = () => setWarpState(getWarpState(clipId));
 
@@ -104,120 +213,31 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
     const beatWidth = Math.max(1, 40 * zoom);
 
-    const draw = () => {
+    useEffect(() => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
             return;
         }
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
-
-        const dpr = window.devicePixelRatio || 1;
-        const width = container.clientWidth * zoom;
-        const height = container.clientHeight;
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
-        ctx.scale(dpr, dpr);
-
-        ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
-        ctx.fillRect(0, 0, width, height);
-
-        const midY = height / 2;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.beginPath();
-        ctx.moveTo(0, midY);
-        ctx.lineTo(width, midY);
-        ctx.stroke();
-
-        const peaks = audioBufferCache.getWaveformPeaks(clipId, Math.floor(width));
-
-        const hasRealData = peaks.some((value) => value > 0);
-
-        if (hasRealData) {
-            ctx.fillStyle = 'rgba(90, 150, 115, 0.5)';
-            ctx.beginPath();
-            ctx.moveTo(0, midY);
-            for (let index = 0; index < peaks.length; index++) {
-                ctx.lineTo(index, midY - peaks[index]! * midY * 0.9);
-            }
-            ctx.lineTo(peaks.length - 1, midY);
-            for (let index = peaks.length - 1; index >= 0; index--) {
-                ctx.lineTo(index, midY + peaks[index]! * midY * 0.9);
-            }
-            ctx.closePath();
-            ctx.fill();
-        } else {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-            const numBars = Math.floor(width / 3);
-            for (let index = 0; index < numBars; index++) {
-                const time = index / numBars;
-                const amp = Math.abs(Math.sin(time * Math.PI * 8) * Math.cos(time * Math.PI * 3)) * 0.6 + 0.05;
-                const barH = amp * height * 0.4;
-                ctx.fillRect(index * 3, midY - barH, 2, barH * 2);
-            }
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.font = '11px system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Audio clip — drop an audio file to load waveform', width / 2, midY - height * 0.35);
-        }
-
-        for (let beat = 0; beat < width / beatWidth; beat++) {
-            const x = beat * beatWidth;
-            ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
-            ctx.stroke();
-        }
-
-        if (warpState.enabled) {
-            for (const marker of warpState.markers) {
-                const x = marker.warpedBeat * beatWidth;
-                if (x < 0 || x > width) {
-                    continue;
-                }
-                ctx.strokeStyle = 'rgba(176, 128, 48, 0.75)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 3]);
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, height);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.lineWidth = 1;
-
-                ctx.fillStyle = 'rgba(176, 128, 48, 0.85)';
-                ctx.beginPath();
-                ctx.moveTo(x - 5, 0);
-                ctx.lineTo(x + 5, 0);
-                ctx.lineTo(x, 8);
-                ctx.closePath();
-                ctx.fill();
-
-                ctx.font = '9px system-ui';
-                ctx.fillStyle = 'rgba(176, 128, 48, 0.7)';
-                ctx.textAlign = 'center';
-                ctx.fillText(marker.originalBeat.toFixed(1), x, height - 4);
-            }
-        }
-    };
-
-    useEffect(() => {
-        draw();
+        drawWaveform({ canvas, container, clipId, zoom, warpState, beatWidth });
     }, [clipId, zoom, bufferVersion, warpState, beatWidth]);
 
     useEffect(() => {
-        const observer = new ResizeObserver(() => draw());
+        const drawCurrentWaveform = (): void => {
+            const canvas = canvasRef.current;
+            const container = containerRef.current;
+            if (!canvas || !container) {
+                return;
+            }
+            drawWaveform({ canvas, container, clipId, zoom, warpState, beatWidth });
+        };
+
+        const observer = new ResizeObserver(drawCurrentWaveform);
         if (containerRef.current) {
             observer.observe(containerRef.current);
         }
         return () => observer.disconnect();
-    }, [draw]);
+    }, [clipId, zoom, warpState, beatWidth]);
 
     const getCanvasX = (event: { clientX: number }): number => {
         const canvas = canvasRef.current;
@@ -238,8 +258,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         const x = getCanvasX(event);
         const hit = hitTestMarker(x);
         if (hit) {
-            draggingMarker.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
-            didDrag.current = false;
+            draggingMarkerRef.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
+            didDragRef.current = false;
             setIsDraggingMarker(true);
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
             event.preventDefault();
@@ -247,28 +267,28 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
-        if (!draggingMarker.current) {
+        if (!draggingMarkerRef.current) {
             return;
         }
         const x = getCanvasX(event);
-        const dx = Math.abs(x - draggingMarker.current.startX);
+        const dx = Math.abs(x - draggingMarkerRef.current.startX);
         if (dx > 4) {
-            didDrag.current = true;
+            didDragRef.current = true;
         }
-        if (didDrag.current) {
+        if (didDragRef.current) {
             const newBeat = Math.max(0, x / beatWidth);
-            moveWarpMarker(clipId, draggingMarker.current.id, newBeat);
+            moveWarpMarker(clipId, draggingMarkerRef.current.id, newBeat);
             refreshWarp();
         }
     };
 
     const handlePointerUp = () => {
-        draggingMarker.current = null;
+        draggingMarkerRef.current = null;
         setIsDraggingMarker(false);
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
-        if (!warpState.enabled || didDrag.current) {
+        if (!warpState.enabled || didDragRef.current) {
             return;
         }
         const canvas = canvasRef.current;
@@ -423,7 +443,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 >
                     <button
                         type="button"
-                        className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent"
+                        className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
                         onClick={waveAct(() => normalizeClip(realClipId))}
                     >
@@ -431,7 +451,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     </button>
                     <button
                         type="button"
-                        className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent"
+                        className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
                         onClick={waveAct(() => reverseClip(realClipId))}
                     >
@@ -444,7 +464,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     >
                         <button
                             type="button"
-                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
+                            className={cn(
+                                menuBtnClass,
+                                'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
+                            )}
                             role="menuitem"
                             onClick={waveAct(() => {
                                 void handleAiDenoiseClip(clipId);
@@ -463,7 +486,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     >
                         <button
                             type="button"
-                            className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
+                            className={cn(
+                                menuBtnClass,
+                                'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
+                            )}
                             role="menuitem"
                             onClick={waveAct(() => {
                                 void handleStemSeparationPreview(clipId);
@@ -477,7 +503,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     </DisabledFeatureWrapper>
                     <button
                         type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
+                        className={cn(
+                            menuBtnClass,
+                            'justify-between text-[var(--color-accent-lavender)] hover:bg-accent'
+                        )}
                         role="menuitem"
                         onClick={waveAct(() => {
                             const track = trackState.tracks.find((time) =>
@@ -491,10 +520,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         <span>AI Audio → MIDI</span>
                         <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">DSP</span>
                     </button>
-                    <div className="my-1 border-t border-border/50" />
+                    <div className={menuSepClass} />
                     <button
                         type="button"
-                        className="flex w-full items-center px-3 py-1.5 text-xs hover:bg-accent"
+                        className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
                         onClick={waveAct(() => {
                             if (warpState.enabled) {

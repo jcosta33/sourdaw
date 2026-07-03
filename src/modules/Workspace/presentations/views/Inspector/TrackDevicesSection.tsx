@@ -21,6 +21,7 @@ import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores
 import { openPluginGui } from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
+import { menuBtnClass } from '#/utils/UI/contextMenuStyles';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { showDevicePanelForType } from '../../../useCases/panels/devicePanels/showDevicePanelForType';
@@ -96,7 +97,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     <button
                                         type="button"
                                         key={plugin.id}
-                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                        className={cn(menuBtnClass, 'text-foreground')}
                                         role="menuitem"
                                         onClick={() => {
                                             addDevice(track.id, plugin.name);
@@ -112,7 +113,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     <button
                                         type="button"
                                         key={plugin.id}
-                                        className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                                        className={cn(menuBtnClass, 'text-foreground hover:bg-accent/50')}
                                         role="menuitem"
                                         onClick={() => {
                                             addDevice(track.id, plugin.name);
@@ -130,7 +131,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             <button
                                                 type="button"
                                                 key={plugin.id}
-                                                className="flex w-full items-center px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                                className={cn(menuBtnClass, 'text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
                                                     addDevice(track.id, plugin.name);
@@ -150,7 +151,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                             <button
                                                 type="button"
                                                 key={plugin.id}
-                                                className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-white/[0.06] transition-colors"
+                                                className={cn(menuBtnClass, 'justify-between text-foreground')}
                                                 role="menuitem"
                                                 onClick={() => {
                                                     addExternalDevice(track.id, plugin.id, plugin.name);
