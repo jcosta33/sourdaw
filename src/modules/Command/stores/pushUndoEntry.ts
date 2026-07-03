@@ -13,7 +13,12 @@ export function pushUndoEntry(
     redoFn: () => void,
     options?: PushUndoEntryOptions
 ): void {
-    const entry = createCallbackUndoEntry(label, undoFn, redoFn, options?.source ?? 'manual');
+    const entry = createCallbackUndoEntry({
+        label,
+        undo: undoFn,
+        redo: redoFn,
+        source: options?.source ?? 'manual',
+    });
     if (options?.groupId) {
         entry.groupId = options.groupId;
         entry.groupLabel = options.groupLabel;

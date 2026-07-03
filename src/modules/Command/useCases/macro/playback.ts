@@ -1,6 +1,6 @@
 import { macroStore } from '../../stores/macroStore';
-import { generateGroupId } from '../commandQueries';
 import { executeAppAction } from '../executeAppAction';
+import { generateGroupId } from '../generateGroupId';
 
 /**
  * Replay a saved macro by dispatching each action in sequence.

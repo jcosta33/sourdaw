@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type UndoEntry, isActionEntry } from '../useCases/commandQueries';
+import { type UndoEntry } from '../useCases/commandQueries';
+import { isActionEntry } from '../useCases/isActionEntry';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const MAX_UNDO_PERSIST = 100;
@@ -10,13 +11,22 @@ export type UndoStoreState = {
     future: UndoEntry[];
 };
 
+type StoredUndoEntry = Omit<UndoEntry, 'kind'> & {
+    kind?: UndoEntry['kind'];
+};
+
+type StoredUndoStoreState = {
+    past: StoredUndoEntry[];
+    future: StoredUndoEntry[];
+};
+
 function loadFromSession(): UndoStoreState {
     try {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         if (raw) {
-            const parsed = JSON.parse(raw) as UndoStoreState;
+            const parsed = JSON.parse(raw) as StoredUndoStoreState;
             if (Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
-                function ensureKind(event: UndoEntry): UndoEntry {
+                function ensureKind(event: StoredUndoEntry): UndoEntry {
                     return { ...event, kind: event.kind ?? 'action' } as UndoEntry;
                 }
                 return {

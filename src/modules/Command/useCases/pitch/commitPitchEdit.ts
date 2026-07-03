@@ -3,8 +3,8 @@ import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
+import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
 
 import { getPitchEditDependencies } from './getPitchEditDependencies';
 
@@ -82,7 +82,12 @@ export async function commitPitchEditCommand(
 
         redoFn();
 
-        const entry = createCallbackUndoEntry('Commit Pitch Edit', undoFn, redoFn, 'manual');
+        const entry = createCallbackUndoEntry({
+            label: 'Commit Pitch Edit',
+            undo: undoFn,
+            redo: redoFn,
+            source: 'manual',
+        });
         commitUndoEntry(entry);
     } catch (error) {
         // Previously the failure was swallowed into `console.error` only, so a

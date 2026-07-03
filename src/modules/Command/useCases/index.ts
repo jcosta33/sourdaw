@@ -5,7 +5,7 @@ export { describeAction } from './actionLabels';
 export { setCommandEventBus } from './commandEventBus';
 
 export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
-export { generateGroupId } from './commandQueries';
+export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
 export type { ExecuteOptions } from './executeAppAction';
