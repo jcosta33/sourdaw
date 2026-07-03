@@ -14,7 +14,7 @@ vi.mock('../../../useCases/grooveTemplate/operations/extractGroove', () => ({
     extractGroove: vi.fn(() => sampleTemplate),
 }));
 
-vi.mock('../../../useCases/grooveTemplate/applyGrooveByGrooveId', () => ({
+vi.mock('../../../useCases/grooveTemplate/registerExtractedGroove', () => ({
     registerExtractedGroove: vi.fn(),
 }));
 
@@ -32,7 +32,7 @@ describe('generation handlers', () => {
     });
 
     it('persists the extracted template to the registry so apply can find it', async () => {
-        const { registerExtractedGroove } = await import('../../../useCases/grooveTemplate/applyGrooveByGrooveId');
+        const { registerExtractedGroove } = await import('../../../useCases/grooveTemplate/registerExtractedGroove');
 
         void handleExtractGroove.execute({ type: 'extractGroove', payload: { clipId: 'c1' } });
 
