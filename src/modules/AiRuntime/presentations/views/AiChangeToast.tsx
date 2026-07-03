@@ -34,6 +34,15 @@ export const AiChangeToast = (): ReactElement | null => {
     }
 
     const latest = changes[0]!;
+    const detailRows = latest.details.map((detail, detail_position) => {
+        const occurrence = latest.details
+            .slice(0, detail_position)
+            .filter((previous_detail) => previous_detail === detail).length;
+        return {
+            detail,
+            key: `${latest.id}-${detail}-${occurrence}`,
+        };
+    });
 
     return (
         <DawUtilityPanel
@@ -49,9 +58,9 @@ export const AiChangeToast = (): ReactElement | null => {
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
                         <div className="mt-1 space-y-0.5">
-                            {latest.details.map((detail) => (
-                                <p key={`${latest.id}-${detail}`} className="text-[10px] text-muted-foreground">
-                                    {detail}
+                            {detailRows.map((detail_row) => (
+                                <p key={detail_row.key} className="text-[10px] text-muted-foreground">
+                                    {detail_row.detail}
                                 </p>
                             ))}
                         </div>

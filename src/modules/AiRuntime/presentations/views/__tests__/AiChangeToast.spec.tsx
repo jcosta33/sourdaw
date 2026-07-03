@@ -15,7 +15,7 @@ vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/undoLastAction', () => ({
 }));
 
 const mockSubscribeAiChangeNotification = vi.fn<(handler: AiChangeNotificationHandler) => () => void>(() => vi.fn());
-vi.mock('#/modules/AiRuntime/useCases/subscribeAiChangeNotification', () => ({
+vi.mock('../../../useCases/subscribeAiChangeNotification', () => ({
     subscribeAiChangeNotification: (handler: AiChangeNotificationHandler) => mockSubscribeAiChangeNotification(handler),
 }));
 
@@ -69,6 +69,38 @@ describe('AiChangeToast', () => {
 
         expect(screen.getByRole('status')).toBeInTheDocument();
         expect(screen.getByText('Test change summary')).toBeInTheDocument();
+    });
+
+    it('should render duplicate details without duplicate-key warnings', () => {
+        let capturedHandler: (data: AiChangeNotification) => void = () => {};
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
+            capturedHandler = handler;
+            return vi.fn();
+        });
+
+        try {
+            render(<AiChangeToast />);
+
+            act(() => {
+                capturedHandler(
+                    createNotification({
+                        summary: 'Duplicate detail summary',
+                        details: ['Repeated detail', 'Repeated detail'],
+                    })
+                );
+            });
+
+            expect(screen.getAllByText('Repeated detail')).toHaveLength(2);
+            const duplicateKeyWarnings = consoleErrorSpy.mock.calls.filter((call) =>
+                call.some(
+                    (entry) => typeof entry === 'string' && entry.includes('Encountered two children with the same key')
+                )
+            );
+            expect(duplicateKeyWarnings).toEqual([]);
+        } finally {
+            consoleErrorSpy.mockRestore();
+        }
     });
 
     it('should call undoLastAction when undo button is clicked', () => {
