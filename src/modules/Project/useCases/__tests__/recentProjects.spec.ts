@@ -12,7 +12,7 @@ import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProj
 type RecentEntry = { name: string; key: string; updatedAt: number };
 
 const storageMocks = vi.hoisted(() => {
-    /** null so getRecentProjects() treats storage as empty (see recentProjectsStorage.get() ?? []). */
+    /** null so getRecentProjects() treats storage as empty through the sanitizer. */
     const mockGet = vi.fn(() => null as RecentEntry[] | null);
     const mockSet = vi.fn<(entries: RecentEntry[]) => void>();
     return { mockGet, mockSet };
