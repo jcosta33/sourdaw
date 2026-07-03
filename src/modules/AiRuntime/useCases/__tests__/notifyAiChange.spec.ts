@@ -1,23 +1,48 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { subscribeAiChangeNotification, notifyAiChange } from '../notifyAiChange';
+import { type AiChangeNotification, notifyAiChange } from '../notifyAiChange';
+import { subscribeAiChangeNotification } from '../subscribeAiChangeNotification';
 
 describe('notifyAiChange', () => {
-    it('notifies subscribers when called', () => {
-        let received: any = null;
+    it('should notify current subscribers when called', () => {
+        const receivedNotifications: AiChangeNotification[] = [];
         const unsubscribe = subscribeAiChangeNotification((change) => {
-            received = change;
+            receivedNotifications.push(change);
         });
 
         notifyAiChange('Test Summary', ['Detail 1', 'Detail 2']);
 
-        expect(received).not.toBeNull();
+        expect(receivedNotifications).toHaveLength(1);
+        const received = receivedNotifications[0];
+        if (received === undefined) {
+            throw new Error('Expected subscriber to receive a notification');
+        }
+
         expect(received.summary).toBe('Test Summary');
         expect(received.details).toEqual(['Detail 1', 'Detail 2']);
         expect(received.id).toContain('ai-change-');
         expect(typeof received.timestamp).toBe('number');
 
         unsubscribe();
+    });
+
+    it('should notify every current subscriber', () => {
+        const firstNotifications: AiChangeNotification[] = [];
+        const secondNotifications: AiChangeNotification[] = [];
+        const unsubscribeFirst = subscribeAiChangeNotification((change) => {
+            firstNotifications.push(change);
+        });
+        const unsubscribeSecond = subscribeAiChangeNotification((change) => {
+            secondNotifications.push(change);
+        });
+
+        notifyAiChange('Shared Summary', ['Shared Detail']);
+
+        expect(firstNotifications.map((change) => change.summary)).toEqual(['Shared Summary']);
+        expect(secondNotifications.map((change) => change.summary)).toEqual(['Shared Summary']);
+
+        unsubscribeFirst();
+        unsubscribeSecond();
     });
 
     it('assigns a unique id to every notification, even within the same millisecond', () => {
@@ -44,18 +69,26 @@ describe('notifyAiChange', () => {
         unsubscribe();
     });
 
-    it('allows unsubscribing', () => {
-        let count = 0;
-        const unsubscribe = subscribeAiChangeNotification(() => {
-            count++;
+    it('should remove only the unsubscribed listener', () => {
+        const retainedNotifications: AiChangeNotification[] = [];
+        const removedNotifications: AiChangeNotification[] = [];
+        const unsubscribeRemoved = subscribeAiChangeNotification((change) => {
+            removedNotifications.push(change);
+        });
+        const unsubscribeRetained = subscribeAiChangeNotification((change) => {
+            retainedNotifications.push(change);
         });
 
         notifyAiChange('Test 1', []);
-        expect(count).toBe(1);
+        expect(removedNotifications).toHaveLength(1);
+        expect(retainedNotifications).toHaveLength(1);
 
-        unsubscribe();
+        unsubscribeRemoved();
 
         notifyAiChange('Test 2', []);
-        expect(count).toBe(1); // Should not increase
+        expect(removedNotifications.map((change) => change.summary)).toEqual(['Test 1']);
+        expect(retainedNotifications.map((change) => change.summary)).toEqual(['Test 1', 'Test 2']);
+
+        unsubscribeRetained();
     });
 });
