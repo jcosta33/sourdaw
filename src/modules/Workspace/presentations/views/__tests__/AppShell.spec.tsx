@@ -16,6 +16,8 @@ import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
+const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
+
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
@@ -75,7 +77,7 @@ vi.mock('../ShortcutsSection', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/presentations/views', () => ({
-    ElasticEditorPanel: () => <div data-testid="elastic-panel">Elastic</div>,
+    ElasticEditorPanel: elasticEditorPanelMock,
 }));
 
 vi.mock('#/modules/AiRuntime/presentations/views/GenerativeAiPanel', () => ({
@@ -212,6 +214,7 @@ describe('AppShell', () => {
         setNotificationEventBus(mockNotificationEventBus);
         setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
+        elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         vi.mocked(useProjectState).mockImplementation(() => projectState);
@@ -342,6 +345,7 @@ describe('AppShell', () => {
             expect(screen.getByRole('tab', { name: 'Elastic' })).toHaveAttribute('aria-selected', 'true');
             expect(screen.getByTestId('elastic-panel')).toBeInTheDocument();
 
+            elasticEditorPanelMock.mockClear();
             trackStoreState = {
                 tracks: [createTrack(createClip('midi'))],
                 selectedTrackId: 'track-1',
@@ -355,7 +359,9 @@ describe('AppShell', () => {
             expect(editorTab).toHaveAttribute('aria-selected', 'true');
             expect(panel.getAttribute('aria-labelledby')).toBe(editorTab.id);
             expect(screen.getByTestId('clip-view')).toBeInTheDocument();
+            expect(elasticEditorPanelMock).not.toHaveBeenCalled();
 
+            elasticEditorPanelMock.mockClear();
             trackStoreState = {
                 tracks: [createTrack(createClip('audio'))],
                 selectedTrackId: 'track-1',
@@ -366,6 +372,7 @@ describe('AppShell', () => {
             expect(screen.getByTestId('elastic-tab-button')).toBeInTheDocument();
             expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
             expect(screen.queryByTestId('elastic-panel')).not.toBeInTheDocument();
+            expect(elasticEditorPanelMock).not.toHaveBeenCalled();
         });
     });
 
