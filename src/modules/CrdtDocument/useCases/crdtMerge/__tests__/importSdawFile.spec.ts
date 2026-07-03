@@ -1,16 +1,17 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../importSdawFile';
+import { detectImportDecision } from '../detectImportDecision';
+import { importSdawFile } from '../importSdawFile';
 
 describe('importSdawFile', () => {
     it('should export detectImportDecision', () => {
-        expect(subject.detectImportDecision).toBeDefined();
-        const time = typeof subject.detectImportDecision;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(detectImportDecision).toBeDefined();
+        const time = typeof detectImportDecision;
+        expect(time).toBe('function');
     });
     it('should export importSdawFile', () => {
-        expect(subject.importSdawFile).toBeDefined();
-        const time = typeof subject.importSdawFile;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(importSdawFile).toBeDefined();
+        const time = typeof importSdawFile;
+        expect(time).toBe('function');
     });
 });

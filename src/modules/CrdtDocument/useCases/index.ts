@@ -1,4 +1,3 @@
-export type { DocId, DocumentBundle, MergeResult } from './crdtDocumentTypes';
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
 export { compactProject } from './compactProject';
