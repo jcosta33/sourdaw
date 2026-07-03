@@ -1,7 +1,10 @@
 import { type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
 
-import { encodeCrustValue, findDeviceRefCrust, flushCrustParam, paramBatcher } from './helpers';
+import { createFlushHandlers } from './createFlushHandlers';
+import { crustBridgeDeps, encodeCrustValue, findDeviceRefCrust, paramBatcher } from './helpers';
+
+const { flushParam: flushCrustParam } = createFlushHandlers(crustBridgeDeps);
 
 export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
     deviceId: string,
