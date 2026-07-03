@@ -2,20 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 
 import { logger } from '#/infra/logger/appLogger';
 
-import * as subject from '../helpers';
-
-describe('helpers', () => {
-    it('should export createFlushParam', () => {
-        expect(subject.createFlushParam).toBeDefined();
-        const t = typeof subject.createFlushParam;
-        expect(t === 'function' || t === 'object').toBe(true);
-    });
-    it('should export encodePatchValue', () => {
-        expect(subject.encodePatchValue).toBeDefined();
-        const t = typeof subject.encodePatchValue;
-        expect(t === 'function' || t === 'object').toBe(true);
-    });
-});
+import { encodePatchValue } from '../helpers';
 
 describe('encodePatchValue', () => {
     let warnSpy: MockInstance<typeof logger.warn>;
@@ -28,34 +15,51 @@ describe('encodePatchValue', () => {
         warnSpy.mockRestore();
     });
 
-    it('encodes numbers and booleans without warning', () => {
-        expect(subject.encodePatchValue('drive', 42)).toBe(42);
-        expect(subject.encodePatchValue('bypass', true)).toBe(1);
-        expect(subject.encodePatchValue('bypass', false)).toBe(0);
+    it('should encode numbers and booleans without warning', () => {
+        expect(encodePatchValue('drive', 42)).toBe(42);
+        expect(encodePatchValue('bypass', true)).toBe(1);
+        expect(encodePatchValue('bypass', false)).toBe(0);
         expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    it('encodes known enum-string keys without warning', () => {
-        expect(subject.encodePatchValue('distortionMode', 'foldback')).toBe(2);
-        expect(subject.encodePatchValue('filterMode', 'bandpass')).toBe(2);
-        expect(subject.encodePatchValue('grainWindow', 'gaussian')).toBe(1);
-        expect(subject.encodePatchValue('crossoverMode', 'linear-phase')).toBe(1);
-        expect(subject.encodePatchValue('globalRouting', 'parallel')).toBe(1);
-        expect(subject.encodePatchValue('routingMode', 'mid-side')).toBe(2);
+    it('should return null for non-string unknown values without warning', () => {
+        expect(encodePatchValue('drive', null)).toBeNull();
+        expect(encodePatchValue('drive', undefined)).toBeNull();
+        expect(encodePatchValue('drive', { value: 1 })).toBeNull();
         expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    it('returns null without warning for known non-audio string keys', () => {
-        expect(subject.encodePatchValue('name', 'My Patch')).toBeNull();
-        expect(subject.encodePatchValue('convolutionIr', 'cathedral')).toBeNull();
+    it('should encode known enum-string keys without warning', () => {
+        expect(encodePatchValue('distortionMode', 'foldback')).toBe(2);
+        expect(encodePatchValue('filterMode', 'bandpass')).toBe(2);
+        expect(encodePatchValue('grainWindow', 'gaussian')).toBe(1);
+        expect(encodePatchValue('crossoverMode', 'linear-phase')).toBe(1);
+        expect(encodePatchValue('globalRouting', 'parallel')).toBe(1);
+        expect(encodePatchValue('routingMode', 'mid-side')).toBe(2);
         expect(warnSpy).not.toHaveBeenCalled();
     });
 
-    it('warns when an unrecognized string-valued key is dropped', () => {
+    it('should fall back to zero for unknown strings on known mode keys without warning', () => {
+        expect(encodePatchValue('distortionMode', 'future-drive')).toBe(0);
+        expect(encodePatchValue('filterMode', 'future-filter')).toBe(0);
+        expect(encodePatchValue('grainWindow', 'future-window')).toBe(0);
+        expect(encodePatchValue('crossoverMode', 'future-crossover')).toBe(0);
+        expect(encodePatchValue('globalRouting', 'future-global-route')).toBe(0);
+        expect(encodePatchValue('routingMode', 'future-route')).toBe(0);
+        expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should return null without warning for known non-audio string keys', () => {
+        expect(encodePatchValue('name', 'My Patch')).toBeNull();
+        expect(encodePatchValue('convolutionIr', 'cathedral')).toBeNull();
+        expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should warn when an unrecognized string-valued key is dropped', () => {
         // Regression: a newly added string field that is not registered as a
         // mode-index map nor as a known non-audio key would silently never
         // reach the engine. The bridge must surface it in dev instead.
-        expect(subject.encodePatchValue('newStringField', 'someValue')).toBeNull();
+        expect(encodePatchValue('newStringField', 'someValue')).toBeNull();
         expect(warnSpy).toHaveBeenCalledTimes(1);
         expect(String(warnSpy.mock.calls[0]?.[0])).toContain('newStringField');
     });

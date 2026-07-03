@@ -1,15 +1,45 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type getBacteriaState, setBacteriaBandParam } from '../../../stores/bacteriaStore';
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { type Track } from '#/modules/Arrangement/stores';
+
+import { DEFAULT_BAND, DEFAULT_PATCH, type BacteriaPatch } from '../../../models/BacteriaPatch';
+import { type BacteriaState, setBacteriaBandParam } from '../../../stores/bacteriaStore';
+import { type PersistDeviceParamFn, type UpdateDeviceParamFn } from '../helpers';
 import { setBacteriaBandParamWithAudio } from '../setBacteriaBandParamWithAudio';
 
-const TWO_BAND_PATCH = {
-    bands: [{ drive: 0 }, { drive: 0 }],
-} as unknown as ReturnType<typeof getBacteriaState>['patch'];
+type ScheduledEntry = {
+    ref: {
+        trackId: string;
+        deviceId: string;
+    };
+    key: string;
+    value: number;
+};
+
+type FlushParam = (compositeKey: string, entry: ScheduledEntry) => void;
+type ScheduleParam = (compositeKey: string, entry: ScheduledEntry, flush: FlushParam) => void;
+type SetBacteriaBandParamMock = (
+    deviceId: string,
+    bandIndex: number,
+    key: keyof BacteriaPatch['bands'][0],
+    value: BacteriaPatch['bands'][0][keyof BacteriaPatch['bands'][0]]
+) => void;
+type GetBacteriaStateMock = (deviceId: string) => BacteriaState;
+
+const mocks = vi.hoisted(() => ({
+    setBacteriaBandParam: vi.fn<SetBacteriaBandParamMock>(),
+    getBacteriaState: vi.fn<GetBacteriaStateMock>(),
+    schedule: vi.fn<ScheduleParam>((compositeKey, entry, flushParam) => {
+        flushParam(compositeKey, entry);
+    }),
+    cancel: vi.fn<(key: string) => void>(),
+    cancelAll: vi.fn<() => void>(),
+}));
 
 vi.mock('../../../stores/bacteriaStore', () => ({
-    setBacteriaBandParam: vi.fn(),
-    getBacteriaState: vi.fn(() => ({ patch: TWO_BAND_PATCH })),
+    setBacteriaBandParam: mocks.setBacteriaBandParam,
+    getBacteriaState: mocks.getBacteriaState,
 }));
 
 vi.mock('../helpers', async (importOriginal) => {
@@ -17,42 +47,97 @@ vi.mock('../helpers', async (importOriginal) => {
     return {
         ...actual,
         paramBatcher: {
-            // Flush synchronously so engine writes are observable in-test.
-            schedule: vi.fn((key, entry, flush) => flush(key, entry)),
+            schedule: mocks.schedule,
+            cancel: mocks.cancel,
+            cancelAll: mocks.cancelAll,
+            get pendingSize() {
+                return 0;
+            },
         },
     };
 });
 
-vi.mock('#/infra/di/inject', () => ({
-    inject: () => (fn: unknown) => fn,
-}));
+type BridgeDeps = {
+    getAllTracks: () => Track[];
+    updateDeviceParam: UpdateDeviceParamFn;
+    persistDeviceParam: PersistDeviceParamFn;
+};
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getAllTracks: vi.fn(),
-    persistDeviceParam: vi.fn(),
-}));
+function createTrackWithDevice(deviceId: string): Track {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [{ id: deviceId, name: 'Bacteria', type: 'bacteria', bypassed: false, parameterValues: {} }],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+}
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: vi.fn(),
-}));
+function createTwoBandState(): BacteriaState {
+    return {
+        patch: {
+            ...DEFAULT_PATCH,
+            bands: [
+                { ...DEFAULT_BAND, drive: 0 },
+                { ...DEFAULT_BAND, drive: 0 },
+            ],
+        },
+        inputDb: -100,
+        outputDb: -100,
+        bandLevels: [0, 0],
+        latency: 0,
+        activeBand: 0,
+        uiLevel: 1,
+        activeModule: 'distortion',
+    };
+}
+
+function createDeps(tracks: Track[] = [createTrackWithDevice('device-1')]): BridgeDeps {
+    return {
+        getAllTracks: vi.fn(() => tracks),
+        updateDeviceParam: vi.fn<UpdateDeviceParamFn>(),
+        persistDeviceParam: vi.fn<PersistDeviceParamFn>(),
+    };
+}
 
 describe('setBacteriaBandParamWithAudio', () => {
-    const deps = {
-        getAllTracks: vi.fn(),
-        updateDeviceParam: vi.fn(),
-        persistDeviceParam: vi.fn(),
-    };
-
     const deviceId = 'device-1';
 
     beforeEach(() => {
         vi.clearAllMocks();
-        deps.getAllTracks.mockReturnValue([{ id: 'track-1', devices: [{ id: deviceId, type: 'bacteria' }] }]);
+        mocks.getBacteriaState.mockReturnValue(createTwoBandState());
     });
 
-    it('schedules an engine write for an in-range band', () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- factory pass-through via mocked inject
-        const action = (setBacteriaBandParamWithAudio as any)(deps);
+    it('should schedule an engine write for an in-range band', () => {
+        const deps = createDeps();
+        const action = injectDependencies(setBacteriaBandParamWithAudio, deps);
 
         action(deviceId, 1, 'drive', 30);
 
@@ -61,22 +146,22 @@ describe('setBacteriaBandParamWithAudio', () => {
         expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'band1_drive', 30);
     });
 
-    it('does NOT schedule an engine write for an out-of-range band index', () => {
+    it('should not schedule an engine write for an out-of-range band index', () => {
         // Regression: the store no-ops on an out-of-range index, but the bridge
         // previously still encoded and scheduled the engine write. The bounds
         // guard must short-circuit before any engine/persist call.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- factory pass-through via mocked inject
-        const action = (setBacteriaBandParamWithAudio as any)(deps);
+        const deps = createDeps();
+        const action = injectDependencies(setBacteriaBandParamWithAudio, deps);
 
-        action(deviceId, 5, 'drive', 30); // patch has only 2 bands (indices 0..1)
+        action(deviceId, 5, 'drive', 30);
 
         expect(deps.updateDeviceParam).not.toHaveBeenCalled();
         expect(deps.persistDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('does NOT schedule an engine write for a negative band index', () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- factory pass-through via mocked inject
-        const action = (setBacteriaBandParamWithAudio as any)(deps);
+    it('should not schedule an engine write for a negative band index', () => {
+        const deps = createDeps();
+        const action = injectDependencies(setBacteriaBandParamWithAudio, deps);
 
         action(deviceId, -1, 'drive', 30);
 

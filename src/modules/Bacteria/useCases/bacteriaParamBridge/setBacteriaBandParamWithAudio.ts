@@ -4,7 +4,8 @@ import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import { getBacteriaState, setBacteriaBandParam } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { createFindDeviceRef, createFlushParam, encodePatchValue, paramBatcher } from './helpers';
+import { createFlushParam } from './createFlushParam';
+import { createFindDeviceRef, encodePatchValue, paramBatcher } from './helpers';
 
 /**
  * Set a Bacteria per-band parameter — updates UI store immediately,

@@ -51,18 +51,17 @@ export const ROUTING_MODE_INDEX = {
     'mid-side': 2,
 } as const;
 
+const DISTORTION_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(DISTORTION_MODE_INDEX));
+const FILTER_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(FILTER_MODE_INDEX));
+const GRAIN_WINDOW_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(GRAIN_WINDOW_INDEX));
+const CROSSOVER_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(CROSSOVER_MODE_INDEX));
+const ROUTING_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(ROUTING_MODE_INDEX));
+
 // String-valued patch fields that are intentionally not audio params, so
 // encodePatchValue returning null for them is expected (not a misconfiguration).
 // `name` is the patch label; `convolutionIr` is an IR identifier resolved
 // out-of-band rather than encoded into a numeric engine param.
 const NON_AUDIO_STRING_KEYS = new Set<string>(['name', 'convolutionIr']);
-
-export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persistDeviceParamFn: PersistDeviceParamFn) {
-    return function flushParam(_compositeKey: string, entry: BacteriaBatchEntry): void {
-        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
-    };
-}
 
 export function encodePatchValue(key: string, value: unknown): number | null {
     if (typeof value === 'number') {
@@ -78,23 +77,23 @@ export function encodePatchValue(key: string, value: unknown): number | null {
     }
 
     if (key === 'distortionMode') {
-        return DISTORTION_MODE_INDEX[value as keyof typeof DISTORTION_MODE_INDEX] ?? 0;
+        return DISTORTION_MODE_LOOKUP.get(value) ?? 0;
     }
 
     if (key === 'filterMode') {
-        return FILTER_MODE_INDEX[value as keyof typeof FILTER_MODE_INDEX] ?? 0;
+        return FILTER_MODE_LOOKUP.get(value) ?? 0;
     }
 
     if (key === 'grainWindow') {
-        return GRAIN_WINDOW_INDEX[value as keyof typeof GRAIN_WINDOW_INDEX] ?? 0;
+        return GRAIN_WINDOW_LOOKUP.get(value) ?? 0;
     }
 
     if (key === 'crossoverMode') {
-        return CROSSOVER_MODE_INDEX[value as keyof typeof CROSSOVER_MODE_INDEX] ?? 0;
+        return CROSSOVER_MODE_LOOKUP.get(value) ?? 0;
     }
 
     if (key === 'globalRouting' || key === 'routingMode') {
-        return ROUTING_MODE_INDEX[value as keyof typeof ROUTING_MODE_INDEX] ?? 0;
+        return ROUTING_MODE_LOOKUP.get(value) ?? 0;
     }
 
     // An unrecognized string-valued key silently never reaches the engine.
