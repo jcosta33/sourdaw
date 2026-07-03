@@ -1,12 +1,22 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { stringify } from 'superjson';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import {
     aiActionHistoryStore,
+    type AiActionHistoryState,
     pushAiActionGroup,
     markGroupReverted,
     toggleAiHistoryPanel,
     clearAiHistory,
 } from '../aiActionHistoryStore';
+
+async function loadHistoryStateFromStoredValue(storedValue: unknown): Promise<AiActionHistoryState | null> {
+    vi.resetModules();
+    window.localStorage.setItem('sourdaw-ai-history', stringify(storedValue));
+
+    const module = await import('../aiActionHistoryStore');
+    return module.aiActionHistoryStore.value;
+}
 
 describe('aiActionHistoryStore', () => {
     beforeEach(() => {
@@ -17,6 +27,91 @@ describe('aiActionHistoryStore', () => {
         const state = aiActionHistoryStore.value;
         expect(state?.groups).toEqual([]);
         expect(state?.panelOpen).toBe(false);
+    });
+
+    describe('persisted hydration', () => {
+        it('should default corrupt stored state instead of hydrating raw invalid shape', async () => {
+            const state = await loadHistoryStateFromStoredValue({
+                groups: 'not-groups',
+                panelOpen: 'yes',
+            });
+
+            expect(state).toEqual({ groups: [], panelOpen: false });
+        });
+
+        it('should default null, non-object, and missing stored state fields', async () => {
+            await expect(loadHistoryStateFromStoredValue(null)).resolves.toEqual({ groups: [], panelOpen: false });
+            await expect(loadHistoryStateFromStoredValue(123)).resolves.toEqual({ groups: [], panelOpen: false });
+            await expect(loadHistoryStateFromStoredValue({})).resolves.toEqual({ groups: [], panelOpen: false });
+        });
+
+        it('should preserve valid stored groups and panel visibility', async () => {
+            const validState = {
+                groups: [
+                    {
+                        id: 'history-1',
+                        prompt: 'Add a bassline',
+                        groupId: 'group-1',
+                        timestamp: 123,
+                        reverted: false,
+                        actions: [
+                            { kind: 'appAction', actionType: 'track.create', label: 'Create track' },
+                            { kind: 'jsonEdit', label: 'Edit project JSON' },
+                        ],
+                    },
+                ],
+                panelOpen: true,
+            };
+
+            const state = await loadHistoryStateFromStoredValue(validState);
+
+            expect(state).toEqual(validState);
+        });
+
+        it('should default invalid top-level fields independently', async () => {
+            const state = await loadHistoryStateFromStoredValue({
+                groups: 'not-groups',
+                panelOpen: true,
+            });
+
+            expect(state).toEqual({ groups: [], panelOpen: true });
+        });
+
+        it('should drop invalid groups including groups with invalid action entries', async () => {
+            const validGroup = {
+                id: 'history-1',
+                prompt: 'Keep this one',
+                groupId: 'group-1',
+                timestamp: 123,
+                reverted: false,
+                actions: [{ kind: 'jsonEdit', label: 'JSON edit' }],
+            };
+
+            const state = await loadHistoryStateFromStoredValue({
+                groups: [
+                    validGroup,
+                    {
+                        id: 'history-2',
+                        prompt: 'Missing finite timestamp',
+                        groupId: 'group-2',
+                        timestamp: Number.NaN,
+                        reverted: false,
+                        actions: [{ kind: 'jsonEdit', label: 'JSON edit' }],
+                    },
+                    {
+                        id: 'history-3',
+                        prompt: 'Invalid action entry',
+                        groupId: 'group-3',
+                        timestamp: 456,
+                        reverted: false,
+                        actions: [{ kind: 'appAction', actionType: 'track.create' }],
+                    },
+                ],
+                panelOpen: 'not-boolean',
+            });
+
+            expect(state).toEqual({ groups: [validGroup], panelOpen: false });
+        });
     });
 
     describe('pushAiActionGroup', () => {
