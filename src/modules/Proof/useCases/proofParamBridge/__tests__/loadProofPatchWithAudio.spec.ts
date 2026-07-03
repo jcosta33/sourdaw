@@ -151,6 +151,21 @@ describe('loadProofPatchWithAudio', () => {
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
     });
 
+    it.each([
+        { restoredValue: 0, expectedMode: 'off' },
+        { restoredValue: 1, expectedMode: 'tpdf' },
+        { restoredValue: 2, expectedMode: 'noise_shaped' },
+    ] as const)('should rehydrate dither_mode $restoredValue as $expectedMode', ({ restoredValue, expectedMode }) => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState({ dither_mode: restoredValue }));
+
+        syncFullPatch(DEVICE_ID);
+
+        expect(getProofState(DEVICE_ID).patch.ditherMode).toBe(expectedMode);
+        expect(paramCalls(bridge).get('dither_mode')).toBe(restoredValue);
+    });
+
     it('should rehydrate restored scalars when runtime-only state already created the Proof entry', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
