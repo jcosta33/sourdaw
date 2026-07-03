@@ -1,6 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { type ModulatorMapping } from '../../models/Modulator';
 import { automationStore } from '../../stores/automationStore';
 import { modulationStore } from '../../stores/modulationStore';
 import { getAutomationValueAtBeat } from '../automation/getAutomationValueAtBeat';
@@ -8,57 +7,11 @@ import { isRecordingAutomation } from '../automationRecording/isRecordingAutomat
 
 import { computeModulatorValue } from './computeModulatorValue';
 import { getModulationDependencies } from './getModulationDependencies';
+import { modulationParamSlew } from './modulationSlewState';
+import { resolveModulationBinding } from './resolveModulationBinding';
 
-/**
- * Per-(track,device,param) exponential slew state for the modulation→engine
- * write, mirroring `applyAutomation`'s slew so the modulation path produces the
- * same smooth ramps instead of stepping the param every tick (zipper noise).
- */
 const SLEW_ALPHA = 0.4;
 const SLEW_EPSILON = 5e-5;
-const modulationParamSlew = new Map<string, number>();
-
-/**
- * Clears all per-param slew state. The slew map is module-level (it must survive
- * across scheduler ticks to ramp smoothly), so a test exercising the slew path
- * must reset it between cases or a prior case's seeded value leaks in and
- * suppresses the next write. Not used on the runtime hot path.
- */
-export function resetModulationSlew(): void {
-    modulationParamSlew.clear();
-}
-
-type MappingBinding = {
-    baseValue: number;
-    paramMin: number;
-    paramMax: number;
-    deviceType: string;
-};
-
-function resolveBinding(mapping: ModulatorMapping): MappingBinding | null {
-    const tracks = trackStore.value?.tracks;
-    if (!tracks) {
-        return null;
-    }
-    const track = tracks.find((candidate) => candidate.id === mapping.targetTrackId);
-    if (!track) {
-        return null;
-    }
-    const device = track.devices.find((candidate) => candidate.id === mapping.targetDeviceId);
-    if (!device) {
-        return null;
-    }
-    const paramDef = getModulationDependencies().getPluginParamRange(device.type, mapping.targetParamId);
-    if (!paramDef) {
-        return null;
-    }
-    return {
-        baseValue: device.parameterValues[mapping.targetParamId] ?? paramDef.defaultValue,
-        paramMin: paramDef.min,
-        paramMax: paramDef.max,
-        deviceType: device.type,
-    };
-}
 
 function clamp(value: number, min: number, max: number): number {
     if (value < min) {
@@ -68,46 +21,6 @@ function clamp(value: number, min: number, max: number): number {
         return max;
     }
     return value;
-}
-
-/**
- * Write each mapping's persisted base value back to the engine once.
- *
- * The engine only ever sees modulated overrides (`applyModulationToEngine`
- * writes every tick while a mapping is live); removing the modulator or the
- * mapping simply stops the writes, which leaves the engine param frozen at the
- * last modulated value. This restores the persisted base so removal actually
- * "lets go" of the param. Called on removal paths, not on the scheduler hot
- * path. De-duplicates by destination so the same param is reverted once even if
- * several removed mappings target it.
- */
-export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): void {
-    // If the engine seam has not been wired (e.g. before app bootstrap, or in a
-    // unit test that never calls `setModulationDependencies`), there is no engine
-    // to revert and nothing was ever written — removal is then a pure store edit.
-    let deps: ReturnType<typeof getModulationDependencies>;
-    try {
-        deps = getModulationDependencies();
-    } catch {
-        return;
-    }
-
-    const reverted = new Set<string>();
-    for (const mapping of mappings) {
-        const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
-        if (reverted.has(key)) {
-            continue;
-        }
-        const binding = resolveBinding(mapping);
-        if (!binding) {
-            continue;
-        }
-        reverted.add(key);
-        // Drop the slew slot so a future re-add of this destination seeds fresh
-        // at its new target rather than ramping from this now-stale value.
-        modulationParamSlew.delete(key);
-        deps.updateDeviceParam(mapping.targetTrackId, mapping.targetDeviceId, mapping.targetParamId, binding.baseValue);
-    }
 }
 
 /**
@@ -187,7 +100,7 @@ export function applyModulationToEngine(currentBeat: number): void {
         const modValue = computeModulatorValue(modulator, currentBeat);
 
         for (const mapping of modulator.mappings) {
-            const binding = resolveBinding(mapping);
+            const binding = resolveModulationBinding(mapping);
             if (!binding) {
                 continue;
             }

@@ -1,7 +1,7 @@
 import { type ModulatorMapping } from '../../models/Modulator';
 import { modulationStore } from '../../stores/modulationStore';
 
-import { revertMappingsToBase } from './applyModulationToEngine';
+import { revertMappingsToBase } from './revertMappingsToBase';
 
 /** The full identity of a mapping destination (a modulator may map the same
  * param on different tracks/devices — `targetParamId` alone is ambiguous). */
