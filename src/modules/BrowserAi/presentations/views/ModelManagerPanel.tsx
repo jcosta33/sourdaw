@@ -34,6 +34,9 @@ function languageLabel(lang: 'en' | 'zh' | 'ja'): string {
     return 'Japanese';
 }
 
+const DDSP_UNAVAILABLE_DESCRIPTION = 'TF.js worker unavailable in this build';
+const DDSP_UNAVAILABLE_LABEL = 'DDSP browser rendering is not available in this build';
+
 type ModelActionProps = {
     id: string;
     name: string;
@@ -208,17 +211,17 @@ export function ModelManagerPanel(): ReactElement {
     };
     const registry = useStore(modelRegistryStore, defaultRegistry);
 
-    const kokoroStatus = registry?.kokoroModel?.status ?? 'not-downloaded';
-    const kokoroProgress = registry?.kokoroModel?.downloadProgress ?? 0;
-    const vocoderStatus = registry?.vocoder?.status ?? 'not-downloaded';
-    const vocoderProgress = registry?.vocoder?.downloadProgress ?? 0;
-    const diffSingerVoicebanks = registry?.diffSingerVoicebanks ?? [];
+    const kokoroStatus = registry.kokoroModel?.status ?? 'not-downloaded';
+    const kokoroProgress = registry.kokoroModel?.downloadProgress ?? 0;
+    const vocoderStatus = registry.vocoder?.status ?? 'not-downloaded';
+    const vocoderProgress = registry.vocoder?.downloadProgress ?? 0;
+    const diffSingerVoicebanks = registry.diffSingerVoicebanks;
 
     // DDSP instruments: use registry status when available, fall back to static catalog
-    const registryInstruments = registry?.ddspInstruments ?? [];
+    const registryInstruments = registry.ddspInstruments;
     const instruments = registryInstruments.length > 0 ? registryInstruments : DDSP_INSTRUMENT_CATALOG;
 
-    const totalUsed = registry?.storageUsedBytes ?? 0;
+    const totalUsed = registry.storageUsedBytes;
     const limitBytes = 2 * 1024 * 1024 * 1024;
     const usagePercent = Math.min(100, (totalUsed / limitBytes) * 100);
     const nearLimit = usagePercent > 80;
@@ -253,16 +256,18 @@ export function ModelManagerPanel(): ReactElement {
             {/* DDSP Instruments */}
             <DawUtilitySection
                 title="DDSP Instruments"
-                detail="Monophonic synthesis · Apache 2.0 · Google Research · Loaded from CDN"
+                detail="Monophonic synthesis · Apache 2.0 · Google Research · Browser renderer unavailable"
             >
                 <div className="space-y-0.5">
                     {instruments.map((instrument) => {
-                        const status = 'status' in instrument ? instrument.status : undefined;
+                        const status = 'status' in instrument ? instrument.status : 'error';
+                        const description =
+                            status === 'ready' ? 'CDN · ~15 MB · cached by browser' : DDSP_UNAVAILABLE_DESCRIPTION;
                         return (
                             <DawPickerRow
                                 key={instrument.id}
                                 heading={instrument.name}
-                                description="CDN · ~15 MB · cached by browser"
+                                description={description}
                                 endSlot={
                                     status === 'ready' ? (
                                         <DawMicroBadge
@@ -272,8 +277,11 @@ export function ModelManagerPanel(): ReactElement {
                                             ✓ Cached
                                         </DawMicroBadge>
                                     ) : (
-                                        <DawMicroBadge tone="muted" aria-label={`${instrument.name} available via CDN`}>
-                                            CDN
+                                        <DawMicroBadge
+                                            tone="danger"
+                                            aria-label={`${instrument.name} unavailable: ${DDSP_UNAVAILABLE_LABEL}`}
+                                        >
+                                            Unavailable
                                         </DawMicroBadge>
                                     )
                                 }
