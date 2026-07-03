@@ -1,5 +1,5 @@
 /**
- * Prompt injection event bus.
+ * Prompt injection injector.
  *
  * The voice command overlay and other sources call `injectPromptCommand`
  * to push transcribed or generated text into the PromptBar.
@@ -9,22 +9,10 @@
  * AiRuntime and Workspace modules can import it.
  */
 
-// §60.1 — Use a Set inside a holder so the binding can't be reassigned
-// from outside this file and the unsubscribe path is O(1) instead of
-// allocating a filtered copy.
-const injectionBus: { listeners: Set<(text: string) => void> } = {
-    listeners: new Set(),
-};
-
-export function onPromptInjection(cb: (text: string) => void): () => void {
-    injectionBus.listeners.add(cb);
-    return () => {
-        injectionBus.listeners.delete(cb);
-    };
-}
+import { promptInjectionListeners } from './promptInjectionState';
 
 export function injectPromptCommand(text: string): void {
-    for (const listener of injectionBus.listeners) {
+    for (const listener of promptInjectionListeners) {
         listener(text);
     }
 }

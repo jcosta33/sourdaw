@@ -1,3 +1,5 @@
+import { type ReactElement, type ReactNode } from 'react';
+
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -8,9 +10,29 @@ import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
 import { TrackListView } from '../TrackListView';
 
+type TrackHeaderMockProps = {
+    track: {
+        id: string;
+        name: string;
+    };
+    isSelected: boolean;
+};
+
+type HeaderBandMockProps = {
+    children: ReactNode;
+    actions: ReactNode;
+};
+
+type EmptyStateMockProps = {
+    title: string;
+    description: string;
+};
+
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn(function useStoreMock<Value>(_store: unknown, defaultValue: Value): Value {
+        return defaultValue;
+    }),
 }));
 
 vi.mock('../../hooks/useTracks', () => ({
@@ -24,7 +46,7 @@ vi.mock('../../hooks/useTracks', () => ({
 }));
 
 vi.mock('../TrackHeader', () => ({
-    TrackHeader: ({ track, isSelected }: any) => (
+    TrackHeader: ({ track, isSelected }: TrackHeaderMockProps): ReactElement => (
         <div data-testid={`track-${track.id}`} data-selected={isSelected}>
             {track.name}
         </div>
@@ -36,7 +58,7 @@ vi.mock('../MiniMasterSpectrum', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ children, actions }: any) => (
+    DawHeaderBand: ({ children, actions }: HeaderBandMockProps): ReactElement => (
         <div data-testid="header-band">
             {children}
             {actions}
@@ -45,7 +67,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
-    DawEmptyState: ({ title, description }: any) => (
+    DawEmptyState: ({ title, description }: EmptyStateMockProps): ReactElement => (
         <div data-testid="empty-state">
             <div>{title}</div>
             <div>{description}</div>
@@ -89,7 +111,7 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     setScrollY: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases/promptInjection', () => ({
+vi.mock('#/modules/AiRuntime/useCases', () => ({
     injectPromptCommand: vi.fn(),
 }));
 
@@ -101,7 +123,7 @@ vi.mock('#/modules/Workspace/useCases/setTrackHeight', () => ({
     setTrackHeight: vi.fn(),
 }));
 
-const renderWithTooltip = (ui: React.ReactElement) => {
+const renderWithTooltip = (ui: ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
 
