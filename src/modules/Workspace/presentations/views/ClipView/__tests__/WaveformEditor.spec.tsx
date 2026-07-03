@@ -1,5 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { normalizeClip } from '#/modules/Arrangement/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
 
@@ -223,5 +225,19 @@ describe('WaveformEditor', () => {
     it('should have correct aria-label for canvas', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform editor')).toBeInTheDocument();
+    });
+
+    it('should run a waveform context menu action and close the menu', () => {
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        const normalizeMenuItem = screen.getByRole('menuitem', { name: 'Normalize' });
+        expect(normalizeMenuItem.tagName).toBe('BUTTON');
+
+        fireEvent.click(normalizeMenuItem);
+
+        expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-1');
+        expect(screen.queryByRole('menuitem', { name: 'Normalize' })).not.toBeInTheDocument();
     });
 });
