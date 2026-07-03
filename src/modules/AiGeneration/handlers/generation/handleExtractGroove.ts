@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { registerExtractedGroove } from '../../useCases/grooveTemplate/applyGrooveByGrooveId';
 import { extractGroove } from '../../useCases/grooveTemplate/operations/extractGroove';
+import { registerExtractedGroove } from '../../useCases/grooveTemplate/registerExtractedGroove';
 
 export const handleExtractGroove = createHandler<'extractGroove'>({
     execute: (alpha) => {

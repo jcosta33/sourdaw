@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { applyGrooveByGrooveId, registerExtractedGroove } from '../applyGrooveByGrooveId';
+import { applyGrooveByGrooveId } from '../applyGrooveByGrooveId';
+import { registerExtractedGroove } from '../registerExtractedGroove';
 
 const mocks = vi.hoisted(() => ({
     getGrooveById: vi.fn(),
