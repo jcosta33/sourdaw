@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { handleGenerateMidiPrompt, buildSeedNotesFromPrompt } from '../handleGenerateMidiPrompt';
+import { buildSeedNotesFromPrompt } from '../buildSeedNotesFromPrompt';
+import { handleGenerateMidiPrompt } from '../handleGenerateMidiPrompt';
 
 type UndoCallback = () => void;
 
