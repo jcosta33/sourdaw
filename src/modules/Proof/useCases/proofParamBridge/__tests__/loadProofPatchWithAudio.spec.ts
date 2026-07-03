@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { loadProofPatchWithAudio } from '../loadProofPatchWithAudio';
 import { syncFullPatch } from '../syncFullPatch';
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getTrackStoreState: vi.fn(() => null),
+}));
 
 function makeBridge(): ProofAudioBridge & {
     setParam: ReturnType<typeof vi.fn>;
@@ -25,12 +31,65 @@ function paramCalls(bridge: ReturnType<typeof makeBridge>): Map<string, number> 
     return map;
 }
 
+function makeTrackState(parameterValues: Record<string, number>): NonNullable<ReturnType<typeof getTrackStoreState>> {
+    return {
+        tracks: [
+            {
+                id: 'track-1',
+                name: 'Master',
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#ffffff',
+                clips: [],
+                devices: [
+                    {
+                        id: DEVICE_ID,
+                        name: 'Proof',
+                        type: 'proof',
+                        bypassed: false,
+                        parameterValues,
+                    },
+                ],
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'auto',
+                hidden: false,
+                disabled: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: 'track-1-alt-default',
+                alternatives: [{ id: 'track-1-alt-default', name: 'Alternative 1', clips: [] }],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            },
+        ],
+        selectedTrackId: 'track-1',
+        ghostClips: [],
+    };
+}
+
 const DEVICE_ID = 'dev-1';
 
 describe('loadProofPatchWithAudio', () => {
     beforeEach(() => {
         bridges.clear();
         proofStore.set({});
+        vi.clearAllMocks();
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
     });
 
     it('loads the patch into the store and sends the full patch to the engine', () => {
@@ -53,6 +112,42 @@ describe('loadProofPatchWithAudio', () => {
         const calls = paramCalls(bridge);
         expect(calls.get('lim_ceiling')).toBe(-1.5);
         expect(calls.get('input_gain')).toBe(DEFAULT_PATCH.inputGain);
+        expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
+    });
+
+    it('should rehydrate restored scalar device params before syncing a default Proof patch', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                input_gain: 3.5,
+                eq_bypass: 1,
+                exc_bypass: 0,
+                lim_ceiling: -3.25,
+                dither_mode: 2,
+                dither_bits: 24,
+                target_lufs: -9,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(3.5);
+        expect(patch.eqBypassed).toBe(true);
+        expect(patch.excBypassed).toBe(false);
+        expect(patch.limCeiling).toBe(-3.25);
+        expect(patch.ditherMode).toBe('noise_shaped');
+        expect(patch.ditherBits).toBe(24);
+        expect(patch.targetLufs).toBe(DEFAULT_PATCH.targetLufs);
+
+        const calls = paramCalls(bridge);
+        expect(calls.get('input_gain')).toBe(3.5);
+        expect(calls.get('eq_bypass')).toBe(1);
+        expect(calls.get('exc_bypass')).toBe(0);
+        expect(calls.get('lim_ceiling')).toBe(-3.25);
+        expect(calls.get('dither_mode')).toBe(2);
+        expect(calls.get('dither_bits')).toBe(24);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
     });
 
