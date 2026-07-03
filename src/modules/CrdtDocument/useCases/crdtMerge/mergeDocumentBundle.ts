@@ -1,5 +1,5 @@
 import { type DocumentBundle, type MergeResult } from '../../models/CrdtDocumentTypes';
-import { persistCrdtProject } from '../crdtProjectLifecycle';
+import { persistCrdtProject } from '../persistCrdtProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 import { mergeDocumentBundleFromRepo } from './helpers';

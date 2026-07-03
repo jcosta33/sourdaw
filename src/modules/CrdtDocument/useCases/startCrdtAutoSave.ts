@@ -14,7 +14,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 
-import { persistCrdtProject } from './crdtProjectLifecycle';
+import { persistCrdtProject } from './persistCrdtProject';
 
 const DEBOUNCE_MS = 2_000;
 

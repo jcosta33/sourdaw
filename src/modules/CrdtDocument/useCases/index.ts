@@ -1,14 +1,12 @@
 export type { DocId, DocumentBundle, MergeResult } from './crdtDocumentTypes';
 export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 
-export {
-    createCrdtProject,
-    loadCrdtProject,
-    persistCrdtProject,
-    compactProject,
-    hasCrdtProject,
-    getPersistenceBackend,
-} from './crdtProjectLifecycle';
+export { compactProject } from './compactProject';
+export { createCrdtProject } from './createCrdtProject';
+export { getPersistenceBackend } from './crdtProjectLifecycle';
+export { hasCrdtProject } from './hasCrdtProject';
+export { loadCrdtProject } from './loadCrdtProject';
+export { persistCrdtProject } from './persistCrdtProject';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { getCrdtDoc } from './getCrdtDoc';

@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { createBranchError } from '../../errors/BranchError';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, MAIN_BRANCH_ID } from '../../stores/branchStore';
-import { compactProject } from '../crdtProjectLifecycle';
+import { compactProject } from '../compactProject';
 
 /**
  * Delete a branch. Cannot delete the main branch or the active branch.

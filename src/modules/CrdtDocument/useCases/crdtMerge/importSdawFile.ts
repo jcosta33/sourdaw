@@ -4,7 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { persistCrdtProject } from '../crdtProjectLifecycle';
+import { persistCrdtProject } from '../persistCrdtProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 import { decodeSdawFile } from '../sdawFileFormat/decodeSdawFile';
 
