@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
     pushActionHistoryEntry: vi.fn(),
-    pushUndo: vi.fn(),
+    commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     mockHandler: {
         execute: vi.fn(),
@@ -35,10 +35,7 @@ vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
     clearSemanticContext: mocks.clearSemanticContext,
 }));
 
-vi.mock('../../stores/undoStore', () => ({
-    pushUndo: mocks.pushUndo,
-    undoStore: { value: {} },
-}));
+vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
@@ -60,7 +57,7 @@ describe('executeAppAction', () => {
 
         expect(mocks.mockHandler.execute).toHaveBeenCalledWith({ type: 'testAction', payload: { foo: 'bar' } });
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
-        expect(mocks.pushUndo).toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
     });
 
@@ -80,7 +77,7 @@ describe('executeAppAction', () => {
         expect(mocks.clearSemanticContext).toHaveBeenCalledOnce();
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
-        expect(mocks.pushUndo).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an
@@ -106,7 +103,7 @@ describe('executeAppAction', () => {
         };
         clearHandlerRegistry();
         registerHandlerMap({ orderedAction: orderedHandler });
-        mocks.pushUndo.mockImplementation(() => order.push('pushUndo'));
+        mocks.commitUndoEntry.mockImplementation(() => order.push('commitUndoEntry'));
         mocks.pushActionHistoryEntry.mockImplementation(() => order.push('pushActionHistoryEntry'));
 
         // `orderedAction` is a synthetic, test-only discriminant — cast through
@@ -116,7 +113,7 @@ describe('executeAppAction', () => {
         // describe is the first thing recorded (snapshot before mutation)…
         expect(order[0]).toBe('describe');
         // …execute runs to completion before either record is pushed…
-        expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('pushUndo'));
+        expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('commitUndoEntry'));
         expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('pushActionHistoryEntry'));
         // …and describe never runs after execute started.
         expect(order.indexOf('describe')).toBeLessThan(order.indexOf('execute:start'));

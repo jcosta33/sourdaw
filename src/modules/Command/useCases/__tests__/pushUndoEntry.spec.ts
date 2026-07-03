@@ -2,27 +2,27 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { pushUndoEntry } from '../pushUndoEntry';
 
-const { pushUndoMock } = vi.hoisted(() => ({
-    pushUndoMock: vi.fn(),
+const { commitUndoEntryMock } = vi.hoisted(() => ({
+    commitUndoEntryMock: vi.fn(),
 }));
 
-vi.mock('../../stores/undoStore', () => ({
-    pushUndo: pushUndoMock,
+vi.mock('../commitUndoEntry', () => ({
+    commitUndoEntry: commitUndoEntryMock,
 }));
 
 describe('pushUndoEntry', () => {
     beforeEach(() => {
-        pushUndoMock.mockClear();
+        commitUndoEntryMock.mockClear();
     });
 
-    it('should call pushUndo with a callback undo entry', () => {
+    it('should commit a callback undo entry', () => {
         const undoFn = vi.fn();
         const redoFn = vi.fn();
 
         pushUndoEntry('My edit', undoFn, redoFn);
 
-        expect(pushUndoMock).toHaveBeenCalledOnce();
-        const entry = pushUndoMock.mock.calls[0][0];
+        expect(commitUndoEntryMock).toHaveBeenCalledOnce();
+        const entry = commitUndoEntryMock.mock.calls[0][0];
         expect(entry.kind).toBe('callback');
         expect(entry.label).toBe('My edit');
         expect(entry.undo).toBe(undoFn);
@@ -33,7 +33,7 @@ describe('pushUndoEntry', () => {
     it('should attach groupId and groupLabel when provided', () => {
         pushUndoEntry('g', vi.fn(), vi.fn(), { groupId: 'gid-1', groupLabel: 'Batch' });
 
-        const entry = pushUndoMock.mock.calls[0][0];
+        const entry = commitUndoEntryMock.mock.calls[0][0];
         expect(entry.groupId).toBe('gid-1');
         expect(entry.groupLabel).toBe('Batch');
     });
@@ -41,6 +41,6 @@ describe('pushUndoEntry', () => {
     it('should pass source when provided', () => {
         pushUndoEntry('v', vi.fn(), vi.fn(), { source: 'ai' });
 
-        expect(pushUndoMock.mock.calls[0][0].source).toBe('ai');
+        expect(commitUndoEntryMock.mock.calls[0][0].source).toBe('ai');
     });
 });
