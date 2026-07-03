@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type YeastState } from '../../../stores/yeastStore';
@@ -42,13 +42,13 @@ describe('YeastPanel', () => {
                 {
                     id: 'arp-1',
                     type: 'arpeggiator',
-                    name: 'Arpeggiator',
+                    name: 'Lead arp lane',
                     bypassed: false,
                 },
                 {
                     id: 'chord-1',
                     type: 'chord',
-                    name: 'Chord Generator',
+                    name: 'Harmony latch lane',
                     bypassed: true,
                 },
             ],
@@ -58,11 +58,17 @@ describe('YeastPanel', () => {
         render(<YeastPanel />);
 
         expect(screen.getByText('Rack build')).toBeInTheDocument();
-        expect(screen.getAllByText('Arpeggiator')).toHaveLength(2);
-        expect(screen.getAllByText('Chord Generator')).toHaveLength(2);
-        expect(screen.getByText('arpeggiator')).toBeInTheDocument();
-        expect(screen.getByText('chord')).toBeInTheDocument();
-        expect(screen.getByText('Bypass')).toBeInTheDocument();
-        expect(screen.getByText('Live')).toBeInTheDocument();
+        const rack_read = screen.getByText('Rack read').closest('section');
+        if (!rack_read) {
+            throw new Error('Rack read section not found');
+        }
+
+        const rack_read_scope = within(rack_read);
+        expect(rack_read_scope.getByText('Lead arp lane')).toBeInTheDocument();
+        expect(rack_read_scope.getByText('Harmony latch lane')).toBeInTheDocument();
+        expect(rack_read_scope.getByText('arpeggiator')).toBeInTheDocument();
+        expect(rack_read_scope.getByText('chord')).toBeInTheDocument();
+        expect(rack_read_scope.getByText('Bypass')).toBeInTheDocument();
+        expect(rack_read_scope.getByText('Live')).toBeInTheDocument();
     });
 });
