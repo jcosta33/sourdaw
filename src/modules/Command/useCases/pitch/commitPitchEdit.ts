@@ -3,8 +3,8 @@ import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
+import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
 
 import { getPitchEditDependencies } from './getPitchEditDependencies';
 

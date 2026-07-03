@@ -495,31 +495,3 @@ export function createUndoEntry(
         source,
     };
 }
-
-export function createCallbackUndoEntry(
-    label: string,
-    undoFn: () => void,
-    redoFn: () => void,
-    source: UndoSource = 'manual'
-): CallbackUndoEntry {
-    return {
-        id: `undo-${crypto.randomUUID().slice(0, 8)}`,
-        kind: 'callback',
-        label,
-        undo: undoFn,
-        redo: redoFn,
-        timestamp: Date.now(),
-        source,
-    };
-}
-
-export function generateGroupId(label: string): { groupId: string; groupLabel: string } {
-    return {
-        groupId: `group-${crypto.randomUUID().slice(0, 8)}`,
-        groupLabel: label,
-    };
-}
-
-export function isActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
-    return entry.kind === 'action';
-}

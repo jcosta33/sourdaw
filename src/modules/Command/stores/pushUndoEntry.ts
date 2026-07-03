@@ -1,5 +1,6 @@
-import { createCallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
+import { type UndoSource } from '../useCases/commandQueries';
 import { commitUndoEntry } from '../useCases/commitUndoEntry';
+import { createCallbackUndoEntry } from '../useCases/createCallbackUndoEntry';
 
 type PushUndoEntryOptions = {
     groupId?: string;

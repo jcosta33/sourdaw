@@ -6,8 +6,8 @@ import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modul
 import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { createCallbackUndoEntry } from '../../commandQueries';
 import { commitUndoEntry } from '../../commitUndoEntry';
+import { createCallbackUndoEntry } from '../../createCallbackUndoEntry';
 import { commitPitchEditCommand } from '../commitPitchEdit';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
 
@@ -19,7 +19,7 @@ vi.mock('../../commitUndoEntry', () => ({
     commitUndoEntry: vi.fn(),
 }));
 
-vi.mock('../../commandQueries', () => ({
+vi.mock('../../createCallbackUndoEntry', () => ({
     createCallbackUndoEntry: vi
         .fn()
         .mockImplementation(
