@@ -1,4 +1,4 @@
-import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
+import { toMcpTools } from './toMcpTools';
 
 export type McpPropertySchema = {
     type: string;
@@ -27,25 +27,7 @@ export type McpToolDefinition = {
     };
 };
 
-// ── Conversion ──────────────────────────────────────────────────────────
-
-/**
- * Convert all DAW_TOOL_SCHEMAS to MCP-compatible tool definitions.
- * The conversion is 1:1 since our internal schema already uses JSON Schema.
- */
-export function toMcpTools(): McpToolDefinition[] {
-    return DAW_TOOL_SCHEMAS.map((schema) => ({
-        name: schema.function.name,
-        description: schema.function.description,
-        inputSchema: {
-            type: 'object' as const,
-            properties: schema.function.parameters.properties as Record<string, McpPropertySchema>,
-            required: schema.function.parameters.required.length > 0 ? schema.function.parameters.required : undefined,
-        },
-    }));
-}
-
-export // Cached — tool schemas don't change at runtime
+// Cached — tool schemas don't change at runtime
 let cachedMcpTools: McpToolDefinition[] | null = null;
 
 /**
