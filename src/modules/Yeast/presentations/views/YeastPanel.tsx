@@ -182,14 +182,6 @@ const defaultYeastState: YeastState = {
 export const YeastPanel = (): ReactElement => {
     const state = useStore(yeastStore, defaultYeastState);
 
-    if (!state) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground/40 text-xs italic">
-                Activating the yeast...
-            </div>
-        );
-    }
-
     const { uiLevel } = state;
     const levelMeta = getLevelMeta(uiLevel);
 
