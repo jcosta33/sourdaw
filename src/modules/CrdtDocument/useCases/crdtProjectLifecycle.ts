@@ -6,7 +6,6 @@ import { hasCrdtDocsInIdb } from '../repositories/crdtPersistence/hasCrdtDocsInI
 import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
 import { saveIncrementalToIdb } from '../repositories/crdtPersistence/saveIncrementalToIdb';
-import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence/isNativeCrdtAvailable';
 import { branchStore } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
@@ -110,8 +109,7 @@ export async function hasCrdtProject(): Promise<boolean> {
  * Detect which persistence backend to use.
  */
 export function getPersistenceBackend(): 'native' | 'browser' {
-    if (isNativeCrdtAvailable()) {
-        return 'native';
-    }
+    // The project lifecycle above still reads and writes IndexedDB; native CRDT
+    // wrappers stay parked until those lifecycle paths are wired to them.
     return 'browser';
 }

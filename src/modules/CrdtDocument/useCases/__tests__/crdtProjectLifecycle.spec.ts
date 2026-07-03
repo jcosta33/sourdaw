@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createCrdtProject, loadCrdtProject, persistCrdtProject, compactProject } from '../crdtProjectLifecycle';
+import {
+    createCrdtProject,
+    loadCrdtProject,
+    persistCrdtProject,
+    compactProject,
+    hasCrdtProject,
+    getPersistenceBackend,
+} from '../crdtProjectLifecycle';
 
 const mocks = vi.hoisted(() => ({
     createProject: vi.fn(),
@@ -14,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     saveIncrementalToIdb: vi.fn(),
     clearIncrementalsFromIdb: vi.fn(),
     hasCrdtDocsInIdb: vi.fn(),
+    isNativeCrdtAvailable: vi.fn(),
     branchStoreValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' } as {
         branches: { branchId: string; rootDocId: string }[];
         activeBranchId: string;
@@ -46,6 +54,9 @@ vi.mock('../../repositories/crdtPersistence/clearIncrementalsFromIdb', () => ({
     clearIncrementalsFromIdb: mocks.clearIncrementalsFromIdb,
 }));
 vi.mock('../../repositories/crdtPersistence/hasCrdtDocsInIdb', () => ({ hasCrdtDocsInIdb: mocks.hasCrdtDocsInIdb }));
+vi.mock('../../repositories/nativeCrdtPersistence/isNativeCrdtAvailable', () => ({
+    isNativeCrdtAvailable: mocks.isNativeCrdtAvailable,
+}));
 
 describe('crdtProjectLifecycle', () => {
     beforeEach(() => {
@@ -54,6 +65,7 @@ describe('crdtProjectLifecycle', () => {
             branches: [{ branchId: 'main', rootDocId: 'root' }],
             activeBranchId: 'main',
         };
+        mocks.isNativeCrdtAvailable.mockReturnValue(false);
     });
 
     it('createCrdtProject initializes repo and compacts', async () => {
@@ -136,5 +148,20 @@ describe('crdtProjectLifecycle', () => {
 
         expect(mocks.saveAllToIdb).toHaveBeenCalledWith(mockBundle);
         expect(mocks.clearIncrementalsFromIdb).toHaveBeenCalledWith('root');
+    });
+
+    it('should check project existence through IDB persistence', async () => {
+        mocks.hasCrdtDocsInIdb.mockResolvedValue(true);
+
+        const result = await hasCrdtProject();
+
+        expect(result).toBe(true);
+        expect(mocks.hasCrdtDocsInIdb).toHaveBeenCalledOnce();
+    });
+
+    it('should report browser persistence when native is available but the lifecycle still uses IDB', () => {
+        mocks.isNativeCrdtAvailable.mockReturnValue(true);
+
+        expect(getPersistenceBackend()).toBe('browser');
     });
 });
