@@ -6,7 +6,8 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 
 import { undoLastAction } from '../../useCases/aiPanelActions/undoLastAction';
-import { type AiChangeNotification, subscribeAiChangeNotification } from '../../useCases/notifyAiChange';
+import { type AiChangeNotification } from '../../useCases/notifyAiChange';
+import { subscribeAiChangeNotification } from '../../useCases/subscribeAiChangeNotification';
 
 export const AiChangeToast = (): ReactElement | null => {
     const [changes, setChanges] = useState<AiChangeNotification[]>([]);
@@ -48,8 +49,8 @@ export const AiChangeToast = (): ReactElement | null => {
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
                         <div className="mt-1 space-y-0.5">
-                            {latest.details.map((detail, index) => (
-                                <p key={index} className="text-[10px] text-muted-foreground">
+                            {latest.details.map((detail) => (
+                                <p key={`${latest.id}-${detail}`} className="text-[10px] text-muted-foreground">
                                     {detail}
                                 </p>
                             ))}
