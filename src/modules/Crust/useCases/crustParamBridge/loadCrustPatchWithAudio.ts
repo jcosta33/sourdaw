@@ -1,7 +1,10 @@
 import { type CrustPatch } from '../../models/CrustPatch';
 import { loadCrustPatch } from '../../stores/crustStore';
 
-import { encodeCrustValue, findDeviceRefCrust, paramBatcher, pushCrustParamImmediately } from './helpers';
+import { createFlushHandlers } from './createFlushHandlers';
+import { crustBridgeDeps, encodeCrustValue, findDeviceRefCrust, paramBatcher } from './helpers';
+
+const { pushParamImmediately: pushCrustParamImmediately } = createFlushHandlers(crustBridgeDeps);
 
 export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
     loadCrustPatch(patch);

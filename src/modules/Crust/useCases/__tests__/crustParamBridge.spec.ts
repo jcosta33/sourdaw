@@ -1,22 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type TestTrack = { id: string; devices: Array<{ id: string }> };
+
 const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.hoisted(() => ({
     mockUpdateDeviceParam: vi.fn(),
     mockPersistDeviceParam: vi.fn(),
-    mockGetAllTracks: vi.fn(() => [] as Array<{ id: string; devices: Array<{ id: string }> }>),
+    mockGetAllTracks: vi.fn<() => TestTrack[]>(() => []),
 }));
 
 vi.mock('../crustParamBridge/helpers', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../crustParamBridge/helpers')>();
-    const handlers = actual.createFlushHandlers({
-        updateDeviceParam: mockUpdateDeviceParam,
-        persistDeviceParam: mockPersistDeviceParam,
-    });
     return {
         ...actual,
-        flushCrustParam: handlers.flushParam,
-        pushCrustParamImmediately: handlers.pushParamImmediately,
-        findDeviceRefCrust: actual.createFindDeviceRef(mockGetAllTracks as never),
+        crustBridgeDeps: {
+            updateDeviceParam: mockUpdateDeviceParam,
+            persistDeviceParam: mockPersistDeviceParam,
+        },
+        findDeviceRefCrust: (deviceId: string) => {
+            for (const track of mockGetAllTracks()) {
+                if (track.devices.some((device) => device.id === deviceId)) {
+                    return { trackId: track.id, deviceId };
+                }
+            }
+            return null;
+        },
         paramBatcher: {
             schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => {
                 flush(key, value);
@@ -33,7 +40,7 @@ vi.mock('../../stores/crustStore', () => ({
     loadCrustPatch: vi.fn(),
 }));
 
-import { DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
+import { DEFAULT_CRUST_PATCH, type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAudio';
@@ -60,7 +67,8 @@ describe('crustParamBridge', () => {
         // bridge must skip both the store write and the engine write so the two
         // never diverge — not write the bad value to the store and skip only the
         // engine push.
-        setCrustParamWithAudio('d1', 'algorithm', 'bogus' as never);
+        const corruptAlgorithm = 'bogus' as CrustPatch['algorithm'];
+        setCrustParamWithAudio('d1', 'algorithm', corruptAlgorithm);
 
         expect(setCrustParam).not.toHaveBeenCalled();
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
@@ -72,7 +80,8 @@ describe('crustParamBridge', () => {
         setCrustParamWithAudio('d1', 'algorithm', 'aggressive');
 
         expect(setCrustParam).toHaveBeenCalledWith('algorithm', 'aggressive');
-        expect(mockUpdateDeviceParam).toHaveBeenCalled();
+        expect(mockUpdateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'algorithm', 4);
+        expect(mockPersistDeviceParam).toHaveBeenCalledWith('d1', 'algorithm', 4);
     });
 
     it('writes the store for a store-only key (streamingPreset) that has no engine encoding', () => {

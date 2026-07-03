@@ -1,34 +1,77 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../helpers';
+import { type Device, type Track } from '#/modules/Arrangement/stores';
 
-describe('helpers', () => {
-    it('should export createFlushHandlers', () => {
-        expect(subject.createFlushHandlers).toBeDefined();
-        const t = typeof subject.createFlushHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
-    });
-    it('should export encodeCrustValue', () => {
-        expect(subject.encodeCrustValue).toBeDefined();
-        const t = typeof subject.encodeCrustValue;
-        expect(t === 'function' || t === 'object').toBe(true);
-    });
-});
+import { createFindDeviceRef, encodeCrustValue } from '../helpers';
 
-describe('encodeCrustValue enum handling', () => {
+function createDevice(id: string): Device {
+    return {
+        id,
+        name: id,
+        type: 'crust',
+        bypassed: false,
+        parameterValues: {},
+    };
+}
+
+function createTrack(input: { id: string; deviceIds: string[] }): Track {
+    return {
+        id: input.id,
+        name: input.id,
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: input.deviceIds.map(createDevice),
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
+}
+
+describe('encodeCrustValue', () => {
     // Each enum-backed key maps a known string to its index. These guard the
     // happy path so the null-on-miss change below cannot silently break valid
     // encoding.
     it.each([
+        ['style', 'transparent', 0],
         ['style', 'punchy', 1],
+        ['algorithm', 'transparent', 0],
         ['algorithm', 'aggressive', 4],
+        ['satAlgorithm', 'soft', 0],
         ['satAlgorithm', 'tube', 3],
+        ['multiBand', 'wideband', 0],
         ['multiBand', '5band', 2],
+        ['stereoMode', 'stereo', 0],
         ['stereoMode', 'ms', 1],
+        ['dither', 'off', 0],
         ['dither', 'powr2', 4],
+        ['scrollSpeed', 'slow', 0],
         ['scrollSpeed', 'fast', 2],
-    ])('encodes known %s value %s to index %d', (key, value, expected) => {
-        expect(subject.encodeCrustValue(key, value)).toBe(expected);
+    ])('should encode known %s value %s to index %d', (key, value, expected) => {
+        expect(encodeCrustValue(key, value)).toBe(expected);
     });
 
     // Regression: an unrecognised enum string used to coerce to the first
@@ -43,13 +86,40 @@ describe('encodeCrustValue enum handling', () => {
         ['stereoMode', 'quad'],
         ['dither', 'powr9'],
         ['scrollSpeed', 'glacial'],
-    ])('returns null for an unknown %s value %s instead of coercing to a valid index', (key, value) => {
-        expect(subject.encodeCrustValue(key, value)).toBeNull();
+    ])('should return null for an unknown %s value %s instead of coercing to a valid index', (key, value) => {
+        expect(encodeCrustValue(key, value)).toBeNull();
     });
 
-    it('still encodes numbers and booleans directly', () => {
-        expect(subject.encodeCrustValue('gain', 7.5)).toBe(7.5);
-        expect(subject.encodeCrustValue('truePeak', true)).toBe(1);
-        expect(subject.encodeCrustValue('satEnabled', false)).toBe(0);
+    it('should encode numbers and booleans directly', () => {
+        expect(encodeCrustValue('gain', 7.5)).toBe(7.5);
+        expect(encodeCrustValue('truePeak', true)).toBe(1);
+        expect(encodeCrustValue('satEnabled', false)).toBe(0);
+    });
+
+    it('should return undefined for store-only string keys', () => {
+        expect(encodeCrustValue('name', 'Init')).toBeUndefined();
+        expect(encodeCrustValue('streamingPreset', 'ebu_r128')).toBeUndefined();
+    });
+
+    it('should return null for unencodable non-string values', () => {
+        expect(encodeCrustValue('algorithm', null)).toBeNull();
+        expect(encodeCrustValue('style', { label: 'transparent' })).toBeNull();
+    });
+});
+
+describe('createFindDeviceRef', () => {
+    it('should return the owning track id and device id when the device exists', () => {
+        const findDeviceRef = createFindDeviceRef(() => [
+            createTrack({ id: 'track-1', deviceIds: ['device-1'] }),
+            createTrack({ id: 'track-2', deviceIds: ['device-2'] }),
+        ]);
+
+        expect(findDeviceRef('device-2')).toEqual({ trackId: 'track-2', deviceId: 'device-2' });
+    });
+
+    it('should return null when the device does not exist', () => {
+        const findDeviceRef = createFindDeviceRef(() => [createTrack({ id: 'track-1', deviceIds: ['device-1'] })]);
+
+        expect(findDeviceRef('missing-device')).toBeNull();
     });
 });

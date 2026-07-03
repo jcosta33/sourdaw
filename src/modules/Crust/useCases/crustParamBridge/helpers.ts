@@ -19,24 +19,7 @@ export type BridgeDeps = {
     persistDeviceParam: typeof persistDeviceParam;
 };
 
-export function createFlushHandlers(deps: BridgeDeps) {
-    function flushParam(_compositeKey: string, entry: CrustBatchEntry): void {
-        deps.updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        deps.persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
-    }
-
-    function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
-        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-        deps.persistDeviceParam(ref.deviceId, key, value);
-    }
-
-    return { flushParam, pushParamImmediately };
-}
-
 export const crustBridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
-
-export const { flushParam: flushCrustParam, pushParamImmediately: pushCrustParamImmediately } =
-    createFlushHandlers(crustBridgeDeps);
 
 export const findDeviceRefCrust = createFindDeviceRef(getAllTracks);
 
@@ -91,6 +74,14 @@ export const SCROLL_SPEED_INDEX = {
     fast: 2,
 } as const;
 
+const STYLE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(STYLE_INDEX));
+const ALGORITHM_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(ALGORITHM_INDEX));
+const SAT_ALGORITHM_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(SAT_ALGORITHM_INDEX));
+const MULTIBAND_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(MULTIBAND_INDEX));
+const STEREO_MODE_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(STEREO_MODE_INDEX));
+const DITHER_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(DITHER_INDEX));
+const SCROLL_SPEED_LOOKUP: ReadonlyMap<string, number> = new Map(Object.entries(SCROLL_SPEED_INDEX));
+
 /**
  * Encode a patch value into the engine's numeric parameter space.
  *
@@ -123,31 +114,31 @@ export function encodeCrustValue(key: string, value: unknown): number | null | u
     // must not silently send the engine a wrong value while the store keeps the
     // bad string (UI↔engine divergence).
     if (key === 'style') {
-        return STYLE_INDEX[value as keyof typeof STYLE_INDEX] ?? null;
+        return STYLE_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'algorithm') {
-        return ALGORITHM_INDEX[value as keyof typeof ALGORITHM_INDEX] ?? null;
+        return ALGORITHM_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'satAlgorithm') {
-        return SAT_ALGORITHM_INDEX[value as keyof typeof SAT_ALGORITHM_INDEX] ?? null;
+        return SAT_ALGORITHM_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'multiBand') {
-        return MULTIBAND_INDEX[value as keyof typeof MULTIBAND_INDEX] ?? null;
+        return MULTIBAND_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'stereoMode') {
-        return STEREO_MODE_INDEX[value as keyof typeof STEREO_MODE_INDEX] ?? null;
+        return STEREO_MODE_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'dither') {
-        return DITHER_INDEX[value as keyof typeof DITHER_INDEX] ?? null;
+        return DITHER_LOOKUP.get(value) ?? null;
     }
 
     if (key === 'scrollSpeed') {
-        return SCROLL_SPEED_INDEX[value as keyof typeof SCROLL_SPEED_INDEX] ?? null;
+        return SCROLL_SPEED_LOOKUP.get(value) ?? null;
     }
 
     // String key with no engine index table (e.g. streamingPreset, name):

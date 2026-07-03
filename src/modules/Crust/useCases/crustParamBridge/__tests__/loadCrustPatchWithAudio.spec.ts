@@ -32,7 +32,8 @@ vi.mock('../../../stores/crustStore', () => ({
 }));
 
 import { DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
-import { paramBatcher, flushCrustParam, findDeviceRefCrust } from '../helpers';
+import { createFlushHandlers } from '../createFlushHandlers';
+import { paramBatcher, findDeviceRefCrust } from '../helpers';
 import { loadCrustPatchWithAudio } from '../loadCrustPatchWithAudio';
 
 describe('loadCrustPatchWithAudio', () => {
@@ -85,11 +86,14 @@ describe('loadCrustPatchWithAudio', () => {
 
     it('cancels a pending drag-flush so it cannot overwrite the loaded preset value', () => {
         const ref = findDeviceRefCrust(DEVICE_ID);
-        expect(ref).not.toBeNull();
+        if (!ref) {
+            throw new Error('expected device ref in test setup');
+        }
+        const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
 
         // A knob drag scheduled a rAF flush carrying a stale gain value but the
         // frame has not fired yet.
-        paramBatcher.schedule(`${DEVICE_ID}:gain`, { ref: ref!, key: 'gain', value: 99 }, flushCrustParam);
+        paramBatcher.schedule(`${DEVICE_ID}:gain`, { ref, key: 'gain', value: 99 }, flushParam);
         expect(paramBatcher.pendingSize).toBe(1);
 
         // The preset carries a different gain; load applies it immediately.
