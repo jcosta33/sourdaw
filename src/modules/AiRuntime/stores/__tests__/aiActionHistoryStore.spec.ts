@@ -18,6 +18,14 @@ async function loadHistoryStateFromStoredValue(storedValue: unknown): Promise<Ai
     return module.aiActionHistoryStore.value;
 }
 
+async function loadHistoryStateFromRawStoredValue(storedValue: string): Promise<AiActionHistoryState | null> {
+    vi.resetModules();
+    window.localStorage.setItem('sourdaw-ai-history', storedValue);
+
+    const module = await import('../aiActionHistoryStore');
+    return module.aiActionHistoryStore.value;
+}
+
 describe('aiActionHistoryStore', () => {
     beforeEach(() => {
         aiActionHistoryStore.set({ groups: [], panelOpen: false });
@@ -43,6 +51,13 @@ describe('aiActionHistoryStore', () => {
             await expect(loadHistoryStateFromStoredValue(null)).resolves.toEqual({ groups: [], panelOpen: false });
             await expect(loadHistoryStateFromStoredValue(123)).resolves.toEqual({ groups: [], panelOpen: false });
             await expect(loadHistoryStateFromStoredValue({})).resolves.toEqual({ groups: [], panelOpen: false });
+        });
+
+        it('should default malformed raw local storage text', async () => {
+            await expect(loadHistoryStateFromRawStoredValue('{not-json')).resolves.toEqual({
+                groups: [],
+                panelOpen: false,
+            });
         });
 
         it('should preserve valid stored groups and panel visibility', async () => {
