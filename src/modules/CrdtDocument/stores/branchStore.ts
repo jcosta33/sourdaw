@@ -18,9 +18,12 @@ export type BranchStoreState = {
 
 export const MAIN_BRANCH_ID = 'main';
 
-export const branchStore = createStore<BranchStoreState>({
-    storage: createLocalStorage('sourdaw-branches'),
-    initialData: {
+type UnknownRecord = {
+    [key: string]: unknown;
+};
+
+function createDefaultBranchStoreState(): BranchStoreState {
+    return {
         branches: [
             {
                 branchId: MAIN_BRANCH_ID,
@@ -33,5 +36,87 @@ export const branchStore = createStore<BranchStoreState>({
             },
         ],
         activeBranchId: MAIN_BRANCH_ID,
-    },
+    };
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateStoredBranchRecord(value: unknown): BranchRecord | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    if (
+        typeof value.branchId !== 'string' ||
+        typeof value.name !== 'string' ||
+        typeof value.rootDocId !== 'string' ||
+        (value.sourceBranchId !== null && typeof value.sourceBranchId !== 'string') ||
+        typeof value.createdAt !== 'number' ||
+        !Number.isFinite(value.createdAt) ||
+        !Array.isArray(value.createdFromHeads) ||
+        typeof value.note !== 'string'
+    ) {
+        return null;
+    }
+
+    const createdFromHeads: string[] = [];
+    for (const head of value.createdFromHeads) {
+        if (typeof head !== 'string') {
+            return null;
+        }
+        createdFromHeads.push(head);
+    }
+
+    return {
+        branchId: value.branchId,
+        name: value.name,
+        rootDocId: value.rootDocId,
+        sourceBranchId: value.sourceBranchId,
+        createdAt: value.createdAt,
+        createdFromHeads,
+        note: value.note,
+    };
+}
+
+function validateStoredBranchRecords(values: unknown[]): BranchRecord[] {
+    const branches: BranchRecord[] = [];
+
+    for (const value of values) {
+        const branch = validateStoredBranchRecord(value);
+        if (branch !== null) {
+            branches.push(branch);
+        }
+    }
+
+    return branches;
+}
+
+function validateStoredBranchStoreState(value: unknown): BranchStoreState {
+    if (!isRecord(value)) {
+        return createDefaultBranchStoreState();
+    }
+
+    const branches = Array.isArray(value.branches) ? validateStoredBranchRecords(value.branches) : [];
+    const hasMainBranch = branches.some((branch) => branch.branchId === MAIN_BRANCH_ID);
+    if (!hasMainBranch) {
+        return createDefaultBranchStoreState();
+    }
+
+    let activeBranchId = MAIN_BRANCH_ID;
+    if (
+        typeof value.activeBranchId === 'string' &&
+        branches.some((branch) => branch.branchId === value.activeBranchId)
+    ) {
+        activeBranchId = value.activeBranchId;
+    }
+
+    return { branches, activeBranchId };
+}
+
+export const branchStore = createStore<BranchStoreState>({
+    storage: createLocalStorage<BranchStoreState>('sourdaw-branches'),
+    initialData: createDefaultBranchStoreState(),
+    sanitize: validateStoredBranchStoreState,
 });
