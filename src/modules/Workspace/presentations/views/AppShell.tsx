@@ -112,6 +112,23 @@ type AppShellProps = {
     children: ReactNode;
 };
 
+type BottomTabValue =
+    | 'editor'
+    | 'mixer'
+    | 'session'
+    | 'routing'
+    | 'analysis'
+    | 'automation'
+    | 'setlist'
+    | 'loopStation'
+    | 'modulation'
+    | 'elastic';
+
+type BottomTabState = {
+    value: BottomTabValue;
+    selectedClipId: string | null;
+};
+
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
     const {
@@ -154,29 +171,27 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
-    const alphaDismissed = useStore(alphaNoticeStore) ?? false;
+    const alphaDismissed = useStore(alphaNoticeStore);
     const showAlphaNotice = project.initialized && !alphaDismissed;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
-    const [bottomTab, setBottomTab] = useState<
-        | 'editor'
-        | 'mixer'
-        | 'session'
-        | 'routing'
-        | 'analysis'
-        | 'automation'
-        | 'setlist'
-        | 'loopStation'
-        | 'modulation'
-        | 'elastic'
-    >('mixer');
-    const elasticBottomTabUnavailable = bottomTab === 'elastic' && !isAudioClipSelected;
+    const [bottomTabState, setBottomTabState] = useState<BottomTabState>({ value: 'mixer', selectedClipId: null });
+    const selectedClipChanged = bottomTabState.selectedClipId !== selectedClipId;
+    const selectedClipBottomTab = selectedClipChanged && selectedClipId !== null ? 'editor' : bottomTabState.value;
+    const elasticBottomTabUnavailable = selectedClipBottomTab === 'elastic' && !isAudioClipSelected;
+    const bottomTab: BottomTabValue = elasticBottomTabUnavailable ? 'editor' : selectedClipBottomTab;
 
-    if (elasticBottomTabUnavailable) {
-        setBottomTab('editor');
+    if (selectedClipChanged || elasticBottomTabUnavailable) {
+        setBottomTabState({
+            value: bottomTab,
+            selectedClipId,
+        });
     }
 
-    const activeBottomTab: typeof bottomTab = elasticBottomTabUnavailable ? 'editor' : bottomTab;
+    const setBottomTab = (value: BottomTabValue): void => {
+        setBottomTabState({ value, selectedClipId });
+    };
+    const activeBottomTab = bottomTab;
 
     // True whenever a modal dialog/overlay owned by AppShell is open. Used to
     // neutralize the skip-link: a focused skip-link targeting #main-content
@@ -256,7 +271,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
         if (selectedClipId) {
-            setBottomTab('editor');
             openMixer();
         }
     }, [selectedClipId]);
@@ -264,12 +278,12 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Listen for automation tab activation (from 'A' key)
     useEffect(() => {
         return onPanelShowAutomation(() => {
-            setBottomTab('automation');
+            setBottomTabState({ value: 'automation', selectedClipId });
             if (!mixerOpen) {
                 openMixer();
             }
         });
-    }, [mixerOpen]);
+    }, [mixerOpen, selectedClipId]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
@@ -385,7 +399,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Bottom-dock tab id helpers. `id`/`aria-controls`/`aria-labelledby` wire
     // each tab to the single shared tabpanel so AT announces the dock as one
     // tablist instead of N unrelated buttons.
-    type BottomTabValue = typeof bottomTab;
     const bottomTabButtonId = (value: BottomTabValue): string => `bottom-dock-tab-${value}`;
     const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
 
@@ -415,14 +428,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         );
     };
 
-    // Bottom-dock tab content. `mixer`/`routing` and any unknown value fall back
-    // to the RoutingMatrix exactly as the original ternary chain did.
+    // Bottom-dock tab content. `routing` renders the same RoutingMatrix branch
+    // the original ternary chain used for its final fallback.
     const renderBottomTabContent = (): ReactNode => {
         switch (activeBottomTab) {
             case 'editor':
                 return <ClipView />;
             case 'mixer':
                 return <MixerPanel style={{ height: '100%' }} />;
+            case 'routing':
+                return <RoutingMatrix />;
             case 'automation':
                 return <AutomationBottomPanel />;
             case 'session':
@@ -770,14 +785,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 <DragResizeHandle
                                     side="top"
                                     onResize={(d) => {
-                                        const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + d));
+                                        const next = Math.max(80, Math.min(400, virtualKeyboardHeight + d));
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
                                 />
-                                <div
-                                    className="shrink-0 overflow-hidden"
-                                    style={{ height: virtualKeyboardHeight ?? 160 }}
-                                >
+                                <div className="shrink-0 overflow-hidden" style={{ height: virtualKeyboardHeight }}>
                                     <VirtualKeyboard onClose={toggleVirtualKeyboard} />
                                 </div>
                             </>

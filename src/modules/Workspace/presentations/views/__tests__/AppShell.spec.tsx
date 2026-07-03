@@ -11,6 +11,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
 import { alphaNoticeStore } from '../../../stores/alphaNoticeStore';
+import { workspaceStore } from '../../../stores/workspaceStore';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
@@ -214,6 +215,7 @@ describe('AppShell', () => {
         setNotificationEventBus(mockNotificationEventBus);
         setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
+        workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
@@ -322,6 +324,34 @@ describe('AppShell', () => {
             const activeTab = screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true');
             expect(activeTab?.getAttribute('aria-controls')).toBe(panel.id);
             expect(panel.getAttribute('aria-labelledby')).toBe(activeTab?.id);
+        });
+
+        it('should select the editor tab and open the dock when a clip is selected', () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: false,
+                    selectedClipId: 'clip-1',
+                })
+            );
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
+
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                    selectedClipId: 'clip-1',
+                })
+            );
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByTestId('clip-view')).toBeInTheDocument();
         });
 
         it('should fall back to the editor tab when the active Elastic tab loses audio clip eligibility', () => {
