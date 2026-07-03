@@ -120,6 +120,39 @@ describe('branchStore', () => {
             });
         });
 
+        it('should drop duplicate branch ids while preserving the first valid record', async () => {
+            const duplicateFeatureBranch = {
+                ...validFeatureBranch,
+                name: 'Duplicate feature',
+                rootDocId: 'branch_duplicate_feature',
+            } satisfies BranchRecord;
+
+            const state = await loadBranchStateFromStoredValue({
+                branches: [validMainBranch, validFeatureBranch, duplicateFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            });
+
+            expect(state).toEqual({
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            });
+        });
+
+        it('should reject a main branch record that is not backed by the root slot', async () => {
+            const nonCanonicalMainBranch = {
+                ...validMainBranch,
+                rootDocId: validFeatureBranch.rootDocId,
+                sourceBranchId: validFeatureBranch.branchId,
+            } satisfies BranchRecord;
+
+            const state = await loadBranchStateFromStoredValue({
+                branches: [nonCanonicalMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            });
+
+            expectCanonicalSingleMainBranchState(state);
+        });
+
         it('should fall back to canonical main state when no valid main branch remains', async () => {
             const state = await loadBranchStateFromStoredValue({
                 branches: [validFeatureBranch],

@@ -1,6 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
+import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+
 export type BranchRecord = {
     branchId: string;
     name: string;
@@ -28,7 +30,7 @@ function createDefaultBranchStoreState(): BranchStoreState {
             {
                 branchId: MAIN_BRANCH_ID,
                 name: 'Main',
-                rootDocId: 'root',
+                rootDocId: DOC_PREFIX_ROOT,
                 sourceBranchId: null,
                 createdAt: Date.now(),
                 createdFromHeads: [],
@@ -61,6 +63,10 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
         return null;
     }
 
+    if (value.branchId === MAIN_BRANCH_ID && (value.rootDocId !== DOC_PREFIX_ROOT || value.sourceBranchId !== null)) {
+        return null;
+    }
+
     const createdFromHeads: string[] = [];
     for (const head of value.createdFromHeads) {
         if (typeof head !== 'string') {
@@ -82,12 +88,16 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
 
 function validateStoredBranchRecords(values: unknown[]): BranchRecord[] {
     const branches: BranchRecord[] = [];
+    const seenBranchIds = new Set<string>();
 
     for (const value of values) {
         const branch = validateStoredBranchRecord(value);
-        if (branch !== null) {
-            branches.push(branch);
+        if (branch === null || seenBranchIds.has(branch.branchId)) {
+            continue;
         }
+
+        seenBranchIds.add(branch.branchId);
+        branches.push(branch);
     }
 
     return branches;
