@@ -18,6 +18,10 @@ export type ShortcutStoreState = {
     customMappings: Record<string, string[]>;
 };
 
+type UnknownRecord = {
+    [key: string]: unknown;
+};
+
 export const LOOP_STATION_PAD_ROWS: string[][] = [
     ['1', '2', '3', '4', '5', '6', '7', '8'],
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i'],
@@ -424,15 +428,62 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
 
 const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcuts');
 
-function getInitialState(): ShortcutStoreState {
-    const stored = storage.get();
+function createInitialShortcutStoreState(): ShortcutStoreState {
     return {
         definitions: INITIAL_DEFINITIONS,
-        customMappings: stored?.customMappings ?? {},
+        customMappings: {},
+    };
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateStoredCustomMappings(value: unknown): Record<string, string[]> {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const customMappings: Record<string, string[]> = {};
+    for (const [definitionId, keys] of Object.entries(value)) {
+        if (!Array.isArray(keys)) {
+            continue;
+        }
+
+        const validKeys: string[] = [];
+        let hasOnlyStringKeys = true;
+        for (const key of keys) {
+            if (typeof key !== 'string') {
+                hasOnlyStringKeys = false;
+                break;
+            }
+
+            validKeys.push(key);
+        }
+
+        if (!hasOnlyStringKeys) {
+            continue;
+        }
+
+        customMappings[definitionId] = validKeys;
+    }
+
+    return customMappings;
+}
+
+function validateStoredShortcutStoreState(value: unknown): ShortcutStoreState {
+    if (!isRecord(value)) {
+        return createInitialShortcutStoreState();
+    }
+
+    return {
+        definitions: INITIAL_DEFINITIONS,
+        customMappings: validateStoredCustomMappings(value.customMappings),
     };
 }
 
 export const shortcutStore = createStore<ShortcutStoreState>({
     storage,
-    initialData: getInitialState(),
+    initialData: createInitialShortcutStoreState(),
+    sanitize: validateStoredShortcutStoreState,
 });
