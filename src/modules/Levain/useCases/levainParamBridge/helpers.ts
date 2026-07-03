@@ -6,6 +6,8 @@ import { type LevainPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
 
+import { camelToSnake } from './camelToSnake';
+
 export type LevainDevice = {
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
@@ -17,10 +19,6 @@ export type LevainBridgeDeps = {
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
 };
-
-export function camelToSnake(str: string): string {
-    return str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-}
 
 export function createLevainBridge(deps: LevainBridgeDeps) {
     const activeDevices = new Map<string, LevainDevice>();
@@ -172,18 +170,20 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 }
             }
         } else if (typeof value === 'number') {
-            const rustKey = camelToSnake(key as string);
+            const rustKey = camelToSnake(String(key));
             queueParam(deviceId, rustKey, value);
-        } else if (typeof value === 'boolean') {
-            const rustKey = camelToSnake(key as string);
-            queueParam(deviceId, rustKey, value ? 1.0 : 0.0);
-        } else if (typeof value === 'object' && value !== null) {
-            for (const [childKey, childVal] of Object.entries(value)) {
+        } else {
+            const maybeObject: unknown = value;
+            if (typeof maybeObject !== 'object' || maybeObject === null) {
+                return;
+            }
+
+            for (const [childKey, childVal] of Object.entries(maybeObject)) {
                 if (typeof childVal === 'number') {
-                    const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
+                    const rustKey = `${camelToSnake(String(key))}_${camelToSnake(childKey)}`;
                     queueParam(deviceId, rustKey, childVal);
                 } else if (typeof childVal === 'boolean') {
-                    const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
+                    const rustKey = `${camelToSnake(String(key))}_${camelToSnake(childKey)}`;
                     queueParam(deviceId, rustKey, childVal ? 1.0 : 0.0);
                 }
             }

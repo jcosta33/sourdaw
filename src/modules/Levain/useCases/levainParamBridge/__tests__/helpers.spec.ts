@@ -2,17 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
-import { camelToSnake, createLevainBridge, type LevainDevice } from '../helpers';
-
-describe('camelToSnake', () => {
-    it('should insert underscores before capitals', () => {
-        expect(camelToSnake('attackTime')).toBe('attack_time');
-    });
-
-    it('should leave lowercase-only strings unchanged', () => {
-        expect(camelToSnake('release')).toBe('release');
-    });
-});
+import { createLevainBridge, type LevainDevice } from '../helpers';
 
 // ---------------------------------------------------------------------------
 // createLevainBridge — engine forwarding behaviour
@@ -99,22 +89,56 @@ describe('createLevainBridge', () => {
             // 'Space' is macro index 4 in the default labels.
             bridge.setMacroWithAudio('d1', 4, 0.7);
 
-            const keys = device.setParam.mock.calls.map((c) => c[0]);
-            expect(keys).toContain('mic_2_volume');
-            expect(keys).not.toContain('mic_1_volume');
             expect(device.setParam).toHaveBeenCalledWith('mic_2_volume', 0.7);
+            expect(device.setParam).not.toHaveBeenCalledWith('mic_1_volume', expect.any(Number));
+        });
+    });
+
+    describe('setLevainParamWithAudio — nested patch forwarding', () => {
+        it('should forward nested number and boolean fields to engine params', () => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            seedDevice('d1');
+            bridge.registerLevainDevice('d1', device, {} as MessagePort);
+            flushRaf();
+            deps.persistDeviceParam.mockClear();
+            device.setParam.mockClear();
+
+            const legato = {
+                ...createDefaultPatch('violin-1').legato,
+                enabled: false,
+                slowThresholdMs: 275,
+            };
+
+            bridge.setLevainParamWithAudio('d1', 'legato', legato);
+
+            expect(levainStore.value?.d1?.patch.legato).toEqual(legato);
+            expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+
+            flushRaf();
+
+            expect(device.setParam).toHaveBeenCalledWith('legato_enabled', 0);
+            expect(device.setParam).toHaveBeenCalledWith('legato_slow_threshold_ms', 275);
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legato_enabled', 0);
+            expect(deps.persistDeviceParam).toHaveBeenCalledWith('d1', 'legato_slow_threshold_ms', 275);
         });
     });
 
     describe('fix 2 — a newer load supersedes the previous one', () => {
         it('aborts the in-flight load when a new load for the same device starts', () => {
             const signals: (AbortSignal | undefined)[] = [];
-            const autoLoad: AutoLoad = (_d, _p, _i, signal) => {
+            function autoLoad(
+                _deviceId: string,
+                _port: MessagePort,
+                _instrumentId: string,
+                signal?: AbortSignal
+            ): Promise<void> {
                 signals.push(signal);
-                return new Promise(() => {
+                return new Promise<void>(() => {
                     // never resolves — simulates a long-running load
                 });
-            };
+            }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
             const device = makeDevice();
@@ -132,10 +156,15 @@ describe('createLevainBridge', () => {
 
         it('aborts the in-flight load on unregister', () => {
             const signals: (AbortSignal | undefined)[] = [];
-            const autoLoad: AutoLoad = (_d, _p, _i, signal) => {
+            function autoLoad(
+                _deviceId: string,
+                _port: MessagePort,
+                _instrumentId: string,
+                signal?: AbortSignal
+            ): Promise<void> {
                 signals.push(signal);
-                return new Promise(() => {});
-            };
+                return new Promise<void>(() => {});
+            }
             const deps = makeDeps(autoLoad);
             const bridge = createLevainBridge(deps);
             bridge.registerLevainDevice('d1', makeDevice(), {} as MessagePort);
