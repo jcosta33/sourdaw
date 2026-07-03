@@ -151,6 +151,30 @@ describe('loadProofPatchWithAudio', () => {
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
     });
 
+    it('should rehydrate restored scalars when runtime-only state already created the Proof entry', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        setProofAbBypass({ deviceId: DEVICE_ID, abBypass: true });
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                input_gain: 2.25,
+                lim_ceiling: -4.5,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(2.25);
+        expect(patch.limCeiling).toBe(-4.5);
+        expect(getProofState(DEVICE_ID).abBypass).toBe(true);
+
+        const calls = paramCalls(bridge);
+        expect(calls.get('ab_bypass')).toBe(1);
+        expect(calls.get('input_gain')).toBe(2.25);
+        expect(calls.get('lim_ceiling')).toBe(-4.5);
+    });
+
     // ── Fix 7: ab_bypass is forwarded on a full sync ──
     it('forwards the runtime A/B compare flag (ab_bypass) on a full sync', () => {
         const bridge = makeBridge();
