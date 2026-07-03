@@ -9,7 +9,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import {
     AUDIO_GENERATION_UNAVAILABLE_MESSAGE,
     ensureAudioGenerationAvailable,
-} from '../../useCases/actions/handleGenerateAudioFallback';
+} from '../../useCases/actions/ensureAudioGenerationAvailable';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (alpha) => {
