@@ -42,6 +42,42 @@ function storeRawState(value: unknown): void {
     window.localStorage.setItem(VC_STORAGE_KEY, JSON.stringify(value));
 }
 
+function getLocalStorageDescriptor(): PropertyDescriptor {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    if (!descriptor) {
+        throw new Error('Expected localStorage descriptor');
+    }
+
+    return descriptor;
+}
+
+async function withLocalStorageDescriptor(
+    descriptor: PropertyDescriptor,
+    callback: () => Promise<void>
+): Promise<void> {
+    const originalDescriptor = getLocalStorageDescriptor();
+    Object.defineProperty(globalThis, 'localStorage', descriptor);
+    try {
+        await callback();
+    } finally {
+        Object.defineProperty(globalThis, 'localStorage', originalDescriptor);
+    }
+}
+
+function createStorageMock(overrides: Partial<Storage> = {}): Storage {
+    return {
+        get length() {
+            return 0;
+        },
+        clear: vi.fn(),
+        getItem: vi.fn(() => null),
+        key: vi.fn(() => null),
+        removeItem: vi.fn(),
+        setItem: vi.fn(),
+        ...overrides,
+    };
+}
+
 async function loadStoreValue(): Promise<VersionControlState | null> {
     const { versionControlStore } = await import('../versionControlStore');
     return versionControlStore.value;
@@ -148,6 +184,42 @@ describe('versionControlStore persistence', () => {
         storeRawState(storedValue);
 
         expectDefaultHydratedState(await loadStoreValue());
+    });
+
+    it('should fall back to memory defaults when localStorage is unavailable', async () => {
+        await withLocalStorageDescriptor({ value: undefined, configurable: true }, async () => {
+            expectDefaultHydratedState(await loadStoreValue());
+        });
+    });
+
+    it('should fall back to defaults when localStorage read throws', async () => {
+        const storage = createStorageMock({
+            getItem: vi.fn(() => {
+                throw new Error('blocked');
+            }),
+        });
+
+        await withLocalStorageDescriptor({ value: storage, configurable: true }, async () => {
+            expectDefaultHydratedState(await loadStoreValue());
+            expect(storage.getItem).toHaveBeenCalledWith(VC_STORAGE_KEY);
+        });
+    });
+
+    it('should not throw when localStorage removeItem fails during clear', async () => {
+        const storage = createStorageMock({
+            removeItem: vi.fn(() => {
+                throw new Error('blocked');
+            }),
+        });
+
+        await withLocalStorageDescriptor({ value: storage, configurable: true }, async () => {
+            const { versionControlStore } = await import('../versionControlStore');
+
+            expect(() => {
+                versionControlStore.clear();
+            }).not.toThrow();
+            expect(storage.removeItem).toHaveBeenCalledWith(VC_STORAGE_KEY);
+        });
     });
 
     it('should not advertise a non-zero snapshot size for versions whose payload cannot be persisted', async () => {

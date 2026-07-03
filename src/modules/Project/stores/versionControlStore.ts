@@ -27,6 +27,18 @@ function isStringArray(value: unknown): value is string[] {
     return value.every((item) => typeof item === 'string');
 }
 
+function isBrowserStorage(value: unknown): value is Storage {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.getItem === 'function' &&
+        typeof value.setItem === 'function' &&
+        typeof value.removeItem === 'function'
+    );
+}
+
 function validateStoredVersion(value: unknown): VersionControlState['versions'][number] | null {
     if (!isRecord(value)) {
         return null;
@@ -148,7 +160,12 @@ function createLightweightVersionControlState(value: VersionControlState): Versi
 
 function getBrowserStorage(): Storage | null {
     try {
-        return globalThis.localStorage;
+        const storage: unknown = Reflect.get(globalThis, 'localStorage');
+        if (!isBrowserStorage(storage)) {
+            return null;
+        }
+
+        return storage;
     } catch {
         return null;
     }
@@ -169,7 +186,14 @@ function createVersionControlStorage(): StorageAdapter<VersionControlState> {
                 return cachedValue;
             }
 
-            const raw = storage.getItem(VC_STORAGE_KEY);
+            let raw: string | null;
+            try {
+                raw = storage.getItem(VC_STORAGE_KEY);
+            } catch {
+                cachedValue = createDefaultState();
+                return cachedValue;
+            }
+
             if (raw === null) {
                 cachedValue = createDefaultState();
                 return cachedValue;
@@ -212,7 +236,11 @@ function createVersionControlStorage(): StorageAdapter<VersionControlState> {
                 return;
             }
 
-            storage.removeItem(VC_STORAGE_KEY);
+            try {
+                storage.removeItem(VC_STORAGE_KEY);
+            } catch {
+                /* storage unavailable */
+            }
         },
 
         isSupported(): boolean {
