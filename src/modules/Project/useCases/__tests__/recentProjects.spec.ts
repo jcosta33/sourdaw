@@ -12,9 +12,9 @@ import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProj
 type RecentEntry = { name: string; key: string; updatedAt: number };
 
 const storageMocks = vi.hoisted(() => {
-    /** null so getRecentProjects() treats storage as empty (see recentProjectsStorage.get() ?? []). */
+    /** null so getRecentProjects() treats storage as empty through the sanitizer. */
     const mockGet = vi.fn(() => null as RecentEntry[] | null);
-    const mockSet = vi.fn();
+    const mockSet = vi.fn<(entries: RecentEntry[]) => void>();
     return { mockGet, mockSet };
 });
 
@@ -82,9 +82,20 @@ describe('recentProjects injectables', () => {
     it('should prepend entry on addToRecentProjects', () => {
         addToRecentProjects('My Song', 'key-a');
 
-        expect(storageMocks.mockSet).toHaveBeenCalledWith([
-            { name: 'My Song', key: 'key-a', updatedAt: expect.any(Number) },
-        ]);
+        expect(storageMocks.mockSet).toHaveBeenCalledTimes(1);
+        const first_call = storageMocks.mockSet.mock.calls[0];
+        if (!first_call) {
+            throw new Error('Expected recent-projects storage write');
+        }
+        const [entries] = first_call;
+        expect(entries).toHaveLength(1);
+        const entry = entries[0];
+        if (!entry) {
+            throw new Error('Expected written recent-project entry');
+        }
+        expect(entry.name).toBe('My Song');
+        expect(entry.key).toBe('key-a');
+        expect(Number.isFinite(entry.updatedAt)).toBe(true);
     });
 
     it('should filter key on removeFromRecentProjects', () => {

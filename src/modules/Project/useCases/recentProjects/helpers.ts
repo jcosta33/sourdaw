@@ -12,6 +12,31 @@ export const recentProjectsStorage = createLocalStorage<RecentProjectEntry[]>(
     RECENT_PROJECTS_KEY as 'sourdaw:recent-projects'
 );
 
+function has_recent_project_entry_fields(value: unknown): value is { name: unknown; key: unknown; updatedAt: unknown } {
+    return typeof value === 'object' && value !== null && 'name' in value && 'key' in value && 'updatedAt' in value;
+}
+
+function is_recent_project_entry(value: unknown): value is RecentProjectEntry {
+    if (!has_recent_project_entry_fields(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.name === 'string' &&
+        typeof value.key === 'string' &&
+        typeof value.updatedAt === 'number' &&
+        Number.isFinite(value.updatedAt)
+    );
+}
+
+function sanitize_recent_projects(value: unknown): RecentProjectEntry[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.filter(is_recent_project_entry);
+}
+
 export function getRecentProjects(): RecentProjectEntry[] {
-    return recentProjectsStorage.get() ?? [];
+    return sanitize_recent_projects(recentProjectsStorage.get());
 }
