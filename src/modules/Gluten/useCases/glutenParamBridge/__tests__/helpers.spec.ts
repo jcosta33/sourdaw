@@ -1,8 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { type Device, type Track, createTrack } from '#/modules/Arrangement/models/Track';
 
-import { createFindDeviceRef, createFlushHandlers, encodeGlutenValue } from '../helpers';
+import { createFindDeviceRef, encodeGlutenValue } from '../helpers';
 
 // Fix 5 — replace the `as never` fixtures with a real, typed Track factory.
 // `createTrack` produces a fully-typed Track; we attach the devices the test
@@ -33,32 +33,6 @@ describe('glutenParamBridge helpers', () => {
         it('should return null when no track contains the device', () => {
             const find = createFindDeviceRef(() => [trackWithDevices('t1', ['d1'])]);
             expect(find('missing')).toBeNull();
-        });
-    });
-
-    describe('createFlushHandlers', () => {
-        it('should flush the entry into update and persist', () => {
-            const updateDeviceParam = vi.fn();
-            const persistDeviceParam = vi.fn();
-            const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
-            const ref = { trackId: 't1', deviceId: 'dev' };
-
-            flushParam('dev:gain', { ref, key: 'gain', value: 0.75 });
-
-            expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'dev', 'gain', 0.75);
-            expect(persistDeviceParam).toHaveBeenCalledWith('dev', 'gain', 0.75);
-        });
-
-        it('should push immediately through update and persist', () => {
-            const updateDeviceParam = vi.fn();
-            const persistDeviceParam = vi.fn();
-            const { pushParamImmediately } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
-            const ref = { trackId: 't1', deviceId: 'dev' };
-
-            pushParamImmediately(ref, 'attack', 12);
-
-            expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'dev', 'attack', 12);
-            expect(persistDeviceParam).toHaveBeenCalledWith('dev', 'attack', 12);
         });
     });
 

@@ -17,10 +17,16 @@ vi.mock('../helpers', async (importActual) => {
         // Keep the real encoder so the null-encode path is exercised genuinely,
         // but stub the side-effecting bridge boundaries.
         findDeviceRefGluten: (deviceId: string): DeviceRef | null => findDeviceRefGluten(deviceId),
-        pushParamImmediately: (ref: DeviceRef, key: string, value: number): void =>
-            pushParamImmediately(ref, key, value),
     };
 });
+
+vi.mock('../createFlushHandlers', () => ({
+    createFlushHandlers: () => ({
+        flushParam: vi.fn(),
+        pushParamImmediately: (ref: DeviceRef, key: string, value: number): void =>
+            pushParamImmediately(ref, key, value),
+    }),
+}));
 
 vi.mock('../../../stores/glutenStore', () => ({
     loadGlutenPatch: (deviceId: string, patch: GlutenPatch): void => loadGlutenPatch(deviceId, patch),
