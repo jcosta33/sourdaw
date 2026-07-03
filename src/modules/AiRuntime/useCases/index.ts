@@ -43,7 +43,8 @@ export type { AiChangeNotification } from './notifyAiChange';
 
 export { parsePromptToActions } from './parsePromptToActions';
 
-export { onPromptInjection, injectPromptCommand } from './promptInjection';
+export { onPromptInjection } from './onPromptInjection';
+export { injectPromptCommand } from './promptInjection';
 
 export { runAiActionWithToast } from './runAiActionWithToast';
 export type { AiActionToastMessages } from './runAiActionWithToast';
