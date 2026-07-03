@@ -1,6 +1,6 @@
 import { modulationStore, modulationRuntimeStore } from '../../stores/modulationStore';
 
-import { revertMappingsToBase } from './applyModulationToEngine';
+import { revertMappingsToBase } from './revertMappingsToBase';
 
 export function removeModulator(id: string): void {
     const state = modulationStore.value;

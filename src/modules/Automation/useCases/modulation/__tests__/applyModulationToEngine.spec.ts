@@ -1,21 +1,80 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { mocks } = vi.hoisted(() => ({
-    mocks: {
-        updateDeviceParam: vi.fn(),
-        getPluginById: vi.fn(),
-        trackStore: { value: null as unknown as { tracks: unknown[] } | null },
-    },
-}));
+type MockPluginParam = {
+    id: string;
+    minValue: number;
+    maxValue: number;
+    defaultValue: number;
+};
+
+type MockPluginDescriptor = {
+    id: string;
+    name: string;
+    parameters: MockPluginParam[];
+};
+
+type MockTrackStoreValue = {
+    tracks: Array<{
+        id: string;
+        automationMode?: 'read' | 'off';
+        clips?: Array<{ id: string; startBeat: number; endBeat: number }>;
+        devices: Array<{
+            id: string;
+            type: string;
+            parameterValues: Record<string, number>;
+        }>;
+    }>;
+} | null;
+
+type UpdateDeviceParam = (trackId: string, deviceId: string, paramId: string, value: number) => void;
+type GetPluginById = (pluginId: string) => MockPluginDescriptor | undefined;
+
+const { mocks } = vi.hoisted(() => {
+    const trackStore: { value: MockTrackStoreValue } = { value: null };
+    return {
+        mocks: {
+            updateDeviceParam: vi.fn<UpdateDeviceParam>(),
+            getPluginById: vi.fn<GetPluginById>(),
+            trackStore,
+        },
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
 }));
 
+import { type AutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
 import { modulationStore } from '../../../stores/modulationStore';
-import { applyModulationToEngine, resetModulationSlew } from '../applyModulationToEngine';
+import { applyModulationToEngine } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
+import { resetModulationSlew } from '../resetModulationSlew';
+
+function createAutomationLaneFixture(input: {
+    id: string;
+    trackId: string;
+    parameterId: string;
+    parameterName: string;
+    value: number;
+    minValue: number;
+    maxValue: number;
+}): AutomationLane {
+    return {
+        id: input.id,
+        trackId: input.trackId,
+        parameterId: input.parameterId,
+        parameterName: input.parameterName,
+        points: [{ beat: 0, value: input.value, curve: 'linear', tension: 0 }],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        virginTerritory: false,
+        minValue: input.minValue,
+        maxValue: input.maxValue,
+    };
+}
 
 describe('applyModulationToEngine', () => {
     beforeEach(() => {
@@ -90,9 +149,7 @@ describe('applyModulationToEngine', () => {
         expect(paramId).toBe('cutoff');
         expect(value).toBeCloseTo(1000);
 
-        const tracks = mocks.trackStore.value?.tracks as
-            | Array<{ devices: Array<{ parameterValues: Record<string, number> }> }>
-            | undefined;
+        const tracks = mocks.trackStore.value?.tracks;
         expect(tracks?.[0]?.devices[0]?.parameterValues.cutoff).toBe(500);
     });
 
@@ -116,6 +173,49 @@ describe('applyModulationToEngine', () => {
         const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
         expect(value).toBeLessThanOrEqual(1000);
         expect(value).toBeGreaterThanOrEqual(0);
+    });
+
+    it('clears the same slew state used by applyModulationToEngine', () => {
+        applyModulationToEngine(1);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        const [, , , initialValue] = mocks.updateDeviceParam.mock.calls[0]!;
+        expect(initialValue).toBeCloseTo(1000);
+
+        mocks.updateDeviceParam.mockClear();
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    devices: [
+                        {
+                            id: 'd1',
+                            type: 'builtin-filter',
+                            parameterValues: { cutoff: 200 },
+                        },
+                    ],
+                },
+            ],
+        };
+        modulationStore.set({
+            modulators: [
+                {
+                    id: 'lfo1',
+                    name: 'LFO',
+                    trackId: 't1',
+                    kind: 'lfo',
+                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                    enabled: true,
+                },
+            ],
+        });
+
+        resetModulationSlew();
+        applyModulationToEngine(1);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        const [, , , resetValue] = mocks.updateDeviceParam.mock.calls[0]!;
+        expect(resetValue).toBeCloseTo(200);
     });
 
     it('does nothing when the modulator is disabled', () => {
@@ -180,22 +280,17 @@ describe('applyModulationToEngine', () => {
         // Track-level gain lane parked at the range top (would be base=1 under the bug).
         automationStore.set({
             lanes: [
-                {
+                createAutomationLaneFixture({
                     id: 'lane-track-gain',
                     trackId: 't1',
                     parameterId: 'gain',
                     parameterName: 'Volume',
-                    points: [{ beat: 0, value: 1, curve: 'linear', tension: 0 }],
-                    objects: [],
-                    visible: true,
-                    enabled: true,
-                    collapsed: false,
-                    virginTerritory: false,
+                    value: 1,
                     minValue: 0,
                     maxValue: 1,
-                },
+                }),
             ],
-        } as never);
+        });
         // amount 0 → delta 0, so the engine value equals the base exactly.
         modulationStore.set({
             modulators: [
@@ -235,22 +330,17 @@ describe('applyModulationToEngine', () => {
         };
         automationStore.set({
             lanes: [
-                {
+                createAutomationLaneFixture({
                     id: 'lane-device-cutoff',
                     trackId: 't1',
                     parameterId: 'builtin-filter:cutoff',
-                    parameterName: 'Filter → Cutoff',
-                    points: [{ beat: 0, value: 800, curve: 'linear', tension: 0 }],
-                    objects: [],
-                    visible: true,
-                    enabled: true,
-                    collapsed: false,
-                    virginTerritory: false,
+                    parameterName: 'Filter Cutoff',
+                    value: 800,
                     minValue: 0,
                     maxValue: 1000,
-                },
+                }),
             ],
-        } as never);
+        });
         modulationStore.set({
             modulators: [
                 {
