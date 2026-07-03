@@ -29,22 +29,45 @@ export type MacroStoreState = {
     currentRecording: AppAction[];
 };
 
-/** Shape-guard a parsed entry before trusting it as a `Macro` (mirrors undoStore's defensive load). */
-function isMacro(value: unknown): value is Macro {
+type UnknownRecord = {
+    readonly [key: string]: unknown;
+};
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    const candidate = value as Record<string, unknown>;
+    if (Array.isArray(value)) {
+        return false;
+    }
+    return true;
+}
+
+function hasPersistedActionShape(value: unknown): boolean {
+    if (!isUnknownRecord(value)) {
+        return false;
+    }
+    return typeof value.type === 'string';
+}
+
+/** Shape-guard a parsed entry before trusting it as a `Macro` (mirrors undoStore's defensive load). */
+function isMacro(value: unknown): value is Macro {
+    if (!isUnknownRecord(value)) {
+        return false;
+    }
     return (
-        typeof candidate.id === 'string' &&
-        typeof candidate.name === 'string' &&
-        typeof candidate.createdAt === 'number' &&
-        Array.isArray(candidate.actions)
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        typeof value.createdAt === 'number' &&
+        Number.isFinite(value.createdAt) &&
+        Array.isArray(value.actions) &&
+        value.actions.every(hasPersistedActionShape)
     );
 }
 
 function loadPersistedMacros(): Macro[] {
     try {
+        // eslint-disable-next-line no-restricted-syntax -- Macro storage is a legacy plain JSON array; createLocalStorage would rewrite it as SuperJSON.
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
             const parsed: unknown = JSON.parse(stored);
@@ -82,6 +105,7 @@ macroStore.subscribe((value) => {
             return;
         }
         try {
+            // eslint-disable-next-line no-restricted-syntax -- Preserve the legacy plain JSON macro array stored under this key.
             window.localStorage.setItem(STORAGE_KEY, JSON.stringify(trimMacrosForPersist(current.macros)));
         } catch {
             // Storage full — silently degrade

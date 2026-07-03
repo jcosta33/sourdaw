@@ -1,13 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type Macro } from '../../models/Macro';
-import { macroStore } from '../macroStore';
+import { type MacroStoreState, macroStore } from '../macroStore';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
 /** Resolve after the persistence microtask flush has run. */
 function flushPersist(): Promise<void> {
     return new Promise<void>((resolve) => queueMicrotask(resolve));
+}
+
+async function loadHydratedMacroState(raw: string): Promise<MacroStoreState | null> {
+    vi.resetModules();
+    localStorage.setItem(STORAGE_KEY, raw);
+    const { macroStore: hydratedMacroStore } = await import('../macroStore');
+    return hydratedMacroStore.value;
 }
 
 describe('macroStore', () => {
@@ -21,6 +28,70 @@ describe('macroStore', () => {
         // write from one test cannot leak into the next.
         await flushPersist();
         localStorage.removeItem(STORAGE_KEY);
+    });
+
+    it('should drop persisted macros that contain malformed action entries', async () => {
+        const state = await loadHydratedMacroState(
+            JSON.stringify([
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback', payload: { unchecked: true }, extra: 'preserved' }],
+                },
+                {
+                    id: 'array-action',
+                    name: 'Array action',
+                    createdAt: 43,
+                    actions: [['togglePlayback']],
+                },
+                {
+                    id: 'missing-type',
+                    name: 'Missing type',
+                    createdAt: 44,
+                    actions: [{ payload: { unchecked: true } }],
+                },
+                {
+                    id: 'numeric-type',
+                    name: 'Numeric type',
+                    createdAt: 45,
+                    actions: [{ type: 123 }],
+                },
+            ])
+        );
+
+        expect(state).toEqual({
+            macros: [
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback', payload: { unchecked: true }, extra: 'preserved' }],
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+    });
+
+    it('should drop persisted macros with non-finite createdAt values', async () => {
+        const state = await loadHydratedMacroState(
+            '[{"id":"infinite","name":"Infinite","createdAt":1e999,"actions":[{"type":"togglePlayback"}]}]'
+        );
+
+        expect(state).toEqual({ macros: [], recording: false, currentRecording: [] });
+    });
+
+    it('should hydrate malformed raw storage text to empty runtime state', async () => {
+        const state = await loadHydratedMacroState('{not json');
+
+        expect(state).toEqual({ macros: [], recording: false, currentRecording: [] });
+    });
+
+    it('should hydrate non-array top-level storage to empty runtime state', async () => {
+        const state = await loadHydratedMacroState('{"macros":[]}');
+
+        expect(state).toEqual({ macros: [], recording: false, currentRecording: [] });
     });
 
     it('should persist macros array to localStorage when state updates', async () => {
