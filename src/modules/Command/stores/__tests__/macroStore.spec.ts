@@ -82,6 +82,38 @@ describe('macroStore', () => {
         expect(state).toEqual({ macros: [], recording: false, currentRecording: [] });
     });
 
+    it('should drop persisted macros with non-JSON-persistable action payloads', async () => {
+        const state = await loadHydratedMacroState(
+            JSON.stringify([
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback' }],
+                },
+                {
+                    id: 'restore-snapshot',
+                    name: 'Restore snapshot',
+                    createdAt: 43,
+                    actions: [{ type: 'restoreDsoSnapshot', payload: { bundle: {} } }],
+                },
+            ])
+        );
+
+        expect(state).toEqual({
+            macros: [
+                {
+                    id: 'valid',
+                    name: 'Valid',
+                    createdAt: 42,
+                    actions: [{ type: 'togglePlayback' }],
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+    });
+
     it('should hydrate malformed raw storage text to empty runtime state', async () => {
         const state = await loadHydratedMacroState('{not json');
 
