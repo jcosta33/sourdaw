@@ -1,13 +1,18 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
+import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
+import { alphaNoticeStore } from '../../../stores/alphaNoticeStore';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
+import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
@@ -18,6 +23,10 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('../../hooks/useWorkspaceState', () => ({
     useWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../hooks/useProjectState', () => ({
+    useProjectState: vi.fn(),
 }));
 
 vi.mock('../../hooks/useAppEventHandlers', () => ({
@@ -57,8 +66,16 @@ vi.mock('../MixerPanel', () => ({
     MixerPanel: () => <div data-testid="mixer-panel">Mixer</div>,
 }));
 
+vi.mock('../ClipView', () => ({
+    ClipView: () => <div data-testid="clip-view">Clip View</div>,
+}));
+
 vi.mock('../ShortcutsSection', () => ({
     ShortcutsSection: () => <div data-testid="shortcuts-section">Shortcuts</div>,
+}));
+
+vi.mock('#/modules/AudioEngine/presentations/views', () => ({
+    ElasticEditorPanel: () => <div data-testid="elastic-panel">Elastic</div>,
 }));
 
 vi.mock('#/modules/AiRuntime/presentations/views/GenerativeAiPanel', () => ({
@@ -75,6 +92,18 @@ vi.mock('#/modules/Collaboration/presentations/views', () => ({
 
 vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
+}));
+
+vi.mock('../../components/LaunchScreen', () => ({
+    LaunchScreen: ({ exiting }: { exiting: boolean }) => (
+        <div data-testid="launch-screen" data-exiting={String(exiting)}>
+            Launch Screen
+        </div>
+    ),
+}));
+
+vi.mock('../../components/ProjectLoadingOverlay', () => ({
+    ProjectLoadingOverlay: () => <div data-testid="project-loading-overlay">Project Loading</div>,
 }));
 
 const mockWorkspaceEventBus = {
@@ -96,6 +125,85 @@ const mockWebMidiEventBus = {
     on: vi.fn(() => () => {}),
 };
 
+type ProjectState = ReturnType<typeof useProjectState>;
+
+const createProjectState = (overrides: Partial<ProjectState> = {}): ProjectState => ({
+    name: 'Untitled Project',
+    createdAt: 0,
+    updatedAt: 0,
+    dirty: false,
+    loading: false,
+    keyRoot: 0,
+    scaleName: 'chromatic',
+    tuning: {
+        name: 'Equal Temperament',
+        frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
+    },
+    initialized: true,
+    ...overrides,
+});
+
+const createWorkspaceState = (overrides: Partial<WorkspaceState> = {}): WorkspaceState => ({
+    ...defaultWorkspaceState,
+    inspectorOpen: false,
+    mixerOpen: false,
+    virtualKeyboardOpen: false,
+    ...overrides,
+});
+
+const createClip = (type: Clip['type']): Clip => ({
+    id: 'clip-1',
+    trackId: 'track-1',
+    name: 'Clip 1',
+    startBeat: 0,
+    endBeat: 4,
+    type,
+    fadeInBeats: 0,
+    fadeOutBeats: 0,
+    gain: 1,
+    color: '#ffffff',
+    locked: false,
+    muted: false,
+});
+
+const createTrack = (clip: Clip): Track => ({
+    id: 'track-1',
+    name: 'Track 1',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    armed: false,
+    gain: 1,
+    pan: 0,
+    color: '#ffffff',
+    clips: [clip],
+    devices: [],
+    sends: [],
+    midiFx: [],
+    frozen: false,
+    freezeState: { status: 'unfrozen' },
+    parentId: null,
+    collapsed: false,
+    inputMonitoring: 'off',
+    hidden: false,
+    disabled: false,
+    height: 120,
+    outputId: 'master',
+    automationMode: 'read',
+    groupId: null,
+    soloSafe: false,
+    notes: '',
+    inputId: null,
+    activeAlternativeId: 'main',
+    alternatives: [{ id: 'main', name: 'Main', clips: [clip] }],
+    vcaGroupId: null,
+    midiOutputTrackId: null,
+    followChordTrack: false,
+});
+
+let projectState: ProjectState;
+let trackStoreState: TrackStoreState;
+
 describe('AppShell', () => {
     beforeEach(() => {
         Container.clear();
@@ -104,32 +212,43 @@ describe('AppShell', () => {
         setNotificationEventBus(mockNotificationEventBus);
         setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
-        // Default implementation to avoid errors
+        projectState = createProjectState();
+        trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+        vi.mocked(useProjectState).mockImplementation(() => projectState);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
-            if (store.name === 'preferencesStore') {
-                return { panelPlacementSidebar: 'left' };
+            if (store === trackStore) {
+                return trackStoreState;
             }
-            if (store.name === 'projectStore') {
-                return { initialized: true, loading: false };
+            if (store === aiStore) {
+                return { tasks: [], isPanelOpen: false };
+            }
+            if (store === alphaNoticeStore) {
+                return true;
             }
             return defaultValue || { past: [], future: [] };
         });
 
-        vi.mocked(useWorkspaceState).mockReturnValue({
-            sidebarOpen: true,
-            inspectorOpen: false,
-            mixerOpen: false,
-            collaborationPanelOpen: false,
-            branchManagerOpen: false,
-            chatPanelOpen: false,
-            selectedClipId: null,
-            sidebarWidth: 200,
-            inspectorWidth: 200,
-            mixerHeight: 200,
-            chatPanelWidth: 200,
-            aiPanelWidth: 200,
-            virtualKeyboardOpen: false,
-        } as ReturnType<typeof useWorkspaceState>);
+        vi.mocked(useWorkspaceState).mockReturnValue(
+            createWorkspaceState({
+                sidebarOpen: true,
+                inspectorOpen: false,
+                mixerOpen: false,
+                collaborationPanelOpen: false,
+                branchManagerOpen: false,
+                chatPanelOpen: false,
+                selectedClipId: null,
+                sidebarWidth: 200,
+                inspectorWidth: 200,
+                mixerHeight: 200,
+                chatPanelWidth: 200,
+                aiPanelWidth: 200,
+                virtualKeyboardOpen: false,
+            })
+        );
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('should render correctly when project is loaded', () => {
@@ -139,9 +258,11 @@ describe('AppShell', () => {
     });
 
     it('should not render sidebar when closed', () => {
-        vi.mocked(useWorkspaceState).mockReturnValue({
-            sidebarOpen: false,
-        } as ReturnType<typeof useWorkspaceState>);
+        vi.mocked(useWorkspaceState).mockReturnValue(
+            createWorkspaceState({
+                sidebarOpen: false,
+            })
+        );
 
         render(<AppShell>Content</AppShell>);
         expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
@@ -155,21 +276,23 @@ describe('AppShell', () => {
 
     describe('bottom-dock accessibility (Fix 1)', () => {
         beforeEach(() => {
-            vi.mocked(useWorkspaceState).mockReturnValue({
-                sidebarOpen: false,
-                inspectorOpen: false,
-                mixerOpen: true,
-                collaborationPanelOpen: false,
-                branchManagerOpen: false,
-                chatPanelOpen: false,
-                selectedClipId: null,
-                sidebarWidth: 200,
-                inspectorWidth: 200,
-                mixerHeight: 200,
-                chatPanelWidth: 200,
-                aiPanelWidth: 200,
-                virtualKeyboardOpen: false,
-            } as ReturnType<typeof useWorkspaceState>);
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                    collaborationPanelOpen: false,
+                    branchManagerOpen: false,
+                    chatPanelOpen: false,
+                    selectedClipId: null,
+                    sidebarWidth: 200,
+                    inspectorWidth: 200,
+                    mixerHeight: 200,
+                    chatPanelWidth: 200,
+                    aiPanelWidth: 200,
+                    virtualKeyboardOpen: false,
+                })
+            );
         });
 
         it('exposes the dock as a tablist with role=tab buttons', () => {
@@ -197,6 +320,53 @@ describe('AppShell', () => {
             expect(activeTab?.getAttribute('aria-controls')).toBe(panel.id);
             expect(panel.getAttribute('aria-labelledby')).toBe(activeTab?.id);
         });
+
+        it('should fall back to the editor tab when the active Elastic tab loses audio clip eligibility', () => {
+            trackStoreState = {
+                tracks: [createTrack(createClip('audio'))],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            };
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                    selectedClipId: 'clip-1',
+                })
+            );
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByTestId('elastic-tab-button'));
+
+            expect(screen.getByRole('tab', { name: 'Elastic' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByTestId('elastic-panel')).toBeInTheDocument();
+
+            trackStoreState = {
+                tracks: [createTrack(createClip('midi'))],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            };
+            rerender(<AppShell>Content</AppShell>);
+
+            const editorTab = screen.getByRole('tab', { name: 'Editor' });
+            const panel = screen.getByRole('tabpanel');
+            expect(screen.queryByTestId('elastic-tab-button')).not.toBeInTheDocument();
+            expect(editorTab).toHaveAttribute('aria-selected', 'true');
+            expect(panel.getAttribute('aria-labelledby')).toBe(editorTab.id);
+            expect(screen.getByTestId('clip-view')).toBeInTheDocument();
+
+            trackStoreState = {
+                tracks: [createTrack(createClip('audio'))],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('elastic-tab-button')).toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.queryByTestId('elastic-panel')).not.toBeInTheDocument();
+        });
     });
 
     describe('skip-link resilience (Fix 2)', () => {
@@ -207,24 +377,61 @@ describe('AppShell', () => {
         });
 
         it('removes the skip-link from the DOM while a modal dialog is open', () => {
-            vi.mocked(useWorkspaceState).mockReturnValue({
-                sidebarOpen: false,
-                inspectorOpen: false,
-                mixerOpen: false,
-                collaborationPanelOpen: true,
-                branchManagerOpen: false,
-                chatPanelOpen: false,
-                selectedClipId: null,
-                sidebarWidth: 200,
-                inspectorWidth: 200,
-                mixerHeight: 200,
-                chatPanelWidth: 200,
-                aiPanelWidth: 200,
-                virtualKeyboardOpen: false,
-            } as ReturnType<typeof useWorkspaceState>);
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: false,
+                    collaborationPanelOpen: true,
+                    branchManagerOpen: false,
+                    chatPanelOpen: false,
+                    selectedClipId: null,
+                    sidebarWidth: 200,
+                    inspectorWidth: 200,
+                    mixerHeight: 200,
+                    chatPanelWidth: 200,
+                    aiPanelWidth: 200,
+                    virtualKeyboardOpen: false,
+                })
+            );
 
             render(<AppShell>Content</AppShell>);
             expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('launch overlay state', () => {
+        it('should show the loading overlay for returning users without rendering LaunchScreen', () => {
+            projectState = createProjectState({ initialized: false, loading: true });
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('project-loading-overlay')).toBeInTheDocument();
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
+
+        it('should start the launch exit animation on initialization and unmount after 700 ms', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('launch-screen')).toHaveAttribute('data-exiting', 'false');
+
+            projectState = createProjectState({ initialized: true, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('launch-screen')).toHaveAttribute('data-exiting', 'true');
+
+            act(() => {
+                vi.advanceTimersByTime(699);
+            });
+            expect(screen.getByTestId('launch-screen')).toBeInTheDocument();
+
+            act(() => {
+                vi.advanceTimersByTime(1);
+            });
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
         });
     });
 });

@@ -170,6 +170,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         | 'modulation'
         | 'elastic'
     >('mixer');
+    const elasticBottomTabUnavailable = bottomTab === 'elastic' && !isAudioClipSelected;
+
+    if (elasticBottomTabUnavailable) {
+        setBottomTab('editor');
+    }
+
+    const activeBottomTab: typeof bottomTab = elasticBottomTabUnavailable ? 'editor' : bottomTab;
 
     // True whenever a modal dialog/overlay owned by AppShell is open. Used to
     // neutralize the skip-link: a focused skip-link targeting #main-content
@@ -264,13 +271,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         });
     }, [mixerOpen]);
 
-    // Fall back to editor when the Elastic tab's audio-clip precondition disappears.
-    useEffect(() => {
-        if (bottomTab === 'elastic' && !isAudioClipSelected) {
-            setBottomTab('editor');
-        }
-    }, [bottomTab, isAudioClipSelected]);
-
     // ─── Panel dimension setters (persisted via workspace store) ───
     // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
     // Generic helper keeps the JSX readable without 14 nearly-identical one-liners (§47.4).
@@ -362,22 +362,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const onAiResize = (d: number): void => setAiWidth((w) => clamp(w + d, 200, 500));
 
     // ─── Launch screen overlay state ───────────────────────────────────────
-    // We start hidden (loading:true is the default). Two effects manage transitions:
-    // 1. New-user path: loading clears without initialized → show launch screen
-    // 2. Initialized fires → trigger CSS exit animation → unmount after 700ms
+    // We start hidden (loading:true is the default). New-user loading completion
+    // shows the launch screen; initialization derives the exit animation and the
+    // existing timer unmounts it after 700ms.
     const [showLaunch, setShowLaunch] = useState(false);
-    const [launchExiting, setLaunchExiting] = useState(false);
+    const launchExiting = showLaunch && project.initialized && !project.loading;
 
-    if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
+    if (!project.initialized && !project.loading && !showLaunch) {
         setShowLaunch(true);
     }
-
-    useEffect(() => {
-        if (project.initialized && !project.loading && showLaunch && !launchExiting) {
-            setLaunchExiting(true);
-        }
-        return undefined;
-    }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
     useEffect(() => {
         if (!launchExiting) {
@@ -385,7 +378,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
         const timer = setTimeout(() => {
             setShowLaunch(false);
-            setLaunchExiting(false);
         }, 700);
         return () => clearTimeout(timer);
     }, [launchExiting]);
@@ -405,7 +397,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         activeClassName: string,
         extraProps: Record<string, string> = {}
     ): ReactNode => {
-        const selected = bottomTab === value;
+        const selected = activeBottomTab === value;
         return (
             <Button
                 role="tab"
@@ -426,7 +418,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Bottom-dock tab content. `mixer`/`routing` and any unknown value fall back
     // to the RoutingMatrix exactly as the original ternary chain did.
     const renderBottomTabContent = (): ReactNode => {
-        switch (bottomTab) {
+        switch (activeBottomTab) {
             case 'editor':
                 return <ClipView />;
             case 'mixer':
@@ -762,7 +754,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <div
                                         role="tabpanel"
                                         id={BOTTOM_TABPANEL_ID}
-                                        aria-labelledby={bottomTabButtonId(bottomTab)}
+                                        aria-labelledby={bottomTabButtonId(activeBottomTab)}
                                         tabIndex={0}
                                         className="flex-1 overflow-hidden"
                                     >
