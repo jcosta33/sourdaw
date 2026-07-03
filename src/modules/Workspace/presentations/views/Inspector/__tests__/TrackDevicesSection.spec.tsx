@@ -5,50 +5,72 @@ import { TrackDevicesSection } from '../TrackDevicesSection';
 
 import type { Track, Device } from '../../../../models/TrackViewTypes';
 
+type TestPlatformPlugin = {
+    id: string;
+    name: string;
+    category: 'effect' | 'utility' | 'analyzer';
+};
+
+type TestPluginDescriptor = {
+    hasCustomUI?: boolean;
+} | null;
+
 // Mock external dependencies
-const mockBypassDevice = vi.fn();
+const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 vi.mock('#/modules/Arrangement/useCases/device/bypassDevice', () => ({
-    bypassDevice: (...args: unknown[]) => mockBypassDevice(...args),
+    bypassDevice: (deviceId: string, bypassed: boolean): void => {
+        mockBypassDevice(deviceId, bypassed);
+    },
 }));
 
-const mockRemoveDevice = vi.fn();
+const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 vi.mock('#/modules/Arrangement/useCases/device/removeDevice', () => ({
-    removeDevice: (...args: unknown[]) => mockRemoveDevice(...args),
+    removeDevice: (deviceId: string): void => {
+        mockRemoveDevice(deviceId);
+    },
 }));
 
-const mockAddDevice = vi.fn();
+const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
 vi.mock('#/modules/Arrangement/useCases/device/addDevice', () => ({
-    addDevice: (...args: unknown[]) => mockAddDevice(...args),
+    addDevice: (trackId: string, pluginName: string): void => {
+        mockAddDevice(trackId, pluginName);
+    },
 }));
 
-const mockAddExternalDevice = vi.fn();
+const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginName: string) => void>();
 vi.mock('#/modules/Arrangement/useCases/device/addExternalDevice', () => ({
-    addExternalDevice: (...args: unknown[]) => mockAddExternalDevice(...args),
+    addExternalDevice: (trackId: string, pluginId: string, pluginName: string): void => {
+        mockAddExternalDevice(trackId, pluginId, pluginName);
+    },
 }));
 
-const mockReorderDevices = vi.fn();
+const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
 vi.mock('#/modules/Arrangement/useCases/device/reorderDevices', () => ({
-    reorderDevices: (...args: unknown[]) => mockReorderDevices(...args),
+    reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
+        mockReorderDevices(trackId, fromIndex, toIndex);
+    },
 }));
 
-const mockGetPlatformPlugins = vi.fn(() => []);
+const mockGetPlatformPlugins = vi.fn<() => TestPlatformPlugin[]>(() => []);
 vi.mock('#/modules/Arrangement/useCases/getPlatformPlugins', () => ({
     getPlatformPlugins: () => mockGetPlatformPlugins(),
 }));
 
-const mockGetPluginById = vi.fn(() => null);
+const mockGetPluginById = vi.fn<(id: string) => TestPluginDescriptor>(() => null);
 vi.mock('#/modules/Arrangement/useCases/getPluginById', () => ({
     getPluginById: (id: string) => mockGetPluginById(id),
 }));
 
-const mockOpenPluginGui = vi.fn();
+const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
 vi.mock('#/modules/Plugin/useCases/pluginLifecycle/openPluginGui', () => ({
-    openPluginGui: (...args: unknown[]) => mockOpenPluginGui(...args),
+    openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
 }));
 
-const mockShowDevicePanelForType = vi.fn();
+const mockShowDevicePanelForType = vi.fn<(deviceType: string, deviceId: string) => void>();
 vi.mock('#/modules/Workspace/useCases/panels/devicePanels/showDevicePanelForType', () => ({
-    showDevicePanelForType: (...args: unknown[]) => mockShowDevicePanelForType(...args),
+    showDevicePanelForType: (deviceType: string, deviceId: string): void => {
+        mockShowDevicePanelForType(deviceType, deviceId);
+    },
 }));
 
 const mockUseStore = vi.fn(() => ({ scannedPlugins: [] }));
@@ -220,6 +242,22 @@ describe('TrackDevicesSection', () => {
         const removeButton = screen.getByLabelText('Remove Compressor');
         fireEvent.click(removeButton);
         expect(mockRemoveDevice).toHaveBeenCalledWith('device-1');
+    });
+
+    it('should add a platform device from the menu and close the menu', () => {
+        mockGetPlatformPlugins.mockReturnValue([{ id: 'chorus', name: 'Chorus', category: 'effect' }]);
+
+        render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
+
+        fireEvent.click(screen.getByLabelText('Add device'));
+
+        const chorusMenuItem = screen.getByRole('menuitem', { name: 'Chorus' });
+        expect(chorusMenuItem.tagName).toBe('BUTTON');
+
+        fireEvent.click(chorusMenuItem);
+
+        expect(mockAddDevice).toHaveBeenCalledWith('track-1', 'Chorus');
+        expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
     });
 
     it('should apply opacity to bypassed devices', () => {
