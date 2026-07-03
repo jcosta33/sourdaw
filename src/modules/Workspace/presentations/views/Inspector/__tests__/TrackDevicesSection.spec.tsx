@@ -192,6 +192,9 @@ describe('TrackDevicesSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockGetPlatformPlugins.mockReturnValue([]);
+        mockGetPluginById.mockReturnValue(null);
+        mockUseStore.mockReturnValue({ scannedPlugins: [] });
     });
 
     it('should render without crashing', () => {
