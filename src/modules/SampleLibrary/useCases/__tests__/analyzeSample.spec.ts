@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { performMusicalAnalysis } from '#/modules/SampleLibrary/services/analysisService';
-import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
-import { analyzeSample } from '#/modules/SampleLibrary/useCases/analyzeSample';
+
+import { performMusicalAnalysis } from '../../services/analysisService';
+import { libraryStore } from '../../stores/libraryStore';
+import { analyzeSample } from '../analyzeSample';
 
 const mocks = vi.hoisted(() => ({
     persist_samples: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -105,6 +106,41 @@ describe('analyzeSample', () => {
     });
 
     it('should not persist when the sample cannot be analyzed', async () => {
+        libraryStore.set(null);
+
+        await analyzeSample('s1');
+
+        expect(performMusicalAnalysis).not.toHaveBeenCalled();
+        expect(mocks.persist_samples).not.toHaveBeenCalled();
+
+        libraryStore.set({
+            samples: [
+                {
+                    id: 's1',
+                    displayName: 'S1',
+                    sync: { status: 'indexed', exists: true },
+                    format: {},
+                    tags: [],
+                    favorite: false,
+                    libraryRootId: 'r1',
+                    relativePath: 'p1',
+                    folder: '',
+                    ext: 'wav',
+                },
+            ],
+            roots: [],
+            folderTrees: {},
+            activeRootId: null,
+            currentFolder: null,
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        });
+
         await analyzeSample('missing');
         expect(mocks.persist_samples).not.toHaveBeenCalled();
 
