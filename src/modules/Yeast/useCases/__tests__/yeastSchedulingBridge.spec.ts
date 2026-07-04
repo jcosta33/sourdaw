@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { processYeastMidi } from '../yeastSchedulingBridge/processRealtimeMidiInput';
+import { processYeastMidi } from '../yeastSchedulingBridge/processYeastMidi';
 
 const mocks = vi.hoisted(() => ({
     getYeastRack: vi.fn(),
