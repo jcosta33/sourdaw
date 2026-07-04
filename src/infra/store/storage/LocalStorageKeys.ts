@@ -112,6 +112,7 @@ export type LocalStorageKey =
 
     // Stores last-used export dialog settings
     | 'sourdaw-export-settings'
+    | 'sourdaw:export-settings'
 
     // Stores the sidebar collapsed/expanded state
     | 'sourdaw-sidebar-state'

@@ -1,3 +1,7 @@
+import { createStore } from '#/infra/store/createStore';
+import { createPlainJsonLocalStorage } from '#/infra/store/storage/createPlainJsonLocalStorage';
+import { type Store } from '#/infra/store/types';
+
 export type ExportFormat = 'wav' | 'mp3' | 'flac';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
 
@@ -76,22 +80,29 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
     };
 }
 
+type CreateExportSettingsStoreOutput = Store<ExportSettings>;
+
+function createExportSettingsStore(): CreateExportSettingsStoreOutput {
+    return createStore<ExportSettings>({
+        storage: createPlainJsonLocalStorage({
+            key: EXPORT_SETTINGS_KEY,
+            decode: sanitizeExportSettings,
+        }),
+        sanitize: sanitizeExportSettings,
+    });
+}
+
 export function loadExportSettings(): ExportSettings {
     try {
-        const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
-        if (stored) {
-            const parsed: unknown = JSON.parse(stored);
-            return sanitizeExportSettings(parsed);
-        }
+        return sanitizeExportSettings(createExportSettingsStore().value);
     } catch {
-        /* ignore */
+        return createDefaultExportSettings();
     }
-    return createDefaultExportSettings();
 }
 
 export function saveExportSettings(settings: ExportSettings): void {
     try {
-        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
+        createExportSettingsStore().set(settings);
     } catch {
         /* ignore */
     }
