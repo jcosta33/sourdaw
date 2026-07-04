@@ -31,7 +31,9 @@ export function applyVelocityCurve(normalized: number, curve: VelocityCurve): nu
             }
             return 0.7 + (normalized - 0.5) * 1.4;
         }
-        default:
-            throw new Error(`Unknown velocity curve: ${curve}`);
+        default: {
+            const unknown_curve = String(curve);
+            throw new Error(`Unknown velocity curve: ${unknown_curve}`);
+        }
     }
 }
