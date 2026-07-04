@@ -1,16 +1,46 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as subject from '../saveCurrentAsPreset';
+import { type DevicePreset } from '../../../../models/SoundPreset';
+
+const devices = [
+    {
+        type: 'synth',
+        name: 'Lead',
+        parameterValues: {
+            drive: 0.5,
+        },
+    },
+] satisfies DevicePreset[];
 
 describe('saveCurrentAsPreset', () => {
-    it('should export saveCurrentAsPreset', () => {
-        expect(subject.saveCurrentAsPreset).toBeDefined();
-        const time = typeof subject.saveCurrentAsPreset;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        vi.resetModules();
+        window.localStorage.clear();
     });
-    it('should export saveUserPreset', () => {
-        expect(subject.saveUserPreset).toBeDefined();
-        const time = typeof subject.saveUserPreset;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should save the current preset through user preset storage defaults', async () => {
+        const subject = await import('../saveCurrentAsPreset');
+        const reader = await import('../readStoredPresets');
+
+        const result = subject.saveCurrentAsPreset({
+            name: 'My Lead',
+            category: 'lead',
+            trackKind: 'midi',
+            devices,
+        });
+
+        expect(result.id).toMatch(/^user-preset-/);
+        expect(result).toEqual({
+            id: result.id,
+            name: 'My Lead',
+            category: 'lead',
+            description: '',
+            trackKind: 'midi',
+            devices,
+            tags: [],
+            author: 'User',
+            isFactory: false,
+        });
+        expect(reader.readStoredPresets()).toEqual([result]);
     });
 });

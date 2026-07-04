@@ -1,30 +1,36 @@
 import { type SoundPreset } from '../../../models/SoundPreset';
 
-import { readStoredPresets, writeStoredPresets } from './helpers';
+import { saveUserPreset } from './saveUserPreset';
 
-export function saveUserPreset(preset: Omit<SoundPreset, 'id' | 'isFactory' | 'author'>): SoundPreset {
-    const stored = readStoredPresets();
-    const full: SoundPreset = {
-        ...preset,
-        id: `user-preset-${crypto.randomUUID()}`,
-        author: 'User',
-        isFactory: false,
-    };
-    stored.push(full);
-    writeStoredPresets(stored);
-    return full;
-}
+type SaveCurrentAsPresetCategory =
+    | 'synth'
+    | 'bass'
+    | 'pad'
+    | 'lead'
+    | 'keys'
+    | 'drums'
+    | 'fx'
+    | 'vocal'
+    | 'guitar'
+    | 'strings';
 
-export type SaveCurrentAsPresetInput = {
+type SaveCurrentAsPresetDevice = {
+    type: string;
     name: string;
-    category: import('../../../models/SoundPreset').SoundPresetCategory;
+    parameterValues: { [parameter_id: string]: number };
+};
+
+type SaveCurrentAsPresetInput = {
+    name: string;
+    category: SaveCurrentAsPresetCategory;
     description?: string;
     tags?: string[];
     trackKind: 'midi' | 'audio';
-    devices: { type: string; name: string; parameterValues: Record<string, number> }[];
+    devices: SaveCurrentAsPresetDevice[];
 };
+type SaveCurrentAsPresetOutput = SoundPreset;
 
-export function saveCurrentAsPreset(input: SaveCurrentAsPresetInput): SoundPreset {
+export function saveCurrentAsPreset(input: SaveCurrentAsPresetInput): SaveCurrentAsPresetOutput {
     return saveUserPreset({
         name: input.name,
         category: input.category,
