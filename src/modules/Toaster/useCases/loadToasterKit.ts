@@ -1,9 +1,7 @@
-import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
 
-import { findDeviceRef } from './toasterParamBridge/helpers';
+import { getToasterControls } from './getToasterControls';
 
 /**
  * Map TS engine type to Rust DrumEngineType index.
@@ -48,26 +46,6 @@ export const TOASTER_ENGINE_MAP: Record<DrumEngineType, number> = {
     'fm-perc': 8,
     sample: 4,
 };
-
-export function getToasterControls(deviceId: string): {
-    setPadParam: (pad: number, name: string, value: number) => void;
-    setParam: (name: string, value: number) => void;
-} | null {
-    // Scope the lookup to THIS device. Picking the first toaster track (the
-    // old behavior) routed instance B's controls onto instance A's worklet.
-    const ref = findDeviceRef(deviceId);
-    if (!ref) {
-        return null;
-    }
-
-    const strip = getTrackStrip(ref.trackId);
-    if (!strip) {
-        return null;
-    }
-
-    const dn = strip.deviceNodes.find((data) => data.deviceId === deviceId && data.toasterControls?.ready);
-    return dn?.toasterControls ?? null;
-}
 
 export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
     // Update the UI store first
