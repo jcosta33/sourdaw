@@ -110,7 +110,8 @@ export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 
 // ── Hardware ─────────────────────────────────────────────────────────────────
-export { exportHardwareMappings, importHardwareMappings } from './hardware/portableMappings';
+export { exportHardwareMappings } from './hardware/exportHardwareMappings';
+export { importHardwareMappings } from './hardware/importHardwareMappings';
 
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';

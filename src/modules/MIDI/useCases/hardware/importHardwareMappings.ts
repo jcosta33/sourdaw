@@ -3,55 +3,59 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type ControllerMapping } from '../../models/ControllerProfile';
 import { hardwareControllerStore } from '../../stores/hardwareControllerStore';
 
-/**
- * Export current hardware mappings as a JSON string (J3).
- */
-export function exportHardwareMappings(profileId: string): string | null {
-    const state = hardwareControllerStore.value;
-    const profile = state?.profiles.find((param) => param.id === profileId);
-    if (!profile) {
-        return null;
-    }
-
-    return JSON.stringify(profile.mappings, null, 2);
-}
-
-const VALID_CONTROL_TYPES: ReadonlySet<ControllerMapping['controlType']> = new Set(['pad', 'knob', 'fader', 'button']);
-const VALID_ACTION_TYPES: ReadonlySet<ControllerMapping['action']['type']> = new Set([
+const VALID_CONTROL_TYPES: ReadonlySet<string> = new Set<ControllerMapping['controlType']>([
+    'pad',
+    'knob',
+    'fader',
+    'button',
+]);
+const VALID_ACTION_TYPES: ReadonlySet<string> = new Set<ControllerMapping['action']['type']>([
     'parameter',
     'transport',
     'workflow',
 ]);
 
+function isValidControlType(value: unknown): value is ControllerMapping['controlType'] {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
+    return VALID_CONTROL_TYPES.has(value);
+}
+
+function isValidActionType(value: unknown): value is ControllerMapping['action']['type'] {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
+    return VALID_ACTION_TYPES.has(value);
+}
+
 function isControllerMapping(value: unknown): value is ControllerMapping {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    const entry = value as Record<string, unknown>;
+    if (!('id' in value) || typeof value.id !== 'string') {
+        return false;
+    }
+    if (!('controlType' in value) || !isValidControlType(value.controlType)) {
+        return false;
+    }
+    if (!('controlIndex' in value) || typeof value.controlIndex !== 'number') {
+        return false;
+    }
+    if (!('channel' in value) || typeof value.channel !== 'number') {
+        return false;
+    }
+    if (!('action' in value) || typeof value.action !== 'object' || value.action === null) {
+        return false;
+    }
 
-    if (typeof entry.id !== 'string') {
+    const action = value.action;
+    if (!('type' in action) || !isValidActionType(action.type)) {
         return false;
     }
-    if (
-        typeof entry.controlType !== 'string' ||
-        !VALID_CONTROL_TYPES.has(entry.controlType as ControllerMapping['controlType'])
-    ) {
-        return false;
-    }
-    if (typeof entry.controlIndex !== 'number' || typeof entry.channel !== 'number') {
-        return false;
-    }
-    if (typeof entry.action !== 'object' || entry.action === null) {
-        return false;
-    }
-    const action = entry.action as Record<string, unknown>;
-    if (
-        typeof action.type !== 'string' ||
-        !VALID_ACTION_TYPES.has(action.type as ControllerMapping['action']['type'])
-    ) {
-        return false;
-    }
-    if (action.target !== undefined && typeof action.target !== 'string') {
+    if ('target' in action && action.target !== undefined && typeof action.target !== 'string') {
         return false;
     }
     return true;
