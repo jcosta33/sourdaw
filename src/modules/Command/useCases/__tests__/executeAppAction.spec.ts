@@ -1,35 +1,66 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+
+import { type Logger } from '#/infra/logger/types';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
 import { executeAppAction } from '../executeAppAction';
 
-import type { ActionHandler, AppAction } from '../commandQueries';
+import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
+
+type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
+type SetSemanticContextInput = Parameters<CrdtStoresModule['setSemanticContext']>[0];
+type PushActionHistoryEntryInput = Parameters<CrdtStoresModule['pushActionHistoryEntry']>[0];
+type CommitUndoEntryModule = typeof import('../commitUndoEntry');
+type CommitUndoEntryInput = Parameters<CommitUndoEntryModule['commitUndoEntry']>[0];
+type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
+type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
+type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
+
+type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
+    execute: Mock<(action: Action) => void | Promise<void>>;
+    describe: Mock<(action: Action) => HandlerDescribeResult>;
+};
+
+type CreateMockHandlerInput<Action extends AppAction> = {
+    label?: string;
+    execute?: (action: Action) => void | Promise<void>;
+    describe?: (action: Action) => HandlerDescribeResult;
+};
+
+type CreateMockHandlerOutput<Action extends AppAction> = MockCommandHandler<Action>;
+
+function create_mock_handler<Action extends AppAction>({
+    label = 'Mock Label',
+    execute = () => undefined,
+    describe = () => ({ label }),
+}: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
+    return {
+        execute: vi.fn<(action: Action) => void | Promise<void>>(execute),
+        describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
+        undoable: true,
+    };
+}
 
 const mocks = vi.hoisted(() => ({
     logger: {
-        error: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn(),
-        debug: vi.fn(),
-        setWriters: vi.fn(),
-    },
-    setSemanticContext: vi.fn(),
-    clearSemanticContext: vi.fn(),
-    pushActionHistoryEntry: vi.fn(),
-    commitUndoEntry: vi.fn(),
-    recordAction: vi.fn(),
-    mockHandler: {
-        execute: vi.fn(),
-        describe: vi.fn(() => ({ label: 'Mock Label' })),
-        undoable: true,
-    },
+        error: vi.fn<Logger['error']>(),
+        info: vi.fn<Logger['info']>(),
+        warn: vi.fn<Logger['warn']>(),
+        debug: vi.fn<Logger['debug']>(),
+        setWriters: vi.fn<Logger['setWriters']>(),
+    } satisfies Logger,
+    setSemanticContext: vi.fn<(ctx: SetSemanticContextInput) => void>(),
+    clearSemanticContext: vi.fn<() => void>(),
+    pushActionHistoryEntry: vi.fn<(entry: PushActionHistoryEntryInput) => void>(),
+    commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
+    recordAction: vi.fn<(action: AppAction) => void>(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<CrdtStoresModule>()),
     pushActionHistoryEntry: mocks.pushActionHistoryEntry,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
@@ -43,37 +74,46 @@ describe('executeAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearHandlerRegistry();
-        registerHandlerMap({ testAction: mocks.mockHandler as any });
     });
 
     it('logs error if no handler is found', async () => {
-        clearHandlerRegistry();
-        await executeAppAction({ type: 'unknownAction', payload: {} } as any);
+        const action: ToggleSidebarAction = { type: 'toggleSidebar' };
+
+        await executeAppAction(action);
+
         expect(mocks.logger.error).toHaveBeenCalled();
     });
 
     it('executes a registered handler', async () => {
-        await executeAppAction({ type: 'testAction', payload: { foo: 'bar' } } as any);
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
 
-        expect(mocks.mockHandler.execute).toHaveBeenCalledWith({ type: 'testAction', payload: { foo: 'bar' } });
+        await executeAppAction(action);
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
-        const action: AppAction = { type: 'toggleSidebar' };
+        const action: ToggleSidebarAction = { type: 'toggleSidebar' };
         const cause = new Error('handler failed');
-        clearHandlerRegistry();
-        registerHandlerMap({ [action.type]: mocks.mockHandler });
-        mocks.mockHandler.execute.mockRejectedValueOnce(cause);
+        const handler = create_mock_handler<ToggleSidebarAction>({
+            execute: () => Promise.reject(cause),
+        });
+        registerHandlerMap({ [action.type]: handler });
 
         await expect(executeAppAction(action)).rejects.toBe(cause);
 
         const reported_error = mocks.logger.error.mock.calls[0]?.[0];
         expect(reported_error).toBeInstanceOf(Error);
-        expect(reported_error?.message).toContain(action.type);
-        expect(reported_error?.cause).toBe(cause);
+        if (reported_error === undefined) {
+            throw new Error('Expected rejected handler to log an error');
+        }
+        expect(reported_error.message).toContain(action.type);
+        expect(reported_error.cause).toBe(cause);
         expect(mocks.clearSemanticContext).toHaveBeenCalledOnce();
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
@@ -88,9 +128,9 @@ describe('executeAppAction', () => {
     // recorded). A handler that re-ordered these — or pushed undo before awaiting —
     // would corrupt destructive undo without any other test catching it.
     it('runs describe() before execute(), and records undo/history only after execute() resolves', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const order: string[] = [];
-        const orderedHandler: ActionHandler = {
-            undoable: true,
+        const handler = create_mock_handler<SetSnapValueAction>({
             describe: () => {
                 order.push('describe');
                 return { label: 'Ordered' };
@@ -100,15 +140,12 @@ describe('executeAppAction', () => {
                 await Promise.resolve();
                 order.push('execute:end');
             },
-        };
-        clearHandlerRegistry();
-        registerHandlerMap({ orderedAction: orderedHandler });
+        });
+        registerHandlerMap({ [action.type]: handler });
         mocks.commitUndoEntry.mockImplementation(() => order.push('commitUndoEntry'));
         mocks.pushActionHistoryEntry.mockImplementation(() => order.push('pushActionHistoryEntry'));
 
-        // `orderedAction` is a synthetic, test-only discriminant — cast through
-        // `AppAction` the same way this suite's other synthetic actions are.
-        await executeAppAction({ type: 'orderedAction', payload: {} } as unknown as AppAction);
+        await executeAppAction(action);
 
         // describe is the first thing recorded (snapshot before mutation)…
         expect(order[0]).toBe('describe');
