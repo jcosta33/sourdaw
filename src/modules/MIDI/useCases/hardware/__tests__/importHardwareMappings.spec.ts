@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { hardwareControllerStore } from '../../../stores/hardwareControllerStore';
-import { exportHardwareMappings, importHardwareMappings } from '../portableMappings';
+import { importHardwareMappings } from '../importHardwareMappings';
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<typeof import('#/utils/Notification/notifyUser').notifyUser>(),
@@ -19,7 +19,15 @@ const baseMapping = {
     action: { type: 'transport' as const, target: 'play' },
 };
 
-describe('portableMappings', () => {
+const otherMapping = {
+    id: 'm-other',
+    controlType: 'fader' as const,
+    controlIndex: 2,
+    channel: 1,
+    action: { type: 'parameter' as const, target: 'volume' },
+};
+
+describe('importHardwareMappings', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         hardwareControllerStore.set({
@@ -32,14 +40,15 @@ describe('portableMappings', () => {
                     productId: ['id1'],
                     mappings: [baseMapping],
                 },
+                {
+                    id: 'p2',
+                    name: 'Profile 2',
+                    manufacturer: 'M',
+                    productId: ['id2'],
+                    mappings: [otherMapping],
+                },
             ],
         });
-    });
-
-    it('should export mappings as JSON', () => {
-        const json = exportHardwareMappings('p1');
-        expect(json).toContain('"id": "m1"');
-        expect(json).toContain('"target": "play"');
     });
 
     it('should import mappings from JSON', () => {
@@ -55,11 +64,13 @@ describe('portableMappings', () => {
         importHardwareMappings('p1', JSON.stringify(newMappings));
 
         const profile = hardwareControllerStore.value?.profiles.find((param) => param.id === 'p1');
+        const otherProfile = hardwareControllerStore.value?.profiles.find((param) => param.id === 'p2');
         expect(profile?.mappings[0]?.id).toBe('m2');
+        expect(otherProfile?.mappings).toEqual([otherMapping]);
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
-    it('notifies the user and leaves mappings untouched when the JSON is malformed', () => {
+    it('should notify the user and leave mappings untouched when the JSON is malformed', () => {
         importHardwareMappings('p1', '{ not valid json');
 
         const profile = hardwareControllerStore.value?.profiles.find((param) => param.id === 'p1');
@@ -69,11 +80,11 @@ describe('portableMappings', () => {
         expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('error');
     });
 
-    it('notifies the user and leaves mappings untouched when an entry has the wrong shape', () => {
+    it('should notify the user and leave mappings untouched when an entry has the wrong shape', () => {
         const invalid = [
             {
                 id: 'mX',
-                controlType: 'spinner', // not a valid control type
+                controlType: 'spinner',
                 controlIndex: 3,
                 channel: 1,
                 action: { type: 'transport' },
@@ -87,7 +98,7 @@ describe('portableMappings', () => {
         expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('error');
     });
 
-    it('rejects a non-array document', () => {
+    it('should reject a non-array document', () => {
         importHardwareMappings('p1', JSON.stringify({ id: 'm2' }));
 
         const profile = hardwareControllerStore.value?.profiles.find((param) => param.id === 'p1');
