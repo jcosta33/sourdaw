@@ -19,6 +19,8 @@ import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMa
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { loadUserPatches } from '../../useCases/user-patches/load-user-patches';
+import { saveUserPatch } from '../../useCases/user-patches/save-user-patch';
 import { AdditiveSection } from '../components/AdditiveSection';
 import { CrumbsSection } from '../components/CrumbsSection';
 import { EffectsSection } from '../components/EffectsSection';
@@ -45,8 +47,6 @@ import { XYPad } from '../components/XYPad';
 
 import { TransformPad } from './TransformPad';
 
-const USER_PATCHES_KEY = 'fermenter-user-patches';
-
 const LEVELS = [
     { id: 1, label: 'Play', eyebrow: 'Scene' },
     { id: 2, label: 'Shape', eyebrow: 'Voice' },
@@ -54,30 +54,6 @@ const LEVELS = [
     { id: 4, label: 'Route', eyebrow: 'Flow' },
     { id: 5, label: 'Lab', eyebrow: 'Bench' },
 ] as const;
-
-function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPatch }> {
-    try {
-        return JSON.parse(window.localStorage.getItem(USER_PATCHES_KEY) ?? '[]') as Array<{
-            id: string;
-            name: string;
-            patch: FermenterPatch;
-        }>;
-    } catch {
-        return [];
-    }
-}
-
-function saveUserPatch(name: string, patch: FermenterPatch): boolean {
-    const patches = loadUserPatches();
-    patches.push({ id: `user-${Date.now()}`, name, patch: { ...patch, name } });
-    try {
-        window.localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
-        return true;
-    } catch {
-        // Quota exceeded or serialization failure — don't crash the save handler.
-        return false;
-    }
-}
 
 function formatPercent(value: number): string {
     return `${Math.round(value * 100)}%`;
@@ -488,7 +464,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
     // version counter forces re-render after user-patch save so the preset browser reflects new entries
-    const [, setVersion] = useState(0);
+    const [_userPatchVersion, setUserPatchVersion] = useState(0);
 
     const userPatches = loadUserPatches();
     const sectionMeta = getSectionMeta(section);
@@ -531,12 +507,12 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             return;
         }
 
-        if (!saveUserPatch(saveName.trim(), patch)) {
+        if (!saveUserPatch({ name: saveName.trim(), patch })) {
             return;
         }
         setSaveName('');
         setShowSave(false);
-        setVersion((currentVersion) => currentVersion + 1);
+        setUserPatchVersion((currentVersion) => currentVersion + 1);
     }
 
     return (
