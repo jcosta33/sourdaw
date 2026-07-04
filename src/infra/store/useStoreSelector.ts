@@ -1,9 +1,9 @@
 import { useSyncExternalStore, useRef, useCallback } from 'react';
 
-import { type Store } from './types';
+import { type ReadableStore } from './types';
 
 export function useStoreSelector<TData, TSelected>(
-    store: Store<TData>,
+    store: ReadableStore<TData>,
     selector: (state: TData | null) => TSelected,
     equalityFn: (a: TSelected, b: TSelected) => boolean = Object.is
 ): TSelected {

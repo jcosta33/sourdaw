@@ -1,12 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { pushUndoMock, recordToTreeMock } = vi.hoisted(() => ({
-    pushUndoMock: vi.fn(),
+const { recordToTreeMock } = vi.hoisted(() => ({
     recordToTreeMock: vi.fn(),
-}));
-
-vi.mock('../../stores/undoStore', () => ({
-    pushUndo: pushUndoMock,
 }));
 
 vi.mock('../undoTree/recordToTree', () => ({
@@ -14,26 +9,32 @@ vi.mock('../undoTree/recordToTree', () => ({
 }));
 
 // Import after mocks so the SUT binds to them.
+import { undoStore } from '../../stores/undoStore';
 import { createUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
 
 describe('commitUndoEntry', () => {
     beforeEach(() => {
-        pushUndoMock.mockClear();
         recordToTreeMock.mockClear();
+        undoStore.set({ past: [], future: [] });
     });
 
-    it('pushes the entry onto the undo store and mirrors it into the tree', () => {
+    it('appends the entry to the undo store and mirrors it into the tree', () => {
+        const existing = createUndoEntry('existing', { type: 'togglePlayback' }, { type: 'toggleRecording' });
+        const future = createUndoEntry('future', { type: 'toggleLoop' }, { type: 'stopPlayback' });
         const entry = createUndoEntry(
             'commit',
             { type: 'setTempo', payload: { bpm: 120 } },
             { type: 'setTempo', payload: { bpm: 100 } }
         );
+        undoStore.set({ past: [existing], future: [future] });
 
         commitUndoEntry(entry);
 
-        expect(pushUndoMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoMock).toHaveBeenCalledWith(entry);
+        expect(undoStore.value).toEqual({
+            past: [existing, entry],
+            future: [],
+        });
         expect(recordToTreeMock).toHaveBeenCalledTimes(1);
         expect(recordToTreeMock).toHaveBeenCalledWith(entry);
     });

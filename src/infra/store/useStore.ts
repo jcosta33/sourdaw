@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-import { type Store } from './types';
+import { type ReadableStore } from './types';
 
-export const useStore = <TData>(store: Store<TData>, defaultValue?: TData): TData => {
+export const useStore = <TData>(store: ReadableStore<TData>, defaultValue?: TData): TData => {
     return useSyncExternalStore(store.subscribeReact, () => store.getSnapshot() ?? (defaultValue as TData));
 };

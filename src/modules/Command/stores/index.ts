@@ -4,8 +4,8 @@
 export { macroStore } from './macroStore';
 export type { MacroStoreState } from './macroStore';
 
-export { undoStore, pushUndo } from './undoStore';
-export type { UndoStoreState } from './undoStore';
+export { undoStore } from './undo-store-facade';
+export type { UndoStoreState } from './undo-store-facade';
 
 export { shortcutStore } from './shortcutStore';
 export type { ShortcutStoreState, ShortcutDefinition, ShortcutAction } from './shortcutStore';
