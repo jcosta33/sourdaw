@@ -1,3 +1,4 @@
+import { persistSamples } from '../repositories/libraryPersistence/persistSamples';
 import { embeddingStore } from '../stores/embeddingStore';
 import { libraryStore } from '../stores/libraryStore';
 
@@ -5,7 +6,7 @@ import { libraryStore } from '../stores/libraryStore';
  * Project high-dimensional embeddings to 2D space using UMAP-style logic.
  * R-G3: 2D Spatial Map.
  */
-export function projectSpatialMap(): void {
+export async function projectSpatialMap(): Promise<void> {
     const embedState = embeddingStore.value;
     const libState = libraryStore.value;
     if (!embedState || !libState) {
@@ -48,5 +49,6 @@ export function projectSpatialMap(): void {
 
     if (changed) {
         libraryStore.set({ ...libState, samples: nextSamples });
+        await persistSamples();
     }
 }
