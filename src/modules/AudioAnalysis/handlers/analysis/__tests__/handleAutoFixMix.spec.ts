@@ -110,14 +110,14 @@ describe('handleAutoFixMix', () => {
 
         expect(mocks.beginLifecycle).toHaveBeenCalled();
         expect(analyzeMix).toHaveBeenCalled();
-        expect(mocks.completeLifecycle).toHaveBeenCalledWith(
-            expect.objectContaining({
-                token: 11,
-                result: expect.objectContaining({
-                    overallLevel: expect.objectContaining({ peakDb: -10 }),
-                }),
-            })
-        );
+        const completed_lifecycle = mocks.completeLifecycle.mock.calls.at(-1)?.[0];
+
+        if (!completed_lifecycle) {
+            throw new Error('Expected lifecycle completion');
+        }
+
+        expect(completed_lifecycle.token).toBe(11);
+        expect(completed_lifecycle.result.overallLevel.peakDb).toBe(-10);
     });
 
     it('should fix clipping tracks and master gain', async () => {
@@ -138,12 +138,17 @@ describe('handleAutoFixMix', () => {
 
         await handleAutoFixMix.execute({ type: 'autoFixMix' });
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type: 'setTrackGain',
-                payload: expect.objectContaining({ trackId: 't1' }),
-            })
+        const actions = mocks.executeAppAction.mock.calls.map(([action]) => action);
+        const track_gain_action = actions.find(
+            (action): action is Extract<AppAction, { type: 'setTrackGain' }> =>
+                action.type === 'setTrackGain' && action.payload.trackId === 't1'
         );
+
+        if (!track_gain_action) {
+            throw new Error('Expected setTrackGain call for track t1');
+        }
+
+        expect(track_gain_action.payload.trackId).toBe('t1');
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             expect.objectContaining({
