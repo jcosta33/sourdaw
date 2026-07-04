@@ -92,7 +92,8 @@ export { generateMidiAI } from './nativeAiBridge/generateMidiAI';
 export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
 
 export type { OfflineRenderOptions } from './offlineRender/types';
-export { cancelExport, isExportActive } from './offlineRender/exportCancellation';
+export { cancelExport } from './offlineRender/exportCancellation';
+export { isExportActive } from './offlineRender/isExportActive';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
