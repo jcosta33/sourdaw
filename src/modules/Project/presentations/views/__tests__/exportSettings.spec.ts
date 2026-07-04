@@ -79,6 +79,27 @@ describe('exportSettings', () => {
         }
     });
 
+    it('should hydrate default formats from empty or invalid format lists', () => {
+        for (const formats of [[], ['bogus']]) {
+            window.localStorage.setItem(
+                EXPORT_SETTINGS_KEY,
+                JSON.stringify({
+                    formats,
+                    sampleRate: 44100,
+                    bitDepth: 24,
+                    mp3BitRate: 128,
+                })
+            );
+
+            expect(loadExportSettings()).toEqual({
+                formats: ['wav'],
+                sampleRate: 44100,
+                bitDepth: 24,
+                mp3BitRate: 128,
+            });
+        }
+    });
+
     it('should save the existing plain JSON shape under the existing key', () => {
         saveExportSettings({
             formats: ['wav', 'mp3'],
