@@ -74,6 +74,17 @@ describe('readStoredPresets', () => {
                 { ...valid_preset, id: 'bad-subcategory', subcategory: 1 },
                 { ...valid_preset, id: 'bad-tags', tags: ['ok', 1] },
                 { ...valid_preset, id: 'bad-factory-flag', isFactory: 'false' },
+                {
+                    ...valid_preset,
+                    id: 'bad-revived-param-record',
+                    devices: [
+                        {
+                            type: 'synth',
+                            name: 'Bad',
+                            parameterValues: new Date('2024-01-01T00:00:00Z'),
+                        },
+                    ],
+                },
             ])
         );
 

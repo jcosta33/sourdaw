@@ -26,6 +26,14 @@ function is_unknown_record(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function is_plain_record(value: unknown): value is UnknownRecord {
+    if (!is_unknown_record(value)) {
+        return false;
+    }
+
+    return Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null;
+}
+
 function is_sound_preset_category(value: unknown): value is SoundPresetCategory {
     return typeof value === 'string' && sound_preset_categories.includes(value);
 }
@@ -40,7 +48,7 @@ function is_string_array(value: unknown): value is string[] {
 
 function is_parameter_values(value: unknown): value is DevicePreset['parameterValues'] {
     return (
-        is_unknown_record(value) &&
+        is_plain_record(value) &&
         Object.values(value).every((item) => typeof item === 'number' && Number.isFinite(item))
     );
 }
