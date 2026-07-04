@@ -9,6 +9,7 @@ type CreatePlainJsonLocalStorageInput<TData> = {
 
 const readPlainJsonValue = <TData>(input: CreatePlainJsonLocalStorageInput<TData>): TData | null => {
     try {
+        // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
         const raw = window.localStorage.getItem(input.key);
         if (raw === null) {
             return null;
@@ -43,23 +44,21 @@ export const createPlainJsonLocalStorage = <TData>(
             hasCachedValue = true;
 
             if (value === null) {
+                // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
                 window.localStorage.removeItem(input.key);
                 return;
             }
 
             const serialized = JSON.stringify(value);
-            if (serialized === undefined) {
-                window.localStorage.removeItem(input.key);
-                cachedValue = null;
-                return;
-            }
 
+            // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
             window.localStorage.setItem(input.key, serialized);
         },
 
         clear(): void {
             cachedValue = null;
             hasCachedValue = true;
+            // eslint-disable-next-line no-restricted-syntax -- This storage adapter is the sanctioned boundary for legacy plain-JSON localStorage keys.
             window.localStorage.removeItem(input.key);
         },
 
