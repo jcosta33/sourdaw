@@ -51,14 +51,20 @@ describe('exportCancellation', () => {
     });
 
     it('should create fresh cancellation state after module reset', async () => {
+        const { acquireRenderLock } = await import('../acquireRenderLock');
         const { cancelExport } = await import('../exportCancellation');
         const { isCancelRequested } = await import('../isCancelRequested');
+        const { isExportActive } = await import('../isExportActive');
+        acquireRenderLock();
         cancelExport();
         expect(isCancelRequested()).toBe(true);
+        expect(isExportActive()).toBe(true);
 
         vi.resetModules();
 
         const { isCancelRequested: isCancelRequestedAfterReset } = await import('../isCancelRequested');
+        const { isExportActive: isExportActiveAfterReset } = await import('../isExportActive');
         expect(isCancelRequestedAfterReset()).toBe(false);
+        expect(isExportActiveAfterReset()).toBe(false);
     });
 });
