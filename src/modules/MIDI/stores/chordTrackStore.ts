@@ -42,7 +42,7 @@ function isNonNegativeFiniteNumber(value: unknown): value is number {
 }
 
 function isRootValue(value: unknown): value is number {
-    return Number.isInteger(value) && value >= 0 && value <= 11;
+    return isFiniteNumber(value) && Number.isInteger(value) && value >= 0 && value <= 11;
 }
 
 function isDurationValue(value: unknown): value is number {
