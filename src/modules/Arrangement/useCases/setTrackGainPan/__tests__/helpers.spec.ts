@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { syncToasterPadParam, maybeRecordAutomation } from '../helpers';
+import { syncToasterPadParam } from '../helpers';
+import { maybeRecordAutomation } from '../maybeRecordAutomation';
 
 describe('setTrackGainPan helpers', () => {
     describe('syncToasterPadParam', () => {

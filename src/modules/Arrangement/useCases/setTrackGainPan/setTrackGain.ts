@@ -6,7 +6,8 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getAllTracks } from '../getAllTracks';
 
-import { maybeRecordAutomation, syncToasterPadParam } from './helpers';
+import { syncToasterPadParam } from './helpers';
+import { maybeRecordAutomation } from './maybeRecordAutomation';
 
 export function setTrackGain(trackId: string, gain: number, isTransient = false): void {
     const clamped = Math.max(0, Math.min(1, gain));
