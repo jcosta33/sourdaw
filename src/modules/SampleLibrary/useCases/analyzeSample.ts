@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
+import { persistSamples } from '../repositories/libraryPersistence/persistSamples';
 import { performMusicalAnalysis } from '../services/analysisService';
 import { libraryStore } from '../stores/libraryStore';
 
@@ -59,6 +60,7 @@ export async function analyzeSample(sampleId: string): Promise<void> {
                     : s
             ),
         });
+        await persistSamples();
     } catch (error) {
         logger.error(
             error instanceof Error ? error : new Error(`Failed to analyze sample ${sampleId}: ${String(error)}`)
