@@ -3,23 +3,21 @@ import { setTrackState } from '../setTrackState';
 
 import { type RippleInsertPlan } from './planRippleInsert';
 
-type RippleInsertClipInput = {
+type UndoRippleInsertClipInput = {
     trackId: string;
-    /** Duration used to shift subsequent clips forward. */
-    insertDuration: number;
     plan: RippleInsertPlan;
 };
 
 /**
- * Executes a ripple insert: shifts clips listed in the plan forward by insertDuration (R-B3.1).
+ * Reverts a ripple insert: restores shifted clips to their original positions.
  */
-export function rippleInsertClip({ trackId, insertDuration, plan }: RippleInsertClipInput): void {
+export function undoRippleInsertClip({ trackId, plan }: UndoRippleInsertClipInput): void {
     const state = getTrackStoreState();
     if (!state) {
         return;
     }
 
-    const shiftSet = new Set(plan.shiftedClips.map((state1) => state1.clipId));
+    const shiftMap = new Map(plan.shiftedClips.map((state1) => [state1.clipId, state1]));
 
     setTrackState({
         ...state,
@@ -30,13 +28,14 @@ export function rippleInsertClip({ trackId, insertDuration, plan }: RippleInsert
             return {
                 ...track,
                 clips: track.clips.map((clip) => {
-                    if (!shiftSet.has(clip.id)) {
+                    const orig = shiftMap.get(clip.id);
+                    if (!orig) {
                         return clip;
                     }
                     return {
                         ...clip,
-                        startBeat: clip.startBeat + insertDuration,
-                        endBeat: clip.endBeat + insertDuration,
+                        startBeat: orig.origStartBeat,
+                        endBeat: orig.origEndBeat,
                     };
                 }),
             };
