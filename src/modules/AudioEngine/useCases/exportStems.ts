@@ -1,6 +1,8 @@
 import { createExportError } from '../errors/ExportError';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
+import { acquireRenderLock } from './offlineRender/acquireRenderLock';
+import { checkCancel } from './offlineRender/checkCancel';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -8,8 +10,9 @@ import {
     RENDER_TIMEOUT_MULTIPLIER,
 } from './offlineRender/constants';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
-import { acquireRenderLock, checkCancel, isCancelRequested, resetCancelFlag } from './offlineRender/exportCancellation';
+import { isCancelRequested } from './offlineRender/isCancelRequested';
 import { renderWithTimeout } from './offlineRender/renderWithTimeout';
+import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
