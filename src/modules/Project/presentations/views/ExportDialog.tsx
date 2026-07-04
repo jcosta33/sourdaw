@@ -35,25 +35,14 @@ import {
 } from '../../useCases/exportActions';
 import { isNativeProjectRuntimeAvailable } from '../../useCases/isNativeProjectRuntimeAvailable';
 
-type ExportFormat = 'wav' | 'mp3' | 'flac';
+import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';
+
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
 type ExportRange = 'project' | 'loop' | 'marquee';
 
 type ExportDialogProps = {
     open: boolean;
     onClose: () => void;
-};
-
-const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
-
-type Mp3BitRate = 96 | 128 | 192 | 320;
-
-type StoredExportSettings = {
-    formats?: ExportFormat[];
-    format?: ExportFormat;
-    sampleRate?: number;
-    bitDepth?: number;
-    mp3BitRate?: number;
 };
 
 type WebFileHandle = {
@@ -78,8 +67,6 @@ const getShowSaveFilePicker = (): ShowSaveFilePicker | null => {
     return typeof candidate === 'function' ? (candidate as ShowSaveFilePicker) : null;
 };
 
-const validMp3BitRates: readonly number[] = [96, 128, 192, 320];
-
 const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
     if (isZip) {
         return 'application/zip';
@@ -91,51 +78,6 @@ const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
         return 'audio/flac';
     }
     return 'audio/mpeg';
-};
-
-const loadExportSettings = (): {
-    formats: ExportFormat[];
-    sampleRate: number;
-    bitDepth: number;
-    mp3BitRate: Mp3BitRate;
-} => {
-    try {
-        const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
-        if (stored) {
-            const parsed = JSON.parse(stored) as StoredExportSettings;
-            let parsedFormats: ExportFormat[] = ['wav'];
-            if (Array.isArray(parsed.formats)) {
-                parsedFormats = parsed.formats;
-            } else if (parsed.format) {
-                parsedFormats = [parsed.format];
-            }
-
-            return {
-                formats: parsedFormats,
-                sampleRate: parsed.sampleRate ?? 44100,
-                bitDepth: parsed.bitDepth ?? 24,
-                mp3BitRate: validMp3BitRates.includes(parsed.mp3BitRate ?? -1)
-                    ? (parsed.mp3BitRate as Mp3BitRate)
-                    : 128,
-            };
-        }
-    } catch {
-        /* ignore */
-    }
-    return { formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 };
-};
-
-const saveExportSettings = (settings: {
-    formats: ExportFormat[];
-    sampleRate: number;
-    bitDepth: number;
-    mp3BitRate: Mp3BitRate;
-}): void => {
-    try {
-        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
-    } catch {
-        /* ignore */
-    }
 };
 
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
