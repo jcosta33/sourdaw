@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { getAnalysisHandlers } from './getAnalysisHandlers';
+export { setMixAnalysisDisplayLifecycle } from './setMixAnalysisDisplayLifecycle';
 
 export { isAudioGenerationAvailable } from './audioAi/isAudioGenerationAvailable';
 export { generateAudio } from './audioAi/generateAudio';

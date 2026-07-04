@@ -1,10 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
-import { mixAnalysisStore } from '#/modules/AiRuntime/stores';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
+
+import { mixAnalysisDisplayLifecycle } from './mixAnalysisDisplayLifecycle';
 
 /** Clip threshold (dBFS) used by analyzeMix to flag `isClipping`. */
 const CLIP_THRESHOLD_DB = -0.5;
@@ -28,18 +29,15 @@ function settleDelay(ms: number): Promise<void> {
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
     execute: async () => {
-        const state = mixAnalysisStore.value;
-        if (!state) {
+        if (!mixAnalysisDisplayLifecycle.begin()) {
             return;
         }
 
-        mixAnalysisStore.set({ ...state, isAnalyzing: true });
-
         try {
             const result = await analyzeMix();
-            mixAnalysisStore.set({ result, isAnalyzing: false, panelOpen: true });
+            mixAnalysisDisplayLifecycle.complete({ result });
 
-            const tracks = trackStore.value?.tracks ?? [];
+            const tracks = getTrackStoreState()?.tracks ?? [];
             for (const tl of result.trackLevels) {
                 if (tl.isClipping) {
                     // Reduce the track *relative to its current fader*, not by
@@ -74,12 +72,12 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             await settleDelay(ANALYSER_SETTLE_MS);
 
             const refreshed = await analyzeMix();
-            mixAnalysisStore.set({ result: refreshed, isAnalyzing: false, panelOpen: true });
+            mixAnalysisDisplayLifecycle.complete({ result: refreshed });
         } catch (error) {
             // Surface the failure instead of swallowing it — a thrown analysis/fix error would
             // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
             logger.error(error instanceof Error ? error : new Error(`Auto-fix mix failed: ${String(error)}`));
-            mixAnalysisStore.set({ ...state, isAnalyzing: false });
+            mixAnalysisDisplayLifecycle.fail();
         }
     },
     describe: () => ({ label: 'Auto-fix mix issues' }),

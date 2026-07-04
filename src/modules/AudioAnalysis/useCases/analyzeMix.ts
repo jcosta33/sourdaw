@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import {
@@ -39,7 +39,7 @@ export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const masterLevels = readLevels(masterAnalyser);
     const frequencyBalance = readFrequencyBalance(masterAnalyser);
 
-    const tracks = trackStore.value?.tracks ?? [];
+    const tracks = getTrackStoreState()?.tracks ?? [];
 
     const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
 
