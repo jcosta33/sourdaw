@@ -43,6 +43,33 @@ describe('stepRecordStepDown', () => {
         expect(stepRecordStore.value?.currentPitch).toBe(62);
     });
 
+    it('should force off-scale pitches to the previous scale degree before stepping down', () => {
+        projectStore.set(makeProjectState({ keyRoot: 0, scaleName: 'major' }));
+        stepRecordStore.set(makeStepRecordState({ active: true, currentPitch: 61 }));
+
+        stepRecordStepDown();
+
+        expect(stepRecordStore.value?.currentPitch).toBe(59);
+    });
+
+    it('should wrap below the first scale degree to the previous octave', () => {
+        projectStore.set(makeProjectState({ keyRoot: 0, scaleName: 'major' }));
+        stepRecordStore.set(makeStepRecordState({ active: true, currentPitch: 60 }));
+
+        stepRecordStepDown();
+
+        expect(stepRecordStore.value?.currentPitch).toBe(59);
+    });
+
+    it('should step below off-scale pitches past the last scale degree', () => {
+        projectStore.set(makeProjectState({ keyRoot: 0, scaleName: 'pentatonicMajor' }));
+        stepRecordStore.set(makeStepRecordState({ active: true, currentPitch: 70 }));
+
+        stepRecordStepDown();
+
+        expect(stepRecordStore.value?.currentPitch).toBe(67);
+    });
+
     it('should clamp the current pitch to zero', () => {
         projectStore.set(makeProjectState({ keyRoot: 0, scaleName: 'chromatic' }));
         stepRecordStore.set(makeStepRecordState({ active: true, currentPitch: 0 }));
