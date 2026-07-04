@@ -1,6 +1,6 @@
 import { setEnvelope } from '../../stores/gainEnvelopeStore';
 
-import { ensureClipGainEnvelope } from './getClipGainEnvelope';
+import { ensureClipGainEnvelope } from './ensureClipGainEnvelope';
 
 export function toggleClipGainEnvelope(clipId: string): boolean {
     const env = ensureClipGainEnvelope(clipId);

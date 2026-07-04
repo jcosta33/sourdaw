@@ -1,6 +1,6 @@
 import { type GainEnvelopePoint, setEnvelope } from '../../stores/gainEnvelopeStore';
 
-import { ensureClipGainEnvelope } from './getClipGainEnvelope';
+import { ensureClipGainEnvelope } from './ensureClipGainEnvelope';
 
 export type { GainEnvelopePoint };
 

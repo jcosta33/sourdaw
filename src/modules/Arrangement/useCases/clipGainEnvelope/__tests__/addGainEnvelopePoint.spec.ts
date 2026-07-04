@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { type ClipGainEnvelope, __resetGainEnvelopesForTest, getEnvelope } from '../../../stores/gainEnvelopeStore';
 import { addGainEnvelopePoint } from '../addGainEnvelopePoint';
-import { ensureClipGainEnvelope } from '../getClipGainEnvelope';
+import { ensureClipGainEnvelope } from '../ensureClipGainEnvelope';
 
-vi.mock('../getClipGainEnvelope', () => ({
+vi.mock('../ensureClipGainEnvelope', () => ({
     ensureClipGainEnvelope: vi.fn(),
 }));
 
