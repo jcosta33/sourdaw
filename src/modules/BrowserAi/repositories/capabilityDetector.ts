@@ -11,7 +11,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type CapabilityReport, type WebGpuTier } from '../models/CapabilityReport';
+import { type BrowserAiCapability, type CapabilityReport, type WebGpuTier } from '../models/CapabilityReport';
 
 const STORAGE_KEY = 'sourdaw-browser-ai-capability';
 const BENCHMARK_FAST_THRESHOLD_MS = 50;
@@ -46,7 +46,7 @@ function isTauriNonWindowsPlatform(): boolean {
         return false;
     }
     // In Tauri, navigator.platform reports the OS
-    const platform = navigator.platform?.toLowerCase() ?? '';
+    const platform = navigator.platform.toLowerCase();
     return platform.includes('mac') || platform.includes('linux');
 }
 
@@ -88,6 +88,56 @@ function classifyWebGpuTier(benchmarkMs: number | null): WebGpuTier {
     return 'unavailable';
 }
 
+type UnknownRecord = {
+    [key: string]: unknown;
+};
+
+function get_capability_storage(): Storage | null {
+    if (!('localStorage' in globalThis)) {
+        return null;
+    }
+    try {
+        return globalThis.localStorage;
+    } catch {
+        return null;
+    }
+}
+
+function is_plain_record(value: unknown): value is UnknownRecord {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function is_browser_ai_capability(value: unknown): value is BrowserAiCapability {
+    return value === 'supported' || value === 'unsupported-browser' || value === 'unsupported-platform';
+}
+
+function is_web_gpu_tier(value: unknown): value is WebGpuTier {
+    return value === 'webgpu-fast' || value === 'webgpu-slow' || value === 'unavailable';
+}
+
+function is_nullable_finite_number(value: unknown): value is number | null {
+    if (value === null) {
+        return true;
+    }
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function is_valid_capability_report(value: unknown): value is CapabilityReport {
+    if (!is_plain_record(value)) {
+        return false;
+    }
+    return (
+        is_browser_ai_capability(value.capability) &&
+        is_web_gpu_tier(value.webGpuTier) &&
+        typeof value.sharedArrayBuffer === 'boolean' &&
+        typeof value.opfsAvailable === 'boolean' &&
+        typeof value.detectedAt === 'number' &&
+        Number.isFinite(value.detectedAt) &&
+        is_nullable_finite_number(value.chromeVersion) &&
+        is_nullable_finite_number(value.benchmarkMs)
+    );
+}
+
 type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 
 export const detectCapabilities = inject({ logger })(
@@ -95,14 +145,17 @@ export const detectCapabilities = inject({ logger })(
         async function detectCapabilities({
             forceRefresh = false,
         }: { forceRefresh?: boolean } = {}): DetectCapabilitiesOutput {
+            const storage = get_capability_storage();
             // Check cached result first
-            if (!forceRefresh && typeof localStorage !== 'undefined') {
-                const cached = window.localStorage.getItem(STORAGE_KEY);
+            if (!forceRefresh && storage) {
+                const cached = storage.getItem(STORAGE_KEY);
                 if (cached) {
                     try {
-                        const parsed = JSON.parse(cached) as CapabilityReport;
-                        logger.info('[BrowserAi] Using cached capability report');
-                        return parsed;
+                        const parsed: unknown = JSON.parse(cached);
+                        if (is_valid_capability_report(parsed)) {
+                            logger.info('[BrowserAi] Using cached capability report');
+                            return parsed;
+                        }
                     } catch {
                         // Corrupt cache — re-detect
                     }
@@ -135,7 +188,7 @@ export const detectCapabilities = inject({ logger })(
                 capability = 'supported';
                 benchmarkMs = await runWebGpuBenchmark();
                 webGpuTier = classifyWebGpuTier(benchmarkMs);
-                logger.info(`[BrowserAi] WebGPU detected: ${webGpuTier} (${String(benchmarkMs?.toFixed(1))}ms)`);
+                logger.info(`[BrowserAi] WebGPU detected: ${webGpuTier} (${String(benchmarkMs.toFixed(1))}ms)`);
             }
 
             const report: CapabilityReport = {
@@ -149,9 +202,9 @@ export const detectCapabilities = inject({ logger })(
             };
 
             // Cache the result
-            if (typeof localStorage !== 'undefined') {
+            if (storage) {
                 try {
-                    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(report));
+                    storage.setItem(STORAGE_KEY, JSON.stringify(report));
                 } catch {
                     // Storage quota exceeded — not critical
                 }
