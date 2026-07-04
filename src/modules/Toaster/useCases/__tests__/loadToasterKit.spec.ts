@@ -1,19 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-
 import { type ToasterKit, type PadState } from '../../models/ToasterKit';
 import { loadKit } from '../../stores/toasterStore';
 import { getToasterControls } from '../getToasterControls';
 import { loadToasterKitPreset, TOASTER_ENGINE_MAP } from '../loadToasterKit';
 
+type MockTrack = {
+    id: string;
+    devices: Array<{
+        id: string;
+        name: string;
+        type: string;
+        bypassed: boolean;
+        parameterValues: Record<string, number>;
+    }>;
+};
+
+type SetParam = (name: string, value: number) => void;
+type SetPadParam = (pad: number, name: string, value: number) => void;
+
+type MockToasterControls = {
+    ready: boolean;
+    setParam: SetParam;
+    setPadParam: SetPadParam;
+};
+
+type MockTrackStrip = {
+    deviceNodes: Array<{
+        deviceId: string;
+        type: string;
+        toasterControls?: MockToasterControls;
+    }>;
+};
+
+const getAllTracksMock = vi.hoisted(() => vi.fn<() => MockTrack[]>(() => []));
+const getTrackStripMock = vi.hoisted(() => vi.fn<(trackId: string) => MockTrackStrip | undefined>());
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getAllTracks: vi.fn(),
+    getAllTracks: getAllTracksMock,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getTrackStrip: vi.fn(),
+    getTrackStrip: getTrackStripMock,
 }));
 
 vi.mock('../../stores/toasterStore', () => ({
@@ -67,8 +95,11 @@ function minimalKit(overrides: Partial<ToasterKit> = {}): ToasterKit {
     };
 }
 
-function wireToasterMocks(setParam: ReturnType<typeof vi.fn>, setPadParam: ReturnType<typeof vi.fn>) {
-    vi.mocked(getAllTracks).mockReturnValue([
+function wireToasterMocks(
+    setParam: ReturnType<typeof vi.fn<SetParam>>,
+    setPadParam: ReturnType<typeof vi.fn<SetPadParam>>
+) {
+    getAllTracksMock.mockReturnValue([
         {
             id: 't1',
             devices: [
@@ -80,28 +111,21 @@ function wireToasterMocks(setParam: ReturnType<typeof vi.fn>, setPadParam: Retur
                     parameterValues: {},
                 },
             ],
-        } as any,
+        },
     ]);
-    vi.mocked(getTrackStrip).mockReturnValue({
+    getTrackStripMock.mockReturnValue({
         deviceNodes: [
             {
                 deviceId: 'd1',
                 type: 'toaster',
-                nodes: [],
-                inputNode: {} as AudioNode,
-                outputNode: {} as AudioNode,
                 toasterControls: {
                     ready: true,
                     setParam,
                     setPadParam,
-                    noteOn: vi.fn(),
-                    noteOff: vi.fn(),
-                    setBypass: vi.fn(),
-                    destroy: vi.fn(),
                 },
             },
         ],
-    } as any);
+    });
 }
 
 describe('TOASTER_ENGINE_MAP', () => {
@@ -118,19 +142,20 @@ describe('TOASTER_ENGINE_MAP', () => {
 
 describe('getToasterControls', () => {
     beforeEach(() => {
-        vi.mocked(getAllTracks).mockReset();
-        vi.mocked(getTrackStrip).mockReset();
+        getAllTracksMock.mockReset();
+        getAllTracksMock.mockReturnValue([]);
+        getTrackStripMock.mockReset();
     });
 
     it('should return null when there is no toaster track', () => {
-        vi.mocked(getAllTracks).mockReturnValue([]);
+        getAllTracksMock.mockReturnValue([]);
 
         expect(getToasterControls('d1')).toBeNull();
     });
 
     it('should return controls when a ready toaster device exists on the strip', () => {
-        const setParam = vi.fn();
-        const setPadParam = vi.fn();
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
         wireToasterMocks(setParam, setPadParam);
 
         const controls = getToasterControls('d1');
@@ -143,8 +168,8 @@ describe('getToasterControls', () => {
     // behavior returned the FIRST toaster device, so a second instance's preset
     // load was routed onto the first instance's worklet.
     it('returns null for a deviceId that is not the first toaster device', () => {
-        const setParam = vi.fn();
-        const setPadParam = vi.fn();
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
         wireToasterMocks(setParam, setPadParam);
 
         expect(getToasterControls('not-d1')).toBeNull();
@@ -154,13 +179,14 @@ describe('getToasterControls', () => {
 describe('loadToasterKitPreset', () => {
     beforeEach(() => {
         vi.mocked(loadKit).mockReset();
-        vi.mocked(getAllTracks).mockReset();
-        vi.mocked(getTrackStrip).mockReset();
+        getAllTracksMock.mockReset();
+        getAllTracksMock.mockReturnValue([]);
+        getTrackStripMock.mockReset();
     });
 
     it('should call loadKit and forward kit-level params when controls exist', () => {
-        const setParam = vi.fn();
-        const setPadParam = vi.fn();
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
         wireToasterMocks(setParam, setPadParam);
 
         const kit = minimalKit();
@@ -180,8 +206,8 @@ describe('loadToasterKitPreset', () => {
     });
 
     it('should set open pad param for hihat-open vs hihat-closed', () => {
-        const setParam = vi.fn();
-        const setPadParam = vi.fn();
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
         wireToasterMocks(setParam, setPadParam);
 
         const kit = minimalKit({
@@ -194,8 +220,8 @@ describe('loadToasterKitPreset', () => {
     });
 
     it('should forward pad engineParams entries', () => {
-        const setParam = vi.fn();
-        const setPadParam = vi.fn();
+        const setParam = vi.fn<SetParam>();
+        const setPadParam = vi.fn<SetPadParam>();
         wireToasterMocks(setParam, setPadParam);
 
         const kit = minimalKit({
@@ -211,7 +237,7 @@ describe('loadToasterKitPreset', () => {
     });
 
     it('should not throw when controls are unavailable', () => {
-        vi.mocked(getAllTracks).mockReturnValue([]);
+        getAllTracksMock.mockReturnValue([]);
 
         const kit = minimalKit();
         expect(() => loadToasterKitPreset('d1', kit)).not.toThrow();
