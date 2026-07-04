@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 import { type ChordEvent } from '../models/ChordEvent';
+import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
 
 export type ChordTrackState = {
     enabled: boolean;
@@ -9,40 +10,99 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
-function isChordEvent(value: unknown): value is ChordEvent {
-    if (typeof value !== 'object' || value === null) {
+const STORAGE_KEY = 'sourdaw_chord_track';
+
+type ChordEventCandidate = {
+    beat?: unknown;
+    duration?: unknown;
+    id?: unknown;
+    quality?: unknown;
+    root?: unknown;
+};
+
+type ChordTrackStateCandidate = {
+    enabled?: unknown;
+    events?: unknown;
+};
+
+function isChordEventCandidate(value: unknown): value is ChordEventCandidate {
+    return typeof value === 'object' && value !== null;
+}
+
+function isChordTrackStateCandidate(value: unknown): value is ChordTrackStateCandidate {
+    return typeof value === 'object' && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+    return isFiniteNumber(value) && value > 0;
+}
+
+function isChordType(value: unknown): value is ChordType {
+    if (typeof value !== 'string') {
         return false;
     }
-    const entry = value as Record<string, unknown>;
+
+    return Object.hasOwn(CHORD_TYPES, value);
+}
+
+function isChordEvent(value: unknown): value is ChordEvent {
+    if (!isChordEventCandidate(value)) {
+        return false;
+    }
+
     return (
-        typeof entry.id === 'string' &&
-        typeof entry.beat === 'number' &&
-        typeof entry.root === 'number' &&
-        typeof entry.quality === 'string' &&
-        typeof entry.duration === 'number'
+        typeof value.id === 'string' &&
+        isFiniteNumber(value.beat) &&
+        isFiniteNumber(value.root) &&
+        isChordType(value.quality) &&
+        isPositiveFiniteNumber(value.duration)
     );
 }
 
 function isChordTrackState(value: unknown): value is ChordTrackState {
-    if (typeof value !== 'object' || value === null) {
+    if (!isChordTrackStateCandidate(value)) {
         return false;
     }
-    const entry = value as Record<string, unknown>;
-    return typeof entry.enabled === 'boolean' && Array.isArray(entry.events) && entry.events.every(isChordEvent);
+
+    return typeof value.enabled === 'boolean' && Array.isArray(value.events) && value.events.every(isChordEvent);
+}
+
+function getStorage(): Storage | null {
+    try {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        return window.localStorage;
+    } catch {
+        return null;
+    }
 }
 
 function loadFromStorage(): ChordTrackState {
+    const storage = getStorage();
+    if (!storage) {
+        return defaultChordTrackState;
+    }
+
     try {
-        const stored = window.localStorage.getItem('sourdaw_chord_track');
-        if (stored) {
-            const parsed: unknown = JSON.parse(stored);
-            if (isChordTrackState(parsed)) {
-                return parsed;
-            }
+        const stored = storage.getItem(STORAGE_KEY);
+        if (stored === null) {
+            return defaultChordTrackState;
+        }
+
+        const parsed: unknown = JSON.parse(stored);
+        if (isChordTrackState(parsed)) {
+            return parsed;
         }
     } catch {
         // Fallback
     }
+
     return defaultChordTrackState;
 }
 
@@ -53,7 +113,14 @@ export const chordTrackStore = createStore<ChordTrackState>({
 /** Persist chord track state to localStorage on every change. */
 chordTrackStore.subscribe(() => {
     const state = chordTrackStore.value;
-    if (state) {
-        window.localStorage.setItem('sourdaw_chord_track', JSON.stringify(state));
+    const storage = getStorage();
+    if (!state || !storage) {
+        return;
+    }
+
+    try {
+        storage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+        // Persistence is best effort.
     }
 });
