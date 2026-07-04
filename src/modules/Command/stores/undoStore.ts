@@ -19,11 +19,24 @@ function isUndoSource(value: unknown): value is UndoSource {
     return value === 'manual' || value === 'prompt' || value === 'voice' || value === 'ai';
 }
 
-function isAppActionRecord(value: unknown): value is AppAction {
+function isSessionPersistableAppAction(value: unknown): value is AppAction {
     if (!isRecord(value)) {
         return false;
     }
+    if (value.type === 'restoreDsoSnapshot') {
+        return false;
+    }
     return typeof value.type === 'string' && value.type.length > 0;
+}
+
+function isSessionPersistableActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
+    if (!isActionEntry(entry)) {
+        return false;
+    }
+    if (!isSessionPersistableAppAction(entry.action)) {
+        return false;
+    }
+    return entry.inverseAction === null || isSessionPersistableAppAction(entry.inverseAction);
 }
 
 function getOptionalString(value: Record<string, unknown>, key: string): string | null | undefined {
@@ -52,12 +65,12 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
 
     const action = value.action;
-    if (!isAppActionRecord(action)) {
+    if (!isSessionPersistableAppAction(action)) {
         return null;
     }
 
     const inverseAction = value.inverseAction;
-    if (inverseAction !== null && !isAppActionRecord(inverseAction)) {
+    if (inverseAction !== null && !isSessionPersistableAppAction(inverseAction)) {
         return null;
     }
 
@@ -144,7 +157,7 @@ undoStore.subscribe((value) => {
         }
         try {
             function serializableOnly(entries: UndoEntry[]) {
-                return entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
+                return entries.filter(isSessionPersistableActionEntry).slice(-MAX_UNDO_PERSIST);
             }
             const trimmed: UndoStoreState = {
                 past: serializableOnly(current.past),
