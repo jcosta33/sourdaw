@@ -1,4 +1,4 @@
-import { type TrackKind } from '../../models/Track';
+import { type Device, type Send, type TrackKind } from '../../models/Track';
 import { type TrackTemplate } from '../../models/TrackTemplate';
 
 import { storage } from './helpers';
@@ -17,15 +17,25 @@ function isTrackKind(value: unknown): value is TrackKind {
     return typeof value === 'string' && TRACK_KINDS.has(value);
 }
 
-function isTrackTemplateDevices(value: unknown): value is TrackTemplate['devices'] {
-    return Array.isArray(value);
+function validateStoredParameterValues(value: unknown): Record<string, number> | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const parameters: Record<string, number> = {};
+
+    for (const [parameterId, parameterValue] of Object.entries(value)) {
+        if (typeof parameterValue !== 'number' || !Number.isFinite(parameterValue)) {
+            return null;
+        }
+
+        parameters[parameterId] = parameterValue;
+    }
+
+    return parameters;
 }
 
-function isTrackTemplateSends(value: unknown): value is TrackTemplate['sends'] {
-    return Array.isArray(value);
-}
-
-function validateStoredTrackTemplate(value: unknown): TrackTemplate | null {
+function validateStoredDevice(value: unknown): Device | null {
     if (!isRecord(value)) {
         return null;
     }
@@ -33,10 +43,110 @@ function validateStoredTrackTemplate(value: unknown): TrackTemplate | null {
     if (
         typeof value.id !== 'string' ||
         typeof value.name !== 'string' ||
+        typeof value.type !== 'string' ||
+        typeof value.bypassed !== 'boolean'
+    ) {
+        return null;
+    }
+
+    const parameterValues = validateStoredParameterValues(value.parameterValues);
+    if (parameterValues === null) {
+        return null;
+    }
+
+    if (value.externalPluginId !== undefined && typeof value.externalPluginId !== 'string') {
+        return null;
+    }
+
+    if (value.externalInstanceId !== undefined && typeof value.externalInstanceId !== 'string') {
+        return null;
+    }
+
+    return {
+        id: value.id,
+        name: value.name,
+        type: value.type,
+        bypassed: value.bypassed,
+        parameterValues,
+        externalPluginId: value.externalPluginId,
+        externalInstanceId: value.externalInstanceId,
+    };
+}
+
+function validateStoredDevices(value: unknown): Device[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const devices: Device[] = [];
+
+    for (const deviceValue of value) {
+        const device = validateStoredDevice(deviceValue);
+        if (device === null) {
+            return null;
+        }
+
+        devices.push(device);
+    }
+
+    return devices;
+}
+
+function validateStoredSend(value: unknown): Send | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    if (
+        typeof value.busId !== 'string' ||
+        typeof value.level !== 'number' ||
+        !Number.isFinite(value.level) ||
+        typeof value.preFader !== 'boolean'
+    ) {
+        return null;
+    }
+
+    return {
+        busId: value.busId,
+        level: value.level,
+        preFader: value.preFader,
+    };
+}
+
+function validateStoredSends(value: unknown): Send[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const sends: Send[] = [];
+
+    for (const sendValue of value) {
+        const send = validateStoredSend(sendValue);
+        if (send === null) {
+            return null;
+        }
+
+        sends.push(send);
+    }
+
+    return sends;
+}
+
+function validateStoredTrackTemplate(value: unknown): TrackTemplate | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const devices = validateStoredDevices(value.devices);
+    const sends = validateStoredSends(value.sends);
+
+    if (
+        typeof value.id !== 'string' ||
+        typeof value.name !== 'string' ||
         typeof value.category !== 'string' ||
         !isTrackKind(value.trackKind) ||
-        !isTrackTemplateDevices(value.devices) ||
-        !isTrackTemplateSends(value.sends) ||
+        devices === null ||
+        sends === null ||
         typeof value.gain !== 'number' ||
         !Number.isFinite(value.gain) ||
         typeof value.pan !== 'number' ||
@@ -53,8 +163,8 @@ function validateStoredTrackTemplate(value: unknown): TrackTemplate | null {
         name: value.name,
         category: value.category,
         trackKind: value.trackKind,
-        devices: value.devices,
-        sends: value.sends,
+        devices,
+        sends,
         gain: value.gain,
         pan: value.pan,
         color: value.color,

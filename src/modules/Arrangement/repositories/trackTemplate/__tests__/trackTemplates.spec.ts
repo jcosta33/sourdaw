@@ -13,6 +13,28 @@ vi.mock('../helpers', () => ({
 }));
 
 describe('trackTemplate repository', () => {
+    type StoredTemplateValue = {
+        [key: string]: unknown;
+    };
+
+    function createDevice(): TrackTemplate['devices'][number] {
+        return {
+            id: 'device-1',
+            name: 'Synth',
+            type: 'builtin-synth',
+            bypassed: false,
+            parameterValues: { cutoff: 0.5 },
+        };
+    }
+
+    function createSend(): TrackTemplate['sends'][number] {
+        return {
+            busId: 'bus-1',
+            level: 0.25,
+            preFader: false,
+        };
+    }
+
     function createTemplate(overrides: Partial<TrackTemplate> = {}): TrackTemplate {
         return {
             id: 'template-1',
@@ -25,6 +47,13 @@ describe('trackTemplate repository', () => {
             pan: 0,
             color: '#ffcc00',
             createdAt: 1_717_171_717,
+            ...overrides,
+        };
+    }
+
+    function createStoredTemplate(overrides: StoredTemplateValue): unknown {
+        return {
+            ...createTemplate(),
             ...overrides,
         };
     }
@@ -49,6 +78,16 @@ describe('trackTemplate repository', () => {
             expect(loadTrackTemplates()).toEqual(templates);
         });
 
+        it('should preserve valid nested devices and sends', () => {
+            const template = createTemplate({
+                devices: [createDevice()],
+                sends: [createSend()],
+            });
+            vi.mocked(storage.get).mockReturnValue([template]);
+
+            expect(loadTrackTemplates()).toEqual([template]);
+        });
+
         it('should return an empty array when stored data is not an array', () => {
             mockStoredTemplates({ id: 'template-1', name: 'Drums' });
 
@@ -67,6 +106,33 @@ describe('trackTemplate repository', () => {
                 'bad-template',
                 secondTemplate,
             ]);
+
+            expect(loadTrackTemplates()).toEqual([firstTemplate, secondTemplate]);
+        });
+
+        it.each([
+            ['invalid id', createStoredTemplate({ id: 1 })],
+            ['invalid name', createStoredTemplate({ name: 1 })],
+            ['invalid category', createStoredTemplate({ category: 1 })],
+            ['invalid trackKind', createStoredTemplate({ trackKind: 'invalid' })],
+            ['invalid color', createStoredTemplate({ color: 1 })],
+            ['invalid devices container', createStoredTemplate({ devices: null })],
+            ['invalid device entry', createStoredTemplate({ devices: [null] })],
+            [
+                'invalid device parameter value',
+                createStoredTemplate({ devices: [{ ...createDevice(), parameterValues: { cutoff: 'open' } }] }),
+            ],
+            ['invalid sends container', createStoredTemplate({ sends: null })],
+            ['invalid send entry', createStoredTemplate({ sends: [{}] })],
+            ['invalid send level', createStoredTemplate({ sends: [{ ...createSend(), level: Number.NaN }] })],
+            ['invalid gain', createStoredTemplate({ gain: Number.NaN })],
+            ['invalid pan', createStoredTemplate({ pan: Number.POSITIVE_INFINITY })],
+            ['invalid createdAt', createStoredTemplate({ createdAt: Number.NEGATIVE_INFINITY })],
+        ])('should drop entries with %s while preserving valid neighboring templates', (_name, invalidTemplate) => {
+            const firstTemplate = createTemplate({ id: 'template-1', name: 'First' });
+            const secondTemplate = createTemplate({ id: 'template-2', name: 'Second', trackKind: 'audio' });
+
+            mockStoredTemplates([firstTemplate, invalidTemplate, secondTemplate]);
 
             expect(loadTrackTemplates()).toEqual([firstTemplate, secondTemplate]);
         });
