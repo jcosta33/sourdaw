@@ -1,16 +1,38 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import * as subject from '../helpers';
+import { type SoundPreset } from '../../../../models/SoundPreset';
+import { userPresetStorage } from '../helpers';
+
+const valid_preset = {
+    id: 'preset-1',
+    name: 'Clean Bass',
+    category: 'bass',
+    description: 'Stable user preset',
+    trackKind: 'midi',
+    devices: [
+        {
+            type: 'synth',
+            name: 'Sub',
+            parameterValues: {
+                cutoff: 1200,
+                resonance: 0.25,
+            },
+        },
+    ],
+    tags: ['clean', 'bass'],
+    author: 'User',
+    isFactory: false,
+} satisfies SoundPreset;
 
 describe('helpers', () => {
-    it('should export readStoredPresets', () => {
-        expect(subject.readStoredPresets).toBeDefined();
-        const time = typeof subject.readStoredPresets;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        window.localStorage.clear();
+        userPresetStorage.clear();
     });
-    it('should export writeStoredPresets', () => {
-        expect(subject.writeStoredPresets).toBeDefined();
-        const time = typeof subject.writeStoredPresets;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should expose the user preset storage adapter', () => {
+        userPresetStorage.set([valid_preset]);
+
+        expect(userPresetStorage.get()).toEqual([valid_preset]);
     });
 });
