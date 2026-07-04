@@ -71,7 +71,7 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
     // Per-pad params (snake_case for Rust)
     for (let index = 0; index < kit.pads.length; index++) {
         const pad = kit.pads[index]!;
-        const engineIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
+        const engineIdx = TOASTER_ENGINE_MAP[pad.engineType];
         controls.setPadParam(index, 'engine_type', engineIdx);
 
         if (pad.engineType === 'hihat-open') {
@@ -92,10 +92,8 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
         controls.setPadParam(index, 'send_reverb', pad.sendReverb);
         controls.setPadParam(index, 'send_delay', pad.sendDelay);
 
-        if (pad.engineParams) {
-            for (const [key, value] of Object.entries(pad.engineParams)) {
-                controls.setPadParam(index, key, value);
-            }
+        for (const [key, value] of Object.entries(pad.engineParams)) {
+            controls.setPadParam(index, key, value);
         }
     }
 }
