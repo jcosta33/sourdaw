@@ -5,7 +5,8 @@ import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type ToasterKit, type PadState } from '../../models/ToasterKit';
 import { loadKit } from '../../stores/toasterStore';
-import { getToasterControls, loadToasterKitPreset, TOASTER_ENGINE_MAP } from '../loadToasterKit';
+import { getToasterControls } from '../getToasterControls';
+import { loadToasterKitPreset, TOASTER_ENGINE_MAP } from '../loadToasterKit';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: vi.fn(),
@@ -169,6 +170,13 @@ describe('loadToasterKitPreset', () => {
         expect(setParam).toHaveBeenCalledWith('master_gain', kit.masterGain);
         expect(setParam).toHaveBeenCalledWith('reverb_mix', kit.reverbMix);
         expect(setPadParam).toHaveBeenCalledWith(0, 'engine_type', TOASTER_ENGINE_MAP['kick-808']);
+
+        const loadKitCallOrder = vi.mocked(loadKit).mock.invocationCallOrder[0];
+        const firstSetParamCallOrder = setParam.mock.invocationCallOrder[0];
+        if (loadKitCallOrder === undefined || firstSetParamCallOrder === undefined) {
+            throw new Error('Expected loadKit and setParam to be called');
+        }
+        expect(loadKitCallOrder).toBeLessThan(firstSetParamCallOrder);
     });
 
     it('should set open pad param for hihat-open vs hihat-closed', () => {
@@ -183,6 +191,23 @@ describe('loadToasterKitPreset', () => {
 
         expect(setPadParam).toHaveBeenCalledWith(0, 'open', 1);
         expect(setPadParam).toHaveBeenCalledWith(1, 'open', 0);
+    });
+
+    it('should forward pad engineParams entries', () => {
+        const setParam = vi.fn();
+        const setPadParam = vi.fn();
+        wireToasterMocks(setParam, setPadParam);
+
+        const kit = minimalKit({
+            pads: [minimalPad({ engineParams: { snap: 0.75, transient: 0.25 } })],
+        });
+        loadToasterKitPreset('d1', kit);
+
+        const engineParamCalls = setPadParam.mock.calls.filter(([, name]) => name === 'snap' || name === 'transient');
+        expect(engineParamCalls).toEqual([
+            [0, 'snap', 0.75],
+            [0, 'transient', 0.25],
+        ]);
     });
 
     it('should not throw when controls are unavailable', () => {
