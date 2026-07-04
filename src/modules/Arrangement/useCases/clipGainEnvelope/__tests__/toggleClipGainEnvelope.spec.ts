@@ -6,10 +6,10 @@ import {
     getEnvelope,
 } from '#/modules/Arrangement/stores/gainEnvelopeStore';
 
-import { ensureClipGainEnvelope } from '../getClipGainEnvelope';
+import { ensureClipGainEnvelope } from '../ensureClipGainEnvelope';
 import { toggleClipGainEnvelope } from '../toggleClipGainEnvelope';
 
-vi.mock('../getClipGainEnvelope', () => ({
+vi.mock('../ensureClipGainEnvelope', () => ({
     ensureClipGainEnvelope: vi.fn(),
 }));
 

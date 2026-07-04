@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { __resetGainEnvelopesForTest, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
-import { getClipGainEnvelope, ensureClipGainEnvelope } from '../getClipGainEnvelope';
+import { ensureClipGainEnvelope } from '../ensureClipGainEnvelope';
+import { getClipGainEnvelope } from '../getClipGainEnvelope';
 
 describe('getClipGainEnvelope', () => {
     beforeEach(() => {
