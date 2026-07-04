@@ -1,9 +1,7 @@
 import { scheduleDrumVoice } from '../../../engine/drumSynthVoices';
-import { type DrumKitDef, type DrumVoiceDef } from '../../../models/DrumSynthTypes';
+import { type DrumKitDef } from '../../../models/DrumSynthTypes';
 
-export function findVoiceByNote(kit: DrumKitDef, midiNote: number): DrumVoiceDef | null {
-    return kit.voices.find((v) => v.midiNote === midiNote) ?? null;
-}
+import { findVoiceByNote } from './findVoiceByNote';
 
 /**
  * Main entry point: schedule a drum hit for a given MIDI note within a kit.
