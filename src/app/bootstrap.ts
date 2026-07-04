@@ -2,7 +2,13 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
-import { getAiOrganizationHandlers, setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import {
+    beginMixAnalysis,
+    completeMixAnalysis,
+    failMixAnalysis,
+    getAiOrganizationHandlers,
+    setVoiceToggleEventBus,
+} from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
@@ -16,7 +22,7 @@ import {
     initStalenessDetection,
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
-import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
+import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,
     updateDevicePatch,
@@ -90,6 +96,11 @@ setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);
 setSetlistEventBus(eventBus);
 setVoiceToggleEventBus(eventBus);
+setMixAnalysisDisplayLifecycle({
+    begin: beginMixAnalysis,
+    complete: completeMixAnalysis,
+    fail: failMixAnalysis,
+});
 setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);

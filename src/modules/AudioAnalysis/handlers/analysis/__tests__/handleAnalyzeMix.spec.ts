@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { analyzeMix } from '../../../useCases/analyzeMix';
+import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix';
 import { handleAnalyzeMix } from '../handleAnalyzeMix';
 
 const mocks = vi.hoisted(() => ({
-    storeValue: null as unknown,
-    storeSet: vi.fn(),
+    beginLifecycle: vi.fn<() => number | null>(),
+    completeLifecycle: vi.fn<(input: { token: number; result: AnalyzeMixOutput }) => void>(),
+    failLifecycle: vi.fn<(input: { token: number }) => void>(),
     loggerError: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/stores', () => ({
-    mixAnalysisStore: {
-        get value() {
-            return mocks.storeValue;
-        },
-        set: mocks.storeSet,
+vi.mock('../../../useCases/mixAnalysisDisplayLifecycle', () => ({
+    mixAnalysisDisplayLifecycle: {
+        begin: mocks.beginLifecycle,
+        complete: mocks.completeLifecycle,
+        fail: mocks.failLifecycle,
     },
 }));
 
@@ -28,15 +28,16 @@ vi.mock('../../../useCases/analyzeMix', () => ({
 
 describe('handleAnalyzeMix', () => {
     beforeEach(() => {
-        mocks.storeValue = null;
-        mocks.storeSet.mockReset();
+        mocks.beginLifecycle.mockReset();
+        mocks.beginLifecycle.mockReturnValue(7);
+        mocks.completeLifecycle.mockReset();
+        mocks.failLifecycle.mockReset();
         mocks.loggerError.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
 
     it('updates store with result when state exists', async () => {
-        mocks.storeValue = { isAnalyzing: false, panelOpen: false, result: null };
-        vi.mocked(analyzeMix).mockResolvedValue({
+        const result: AnalyzeMixOutput = {
             timestamp: 1,
             overallLevel: { peakDb: -6, rmsDb: -12 },
             frequencyBalance: {
@@ -50,31 +51,32 @@ describe('handleAnalyzeMix', () => {
             trackLevels: [],
             issues: [],
             suggestions: [],
-        });
+        };
+        vi.mocked(analyzeMix).mockResolvedValue(result);
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
-        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
+        expect(mocks.beginLifecycle).toHaveBeenCalled();
         expect(analyzeMix).toHaveBeenCalled();
-        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
+        expect(mocks.completeLifecycle).toHaveBeenCalledWith({ token: 7, result });
     });
 
     it('no-ops when mix analysis store is missing', async () => {
-        mocks.storeValue = null;
+        mocks.beginLifecycle.mockReturnValue(null);
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
         expect(analyzeMix).not.toHaveBeenCalled();
+        expect(mocks.completeLifecycle).not.toHaveBeenCalled();
     });
 
     it('logs the error and resets isAnalyzing when analysis throws', async () => {
-        mocks.storeValue = { isAnalyzing: false, panelOpen: false, result: null };
         const failure = new Error('master analyser unusable');
         vi.mocked(analyzeMix).mockRejectedValue(failure);
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
-        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ isAnalyzing: false }));
+        expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 7 });
     });
 });

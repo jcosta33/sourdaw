@@ -3,6 +3,9 @@
 
 export { getAiOrganizationHandlers } from './getAiOrganizationHandlers';
 export { mixHealthAnalysis } from './mixHealthAnalysis';
+export { beginMixAnalysis } from './beginMixAnalysis';
+export { completeMixAnalysis } from './completeMixAnalysis';
+export { failMixAnalysis } from './failMixAnalysis';
 
 export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, isComplexPrompt } from './aiRuntimeQueries/helpers';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
