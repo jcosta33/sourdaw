@@ -51,6 +51,20 @@ describe('interpolateAutomationValue', () => {
         expect(interpolateAutomationValue(p1, p2, 0.25)).toBeCloseTo(0.25);
     });
 
+    it('should default missing legacy exponential tension to linear tension', () => {
+        const legacyPoint = { beat: 0, value: 0, curve: 'exponential' } satisfies Omit<AutomationPoint, 'tension'>;
+        const nextPoint = pt(4, 1, 'exponential');
+
+        expect(interpolateAutomationValue(legacyPoint as AutomationPoint, nextPoint, 2)).toBeCloseTo(0.5);
+    });
+
+    it('should default missing legacy s-curve tension to the historic midpoint tension', () => {
+        const legacyPoint = { beat: 0, value: 0, curve: 's-curve' } satisfies Omit<AutomationPoint, 'tension'>;
+        const nextPoint = pt(4, 1, 's-curve');
+
+        expect(interpolateAutomationValue(legacyPoint as AutomationPoint, nextPoint, 1)).toBeCloseTo(0.203125);
+    });
+
     it('should evaluate smooth curves with Catmull-Rom neighbors', () => {
         const p1 = pt(0, 0, 'smooth');
         const p2 = pt(1, 10, 'smooth');

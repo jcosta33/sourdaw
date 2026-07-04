@@ -70,6 +70,10 @@ function applyTension(time: number, tension: number): number {
     return time ** power;
 }
 
+function readAutomationTension(point: { tension?: unknown }, fallback: number): number {
+    return typeof point.tension === 'number' ? point.tension : fallback;
+}
+
 /**
  * Interpolates an automation value at a given beat position between two points.
  * Supports linear, step, exponential, s-curve, stairs, and smooth interpolation.
@@ -98,13 +102,13 @@ export function interpolateAutomationValue(
     }
 
     if (p1.curve === 'exponential') {
-        const tension = p1.tension;
+        const tension = readAutomationTension(p1, 0);
         const expT = applyTension(time, tension);
         return p1.value + (p2.value - p1.value) * expT;
     }
 
     if (p1.curve === 's-curve') {
-        const tension = p1.tension;
+        const tension = readAutomationTension(p1, 0.5);
         const st = time * time * (3 - 2 * time); // Hermite basis
         const curved = time + (st - time) * Math.abs(tension);
         return p1.value + (p2.value - p1.value) * curved;
