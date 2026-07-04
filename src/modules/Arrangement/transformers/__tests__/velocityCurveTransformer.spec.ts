@@ -24,4 +24,10 @@ describe('applyVelocityCurve', () => {
         expect(applyVelocityCurve(0.25, 'expand')).toBeCloseTo(0.25 * 0.3);
         expect(applyVelocityCurve(0.75, 'expand')).toBeCloseTo(0.7 + 0.25 * 1.4);
     });
+
+    it('should reject unknown runtime curve values', () => {
+        const curve = 'broken-curve' as never;
+
+        expect(() => applyVelocityCurve(0.5, curve)).toThrow('Unknown velocity curve: broken-curve');
+    });
 });
