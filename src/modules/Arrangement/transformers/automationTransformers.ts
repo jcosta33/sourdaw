@@ -98,13 +98,13 @@ export function interpolateAutomationValue(
     }
 
     if (p1.curve === 'exponential') {
-        const tension = p1.tension ?? 0;
+        const tension = p1.tension;
         const expT = applyTension(time, tension);
         return p1.value + (p2.value - p1.value) * expT;
     }
 
     if (p1.curve === 's-curve') {
-        const tension = p1.tension ?? 0.5;
+        const tension = p1.tension;
         const st = time * time * (3 - 2 * time); // Hermite basis
         const curved = time + (st - time) * Math.abs(tension);
         return p1.value + (p2.value - p1.value) * curved;
