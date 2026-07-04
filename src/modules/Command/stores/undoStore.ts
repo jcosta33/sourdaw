@@ -1,6 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type UndoEntry } from '../useCases/commandQueries';
+import { type ActionUndoEntry, type AppAction, type UndoEntry, type UndoSource } from '../useCases/commandQueries';
 import { isActionEntry } from '../useCases/isActionEntry';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
@@ -11,27 +11,107 @@ export type UndoStoreState = {
     future: UndoEntry[];
 };
 
-type StoredUndoEntry = Omit<UndoEntry, 'kind'> & {
-    kind?: UndoEntry['kind'];
-};
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
-type StoredUndoStoreState = {
-    past: StoredUndoEntry[];
-    future: StoredUndoEntry[];
-};
+function isUndoSource(value: unknown): value is UndoSource {
+    return value === 'manual' || value === 'prompt' || value === 'voice' || value === 'ai';
+}
+
+function isAppActionRecord(value: unknown): value is AppAction {
+    if (!isRecord(value)) {
+        return false;
+    }
+    return typeof value.type === 'string' && value.type.length > 0;
+}
+
+function getOptionalString(value: Record<string, unknown>, key: string): string | null | undefined {
+    const maybeString = value[key];
+    if (maybeString === undefined) {
+        return undefined;
+    }
+    if (typeof maybeString !== 'string') {
+        return null;
+    }
+    return maybeString;
+}
+
+function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    if (value.kind !== undefined && value.kind !== 'action') {
+        return null;
+    }
+    if (typeof value.id !== 'string' || typeof value.label !== 'string') {
+        return null;
+    }
+    if (typeof value.timestamp !== 'number' || !Number.isFinite(value.timestamp)) {
+        return null;
+    }
+
+    const action = value.action;
+    if (!isAppActionRecord(action)) {
+        return null;
+    }
+
+    const inverseAction = value.inverseAction;
+    if (inverseAction !== null && !isAppActionRecord(inverseAction)) {
+        return null;
+    }
+
+    const source = value.source ?? 'manual';
+    if (!isUndoSource(source)) {
+        return null;
+    }
+
+    const groupId = getOptionalString(value, 'groupId');
+    if (groupId === null) {
+        return null;
+    }
+
+    const groupLabel = getOptionalString(value, 'groupLabel');
+    if (groupLabel === null) {
+        return null;
+    }
+
+    const entry: ActionUndoEntry = {
+        id: value.id,
+        kind: 'action',
+        label: value.label,
+        action,
+        inverseAction,
+        timestamp: value.timestamp,
+        source,
+    };
+
+    if (groupId !== undefined) {
+        entry.groupId = groupId;
+    }
+    if (groupLabel !== undefined) {
+        entry.groupLabel = groupLabel;
+    }
+
+    return entry;
+}
+
+function sanitizeStoredEntries(values: unknown[]): ActionUndoEntry[] {
+    return values.flatMap((value) => {
+        const entry = sanitizeStoredEntry(value);
+        return entry === null ? [] : [entry];
+    });
+}
 
 function loadFromSession(): UndoStoreState {
     try {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
         if (raw) {
-            const parsed = JSON.parse(raw) as StoredUndoStoreState;
-            if (Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
-                function ensureKind(event: StoredUndoEntry): UndoEntry {
-                    return { ...event, kind: event.kind ?? 'action' } as UndoEntry;
-                }
+            const parsed: unknown = JSON.parse(raw);
+            if (isRecord(parsed) && Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
                 return {
-                    past: parsed.past.map(ensureKind),
-                    future: parsed.future.map(ensureKind),
+                    past: sanitizeStoredEntries(parsed.past),
+                    future: sanitizeStoredEntries(parsed.future),
                 };
             }
         }
