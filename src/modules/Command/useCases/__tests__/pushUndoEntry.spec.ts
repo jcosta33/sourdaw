@@ -1,18 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type CallbackUndoEntry } from '../commandQueries';
+import { commitUndoEntry } from '../commitUndoEntry';
 import { pushUndoEntry } from '../pushUndoEntry';
 
-const { commitUndoEntryMock } = vi.hoisted(() => ({
-    commitUndoEntryMock: vi.fn(),
+vi.mock('../commitUndoEntry', () => ({
+    commitUndoEntry: vi.fn(),
 }));
 
-vi.mock('../commitUndoEntry', () => ({
-    commitUndoEntry: commitUndoEntryMock,
-}));
+function getCommittedCallbackEntry(): CallbackUndoEntry {
+    expect(commitUndoEntry).toHaveBeenCalledOnce();
+
+    const call = vi.mocked(commitUndoEntry).mock.calls.at(0);
+    if (call === undefined) {
+        throw new Error('Expected commitUndoEntry to be called');
+    }
+
+    const [entry] = call;
+    if (entry.kind !== 'callback') {
+        throw new Error('Expected callback undo entry');
+    }
+
+    return entry;
+}
 
 describe('pushUndoEntry', () => {
     beforeEach(() => {
-        commitUndoEntryMock.mockClear();
+        vi.mocked(commitUndoEntry).mockClear();
     });
 
     it('should commit a callback undo entry', () => {
@@ -21,8 +35,7 @@ describe('pushUndoEntry', () => {
 
         pushUndoEntry('My edit', undoFn, redoFn);
 
-        expect(commitUndoEntryMock).toHaveBeenCalledOnce();
-        const entry = commitUndoEntryMock.mock.calls[0][0];
+        const entry = getCommittedCallbackEntry();
         expect(entry.kind).toBe('callback');
         expect(entry.label).toBe('My edit');
         expect(entry.undo).toBe(undoFn);
@@ -33,7 +46,7 @@ describe('pushUndoEntry', () => {
     it('should attach groupId and groupLabel when provided', () => {
         pushUndoEntry('g', vi.fn(), vi.fn(), { groupId: 'gid-1', groupLabel: 'Batch' });
 
-        const entry = commitUndoEntryMock.mock.calls[0][0];
+        const entry = getCommittedCallbackEntry();
         expect(entry.groupId).toBe('gid-1');
         expect(entry.groupLabel).toBe('Batch');
     });
@@ -41,6 +54,6 @@ describe('pushUndoEntry', () => {
     it('should pass source when provided', () => {
         pushUndoEntry('v', vi.fn(), vi.fn(), { source: 'ai' });
 
-        expect(commitUndoEntryMock.mock.calls[0][0].source).toBe('ai');
+        expect(getCommittedCallbackEntry().source).toBe('ai');
     });
 });
