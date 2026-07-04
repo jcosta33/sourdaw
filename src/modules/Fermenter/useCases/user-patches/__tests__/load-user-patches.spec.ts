@@ -1,9 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { DEFAULT_PATCH, type FermenterMacroMapping } from '../../../models/FermenterPatch';
 import { loadUserPatches } from '../load-user-patches';
 
 const STORAGE_KEY = 'fermenter-user-patches';
+
+function createValidMacroMappings(): FermenterMacroMapping[] {
+    return [
+        {
+            targets: [
+                {
+                    target: 'filterCutoff',
+                    center: 2_400,
+                    depth: 1_200,
+                    min: 120,
+                    max: 6_000,
+                    curve: 'exponential',
+                },
+            ],
+        },
+        { targets: [{ target: 'distMix', center: 0.2, depth: 0.2, min: 0, max: 0.4, curve: 'linear' }] },
+        { targets: [] },
+        { targets: [] },
+        { targets: [] },
+        { targets: [] },
+        { targets: [] },
+        { targets: [] },
+    ];
+}
 
 describe('loadUserPatches', () => {
     beforeEach(() => {
@@ -49,6 +73,29 @@ describe('loadUserPatches', () => {
         expect(userPatches[0]?.patch.macros).toEqual(storedMacros);
     });
 
+    it('should preserve valid custom macro mappings', () => {
+        const macroMappings = createValidMacroMappings();
+        window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify([
+                {
+                    id: 'custom-macros',
+                    name: 'Custom macros',
+                    patch: {
+                        macroMappings,
+                    },
+                },
+            ])
+        );
+
+        const userPatches = loadUserPatches();
+
+        expect(userPatches).toHaveLength(1);
+        expect(userPatches[0]?.patch.macroMappings).toEqual(macroMappings);
+        expect(userPatches[0]?.patch.macroMappings).not.toBe(DEFAULT_PATCH.macroMappings);
+        expect(userPatches[0]?.patch.macroMappings?.[0]).not.toBe(DEFAULT_PATCH.macroMappings?.[0]);
+    });
+
     it('should hydrate invalid numeric fields and invalid macros from defaults', () => {
         window.localStorage.setItem(
             STORAGE_KEY,
@@ -58,6 +105,9 @@ describe('loadUserPatches', () => {
                     name: 'Defaults',
                     patch: {
                         filterCutoff: 'bright',
+                        macroMappings: [
+                            { targets: [{ target: 'name', center: 0, depth: 1, min: 0, max: 1, curve: 'linear' }] },
+                        ],
                         macros: [0.1, 0.2, 0.3],
                         masterGain: null,
                     },
@@ -71,6 +121,9 @@ describe('loadUserPatches', () => {
         expect(userPatches[0]?.patch.filterCutoff).toBe(DEFAULT_PATCH.filterCutoff);
         expect(userPatches[0]?.patch.masterGain).toBe(DEFAULT_PATCH.masterGain);
         expect(userPatches[0]?.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        expect(userPatches[0]?.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        expect(userPatches[0]?.patch.macroMappings).not.toBe(DEFAULT_PATCH.macroMappings);
+        expect(userPatches[0]?.patch.macroMappings?.[0]).not.toBe(DEFAULT_PATCH.macroMappings?.[0]);
     });
 
     it('should hydrate invalid JSON, invalid top-level values, and missing browser storage to empty lists', () => {

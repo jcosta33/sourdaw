@@ -12,5 +12,9 @@ export function saveUserPatch({ name, patch }: SaveUserPatchInput): boolean {
     const userPatches = loadUserPatches();
     const nextPatches = [...userPatches, { id: `user-${Date.now()}`, name, patch: { ...patch, name } }];
 
-    return writeUserPatchesText(JSON.stringify(nextPatches));
+    try {
+        return writeUserPatchesText(JSON.stringify(nextPatches));
+    } catch {
+        return false;
+    }
 }

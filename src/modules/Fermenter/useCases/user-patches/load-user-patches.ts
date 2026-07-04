@@ -1,4 +1,10 @@
-import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
+import {
+    DEFAULT_MACRO_MAPPINGS,
+    DEFAULT_PATCH,
+    type FermenterMacroMapping,
+    type FermenterMacroTarget,
+    type FermenterPatch,
+} from '../../models/FermenterPatch';
 import { readUserPatchesText } from '../../repositories/user-patches/read-user-patches-text';
 
 type JsonObject = {
@@ -45,8 +51,123 @@ function isMacroTuple(value: unknown): value is FermenterPatch['macros'] {
     return true;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+    if (typeof value !== 'number') {
+        return false;
+    }
+
+    return Number.isFinite(value);
+}
+
+const NUMERIC_PATCH_KEYS = new Set(
+    Object.entries(DEFAULT_PATCH)
+        .filter(([, value]) => typeof value === 'number')
+        .map(([key]) => key)
+);
+
+function isNumericPatchKey(value: unknown): value is keyof FermenterPatch {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
+    return NUMERIC_PATCH_KEYS.has(value);
+}
+
+function isMacroCurve(value: unknown): value is FermenterMacroTarget['curve'] {
+    return value === 'linear' || value === 'exponential';
+}
+
 function cloneMacros(macros: FermenterPatch['macros']): FermenterPatch['macros'] {
     return [macros[0], macros[1], macros[2], macros[3], macros[4], macros[5], macros[6], macros[7]];
+}
+
+function cloneMacroMappings(macroMappings: FermenterMacroMapping[]): FermenterMacroMapping[] {
+    return macroMappings.map((macroMapping) => ({
+        targets: macroMapping.targets.map((target) => ({ ...target })),
+    }));
+}
+
+function sanitizeMacroTarget(value: unknown): FermenterMacroTarget | null {
+    if (!isJsonObject(value)) {
+        return null;
+    }
+
+    if (!isNumericPatchKey(value.target)) {
+        return null;
+    }
+
+    if (!isFiniteNumber(value.center)) {
+        return null;
+    }
+
+    if (!isFiniteNumber(value.depth)) {
+        return null;
+    }
+
+    if (!isFiniteNumber(value.min)) {
+        return null;
+    }
+
+    if (!isFiniteNumber(value.max)) {
+        return null;
+    }
+
+    if (!isMacroCurve(value.curve)) {
+        return null;
+    }
+
+    return {
+        target: value.target,
+        center: value.center,
+        depth: value.depth,
+        min: value.min,
+        max: value.max,
+        curve: value.curve,
+    };
+}
+
+function sanitizeMacroMapping(value: unknown): FermenterMacroMapping | null {
+    if (!isJsonObject(value)) {
+        return null;
+    }
+
+    if (!Array.isArray(value.targets)) {
+        return null;
+    }
+
+    const targets: FermenterMacroTarget[] = [];
+    for (const target of value.targets) {
+        const sanitizedTarget = sanitizeMacroTarget(target);
+        if (sanitizedTarget === null) {
+            return null;
+        }
+
+        targets.push(sanitizedTarget);
+    }
+
+    return { targets };
+}
+
+function sanitizeMacroMappings(value: unknown): FermenterMacroMapping[] {
+    if (!Array.isArray(value)) {
+        return cloneMacroMappings(DEFAULT_MACRO_MAPPINGS);
+    }
+
+    if (value.length !== 8) {
+        return cloneMacroMappings(DEFAULT_MACRO_MAPPINGS);
+    }
+
+    const macroMappings: FermenterMacroMapping[] = [];
+    for (const macroMapping of value) {
+        const sanitizedMacroMapping = sanitizeMacroMapping(macroMapping);
+        if (sanitizedMacroMapping === null) {
+            return cloneMacroMappings(DEFAULT_MACRO_MAPPINGS);
+        }
+
+        macroMappings.push(sanitizedMacroMapping);
+    }
+
+    return macroMappings;
 }
 
 type HydratePatchInput = {
@@ -59,6 +180,7 @@ function hydratePatch({ name, storedPatch }: HydratePatchInput): FermenterPatch 
         ...DEFAULT_PATCH,
         name,
         macros: cloneMacros(DEFAULT_PATCH.macros),
+        macroMappings: cloneMacroMappings(DEFAULT_MACRO_MAPPINGS),
     };
 
     for (const [key, defaultValue] of Object.entries(DEFAULT_PATCH)) {
@@ -82,6 +204,7 @@ function hydratePatch({ name, storedPatch }: HydratePatchInput): FermenterPatch 
         patch.macros = cloneMacros(storedPatch.macros);
     }
 
+    patch.macroMappings = sanitizeMacroMappings(storedPatch.macroMappings);
     patch.name = name;
     return patch;
 }
