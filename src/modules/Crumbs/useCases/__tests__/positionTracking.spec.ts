@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { interpolateFrame, subscribeToPosition } from '../positionTracking';
+import { interpolateFrame } from '../interpolateFrame';
+import { subscribeToPosition } from '../positionTracking';
 
 const mocks = vi.hoisted(() => ({
     isCrumbsNativeAvailable: vi.fn<() => boolean>(),
