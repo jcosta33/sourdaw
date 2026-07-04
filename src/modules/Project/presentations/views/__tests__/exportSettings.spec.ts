@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
@@ -7,6 +7,10 @@ const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 describe('exportSettings', () => {
     beforeEach(() => {
         window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('should default invalid stored settings before they hydrate into UI state', () => {
@@ -63,6 +67,49 @@ describe('exportSettings', () => {
             sampleRate: 96000,
             bitDepth: 16,
             mp3BitRate: 192,
+        });
+    });
+
+    it('should load valid stored settings without writing back to localStorage', () => {
+        window.localStorage.setItem(
+            EXPORT_SETTINGS_KEY,
+            JSON.stringify({
+                formats: ['flac', 'mp3'],
+                sampleRate: 88200,
+                bitDepth: 32,
+                mp3BitRate: 320,
+            })
+        );
+        const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+        expect(loadExportSettings()).toEqual({
+            formats: ['flac', 'mp3'],
+            sampleRate: 88200,
+            bitDepth: 32,
+            mp3BitRate: 320,
+        });
+        expect(setItem).not.toHaveBeenCalled();
+    });
+
+    it('should load valid stored settings when storage writes fail', () => {
+        window.localStorage.setItem(
+            EXPORT_SETTINGS_KEY,
+            JSON.stringify({
+                formats: ['wav', 'flac'],
+                sampleRate: 48000,
+                bitDepth: 16,
+                mp3BitRate: 96,
+            })
+        );
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new Error('quota exceeded');
+        });
+
+        expect(loadExportSettings()).toEqual({
+            formats: ['wav', 'flac'],
+            sampleRate: 48000,
+            bitDepth: 16,
+            mp3BitRate: 96,
         });
     });
 

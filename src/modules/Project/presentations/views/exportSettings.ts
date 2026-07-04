@@ -88,7 +88,6 @@ function createExportSettingsStore(): CreateExportSettingsStoreOutput {
             key: EXPORT_SETTINGS_KEY,
             decode: sanitizeExportSettings,
         }),
-        sanitize: sanitizeExportSettings,
     });
 }
 
