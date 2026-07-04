@@ -1,6 +1,7 @@
 import { type ProofChamberEngineState } from '../../models/ProofChamberState';
 
-import { USER_PRESETS_KEY, getUserPresets } from './helpers';
+import { getUserPresets } from './helpers';
+import { writeUserPresets } from './writeUserPresets';
 
 export function saveUserPreset(name: string, params: ProofChamberEngineState): void {
     const presets = getUserPresets();
@@ -10,5 +11,5 @@ export function saveUserPreset(name: string, params: ProofChamberEngineState): v
         category: 'user',
         params: { ...params },
     });
-    window.localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(presets));
+    writeUserPresets(presets);
 }

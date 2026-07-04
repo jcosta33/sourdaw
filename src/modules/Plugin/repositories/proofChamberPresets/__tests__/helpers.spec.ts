@@ -42,6 +42,28 @@ describe('getUserPresets', () => {
         expect(getUserPresets()).toEqual(row);
     });
 
+    it('should drop malformed preset entries while preserving valid neighbors', () => {
+        const valid_preset = {
+            id: 'user-1',
+            name: 'Mine',
+            category: 'user' as const,
+            params: DEFAULT_PARAMS,
+        };
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify([
+                valid_preset,
+                { ...valid_preset, id: 1 },
+                { ...valid_preset, id: 'bad-category', category: 'unknown' },
+                { ...valid_preset, id: 'bad-algorithm', params: { ...DEFAULT_PARAMS, algorithm: 'bad' } },
+                { ...valid_preset, id: 'bad-number', params: { ...DEFAULT_PARAMS, mix: 'wet' } },
+                { ...valid_preset, id: 'bad-boolean', params: { ...DEFAULT_PARAMS, freeze: 'false' } },
+            ])
+        );
+
+        expect(getUserPresets()).toEqual([valid_preset]);
+    });
+
     it('should return an empty array when JSON is invalid', () => {
         localStorage.setItem(STORAGE_KEY, 'not-json');
         expect(getUserPresets()).toEqual([]);
@@ -69,9 +91,40 @@ describe('user preset callers tolerate a non-array stored value', () => {
         expect(stored[0].name).toBe('Mine');
     });
 
+    it('saveUserPreset should append to sanitized stored presets', () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify([{ id: 1, name: 'Bad', category: 'user', params: DEFAULT_PARAMS }])
+        );
+
+        saveUserPreset('Mine', DEFAULT_PARAMS);
+
+        const stored = getUserPresets();
+        expect(stored).toHaveLength(1);
+        expect(stored[0].name).toBe('Mine');
+        expect(stored[0].params).toEqual(DEFAULT_PARAMS);
+    });
+
     it('deleteUserPreset should not throw when storage holds a non-array object', () => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }));
         expect(() => deleteUserPreset('user-1')).not.toThrow();
+        expect(getUserPresets()).toEqual([]);
+    });
+
+    it('deleteUserPreset should filter sanitized stored presets', () => {
+        const valid_preset = {
+            id: 'user-1',
+            name: 'Mine',
+            category: 'user' as const,
+            params: DEFAULT_PARAMS,
+        };
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify([valid_preset, { id: 1, name: 'Bad', category: 'user', params: DEFAULT_PARAMS }])
+        );
+
+        deleteUserPreset('user-1');
+
         expect(getUserPresets()).toEqual([]);
     });
 });
