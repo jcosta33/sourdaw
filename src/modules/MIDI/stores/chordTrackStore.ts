@@ -37,8 +37,16 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-function isPositiveFiniteNumber(value: unknown): value is number {
-    return isFiniteNumber(value) && value > 0;
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0;
+}
+
+function isRootValue(value: unknown): value is number {
+    return Number.isInteger(value) && value >= 0 && value <= 11;
+}
+
+function isDurationValue(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0.25;
 }
 
 function isChordType(value: unknown): value is ChordType {
@@ -56,10 +64,10 @@ function isChordEvent(value: unknown): value is ChordEvent {
 
     return (
         typeof value.id === 'string' &&
-        isFiniteNumber(value.beat) &&
-        isFiniteNumber(value.root) &&
+        isNonNegativeFiniteNumber(value.beat) &&
+        isRootValue(value.root) &&
         isChordType(value.quality) &&
-        isPositiveFiniteNumber(value.duration)
+        isDurationValue(value.duration)
     );
 }
 

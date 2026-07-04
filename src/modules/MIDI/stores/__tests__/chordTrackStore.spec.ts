@@ -91,6 +91,45 @@ describe('chordTrackStore localStorage loader', () => {
         expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 
+    it('should fall back when a persisted event has a negative beat', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: -3, root: 5, quality: 'major', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back when a persisted event root is outside the pitch-class range', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: -1, quality: 'major', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back when a persisted event duration is below the chord editor minimum', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 0.01 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
     it('falls back to the default state when the persisted JSON is malformed', async () => {
         localStorage.setItem(STORAGE_KEY, '{ not valid json');
 
