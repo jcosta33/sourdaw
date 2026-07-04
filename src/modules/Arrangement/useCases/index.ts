@@ -5,7 +5,8 @@
 
 export { addTrack } from './addTrack';
 export { setArrangementEventBus } from './arrangementEventBus';
-export { createTrack, normalizeTrack } from './createTrack';
+export { createTrack } from './createTrack';
+export { normalizeTrack } from './normalizeTrack';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { duplicateTrack } from './duplicateTrack';
