@@ -193,6 +193,23 @@ describe('loadToasterKitPreset', () => {
         expect(setPadParam).toHaveBeenCalledWith(1, 'open', 0);
     });
 
+    it('should forward pad engineParams entries', () => {
+        const setParam = vi.fn();
+        const setPadParam = vi.fn();
+        wireToasterMocks(setParam, setPadParam);
+
+        const kit = minimalKit({
+            pads: [minimalPad({ engineParams: { snap: 0.75, transient: 0.25 } })],
+        });
+        loadToasterKitPreset('d1', kit);
+
+        const engineParamCalls = setPadParam.mock.calls.filter(([, name]) => name === 'snap' || name === 'transient');
+        expect(engineParamCalls).toEqual([
+            [0, 'snap', 0.75],
+            [0, 'transient', 0.25],
+        ]);
+    });
+
     it('should not throw when controls are unavailable', () => {
         vi.mocked(getAllTracks).mockReturnValue([]);
 
