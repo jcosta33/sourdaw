@@ -20,7 +20,14 @@ vi.mock('../../hooks/usePreviewAudio', () => ({
 
 // Mock child components
 vi.mock('../Sidebar/InstrumentsTab', () => ({
-    InstrumentsTab: () => <div data-testid="instruments-tab">Instruments</div>,
+    InstrumentsTab: ({ favorites }: { favorites: Set<unknown> }) => (
+        <div
+            data-testid="instruments-tab"
+            data-favorites={Array.from(favorites, (favorite) => String(favorite)).join('|')}
+        >
+            Instruments
+        </div>
+    ),
 }));
 
 vi.mock('../Sidebar/EffectsTab', () => ({
@@ -42,11 +49,23 @@ vi.mock('#/modules/SampleLibrary/presentations/views/LibraryBrowser', () => ({
 describe('Sidebar', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        window.localStorage.clear();
     });
 
     it('should render Instruments tab by default', () => {
         render(<Sidebar />);
         expect(screen.getByTestId('instruments-tab')).toBeInTheDocument();
+    });
+
+    it('should drop malformed stored favorite entries before tab props receive favorites', () => {
+        window.localStorage.setItem(
+            'sourdaw-favorites',
+            JSON.stringify(['valid-favorite', 42, null, { id: 'object-favorite' }, false])
+        );
+
+        render(<Sidebar />);
+
+        expect(screen.getByTestId('instruments-tab')).toHaveAttribute('data-favorites', 'valid-favorite');
     });
 
     it('should switch to Effects tab when clicked', () => {

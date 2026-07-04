@@ -10,6 +10,8 @@ import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
+import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
@@ -89,14 +91,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
     const [searchQuery, setSearchQuery] = useState('');
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
-    const [favorites, setFavorites] = useState<Set<string>>(() => {
-        try {
-            const stored = window.localStorage.getItem('sourdaw-favorites');
-            return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
-        } catch {
-            return new Set();
-        }
-    });
+    const [favorites, setFavorites] = useState<Set<string>>(loadSidebarFavorites);
     const { tracks, selectedTrackId } = useTracks();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const preview = usePreviewAudio();
@@ -142,11 +137,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
             } else {
                 next.add(id);
             }
-            try {
-                window.localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
-            } catch {
-                /* ignore */
-            }
+            saveSidebarFavorites(next);
             return next;
         });
     };
