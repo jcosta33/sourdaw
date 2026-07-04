@@ -93,12 +93,10 @@ export { snapClipToScale } from './snapClipToScale';
 export { toggleStepRecording } from './stepRecording/toggleStepRecording';
 export { stepRecordNoteOn } from './stepRecording/stepRecordNoteOn';
 export { stepRecordNoteOff } from './stepRecording/stepRecordNoteOff';
-export {
-    stepRecordAdvance,
-    stepRecordRetreat,
-    stepRecordStepUp,
-    stepRecordStepDown,
-} from './stepRecording/stepRecordNavigation';
+export { stepRecordAdvance } from './stepRecording/stepRecordAdvance';
+export { stepRecordRetreat } from './stepRecording/stepRecordRetreat';
+export { stepRecordStepUp } from './stepRecording/stepRecordStepUp';
+export { stepRecordStepDown } from './stepRecording/stepRecordStepDown';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiLearnHandlers } from './getMidiLearnHandlers';
