@@ -29,7 +29,8 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     },
 }));
 
-import { trackPitch, detectDominantPitch } from '../pitchDetection';
+import { detectDominantPitch } from '../pitchDetection';
+import { trackPitch } from '../trackPitch';
 
 describe('pitchDetection', () => {
     it('trackPitch returns an empty list when the buffer is missing', () => {
