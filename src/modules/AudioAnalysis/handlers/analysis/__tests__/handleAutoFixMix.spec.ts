@@ -12,15 +12,15 @@ type TrackStateForMixAnalysis = {
 type TrackLevel = AnalyzeMixOutput['trackLevels'][number];
 
 const mocks = vi.hoisted(() => ({
-    beginLifecycle: vi.fn<() => boolean>(),
-    completeLifecycle: vi.fn<(input: { result: AnalyzeMixOutput }) => void>(),
-    failLifecycle: vi.fn<() => void>(),
+    beginLifecycle: vi.fn<() => number | null>(),
+    completeLifecycle: vi.fn<(input: { token: number; result: AnalyzeMixOutput }) => void>(),
+    failLifecycle: vi.fn<(input: { token: number }) => void>(),
     executeAppAction: vi.fn<(action: AppAction) => void | Promise<void>>(),
     getTrackStoreState: vi.fn<() => TrackStateForMixAnalysis | null>(),
     loggerError: vi.fn(),
 }));
 
-vi.mock('../mixAnalysisDisplayLifecycle', () => ({
+vi.mock('../../../useCases/mixAnalysisDisplayLifecycle', () => ({
     mixAnalysisDisplayLifecycle: {
         begin: mocks.beginLifecycle,
         complete: mocks.completeLifecycle,
@@ -86,7 +86,7 @@ function create_analysis_result(input: CreateAnalysisResultInput = {}): AnalyzeM
 describe('handleAutoFixMix', () => {
     beforeEach(() => {
         mocks.beginLifecycle.mockReset();
-        mocks.beginLifecycle.mockReturnValue(true);
+        mocks.beginLifecycle.mockReturnValue(11);
         mocks.completeLifecycle.mockReset();
         mocks.failLifecycle.mockReset();
         mocks.executeAppAction.mockReset();
@@ -97,7 +97,7 @@ describe('handleAutoFixMix', () => {
     });
 
     it('should do nothing if store state is missing', async () => {
-        mocks.beginLifecycle.mockReturnValue(false);
+        mocks.beginLifecycle.mockReturnValue(null);
         await handleAutoFixMix.execute({ type: 'autoFixMix' });
         expect(analyzeMix).not.toHaveBeenCalled();
         expect(mocks.completeLifecycle).not.toHaveBeenCalled();
@@ -112,6 +112,7 @@ describe('handleAutoFixMix', () => {
         expect(analyzeMix).toHaveBeenCalled();
         expect(mocks.completeLifecycle).toHaveBeenCalledWith(
             expect.objectContaining({
+                token: 11,
                 result: expect.objectContaining({
                     overallLevel: expect.objectContaining({ peakDb: -10 }),
                 }),
@@ -201,13 +202,12 @@ describe('handleAutoFixMix', () => {
         try {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 0.8 }] });
 
-            vi.mocked(analyzeMix)
-                .mockResolvedValueOnce(
-                    create_analysis_result({
-                        trackLevels: [create_track_level({ trackId: 't1', isClipping: true, peakDb: 2 })],
-                    })
-                )
-                .mockResolvedValueOnce(create_analysis_result());
+            const initial_result = create_analysis_result({
+                trackLevels: [create_track_level({ trackId: 't1', isClipping: true, peakDb: 2 })],
+            });
+            const refreshed_result = create_analysis_result({ overallLevel: { peakDb: -12 } });
+
+            vi.mocked(analyzeMix).mockResolvedValueOnce(initial_result).mockResolvedValueOnce(refreshed_result);
 
             const done = handleAutoFixMix.execute({ type: 'autoFixMix' });
 
@@ -221,6 +221,10 @@ describe('handleAutoFixMix', () => {
             await vi.advanceTimersByTimeAsync(250);
             await done;
             expect(analyzeMix).toHaveBeenCalledTimes(2);
+            expect(mocks.completeLifecycle).toHaveBeenLastCalledWith({
+                token: 11,
+                result: refreshed_result,
+            });
         } finally {
             vi.useRealTimers();
         }
@@ -233,7 +237,7 @@ describe('handleAutoFixMix', () => {
         await handleAutoFixMix.execute({ type: 'autoFixMix' });
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
-        expect(mocks.failLifecycle).toHaveBeenCalled();
+        expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
     });
 
     afterEach(() => {

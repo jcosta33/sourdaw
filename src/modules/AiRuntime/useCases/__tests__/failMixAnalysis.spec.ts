@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type MixAnalysis } from '../../models/MixAnalysis';
 import { mixAnalysisStore } from '../../stores/mixAnalysisStore';
+import { beginMixAnalysis } from '../beginMixAnalysis';
+import { completeMixAnalysis } from '../completeMixAnalysis';
 import { failMixAnalysis } from '../failMixAnalysis';
 
 const stale_result: MixAnalysis = {
@@ -40,7 +42,7 @@ describe('failMixAnalysis', () => {
     beforeEach(() => {
         mixAnalysisStore.set({
             result: stale_result,
-            isAnalyzing: true,
+            isAnalyzing: false,
             panelOpen: false,
         });
     });
@@ -51,6 +53,10 @@ describe('failMixAnalysis', () => {
 
     it('should stop analyzing without replacing interleaved result or panel state', () => {
         const update_spy = vi.spyOn(mixAnalysisStore, 'update');
+        const token = beginMixAnalysis();
+        if (token === null) {
+            throw new Error('Expected mix analysis run token');
+        }
 
         mixAnalysisStore.set({
             result: interleaved_result,
@@ -58,12 +64,33 @@ describe('failMixAnalysis', () => {
             panelOpen: true,
         });
 
-        failMixAnalysis();
+        failMixAnalysis({ token });
 
-        expect(update_spy).toHaveBeenCalledTimes(1);
+        expect(update_spy).toHaveBeenCalledTimes(2);
         expect(mixAnalysisStore.value).toEqual({
             result: interleaved_result,
             isAnalyzing: false,
+            panelOpen: true,
+        });
+    });
+
+    it('should ignore stale run failures', () => {
+        const first_token = beginMixAnalysis();
+        if (first_token === null) {
+            throw new Error('Expected first mix analysis run token');
+        }
+
+        completeMixAnalysis({ token: first_token, result: interleaved_result });
+        const second_token = beginMixAnalysis();
+        if (second_token === null) {
+            throw new Error('Expected second mix analysis run token');
+        }
+
+        failMixAnalysis({ token: first_token });
+
+        expect(mixAnalysisStore.value).toEqual({
+            result: interleaved_result,
+            isAnalyzing: true,
             panelOpen: true,
         });
     });

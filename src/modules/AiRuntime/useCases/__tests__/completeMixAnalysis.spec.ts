@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type MixAnalysis } from '../../models/MixAnalysis';
 import { mixAnalysisStore } from '../../stores/mixAnalysisStore';
+import { beginMixAnalysis } from '../beginMixAnalysis';
 import { completeMixAnalysis } from '../completeMixAnalysis';
 
 const previous_result: MixAnalysis = {
@@ -50,7 +51,7 @@ describe('completeMixAnalysis', () => {
     beforeEach(() => {
         mixAnalysisStore.set({
             result: previous_result,
-            isAnalyzing: true,
+            isAnalyzing: false,
             panelOpen: false,
         });
     });
@@ -61,13 +62,38 @@ describe('completeMixAnalysis', () => {
 
     it('should store the completed result, stop analyzing, and open the panel', () => {
         const update_spy = vi.spyOn(mixAnalysisStore, 'update');
+        const token = beginMixAnalysis();
+        if (token === null) {
+            throw new Error('Expected mix analysis run token');
+        }
 
-        completeMixAnalysis({ result: completed_result });
+        completeMixAnalysis({ token, result: completed_result });
 
-        expect(update_spy).toHaveBeenCalledTimes(1);
+        expect(update_spy).toHaveBeenCalledTimes(2);
         expect(mixAnalysisStore.value).toEqual({
             result: completed_result,
             isAnalyzing: false,
+            panelOpen: true,
+        });
+    });
+
+    it('should ignore stale run completions', () => {
+        const first_token = beginMixAnalysis();
+        if (first_token === null) {
+            throw new Error('Expected first mix analysis run token');
+        }
+
+        completeMixAnalysis({ token: first_token, result: completed_result });
+        const second_token = beginMixAnalysis();
+        if (second_token === null) {
+            throw new Error('Expected second mix analysis run token');
+        }
+
+        completeMixAnalysis({ token: first_token, result: previous_result });
+
+        expect(mixAnalysisStore.value).toEqual({
+            result: completed_result,
+            isAnalyzing: true,
             panelOpen: true,
         });
     });

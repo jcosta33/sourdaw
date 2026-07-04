@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
-import { mixAnalysisDisplayLifecycle } from '../../handlers/analysis/mixAnalysisDisplayLifecycle';
+import { mixAnalysisDisplayLifecycle } from '../mixAnalysisDisplayLifecycle';
 import { setMixAnalysisDisplayLifecycle } from '../setMixAnalysisDisplayLifecycle';
 
 const empty_result: Parameters<typeof mixAnalysisDisplayLifecycle.complete>[0]['result'] = {
@@ -20,7 +20,7 @@ const empty_result: Parameters<typeof mixAnalysisDisplayLifecycle.complete>[0]['
 };
 
 const fallback_lifecycle = {
-    begin: (): boolean => false,
+    begin: (): number | null => null,
     complete: (): void => {},
     fail: (): void => {},
 };
@@ -32,19 +32,19 @@ describe('setMixAnalysisDisplayLifecycle', () => {
 
     it('should route display lifecycle calls through the configured port', () => {
         const lifecycle = {
-            begin: vi.fn<() => boolean>(() => true),
-            complete: vi.fn<(input: { result: typeof empty_result }) => void>(),
-            fail: vi.fn<() => void>(),
+            begin: vi.fn<() => number | null>(() => 3),
+            complete: vi.fn<(input: { token: number; result: typeof empty_result }) => void>(),
+            fail: vi.fn<(input: { token: number }) => void>(),
         };
 
         setMixAnalysisDisplayLifecycle(lifecycle);
 
-        expect(mixAnalysisDisplayLifecycle.begin()).toBe(true);
-        mixAnalysisDisplayLifecycle.complete({ result: empty_result });
-        mixAnalysisDisplayLifecycle.fail();
+        expect(mixAnalysisDisplayLifecycle.begin()).toBe(3);
+        mixAnalysisDisplayLifecycle.complete({ token: 3, result: empty_result });
+        mixAnalysisDisplayLifecycle.fail({ token: 3 });
 
         expect(lifecycle.begin).toHaveBeenCalledTimes(1);
-        expect(lifecycle.complete).toHaveBeenCalledWith({ result: empty_result });
-        expect(lifecycle.fail).toHaveBeenCalledTimes(1);
+        expect(lifecycle.complete).toHaveBeenCalledWith({ token: 3, result: empty_result });
+        expect(lifecycle.fail).toHaveBeenCalledWith({ token: 3 });
     });
 });

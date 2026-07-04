@@ -1,6 +1,15 @@
+import { isCurrentMixAnalysisRun } from '../stores/mixAnalysisRunRegistry';
 import { mixAnalysisStore } from '../stores/mixAnalysisStore';
 
-export function failMixAnalysis(): void {
+type FailMixAnalysisInput = {
+    token: number;
+};
+
+export function failMixAnalysis(input: FailMixAnalysisInput): void {
+    if (!isCurrentMixAnalysisRun(input.token)) {
+        return;
+    }
+
     mixAnalysisStore.update((state) => {
         if (!state) {
             return state;

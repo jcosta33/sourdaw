@@ -4,8 +4,7 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
-
-import { mixAnalysisDisplayLifecycle } from './mixAnalysisDisplayLifecycle';
+import { mixAnalysisDisplayLifecycle } from '../../useCases/mixAnalysisDisplayLifecycle';
 
 /** Clip threshold (dBFS) used by analyzeMix to flag `isClipping`. */
 const CLIP_THRESHOLD_DB = -0.5;
@@ -29,13 +28,14 @@ function settleDelay(ms: number): Promise<void> {
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
     execute: async () => {
-        if (!mixAnalysisDisplayLifecycle.begin()) {
+        const token = mixAnalysisDisplayLifecycle.begin();
+        if (token === null) {
             return;
         }
 
         try {
             const result = await analyzeMix();
-            mixAnalysisDisplayLifecycle.complete({ result });
+            mixAnalysisDisplayLifecycle.complete({ token, result });
 
             const tracks = getTrackStoreState()?.tracks ?? [];
             for (const tl of result.trackLevels) {
@@ -72,12 +72,12 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             await settleDelay(ANALYSER_SETTLE_MS);
 
             const refreshed = await analyzeMix();
-            mixAnalysisDisplayLifecycle.complete({ result: refreshed });
+            mixAnalysisDisplayLifecycle.complete({ token, result: refreshed });
         } catch (error) {
             // Surface the failure instead of swallowing it — a thrown analysis/fix error would
             // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
             logger.error(error instanceof Error ? error : new Error(`Auto-fix mix failed: ${String(error)}`));
-            mixAnalysisDisplayLifecycle.fail();
+            mixAnalysisDisplayLifecycle.fail({ token });
         }
     },
     describe: () => ({ label: 'Auto-fix mix issues' }),

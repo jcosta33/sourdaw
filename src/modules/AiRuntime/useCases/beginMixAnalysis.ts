@@ -1,16 +1,17 @@
+import { beginMixAnalysisRun } from '../stores/mixAnalysisRunRegistry';
 import { mixAnalysisStore } from '../stores/mixAnalysisStore';
 
-export function beginMixAnalysis(): boolean {
-    let did_begin = false;
+export function beginMixAnalysis(): number | null {
+    let run_token: number | null = null;
 
     mixAnalysisStore.update((state) => {
-        if (!state) {
+        if (!state || state.isAnalyzing) {
             return state;
         }
 
-        did_begin = true;
+        run_token = beginMixAnalysisRun();
         return { ...state, isAnalyzing: true };
     });
 
-    return did_begin;
+    return run_token;
 }

@@ -4,13 +4,13 @@ import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix'
 import { handleAnalyzeMix } from '../handleAnalyzeMix';
 
 const mocks = vi.hoisted(() => ({
-    beginLifecycle: vi.fn<() => boolean>(),
-    completeLifecycle: vi.fn<(input: { result: AnalyzeMixOutput }) => void>(),
-    failLifecycle: vi.fn<() => void>(),
+    beginLifecycle: vi.fn<() => number | null>(),
+    completeLifecycle: vi.fn<(input: { token: number; result: AnalyzeMixOutput }) => void>(),
+    failLifecycle: vi.fn<(input: { token: number }) => void>(),
     loggerError: vi.fn(),
 }));
 
-vi.mock('../mixAnalysisDisplayLifecycle', () => ({
+vi.mock('../../../useCases/mixAnalysisDisplayLifecycle', () => ({
     mixAnalysisDisplayLifecycle: {
         begin: mocks.beginLifecycle,
         complete: mocks.completeLifecycle,
@@ -29,7 +29,7 @@ vi.mock('../../../useCases/analyzeMix', () => ({
 describe('handleAnalyzeMix', () => {
     beforeEach(() => {
         mocks.beginLifecycle.mockReset();
-        mocks.beginLifecycle.mockReturnValue(true);
+        mocks.beginLifecycle.mockReturnValue(7);
         mocks.completeLifecycle.mockReset();
         mocks.failLifecycle.mockReset();
         mocks.loggerError.mockReset();
@@ -58,11 +58,11 @@ describe('handleAnalyzeMix', () => {
 
         expect(mocks.beginLifecycle).toHaveBeenCalled();
         expect(analyzeMix).toHaveBeenCalled();
-        expect(mocks.completeLifecycle).toHaveBeenCalledWith({ result });
+        expect(mocks.completeLifecycle).toHaveBeenCalledWith({ token: 7, result });
     });
 
     it('no-ops when mix analysis store is missing', async () => {
-        mocks.beginLifecycle.mockReturnValue(false);
+        mocks.beginLifecycle.mockReturnValue(null);
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
@@ -77,6 +77,6 @@ describe('handleAnalyzeMix', () => {
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
-        expect(mocks.failLifecycle).toHaveBeenCalled();
+        expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 7 });
     });
 });

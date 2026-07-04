@@ -36,13 +36,22 @@ describe('beginMixAnalysis', () => {
     it('should mark analysis as running without replacing result or panel state', () => {
         const update_spy = vi.spyOn(mixAnalysisStore, 'update');
 
-        beginMixAnalysis();
+        const token = beginMixAnalysis();
 
+        expect(token).not.toBeNull();
         expect(update_spy).toHaveBeenCalledTimes(1);
         expect(mixAnalysisStore.value).toEqual({
             result: analysis_result,
             isAnalyzing: true,
             panelOpen: true,
         });
+    });
+
+    it('should not begin another run while analysis is already running', () => {
+        beginMixAnalysis();
+
+        const second_token = beginMixAnalysis();
+
+        expect(second_token).toBeNull();
     });
 });

@@ -1,7 +1,4 @@
-import {
-    type MixAnalysisDisplayLifecycle,
-    setMixAnalysisDisplayLifecyclePort,
-} from '../handlers/analysis/mixAnalysisDisplayLifecycle';
+import { type MixAnalysisDisplayLifecycle, setMixAnalysisDisplayLifecyclePort } from './mixAnalysisDisplayLifecycle';
 
 type SetMixAnalysisDisplayLifecycleInput = MixAnalysisDisplayLifecycle;
 

@@ -30,17 +30,22 @@ type MixAnalysisDisplayResult = {
 };
 
 type CompleteMixAnalysisDisplayInput = {
+    token: number;
     result: MixAnalysisDisplayResult;
 };
 
+type FailMixAnalysisDisplayInput = {
+    token: number;
+};
+
 export type MixAnalysisDisplayLifecycle = {
-    begin: () => boolean;
+    begin: () => number | null;
     complete: (input: CompleteMixAnalysisDisplayInput) => void;
-    fail: () => void;
+    fail: (input: FailMixAnalysisDisplayInput) => void;
 };
 
 const fallback_lifecycle: MixAnalysisDisplayLifecycle = {
-    begin: () => false,
+    begin: () => null,
     complete: () => {},
     fail: () => {},
 };
@@ -52,8 +57,8 @@ export const mixAnalysisDisplayLifecycle: MixAnalysisDisplayLifecycle = {
     complete: (input) => {
         configured_lifecycle.complete(input);
     },
-    fail: () => {
-        configured_lifecycle.fail();
+    fail: (input) => {
+        configured_lifecycle.fail(input);
     },
 };
 
