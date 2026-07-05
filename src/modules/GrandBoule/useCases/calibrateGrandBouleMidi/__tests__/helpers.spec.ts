@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { type Store } from '#/infra/store/types';
+import { clamp } from '#/utils/Math/clamp';
 
 import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig';
 import { createDefaultMidiCalibration } from '../../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset';
 import { type GrandBouleState } from '../../../stores/grandBouleStore';
-import { clamp, updateCalibration } from '../helpers';
+import { updateCalibration } from '../helpers';
 
 function createMockGrandBouleStore(): Store<GrandBouleState> {
     let value: GrandBouleState | null = null;
