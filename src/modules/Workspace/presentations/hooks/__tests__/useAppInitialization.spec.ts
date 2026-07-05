@@ -2,8 +2,9 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
-import { saveProject } from '#/modules/Project/useCases';
+import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -46,6 +47,7 @@ vi.mock('#/modules/Project/stores', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     verifyAudioBufferReferences: vi.fn().mockResolvedValue(undefined),
     loadProject: vi.fn().mockResolvedValue(undefined),
+    finishProjectLoading: vi.fn(),
     saveProject: vi.fn(),
 }));
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
@@ -191,7 +193,7 @@ describe('useAppInitialization — autosave governed by preferences', () => {
     });
 });
 
-describe('useAppInitialization — launch state preservation', () => {
+describe('useAppInitialization — Project loading boundary', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         projectStoreMock.current = {
@@ -212,14 +214,26 @@ describe('useAppInitialization — launch state preservation', () => {
         vi.restoreAllMocks();
     });
 
-    it('does not mark a user-started project uninitialized when boot finishes later', async () => {
+    it('clears Project loading through the Project use case when no saved CRDT project exists', async () => {
         renderHook(() => useAppInitialization());
 
         await waitFor(() => {
-            expect(projectStoreMock.set).toHaveBeenCalledWith(
-                expect.objectContaining({ loading: false, initialized: true })
-            );
+            expect(finishProjectLoading).toHaveBeenCalledTimes(1);
         });
+        expect(projectStoreMock.set).not.toHaveBeenCalled();
+        expect(loadProject).not.toHaveBeenCalled();
+    });
+
+    it('loads a saved CRDT project instead of clearing Project loading directly', async () => {
+        vi.mocked(hasCrdtProject).mockResolvedValueOnce(true);
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(loadProject).toHaveBeenCalledTimes(1);
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(projectStoreMock.set).not.toHaveBeenCalled();
     });
 });
 
