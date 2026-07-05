@@ -95,6 +95,15 @@ describe('AiRenderClipPreview', () => {
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('preview-buffer');
     });
 
+    it('should stop active preview playback on unmount', () => {
+        const view = render_preview();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
+        view.unmount();
+
+        expect(mocks.stop).toHaveBeenCalledTimes(1);
+    });
+
     it('should release a canceled drag preview on unmount', () => {
         const view = render_preview();
         const dataTransfer = create_data_transfer('none');

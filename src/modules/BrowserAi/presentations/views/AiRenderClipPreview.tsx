@@ -54,6 +54,10 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     // deliberately left in place.
     useEffect(() => {
         const evictPriorBuffer = (): void => {
+            const activePlayback = playbackRef.current;
+            playbackRef.current = null;
+            activePlayback?.stop();
+
             if (bufferIdRef.current && !handedOffRef.current) {
                 releasePreviewAudioBuffer(bufferIdRef.current);
             }
