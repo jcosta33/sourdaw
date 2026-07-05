@@ -129,7 +129,7 @@ vi.mock('#/modules/AudioAnalysis/useCases/pitchDetection', () => ({
     detectDominantPitch: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases/audioFeatures', () => ({
+vi.mock('#/modules/AudioAnalysis/useCases/summarizeFeatures', () => ({
     summarizeFeatures: vi.fn(),
 }));
 
