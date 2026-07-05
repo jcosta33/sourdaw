@@ -61,6 +61,7 @@ type DragState = {
     pointerId: number;
     altKey: boolean;
     ctrlKey: boolean;
+    undoGroupId: string;
 };
 
 const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
@@ -248,6 +249,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 pointerId: event.pointerId,
                 altKey: event.altKey,
                 ctrlKey: event.ctrlKey,
+                undoGroupId: `elastic-marker-drag-${clipId}-${hit.id}-${event.pointerId}-${Date.now()}`,
             };
             didDragRef.current = false;
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -269,6 +271,8 @@ export const ElasticEditorPanel = (): ReactElement => {
             markerId: drag.markerId,
             field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
             beat,
+            undoGroupId: drag.undoGroupId,
+            undoGroupLabel: 'Move elastic marker',
         });
         refreshWarp();
     };

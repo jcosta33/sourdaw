@@ -305,6 +305,8 @@ describe('ElasticEditorPanel', () => {
             markerId: 'm1',
             field: 'warpedBeat',
             beat: 1.75,
+            undoGroupId: expect.stringMatching(/^elastic-marker-drag-c1-m1-4-/),
+            undoGroupLabel: 'Move elastic marker',
         });
     });
 
@@ -329,6 +331,8 @@ describe('ElasticEditorPanel', () => {
             markerId: 'm1',
             field: 'originalBeat',
             beat: 1.8,
+            undoGroupId: expect.stringMatching(/^elastic-marker-drag-c1-m1-4-/),
+            undoGroupLabel: 'Move elastic marker',
         });
     });
 
