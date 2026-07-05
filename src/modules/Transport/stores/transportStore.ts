@@ -51,6 +51,21 @@ type ApplyDurableFieldInput<TValue> = {
     assign_value: (value: TValue) => void;
 };
 
+type GetOwnValueInput = {
+    value: object;
+    key: string;
+};
+
+type HasExactKeysInput = {
+    value: object;
+    keys: readonly string[];
+};
+
+type HasTransportStateValuesInput = {
+    value: object;
+    state: TransportState;
+};
+
 function create_default_transport_state(): TransportState {
     return { ...defaultTransportState };
 }
@@ -59,8 +74,8 @@ function is_transport_object(value: unknown): value is object {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function get_own_value(value: object, key: string): OwnValue {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+function get_own_value(input: GetOwnValueInput): OwnValue {
+    const descriptor = Object.getOwnPropertyDescriptor(input.value, input.key);
     if (!descriptor) {
         return { found: false };
     }
@@ -72,9 +87,9 @@ function get_own_value(value: object, key: string): OwnValue {
     return { found: true, value: descriptor.value };
 }
 
-function has_exact_keys(value: object, keys: readonly string[]): boolean {
-    const value_keys = Object.keys(value);
-    return value_keys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+function has_exact_keys(input: HasExactKeysInput): boolean {
+    const value_keys = Object.keys(input.value);
+    return value_keys.length === input.keys.length && input.keys.every((key) => Object.hasOwn(input.value, key));
 }
 
 function is_finite_number(value: unknown): value is number {
@@ -115,7 +130,7 @@ function is_valid_bar_count(value: unknown): value is number {
 }
 
 function apply_durable_field<TValue>(input: ApplyDurableFieldInput<TValue>): boolean {
-    const property = get_own_value(input.source, input.key);
+    const property = get_own_value({ value: input.source, key: input.key });
     if (!property.found) {
         return true;
     }
@@ -291,10 +306,10 @@ function normalize_transport_object(value: object): TransportState | null {
     return next_state;
 }
 
-function has_transport_state_values(value: object, state: TransportState): boolean {
+function has_transport_state_values(input: HasTransportStateValuesInput): boolean {
     return TRANSPORT_STATE_KEYS.every((key) => {
-        const property = get_own_value(value, key);
-        return property.found && property.value === state[key];
+        const property = get_own_value({ value: input.value, key });
+        return property.found && property.value === input.state[key];
     });
 }
 
@@ -303,12 +318,12 @@ function is_exact_clean_transport_state(value: unknown): value is TransportState
         return false;
     }
 
-    if (!has_exact_keys(value, TRANSPORT_STATE_KEYS)) {
+    if (!has_exact_keys({ value, keys: TRANSPORT_STATE_KEYS })) {
         return false;
     }
 
     const normalized = normalize_transport_object(value);
-    return normalized !== null && has_transport_state_values(value, normalized);
+    return normalized !== null && has_transport_state_values({ value, state: normalized });
 }
 
 function sanitize_transport_state(value: unknown): TransportState {
