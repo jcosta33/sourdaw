@@ -16,9 +16,16 @@ export type TimeSignatureMapStoreState = {
 
 const MIN_TIME_SIGNATURE_PART = 1;
 const MAX_TIME_SIGNATURE_PART = 32;
+const TIME_SIGNATURE_MAP_KEYS = ['changes'] as const;
+const TIME_SIGNATURE_CHANGE_KEYS = ['id', 'beat', 'numerator', 'denominator'] as const;
 
 function create_empty_time_signature_map_state(): TimeSignatureMapStoreState {
     return { changes: [] };
+}
+
+function has_exact_keys(value: object, keys: readonly string[]): boolean {
+    const value_keys = Object.keys(value);
+    return value_keys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
 function is_unknown_array(value: unknown): value is unknown[] {
@@ -76,7 +83,24 @@ function normalize_time_signature_change(change: TimeSignatureChange): TimeSigna
     };
 }
 
+function is_exact_time_signature_map_state(value: unknown): value is TimeSignatureMapStoreState {
+    const changes = get_time_signature_change_values(value);
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        has_exact_keys(value, TIME_SIGNATURE_MAP_KEYS) &&
+        changes !== null &&
+        changes.every(
+            (change) => is_valid_time_signature_change(change) && has_exact_keys(change, TIME_SIGNATURE_CHANGE_KEYS)
+        )
+    );
+}
+
 function sanitize_time_signature_map_state(value: unknown): TimeSignatureMapStoreState {
+    if (is_exact_time_signature_map_state(value)) {
+        return value;
+    }
+
     const changes = get_time_signature_change_values(value);
     if (changes === null) {
         return create_empty_time_signature_map_state();

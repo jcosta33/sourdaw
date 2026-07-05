@@ -11,6 +11,7 @@ type TestDoc = {
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 const fake_doc: TestDoc = {};
+let mutation_count = 0;
 
 function clear_fake_doc(): void {
     for (const key of Object.keys(fake_doc)) {
@@ -24,6 +25,7 @@ function configure_fake_crdt_port(): void {
         getSemanticMessage: () => undefined,
         hasDoc: () => true,
         mutateDoc: ({ changeFn }) => {
+            mutation_count += 1;
             changeFn(fake_doc);
         },
     };
@@ -45,6 +47,7 @@ describe('timeSignatureMapStore', () => {
         timeSignatureMapStore.set({ changes: [] });
         await flush_pending_frame();
         clear_fake_doc();
+        mutation_count = 0;
         configure_fake_crdt_port();
     });
 
@@ -102,7 +105,7 @@ describe('timeSignatureMapStore', () => {
         expect(timeSignatureMapStore.value).toEqual({ changes: [valid_change] });
     });
 
-    it('should preserve valid CRDT time-signature map hydration', () => {
+    it('should preserve valid CRDT time-signature map hydration without writing back', async () => {
         const valid_changes = [
             { id: 'time-signature-a', beat: 0, numerator: 4, denominator: 4 },
             { id: 'time-signature-b', beat: 8, numerator: 7, denominator: 8 },
@@ -110,8 +113,10 @@ describe('timeSignatureMapStore', () => {
         fake_doc.timeSignatureMap = { changes: valid_changes };
 
         timeSignatureMapStore.hydrate();
+        await flush_pending_frame();
 
         expect(timeSignatureMapStore.value).toEqual({ changes: valid_changes });
+        expect(mutation_count).toBe(0);
     });
 
     it('should strip extra CRDT object fields while preserving valid time-signature changes', () => {

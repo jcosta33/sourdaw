@@ -11,6 +11,7 @@ type TestDoc = {
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 const fake_doc: TestDoc = {};
+let mutation_count = 0;
 
 function clear_fake_doc(): void {
     for (const key of Object.keys(fake_doc)) {
@@ -24,6 +25,7 @@ function configure_fake_crdt_port(): void {
         getSemanticMessage: () => undefined,
         hasDoc: () => true,
         mutateDoc: ({ changeFn }) => {
+            mutation_count += 1;
             changeFn(fake_doc);
         },
     };
@@ -45,6 +47,7 @@ describe('tempoMapStore', () => {
         tempoMapStore.set({ changes: [] });
         await flush_pending_frame();
         clear_fake_doc();
+        mutation_count = 0;
         configure_fake_crdt_port();
     });
 
@@ -107,7 +110,7 @@ describe('tempoMapStore', () => {
         expect(tempoMapStore.value).toEqual({ changes: [valid_change] });
     });
 
-    it('should preserve valid CRDT tempo map hydration', () => {
+    it('should preserve valid CRDT tempo map hydration without writing back', async () => {
         const valid_changes = [
             { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
             { id: 'tempo-b', beat: 8, tempo: 150, curve: 'linear' },
@@ -115,8 +118,10 @@ describe('tempoMapStore', () => {
         fake_doc.tempoMap = { changes: valid_changes };
 
         tempoMapStore.hydrate();
+        await flush_pending_frame();
 
         expect(tempoMapStore.value).toEqual({ changes: valid_changes });
+        expect(mutation_count).toBe(0);
     });
 
     it('should strip extra CRDT object fields while preserving valid tempo changes', () => {

@@ -16,9 +16,16 @@ export type TempoMapStoreState = {
 
 const MIN_TEMPO = 20;
 const MAX_TEMPO = 999;
+const TEMPO_MAP_KEYS = ['changes'] as const;
+const TEMPO_CHANGE_KEYS = ['id', 'beat', 'tempo', 'curve'] as const;
 
 function create_empty_tempo_map_state(): TempoMapStoreState {
     return { changes: [] };
+}
+
+function has_exact_keys(value: object, keys: readonly string[]): boolean {
+    const value_keys = Object.keys(value);
+    return value_keys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
 function is_unknown_array(value: unknown): value is unknown[] {
@@ -74,7 +81,22 @@ function normalize_tempo_change(change: TempoChange): TempoChange {
     };
 }
 
+function is_exact_tempo_map_state(value: unknown): value is TempoMapStoreState {
+    const changes = get_tempo_change_values(value);
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        has_exact_keys(value, TEMPO_MAP_KEYS) &&
+        changes !== null &&
+        changes.every((change) => is_valid_tempo_change(change) && has_exact_keys(change, TEMPO_CHANGE_KEYS))
+    );
+}
+
 function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
+    if (is_exact_tempo_map_state(value)) {
+        return value;
+    }
+
     const changes = get_tempo_change_values(value);
     if (changes === null) {
         return create_empty_tempo_map_state();
