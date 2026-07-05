@@ -12,6 +12,10 @@ type MockDictationResult = {
     text: string;
     durationMs: number;
 };
+type MockVoiceStatus = {
+    isListening: boolean;
+    transcribing: boolean;
+};
 
 const mocks = vi.hoisted(() => ({
     onVoiceToggle: vi.fn<() => () => void>(() => () => {}),
@@ -20,6 +24,9 @@ const mocks = vi.hoisted(() => ({
     ensureWhisperReady: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     startDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     stopDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    setVoiceStatus: vi.fn<(status: MockVoiceStatus) => void>(),
+    setVoiceListeningStatus: vi.fn<(isListening: boolean) => void>(),
+    setVoiceTranscribingStatus: vi.fn<(transcribing: boolean) => void>(),
     onDictationResult: vi
         .fn<(handler: (result: MockDictationResult) => void) => Promise<() => void>>()
         .mockResolvedValue(() => {}),
@@ -52,6 +59,48 @@ vi.mock('../../../useCases/voiceDictation/stopDictation', () => ({
 vi.mock('../../../useCases/voiceDictation/onDictationResult', () => ({
     onDictationResult: mocks.onDictationResult,
 }));
+
+vi.mock('../../../useCases/setVoiceStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../stores/voiceStatusStore')>(
+        '../../../stores/voiceStatusStore'
+    );
+    mocks.setVoiceStatus.mockImplementation((status) => {
+        actual.voiceStatusStore.set(status);
+    });
+    return {
+        setVoiceStatus: mocks.setVoiceStatus,
+    };
+});
+
+vi.mock('../../../useCases/setVoiceListeningStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../stores/voiceStatusStore')>(
+        '../../../stores/voiceStatusStore'
+    );
+    mocks.setVoiceListeningStatus.mockImplementation((isListening) => {
+        actual.voiceStatusStore.set({
+            isListening,
+            transcribing: actual.voiceStatusStore.value?.transcribing ?? false,
+        });
+    });
+    return {
+        setVoiceListeningStatus: mocks.setVoiceListeningStatus,
+    };
+});
+
+vi.mock('../../../useCases/setVoiceTranscribingStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../stores/voiceStatusStore')>(
+        '../../../stores/voiceStatusStore'
+    );
+    mocks.setVoiceTranscribingStatus.mockImplementation((transcribing) => {
+        actual.voiceStatusStore.set({
+            isListening: actual.voiceStatusStore.value?.isListening ?? false,
+            transcribing,
+        });
+    });
+    return {
+        setVoiceTranscribingStatus: mocks.setVoiceTranscribingStatus,
+    };
+});
 
 type MockSpeechRecognition = {
     continuous: boolean;
@@ -155,6 +204,7 @@ describe('useVoiceRecording', () => {
 
         expect(result.current.isListening).toBe(true);
         expect(result.current.voiceMode).toBe('whisper');
+        expect(mocks.setVoiceListeningStatus).toHaveBeenCalledWith(true);
         expect(voiceStatusStore.value?.isListening).toBe(true);
     });
 
@@ -186,6 +236,7 @@ describe('useVoiceRecording', () => {
 
         expect(mocks.stopDictation).toHaveBeenCalled();
         expect(result.current.transcribing).toBe(true);
+        expect(mocks.setVoiceTranscribingStatus).toHaveBeenCalledWith(true);
         expect(voiceStatusStore.value?.transcribing).toBe(true);
     });
 
@@ -355,6 +406,7 @@ describe('useVoiceRecording', () => {
 
         expect(mocks.injectPromptCommand).toHaveBeenCalledWith('build a drum loop');
         expect(result.current.isListening).toBe(false);
+        expect(mocks.setVoiceListeningStatus).toHaveBeenLastCalledWith(false);
         expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 
@@ -388,6 +440,7 @@ describe('useVoiceRecording', () => {
         expect(result.current.finalText).toBe('make the bass wider');
         expect(result.current.isListening).toBe(false);
         expect(result.current.transcribing).toBe(false);
+        expect(mocks.setVoiceStatus).toHaveBeenLastCalledWith({ isListening: false, transcribing: false });
         expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 });

@@ -10,8 +10,10 @@ import { useEffect, useRef, useState } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { voiceStatusStore } from '../../stores/voiceStatusStore';
 import { injectPromptCommand } from '../../useCases/promptInjection';
+import { setVoiceListeningStatus } from '../../useCases/setVoiceListeningStatus';
+import { setVoiceStatus } from '../../useCases/setVoiceStatus';
+import { setVoiceTranscribingStatus } from '../../useCases/setVoiceTranscribingStatus';
 import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperReady';
 import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 import { startDictation } from '../../useCases/voiceDictation/startDictation';
@@ -87,17 +89,18 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [transcribing, setTranscribing] = useState(false);
     const [errorText, setErrorText] = useState('');
 
-    // Sync to voiceStatusStore so VoiceButton can reflect state
-    const setVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
+    const syncVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
         setIsListening(value.isListening);
         setTranscribing(value.transcribing);
-        voiceStatusStore.set(value);
+        setVoiceStatus(value);
     };
     const setListening = (value: boolean): void => {
-        setVoiceStatus({ isListening: value, transcribing: voiceStatusStore.value?.transcribing ?? false });
+        setIsListening(value);
+        setVoiceListeningStatus(value);
     };
     const setTranscribingAndStore = (value: boolean): void => {
-        setVoiceStatus({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
+        setTranscribing(value);
+        setVoiceTranscribingStatus(value);
     };
 
     const [voiceMode, setVoiceMode] = useState<VoiceInputMode>(null);
@@ -144,7 +147,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                     setFinalText(text);
                     injectPromptCommand(text);
                 }
-                setVoiceStatus({ isListening: false, transcribing: false });
+                syncVoiceStatus({ isListening: false, transcribing: false });
                 releaseDictationListener();
             });
             // If the component unmounted while we awaited the listener
