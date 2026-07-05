@@ -173,4 +173,3 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
 
 /** Re-export catalogs and shared types for components that render instrument / voice selectors */
 export { KOKORO_VOICE_CATALOG, DDSP_INSTRUMENT_CATALOG };
-export type { RenderQuality } from '../models/RenderProgress';
