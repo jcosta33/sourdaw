@@ -50,7 +50,3 @@ export function markEntryReverted(entryId: string): void {
         entries: state.entries.map((event) => (event.id === entryId ? { ...event, reverted: true } : event)),
     });
 }
-
-export function clearActionHistory(): void {
-    actionHistoryStore.set({ entries: [] });
-}

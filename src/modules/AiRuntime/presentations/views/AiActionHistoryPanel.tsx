@@ -9,8 +9,8 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
-import { actionHistoryStore, clearActionHistory } from '#/modules/CrdtDocument/stores';
-import { canRevertAction, revertAction } from '#/modules/CrdtDocument/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+import { canRevertAction, clearActionHistory, revertAction } from '#/modules/CrdtDocument/useCases';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
