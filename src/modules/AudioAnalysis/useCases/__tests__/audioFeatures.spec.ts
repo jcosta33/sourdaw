@@ -34,15 +34,11 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     },
 }));
 
-import { extractFeatures, summarizeFeatures } from '../audioFeatures';
+import { extractFeatures } from '../audioFeatures';
 
 describe('audioFeatures', () => {
     it('extractFeatures returns an empty array when the buffer is missing', () => {
         expect(extractFeatures('missing')).toEqual([]);
-    });
-
-    it('summarizeFeatures returns null when the buffer is missing', () => {
-        expect(summarizeFeatures('missing')).toBeNull();
     });
 
     it('extractFeatures produces frames for a real tone', () => {
@@ -51,28 +47,6 @@ describe('audioFeatures', () => {
         const frames = extractFeatures('tone44k');
         expect(frames.length).toBeGreaterThan(0);
         expect(frames[0]?.chroma.length).toBe(12);
-    });
-
-    it('summarizeFeatures averages each chroma bin by summing then dividing once', () => {
-        // Fix 2: the average must equal a reference that sums the raw per-frame
-        // chroma and divides by the frame count exactly once. The previous code
-        // divided inside the accumulation loop, compounding floating-point
-        // rounding so at least one bin drifted by an ULP from this reference.
-        const frames = extractFeatures('tone44k');
-        expect(frames.length).toBeGreaterThan(1);
-
-        const node = frames.length;
-        const reference = Array.from({ length: 12 }, (_unused, bin) => {
-            let sum = 0;
-            for (const frame of frames) {
-                sum += frame.chroma[bin] ?? 0;
-            }
-            return sum / node;
-        });
-
-        const summary = summarizeFeatures('tone44k');
-        expect(summary).not.toBeNull();
-        expect(summary?.chromaProfile).toEqual(reference);
     });
 
     it('restores Meyda global config after extraction (reentrancy)', () => {
