@@ -11,8 +11,10 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { setAutoScroll, setScrollX, timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+import { setTimelineMinimapAutoScroll } from '../../useCases/setTimelineMinimapAutoScroll';
+import { setTimelineMinimapScrollX } from '../../useCases/setTimelineMinimapScrollX';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
@@ -205,7 +207,7 @@ export const TimelineMinimap = (): ReactElement => {
         }
 
         if (transportStore.value?.isPlaying) {
-            setAutoScroll(false);
+            setTimelineMinimapAutoScroll(false);
         }
 
         const rect = containerRef.current!.getBoundingClientRect();
@@ -223,10 +225,7 @@ export const TimelineMinimap = (): ReactElement => {
             const clickedBeat = clickX / beatsToPixels;
             const targetBeat = Math.max(0, clickedBeat - visibleBeats / 2);
             const newScrollX = targetBeat * pixelsPerBeat;
-            const currentViewState = timelineViewStore.value;
-            if (currentViewState) {
-                timelineViewStore.set({ ...currentViewState, scrollX: newScrollX });
-            }
+            setTimelineMinimapScrollX(newScrollX);
             // After jump, the viewport starts at newScrollX in minimap coords
             dragOffsetInMinimapPx = clickX - (newScrollX / pixelsPerBeat) * beatsToPixels;
         }
@@ -252,10 +251,7 @@ export const TimelineMinimap = (): ReactElement => {
             const moveX = moveEvent.clientX - currentRect.left;
             const newViewportStartPx = moveX - dragOffsetRef.current;
             const targetScrollX = Math.max(0, (newViewportStartPx / currentMetrics.beatsToPixels) * pixelsPerBeat);
-            const currentViewState = timelineViewStore.value;
-            if (currentViewState) {
-                timelineViewStore.set({ ...currentViewState, scrollX: targetScrollX });
-            }
+            setTimelineMinimapScrollX(targetScrollX);
         };
 
         const detachListeners = () => {
@@ -283,31 +279,31 @@ export const TimelineMinimap = (): ReactElement => {
         const pagePx = pageBeats * pixelsPerBeat;
 
         if (transportStore.value?.isPlaying) {
-            setAutoScroll(false);
+            setTimelineMinimapAutoScroll(false);
         }
 
         switch (event.key) {
             case 'ArrowLeft':
             case 'ArrowDown':
                 event.preventDefault();
-                setScrollX(scrollX - stepPx);
+                setTimelineMinimapScrollX(scrollX - stepPx);
                 break;
             case 'ArrowRight':
             case 'ArrowUp':
                 event.preventDefault();
-                setScrollX(scrollX + stepPx);
+                setTimelineMinimapScrollX(scrollX + stepPx);
                 break;
             case 'PageUp':
                 event.preventDefault();
-                setScrollX(scrollX - pagePx);
+                setTimelineMinimapScrollX(scrollX - pagePx);
                 break;
             case 'PageDown':
                 event.preventDefault();
-                setScrollX(scrollX + pagePx);
+                setTimelineMinimapScrollX(scrollX + pagePx);
                 break;
             case 'Home':
                 event.preventDefault();
-                setScrollX(0);
+                setTimelineMinimapScrollX(0);
                 break;
             default:
                 break;
