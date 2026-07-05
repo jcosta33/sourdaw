@@ -1,4 +1,4 @@
-import { isStemSeparationAvailable as checkStemSeparationAvailability } from '../../repositories/audioAiEngine';
+import { isStemSeparationAvailable as checkStemSeparationAvailability } from '../../repositories/isStemSeparationAvailable';
 
 /**
  * Public contract for AudioAnalysis AI engine operations.

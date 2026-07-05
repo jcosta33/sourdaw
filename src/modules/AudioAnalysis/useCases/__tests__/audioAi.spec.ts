@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../repositories/audioAiEngine', () => ({
+const mocks = vi.hoisted(() => ({
     isStemSeparationAvailable: vi.fn(() => true),
     isAudioGenerationAvailable: vi.fn(() => false),
     isAudioAiServerRunning: vi.fn().mockResolvedValue(true),
@@ -8,7 +8,26 @@ vi.mock('../../repositories/audioAiEngine', () => ({
     separateStems: vi.fn().mockResolvedValue({} as Record<string, AudioBuffer>),
 }));
 
-import * as repo from '../../repositories/audioAiEngine';
+vi.mock('../../repositories/isStemSeparationAvailable', () => ({
+    isStemSeparationAvailable: mocks.isStemSeparationAvailable,
+}));
+
+vi.mock('../../repositories/isAudioGenerationAvailable', () => ({
+    isAudioGenerationAvailable: mocks.isAudioGenerationAvailable,
+}));
+
+vi.mock('../../repositories/isAudioAiServerRunning', () => ({
+    isAudioAiServerRunning: mocks.isAudioAiServerRunning,
+}));
+
+vi.mock('../../repositories/generateAudio', () => ({
+    generateAudio: mocks.generateAudio,
+}));
+
+vi.mock('../../repositories/separateStems', () => ({
+    separateStems: mocks.separateStems,
+}));
+
 import { generateAudio } from '../audioAi/generateAudio';
 import { isAudioAiServerRunning } from '../audioAi/isAudioAiServerRunning';
 import { isAudioGenerationAvailable } from '../audioAi/isAudioGenerationAvailable';
@@ -27,10 +46,10 @@ describe('audioAi delegates', () => {
         await generateAudio('test prompt', 5);
         await separateStems(new ArrayBuffer(0), ['drums']);
 
-        expect(repo.isStemSeparationAvailable).toHaveBeenCalled();
-        expect(repo.isAudioGenerationAvailable).toHaveBeenCalled();
-        expect(repo.isAudioAiServerRunning).toHaveBeenCalled();
-        expect(repo.generateAudio).toHaveBeenCalledWith('test prompt', 5, undefined);
-        expect(repo.separateStems).toHaveBeenCalledWith(expect.any(ArrayBuffer), ['drums']);
+        expect(mocks.isStemSeparationAvailable).toHaveBeenCalled();
+        expect(mocks.isAudioGenerationAvailable).toHaveBeenCalled();
+        expect(mocks.isAudioAiServerRunning).toHaveBeenCalled();
+        expect(mocks.generateAudio).toHaveBeenCalledWith('test prompt', 5, undefined);
+        expect(mocks.separateStems).toHaveBeenCalledWith(expect.any(ArrayBuffer), ['drums']);
     });
 });
