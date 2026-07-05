@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import { getDefaultPadNames } from '../getDefaultPadNames';
+import { getToasterPresetKit } from '../getToasterPresetKit';
+import { getToasterPresetSummaries } from '../getToasterPresetSummaries';
 import { getToasterPresets } from '../toasterQueries';
 
 describe('toasterQueries', () => {
@@ -45,15 +47,23 @@ describe('toasterQueries', () => {
         expect(freshFirstPreset.tags).toEqual(['toaster', 'init']);
     });
 
-    it('should return toaster preset kit data as defensive snapshots', () => {
-        const presets = getToasterPresets();
-        const classicPreset = presets.find((preset) => preset.id === '808-classic');
-
-        if (!classicPreset) {
-            throw new Error('Expected the classic 808 Toaster preset.');
+    it('should return toaster preset summaries without kit payloads', () => {
+        const summaries = getToasterPresetSummaries();
+        const firstSummary = summaries[0];
+        if (!firstSummary) {
+            throw new Error('Expected at least one Toaster preset summary.');
         }
 
-        const classicKick = classicPreset.kit.pads[0];
+        firstSummary.tags[0] = 'mutated';
+
+        expect('kit' in firstSummary).toBe(false);
+        expect(getToasterPresetSummaries()[0]?.tags).toEqual(['toaster', 'init']);
+    });
+
+    it('should return toaster preset kit data as defensive snapshots', () => {
+        const classicKit = getToasterPresetKit('808-classic');
+
+        const classicKick = classicKit?.pads[0];
         if (!classicKick) {
             throw new Error('Expected the classic 808 Toaster preset to include a kick pad.');
         }
@@ -61,17 +71,16 @@ describe('toasterQueries', () => {
         classicKick.engineParams.base_freq = 999;
         classicKick.name = 'Mutated Kick';
 
-        const freshClassicPreset = getToasterPresets().find((preset) => preset.id === '808-classic');
-        if (!freshClassicPreset) {
-            throw new Error('Expected the classic 808 Toaster preset.');
-        }
-
-        const freshClassicKick = freshClassicPreset.kit.pads[0];
+        const freshClassicKick = getToasterPresetKit('808-classic')?.pads[0];
         if (!freshClassicKick) {
             throw new Error('Expected the classic 808 Toaster preset to include a kick pad.');
         }
 
         expect(freshClassicKick.engineParams.base_freq).toBe(50);
         expect(freshClassicKick.name).toBe('Kick');
+    });
+
+    it('should return null for an unknown toaster preset kit', () => {
+        expect(getToasterPresetKit('missing')).toBeNull();
     });
 });

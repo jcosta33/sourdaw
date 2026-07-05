@@ -24,11 +24,12 @@ import {
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
+import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
+import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { startSequencer, stopSequencer } from '../../useCases/sequencerPlayback';
 import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
-import { getToasterPresets } from '../../useCases/toasterQueries';
 import { triggerToasterPad } from '../../useCases/triggerPad';
 import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
@@ -52,6 +53,8 @@ const SectionCard = ({
         {children}
     </DawPluginSectionCard>
 );
+
+const TOASTER_PRESET_SUMMARIES = getToasterPresetSummaries();
 
 const Knob = ({
     value,
@@ -149,7 +152,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
     const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
     const presetSearch = presetQuery.trim().toLowerCase();
-    const visiblePresets = getToasterPresets().filter((preset) => {
+    const visiblePresets = TOASTER_PRESET_SUMMARIES.filter((preset) => {
         if (presetSearch.length === 0) {
             return true;
         }
@@ -180,6 +183,15 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         setToasterPadParam(deviceId, padIndex, key as keyof PadState, value);
     }
 
+    function handleLoadPreset(presetId: string): void {
+        const presetKit = getToasterPresetKit(presetId);
+        if (!presetKit) {
+            return;
+        }
+
+        loadToasterKitPreset(deviceId, presetKit);
+    }
+
     return (
         <div className="toaster-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[18rem_minmax(0,1fr)_17rem] gap-3">
@@ -196,7 +208,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </label>
                         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
                             {visiblePresets.map((preset) => {
-                                const active = preset.kit.name === kit.name;
+                                const active = preset.name === kit.name;
                                 return (
                                     <button
                                         key={preset.id}
@@ -206,7 +218,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
-                                        onClick={() => loadToasterKitPreset(deviceId, preset.kit)}
+                                        onClick={() => handleLoadPreset(preset.id)}
                                     >
                                         <div className="flex w-full items-center justify-between gap-2">
                                             <span className="text-[11px] font-medium text-foreground">
