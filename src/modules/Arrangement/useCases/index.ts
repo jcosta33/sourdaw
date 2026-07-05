@@ -200,6 +200,7 @@ export { disableWarp } from './warp/disableWarp';
 export { setStretchMode } from './warp/setStretchMode';
 export { removeWarpMarker } from './warp/removeWarpMarker';
 export { moveWarpMarker } from './warp/moveWarpMarker';
+export { updateWarpMarkerBeat } from './warp/updateWarpMarkerBeat';
 
 export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';
 export { rdpSimplify } from './automationQueries/rdpSimplify';

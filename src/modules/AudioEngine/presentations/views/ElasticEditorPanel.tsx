@@ -4,8 +4,8 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTrackState, trackStore, getWarpState, warpStates } from '#/modules/Arrangement/stores';
-import { setStretchMode } from '#/modules/Arrangement/useCases';
+import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
+import { setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -264,11 +264,11 @@ export const ElasticEditorPanel = (): ReactElement => {
         const x = getCanvasX(event);
         const beatRaw = Math.max(0, x / beatWidth);
         const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1) : beatRaw;
-        mutateMarker(clipId, drag.markerId, (m) => {
-            if (drag.altKey || event.altKey) {
-                return { ...m, originalBeat: beat };
-            }
-            return { ...m, warpedBeat: beat };
+        updateWarpMarkerBeat({
+            clipId,
+            markerId: drag.markerId,
+            field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
+            beat,
         });
         refreshWarp();
     };
@@ -495,15 +495,6 @@ function visibleMarkers(
         const x = m.warpedBeat * beatWidth;
         return x >= minX && x <= maxX;
     });
-}
-
-function mutateMarker(clipId: string, markerId: string, updater: (m: WarpMarkerView) => WarpMarkerView): void {
-    const current = warpStates.get(clipId);
-    if (!current) {
-        return;
-    }
-    const nextMarkers = current.markers.map((m) => (m.id === markerId ? updater(m as WarpMarkerView) : m));
-    warpStates.set(clipId, { ...current, markers: nextMarkers });
 }
 
 type DrawArgs = {
