@@ -97,6 +97,8 @@ export { stepRecordAdvance } from './stepRecording/stepRecordAdvance';
 export { stepRecordRetreat } from './stepRecording/stepRecordRetreat';
 export { stepRecordStepUp } from './stepRecording/stepRecordStepUp';
 export { stepRecordStepDown } from './stepRecording/stepRecordStepDown';
+export { setStepRecordBeat } from './stepRecording/setStepRecordBeat';
+export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingForClip';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiLearnHandlers } from './getMidiLearnHandlers';

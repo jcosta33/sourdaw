@@ -16,7 +16,14 @@ import { DawSideRail } from '#/components/daw/DawSideRail';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
-import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI/useCases';
+import {
+    setNoteVelocity,
+    setNotePressure,
+    setNoteSlide,
+    setNotePitchBend,
+    setStepRecordBeat,
+    toggleStepRecordingForClip,
+} from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
@@ -196,20 +203,7 @@ export const PianoRoll = ({
         isFolded,
         stepInput: stepRecord?.active ?? false,
         stepBeat: stepRecord?.currentBeat ?? 0,
-        setStepBeat: (beat) => {
-            const state = stepRecordStore.value;
-            if (!state) {
-                return;
-            }
-            if (typeof beat === 'function') {
-                stepRecordStore.set({
-                    ...state,
-                    currentBeat: beat(state.currentBeat),
-                });
-            } else {
-                stepRecordStore.set({ ...state, currentBeat: beat });
-            }
-        },
+        setStepBeat: setStepRecordBeat,
         chordMode,
         chordType,
         paintMode,
@@ -243,18 +237,7 @@ export const PianoRoll = ({
                 constrainToScale={constrainToScale}
                 onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
                 stepInput={stepRecord?.active ?? false}
-                onToggleStepInput={() => {
-                    const state = stepRecordStore.value;
-                    if (!state) {
-                        return;
-                    }
-                    stepRecordStore.set({
-                        ...state,
-                        active: !state.active,
-                        clipId: !state.active ? clipId : null,
-                        currentBeat: 0,
-                    });
-                }}
+                onToggleStepInput={() => toggleStepRecordingForClip({ clipId })}
                 showGhostNotes={showGhostNotes}
                 onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
                 chordMode={chordMode}
