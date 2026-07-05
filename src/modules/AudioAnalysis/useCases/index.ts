@@ -27,6 +27,6 @@ export { polyphonicAudioToMidi } from './polyphonicAudioToMidi';
 
 export { analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix/analyzeMix';
 
-export { compareToReference } from './referenceMixComparison/compareMixes';
+export { compareToReference } from './referenceMixComparison/compareToReference';
 
 export { detectTempo } from './tempoDetection';

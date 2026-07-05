@@ -6,9 +6,6 @@ import {
     FREQUENCY_RANGES,
 } from '../../models/MixComparisonTypes';
 
-import { analyzeMix } from './analyzeMix/analyzeMix';
-import { createReferenceAnalysis } from './analyzeMix/createReferenceAnalysis';
-
 /**
  * Compare current mix against a reference and generate suggestions.
  */
@@ -109,13 +106,4 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
         currentAnalysis: current,
         analyzedAt: new Date().toISOString(),
     };
-}
-
-/**
- * Run full comparison against a default mastered reference.
- */
-export function compareToReference(): MixComparisonResult {
-    const current = analyzeMix();
-    const reference = createReferenceAnalysis();
-    return compareMixes(reference, current);
 }

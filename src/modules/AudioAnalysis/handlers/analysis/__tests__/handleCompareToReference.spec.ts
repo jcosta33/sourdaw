@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
 }));
 
-vi.mock('../../../useCases/referenceMixComparison/compareMixes', () => ({
+vi.mock('../../../useCases/referenceMixComparison/compareToReference', () => ({
     compareToReference: mocks.compareToReference,
 }));
 

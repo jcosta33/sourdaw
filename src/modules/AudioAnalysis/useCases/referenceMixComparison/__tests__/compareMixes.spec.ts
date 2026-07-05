@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { type MixAnalysis } from '../../../models/MixComparisonTypes';
-import { compareMixes, compareToReference } from '../compareMixes';
+import { compareMixes } from '../compareMixes';
 
 const sampleAnalysis: MixAnalysis = {
     rmsDb: -18,
@@ -20,14 +20,6 @@ const sampleAnalysis: MixAnalysis = {
     dynamicRange: 12,
     crestFactor: 12,
 };
-
-vi.mock('../analyzeMix/createReferenceAnalysis', () => ({
-    createReferenceAnalysis: vi.fn(() => sampleAnalysis),
-}));
-
-vi.mock('../analyzeMix/analyzeMix', () => ({
-    analyzeMix: vi.fn(() => sampleAnalysis),
-}));
 
 describe('compareMixes', () => {
     it('should produce a high score when current matches reference', () => {
@@ -63,11 +55,5 @@ describe('compareMixes', () => {
         const current = { ...sampleAnalysis, stereoWidth: 0.95 };
         const result = compareMixes(sampleAnalysis, current);
         expect(result.suggestions.some((state) => state.category === 'stereo')).toBe(true);
-    });
-
-    it('should compareToReference using analyzeMix and createReferenceAnalysis', () => {
-        const result = compareToReference();
-        expect(result).toBeDefined();
-        expect(result.overallScore).toBeGreaterThanOrEqual(0);
     });
 });

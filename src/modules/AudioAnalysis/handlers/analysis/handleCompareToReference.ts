@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { compareToReference } from '../../useCases/referenceMixComparison/compareMixes';
+import { compareToReference } from '../../useCases/referenceMixComparison/compareToReference';
 
 export const handleCompareToReference = createHandler<'compareToReference'>({
     execute: () => {
