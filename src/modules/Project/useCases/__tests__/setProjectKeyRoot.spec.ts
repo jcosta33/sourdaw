@@ -52,16 +52,21 @@ describe('setProjectKeyRoot', () => {
         expect(mocks.projectStore.set).not.toHaveBeenCalled();
     });
 
-    it('should set an integer pitch class and preserve the rest of the project', () => {
-        const initialProject = createProjectState();
-        mocks.projectStore.value = initialProject;
+    it('should set integer pitch classes and preserve the rest of the project', () => {
+        const validRoots = [0, 7, 11];
 
-        setProjectKeyRoot(7);
+        for (const validRoot of validRoots) {
+            const initialProject = createProjectState();
+            mocks.projectStore.value = initialProject;
+            mocks.projectStore.set.mockClear();
 
-        expect(mocks.projectStore.set).toHaveBeenCalledWith({
-            ...initialProject,
-            keyRoot: 7,
-        });
+            setProjectKeyRoot(validRoot);
+
+            expect(mocks.projectStore.set).toHaveBeenCalledWith({
+                ...initialProject,
+                keyRoot: validRoot,
+            });
+        }
     });
 
     it('should not write invalid pitch classes', () => {
