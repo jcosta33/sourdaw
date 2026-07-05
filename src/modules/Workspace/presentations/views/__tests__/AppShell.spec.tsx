@@ -18,6 +18,7 @@ import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
+const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -107,6 +108,29 @@ vi.mock('../../components/LaunchScreen', () => ({
 
 vi.mock('../../components/ProjectLoadingOverlay', () => ({
     ProjectLoadingOverlay: () => <div data-testid="project-loading-overlay">Project Loading</div>,
+}));
+
+vi.mock('../../components/AlphaNoticeDialog', () => ({
+    AlphaNoticeDialog: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => {
+        if (!open) {
+            return null;
+        }
+
+        return (
+            <div data-testid="alpha-notice-dialog">
+                <button type="button" onClick={() => onOpenChange(false)}>
+                    Close alpha notice
+                </button>
+                <button type="button" onClick={() => onOpenChange(true)}>
+                    Keep alpha notice open
+                </button>
+            </div>
+        );
+    },
+}));
+
+vi.mock('../../../useCases/dismissAlphaNotice', () => ({
+    dismissAlphaNotice: dismissAlphaNoticeMock,
 }));
 
 const mockWorkspaceEventBus = {
@@ -205,6 +229,7 @@ const createTrack = (clip: Clip): Track => ({
 });
 
 let projectState: ProjectState;
+let alphaNoticeDismissed: boolean;
 let trackStoreState: TrackStoreState;
 
 describe('AppShell', () => {
@@ -218,6 +243,7 @@ describe('AppShell', () => {
         workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
+        alphaNoticeDismissed = true;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
         vi.mocked(useProjectState).mockImplementation(() => projectState);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
@@ -228,7 +254,7 @@ describe('AppShell', () => {
                 return { tasks: [], isPanelOpen: false };
             }
             if (store === alphaNoticeStore) {
-                return true;
+                return alphaNoticeDismissed;
             }
             return defaultValue || { past: [], future: [] };
         });
@@ -254,6 +280,42 @@ describe('AppShell', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    describe('alpha notice dismissal boundary', () => {
+        it('should show initialized projects the alpha notice until dismissed', () => {
+            alphaNoticeDismissed = false;
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.getByTestId('alpha-notice-dialog')).toBeInTheDocument();
+        });
+
+        it('should hide initialized projects the alpha notice after dismissal state is read', () => {
+            alphaNoticeDismissed = true;
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('alpha-notice-dialog')).not.toBeInTheDocument();
+        });
+
+        it('should call dismissAlphaNotice when the alpha notice closes', () => {
+            alphaNoticeDismissed = false;
+
+            render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('button', { name: 'Close alpha notice' }));
+
+            expect(dismissAlphaNoticeMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('should not call dismissAlphaNotice when the alpha notice remains open', () => {
+            alphaNoticeDismissed = false;
+
+            render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('button', { name: 'Keep alpha notice open' }));
+
+            expect(dismissAlphaNoticeMock).not.toHaveBeenCalled();
+        });
     });
 
     it('should render correctly when project is loaded', () => {

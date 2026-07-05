@@ -39,6 +39,7 @@ import { clamp } from '#/utils/Math/clamp';
 import { defaultPreferences } from '../../models/Preferences';
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { preferencesStore } from '../../stores/preferencesStore';
+import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
 import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
 import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
@@ -841,7 +842,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     open={showAlphaNotice}
                     onOpenChange={(open) => {
                         if (!open) {
-                            alphaNoticeStore.set(true);
+                            dismissAlphaNotice();
                         }
                     }}
                 />
