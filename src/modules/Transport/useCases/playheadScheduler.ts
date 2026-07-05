@@ -25,8 +25,9 @@ import { transportStore } from '../stores/transportStore';
 import { evaluateFollowActions } from './evaluateFollowActions';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
+import { resetMetronomeBeat } from './scheduling/resetMetronomeBeat';
 import { scheduleAudioClips, disposeAudioClipScheduling } from './scheduling/scheduleAudioClips';
-import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
+import { scheduleMetronome } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 
 export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };

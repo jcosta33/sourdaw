@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { scheduleMetronome, resetMetronomeBeat } from '../scheduleMetronome';
+import { resetMetronomeBeat } from '../resetMetronomeBeat';
+import { scheduleMetronome } from '../scheduleMetronome';
 
 vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
@@ -34,7 +35,7 @@ describe('scheduleMetronome', () => {
         mockGetCurrentTime.mockReturnValue(0);
         // A reset far in the future prunes any dedup entries left by a prior test
         // (entries with a click time below now-epsilon are dropped) without relying
-        // on cross-test module state. The reset itself only touches _lastMetronomeBeat.
+        // on cross-test module state. The reset itself only touches metronomeSchedulingState.lastBeat.
         mockGetCurrentTime.mockReturnValue(1e6);
         scheduleMetronome(0, -1, 0, metronomeOn, 120); // no beats in range; prunes stale entries
         mockGetCurrentTime.mockReturnValue(0);

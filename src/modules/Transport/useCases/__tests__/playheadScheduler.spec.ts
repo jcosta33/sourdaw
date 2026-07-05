@@ -79,8 +79,10 @@ vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
     },
 }));
 vi.mock('../scheduling/scheduleMetronome', () => ({
-    resetMetronomeBeat: vi.fn(),
     scheduleMetronome: vi.fn(),
+}));
+vi.mock('../scheduling/resetMetronomeBeat', () => ({
+    resetMetronomeBeat: vi.fn(),
 }));
 vi.mock('../scheduling/scheduleAudioClips', () => ({
     scheduleAudioClips: vi.fn(),
