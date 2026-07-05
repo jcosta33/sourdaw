@@ -12,6 +12,10 @@ type MockDictationResult = {
     text: string;
     durationMs: number;
 };
+type MockVoiceStatus = {
+    isListening: boolean;
+    transcribing: boolean;
+};
 
 const mocks = vi.hoisted(() => ({
     onVoiceToggle: vi.fn<() => () => void>(() => () => {}),
@@ -20,6 +24,9 @@ const mocks = vi.hoisted(() => ({
     ensureWhisperReady: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     startDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     stopDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    setVoiceStatus: vi.fn<(status: MockVoiceStatus) => MockVoiceStatus>(),
+    setVoiceListeningStatus: vi.fn<(isListening: boolean) => MockVoiceStatus>(),
+    setVoiceTranscribingStatus: vi.fn<(transcribing: boolean) => MockVoiceStatus>(),
     onDictationResult: vi
         .fn<(handler: (result: MockDictationResult) => void) => Promise<() => void>>()
         .mockResolvedValue(() => {}),
@@ -52,6 +59,42 @@ vi.mock('../../../useCases/voiceDictation/stopDictation', () => ({
 vi.mock('../../../useCases/voiceDictation/onDictationResult', () => ({
     onDictationResult: mocks.onDictationResult,
 }));
+
+vi.mock('../../../useCases/setVoiceStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../useCases/setVoiceStatus')>(
+        '../../../useCases/setVoiceStatus'
+    );
+    mocks.setVoiceStatus.mockImplementation((status) => {
+        return actual.setVoiceStatus(status);
+    });
+    return {
+        setVoiceStatus: mocks.setVoiceStatus,
+    };
+});
+
+vi.mock('../../../useCases/setVoiceListeningStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../useCases/setVoiceListeningStatus')>(
+        '../../../useCases/setVoiceListeningStatus'
+    );
+    mocks.setVoiceListeningStatus.mockImplementation((isListening) => {
+        return actual.setVoiceListeningStatus(isListening);
+    });
+    return {
+        setVoiceListeningStatus: mocks.setVoiceListeningStatus,
+    };
+});
+
+vi.mock('../../../useCases/setVoiceTranscribingStatus', async () => {
+    const actual = await vi.importActual<typeof import('../../../useCases/setVoiceTranscribingStatus')>(
+        '../../../useCases/setVoiceTranscribingStatus'
+    );
+    mocks.setVoiceTranscribingStatus.mockImplementation((transcribing) => {
+        return actual.setVoiceTranscribingStatus(transcribing);
+    });
+    return {
+        setVoiceTranscribingStatus: mocks.setVoiceTranscribingStatus,
+    };
+});
 
 type MockSpeechRecognition = {
     continuous: boolean;
@@ -155,7 +198,24 @@ describe('useVoiceRecording', () => {
 
         expect(result.current.isListening).toBe(true);
         expect(result.current.voiceMode).toBe('whisper');
+        expect(mocks.setVoiceListeningStatus).toHaveBeenCalledWith(true);
         expect(voiceStatusStore.value?.isListening).toBe(true);
+    });
+
+    it('syncs local transcribing from the status composed by the listening use case', async () => {
+        voiceStatusStore.set({ isListening: false, transcribing: true });
+        mocks.resolveVoiceInputMode.mockReturnValue('whisper');
+        const { result } = renderHook(() => useVoiceRecording());
+
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
+        await act(async () => {
+            result.current.toggleListening();
+        });
+
+        expect(mocks.setVoiceListeningStatus).toHaveBeenCalledWith(true);
+        expect(result.current.isListening).toBe(true);
+        expect(result.current.transcribing).toBe(true);
+        expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: true });
     });
 
     it('sets error if no voice mode is available', () => {
@@ -185,7 +245,9 @@ describe('useVoiceRecording', () => {
         });
 
         expect(mocks.stopDictation).toHaveBeenCalled();
+        expect(result.current.isListening).toBe(true);
         expect(result.current.transcribing).toBe(true);
+        expect(mocks.setVoiceTranscribingStatus).toHaveBeenCalledWith(true);
         expect(voiceStatusStore.value?.transcribing).toBe(true);
     });
 
@@ -348,6 +410,10 @@ describe('useVoiceRecording', () => {
             result.current.toggleListening();
         });
 
+        expect(result.current.isListening).toBe(true);
+        expect(mocks.setVoiceListeningStatus).toHaveBeenCalledWith(true);
+        expect(voiceStatusStore.value?.isListening).toBe(true);
+
         act(() => {
             recognition.onresult?.(createSpeechRecognitionEvent({ transcript: ' build a drum loop ', isFinal: true }));
             recognition.onend?.();
@@ -355,6 +421,7 @@ describe('useVoiceRecording', () => {
 
         expect(mocks.injectPromptCommand).toHaveBeenCalledWith('build a drum loop');
         expect(result.current.isListening).toBe(false);
+        expect(mocks.setVoiceListeningStatus).toHaveBeenLastCalledWith(false);
         expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 
@@ -388,6 +455,7 @@ describe('useVoiceRecording', () => {
         expect(result.current.finalText).toBe('make the bass wider');
         expect(result.current.isListening).toBe(false);
         expect(result.current.transcribing).toBe(false);
+        expect(mocks.setVoiceStatus).toHaveBeenLastCalledWith({ isListening: false, transcribing: false });
         expect(voiceStatusStore.value).toEqual({ isListening: false, transcribing: false });
     });
 });
