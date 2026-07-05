@@ -9,8 +9,9 @@ describe('setVoiceStatus', () => {
     });
 
     it('should replace the full voice status', () => {
-        setVoiceStatus({ isListening: true, transcribing: true });
+        const status = setVoiceStatus({ isListening: true, transcribing: true });
 
+        expect(status).toEqual({ isListening: true, transcribing: true });
         expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: true });
     });
 });

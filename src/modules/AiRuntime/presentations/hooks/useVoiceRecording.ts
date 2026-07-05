@@ -89,18 +89,18 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [transcribing, setTranscribing] = useState(false);
     const [errorText, setErrorText] = useState('');
 
-    const syncVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
+    const syncLocalVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
         setIsListening(value.isListening);
         setTranscribing(value.transcribing);
-        setVoiceStatus(value);
+    };
+    const syncVoiceStatus = (value: { isListening: boolean; transcribing: boolean }): void => {
+        syncLocalVoiceStatus(setVoiceStatus(value));
     };
     const setListening = (value: boolean): void => {
-        setIsListening(value);
-        setVoiceListeningStatus(value);
+        syncLocalVoiceStatus(setVoiceListeningStatus(value));
     };
     const setTranscribingAndStore = (value: boolean): void => {
-        setTranscribing(value);
-        setVoiceTranscribingStatus(value);
+        syncLocalVoiceStatus(setVoiceTranscribingStatus(value));
     };
 
     const [voiceMode, setVoiceMode] = useState<VoiceInputMode>(null);

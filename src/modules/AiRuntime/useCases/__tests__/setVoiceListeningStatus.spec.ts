@@ -11,16 +11,18 @@ describe('setVoiceListeningStatus', () => {
     it('should update listening while preserving transcribing', () => {
         voiceStatusStore.set({ isListening: false, transcribing: true });
 
-        setVoiceListeningStatus(true);
+        const status = setVoiceListeningStatus(true);
 
+        expect(status).toEqual({ isListening: true, transcribing: true });
         expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: true });
     });
 
     it('should fall back to a non-transcribing status when current status is empty', () => {
         voiceStatusStore.set(null);
 
-        setVoiceListeningStatus(true);
+        const status = setVoiceListeningStatus(true);
 
+        expect(status).toEqual({ isListening: true, transcribing: false });
         expect(voiceStatusStore.value).toEqual({ isListening: true, transcribing: false });
     });
 });

@@ -1,10 +1,18 @@
-import { voiceStatusStore } from '../stores/voiceStatusStore';
+import { voiceStatusStore, type VoiceStatus } from '../stores/voiceStatusStore';
 
-export function setVoiceTranscribingStatus(transcribing: boolean): void {
+type SetVoiceTranscribingStatusOutput = VoiceStatus;
+
+export function setVoiceTranscribingStatus(transcribing: boolean): SetVoiceTranscribingStatusOutput {
+    let next_status: SetVoiceTranscribingStatusOutput = {
+        isListening: false,
+        transcribing,
+    };
     voiceStatusStore.update((status) => {
-        return {
+        next_status = {
             isListening: status?.isListening ?? false,
             transcribing,
         };
+        return next_status;
     });
+    return next_status;
 }
