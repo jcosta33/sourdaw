@@ -104,6 +104,18 @@ describe('AiRenderClipPreview', () => {
         expect(mocks.stop).toHaveBeenCalledTimes(1);
     });
 
+    it('should reset playback state when audio changes', () => {
+        const view = render_preview(new Float32Array([0.1, 0.2, 0.3]));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
+        view.rerender(
+            <AiRenderClipPreview audio={new Float32Array([0.4, 0.5])} sampleRate={48_000} label="A" name="Clip A" />
+        );
+
+        expect(mocks.stop).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: 'Play A' })).toBeInTheDocument();
+    });
+
     it('should release a canceled drag preview on unmount', () => {
         const view = render_preview();
         const dataTransfer = create_data_transfer('none');

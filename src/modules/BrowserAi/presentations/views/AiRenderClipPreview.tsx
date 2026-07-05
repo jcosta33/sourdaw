@@ -26,8 +26,18 @@ type AiRenderClipPreviewProps = {
 
 type PreviewPlayback = NonNullable<ReturnType<typeof playCachedAudioBufferPreview>>;
 
+type PreviewPlayState = {
+    isPlaying: boolean;
+    audio: Float32Array;
+    sampleRate: number;
+};
+
 export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRenderClipPreviewProps): ReactElement => {
-    const [isPlaying, setIsPlaying] = useState(false);
+    const [playState, setPlayState] = useState<PreviewPlayState>({
+        isPlaying: false,
+        audio,
+        sampleRate,
+    });
     const playbackRef = useRef<PreviewPlayback | null>(null);
     const bufferIdRef = useRef<string | null>(null);
     // Set once this row's buffer has been dragged onto a track: the dropped clip
@@ -36,6 +46,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     const handedOffRef = useRef(false);
 
     const durationSec = audio.length / sampleRate;
+    const isPlaying = playState.isPlaying && playState.audio === audio && playState.sampleRate === sampleRate;
 
     const ensureBufferId = (): string => {
         if (!bufferIdRef.current) {
@@ -71,7 +82,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         if (isPlaying) {
             playbackRef.current?.stop();
             playbackRef.current = null;
-            setIsPlaying(false);
+            setPlayState({ isPlaying: false, audio, sampleRate });
             return;
         }
 
@@ -83,8 +94,8 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
                 // Guard: only clear state if this playback is still the active one.
                 // Prevents a stopped playback's onended from clobbering a new playback.
                 if (playbackRef.current === startedPlayback) {
-                    setIsPlaying(false);
                     playbackRef.current = null;
+                    setPlayState({ isPlaying: false, audio, sampleRate });
                 }
             },
         });
@@ -94,7 +105,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         }
 
         playbackRef.current = startedPlayback;
-        setIsPlaying(true);
+        setPlayState({ isPlaying: true, audio, sampleRate });
     };
 
     const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
