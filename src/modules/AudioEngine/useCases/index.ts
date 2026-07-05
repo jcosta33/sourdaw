@@ -50,12 +50,10 @@ export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
 export { scheduleDeviceKeyOff } from './deviceControls/scheduleDeviceKeyOff';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
 export { registerTuningTable } from './deviceControls/tuningControls';
-export {
-    addMidiFxToStrip,
-    removeMidiFxFromStrip,
-    updateMidiFxParam,
-    updateMidiFxBypass,
-} from './deviceControls/midiFxControls';
+export { addMidiFxToStrip } from './deviceControls/addMidiFxToStrip';
+export { removeMidiFxFromStrip } from './deviceControls/removeMidiFxFromStrip';
+export { updateMidiFxBypass } from './deviceControls/updateMidiFxBypass';
+export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
 
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
