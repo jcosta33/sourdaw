@@ -6,14 +6,6 @@ export const STORE_NAME = 'documents';
 let _db: IDBDatabase | null = null;
 let _dbPromise: Promise<IDBDatabase | null> | null = null;
 
-export function getDb(): IDBDatabase | null {
-    return _db;
-}
-
-export function getDbPromise(): Promise<IDBDatabase | null> | null {
-    return _dbPromise;
-}
-
 export function openDatabase(): Promise<IDBDatabase | null> {
     if (_dbPromise) {
         return _dbPromise;
