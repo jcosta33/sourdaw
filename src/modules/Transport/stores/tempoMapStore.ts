@@ -14,7 +14,99 @@ export type TempoMapStoreState = {
     changes: TempoChange[];
 };
 
+const MIN_TEMPO = 20;
+const MAX_TEMPO = 999;
+const TEMPO_MAP_KEYS = ['changes'] as const;
+const TEMPO_CHANGE_KEYS = ['id', 'beat', 'tempo', 'curve'] as const;
+
+function create_empty_tempo_map_state(): TempoMapStoreState {
+    return { changes: [] };
+}
+
+function has_exact_keys(value: object, keys: readonly string[]): boolean {
+    const value_keys = Object.keys(value);
+    return value_keys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function is_unknown_array(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
+function get_tempo_change_values(value: unknown): unknown[] | null {
+    if (value === null || typeof value !== 'object') {
+        return null;
+    }
+
+    if (!('changes' in value)) {
+        return null;
+    }
+
+    if (!is_unknown_array(value.changes)) {
+        return null;
+    }
+
+    return value.changes;
+}
+
+function is_tempo_curve(value: unknown): value is TempoChange['curve'] {
+    return value === 'instant' || value === 'linear';
+}
+
+function is_valid_tempo_change(value: unknown): value is TempoChange {
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        'id' in value &&
+        typeof value.id === 'string' &&
+        'beat' in value &&
+        typeof value.beat === 'number' &&
+        Number.isFinite(value.beat) &&
+        value.beat >= 0 &&
+        'tempo' in value &&
+        typeof value.tempo === 'number' &&
+        Number.isFinite(value.tempo) &&
+        value.tempo >= MIN_TEMPO &&
+        value.tempo <= MAX_TEMPO &&
+        'curve' in value &&
+        is_tempo_curve(value.curve)
+    );
+}
+
+function normalize_tempo_change(change: TempoChange): TempoChange {
+    return {
+        id: change.id,
+        beat: change.beat,
+        tempo: change.tempo,
+        curve: change.curve,
+    };
+}
+
+function is_exact_tempo_map_state(value: unknown): value is TempoMapStoreState {
+    const changes = get_tempo_change_values(value);
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        has_exact_keys(value, TEMPO_MAP_KEYS) &&
+        changes !== null &&
+        changes.every((change) => is_valid_tempo_change(change) && has_exact_keys(change, TEMPO_CHANGE_KEYS))
+    );
+}
+
+function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
+    if (is_exact_tempo_map_state(value)) {
+        return value;
+    }
+
+    const changes = get_tempo_change_values(value);
+    if (changes === null) {
+        return create_empty_tempo_map_state();
+    }
+
+    return { changes: changes.filter(is_valid_tempo_change).map(normalize_tempo_change) };
+}
+
 export const tempoMapStore = createStore<TempoMapStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tempoMap'),
-    initialData: { changes: [] },
+    initialData: create_empty_tempo_map_state(),
+    sanitize: sanitize_tempo_map_state,
 });
