@@ -53,7 +53,7 @@ describe('newProject injectable', () => {
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(createCrdtProject).toHaveBeenCalledWith('Test');
-        expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master' });
+        expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);

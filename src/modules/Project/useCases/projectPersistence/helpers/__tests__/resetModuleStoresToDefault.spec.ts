@@ -5,29 +5,19 @@ import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/G
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
 const mocks = vi.hoisted(() => ({
-    trackStoreSet: vi.fn(),
+    resetArrangementStoresForProject: vi.fn(),
     transportStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
     tempoMapStoreSet: vi.fn(),
     timeSignatureMapStoreSet: vi.fn(),
-    markerStoreSet: vi.fn(),
-    takeLaneStoreSet: vi.fn(),
     setSidechainRoutes: vi.fn(),
     grinderStoreSet: vi.fn(),
     grinderTelemetryStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: { set: mocks.trackStoreSet },
-}));
-
-vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
-    markerStore: { set: mocks.markerStoreSet },
-}));
-
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
-    takeLaneStore: { set: mocks.takeLaneStoreSet },
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
 }));
 
 vi.mock('#/modules/Automation/stores/automationStore', () => ({
@@ -66,14 +56,12 @@ import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
     beforeEach(() => {
-        mocks.trackStoreSet.mockClear();
+        mocks.resetArrangementStoresForProject.mockClear();
         mocks.transportStoreSet.mockClear();
         mocks.automationStoreSet.mockClear();
         mocks.midiStoreSet.mockClear();
         mocks.tempoMapStoreSet.mockClear();
         mocks.timeSignatureMapStoreSet.mockClear();
-        mocks.markerStoreSet.mockClear();
-        mocks.takeLaneStoreSet.mockClear();
         mocks.setSidechainRoutes.mockClear();
         mocks.grinderStoreSet.mockClear();
         mocks.grinderTelemetryStoreSet.mockClear();
@@ -82,7 +70,7 @@ describe('resetModuleStoresToDefault', () => {
     it('should reset arrangement, transport, automation, MIDI, and routing stores', () => {
         resetModuleStoresToDefault();
 
-        expect(mocks.trackStoreSet).toHaveBeenCalledWith({ tracks: [], selectedTrackId: null });
+        expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
         expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.midiStoreSet).toHaveBeenCalledWith({
@@ -92,8 +80,6 @@ describe('resetModuleStoresToDefault', () => {
         });
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
-        expect(mocks.markerStoreSet).toHaveBeenCalledWith({ markers: [], sections: [] });
-        expect(mocks.takeLaneStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
     });
 

@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
@@ -33,13 +32,8 @@ export function newProject(name = 'Untitled Project'): void {
     // fresh project never shares a reference with the module-level default.
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
 
-    addTrack({ name: 'Master', kind: 'master' });
-
-    // Don't auto-select the master track — nothing should be selected on a fresh project
-    const currentTrackState = trackStore.value;
-    if (currentTrackState) {
-        trackStore.set({ ...currentTrackState, selectedTrackId: null });
-    }
+    // Don't auto-select the master track — nothing should be selected on a fresh project.
+    addTrack({ name: 'Master', kind: 'master', select: false });
 
     projectStore.set({
         name,

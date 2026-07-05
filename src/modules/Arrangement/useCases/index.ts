@@ -17,6 +17,7 @@ export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
+export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
 export { freezeTrack } from './freezeBounce/freezeTrack';
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
