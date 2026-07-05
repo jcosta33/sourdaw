@@ -3,16 +3,19 @@
  *
  * Shows: play/stop button, label, duration.
  * Draggable: the entire row can be dragged onto an audio track in the
- * arrangement. On drag start the Float32Array is converted to an AudioBuffer,
- * cached in audioBufferCache, and the bufferId is set as drag data.
+ * arrangement. On drag start the Float32Array is cached by AudioEngine and
+ * the bufferId is set as drag data.
  */
 
 import { type DragEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { GripVertical, Play, Square } from 'lucide-react';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext, createBufferSource } from '#/modules/AudioEngine/useCases';
+import {
+    cachePreviewAudioBuffer,
+    playCachedAudioBufferPreview,
+    releasePreviewAudioBuffer,
+} from '#/modules/AudioEngine/useCases';
 
 type AiRenderClipPreviewProps = {
     audio: Float32Array;
@@ -21,22 +24,11 @@ type AiRenderClipPreviewProps = {
     name: string;
 };
 
-/**
- * Convert a mono Float32Array to an AudioBuffer and cache it.
- * Returns the bufferId used in the cache.
- */
-function cacheAudioBuffer(audio: Float32Array, sampleRate: number): string {
-    const id = `ai-render-${crypto.randomUUID()}`;
-    const ctx = getAudioContext();
-    const buffer = ctx.createBuffer(1, audio.length, sampleRate);
-    buffer.getChannelData(0).set(audio);
-    audioBufferCache.set(id, buffer);
-    return id;
-}
+type PreviewPlayback = NonNullable<ReturnType<typeof playCachedAudioBufferPreview>>;
 
 export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRenderClipPreviewProps): ReactElement => {
     const [isPlaying, setIsPlaying] = useState(false);
-    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const playbackRef = useRef<PreviewPlayback | null>(null);
     const bufferIdRef = useRef<string | null>(null);
     // Set once this row's buffer has been dragged onto a track: the dropped clip
     // now points at the same cache entry (see useTimelineFileDrop), so this row
@@ -47,13 +39,13 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
     const ensureBufferId = (): string => {
         if (!bufferIdRef.current) {
-            bufferIdRef.current = cacheAudioBuffer(audio, sampleRate);
+            bufferIdRef.current = cachePreviewAudioBuffer({ audio, sampleRate });
         }
         return bufferIdRef.current;
     };
 
-    // Evict this row's cached AudioBuffer from the cross-module audioBufferCache
-    // when the component unmounts or when the audio it represents changes.
+    // Release this row's cached preview buffer when the component unmounts or
+    // when the audio it represents changes.
     // Without this, every previewed render leaks an entry into a cache shared
     // across the app, growing unbounded for the lifetime of the session.
     // The buffer is derived from (audio, sampleRate), so a change to either makes
@@ -63,7 +55,7 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     useEffect(() => {
         const evictPriorBuffer = (): void => {
             if (bufferIdRef.current && !handedOffRef.current) {
-                audioBufferCache.remove(bufferIdRef.current);
+                releasePreviewAudioBuffer(bufferIdRef.current);
             }
             bufferIdRef.current = null;
             handedOffRef.current = false;
@@ -73,31 +65,31 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
     const handlePlay = (): void => {
         if (isPlaying) {
-            sourceRef.current?.stop();
-            sourceRef.current = null;
+            playbackRef.current?.stop();
+            playbackRef.current = null;
             setIsPlaying(false);
             return;
         }
 
-        ensureBufferId();
-        const buffer = audioBufferCache.get(bufferIdRef.current!);
-        if (!buffer) {
+        const bufferId = ensureBufferId();
+        let startedPlayback: PreviewPlayback | null = null;
+        startedPlayback = playCachedAudioBufferPreview({
+            bufferId,
+            onEnded: () => {
+                // Guard: only clear state if this playback is still the active one.
+                // Prevents a stopped playback's onended from clobbering a new playback.
+                if (playbackRef.current === startedPlayback) {
+                    setIsPlaying(false);
+                    playbackRef.current = null;
+                }
+            },
+        });
+
+        if (!startedPlayback) {
             return;
         }
 
-        const source = createBufferSource();
-        source.buffer = buffer;
-        source.connect(getAudioContext().destination);
-        source.onended = () => {
-            // Guard: only clear state if this source is still the active one.
-            // Prevents a stopped source's onended from clobbering a new playback.
-            if (sourceRef.current === source) {
-                setIsPlaying(false);
-                sourceRef.current = null;
-            }
-        };
-        source.start();
-        sourceRef.current = source;
+        playbackRef.current = startedPlayback;
         setIsPlaying(true);
     };
 

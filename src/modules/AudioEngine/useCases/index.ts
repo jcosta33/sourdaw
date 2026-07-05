@@ -28,6 +28,9 @@ export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
+export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
+export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
