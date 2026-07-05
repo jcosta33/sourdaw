@@ -16,8 +16,10 @@ import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTransientsForClip';
+import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
 import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
@@ -126,7 +128,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 refreshWarp();
                 event.preventDefault();
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
-                const selected = elasticAudioStore.value?.selectedMarkerIds ?? [];
+                const selected = elasticState.selectedMarkerIds;
                 for (const markerId of selected) {
                     removeMarker(markerId);
                 }
@@ -136,7 +138,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [clipId, elasticState.openClipId]);
+    }, [clipId, elasticState.openClipId, elasticState.selectedMarkerIds]);
 
     const beatWidth = Math.max(1, 40 * zoom);
 
@@ -166,7 +168,7 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const handleDetect = (): void => {
         detectTransientsForClip(clipId, elasticState.sensitivity);
-        elasticAudioStore.set({ ...elasticState, detected: true });
+        markElasticDetectionComplete();
         refreshWarp();
     };
 
@@ -249,10 +251,7 @@ export const ElasticEditorPanel = (): ReactElement => {
             };
             didDragRef.current = false;
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
-            elasticAudioStore.set({
-                ...(elasticAudioStore.value ?? defaultElasticAudioState),
-                selectedMarkerIds: [hit.id],
-            });
+            selectElasticMarkers([hit.id]);
         }
     };
 

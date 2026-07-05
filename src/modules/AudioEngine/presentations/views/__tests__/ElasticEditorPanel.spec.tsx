@@ -1,67 +1,77 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    setElasticTool: vi.fn(),
-    setElasticSensitivity: vi.fn(),
-    detectTransientsForClip: vi.fn(),
-    quantizeTransients: vi.fn(),
-    addManualMarker: vi.fn(),
-    removeMarker: vi.fn(),
-    toggleMarkerLock: vi.fn(),
-    setStretchMode: vi.fn(),
-    setDefaultAlgorithm: vi.fn(),
-    getWaveformPeaks: vi.fn(() => new Float32Array(200).fill(0.3)),
-    trackStoreValue: {
-        tracks: [
+const mocks = vi.hoisted(() => {
+    const callOrder: string[] = [];
+    return {
+        callOrder,
+        setElasticTool: vi.fn(),
+        setElasticSensitivity: vi.fn(),
+        detectTransientsForClip: vi.fn(() => {
+            callOrder.push('detect');
+        }),
+        markElasticDetectionComplete: vi.fn(() => {
+            callOrder.push('mark');
+        }),
+        selectElasticMarkers: vi.fn(),
+        quantizeTransients: vi.fn(),
+        addManualMarker: vi.fn(),
+        removeMarker: vi.fn(),
+        toggleMarkerLock: vi.fn(),
+        setStretchMode: vi.fn(),
+        setDefaultAlgorithm: vi.fn(),
+        getWaveformPeaks: vi.fn(() => new Float32Array(200).fill(0.3)),
+        trackStoreValue: {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
+                },
+            ],
+            selectedTrackId: 't1',
+        },
+        workspaceStoreValue: {
+            selectedClipId: 'c1',
+            snapValue: 0.25,
+        },
+        elasticStoreValue: {
+            openClipId: 'c1',
+            tool: 'select' as const,
+            sensitivity: 0.5,
+            selectedMarkerIds: [],
+            detected: true,
+        },
+        warpStates: new Map<
+            string,
             {
-                id: 't1',
-                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
-            },
-        ],
-        selectedTrackId: 't1',
-    },
-    workspaceStoreValue: {
-        selectedClipId: 'c1',
-        snapValue: 0.25,
-    },
-    elasticStoreValue: {
-        openClipId: 'c1',
-        tool: 'select' as const,
-        sensitivity: 0.5,
-        selectedMarkerIds: [],
-        detected: true,
-    },
-    warpStates: new Map<
-        string,
-        {
-            enabled: boolean;
-            markers: Array<{
-                id: string;
-                originalBeat: number;
-                warpedBeat: number;
-                origin?: 'user' | 'transient-auto' | 'grid-snap';
-                confidence?: number;
-                locked?: boolean;
-            }>;
-            stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
-            originalTempo: number | null;
-        }
-    >([
-        [
-            'c1',
-            {
-                enabled: true,
-                markers: [
-                    { id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.9 },
-                    { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
-                ],
-                stretchMode: 'complex' as const,
-                originalTempo: null,
-            },
-        ],
-    ]),
-}));
+                enabled: boolean;
+                markers: Array<{
+                    id: string;
+                    originalBeat: number;
+                    warpedBeat: number;
+                    origin?: 'user' | 'transient-auto' | 'grid-snap';
+                    confidence?: number;
+                    locked?: boolean;
+                }>;
+                stretchMode: 'repitch' | 'complex' | 'texture' | 'beats';
+                originalTempo: number | null;
+            }
+        >([
+            [
+                'c1',
+                {
+                    enabled: true,
+                    markers: [
+                        { id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'transient-auto', confidence: 0.9 },
+                        { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
+                    ],
+                    stretchMode: 'complex' as const,
+                    originalTempo: null,
+                },
+            ],
+        ]),
+    };
+});
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, fallback?: unknown) => {
@@ -169,6 +179,10 @@ vi.mock('../../../useCases/elasticAudio/detectTransientsForClip', () => ({
     detectTransientsForClip: (...args: unknown[]) => mocks.detectTransientsForClip(...args),
 }));
 
+vi.mock('../../../useCases/elasticAudio/markElasticDetectionComplete', () => ({
+    markElasticDetectionComplete: (...args: unknown[]) => mocks.markElasticDetectionComplete(...args),
+}));
+
 vi.mock('../../../useCases/elasticAudio/quantizeTransients', () => ({
     quantizeTransients: (...args: unknown[]) => mocks.quantizeTransients(...args),
 }));
@@ -185,6 +199,10 @@ vi.mock('../../../useCases/elasticAudio/setElasticTool', () => ({
     setElasticTool: (...args: unknown[]) => mocks.setElasticTool(...args),
 }));
 
+vi.mock('../../../useCases/elasticAudio/selectElasticMarkers', () => ({
+    selectElasticMarkers: (...args: unknown[]) => mocks.selectElasticMarkers(...args),
+}));
+
 vi.mock('../../../useCases/elasticAudio/toggleMarkerLock', () => ({
     toggleMarkerLock: (...args: unknown[]) => mocks.toggleMarkerLock(...args),
 }));
@@ -194,6 +212,7 @@ import { ElasticEditorPanel } from '../ElasticEditorPanel';
 describe('ElasticEditorPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.callOrder.length = 0;
         mocks.trackStoreValue = {
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
             selectedTrackId: 't1',
@@ -236,10 +255,28 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.setElasticTool).toHaveBeenCalledWith('lock-marker');
     });
 
-    it('invokes detectTransientsForClip on Detect button', () => {
+    it('invokes detectTransientsForClip then marks detection complete on Detect button', () => {
         render(<ElasticEditorPanel />);
         fireEvent.click(screen.getByTestId('elastic-detect-button'));
         expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('c1', 0.5);
+        expect(mocks.markElasticDetectionComplete).toHaveBeenCalledTimes(1);
+        expect(mocks.callOrder).toEqual(['detect', 'mark']);
+    });
+
+    it('selects an existing marker through the elastic selection use case', () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, {
+            clientX: 40,
+            pointerId: 4,
+        });
+
+        expect(mocks.selectElasticMarkers).toHaveBeenCalledWith(['m1']);
+        expect(mocks.addManualMarker).not.toHaveBeenCalled();
+        expect(mocks.removeMarker).not.toHaveBeenCalled();
+        expect(mocks.toggleMarkerLock).not.toHaveBeenCalled();
     });
 
     it('invokes quantizeTransients on Quantize button when markers exist and detection ran', () => {
