@@ -4,6 +4,7 @@ import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { arrangementStore, projectStore } from '#/modules/Project/stores';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
+import { cvGateStore } from '#/modules/Synth/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
 /** All project-state stores backed by AutomergeStorage. */
@@ -18,6 +19,7 @@ const projectStores = [
     takeLaneStore,
     arrangementStore,
     projectStore,
+    cvGateStore,
 ];
 
 export function projectCrdtToStores(): void {

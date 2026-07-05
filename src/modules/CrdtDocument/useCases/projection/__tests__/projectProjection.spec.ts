@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     takeLaneStore: { hydrate: vi.fn() },
     arrangementStore: { hydrate: vi.fn() },
     projectStore: { hydrate: vi.fn() },
+    cvGateStore: { hydrate: vi.fn() },
     hydrateSidechainRoutes: vi.fn(),
 }));
 
@@ -64,6 +65,15 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     };
 });
 
+// Mock Synth
+vi.mock('#/modules/Synth/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Synth/stores')>();
+    return {
+        ...actual,
+        cvGateStore: mocks.cvGateStore,
+    };
+});
+
 // Mock Transport
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
@@ -91,6 +101,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.takeLaneStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.arrangementStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });
