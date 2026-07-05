@@ -11,8 +11,10 @@ export { separateStems } from './audioAi/separateStems';
 export type { AudioFeatures, AudioFeaturesSummary, AnalysisOptions } from './audioFeatures';
 export { summarizeFeatures } from './audioFeatures';
 
-export type { AudioToMidiOptions, DetectedOnset } from './audioToMidi';
-export { detectOnsets, audioToMidi } from './audioToMidi';
+export type { AudioToMidiOptions } from './audioToMidi';
+export { audioToMidi } from './audioToMidi';
+export type { DetectedOnset } from './detectOnsets';
+export { detectOnsets } from './detectOnsets';
 
 export type { InsertPolyphonicMidiNotesResult } from './insertPolyphonicMidiNotes';
 export { insertPolyphonicMidiNotes } from './insertPolyphonicMidiNotes';
