@@ -24,6 +24,7 @@ import {
     setStretchMode,
     removeWarpMarker,
     moveWarpMarker,
+    commitWarpMarkerBeatDrag,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -174,7 +175,12 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
-    const draggingMarkerRef = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
+    const draggingMarkerRef = useRef<{
+        id: string;
+        startX: number;
+        startOriginalBeat: number;
+        startWarpedBeat: number;
+    } | null>(null);
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDragRef = useRef(false);
 
@@ -258,7 +264,12 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         const x = getCanvasX(event);
         const hit = hitTestMarker(x);
         if (hit) {
-            draggingMarkerRef.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
+            draggingMarkerRef.current = {
+                id: hit.id,
+                startX: x,
+                startOriginalBeat: hit.originalBeat,
+                startWarpedBeat: hit.warpedBeat,
+            };
             didDragRef.current = false;
             setIsDraggingMarker(true);
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -282,9 +293,23 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         }
     };
 
-    const handlePointerUp = () => {
+    const finishMarkerDrag = (): void => {
+        const drag = draggingMarkerRef.current;
+        if (!drag) {
+            return;
+        }
+        commitWarpMarkerBeatDrag({
+            clipId,
+            markerId: drag.id,
+            beforeOriginalBeat: drag.startOriginalBeat,
+            beforeWarpedBeat: drag.startWarpedBeat,
+        });
         draggingMarkerRef.current = null;
         setIsDraggingMarker(false);
+    };
+
+    const handlePointerUp = () => {
+        finishMarkerDrag();
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -423,6 +448,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
+                    onPointerCancel={finishMarkerDrag}
+                    onLostPointerCapture={finishMarkerDrag}
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={handleWaveContextMenu}
                 />

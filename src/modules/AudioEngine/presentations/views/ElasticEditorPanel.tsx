@@ -277,18 +277,26 @@ export const ElasticEditorPanel = (): ReactElement => {
         refreshWarp();
     };
 
+    const finishMarkerDrag = (): void => {
+        const drag = dragRef.current;
+        if (!drag) {
+            return;
+        }
+        commitWarpMarkerBeatDrag({
+            clipId,
+            markerId: drag.markerId,
+            beforeOriginalBeat: drag.startOriginalBeat,
+            beforeWarpedBeat: drag.startWarpedBeat,
+        });
+        dragRef.current = null;
+    };
+
     const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
         const drag = dragRef.current;
         if (drag) {
             (event.target as HTMLCanvasElement).releasePointerCapture(drag.pointerId);
-            commitWarpMarkerBeatDrag({
-                clipId,
-                markerId: drag.markerId,
-                beforeOriginalBeat: drag.startOriginalBeat,
-                beforeWarpedBeat: drag.startWarpedBeat,
-            });
         }
-        dragRef.current = null;
+        finishMarkerDrag();
     };
 
     const onContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
@@ -424,6 +432,8 @@ export const ElasticEditorPanel = (): ReactElement => {
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
+                    onPointerCancel={finishMarkerDrag}
+                    onLostPointerCapture={finishMarkerDrag}
                     onContextMenu={onContextMenu}
                 />
             </div>

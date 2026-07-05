@@ -356,6 +356,31 @@ describe('ElasticEditorPanel', () => {
         });
     });
 
+    it('should commit marker drag undo when pointer capture is canceled', () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, {
+            clientX: 40,
+            pointerId: 4,
+        });
+        fireEvent.pointerMove(canvas, {
+            clientX: 69,
+            pointerId: 4,
+        });
+        fireEvent.pointerCancel(canvas, {
+            pointerId: 4,
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            beforeOriginalBeat: 1,
+            beforeWarpedBeat: 1,
+        });
+    });
+
     it('invokes quantizeTransients on Quantize button when markers exist and detection ran', () => {
         render(<ElasticEditorPanel />);
         const btn = screen.getByTestId('elastic-quantize-button');

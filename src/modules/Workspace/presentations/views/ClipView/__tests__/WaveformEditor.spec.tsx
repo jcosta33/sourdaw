@@ -1,7 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { normalizeClip } from '#/modules/Arrangement/useCases';
+import { getWarpState } from '#/modules/Arrangement/stores';
+import { commitWarpMarkerBeatDrag, moveWarpMarker, normalizeClip } from '#/modules/Arrangement/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
 
@@ -137,6 +138,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     normalizeClip: vi.fn(),
     reverseClip: vi.fn(),
     moveWarpMarker: vi.fn(),
+    commitWarpMarkerBeatDrag: vi.fn(),
     removeWarpMarker: vi.fn(),
     setStretchMode: vi.fn(),
     disableWarp: vi.fn(),
@@ -239,5 +241,52 @@ describe('WaveformEditor', () => {
 
         expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-1');
         expect(screen.queryByRole('menuitem', { name: 'Normalize' })).not.toBeInTheDocument();
+    });
+
+    it('should commit marker drag undo on pointer up', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+
+        expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1', 2.1);
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+            clipId: 'clip-1',
+            markerId: 'm1',
+            beforeOriginalBeat: 0.5,
+            beforeWarpedBeat: 1,
+        });
+    });
+
+    it('should commit marker drag undo on pointer cancel', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        fireEvent.pointerCancel(canvas, { pointerId: 7 });
+
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+            clipId: 'clip-1',
+            markerId: 'm1',
+            beforeOriginalBeat: 0.5,
+            beforeWarpedBeat: 1,
+        });
     });
 });
