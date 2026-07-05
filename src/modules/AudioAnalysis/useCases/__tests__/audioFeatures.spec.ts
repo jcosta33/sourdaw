@@ -34,7 +34,8 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     },
 }));
 
-import { extractFeatures, summarizeFeatures } from '../audioFeatures';
+import { extractFeatures } from '../audioFeatures';
+import { summarizeFeatures } from '../summarizeFeatures';
 
 describe('audioFeatures', () => {
     it('extractFeatures returns an empty array when the buffer is missing', () => {

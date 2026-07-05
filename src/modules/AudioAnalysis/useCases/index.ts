@@ -9,7 +9,7 @@ export { generateAudio } from './audioAi/generateAudio';
 export { separateStems } from './audioAi/separateStems';
 
 export type { AudioFeatures, AudioFeaturesSummary, AnalysisOptions } from './audioFeatures';
-export { summarizeFeatures } from './audioFeatures';
+export { summarizeFeatures } from './summarizeFeatures';
 
 export type { AudioToMidiOptions } from './audioToMidi';
 export { audioToMidi } from './audioToMidi';
