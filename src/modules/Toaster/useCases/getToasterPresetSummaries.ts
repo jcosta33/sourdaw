@@ -1,17 +1,17 @@
 import { TOASTER_PRESETS } from '../repositories/toasterPresets';
 
-type GetToasterPresetsOutput = Array<{
+type GetToasterPresetSummariesOutput = Array<{
     id: string;
     name: string;
     description: string;
     tags: string[];
-    kit: (typeof TOASTER_PRESETS)[number]['kit'];
 }>;
 
-export function getToasterPresets(): GetToasterPresetsOutput {
+export function getToasterPresetSummaries(): GetToasterPresetSummariesOutput {
     return TOASTER_PRESETS.map((preset) => ({
-        ...preset,
+        id: preset.id,
+        name: preset.name,
+        description: preset.description,
         tags: [...preset.tags],
-        kit: structuredClone(preset.kit),
     }));
 }
