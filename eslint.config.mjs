@@ -2556,7 +2556,7 @@ export default defineConfig(
             'sourdaw/no-multiple-function-exports': 'warn',
             'sourdaw/no-namespace-import': 'error',
             'sourdaw/no-nonmodule-private-module-import': 'warn',
-            'sourdaw/no-repository-usecase-import': 'warn',
+            'sourdaw/no-repository-usecase-import': 'error',
             'sourdaw/no-type-only-private-module-import': 'warn',
             'sourdaw/no-type-assertion-escape': 'error',
 
