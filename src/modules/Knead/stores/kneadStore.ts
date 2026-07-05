@@ -81,6 +81,10 @@ function is_finite_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function is_safe_record_key(key: string): boolean {
+    return key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
+}
+
 function sanitize_active_clip_id(value: unknown): string | null {
     if (typeof value === 'string') {
         return value;
@@ -204,6 +208,10 @@ function sanitize_knead_clip_map(value: unknown): Record<string, KneadClipState>
     }
 
     for (const [clip_id, clip_candidate] of Object.entries(value)) {
+        if (!is_safe_record_key(clip_id)) {
+            continue;
+        }
+
         const clip = sanitize_knead_clip_state(clip_candidate);
         if (clip !== null) {
             clips[clip_id] = clip;
@@ -288,6 +296,10 @@ function sanitize_pitch_contour_map(value: unknown): Record<string, PitchContour
     }
 
     for (const [clip_id, contour_candidate] of Object.entries(value)) {
+        if (!is_safe_record_key(clip_id)) {
+            continue;
+        }
+
         const contour = sanitize_pitch_contour(contour_candidate);
         if (contour !== null) {
             contours[clip_id] = contour;

@@ -6,7 +6,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 // real `createAutomergeStorage` adapter configured by `kneadStore` exercises
 // its `toCrdt` / `fromCrdt` callbacks against controllable state.
 const fakeDoc: Record<string, unknown> = {};
-let mutateDocCallCount = 0;
+let mutate_doc_call_count = 0;
 
 import { kneadStore, defaultKneadState } from '../kneadStore';
 
@@ -16,7 +16,7 @@ function configureFakeCrdtPort(): void {
         getSemanticMessage: () => undefined,
         hasDoc: () => true,
         mutateDoc: ({ changeFn }) => {
-            mutateDocCallCount += 1;
+            mutate_doc_call_count += 1;
             changeFn(fakeDoc);
         },
     });
@@ -31,11 +31,11 @@ describe('kneadStore persistence of transient analysis flags', () => {
         for (const key of Object.keys(fakeDoc)) {
             delete fakeDoc[key];
         }
-        mutateDocCallCount = 0;
+        mutate_doc_call_count = 0;
         configureFakeCrdtPort();
         kneadStore.set(defaultKneadState);
         await flushRaf();
-        mutateDocCallCount = 0;
+        mutate_doc_call_count = 0;
     });
 
     afterEach(() => {
@@ -235,7 +235,7 @@ describe('kneadStore persistence of transient analysis flags', () => {
         kneadStore.hydrate();
         await flushRaf();
 
-        expect(mutateDocCallCount).toBe(0);
+        expect(mutate_doc_call_count).toBe(0);
         expect(fakeDoc.knead).toEqual({
             activeClipId: 'clip-valid',
             clips: {},
@@ -262,5 +262,45 @@ describe('kneadStore persistence of transient analysis flags', () => {
             isAnalyzing: false,
             analysisProgress: 0,
         });
+    });
+
+    it('should drop prototype-polluting CRDT map keys on hydrate', () => {
+        const valid_clip = {
+            clipId: 'clip-safe',
+            blobs: [],
+            retuneSpeedMs: 45,
+            toleranceCents: 35,
+            toleranceTimeMs: 20,
+            humanizePercent: 12,
+            formantPreserve: true,
+        };
+        const valid_contour = {
+            points: [],
+            sample_rate: 48000,
+            hop_size: 256,
+        };
+
+        fakeDoc.knead = {
+            activeClipId: 'clip-safe',
+            clips: {
+                ['__proto__']: { ...valid_clip, clipId: 'polluted-proto' },
+                constructor: { ...valid_clip, clipId: 'polluted-constructor' },
+                prototype: { ...valid_clip, clipId: 'polluted-prototype' },
+                'clip-safe': valid_clip,
+            },
+            contours: {
+                ['__proto__']: valid_contour,
+                constructor: valid_contour,
+                prototype: valid_contour,
+                'clip-safe': valid_contour,
+            },
+        };
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value?.clips).toEqual({ 'clip-safe': valid_clip });
+        expect(kneadStore.value?.contours).toEqual({ 'clip-safe': valid_contour });
+        expect(Object.getPrototypeOf(kneadStore.value?.clips)).toBe(Object.prototype);
+        expect(Object.getPrototypeOf(kneadStore.value?.contours)).toBe(Object.prototype);
     });
 });
