@@ -12,6 +12,15 @@ import { addDevice } from '../../device/addDevice';
 import { setDeviceParameter } from '../../device/setDeviceParameter/setDeviceParameter';
 import { loadPresetToTrack } from '../presetLoading';
 
+const mocks = vi.hoisted(() => ({
+    compileFaustDSP: vi.fn(),
+    createFaustNode: vi.fn(),
+    isFaustModule: vi.fn((moduleId: string) => moduleId.startsWith('faust-')),
+    logger: { error: vi.fn() },
+    notifyUser: vi.fn(),
+    registerFaustDSP: vi.fn(),
+}));
+
 vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: vi.fn(),
 }));
@@ -40,6 +49,21 @@ vi.mock('#/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip', (
     removeDeviceFromStrip: vi.fn(),
 }));
 
+vi.mock('#/modules/Plugin/useCases', () => ({
+    compileFaustDSP: mocks.compileFaustDSP,
+    createFaustNode: mocks.createFaustNode,
+    isFaustModule: mocks.isFaustModule,
+    registerFaustDSP: mocks.registerFaustDSP,
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: mocks.logger,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
 function basePreset(devices: SoundPreset['devices']): SoundPreset {
     return {
         id: 'p1',
@@ -63,6 +87,9 @@ describe('loadPresetToTrack', () => {
         vi.mocked(addDeviceToStrip).mockReset();
         vi.mocked(updateDeviceParam).mockReset();
         vi.mocked(removeDeviceFromStrip).mockReset();
+        mocks.compileFaustDSP.mockReset();
+        mocks.logger.error.mockReset();
+        mocks.notifyUser.mockReset();
     });
 
     it('should strip existing devices before loading when track exists', () => {
@@ -92,6 +119,8 @@ describe('loadPresetToTrack', () => {
 
         expect(removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'old-dev');
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        const clearDevices = vi.mocked(updateTrack).mock.calls[0]?.[1];
+        expect(clearDevices?.(track)).toEqual({ ...track, devices: [] });
     });
 
     it('should add effect devices without stripping when track is missing', () => {
@@ -123,5 +152,29 @@ describe('loadPresetToTrack', () => {
         expect(updateTrack).toHaveBeenCalled();
         expect(addDeviceToStrip).toHaveBeenCalled();
         expect(updateDeviceParam).toHaveBeenCalledWith('t2', expect.any(String), 'cutoff', 0.4);
+    });
+
+    it('should notify when Faust instrument compilation fails', async () => {
+        const failure = new Error('compile failed');
+        mocks.compileFaustDSP.mockRejectedValueOnce(failure);
+        vi.mocked(getTrackById).mockReturnValue(undefined);
+
+        loadPresetToTrack(
+            't3',
+            basePreset([{ type: 'faust-synth', name: 'Faust Synth', parameterValues: { gain: 0.8 } }])
+        );
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+        });
+
+        expect(mocks.compileFaustDSP).toHaveBeenCalledWith('faust-synth');
+        const loggedError: unknown = mocks.logger.error.mock.calls[0]?.[0];
+        expect(loggedError).toBeInstanceOf(Error);
+        if (!(loggedError instanceof Error)) {
+            throw new Error('Expected Faust compilation failure to be logged');
+        }
+        expect(loggedError.message).toBe('Faust compilation failed for faust-synth');
+        expect(loggedError.cause).toBe(failure);
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to compile Faust device: Faust Synth', 'error');
     });
 });
