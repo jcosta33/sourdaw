@@ -8,6 +8,7 @@ export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 
 export { createCrdtDoc } from './createCrdtDoc';
+export { clearActionHistory } from './clearActionHistory';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
