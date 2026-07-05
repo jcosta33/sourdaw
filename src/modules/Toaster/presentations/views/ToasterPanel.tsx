@@ -28,7 +28,7 @@ import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { startSequencer, stopSequencer } from '../../useCases/sequencerPlayback';
 import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
-import { TOASTER_PRESETS } from '../../useCases/toasterQueries';
+import { getToasterPresets } from '../../useCases/toasterQueries';
 import { triggerToasterPad } from '../../useCases/triggerPad';
 import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
@@ -149,7 +149,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
     const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
     const presetSearch = presetQuery.trim().toLowerCase();
-    const visiblePresets = TOASTER_PRESETS.filter((preset) => {
+    const visiblePresets = getToasterPresets().filter((preset) => {
         if (presetSearch.length === 0) {
             return true;
         }

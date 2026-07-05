@@ -1,7 +1,17 @@
-import { TOASTER_PRESETS as _TOASTER_PRESETS } from '../repositories/toasterPresets';
+import { TOASTER_PRESETS } from '../repositories/toasterPresets';
 
-// Single source of truth lives in the model layer; re-exported here so other
-// modules can reach it through the useCases contract barrel (models are private).
-export { DEFAULT_PAD_NAMES } from '../models/ToasterKit';
+type GetToasterPresetsOutput = Array<{
+    id: string;
+    name: string;
+    description: string;
+    tags: string[];
+    kit: (typeof TOASTER_PRESETS)[number]['kit'];
+}>;
 
-export { _TOASTER_PRESETS as TOASTER_PRESETS };
+export function getToasterPresets(): GetToasterPresetsOutput {
+    return TOASTER_PRESETS.map((preset) => ({
+        ...preset,
+        tags: [...preset.tags],
+        kit: structuredClone(preset.kit),
+    }));
+}

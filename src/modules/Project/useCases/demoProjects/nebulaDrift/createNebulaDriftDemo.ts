@@ -29,7 +29,7 @@ import { createAutomationLane } from '#/modules/Automation/useCases';
 import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
 import { addChordEvent } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
-import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
+import { getDefaultPadNames } from '#/modules/Toaster/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     addTempoChange,
@@ -199,9 +199,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
         },
     ];
 
+    const defaultPadNames = getDefaultPadNames();
     const toasterPadTracks = Array.from({ length: 16 }, (_, index) => {
         const child = createTrack({
-            name: DEFAULT_PAD_NAMES[index] ?? `Pad ${index + 1}`,
+            name: defaultPadNames[index] ?? `Pad ${index + 1}`,
             kind: 'midi',
             parentId: toasterFolder.id,
         });
@@ -1256,7 +1257,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
                 continue;
             }
             const [st, en] = toasterSegRanges[state]!;
-            const padName = DEFAULT_PAD_NAMES[padIdx] ?? `Pad ${padIdx + 1}`;
+            const padName = defaultPadNames[padIdx] ?? `Pad ${padIdx + 1}`;
             const context = createMidiClip(time.id, `${padName} · ${toasterSegLabels[state]}`, st, en, time.color);
             list.push(context);
             toasterNotesByClipId[context.id] = arr;
