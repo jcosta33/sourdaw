@@ -10,8 +10,10 @@ export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 
+export { finishToolSwap } from './finishToolSwap';
 export { setEditingTool } from './setEditingTool';
 export { setMarqueeSelection } from './setMarqueeSelection';
+export { startToolSwap } from './startToolSwap';
 
 // ── Track Height ──────────────────────────────────────────────────────────────
 

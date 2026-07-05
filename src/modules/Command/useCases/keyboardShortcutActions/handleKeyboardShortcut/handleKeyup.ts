@@ -1,6 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { toolSwapStore } from '#/modules/Workspace/stores';
-import { setEditingTool } from '#/modules/Workspace/useCases';
+import { finishToolSwap } from '#/modules/Workspace/useCases';
 
 import { CommandEventBus } from '../../commandEventBus';
 
@@ -15,13 +14,6 @@ export const handleKeyup = inject({ eventBus: CommandEventBus })(
             }
 
             // R-A3: Quick-swap tool (hold beyond 300ms = temporary swap)
-            const swap = toolSwapStore.value;
-            if (swap && swap.lastDownKey === key && swap.lastDownTime !== null && swap.previousTool !== null) {
-                const duration = performance.now() - swap.lastDownTime;
-                if (duration > 300) {
-                    setEditingTool(swap.previousTool);
-                }
-                toolSwapStore.set({ lastDownTime: null, lastDownKey: null, previousTool: null });
-            }
+            finishToolSwap({ key, timestamp: performance.now() });
         }
 );

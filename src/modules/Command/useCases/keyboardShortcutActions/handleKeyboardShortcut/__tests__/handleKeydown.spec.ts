@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { seekPlayhead } from '#/modules/Transport/useCases';
+import { setEditingTool, startToolSwap } from '#/modules/Workspace/useCases';
 
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
@@ -41,8 +42,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: { value: { selectedClipIds: [], selectedClipId: null } },
-    toolSwapStore: { value: null, set: vi.fn() },
+    workspaceStore: { value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null } },
 }));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
@@ -55,12 +55,13 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     setEditingTool: vi.fn(),
     setMarqueeSelection: vi.fn(),
     showAutomationPanel: vi.fn(),
+    startToolSwap: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleMixer: vi.fn(),
     toggleTrackList: vi.fn(),
     toggleVirtualKeyboard: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
-    TOOL_SHORTCUTS: {},
+    TOOL_SHORTCUTS: { d: 'draw' },
 }));
 
 vi.mock('../../../../stores/shortcutStore', () => ({
@@ -142,5 +143,27 @@ describe('handleKeydown', () => {
 
         expect(prevent).toBe(false);
         expect(seekPlayhead).not.toHaveBeenCalled();
+    });
+
+    it('asks Workspace to start a held tool swap before selecting the requested tool', () => {
+        const performanceNow = vi.spyOn(performance, 'now').mockReturnValue(1234);
+
+        const prevent = handleKeydown(descriptor({ key: 'd' }));
+
+        expect(prevent).toBe(false);
+        expect(startToolSwap).toHaveBeenCalledWith({
+            key: 'd',
+            timestamp: 1234,
+            tool: 'draw',
+        });
+        expect(setEditingTool).toHaveBeenCalledWith('draw');
+        const [startOrder] = vi.mocked(startToolSwap).mock.invocationCallOrder;
+        const [selectOrder] = vi.mocked(setEditingTool).mock.invocationCallOrder;
+        if (startOrder === undefined || selectOrder === undefined) {
+            throw new Error('expected tool-swap and tool-selection calls to be recorded');
+        }
+        expect(startOrder).toBeLessThan(selectOrder);
+
+        performanceNow.mockRestore();
     });
 });

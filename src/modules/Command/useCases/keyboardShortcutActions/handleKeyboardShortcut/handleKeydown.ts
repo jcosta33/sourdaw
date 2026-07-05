@@ -11,7 +11,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { loopStationStore } from '#/modules/Transport/stores';
 import { stopPlayback, seekPlayhead, setLoopRegion, stopAllSlots, triggerPad } from '#/modules/Transport/useCases';
-import { workspaceStore, toolSwapStore, type EditingTool } from '#/modules/Workspace/stores';
+import { workspaceStore, type EditingTool } from '#/modules/Workspace/stores';
 import {
     clearClipSelection,
     cycleAutomationVisibility,
@@ -22,6 +22,7 @@ import {
     setEditingTool,
     setMarqueeSelection,
     showAutomationPanel,
+    startToolSwap,
     toggleCommandPalette,
     toggleMixer,
     toggleTrackList,
@@ -610,15 +611,11 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         const normalizedKey = key.toLowerCase();
         const tool = NUMBER_TOOL_MAP[key] || TOOL_SHORTCUTS[normalizedKey];
         if (tool && !mod && !shift && !alt && !repeat) {
-            const currentTool = workspaceStore.value?.activeTool;
-            // Only track swap if it's a different tool than current
-            if (currentTool && currentTool !== tool) {
-                toolSwapStore.set({
-                    lastDownTime: performance.now(),
-                    lastDownKey: key,
-                    previousTool: currentTool,
-                });
-            }
+            startToolSwap({
+                key,
+                timestamp: performance.now(),
+                tool,
+            });
         }
 
         return handleSimpleKeys(key);
