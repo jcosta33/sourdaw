@@ -26,6 +26,7 @@ export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
 export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
 export { revertAction } from './revertAction/revertAction';
 export { canRevertAction } from './revertAction/canRevertAction';
-export { saveSnapshot, transactSnapshot } from './saveSnapshot';
+export { saveSnapshot } from './saveSnapshot';
+export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';
