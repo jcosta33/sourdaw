@@ -25,6 +25,7 @@ import {
     toggleStepRecordingForClip,
 } from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
+import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
@@ -229,9 +230,9 @@ export const PianoRoll = ({
                 gridSnap={gridSnap}
                 onGridSnapChange={setGridSnap}
                 scaleRoot={keyRoot}
-                onScaleRootChange={(root) => projectStore.set({ ...projectStore.value!, keyRoot: root })}
+                onScaleRootChange={setProjectKeyRoot}
                 scaleType={scaleName}
-                onScaleTypeChange={(type) => projectStore.set({ ...projectStore.value!, scaleName: type })}
+                onScaleTypeChange={setProjectScaleName}
                 isFolded={isFolded}
                 onToggleFolded={() => setIsFolded((param) => !param)}
                 constrainToScale={constrainToScale}

@@ -11,6 +11,7 @@ import { addDevice } from '#/modules/Arrangement/useCases';
 import { kneadStore } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { projectStore } from '#/modules/Project/stores';
+import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -67,11 +68,11 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     };
 
     const handleKeyChange = (root: number) => {
-        projectStore.set({ ...projectStore.value!, keyRoot: root });
+        setProjectKeyRoot(root);
     };
 
     const handleScaleChange = (name: string) => {
-        projectStore.set({ ...projectStore.value!, scaleName: name });
+        setProjectScaleName(name);
     };
 
     // Refs for animation loop to avoid dependency-triggered re-runs of the loop itself

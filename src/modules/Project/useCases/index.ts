@@ -4,6 +4,8 @@ export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { loadProject } from './projectPersistence/loadProject';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
+export { setProjectKeyRoot } from './setProjectKeyRoot';
+export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
