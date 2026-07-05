@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { resampleBuffer, separateStemsBrowser } from '../browserStemSeparation';
+import { separateStemsBrowser } from '../browserStemSeparation';
 
 // onnxruntime-web is dynamically imported inside getSession(); mock it so we
 // can count how many inference sessions get created across concurrent calls.
-const createSessionMock = vi.fn(async () => ({
-    run: vi.fn(),
-    release: vi.fn(),
-}));
+const createSessionMock = vi.fn(() =>
+    Promise.resolve({
+        run: vi.fn(),
+        release: vi.fn(),
+    })
+);
 
 vi.mock('onnxruntime-web', () => ({
     InferenceSession: {
@@ -22,14 +24,6 @@ vi.mock('onnxruntime-web', () => ({
     },
 }));
 
-describe('resampleBuffer', () => {
-    it('should return the same buffer when sample rate already matches', async () => {
-        const buffer = { sampleRate: 44100, length: 128, numberOfChannels: 1 } as unknown as AudioBuffer;
-        const out = await resampleBuffer(buffer, 44100);
-        expect(out).toBe(buffer);
-    });
-});
-
 describe('separateStemsBrowser — concurrent session load', () => {
     let fetchMock: ReturnType<typeof vi.fn>;
     let originalFetch: typeof globalThis.fetch;
@@ -41,11 +35,13 @@ describe('separateStemsBrowser — concurrent session load', () => {
         // getModelBuffer() downloads the ~235MB model via fetch when the Cache
         // API is absent (jsdom has no `caches`). Count those downloads.
         originalFetch = globalThis.fetch;
-        fetchMock = vi.fn(async () => ({
-            ok: true,
-            status: 200,
-            arrayBuffer: async () => new ArrayBuffer(8),
-        }));
+        fetchMock = vi.fn(() =>
+            Promise.resolve({
+                ok: true,
+                status: 200,
+                arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
+            })
+        );
         globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
         // separateStemsBrowser decodes audio *after* getSession() resolves. The
@@ -56,9 +52,9 @@ describe('separateStemsBrowser — concurrent session load', () => {
             decodeAudioData?: AudioContext['decodeAudioData'];
         };
         originalDecode = proto.decodeAudioData;
-        proto.decodeAudioData = vi.fn(async () => {
-            throw new Error('decode-stop');
-        }) as unknown as AudioContext['decodeAudioData'];
+        proto.decodeAudioData = vi.fn(() =>
+            Promise.reject(new Error('decode-stop'))
+        ) as unknown as AudioContext['decodeAudioData'];
     });
 
     afterEach(() => {

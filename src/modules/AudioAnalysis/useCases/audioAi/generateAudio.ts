@@ -1,4 +1,4 @@
-import { generateAudio as generateAudioWithAiEngine } from '../../repositories/audioAiEngine';
+import { generateAudio as generateAudioWithAiEngine } from '../../repositories/generateAudio';
 
 export function generateAudio(
     prompt: string,

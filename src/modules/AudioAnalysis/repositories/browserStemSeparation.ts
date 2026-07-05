@@ -10,6 +10,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { resampleBuffer } from './resampleBuffer';
+
 const DEMUCS_MODEL_URL = 'https://huggingface.co/MansfieldPlumbing/Demucs_v4_TRT/resolve/main/demucsv4.onnx';
 const DEMUCS_SAMPLE_RATE = 44100;
 const DEMUCS_SEGMENT_LEN = 343980; // ~7.8s at 44100Hz
@@ -44,24 +46,7 @@ const ortSession: {
     ort: null,
 };
 
-/**
- * Resample audio using OfflineAudioContext.
- */
-export async function resampleBuffer(buffer: AudioBuffer, targetRate: number): Promise<AudioBuffer> {
-    if (buffer.sampleRate === targetRate) {
-        return buffer;
-    }
-    const ratio = targetRate / buffer.sampleRate;
-    const newLength = Math.round(buffer.length * ratio);
-    const ctx = new OfflineAudioContext(buffer.numberOfChannels, newLength, targetRate);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start();
-    return ctx.startRendering();
-}
-
-export type BrowserStemResult = Record<string, AudioBuffer>;
+type BrowserStemResult = Record<string, AudioBuffer>;
 
 /**
  * Separate audio into stems using Demucs v4 ONNX in the browser.

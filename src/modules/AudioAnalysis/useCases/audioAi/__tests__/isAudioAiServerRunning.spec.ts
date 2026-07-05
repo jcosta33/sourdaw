@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     check: vi.fn(),
 }));
 
-vi.mock('../../../repositories/audioAiEngine', () => ({
+vi.mock('../../../repositories/isAudioAiServerRunning', () => ({
     isAudioAiServerRunning: mocks.check,
 }));
 
