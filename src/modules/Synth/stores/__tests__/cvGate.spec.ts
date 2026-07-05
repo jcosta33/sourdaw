@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createStore } from '#/infra/store/createStore';
-import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
-import { defaultCvGateState, sanitize_cv_gate_state, type CvGateState } from '../cvGate';
+import { cvGateStore, defaultCvGateState, sanitize_cv_gate_state, type CvGateState } from '../cvGate';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -37,19 +36,23 @@ function create_test_port(input: CreateTestPortInput = {}): { mutations: Mutatio
     return { mutations, port };
 }
 
+async function flush_pending_frame(): Promise<void> {
+    await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+            resolve();
+        });
+    });
+}
+
 describe('sanitize_cv_gate_state', () => {
-    beforeEach(() => {
-        vi.stubGlobal(
-            'requestAnimationFrame',
-            vi.fn(() => 42)
-        );
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    beforeEach(async () => {
         configureAutomergeStoragePort(null);
+        cvGateStore.set(defaultCvGateState);
+        await flush_pending_frame();
     });
 
     afterEach(() => {
         configureAutomergeStoragePort(null);
-        vi.unstubAllGlobals();
     });
 
     it('should reset invalid top-level CRDT hydration to safe defaults', () => {
@@ -167,7 +170,7 @@ describe('sanitize_cv_gate_state', () => {
         });
     });
 
-    it('should not write back when CRDT hydration is already valid and exact', () => {
+    it('should not write back when CRDT hydration is already valid and exact', async () => {
         const valid_state: CvGateState = {
             outputs: [],
             voltageStandard: 'hz-per-volt',
@@ -177,16 +180,11 @@ describe('sanitize_cv_gate_state', () => {
         };
         const { mutations, port } = create_test_port({ initialDoc: { cvGate: valid_state } });
         configureAutomergeStoragePort(port);
-        const storage = createAutomergeStorage<CvGateState>('root', 'cvGate');
-        const store = createStore({
-            storage,
-            initialData: defaultCvGateState,
-            sanitize: sanitize_cv_gate_state,
-        });
 
-        store.hydrate();
+        cvGateStore.hydrate();
+        await flush_pending_frame();
 
-        expect(store.value).toEqual(valid_state);
+        expect(cvGateStore.value).toEqual(valid_state);
         expect(mutations).toEqual([]);
     });
 });

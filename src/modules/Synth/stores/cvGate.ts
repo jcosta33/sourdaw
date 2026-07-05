@@ -54,13 +54,18 @@ const CV_OUTPUT_CHANNEL_KEYS = [
     'active',
 ] as const;
 
-function has_exact_keys(value: object, keys: readonly string[]): boolean {
-    const value_keys = Object.keys(value);
-    return value_keys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+type HasExactKeysInput = {
+    value: object;
+    keys: readonly string[];
+};
+
+function has_exact_keys(input: HasExactKeysInput): boolean {
+    const value_keys = Object.keys(input.value);
+    return value_keys.length === input.keys.length && input.keys.every((key) => Object.hasOwn(input.value, key));
 }
 
 function is_record(value: unknown): value is UnknownRecord {
-    return value !== null && typeof value === 'object';
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function get_record(value: unknown): UnknownRecord | null {
@@ -120,10 +125,11 @@ function is_exact_cv_gate_state(value: unknown): value is CvGateState {
 
     return (
         record !== null &&
-        has_exact_keys(record, CV_GATE_STATE_KEYS) &&
+        has_exact_keys({ value: record, keys: CV_GATE_STATE_KEYS }) &&
         Array.isArray(record.outputs) &&
         record.outputs.every(
-            (output) => is_valid_cv_output_channel(output) && has_exact_keys(output, CV_OUTPUT_CHANNEL_KEYS)
+            (output) =>
+                is_valid_cv_output_channel(output) && has_exact_keys({ value: output, keys: CV_OUTPUT_CHANNEL_KEYS })
         ) &&
         is_voltage_standard(record.voltageStandard) &&
         is_finite_number(record.clockDivision) &&
