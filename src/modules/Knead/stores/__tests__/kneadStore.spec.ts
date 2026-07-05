@@ -6,6 +6,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 // real `createAutomergeStorage` adapter configured by `kneadStore` exercises
 // its `toCrdt` / `fromCrdt` callbacks against controllable state.
 const fakeDoc: Record<string, unknown> = {};
+let mutateDocCallCount = 0;
 
 import { kneadStore, defaultKneadState } from '../kneadStore';
 
@@ -15,6 +16,7 @@ function configureFakeCrdtPort(): void {
         getSemanticMessage: () => undefined,
         hasDoc: () => true,
         mutateDoc: ({ changeFn }) => {
+            mutateDocCallCount += 1;
             changeFn(fakeDoc);
         },
     });
@@ -25,12 +27,15 @@ async function flushRaf(): Promise<void> {
 }
 
 describe('kneadStore persistence of transient analysis flags', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         for (const key of Object.keys(fakeDoc)) {
             delete fakeDoc[key];
         }
+        mutateDocCallCount = 0;
         configureFakeCrdtPort();
         kneadStore.set(defaultKneadState);
+        await flushRaf();
+        mutateDocCallCount = 0;
     });
 
     afterEach(() => {
@@ -64,5 +69,198 @@ describe('kneadStore persistence of transient analysis flags', () => {
 
         expect(kneadStore.value?.isAnalyzing).toBe(false);
         expect(kneadStore.value?.analysisProgress).toBe(0);
+    });
+
+    it('should default malformed top-level CRDT state to safe idle state on hydrate', () => {
+        fakeDoc.knead = 'not-knead-state';
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value).toEqual(defaultKneadState);
+    });
+
+    it('should drop malformed CRDT map entries and strip stale fields on hydrate', () => {
+        fakeDoc.knead = {
+            activeClipId: 'clip-valid',
+            clips: {
+                'clip-valid': {
+                    clipId: 'clip-valid',
+                    blobs: [
+                        {
+                            id: 'blob-valid',
+                            startTime: 1,
+                            endTime: 2,
+                            pitchCenterCents: 1200,
+                            originalPitchCenterCents: 1198,
+                            pitchCurveCents: [1190, 1200, 1210],
+                            voicedConfidence: 0.92,
+                            driftPercent: 1.5,
+                            vibratoDepthPercent: 2.5,
+                            vibratoRateHz: 5.5,
+                            formantShiftCents: 12,
+                            gainDb: -3,
+                            muted: false,
+                            staleBlobField: 'drop-me',
+                        },
+                        {
+                            id: 'blob-bad',
+                            startTime: 1,
+                            endTime: 'bad',
+                            pitchCenterCents: 1200,
+                            originalPitchCenterCents: 1198,
+                            pitchCurveCents: [1190],
+                            voicedConfidence: 0.8,
+                            driftPercent: 1,
+                            vibratoDepthPercent: 2,
+                            vibratoRateHz: 5,
+                            formantShiftCents: 10,
+                            gainDb: -1,
+                            muted: false,
+                        },
+                    ],
+                    retuneSpeedMs: 45,
+                    toleranceCents: 35,
+                    toleranceTimeMs: 20,
+                    humanizePercent: 12,
+                    formantPreserve: true,
+                    staleClipField: 'drop-me',
+                },
+                'clip-bad': {
+                    clipId: 123,
+                    blobs: [],
+                    retuneSpeedMs: 45,
+                    toleranceCents: 35,
+                    toleranceTimeMs: 20,
+                    humanizePercent: 12,
+                    formantPreserve: true,
+                },
+            },
+            contours: {
+                'clip-valid': {
+                    points: [
+                        {
+                            time_ms: 10,
+                            frequency_hz: 440,
+                            confidence: 0.8,
+                            voiced: true,
+                            stalePointField: 'drop-me',
+                        },
+                        {
+                            time_ms: 11,
+                            frequency_hz: 'bad',
+                            confidence: 0.7,
+                            voiced: true,
+                        },
+                    ],
+                    sample_rate: 48000,
+                    hop_size: 256,
+                    algorithm: 123,
+                    staleContourField: 'drop-me',
+                },
+                'contour-bad': {
+                    points: [],
+                    sample_rate: 'bad',
+                    hop_size: 256,
+                },
+            },
+            isAnalyzing: true,
+            analysisProgress: 0.8,
+            staleTopLevelField: 'drop-me',
+        };
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value).toEqual({
+            activeClipId: 'clip-valid',
+            clips: {
+                'clip-valid': {
+                    clipId: 'clip-valid',
+                    blobs: [
+                        {
+                            id: 'blob-valid',
+                            startTime: 1,
+                            endTime: 2,
+                            pitchCenterCents: 1200,
+                            originalPitchCenterCents: 1198,
+                            pitchCurveCents: [1190, 1200, 1210],
+                            voicedConfidence: 0.92,
+                            driftPercent: 1.5,
+                            vibratoDepthPercent: 2.5,
+                            vibratoRateHz: 5.5,
+                            formantShiftCents: 12,
+                            gainDb: -3,
+                            muted: false,
+                        },
+                    ],
+                    retuneSpeedMs: 45,
+                    toleranceCents: 35,
+                    toleranceTimeMs: 20,
+                    humanizePercent: 12,
+                    formantPreserve: true,
+                },
+            },
+            contours: {
+                'clip-valid': {
+                    points: [
+                        {
+                            time_ms: 10,
+                            frequency_hz: 440,
+                            confidence: 0.8,
+                            voiced: true,
+                        },
+                    ],
+                    sample_rate: 48000,
+                    hop_size: 256,
+                },
+            },
+            isAnalyzing: false,
+            analysisProgress: 0,
+        });
+    });
+
+    it('should not write back when hydrating clean valid CRDT state', async () => {
+        fakeDoc.knead = {
+            activeClipId: 'clip-valid',
+            clips: {},
+            contours: {
+                'clip-valid': {
+                    points: [],
+                    sample_rate: 48000,
+                    hop_size: 256,
+                    algorithm: 'pyin',
+                },
+            },
+        };
+
+        kneadStore.hydrate();
+        await flushRaf();
+
+        expect(mutateDocCallCount).toBe(0);
+        expect(fakeDoc.knead).toEqual({
+            activeClipId: 'clip-valid',
+            clips: {},
+            contours: {
+                'clip-valid': {
+                    points: [],
+                    sample_rate: 48000,
+                    hop_size: 256,
+                    algorithm: 'pyin',
+                },
+            },
+        });
+        expect(kneadStore.value).toEqual({
+            activeClipId: 'clip-valid',
+            clips: {},
+            contours: {
+                'clip-valid': {
+                    points: [],
+                    sample_rate: 48000,
+                    hop_size: 256,
+                    algorithm: 'pyin',
+                },
+            },
+            isAnalyzing: false,
+            analysisProgress: 0,
+        });
     });
 });
