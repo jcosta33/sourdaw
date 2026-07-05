@@ -118,4 +118,25 @@ describe('tempoMapStore', () => {
 
         expect(tempoMapStore.value).toEqual({ changes: valid_changes });
     });
+
+    it('should strip extra CRDT object fields while preserving valid tempo changes', () => {
+        fake_doc.tempoMap = {
+            changes: [
+                {
+                    id: 'tempo-extra',
+                    beat: 4,
+                    tempo: 132,
+                    curve: 'linear',
+                    hiddenField: 'drop-me',
+                },
+            ],
+            hiddenTopLevel: true,
+        };
+
+        tempoMapStore.hydrate();
+
+        expect(tempoMapStore.value).toEqual({
+            changes: [{ id: 'tempo-extra', beat: 4, tempo: 132, curve: 'linear' }],
+        });
+    });
 });

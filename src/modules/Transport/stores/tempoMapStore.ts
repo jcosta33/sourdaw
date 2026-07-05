@@ -65,22 +65,22 @@ function is_valid_tempo_change(value: unknown): value is TempoChange {
     );
 }
 
-function is_tempo_map_state(value: unknown): value is TempoMapStoreState {
-    const changes = get_tempo_change_values(value);
-    return changes !== null && changes.every(is_valid_tempo_change);
+function normalize_tempo_change(change: TempoChange): TempoChange {
+    return {
+        id: change.id,
+        beat: change.beat,
+        tempo: change.tempo,
+        curve: change.curve,
+    };
 }
 
 function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
-    if (is_tempo_map_state(value)) {
-        return value;
-    }
-
     const changes = get_tempo_change_values(value);
     if (changes === null) {
         return create_empty_tempo_map_state();
     }
 
-    return { changes: changes.filter(is_valid_tempo_change) };
+    return { changes: changes.filter(is_valid_tempo_change).map(normalize_tempo_change) };
 }
 
 export const tempoMapStore = createStore<TempoMapStoreState>({

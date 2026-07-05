@@ -113,4 +113,25 @@ describe('timeSignatureMapStore', () => {
 
         expect(timeSignatureMapStore.value).toEqual({ changes: valid_changes });
     });
+
+    it('should strip extra CRDT object fields while preserving valid time-signature changes', () => {
+        fake_doc.timeSignatureMap = {
+            changes: [
+                {
+                    id: 'time-signature-extra',
+                    beat: 4,
+                    numerator: 5,
+                    denominator: 8,
+                    hiddenField: 'drop-me',
+                },
+            ],
+            hiddenTopLevel: true,
+        };
+
+        timeSignatureMapStore.hydrate();
+
+        expect(timeSignatureMapStore.value).toEqual({
+            changes: [{ id: 'time-signature-extra', beat: 4, numerator: 5, denominator: 8 }],
+        });
+    });
 });

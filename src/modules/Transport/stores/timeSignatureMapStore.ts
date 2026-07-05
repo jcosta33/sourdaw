@@ -67,22 +67,22 @@ function is_valid_time_signature_change(value: unknown): value is TimeSignatureC
     );
 }
 
-function is_time_signature_map_state(value: unknown): value is TimeSignatureMapStoreState {
-    const changes = get_time_signature_change_values(value);
-    return changes !== null && changes.every(is_valid_time_signature_change);
+function normalize_time_signature_change(change: TimeSignatureChange): TimeSignatureChange {
+    return {
+        id: change.id,
+        beat: change.beat,
+        numerator: change.numerator,
+        denominator: change.denominator,
+    };
 }
 
 function sanitize_time_signature_map_state(value: unknown): TimeSignatureMapStoreState {
-    if (is_time_signature_map_state(value)) {
-        return value;
-    }
-
     const changes = get_time_signature_change_values(value);
     if (changes === null) {
         return create_empty_time_signature_map_state();
     }
 
-    return { changes: changes.filter(is_valid_time_signature_change) };
+    return { changes: changes.filter(is_valid_time_signature_change).map(normalize_time_signature_change) };
 }
 
 export const timeSignatureMapStore = createStore<TimeSignatureMapStoreState>({
