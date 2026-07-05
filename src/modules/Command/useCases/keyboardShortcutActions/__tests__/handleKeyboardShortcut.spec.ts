@@ -46,6 +46,8 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     toggleWorkspaceMode: vi.fn(),
     setMarqueeSelection: vi.fn(),
     setEditingTool: vi.fn(),
+    startToolSwap: vi.fn(),
+    finishToolSwap: vi.fn(),
     showAutomationPanel: vi.fn(),
     toggleMixer: vi.fn(),
     toggleTrackList: vi.fn(),

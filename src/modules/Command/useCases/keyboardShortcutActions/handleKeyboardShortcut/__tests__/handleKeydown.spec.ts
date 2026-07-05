@@ -43,7 +43,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 vi.mock('#/modules/Workspace/stores', () => ({
     workspaceStore: { value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null } },
-    toolSwapStore: { value: null, set: vi.fn() },
 }));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
@@ -158,6 +157,12 @@ describe('handleKeydown', () => {
             tool: 'draw',
         });
         expect(setEditingTool).toHaveBeenCalledWith('draw');
+        const [startOrder] = vi.mocked(startToolSwap).mock.invocationCallOrder;
+        const [selectOrder] = vi.mocked(setEditingTool).mock.invocationCallOrder;
+        if (startOrder === undefined || selectOrder === undefined) {
+            throw new Error('expected tool-swap and tool-selection calls to be recorded');
+        }
+        expect(startOrder).toBeLessThan(selectOrder);
 
         performanceNow.mockRestore();
     });
