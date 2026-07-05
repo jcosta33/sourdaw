@@ -1,10 +1,59 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+
+import { type AutomationStoreState } from '../automationStore';
 import { automationStore } from '../automationStore';
 
+type TestDoc = {
+    [key: string]: unknown;
+};
+
+type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
+
+const fake_doc: TestDoc = {};
+let mutation_count = 0;
+
+function clear_fake_doc(): void {
+    for (const key of Object.keys(fake_doc)) {
+        delete fake_doc[key];
+    }
+}
+
+function configure_fake_crdt_port(): void {
+    const port: TestPort = {
+        getDoc: () => fake_doc,
+        getSemanticMessage: () => undefined,
+        hasDoc: () => true,
+        mutateDoc: ({ changeFn }) => {
+            mutation_count += 1;
+            changeFn(fake_doc);
+        },
+    };
+
+    configureAutomergeStoragePort(port);
+}
+
+async function flush_pending_frame(): Promise<void> {
+    await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+            resolve();
+        });
+    });
+}
+
 describe('automationStore', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        configureAutomergeStoragePort(null);
         automationStore.set({ lanes: [] });
+        await flush_pending_frame();
+        clear_fake_doc();
+        mutation_count = 0;
+        configure_fake_crdt_port();
+    });
+
+    afterEach(() => {
+        configureAutomergeStoragePort(null);
     });
 
     it('should have initial empty state', () => {
@@ -30,5 +79,178 @@ describe('automationStore', () => {
 
         expect(automationStore.value?.lanes).toHaveLength(1);
         expect(automationStore.value?.lanes[0]).toEqual(lane);
+    });
+
+    it('should sanitize malformed CRDT hydration to an empty automation store without throwing', () => {
+        fake_doc.automation = { lanes: 'not-an-array' };
+
+        expect(() => {
+            automationStore.hydrate();
+        }).not.toThrow();
+
+        expect(automationStore.value).toEqual({ lanes: [] });
+    });
+
+    it('should keep valid neighboring lanes and points when malformed CRDT rows hydrate', () => {
+        const valid_lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: [
+                { beat: 0, value: 0.75, curve: 'linear', tension: 0 },
+                { beat: Number.NaN, value: 0.5, curve: 'linear', tension: 0 },
+            ],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            virginTerritory: true,
+            minValue: 0,
+            maxValue: 1,
+        } satisfies AutomationStoreState['lanes'][number];
+
+        fake_doc.automation = {
+            lanes: [
+                valid_lane,
+                {
+                    id: 'bad-lane',
+                    trackId: 7,
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: true,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        };
+
+        automationStore.hydrate();
+
+        expect(automationStore.value).toEqual({
+            lanes: [
+                {
+                    ...valid_lane,
+                    points: [{ beat: 0, value: 0.75, curve: 'linear', tension: 0 }],
+                },
+            ],
+        });
+    });
+
+    it('should preserve automation parents when optional nested fields are malformed', () => {
+        fake_doc.automation = {
+            lanes: [
+                {
+                    id: 'lane-with-bad-optionals',
+                    trackId: 'track-1',
+                    clipId: null,
+                    clipAutomationMode: 'bogus',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [
+                        {
+                            beat: 0,
+                            value: 0.75,
+                            curve: 'linear',
+                            tension: 0,
+                            cp1: { x: Number.NaN, y: 0.2 },
+                            cp2: { x: 0.8, y: 0.9 },
+                        },
+                    ],
+                    objects: [
+                        {
+                            id: 'object-1',
+                            laneId: 'lane-with-bad-optionals',
+                            startBeat: 0,
+                            endBeat: 8,
+                            points: [
+                                { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
+                                { beat: 2, value: Number.NaN, curve: 'linear', tension: 0 },
+                            ],
+                            name: 'Object',
+                            loopLength: null,
+                        },
+                    ],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    trimPoints: 'bad-trim',
+                    ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
+                    linkedLaneId: null,
+                    linkScale: 'bad-scale',
+                    viewMinValue: 'bad-view-min',
+                    viewMaxValue: 2,
+                    color: 7,
+                },
+            ],
+        };
+
+        automationStore.hydrate();
+
+        expect(automationStore.value).toEqual({
+            lanes: [
+                {
+                    id: 'lane-with-bad-optionals',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ beat: 0, value: 0.75, curve: 'linear', tension: 0, cp2: { x: 0.8, y: 0.9 } }],
+                    objects: [
+                        {
+                            id: 'object-1',
+                            laneId: 'lane-with-bad-optionals',
+                            startBeat: 0,
+                            endBeat: 8,
+                            points: [{ beat: 1, value: 0.2, curve: 'linear', tension: 0 }],
+                            name: 'Object',
+                        },
+                    ],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: true,
+                    minValue: 0,
+                    maxValue: 1,
+                    ghostPoints: [{ beat: 3, value: 0.4, curve: 'step', tension: 0 }],
+                    viewMaxValue: 2,
+                },
+            ],
+        });
+    });
+
+    it('should preserve valid CRDT hydration without writing back', async () => {
+        const valid_state = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: true,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        } satisfies AutomationStoreState;
+        fake_doc.automation = valid_state;
+
+        automationStore.hydrate();
+        await flush_pending_frame();
+
+        expect(automationStore.value).toEqual(valid_state);
+        expect(mutation_count).toBe(0);
     });
 });
