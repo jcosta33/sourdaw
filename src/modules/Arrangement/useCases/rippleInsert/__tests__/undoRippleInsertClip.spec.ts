@@ -5,7 +5,7 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { getTrackStoreState, type TrackStoreState } from '../../getTrackStoreState';
 import { setTrackState } from '../../setTrackState';
 import { type RippleInsertPlan } from '../planRippleInsert';
-import { rippleInsertClip } from '../rippleInsertClip';
+import { undoRippleInsertClip } from '../undoRippleInsertClip';
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
@@ -15,39 +15,33 @@ vi.mock('../../setTrackState', () => ({
     setTrackState: vi.fn(),
 }));
 
-describe('rippleInsertClip', () => {
+describe('undoRippleInsertClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('should shift only planned clips forward by the insert duration', () => {
-        const clipBeforeInsert = ClipDummy.create({
-            id: 'clip-before-insert',
+    it('should restore planned clips to their original start and end beats', () => {
+        const shiftedClip = ClipDummy.create({
+            id: 'clip-shifted',
             trackId: 'track-target',
-            startBeat: 0,
-            endBeat: 1,
-        });
-        const plannedClip = ClipDummy.create({
-            id: 'clip-planned',
-            trackId: 'track-target',
-            startBeat: 2,
-            endBeat: 4,
+            startBeat: 3.5,
+            endBeat: 5.5,
         });
         const unplannedClip = ClipDummy.create({
             id: 'clip-unplanned',
             trackId: 'track-target',
-            startBeat: 5,
-            endBeat: 6,
+            startBeat: 7,
+            endBeat: 8,
         });
         const otherTrackClip = ClipDummy.create({
             id: 'clip-other-track',
             trackId: 'track-other',
-            startBeat: 2,
-            endBeat: 4,
+            startBeat: 3.5,
+            endBeat: 5.5,
         });
         const targetTrack = TrackDummy.create({
             id: 'track-target',
-            clips: [clipBeforeInsert, plannedClip, unplannedClip],
+            clips: [shiftedClip, unplannedClip],
         });
         const otherTrack = TrackDummy.create({
             id: 'track-other',
@@ -63,16 +57,15 @@ describe('rippleInsertClip', () => {
         const plan: RippleInsertPlan = {
             shiftedClips: [
                 {
-                    clipId: 'clip-planned',
+                    clipId: 'clip-shifted',
                     origStartBeat: 2,
                     origEndBeat: 4,
                 },
             ],
         };
 
-        rippleInsertClip({
+        undoRippleInsertClip({
             trackId: 'track-target',
-            insertDuration: 1.5,
             plan,
         });
 
@@ -82,11 +75,10 @@ describe('rippleInsertClip', () => {
                 {
                     ...targetTrack,
                     clips: [
-                        clipBeforeInsert,
                         {
-                            ...plannedClip,
-                            startBeat: 3.5,
-                            endBeat: 5.5,
+                            ...shiftedClip,
+                            startBeat: 2,
+                            endBeat: 4,
                         },
                         unplannedClip,
                     ],

@@ -33,7 +33,8 @@ import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
-import { rippleInsertClip, undoRippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
+import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
+import { undoRippleInsertClip } from '../../useCases/rippleInsert/undoRippleInsertClip';
 import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
 import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
 import { setTrackState } from '../../useCases/setTrackState';
@@ -484,10 +485,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
         const contentY = getContentY(y, getScrollY());
         const model = buildTimelineRenderModel();
-        const tracks = model?.tracks;
-        if (!tracks) {
-            return;
-        }
+        const tracks = model.tracks;
         const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
         const targetTrack = trackHit ? tracks[trackHit.index] : null;
         const snapTrackId = targetTrack?.id ?? dragState.sourceTrackId;
@@ -672,10 +670,10 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         if (rubberBandRef.current && rubberBand) {
             const view = timelineViewStore.value;
             const model = buildTimelineRenderModel();
-            if (view && model) {
+            if (view) {
                 const left = Math.min(rubberBand.startX, rubberBand.endX);
                 const right = Math.max(rubberBand.startX, rubberBand.endX);
-                const sY = view.scrollY ?? 0;
+                const sY = view.scrollY;
                 const top = Math.min(rubberBand.startY, rubberBand.endY) + sY;
                 const bottom = Math.max(rubberBand.startY, rubberBand.endY) + sY;
                 const leftBeat = left / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
