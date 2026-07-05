@@ -130,7 +130,19 @@ describe('transportStore', () => {
         }
     });
 
-    it('should merge valid partial durable CRDT hydration over default runtime state', () => {
+    it('should merge valid partial durable CRDT hydration over defaults without preserving stale cached fields', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: true,
+            overdubEnabled: true,
+            playheadPosition: 44,
+            scheduleGrainMs: 25,
+            tempo: 220,
+            timeSignatureNumerator: 11,
+            timeSignatureDenominator: 16,
+            metronomeVolume: 0.1,
+        });
         fake_doc.transport = {
             tempo: 132,
             isLooping: true,
