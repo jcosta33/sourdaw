@@ -11,11 +11,251 @@ export type MidiStoreState = {
     pitchBendByClipId: Record<string, MidiPitchBend[]>;
 };
 
+export const defaultMidiStoreState: MidiStoreState = {
+    notesByClipId: {},
+    ccByClipId: {},
+    pitchBendByClipId: {},
+};
+
+const MIDI_STORE_STATE_KEYS = ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
+const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
+const MIDI_NOTE_OPTIONAL_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel'] as const;
+const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
+const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
+
+type HasExactKeysInput = {
+    value: object;
+    required_keys: readonly string[];
+    optional_keys?: readonly string[];
+};
+
+function has_exact_keys({ value, required_keys, optional_keys = [] }: HasExactKeysInput): boolean {
+    const value_keys = Object.keys(value);
+    const allowed_keys = new Set([...required_keys, ...optional_keys]);
+
+    return required_keys.every((key) => Object.hasOwn(value, key)) && value_keys.every((key) => allowed_keys.has(key));
+}
+
+function is_plain_object(value: unknown): value is { [key: string]: unknown } {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function is_finite_number(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function is_valid_midi_note(value: unknown): value is MidiNote {
+    return (
+        is_plain_object(value) &&
+        'id' in value &&
+        typeof value.id === 'string' &&
+        'pitch' in value &&
+        is_finite_number(value.pitch) &&
+        'startBeat' in value &&
+        is_finite_number(value.startBeat) &&
+        'duration' in value &&
+        is_finite_number(value.duration) &&
+        'velocity' in value &&
+        is_finite_number(value.velocity)
+    );
+}
+
+function has_valid_midi_note_optionals(value: MidiNote): boolean {
+    return (
+        (!('probability' in value) || is_finite_number(value.probability)) &&
+        (!('pressure' in value) || is_finite_number(value.pressure)) &&
+        (!('slide' in value) || is_finite_number(value.slide)) &&
+        (!('pitchBend' in value) || is_finite_number(value.pitchBend)) &&
+        (!('channel' in value) || is_finite_number(value.channel))
+    );
+}
+
+function is_exact_midi_note(value: unknown): value is MidiNote {
+    return (
+        is_valid_midi_note(value) &&
+        has_valid_midi_note_optionals(value) &&
+        has_exact_keys({
+            value,
+            required_keys: MIDI_NOTE_REQUIRED_KEYS,
+            optional_keys: MIDI_NOTE_OPTIONAL_KEYS,
+        })
+    );
+}
+
+function normalize_midi_note(note: MidiNote): MidiNote {
+    const normalized_note: MidiNote = {
+        id: note.id,
+        pitch: note.pitch,
+        startBeat: note.startBeat,
+        duration: note.duration,
+        velocity: note.velocity,
+    };
+
+    if (is_finite_number(note.probability)) {
+        normalized_note.probability = note.probability;
+    }
+    if (is_finite_number(note.pressure)) {
+        normalized_note.pressure = note.pressure;
+    }
+    if (is_finite_number(note.slide)) {
+        normalized_note.slide = note.slide;
+    }
+    if (is_finite_number(note.pitchBend)) {
+        normalized_note.pitchBend = note.pitchBend;
+    }
+    if (is_finite_number(note.channel)) {
+        normalized_note.channel = note.channel;
+    }
+
+    return normalized_note;
+}
+
+function is_valid_midi_cc(value: unknown): value is MidiCC {
+    return (
+        is_plain_object(value) &&
+        'id' in value &&
+        typeof value.id === 'string' &&
+        'controller' in value &&
+        is_finite_number(value.controller) &&
+        'value' in value &&
+        is_finite_number(value.value) &&
+        'beat' in value &&
+        is_finite_number(value.beat) &&
+        'channel' in value &&
+        is_finite_number(value.channel)
+    );
+}
+
+function is_exact_midi_cc(value: unknown): value is MidiCC {
+    return is_valid_midi_cc(value) && has_exact_keys({ value, required_keys: MIDI_CC_KEYS });
+}
+
+function normalize_midi_cc(event: MidiCC): MidiCC {
+    return {
+        id: event.id,
+        controller: event.controller,
+        value: event.value,
+        beat: event.beat,
+        channel: event.channel,
+    };
+}
+
+function is_valid_midi_pitch_bend(value: unknown): value is MidiPitchBend {
+    return (
+        is_plain_object(value) &&
+        'id' in value &&
+        typeof value.id === 'string' &&
+        'value' in value &&
+        is_finite_number(value.value) &&
+        'beat' in value &&
+        is_finite_number(value.beat) &&
+        'channel' in value &&
+        is_finite_number(value.channel)
+    );
+}
+
+function is_exact_midi_pitch_bend(value: unknown): value is MidiPitchBend {
+    return is_valid_midi_pitch_bend(value) && has_exact_keys({ value, required_keys: MIDI_PITCH_BEND_KEYS });
+}
+
+function normalize_midi_pitch_bend(event: MidiPitchBend): MidiPitchBend {
+    return {
+        id: event.id,
+        value: event.value,
+        beat: event.beat,
+        channel: event.channel,
+    };
+}
+
+type NormalizeClipMapInput<TRow> = {
+    value: unknown;
+    is_valid_row: (value: unknown) => value is TRow;
+    normalize_row: (value: TRow) => TRow;
+};
+
+function normalize_clip_map<TRow>({
+    value,
+    is_valid_row,
+    normalize_row,
+}: NormalizeClipMapInput<TRow>): Record<string, TRow[]> {
+    if (!is_plain_object(value)) {
+        return {};
+    }
+
+    const normalized_clip_map: Record<string, TRow[]> = {};
+
+    for (const [clip_id, rows] of Object.entries(value)) {
+        if (!Array.isArray(rows)) {
+            continue;
+        }
+
+        normalized_clip_map[clip_id] = rows.filter(is_valid_row).map(normalize_row);
+    }
+
+    return normalized_clip_map;
+}
+
+function is_exact_note_clip_map(value: unknown): value is Record<string, MidiNote[]> {
+    return (
+        is_plain_object(value) &&
+        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_note))
+    );
+}
+
+function is_exact_cc_clip_map(value: unknown): value is Record<string, MidiCC[]> {
+    return (
+        is_plain_object(value) &&
+        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_cc))
+    );
+}
+
+function is_exact_pitch_bend_clip_map(value: unknown): value is Record<string, MidiPitchBend[]> {
+    return (
+        is_plain_object(value) &&
+        Object.values(value).every((rows) => Array.isArray(rows) && rows.every(is_exact_midi_pitch_bend))
+    );
+}
+
+function is_exact_midi_store_state(value: unknown): value is MidiStoreState {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: MIDI_STORE_STATE_KEYS }) &&
+        is_exact_note_clip_map(value.notesByClipId) &&
+        is_exact_cc_clip_map(value.ccByClipId) &&
+        is_exact_pitch_bend_clip_map(value.pitchBendByClipId)
+    );
+}
+
+export function sanitize_midi_store_state(value: unknown): MidiStoreState {
+    if (is_exact_midi_store_state(value)) {
+        return value;
+    }
+
+    if (!is_plain_object(value)) {
+        return defaultMidiStoreState;
+    }
+
+    return {
+        notesByClipId: normalize_clip_map({
+            value: value.notesByClipId,
+            is_valid_row: is_valid_midi_note,
+            normalize_row: normalize_midi_note,
+        }),
+        ccByClipId: normalize_clip_map({
+            value: value.ccByClipId,
+            is_valid_row: is_valid_midi_cc,
+            normalize_row: normalize_midi_cc,
+        }),
+        pitchBendByClipId: normalize_clip_map({
+            value: value.pitchBendByClipId,
+            is_valid_row: is_valid_midi_pitch_bend,
+            normalize_row: normalize_midi_pitch_bend,
+        }),
+    };
+}
+
 export const midiStore = createStore<MidiStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi'),
-    initialData: {
-        notesByClipId: {},
-        ccByClipId: {},
-        pitchBendByClipId: {},
-    },
+    initialData: defaultMidiStoreState,
+    sanitize: sanitize_midi_store_state,
 });
