@@ -184,6 +184,7 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
+export { toggleTimelineAutoScroll } from './toggleTimelineAutoScroll';
 
 // ── VCA ───────────────────────────────────────────────────────────────────────
 
