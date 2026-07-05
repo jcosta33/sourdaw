@@ -5,7 +5,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
-import { setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
+import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -61,7 +61,8 @@ type DragState = {
     pointerId: number;
     altKey: boolean;
     ctrlKey: boolean;
-    undoGroupId: string;
+    startOriginalBeat: number;
+    startWarpedBeat: number;
 };
 
 const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
@@ -249,7 +250,8 @@ export const ElasticEditorPanel = (): ReactElement => {
                 pointerId: event.pointerId,
                 altKey: event.altKey,
                 ctrlKey: event.ctrlKey,
-                undoGroupId: `elastic-marker-drag-${clipId}-${hit.id}-${event.pointerId}-${Date.now()}`,
+                startOriginalBeat: hit.originalBeat,
+                startWarpedBeat: hit.warpedBeat,
             };
             didDragRef.current = false;
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -271,15 +273,20 @@ export const ElasticEditorPanel = (): ReactElement => {
             markerId: drag.markerId,
             field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
             beat,
-            undoGroupId: drag.undoGroupId,
-            undoGroupLabel: 'Move elastic marker',
         });
         refreshWarp();
     };
 
     const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
-        if (dragRef.current) {
-            (event.target as HTMLCanvasElement).releasePointerCapture(dragRef.current.pointerId);
+        const drag = dragRef.current;
+        if (drag) {
+            (event.target as HTMLCanvasElement).releasePointerCapture(drag.pointerId);
+            commitWarpMarkerBeatDrag({
+                clipId,
+                markerId: drag.markerId,
+                beforeOriginalBeat: drag.startOriginalBeat,
+                beforeWarpedBeat: drag.startWarpedBeat,
+            });
         }
         dragRef.current = null;
     };

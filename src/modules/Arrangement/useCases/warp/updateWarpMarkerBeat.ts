@@ -1,5 +1,3 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
-
 import { warpStates } from '../../stores/warpStates';
 
 type UpdateWarpMarkerBeatInput = {
@@ -7,8 +5,6 @@ type UpdateWarpMarkerBeatInput = {
     markerId: string;
     field: 'originalBeat' | 'warpedBeat';
     beat: number;
-    undoGroupId?: string;
-    undoGroupLabel?: string;
 };
 
 export function updateWarpMarkerBeat(input: UpdateWarpMarkerBeatInput): void {
@@ -21,7 +17,6 @@ export function updateWarpMarkerBeat(input: UpdateWarpMarkerBeatInput): void {
         return;
     }
 
-    const beforeSnapshot = { ...current, markers: [...current.markers] };
     const nextMarkers = current.markers.map((marker) =>
         marker.id === input.markerId ? { ...marker, [input.field]: input.beat } : marker
     );
@@ -30,17 +25,4 @@ export function updateWarpMarkerBeat(input: UpdateWarpMarkerBeatInput): void {
         markers: nextMarkers,
     };
     warpStates.set(input.clipId, nextState);
-
-    if (input.undoGroupId) {
-        pushUndoEntry(
-            input.field === 'originalBeat' ? 'Move elastic marker source beat' : 'Move elastic marker warp beat',
-            () => {
-                warpStates.set(input.clipId, beforeSnapshot);
-            },
-            () => {
-                warpStates.set(input.clipId, { ...nextState, markers: [...nextMarkers] });
-            },
-            { groupId: input.undoGroupId, groupLabel: input.undoGroupLabel }
-        );
-    }
 }

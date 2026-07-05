@@ -1,19 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({
-    pushUndoEntry: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: mocks.pushUndoEntry,
-}));
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { warpStates } from '../../../stores/warpStates';
 import { moveWarpMarker } from '../moveWarpMarker';
 
 describe('moveWarpMarker', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
         warpStates.clear();
     });
 
@@ -34,6 +25,5 @@ describe('moveWarpMarker', () => {
             { id: 'm1', originalBeat: 1, warpedBeat: 1.75, origin: 'user' },
             { id: 'm2', originalBeat: 2, warpedBeat: 2, origin: 'user' },
         ]);
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 });
