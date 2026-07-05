@@ -14,6 +14,9 @@ vi.mock('../../../useCases/preset/presetStorage/getUserPresets', () => ({
 
 vi.mock('../../../useCases/preset/presetLoading', () => ({
     loadPresetToTrack: mocks.loadPresetToTrack,
+}));
+
+vi.mock('../../../useCases/preset/createTrackFromPreset', () => ({
     createTrackFromPreset: mocks.createTrackFromPreset,
 }));
 

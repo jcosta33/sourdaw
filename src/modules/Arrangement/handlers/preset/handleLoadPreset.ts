@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { loadPresetToTrack, createTrackFromPreset } from '../../useCases/preset/presetLoading';
+import { createTrackFromPreset } from '../../useCases/preset/createTrackFromPreset';
+import { loadPresetToTrack } from '../../useCases/preset/presetLoading';
 import { getUserPresets } from '../../useCases/preset/presetStorage/getUserPresets';
 
 function findPresetById(presetId: string) {

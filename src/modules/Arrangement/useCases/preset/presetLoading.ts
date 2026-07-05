@@ -12,7 +12,6 @@ import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Device } from '../../stores/trackStore';
-import { addTrack } from '../addTrack';
 import { addDevice } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter/setDeviceParameter';
 
@@ -39,15 +38,6 @@ function attachEffectDevice(trackId: string, dp: DevicePreset): void {
         setDeviceParameter(added.id, paramId, value);
         updateDeviceParam(trackId, added.id, paramId, value);
     }
-}
-
-export function createTrackFromPreset(preset: SoundPreset): string | null {
-    const track = addTrack({ name: preset.name, kind: preset.trackKind });
-    if (!track) {
-        return null;
-    }
-    loadPresetToTrack(track.id, preset);
-    return track.id;
 }
 
 export const loadPresetToTrack = inject({ logger })(({ logger }) => {
