@@ -128,7 +128,9 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
 export { deleteTime } from './timeOperations/deleteTime';
-export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
+export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
+export { insertTime } from './timeOperations/insertTime';
+export { setTimeOperationDependencies } from './timeOperations/timeOperationDependencies';
 
 export { addMarker } from './marker/markerOperations/addMarker';
 export { removeMarker } from './marker/markerOperations/removeMarker';

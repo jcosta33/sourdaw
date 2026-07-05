@@ -35,6 +35,7 @@ export { updateSetlistItem } from './setlist/updateSetlistItem';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
+export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
 export { updateTempoChange } from './tempoMap/updateTempoChange';
 
 export { detectProjectTempo } from './tempoMapping/operations/detectProjectTempo';

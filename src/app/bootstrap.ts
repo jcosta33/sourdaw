@@ -21,6 +21,7 @@ import {
     getArrangementHandlers,
     initStalenessDetection,
     setArrangementEventBus,
+    setTimeOperationDependencies,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -78,6 +79,7 @@ import {
     getTransportState,
     setSetlistEventBus,
     setStopPlaybackCallback,
+    shiftTimelineMapsAfterBeat,
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
@@ -106,6 +108,7 @@ setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
+setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
 
 window.addEventListener('beforeunload', () => {
     // Attempt GC on window close
