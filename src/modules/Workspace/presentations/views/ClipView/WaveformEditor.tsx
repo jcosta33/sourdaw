@@ -28,8 +28,7 @@ import {
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, getCachedAudioBufferWaveformPeaks, isTauri } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
@@ -89,7 +88,7 @@ const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }:
     canvasContext.lineTo(width, middleY);
     canvasContext.stroke();
 
-    const peaks = audioBufferCache.getWaveformPeaks(clipId, Math.floor(width));
+    const peaks = getCachedAudioBufferWaveformPeaks({ bufferId: clipId, numBins: Math.floor(width) });
 
     const hasRealData = peaks.some((value) => value > 0);
 
