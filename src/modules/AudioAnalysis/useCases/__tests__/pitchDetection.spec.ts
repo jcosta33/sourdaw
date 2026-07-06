@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const SAMPLE_RATE = 44100;
 
@@ -17,28 +17,30 @@ function toneA4Buffer(): { sampleRate: number; getChannelData: () => Float32Arra
 
 const toneA4 = toneA4Buffer();
 
-// Production imports `audioBufferCache` from `#/modules/AudioEngine/stores`;
-// the previous `#/modules/AudioEngine/useCases` mock was inert, so the
-// detector read the real empty store and never ran the pitch tracker.
-//
 // `pitchy` is intentionally NOT mocked here: the happy-path test exercises the
 // real McLeod Pitch Method against a synthesized tone.
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: vi.fn((id: string) => (id === 'toneA4' ? toneA4 : null)),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => (bufferId === 'toneA4' ? toneA4 : null)),
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { detectDominantPitch } from '../pitchDetection';
 import { trackPitch } from '../trackPitch';
 
 describe('pitchDetection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
     it('trackPitch returns an empty list when the buffer is missing', () => {
         expect(trackPitch('missing')).toEqual([]);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('detectDominantPitch returns null when the buffer is missing', () => {
         expect(detectDominantPitch('missing')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('tracks A4 (440 Hz) across a pure tone', () => {
@@ -51,6 +53,7 @@ describe('pitchDetection', () => {
             expect(result.frequency).toBeLessThan(450);
             expect(result.midiPitch).toBe(69);
         }
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'toneA4' });
     });
 
     it('detectDominantPitch reports A4 for a pure 440 Hz tone', () => {
@@ -58,5 +61,6 @@ describe('pitchDetection', () => {
         expect(dominant).not.toBeNull();
         expect(dominant?.midiPitch).toBe(69);
         expect(dominant?.noteName).toBe('A4');
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'toneA4' });
     });
 });
