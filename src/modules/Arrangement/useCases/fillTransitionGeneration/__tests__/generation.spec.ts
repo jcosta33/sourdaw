@@ -33,6 +33,18 @@ describe('generation', () => {
         });
     });
 
+    it('should fall back to a descending drum fill for unknown runtime style strings', () => {
+        const fill = generateDrumFill(8, 2, 'made-up-style');
+
+        expect(fill.notes.slice(0, 4)).toEqual([
+            { pitch: 48, startBeat: 8, duration: 0.25, velocity: 88 },
+            { pitch: 45, startBeat: 8.25, duration: 0.25, velocity: 89 },
+            { pitch: 41, startBeat: 8.5, duration: 0.25, velocity: 90 },
+            { pitch: 43, startBeat: 8.75, duration: 0.25, velocity: 90 },
+        ]);
+        expect(fill.notes.at(-1)).toEqual({ pitch: 49, startBeat: 10, duration: 1, velocity: 120 });
+    });
+
     it('should generate riser notes that climb in pitch and velocity', () => {
         const fill = generateRiser(4, 1, 60, 72);
 

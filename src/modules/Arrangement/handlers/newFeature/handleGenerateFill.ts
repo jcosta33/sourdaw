@@ -8,7 +8,7 @@ export const handleGenerateFill = createHandler<'generateFill'>({
         const fill = generateDrumFill(
             alpha.payload.atBeat,
             alpha.payload.durationBeats ?? 2,
-            (alpha.payload.style ?? 'descending') as 'simple' | 'descending' | 'sixteenth' | 'syncopated'
+            alpha.payload.style ?? 'descending'
         );
         notifyUser(`Generated ${fill.notes.length}-note drum fill`, 'success');
     },

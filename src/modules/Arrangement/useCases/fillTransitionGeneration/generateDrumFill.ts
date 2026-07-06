@@ -1,13 +1,16 @@
 import { type GeneratedFill } from '../../models/FillTransitionTypes';
 
-import { DRUM_MAP, FILL_PATTERNS, type DrumFillStyle } from './generation';
+import { DRUM_MAP, FILL_PATTERNS } from './generation';
 
 export function generateDrumFill(
     atBeat: number,
     durationBeats: number = 2,
-    style: DrumFillStyle = 'descending'
+    style: string = 'descending'
 ): GeneratedFill {
-    const pattern = FILL_PATTERNS[style];
+    const pattern =
+        style === 'simple' || style === 'descending' || style === 'sixteenth' || style === 'syncopated'
+            ? FILL_PATTERNS[style]
+            : FILL_PATTERNS.descending;
     const notes: GeneratedFill['notes'] = [];
 
     const barsSpanned = Math.max(1, Math.floor(durationBeats));
