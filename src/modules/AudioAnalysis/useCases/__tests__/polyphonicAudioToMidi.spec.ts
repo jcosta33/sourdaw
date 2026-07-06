@@ -8,11 +8,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: () => getAllTracksMock(),
 }));
 
-const audioBufferCacheGet = vi.fn<(id: string) => AudioBuffer | undefined>();
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: (id: string) => audioBufferCacheGet(id),
-    },
+const getCachedAudioBufferMock = vi.fn<(input: { bufferId: string }) => AudioBuffer | null>();
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: (input: { bufferId: string }) => getCachedAudioBufferMock(input),
 }));
 
 const loggerWarnMock = vi.fn<(message: string) => void>();
@@ -54,7 +52,7 @@ describe('polyphonicAudioToMidi', () => {
     beforeEach(() => {
         getAllTracksMock.mockReset();
         getAllTracksMock.mockReturnValue([]);
-        audioBufferCacheGet.mockReset();
+        getCachedAudioBufferMock.mockReset();
         loggerWarnMock.mockReset();
         basicPitchCtor.mockReset();
     });
@@ -66,7 +64,7 @@ describe('polyphonicAudioToMidi', () => {
         expect(loggerWarnMock).toHaveBeenCalledWith(expect.stringContaining('Clip not found'));
     });
 
-    it('constructs the Basic Pitch model only once across concurrent first calls', async () => {
+    it('should return null and warn when audio buffer is not found', async () => {
         const clip = {
             id: 'clip-1',
             audioBufferId: 'buf-1',
@@ -75,7 +73,26 @@ describe('polyphonicAudioToMidi', () => {
             endBeat: 4,
         };
         getAllTracksMock.mockReturnValue([{ clips: [clip] }]);
-        audioBufferCacheGet.mockReturnValue({
+        getCachedAudioBufferMock.mockReturnValue(null);
+
+        const result = await polyphonicAudioToMidi({ clipId: 'clip-1' });
+
+        expect(result).toBeNull();
+        expect(getCachedAudioBufferMock).toHaveBeenCalledWith({ bufferId: 'buf-1' });
+        expect(loggerWarnMock).toHaveBeenCalledWith(expect.stringContaining('Audio buffer not found: buf-1'));
+        expect(basicPitchCtor).not.toHaveBeenCalled();
+    });
+
+    it('should construct the Basic Pitch model only once across concurrent first calls', async () => {
+        const clip = {
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            name: 'Take 1',
+            startBeat: 0,
+            endBeat: 4,
+        };
+        getAllTracksMock.mockReturnValue([{ clips: [clip] }]);
+        getCachedAudioBufferMock.mockReturnValue({
             sampleRate: 22050,
             length: 22050,
             duration: 1,
@@ -86,6 +103,7 @@ describe('polyphonicAudioToMidi', () => {
         // memoized load promise must coalesce them onto a single BasicPitch.
         await Promise.all([polyphonicAudioToMidi({ clipId: 'clip-1' }), polyphonicAudioToMidi({ clipId: 'clip-1' })]);
 
+        expect(getCachedAudioBufferMock).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(basicPitchCtor).toHaveBeenCalledTimes(1);
     });
 });

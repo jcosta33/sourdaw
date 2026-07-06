@@ -18,7 +18,7 @@ import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url';
 
 import { logger } from '#/infra/logger/appLogger';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ export async function polyphonicAudioToMidi(
     }
 
     const bufferId = clip.audioBufferId ?? clipId;
-    const buffer = audioBufferCache.get(bufferId);
+    const buffer = getCachedAudioBuffer({ bufferId });
     if (!buffer) {
         logger.warn(`[Basic Pitch] Audio buffer not found: ${bufferId}`);
         return null;
