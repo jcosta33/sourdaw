@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const SAMPLE_RATE = 44100;
 
@@ -30,34 +30,37 @@ function beatBuffer(bpm: number, seconds: number): { sampleRate: number; getChan
 const silent = silentBuffer();
 const beat120 = beatBuffer(120, 5);
 
-// Production imports `audioBufferCache` from `#/modules/AudioEngine/stores`;
-// the previous `#/modules/AudioEngine/useCases` mock was inert, so the
-// detector read the real empty store and never ran onset detection.
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: vi.fn((id: string) => {
-            if (id === 'silent') {
-                return silent;
-            }
-            if (id === 'beat120') {
-                return beat120;
-            }
-            return null;
-        }),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => {
+        if (bufferId === 'silent') {
+            return silent;
+        }
+        if (bufferId === 'beat120') {
+            return beat120;
+        }
+        return null;
+    }),
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { detectTempo } from '../tempoDetection';
 
 describe('detectTempo', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
     it('returns null when the buffer is missing', () => {
         expect(detectTempo('missing')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('returns null when there are not enough onsets (silent buffer)', () => {
         // The buffer is now actually injected, so onset detection runs over the
         // silent signal, finds < 4 onsets, and returns null.
         expect(detectTempo('silent')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'silent' });
     });
 
     it('recovers 120 BPM from evenly spaced beats', () => {
@@ -67,5 +70,6 @@ describe('detectTempo', () => {
         expect(bpm).not.toBeNull();
         expect(bpm!).toBeGreaterThanOrEqual(118);
         expect(bpm!).toBeLessThanOrEqual(122);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'beat120' });
     });
 });
