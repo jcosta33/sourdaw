@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     createBufferSource,
     ensureTrackStrip,
     getAudioContext,
+    getCachedAudioBuffer,
     getCompensationDelay,
     getCurrentTime,
     getDrumKitByIndex,
@@ -138,7 +138,7 @@ export function scheduleFrozenTrack(
         return false;
     }
 
-    const buffer = audioBufferCache.get(track.freezeState.frozenBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId });
     if (!buffer) {
         return false;
     }

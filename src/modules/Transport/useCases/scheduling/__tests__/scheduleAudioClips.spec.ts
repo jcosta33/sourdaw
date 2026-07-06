@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { createBufferSource } from '#/modules/AudioEngine/useCases';
+import { createBufferSource, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -21,13 +20,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { get: vi.fn() },
-}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: vi.fn(() => ({ gainNode: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
     createBufferSource: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
     getAudioContext: vi.fn(() => ({
         currentTime: 0,
         createGain: vi.fn(() => ({
@@ -66,8 +63,8 @@ vi.mock('../../models/TempoMap', () => ({
 }));
 
 const mockResolveClips = vi.mocked(resolveClipsWithComping);
-const mockBufferCache = vi.mocked(audioBufferCache.get);
 const mockCreateBufferSource = vi.mocked(createBufferSource);
+const mockGetCachedAudioBuffer = vi.mocked(getCachedAudioBuffer);
 
 function makeAudioTrack(clips: unknown[]): unknown {
     return {
@@ -135,12 +132,13 @@ describe('scheduleAudioClips', () => {
         // (4 beats / 1 bps = 4 s), not the clip's local rate (4 / 2 = 2 s).
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
-        mockBufferCache.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 60);
 
+        expect(mockGetCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(fakeSource.start).toHaveBeenCalledTimes(1);
         const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
         // iterStartTime = getCurrentTime() + (8 - 0)/(60/60) + 0 = 8.
@@ -155,12 +153,13 @@ describe('scheduleAudioClips', () => {
         // clip tempo, so duration != (endTime - startTime). Assert they agree.
         const fakeSource = makeFakeSource();
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
-        mockBufferCache.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
 
         scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState, 60);
 
+        expect(mockGetCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         const [when, , duration] = fakeSource.start.mock.calls[0]!;
         // endTime for the 4-beat span at timeline tempo 60 is when + 4. duration must
         // equal that span (when + duration === endTime).
