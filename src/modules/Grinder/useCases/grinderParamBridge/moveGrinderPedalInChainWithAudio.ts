@@ -1,10 +1,11 @@
 import { inject } from '#/infra/di/inject';
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPedalType } from '../../models/GrinderPatch';
 import { moveGrinderPedalInChain } from '../../stores/grinderStore';
 
+import { getPedalOrderAudioEntries } from './getPedalOrderAudioEntries';
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import { createFindDeviceRef, getPedalOrderAudioEntries } from './helpers';
 
 export const moveGrinderPedalInChainWithAudio = inject(grinderParamBridgeDependencies)(({
     getAllTracks: get_all_tracks_fn,

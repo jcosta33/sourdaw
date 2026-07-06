@@ -1,10 +1,13 @@
 import { inject } from '#/infra/di/inject';
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPedal, type GrinderPedalType } from '../../models/GrinderPatch';
 import { setGrinderPedalParam } from '../../stores/grinderStore';
 
+import { createFlushParam } from './createFlushParam';
+import { getAudioParamKeyForPedal } from './getAudioParamKeyForPedal';
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import { createFindDeviceRef, createFlushParam, getAudioParamKeyForPedal, paramBatcher } from './helpers';
+import { paramBatcher } from './helpers';
 
 export const setGrinderPedalParamWithAudio = inject(grinderParamBridgeDependencies)(({
     getAllTracks: getAllTracksFn,
@@ -12,7 +15,7 @@ export const setGrinderPedalParamWithAudio = inject(grinderParamBridgeDependenci
     persistDeviceParam: persistDeviceParamFn,
 }) => {
     const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+    const flushParam = createFlushParam({ updateDeviceParamFn, persistDeviceParamFn });
 
     return function setGrinderPedalParamWithAudio(
         deviceId: string,

@@ -1,9 +1,9 @@
 import { inject } from '#/infra/di/inject';
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { recallGrinderSnapshot } from '../../stores/grinderStore';
 
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import { createFindDeviceRef } from './helpers';
 import { syncGrinderPatchToAudio } from './syncGrinderPatchToAudio';
 
 export const recallGrinderSnapshotWithAudio = inject(grinderParamBridgeDependencies)(({
