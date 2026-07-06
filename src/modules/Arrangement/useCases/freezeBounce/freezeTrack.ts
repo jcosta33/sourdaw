@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -73,7 +73,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
         }
 
         const freezeId = `freeze-${trackId}-${Date.now()}`;
-        audioBufferCache.set(freezeId, renderedBuffer);
+        cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId });
 
         updateTrack(trackId, (time) => ({
             ...time,

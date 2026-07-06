@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
@@ -19,10 +19,8 @@ vi.mock('../renderOffline', () => ({
     renderTrackOffline: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        set: vi.fn(),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: vi.fn(),
 }));
 
 describe('freezeTrack', () => {
@@ -54,7 +52,7 @@ describe('freezeTrack', () => {
         expect(updateTrack).not.toHaveBeenCalled();
     });
 
-    it('freezes the track successfully', async () => {
+    it('should freeze the track successfully', async () => {
         trackStore.set({
             tracks: [
                 {
@@ -67,10 +65,18 @@ describe('freezeTrack', () => {
             selectedTrackId: null,
         });
 
-        vi.mocked(renderTrackOffline).mockResolvedValue({
+        const renderedBuffer: AudioBuffer = {
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+            duration: 1,
+            getChannelData: vi.fn(() => new Float32Array(44100)),
             sampleRate: 44100,
+            length: 44100,
             numberOfChannels: 2,
-        } as any);
+        };
+        const expectedBufferId = 'freeze-t1-1234567890';
+
+        vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer);
 
         await freezeTrack('t1');
 
@@ -87,12 +93,22 @@ describe('freezeTrack', () => {
         const frozenTrack = frozenUpdater(trackStore.value!.tracks[0]);
 
         expect(frozenTrack.frozen).toBe(true);
-        expect(frozenTrack.frozenBufferId).toMatch(/^freeze-t1-/);
-        expect(frozenTrack.freezeState.status).toBe('frozen');
-        expect(frozenTrack.freezeState.sourceContentHash).toBe('mock-hash');
-        expect(frozenTrack.freezeState.renderedAt).toBe(1234567890);
+        expect(frozenTrack.frozenBufferId).toBe(expectedBufferId);
+        expect(frozenTrack.freezeState).toEqual({
+            status: 'frozen',
+            freezeId: expectedBufferId,
+            frozenBufferId: expectedBufferId,
+            sourceContentHash: 'mock-hash',
+            renderSettings: {
+                sampleRate: 44100,
+                bitDepth: 32,
+                channelCount: 2,
+                tailLengthSeconds: 2,
+            },
+            renderedAt: 1234567890,
+        });
 
-        expect(audioBufferCache.set).toHaveBeenCalledWith(frozenTrack.frozenBufferId, expect.any(Object));
+        expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
     });
 
