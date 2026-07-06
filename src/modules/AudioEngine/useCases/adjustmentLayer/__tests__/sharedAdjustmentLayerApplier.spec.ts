@@ -60,10 +60,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-import {
-    getSharedAdjustmentLayerApplier,
-    resetSharedAdjustmentLayerApplierForTest,
-} from '../sharedAdjustmentLayerApplier';
+import { adjustmentApplicationStore } from '../../../stores/adjustmentApplicationStore';
+import { resetSharedAdjustmentLayerApplierForTest } from '../resetSharedAdjustmentLayerApplierForTest';
+import { getSharedAdjustmentLayerApplier } from '../sharedAdjustmentLayerApplier';
 
 describe('sharedAdjustmentLayerApplier engine wiring', () => {
     beforeEach(() => {
@@ -134,6 +133,37 @@ describe('sharedAdjustmentLayerApplier engine wiring', () => {
         const applier = getSharedAdjustmentLayerApplier();
         applier.reset();
         expect(mocks.resetAdjustmentLayers).toHaveBeenCalled();
+    });
+
+    it('should clear test singleton wiring and applied records with the reset helper', () => {
+        const applier = getSharedAdjustmentLayerApplier();
+        expect(mocks.subscribers.size).toBe(1);
+
+        applier.applyLayers({
+            activeLayers: [
+                {
+                    id: 'L1',
+                    name: 'EQ',
+                    effectType: 'eq',
+                    parameters: [{ name: 'High Gain', value: 6, min: -12, max: 12, unit: 'dB' }],
+                    affectedTrackIds: ['t1'],
+                    insertionIndex: 0,
+                    regions: [{ id: 'r1', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 0 }],
+                    enabled: true,
+                    mix: 1,
+                    color: '#000',
+                },
+            ],
+            beat: 2,
+        });
+        expect(adjustmentApplicationStore.value?.applied).toHaveLength(1);
+
+        resetSharedAdjustmentLayerApplierForTest();
+        expect(mocks.subscribers.size).toBe(0);
+        expect(adjustmentApplicationStore.value).toEqual({ applied: [] });
+
+        getSharedAdjustmentLayerApplier();
+        expect(mocks.subscribers.size).toBe(1);
     });
 
     it('re-reads the user fader value when trackStore mutates while a volume layer is active', () => {
