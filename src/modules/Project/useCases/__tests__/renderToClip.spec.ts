@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
-    audioBufferCacheSet: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
     pushUndoEntry: vi.fn(),
     trackStoreValue: { tracks: [], selectedTrackId: null } as { tracks: unknown[]; selectedTrackId: string | null },
     trackStoreSet: vi.fn(),
@@ -23,8 +23,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { set: mocks.audioBufferCacheSet },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -57,7 +57,7 @@ describe('renderToClip', () => {
         expect(typeof result?.audioBufferId).toBe('string');
         expect(result?.audioBufferId.startsWith('rendered-')).toBe(true);
 
-        expect(mocks.audioBufferCacheSet).toHaveBeenCalledWith(result?.audioBufferId, buffer);
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer, bufferId: result?.audioBufferId });
         expect(mocks.addClip).toHaveBeenCalledWith({
             trackId: 'track-1',
             startBeat: 4,
