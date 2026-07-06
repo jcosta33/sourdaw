@@ -2,7 +2,7 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { llmStatusStore, pushAiActionGroup } from '#/modules/AiRuntime/stores';
+import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     parsePromptToActions,
     isComplexPrompt,
@@ -14,6 +14,7 @@ import {
     notifyAiChange,
     isLlmAvailable,
     initEngine,
+    recordAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction, executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
@@ -223,7 +224,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 timestamp: Date.now(),
                 reverted: false,
             };
-            pushAiActionGroup(historyGroup);
+            recordAiActionGroup(historyGroup);
         }
     };
 

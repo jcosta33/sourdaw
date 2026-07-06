@@ -10,6 +10,7 @@ export { setVoiceStatus } from './setVoiceStatus';
 export { setVoiceListeningStatus } from './setVoiceListeningStatus';
 export { setVoiceTranscribingStatus } from './setVoiceTranscribingStatus';
 export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
+export { recordAiActionGroup } from './recordAiActionGroup';
 
 export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, isComplexPrompt } from './aiRuntimeQueries/helpers';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
