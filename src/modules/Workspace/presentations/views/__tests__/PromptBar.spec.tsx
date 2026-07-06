@@ -84,5 +84,6 @@ describe('PromptBar', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Toggle AI action history' }));
 
         expect(vi.mocked(toggleAiHistoryPanel)).toHaveBeenCalledTimes(1);
+        expect(module_mocks.toggle_ai_history_panel.mock.calls).toEqual([[]]);
     });
 });

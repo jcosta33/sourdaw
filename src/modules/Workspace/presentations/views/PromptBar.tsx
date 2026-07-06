@@ -244,7 +244,9 @@ export const PromptBar = (): ReactElement => {
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={toggleAiHistoryPanel}
+                    onClick={() => {
+                        toggleAiHistoryPanel();
+                    }}
                     title="AI action history"
                     aria-label="Toggle AI action history"
                     type="button"
