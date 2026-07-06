@@ -1,7 +1,6 @@
 import { type DragEvent, useState } from 'react';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -171,7 +170,7 @@ export const useTimelineFileDrop = ({
                 // so the SampleLibrary file resolver would have nothing to resolve.
                 // Resolve the buffer id straight from the cache before attempting
                 // any file access or decode.
-                const cachedBuffer = audioBufferCache.get(sample.id);
+                const cachedBuffer = getCachedAudioBuffer({ bufferId: sample.id });
                 if (cachedBuffer) {
                     audioBufferId = sample.id;
                     durationBeats = Math.max(
