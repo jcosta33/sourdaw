@@ -1,14 +1,93 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type ClipRenderModel, type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import { type ClipRenderModel, type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { drawClip } from '../clipDrawing';
+
+type GetCachedAudioBufferMock = (input: { bufferId: string }) => AudioBuffer | null;
+
+type GetCachedAudioBufferWaveformPeaksMock = (input: {
+    bufferId: string;
+    numBins: number;
+    startSample?: number;
+    endSample?: number;
+}) => Float32Array;
+
+const mocks = vi.hoisted(() => ({
+    getCachedAudioBuffer: vi.fn<GetCachedAudioBufferMock>(),
+    getCachedAudioBufferWaveformPeaks: vi.fn<GetCachedAudioBufferWaveformPeaksMock>(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    getCachedAudioBufferWaveformPeaks: mocks.getCachedAudioBufferWaveformPeaks,
+}));
+
+const create_test_audio_buffer = (sampleRate = 48_000): AudioBuffer => {
+    const channel_data = new Float32Array(96_000);
+    return {
+        copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
+            destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
+        },
+        copyToChannel: (source, _channel_number, start_in_channel = 0) => {
+            channel_data.set(source, start_in_channel);
+        },
+        duration: channel_data.length / sampleRate,
+        getChannelData: () => channel_data,
+        length: channel_data.length,
+        numberOfChannels: 1,
+        sampleRate,
+    };
+};
+
+const create_test_model = (overrides: Partial<TimelineRenderModel> = {}): TimelineRenderModel => ({
+    dataDirty: false,
+    tracks: [],
+    selectedTrackId: null,
+    selectedClipId: null,
+    selectedClipIds: [],
+    playheadPosition: 0,
+    viewportStartBeat: 0,
+    viewportEndBeat: 16,
+    beatsPerPixel: 1 / 25,
+    pixelsPerBeat: 25,
+    trackHeight: 40,
+    scrollY: 0,
+    tempo: 120,
+    timeSignatureNumerator: 4,
+    timeSignatureDenominator: 4,
+    ...overrides,
+});
+
+const create_audio_clip = (overrides: Partial<ClipRenderModel> = {}): ClipRenderModel => ({
+    id: 'audio-clip-1',
+    startBeat: 2,
+    endBeat: 6,
+    name: 'Audio Clip',
+    color: '#000',
+    type: 'audio',
+    muted: false,
+    midiNotes: [],
+    audioBufferId: 'buf-1',
+    audioOffsetBeats: 1,
+    stretchRatio: 2,
+    loopEnabled: false,
+    loopLength: undefined,
+    midiOffsetBeats: 0,
+    fadeInBeats: 0,
+    fadeOutBeats: 0,
+    ...overrides,
+});
 
 describe('drawClip (Coordinate Conventions)', () => {
     let mockCtx: any;
 
     beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array());
         mockCtx = {
             beginPath: vi.fn(),
+            closePath: vi.fn(),
             roundRect: vi.fn(),
             fill: vi.fn(),
             strokeStyle: '',
@@ -19,6 +98,7 @@ describe('drawClip (Coordinate Conventions)', () => {
             stroke: vi.fn(),
             moveTo: vi.fn(),
             lineTo: vi.fn(),
+            rect: vi.fn(),
             clearRect: vi.fn(),
             clip: vi.fn(),
             save: vi.fn(),
@@ -132,5 +212,30 @@ describe('drawClip (Coordinate Conventions)', () => {
 
         // isInlineEditing:true exercises the padded-extent path that used the spread.
         expect(() => drawClip(mockCtx, clip, model, 0, 30)).not.toThrow();
+    });
+
+    it('should draw cached audio waveform peaks through AudioEngine owner use cases', () => {
+        const buffer = create_test_audio_buffer();
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
+
+        drawClip(mockCtx, create_audio_clip(), create_test_model(), 0, 40);
+
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 100,
+            startSample: 24_000,
+            endSample: 72_000,
+        });
+    });
+
+    it('should not read waveform peaks when the cached audio buffer is missing', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        drawClip(mockCtx, create_audio_clip({ audioBufferId: 'missing-buffer' }), create_test_model(), 0, 40);
+
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing-buffer' });
+        expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
     });
 });

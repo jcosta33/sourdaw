@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
@@ -409,13 +409,13 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     }
 
                     // AUDIO waveform peaks
-                    if (clip.type === 'audio' && clip.audioBufferId && audioBufferCache.has(clip.audioBufferId)) {
+                    if (clip.type === 'audio' && clip.audioBufferId) {
                         const w = cx2 - cx1;
                         if (w >= 4) {
                             // At least 1 rect per pixel, up to max ~2000 bins to balance perf
                             const numBins = Math.min(Math.floor(w * dpr), 2000);
 
-                            const buffer = audioBufferCache.get(clip.audioBufferId);
+                            const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
                             if (buffer) {
                                 const offsetBeats = clip.audioOffsetBeats ?? 0;
                                 const stretchRatio = clip.stretchRatio ?? 1;
@@ -426,7 +426,9 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
                                 const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
 
-                                const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+                                const peaks = getCachedAudioBufferWaveformPeaks({
+                                    bufferId: clip.audioBufferId,
+                                    numBins,
                                     startSample,
                                     endSample,
                                 });
