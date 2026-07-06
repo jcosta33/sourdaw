@@ -1,26 +1,41 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import * as subject from '../trackTemplate';
+import { type TrackTemplate } from '../../models/TrackTemplate';
+import { trackTemplateCache } from '../trackTemplate';
 
 describe('trackTemplate', () => {
-    it('should export deleteTrackTemplate', () => {
-        expect(subject.deleteTrackTemplate).toBeDefined();
-        const time = typeof subject.deleteTrackTemplate;
-        expect(time === 'function' || time === 'object').toBe(true);
+    function createTemplate(overrides: Partial<TrackTemplate> = {}): TrackTemplate {
+        return {
+            id: 'template-1',
+            name: 'Template 1',
+            category: 'User',
+            trackKind: 'audio',
+            devices: [],
+            sends: [],
+            gain: 0.8,
+            pan: 0,
+            color: '#ff0000',
+            createdAt: 1_717_171_717,
+            ...overrides,
+        };
+    }
+
+    beforeEach(() => {
+        trackTemplateCache.templates = null;
     });
-    it('should export getTrackTemplates', () => {
-        expect(subject.getTrackTemplates).toBeDefined();
-        const time = typeof subject.getTrackTemplates;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should expose an unloaded template cache by default', () => {
+        expect(trackTemplateCache.templates).toBeNull();
     });
-    it('should export loadTrackTemplate', () => {
-        expect(subject.loadTrackTemplate).toBeDefined();
-        const time = typeof subject.loadTrackTemplate;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export saveTrackAsTemplate', () => {
-        expect(subject.saveTrackAsTemplate).toBeDefined();
-        const time = typeof subject.saveTrackAsTemplate;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should hold immutable cache replacements by reference', () => {
+        const firstTemplates = [createTemplate({ id: 'template-1' })];
+        trackTemplateCache.templates = firstTemplates;
+
+        const nextTemplates = [...firstTemplates, createTemplate({ id: 'template-2' })];
+        trackTemplateCache.templates = nextTemplates;
+
+        expect(trackTemplateCache.templates).toBe(nextTemplates);
+        expect(firstTemplates).toEqual([createTemplate({ id: 'template-1' })]);
     });
 });

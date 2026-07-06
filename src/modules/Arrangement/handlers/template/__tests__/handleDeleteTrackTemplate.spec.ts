@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     deleteTrackTemplate: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackTemplate', () => ({
+vi.mock('../../../useCases/deleteTrackTemplate', () => ({
     deleteTrackTemplate: mocks.deleteTrackTemplate,
 }));
 

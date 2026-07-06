@@ -32,10 +32,11 @@ import { confirmUser } from '#/utils/Notification/confirmUser';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
+import { getTrackTemplates } from '../../useCases/getTrackTemplates';
+import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
 import { removeTrack } from '../../useCases/removeTrack';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';

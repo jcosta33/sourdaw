@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     saveTrackAsTemplate: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackTemplate', () => ({
+vi.mock('../../../useCases/saveTrackAsTemplate', () => ({
     saveTrackAsTemplate: mocks.saveTrackAsTemplate,
 }));
 

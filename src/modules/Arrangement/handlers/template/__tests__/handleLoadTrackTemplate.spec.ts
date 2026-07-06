@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     loadTrackTemplate: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackTemplate', () => ({
+vi.mock('../../../useCases/loadTrackTemplate', () => ({
     loadTrackTemplate: mocks.loadTrackTemplate,
 }));
 
