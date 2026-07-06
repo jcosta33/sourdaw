@@ -1,5 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getAudioContext } from '#/modules/AudioEngine/useCases';
 
 export type DecodedDawProjectAssets = {
     bufferIdsByPath: Map<string, string>;
@@ -26,7 +25,7 @@ export async function decodeDawProjectAssets(audioAssets: Map<string, Uint8Array
         try {
             const buffer = await context.decodeAudioData(copy.buffer);
             const id = `audio-${crypto.randomUUID()}`;
-            audioBufferCache.set(id, buffer);
+            cacheAudioBuffer({ buffer, bufferId: id });
             bufferIdsByPath.set(path, id);
         } catch {
             failedPaths.push(path);
