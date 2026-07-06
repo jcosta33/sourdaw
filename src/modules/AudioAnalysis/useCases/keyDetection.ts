@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 // Krumhansl-Schmuckler key profiles
@@ -6,7 +6,7 @@ const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.6
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
 export function detectKey(audioBufferId: string): { key: string; mode: 'major' | 'minor'; confidence: number } | null {
-    const buffer = audioBufferCache.get(audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: audioBufferId });
     if (!buffer) {
         return null;
     }
