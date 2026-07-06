@@ -1,6 +1,10 @@
-import { type SerializedNote, type RuntimeNote } from './midiStateMapping';
+import { type MidiStoreState } from '#/modules/MIDI/stores';
 
-export function serializeProjectMidiNote(note: RuntimeNote): SerializedNote {
+import { type ProjectMidiNote } from '../../../models/ProjectData';
+
+type RuntimeNote = MidiStoreState['notesByClipId'][string][number];
+
+export function serializeProjectMidiNote(note: RuntimeNote): ProjectMidiNote {
     return {
         id: note.id,
         pitch: note.pitch,

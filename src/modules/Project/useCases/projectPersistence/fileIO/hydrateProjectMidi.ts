@@ -1,23 +1,24 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
-import { type ProjectMidi } from '../../../models/ProjectData';
-
 import {
-    mapProjectMidiValues,
-    type RuntimeCC,
-    type RuntimeNote,
-    type RuntimePitchBend,
-    type SerializedCC,
-    type SerializedNote,
-    type SerializedPitchBend,
-} from './midiStateMapping';
+    type ProjectMidi,
+    type ProjectMidiCC,
+    type ProjectMidiNote,
+    type ProjectMidiPitchBend,
+} from '../../../models/ProjectData';
 
-function hydrateProjectMidiNote(note: SerializedNote): RuntimeNote {
+import { mapProjectMidiValues } from './midiStateMapping';
+
+type RuntimeNote = MidiStoreState['notesByClipId'][string][number];
+type RuntimeCC = MidiStoreState['ccByClipId'][string][number];
+type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
+
+function hydrateProjectMidiNote(note: ProjectMidiNote): RuntimeNote {
     return note;
 }
 
 type HydrateProjectMidiCCInput = {
-    cc: SerializedCC;
+    cc: ProjectMidiCC;
     clipId: string;
     index: number;
 };
@@ -35,7 +36,7 @@ function hydrateProjectMidiCC({ cc, clipId, index }: HydrateProjectMidiCCInput):
 }
 
 type HydrateProjectMidiPitchBendInput = {
-    pb: SerializedPitchBend;
+    pb: ProjectMidiPitchBend;
     clipId: string;
     index: number;
 };

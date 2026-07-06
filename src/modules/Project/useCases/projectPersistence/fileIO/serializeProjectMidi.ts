@@ -1,21 +1,18 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
-import { type ProjectMidi } from '../../../models/ProjectData';
+import { type ProjectMidi, type ProjectMidiCC, type ProjectMidiPitchBend } from '../../../models/ProjectData';
 
-import {
-    mapProjectMidiValues,
-    type RuntimeCC,
-    type RuntimePitchBend,
-    type SerializedCC,
-    type SerializedPitchBend,
-} from './midiStateMapping';
+import { mapProjectMidiValues } from './midiStateMapping';
 import { serializeProjectMidiNote } from './serializeProjectMidiNote';
 
-function serializeProjectMidiCC(cc: RuntimeCC): SerializedCC {
+type RuntimeCC = MidiStoreState['ccByClipId'][string][number];
+type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
+
+function serializeProjectMidiCC(cc: RuntimeCC): ProjectMidiCC {
     return { beat: cc.beat, controller: cc.controller, value: cc.value, channel: cc.channel };
 }
 
-function serializeProjectMidiPitchBend(pb: RuntimePitchBend): SerializedPitchBend {
+function serializeProjectMidiPitchBend(pb: RuntimePitchBend): ProjectMidiPitchBend {
     return { beat: pb.beat, value: pb.value, channel: pb.channel };
 }
 
