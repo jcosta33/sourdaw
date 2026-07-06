@@ -17,12 +17,39 @@ type FakeWorker = {
     terminate: () => void;
 };
 
+type TestRecordingClip = {
+    id: string;
+    trackId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    type: 'audio';
+    audioBufferId?: string;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+    gain: number;
+    color: string;
+    locked: boolean;
+    muted: boolean;
+};
+
+type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
+
+type StartAudioRecordingMock = (trackId: string, onComplete: (buffer: AudioBuffer) => void) => void;
+
+type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
+
 // Shared mutable test state, hoisted so the vi.mock factories below can close
 // over it (vi.mock factories are hoisted above imports).
 const harness = vi.hoisted(() => ({
     clock: 0,
+    cache_audio_buffer: vi.fn<CacheAudioBufferMock>(({ bufferId }) => bufferId ?? 'generated-test-buffer'),
     setTransportInfo: vi.fn(),
+    start_audio_recording: vi.fn<StartAudioRecordingMock>(),
+    start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
     workers: [] as FakeWorker[],
+    track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
+    update_clip: vi.fn<UpdateClipMock>(),
 }));
 
 vi.mock('../../stores/transportStore', () => ({
@@ -38,23 +65,24 @@ vi.mock('../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: { value: { tracks: [] } },
+    trackStore: harness.track_store,
 }));
 vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
     takeLaneStore: { value: { lanes: [] } },
 }));
 vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({ addTakeLane: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases/comping/addTake', () => ({ addTake: vi.fn() }));
-vi.mock('#/modules/Arrangement/useCases/recording/startRecording', () => ({ startRecording: vi.fn(() => []) }));
+vi.mock('#/modules/Arrangement/useCases/recording/startRecording', () => ({ startRecording: harness.start_recording }));
 vi.mock('#/modules/Arrangement/useCases/recording/stopRecording', () => ({ stopRecording: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({ updateClip: harness.update_clip }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
 }));
-vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
-    audioBufferCache: { set: vi.fn(), get: vi.fn() },
-}));
+vi.mock('#/modules/AudioEngine/useCases/cacheAudioBuffer', () => ({ cacheAudioBuffer: harness.cache_audio_buffer }));
 vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({ stopAllScheduled: vi.fn() }));
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () => ({ startAudioRecording: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () => ({
+    startAudioRecording: harness.start_audio_recording,
+}));
 vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({ stopAudioRecording: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
     getAudioContext: vi.fn(() => ({
@@ -167,6 +195,18 @@ async function fireTick(): Promise<void> {
     await Promise.resolve();
 }
 
+function create_test_audio_buffer(): AudioBuffer {
+    return {
+        duration: 1,
+        length: 48000,
+        numberOfChannels: 1,
+        sampleRate: 48000,
+        copyFromChannel: () => {},
+        copyToChannel: () => {},
+        getChannelData: () => new Float32Array(48000),
+    } satisfies AudioBuffer;
+}
+
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -199,6 +239,7 @@ describe('playhead scheduler tick', () => {
         playheadPositionRef.current = 0;
         tempoMapStore.value = { changes: [] };
         transportStore.value = { ...playingTransport };
+        harness.track_store.value = { tracks: [] };
         disposePlayheadScheduler();
     });
 
@@ -270,6 +311,65 @@ describe('playhead scheduler tick', () => {
         await fireTick();
 
         expect(vi.mocked(stopAllScheduled).mock.calls.length).toBe(stopCallsBefore);
+    });
+
+    it('should cache punch-in audio completion through the AudioEngine use case and update the recording clip', async () => {
+        const random_uuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
+        const recording_clip = {
+            id: 'rec-clip-1',
+            trackId: 'track-audio-1',
+            name: 'Recording 1',
+            startBeat: 0,
+            endBeat: 0,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        harness.track_store.value = {
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+        };
+        transportStore.value = {
+            ...playingTransport,
+            punchInEnabled: true,
+            punchInBeat: 0.05,
+            punchOutBeat: 4,
+        };
+        harness.start_recording.mockReturnValue([recording_clip]);
+
+        try {
+            startPlayheadScheduler();
+
+            harness.clock = 0.05;
+            await fireTick();
+
+            expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function));
+
+            const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
+            const buffer = create_test_audio_buffer();
+            complete_recording(buffer);
+
+            expect(harness.cache_audio_buffer).toHaveBeenCalledWith({
+                buffer,
+                bufferId: 'rec-00000000-0000-4000-8000-000000000001',
+            });
+            expect(harness.update_clip).toHaveBeenCalledWith('rec-clip-1', expect.any(Function));
+
+            const update_clip_call = harness.update_clip.mock.calls[0]!;
+            const updated_clip = update_clip_call[1]({
+                ...recording_clip,
+                audioBufferId: 'old-buffer',
+            });
+            expect(updated_clip).toEqual({
+                ...recording_clip,
+                audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
+            });
+        } finally {
+            random_uuid.mockRestore();
+        }
     });
 
     it('disposePlayheadScheduler terminates the worker and clears the audio-clip pool (regression: §B fix 5)', async () => {
