@@ -5,13 +5,42 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { toggleRecording } from '../toggleRecording';
 
+type TestRecordingBuffer = {
+    duration: number;
+};
+
+type TestRecordingClip = {
+    id: string;
+    trackId: string;
+    startBeat: number;
+    endBeat: number;
+    audioBufferId?: string;
+};
+
+type TestTrack = {
+    id: string;
+    kind: 'audio' | 'midi';
+    armed: boolean;
+};
+
+type TestTrackState = {
+    tracks: TestTrack[];
+};
+
 const mocks = vi.hoisted(() => ({
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     resumeEngine: vi.fn<() => Promise<void>>(),
     notifyUser: vi.fn<(...args: unknown[]) => void>(),
     ensureTrackStrips: vi.fn<() => void>(),
     getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
+    getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
+    updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
+    startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
     startPlayback: vi.fn<() => void>(),
+    cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
+    startAudioRecording:
+        vi.fn<(trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<void> | void>(),
+    getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
     timeSignatureMapStore: { value: { changes: [] } as { changes: unknown[] } },
 }));
 
@@ -35,19 +64,17 @@ vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: vi.fn(),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: vi.fn(() => ({ tracks: [] })),
-    updateClip: vi.fn(),
-    startRecording: vi.fn(() => []),
-}));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { set: vi.fn(), get: vi.fn() },
+    getTrackStoreState: mocks.getTrackStoreState,
+    updateClip: mocks.updateClip,
+    startRecording: mocks.startRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
-    startAudioRecording: vi.fn(),
-    getCompensationDelay: vi.fn(() => 0),
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
+    startAudioRecording: mocks.startAudioRecording,
+    getCompensationDelay: mocks.getCompensationDelay,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
@@ -140,5 +167,60 @@ describe('toggleRecording', () => {
 
         // 1 bar * 5 beats/bar = 5 clicks.
         expect(mocks.scheduleClick).toHaveBeenCalledTimes(5);
+    });
+
+    it('should cache recorded audio through the AudioEngine use case with a generated recording id', async () => {
+        const recording_clip = {
+            id: 'clip-recording',
+            trackId: 'track-audio',
+            startBeat: 10,
+            endBeat: 10,
+        };
+        const recorded_buffer = { duration: 2 };
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startRecording.mockReturnValue([recording_clip]);
+
+        toggleRecording();
+
+        const recording_callback = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!recording_callback) {
+            throw new Error('Expected recording callback to be registered');
+        }
+
+        recording_callback(recorded_buffer);
+
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
+            buffer: recorded_buffer,
+            bufferId: expect.stringMatching(/^rec-/),
+        });
+
+        const cached_buffer_id = mocks.cacheAudioBuffer.mock.calls[0]?.[0].bufferId;
+        if (!cached_buffer_id) {
+            throw new Error('Expected recording buffer id to be cached');
+        }
+
+        await Promise.resolve();
+
+        const clip_update = mocks.updateClip.mock.calls[0]?.[1];
+        if (!clip_update) {
+            throw new Error('Expected recording clip to be updated');
+        }
+
+        expect(clip_update(recording_clip)).toEqual({
+            ...recording_clip,
+            audioBufferId: cached_buffer_id,
+            startBeat: 10,
+            endBeat: 14,
+        });
     });
 });
