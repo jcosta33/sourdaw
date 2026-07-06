@@ -1,6 +1,6 @@
 import { getDrumKitByIndex as getDrumKitByIndexFromFactory } from '../../models/FactoryDrumKits';
 
-import { toDrumKit } from './helpers';
+import { toDrumKit } from './toDrumKit';
 
 import type { DrumKit } from './helpers';
 
