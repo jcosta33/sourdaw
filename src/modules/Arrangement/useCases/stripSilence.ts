@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { getTrackState } from '../repositories/track/getTrackState';
 import { updateTrack } from '../repositories/track/updateTrack';
@@ -27,7 +27,7 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
         return;
     }
 
-    const buffer = audioBufferCache.get(targetClip.clip.audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: targetClip.clip.audioBufferId });
     if (!buffer) {
         return;
     }
