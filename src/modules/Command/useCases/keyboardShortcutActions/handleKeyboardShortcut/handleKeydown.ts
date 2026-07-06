@@ -35,11 +35,12 @@ import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } fro
 import { CommandEventBus } from '../../commandEventBus';
 import { executeAppAction } from '../../executeAppAction';
 import { pushUndoEntry } from '../../pushUndoEntry';
+import { redo } from '../../redo';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
-import { undo, redo } from '../../undoRedo';
+import { undo } from '../../undo';
 import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 

@@ -75,7 +75,8 @@ vi.mock('../../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn
 vi.mock('../../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: getLastClipEndBeatMock }));
 vi.mock('../../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: goToNextMarkerMock }));
 vi.mock('../../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: goToPreviousMarkerMock }));
-vi.mock('../../../undoRedo', () => ({ undo: vi.fn(), redo: vi.fn() }));
+vi.mock('../../../redo', () => ({ redo: vi.fn() }));
+vi.mock('../../../undo', () => ({ undo: vi.fn() }));
 vi.mock('../../clipShortcuts/duplicateSelectedClipsForward', () => ({ duplicateSelectedClipsForward: vi.fn() }));
 vi.mock('../../trackShortcuts/duplicateTrack', () => ({ duplicateTrack: vi.fn() }));
 
