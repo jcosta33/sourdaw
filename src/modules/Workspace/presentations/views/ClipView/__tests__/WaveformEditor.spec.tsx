@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getWarpState } from '#/modules/Arrangement/stores';
 import {
@@ -11,6 +11,25 @@ import {
 import { getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
+
+const original_canvas_get_context_descriptor = Object.getOwnPropertyDescriptor(
+    HTMLCanvasElement.prototype,
+    'getContext'
+);
+const original_client_width_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+const original_client_height_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+
+function restore_property_descriptor(
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor | undefined
+): void {
+    if (descriptor) {
+        Object.defineProperty(target, propertyKey, descriptor);
+        return;
+    }
+    Reflect.deleteProperty(target, propertyKey);
+}
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({
@@ -206,6 +225,12 @@ describe('WaveformEditor', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        restore_property_descriptor(HTMLCanvasElement.prototype, 'getContext', original_canvas_get_context_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientWidth', original_client_width_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientHeight', original_client_height_descriptor);
     });
 
     it('should render without crashing', () => {
