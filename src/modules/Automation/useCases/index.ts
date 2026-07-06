@@ -23,7 +23,9 @@ export { startAutomationRecording } from './automationRecording/startAutomationR
 export { stopAutomationRecording } from './automationRecording/stopAutomationRecording';
 export { releaseTouchAutomation } from './automationRecording/releaseTouchAutomation';
 
-export { beginDrawSession, paintDrawPoint, endDrawSession } from './automationDrawMode';
+export { beginDrawSession } from './beginDrawSession';
+export { paintDrawPoint } from './paintDrawPoint';
+export { endDrawSession } from './endDrawSession';
 export { selectPointsInRange } from './automationSelection/selectPointsInRange';
 
 export { applyModulation } from './modulation/applyModulation';
