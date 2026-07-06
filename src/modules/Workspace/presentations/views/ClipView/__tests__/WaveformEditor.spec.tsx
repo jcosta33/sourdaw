@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getWarpState } from '#/modules/Arrangement/stores';
 import {
@@ -8,8 +8,28 @@ import {
     moveWarpMarker,
     normalizeClip,
 } from '#/modules/Arrangement/useCases';
+import { getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
+
+const original_canvas_get_context_descriptor = Object.getOwnPropertyDescriptor(
+    HTMLCanvasElement.prototype,
+    'getContext'
+);
+const original_client_width_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+const original_client_height_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+
+function restore_property_descriptor(
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor | undefined
+): void {
+    if (descriptor) {
+        Object.defineProperty(target, propertyKey, descriptor);
+        return;
+    }
+    Reflect.deleteProperty(target, propertyKey);
+}
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({
@@ -116,10 +136,8 @@ vi.mock('#/utils/UI/resolveToken', () => ({
     resolveToken: vi.fn(() => '#151515'),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
-    audioBufferCache: {
-        getWaveformPeaks: vi.fn(() => []),
-    },
+vi.mock('#/modules/AudioEngine/useCases/getCachedAudioBufferWaveformPeaks', () => ({
+    getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -209,6 +227,12 @@ describe('WaveformEditor', () => {
         vi.clearAllMocks();
     });
 
+    afterEach(() => {
+        restore_property_descriptor(HTMLCanvasElement.prototype, 'getContext', original_canvas_get_context_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientWidth', original_client_width_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientHeight', original_client_height_descriptor);
+    });
+
     it('should render without crashing', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform zoom')).toBeInTheDocument();
@@ -227,6 +251,45 @@ describe('WaveformEditor', () => {
     it('should render canvas element', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform editor')).toBeInTheDocument();
+    });
+
+    it('should request waveform peaks through the AudioEngine use case', () => {
+        const canvasContext = {
+            scale: vi.fn(),
+            fillRect: vi.fn(),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            closePath: vi.fn(),
+            fill: vi.fn(),
+            setLineDash: vi.fn(),
+            fillText: vi.fn(),
+        };
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+            configurable: true,
+            value: vi.fn((contextId: string) => {
+                if (contextId === '2d') {
+                    return canvasContext;
+                }
+                return null;
+            }),
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 127,
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+            configurable: true,
+            get: () => 48,
+        });
+
+        render(<WaveformEditor {...defaultProps} />);
+
+        expect(vi.mocked(getCachedAudioBufferWaveformPeaks)).toHaveBeenCalledWith({
+            bufferId: 'clip-1',
+            numBins: 127,
+        });
     });
 
     it('should have correct aria-label for canvas', () => {
