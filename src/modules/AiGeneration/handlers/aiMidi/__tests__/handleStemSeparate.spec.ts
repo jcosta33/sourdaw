@@ -6,8 +6,8 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
     removeTrack: vi.fn(),
-    cacheSet: vi.fn(),
-    cacheGet: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     separateStems: vi.fn(),
@@ -21,10 +21,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
     getTrackStoreState: mocks.getTrackStoreState,
     removeTrack: mocks.removeTrack,
-}));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { set: mocks.cacheSet, get: mocks.cacheGet },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -41,6 +37,8 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioBufferToWav: mocks.audioBufferToWav,
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
 describe('handleStemSeparate', () => {
@@ -86,10 +84,11 @@ describe('handleStemSeparate', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
         });
-        mocks.cacheGet.mockReturnValue(null);
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
 
         await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow();
 
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Stem separation failed: audio buffer not found in cache',
             'error'
@@ -115,13 +114,16 @@ describe('handleStemSeparate', () => {
         });
 
         const mockBuffer = {} as AudioBuffer;
-        mocks.cacheGet.mockReturnValue(mockBuffer);
+        mocks.getCachedAudioBuffer.mockReturnValue(mockBuffer);
         mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
 
+        const vocalsBuffer = {} as AudioBuffer;
+        const drumsBuffer = {} as AudioBuffer;
         mocks.separateStems.mockResolvedValue({
-            vocals: {} as AudioBuffer,
-            drums: {} as AudioBuffer,
+            vocals: vocalsBuffer,
+            drums: drumsBuffer,
         });
+        mocks.cacheAudioBuffer.mockReturnValueOnce('stem-vocals-buffer').mockReturnValueOnce('stem-drums-buffer');
 
         let trackIdCounter = 0;
         mocks.addTrack.mockImplementation(() => ({ id: `t${++trackIdCounter}` }));
@@ -131,23 +133,29 @@ describe('handleStemSeparate', () => {
             payload: { clipId: 'c1', stems: ['vocals', 'drums'] },
         });
 
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.separateStems).toHaveBeenCalledWith(expect.any(ArrayBuffer), ['vocals', 'drums']);
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(3);
         expect(mocks.addTrack).toHaveBeenCalledTimes(2);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — drums', kind: 'audio' });
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: vocalsBuffer });
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: drumsBuffer });
 
         expect(mocks.addClip).toHaveBeenCalledTimes(2);
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackId: 't1',
                 name: 'vocals',
+                audioBufferId: 'stem-vocals-buffer',
             })
         );
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackId: 't2',
                 name: 'drums',
+                audioBufferId: 'stem-drums-buffer',
             })
         );
 
@@ -185,10 +193,12 @@ describe('handleStemSeparate', () => {
             ],
         });
 
-        mocks.cacheGet.mockReturnValue({} as AudioBuffer);
+        const vocalsBuffer = {} as AudioBuffer;
+        mocks.getCachedAudioBuffer.mockReturnValue({} as AudioBuffer);
         mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
-        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
+        mocks.separateStems.mockResolvedValue({ vocals: vocalsBuffer });
         mocks.addTrack.mockReturnValue({ id: 't-new' });
+        mocks.cacheAudioBuffer.mockReturnValue('stem-buffer');
 
         await handleStemSeparate.execute({
             type: 'stemSeparate',
@@ -198,14 +208,16 @@ describe('handleStemSeparate', () => {
         expect(mocks.getTrackStoreState).toHaveBeenCalledTimes(2);
         expect(mocks.removeTrack).toHaveBeenCalledWith('t-old');
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: vocalsBuffer });
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'stem-buffer' }));
     });
 
     it('logs warning if separation throws', async () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
         });
-        mocks.cacheGet.mockReturnValue({} as AudioBuffer);
+        mocks.getCachedAudioBuffer.mockReturnValue({} as AudioBuffer);
         mocks.separateStems.mockRejectedValue(new Error('Oops'));
 
         await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow(
