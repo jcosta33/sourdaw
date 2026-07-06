@@ -1,5 +1,5 @@
 import { addClip, addTrack, removeClip, removeTrack } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
 export type RenderToClipInput = {
@@ -19,7 +19,7 @@ export type RenderToClipOutput = {
 
 export function renderToClip(input: RenderToClipInput): RenderToClipOutput | null {
     const audioBufferId = `rendered-${crypto.randomUUID()}`;
-    audioBufferCache.set(audioBufferId, input.buffer);
+    cacheAudioBuffer({ buffer: input.buffer, bufferId: audioBufferId });
 
     const createdNewTrack = input.targetTrackId === 'new';
     let trackId: string;
