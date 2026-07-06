@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { createBufferSource, ensureTrackStrip, getCurrentTime } from '#/modules/AudioEngine/useCases';
+import {
+    createBufferSource,
+    ensureTrackStrip,
+    getCachedAudioBuffer,
+    getCurrentTime,
+} from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { getYeastRack } from '#/modules/Yeast/stores';
@@ -33,14 +37,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: vi.fn(() => ({})),
     getGrooveOffsetAtBeat: vi.fn(() => 0),
 }));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { get: vi.fn(() => null) },
-}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
+    getCachedAudioBuffer: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
         sampleRate: 48000,
         createGain: vi.fn(() => ({ connect: vi.fn() })),
@@ -304,7 +306,7 @@ describe('scheduleFrozenTrack', () => {
         const connect = vi.fn();
         const source = { start, connect, onended: null } as never;
         vi.mocked(createBufferSource).mockReturnValue(source);
-        vi.mocked(audioBufferCache.get).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
         vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
         vi.mocked(getCurrentTime).mockReturnValue(0);
 
@@ -316,6 +318,7 @@ describe('scheduleFrozenTrack', () => {
 
         const scheduled = scheduleFrozenTrack(track, 0, [], 120);
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(scheduled).toBe(true);
         // earliest clip startBeat = 8; at 120bpm, 8 beats = 4 seconds.
         // Old (buggy) behaviour offset by beat 0 => start(0).

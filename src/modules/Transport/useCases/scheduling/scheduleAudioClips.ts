@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     createBufferSource,
     ensureTrackStrip,
     getAudioContext,
+    getCachedAudioBuffer,
     getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
@@ -132,7 +132,7 @@ export function scheduleAudioClips(
                 continue;
             }
 
-            const buffer = audioBufferCache.get(clip.audioBufferId);
+            const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
             if (!buffer) {
                 const isRecordingClip = clip.audioBufferId.startsWith('rec-');
                 if (!isRecordingClip) {
