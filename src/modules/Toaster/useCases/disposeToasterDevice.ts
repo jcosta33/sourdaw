@@ -18,8 +18,8 @@
 
 import { unregisterToasterDevice } from '../stores/toasterStore';
 
+import { exit16Levels } from './exit16Levels';
 import { stopSequencer } from './sequencerPlayback';
-import { exit16Levels } from './sixteenLevels';
 import { stopNoteRepeat } from './stopNoteRepeat';
 import { cancelPendingToasterPadParams } from './toasterParamBridge/cancelPendingToasterPadParams';
 

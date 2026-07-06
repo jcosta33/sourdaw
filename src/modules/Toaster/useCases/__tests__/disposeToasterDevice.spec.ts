@@ -3,11 +3,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
 import { disposeToasterDevice } from '../disposeToasterDevice';
+import { enter16Levels } from '../enter16Levels';
+import { is16LevelsActive } from '../is16LevelsActive';
 import { isNoteRepeating } from '../isNoteRepeating';
 import { startSequencer } from '../sequencerPlayback';
-import { enter16Levels, is16LevelsActive, trigger16Level } from '../sixteenLevels';
 import { startNoteRepeat } from '../startNoteRepeat';
 import { setToasterPadParam } from '../toasterParamBridge/setToasterPadParam';
+import { trigger16Level } from '../trigger16Level';
 import { triggerToasterPad } from '../triggerPad';
 
 // The AudioEngine barrel supplies both getAudioTime (sequencer clock) and
