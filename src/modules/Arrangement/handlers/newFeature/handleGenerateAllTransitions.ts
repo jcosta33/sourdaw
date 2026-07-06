@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { generateAllTransitionFills } from '../../useCases/fillTransitionGeneration/generation';
+import { generateAllTransitionFills } from '../../useCases/fillTransitionGeneration/generateAllTransitionFills';
 
 export const handleGenerateAllTransitions = createHandler<'generateAllTransitions'>({
     execute: () => {

@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { generateDrumFill } from '../../useCases/fillTransitionGeneration/generation';
+import { generateDrumFill } from '../../useCases/fillTransitionGeneration/generateDrumFill';
 
 export const handleGenerateFill = createHandler<'generateFill'>({
     execute: (alpha) => {
