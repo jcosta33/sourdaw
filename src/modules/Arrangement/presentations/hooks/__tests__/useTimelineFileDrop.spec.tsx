@@ -10,12 +10,12 @@ const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
     getAssetTransfer: vi.fn(),
     decodeAudioFile: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
     resolveDroppedSampleFile: vi.fn(),
     addClip: vi.fn(),
     addDevice: vi.fn(),
     addTrack: vi.fn(),
     importMidiFile: vi.fn(),
-    audioBufferCacheGet: vi.fn(),
 }));
 
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({
@@ -51,13 +51,7 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     decodeAudioFile: mocks.decodeAudioFile,
-}));
-
-vi.mock('#/modules/AudioEngine/stores', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    audioBufferCache: {
-        get: mocks.audioBufferCacheGet,
-    },
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
 vi.mock('../../../useCases/clip/addClip', () => ({
@@ -87,7 +81,7 @@ describe('useTimelineFileDrop', () => {
         mocks.getAssetTransfer.mockReturnValue({ addLocalAsset: vi.fn().mockResolvedValue('hash') });
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null } as any;
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
-        mocks.audioBufferCacheGet.mockReturnValue(undefined);
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
     });
 
@@ -170,9 +164,7 @@ describe('useTimelineFileDrop', () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         // Buffer present in the cache keyed by the sample id.
-        mocks.audioBufferCacheGet.mockImplementation((id: string) =>
-            id === 'factory-kick' ? ({ duration: 2 } as AudioBuffer) : undefined
-        );
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 } as AudioBuffer);
 
         const mockEvent = {
             preventDefault: vi.fn(),
@@ -202,6 +194,7 @@ describe('useTimelineFileDrop', () => {
                 expect.objectContaining({ name: 'Kick', type: 'audio', audioBufferId: 'factory-kick' })
             );
         });
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'factory-kick' });
         // The cache short-circuit must skip the file decode path entirely.
         expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
