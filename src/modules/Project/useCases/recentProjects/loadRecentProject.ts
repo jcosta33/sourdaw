@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -54,7 +53,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
 
         writeProjectJson(raw);
 
-        await audioBufferCache.restoreFromIdb(getAudioContext());
+        await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
         if (trackStore.value) {
             trackStore.set({ ...trackStore.value });
         }

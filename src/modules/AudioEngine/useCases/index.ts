@@ -33,6 +33,7 @@ export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
+export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
