@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     initializeAudioEngine,
     getAudioContext,
@@ -10,6 +9,7 @@ import {
     setMasterGainValue,
     resumeEngine,
     requestMicPermission,
+    restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
@@ -55,10 +55,10 @@ export const useAppInitialization = (): void => {
                 const referencedIds = (trackStore.value?.tracks ?? [])
                     .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
-                await audioBufferCache.restoreFromIdb(
-                    getAudioContext(),
-                    referencedIds.length > 0 ? referencedIds : undefined
-                );
+                await restoreCachedAudioBuffersFromIdb({
+                    audioContext: getAudioContext(),
+                    bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
+                });
                 void verifyAudioBufferReferences();
                 void initWebMidi();
                 registerProModulationEffects();
