@@ -59,7 +59,6 @@ type ExportDialogMocks = {
     notifyUser: ReturnType<typeof vi.fn>;
     renderOffline: ReturnType<typeof vi.fn>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn>;
-    restoreFromIdb: ReturnType<typeof vi.fn>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
     trackStore: TestStore<TestTrackStoreState>;
     transportStore: TestStore<TestTransportState>;
@@ -89,7 +88,6 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         notifyUser: vi.fn(),
         renderOffline: vi.fn(),
         restoreCachedAudioBuffersFromIdb: vi.fn(),
-        restoreFromIdb: vi.fn(),
         selectNativeAudioExportFile: vi.fn(),
         trackStore,
         transportStore,
@@ -120,12 +118,6 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
-}));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        restoreFromIdb: mocks.restoreFromIdb,
-    },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -233,7 +225,6 @@ describe('ExportDialog', () => {
         mocks.audioContext = asBaseAudioContext(createMockAudioContext());
         mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
         mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
-        mocks.restoreFromIdb.mockResolvedValue(0);
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
         mocks.renderOffline.mockResolvedValue(MockAudioBuffer.create(2, 128, 44100));
         mocks.encodeWav.mockResolvedValue(new Uint8Array([1, 2, 3]));
