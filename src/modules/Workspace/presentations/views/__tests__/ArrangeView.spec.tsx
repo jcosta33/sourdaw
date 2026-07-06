@@ -316,9 +316,9 @@ describe('ArrangeView', () => {
     });
 
     it('should coalesce horizontal scrollbar drag writes through the Arrangement use case', () => {
-        let frameCallback: FrameRequestCallback | null = null;
+        const frameCallbacks: FrameRequestCallback[] = [];
         const requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-            frameCallback = callback;
+            frameCallbacks.push(callback);
             return 7;
         });
 
@@ -332,7 +332,8 @@ describe('ArrangeView', () => {
         expect(setTimelineHorizontalScrollbarScrollX).not.toHaveBeenCalled();
         expect(setScrollX).not.toHaveBeenCalled();
 
-        if (frameCallback === null) {
+        const frameCallback = frameCallbacks.at(0);
+        if (!frameCallback) {
             throw new Error('Expected scrollbar drag to schedule a frame');
         }
         frameCallback(0);
