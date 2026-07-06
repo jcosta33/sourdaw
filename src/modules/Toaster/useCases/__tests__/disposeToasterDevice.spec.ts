@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
 import { disposeToasterDevice } from '../disposeToasterDevice';
-import { startNoteRepeat, isNoteRepeating } from '../noteRepeat';
+import { isNoteRepeating } from '../isNoteRepeating';
 import { startSequencer } from '../sequencerPlayback';
 import { enter16Levels, is16LevelsActive, trigger16Level } from '../sixteenLevels';
+import { startNoteRepeat } from '../startNoteRepeat';
 import { setToasterPadParam } from '../toasterParamBridge/setToasterPadParam';
 import { triggerToasterPad } from '../triggerPad';
 
