@@ -10,7 +10,7 @@ import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStor
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
-import { hydrateProjectMidi } from './midiStateMapping';
+import { hydrateProjectMidi } from './hydrateProjectMidi';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
     // Validated — stop any in-flight playback and tear down the previous

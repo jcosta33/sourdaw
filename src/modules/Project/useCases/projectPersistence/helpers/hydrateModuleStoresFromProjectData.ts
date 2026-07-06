@@ -11,7 +11,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
-import { hydrateProjectMidi } from '../fileIO/midiStateMapping';
+import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
