@@ -33,6 +33,8 @@ export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
     if (!strip) {
         return;
     }
-    const dn = strip.deviceNodes.find((data) => data.toasterControls && data.toasterControls.ready !== undefined);
-    dn?.toasterControls?.setPadParam(padIndex, key, value);
+    const toasterControls = strip.deviceNodes.find(
+        (data) => data.toasterControls?.ready !== undefined
+    )?.toasterControls;
+    toasterControls?.setPadParam(padIndex, key, value);
 }
