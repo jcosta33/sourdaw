@@ -1,5 +1,5 @@
 import Meyda from 'meyda';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const SAMPLE_RATE = 44100;
 
@@ -16,37 +16,38 @@ function toneBuffer(sampleRate: number): { sampleRate: number; getChannelData: (
 const tone44k = toneBuffer(SAMPLE_RATE);
 const tone48k = toneBuffer(48000);
 
-// Production imports `audioBufferCache` from `#/modules/AudioEngine/stores`;
-// the previous `#/modules/AudioEngine/useCases` mock was inert, so extraction
-// read the real empty store and never ran Meyda. `meyda` itself is left
-// unmocked so the feature math runs for real.
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: vi.fn((id: string) => {
-            if (id === 'tone44k') {
-                return tone44k;
-            }
-            if (id === 'tone48k') {
-                return tone48k;
-            }
-            return null;
-        }),
-    },
+// Mock the AudioEngine-owned cache-read boundary while leaving Meyda real.
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => {
+        if (bufferId === 'tone44k') {
+            return tone44k;
+        }
+        if (bufferId === 'tone48k') {
+            return tone48k;
+        }
+        return null;
+    }),
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { extractFeatures } from '../audioFeatures';
 
 describe('audioFeatures', () => {
+    beforeEach(() => {
+        vi.mocked(getCachedAudioBuffer).mockClear();
+    });
+
     it('extractFeatures returns an empty array when the buffer is missing', () => {
         expect(extractFeatures('missing')).toEqual([]);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('extractFeatures produces frames for a real tone', () => {
-        // With the buffer actually injected and Meyda real, extraction yields
-        // one feature snapshot per analysis window.
         const frames = extractFeatures('tone44k');
         expect(frames.length).toBeGreaterThan(0);
         expect(frames[0]?.chroma.length).toBe(12);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'tone44k' });
     });
 
     it('restores Meyda global config after extraction (reentrancy)', () => {

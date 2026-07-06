@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const SAMPLE_RATE = 44100;
 
@@ -14,23 +14,28 @@ function toneBuffer(sampleRate: number): { sampleRate: number; getChannelData: (
 
 const tone44k = toneBuffer(SAMPLE_RATE);
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: vi.fn((id: string) => {
-            if (id === 'tone44k') {
-                return tone44k;
-            }
-            return null;
-        }),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => {
+        if (bufferId === 'tone44k') {
+            return tone44k;
+        }
+        return null;
+    }),
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { extractFeatures } from '../audioFeatures';
 import { summarizeFeatures } from '../summarizeFeatures';
 
 describe('summarizeFeatures', () => {
+    beforeEach(() => {
+        vi.mocked(getCachedAudioBuffer).mockClear();
+    });
+
     it('returns null when the buffer is missing', () => {
         expect(summarizeFeatures('missing')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('averages each chroma bin by summing then dividing once', () => {
@@ -51,5 +56,6 @@ describe('summarizeFeatures', () => {
         const summary = summarizeFeatures('tone44k');
         expect(summary).not.toBeNull();
         expect(summary?.chromaProfile).toEqual(reference);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'tone44k' });
     });
 });
