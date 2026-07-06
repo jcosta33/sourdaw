@@ -14,7 +14,7 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
-import { defaultTrackState, trackStore, getWarpState, addWarpMarker } from '#/modules/Arrangement/stores';
+import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
     normalizeClip,
@@ -25,6 +25,7 @@ import {
     removeWarpMarker,
     moveWarpMarker,
     commitWarpMarkerBeatDrag,
+    addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -326,7 +327,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         if (hitMarker) {
             removeWarpMarker(clipId, hitMarker.id);
         } else {
-            addWarpMarker(clipId, beat, beat);
+            addManualWarpMarker({ clipId, beat });
         }
         refreshWarp();
     };

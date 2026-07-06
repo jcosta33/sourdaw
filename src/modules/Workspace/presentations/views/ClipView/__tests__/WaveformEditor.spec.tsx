@@ -2,7 +2,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getWarpState } from '#/modules/Arrangement/stores';
-import { commitWarpMarkerBeatDrag, moveWarpMarker, normalizeClip } from '#/modules/Arrangement/useCases';
+import {
+    addManualWarpMarker,
+    commitWarpMarkerBeatDrag,
+    moveWarpMarker,
+    normalizeClip,
+} from '#/modules/Arrangement/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
 
@@ -127,7 +132,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         subscribeReact: vi.fn(() => () => {}),
     },
     defaultTrackState: { tracks: [] },
-    addWarpMarker: vi.fn(),
     getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
     warpStates: new Map(),
 }));
@@ -138,6 +142,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     normalizeClip: vi.fn(),
     reverseClip: vi.fn(),
     moveWarpMarker: vi.fn(),
+    addManualWarpMarker: vi.fn(),
     commitWarpMarkerBeatDrag: vi.fn(),
     removeWarpMarker: vi.fn(),
     setStretchMode: vi.fn(),
@@ -227,6 +232,20 @@ describe('WaveformEditor', () => {
     it('should have correct aria-label for canvas', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform editor')).toBeInTheDocument();
+    });
+
+    it('should add manual warp marker through the Arrangement use case on double click', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
+
+        expect(vi.mocked(addManualWarpMarker)).toHaveBeenCalledWith({ clipId: 'clip-1', beat: 2 });
     });
 
     it('should run a waveform context menu action and close the menu', () => {
