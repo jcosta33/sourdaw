@@ -4,14 +4,10 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { type AutomationPoint } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
-import {
-    activeRecording,
-    pendingPoints,
-    touchActive,
-    findLaneId,
-    clearPointsInRange,
-    flushPendingPoints,
-} from './recordingSessionState';
+import { clearPointsInRange } from './clearPointsInRange';
+import { findLaneId } from './findLaneId';
+import { flushPendingPoints } from './flushPendingPoints';
+import { activeRecording, pendingPoints, touchActive } from './recordingSessionState';
 
 /** Snapshot the points of one lane, or null if the lane is absent. */
 function snapshotLanePoints(laneId: string): AutomationPoint[] | null {

@@ -3,7 +3,8 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { automationStore } from '../../stores/automationStore';
 
-import { RECORDING_MODES, activeRecording, pendingPoints, touchActive, makeKey } from './recordingSessionState';
+import { makeKey } from './makeKey';
+import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
 
 export function startAutomationRecording(): void {
     activeRecording.clear();

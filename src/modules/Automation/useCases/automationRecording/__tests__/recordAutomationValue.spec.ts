@@ -9,16 +9,7 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const {
-    activeRecording,
-    pendingPoints,
-    touchActive,
-    findLaneId,
-    clearPointsInRange,
-    trackSnapshot,
-    transportSnapshot,
-    warn,
-} = vi.hoisted(() => {
+const { activeRecording, pendingPoints, touchActive, trackSnapshot, transportSnapshot, warn } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const touchActive = new Set<string>();
@@ -28,8 +19,6 @@ const {
         activeRecording,
         pendingPoints,
         touchActive,
-        findLaneId: vi.fn(() => null as string | null),
-        clearPointsInRange: vi.fn(),
         trackSnapshot,
         transportSnapshot,
         warn: vi.fn(),
@@ -69,9 +58,6 @@ vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
     touchActive,
-    makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
-    findLaneId,
-    clearPointsInRange,
 }));
 
 function setTracks(tracks: TestTrack[]): void {
@@ -84,7 +70,6 @@ describe('recordAutomationValue', () => {
         activeRecording.clear();
         pendingPoints.clear();
         touchActive.clear();
-        findLaneId.mockReturnValue(null);
         trackSnapshot.value = null;
         transportSnapshot.value = { tempo: 120 };
         setAutomationRecordingDependencies({
@@ -109,12 +94,11 @@ describe('recordAutomationValue', () => {
         expect(pendingPoints.size).toBe(0);
     });
 
-    it('records a pending point in write mode and skips lane clears when no lane exists', () => {
+    it('records a pending point in write mode', () => {
         setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         recordAutomationValue('t1', 'gain', 0.75, 8);
 
-        expect(clearPointsInRange).not.toHaveBeenCalled();
         const key = 't1::gain';
         expect(pendingPoints.get(key)).toEqual([
             expect.objectContaining({ beat: 8, value: 0.75, curve: 'linear', tension: 0 }),
@@ -125,15 +109,13 @@ describe('recordAutomationValue', () => {
     // Regression (Batch B fix 3): write mode used to call clearPointsInRange on
     // EVERY value at ~100Hz (a full lane re-map + filter). Recording now only
     // buffers — the recorded span is cleared once at flush (stopAutomationRecording).
-    it('never clears the lane per value in write mode (clearing is deferred to flush)', () => {
-        findLaneId.mockReturnValue('lane-1');
+    it('buffers multiple write-mode values for stop-time clearing and flush', () => {
         setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         recordAutomationValue('t1', 'gain', 0.5, 4);
         recordAutomationValue('t1', 'gain', 0.6, 5);
         recordAutomationValue('t1', 'gain', 0.7, 6);
 
-        expect(clearPointsInRange).not.toHaveBeenCalled();
         expect(pendingPoints.get('t1::gain')?.map((point) => point.beat)).toEqual([4, 5, 6]);
     });
 
