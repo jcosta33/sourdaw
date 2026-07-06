@@ -185,6 +185,7 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 export { zoomTracksVertical } from './trackZoom';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
+export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
 export { toggleTimelineAutoScroll } from './toggleTimelineAutoScroll';
 
 // ── VCA ───────────────────────────────────────────────────────────────────────
