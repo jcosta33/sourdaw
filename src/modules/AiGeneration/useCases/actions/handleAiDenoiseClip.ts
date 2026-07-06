@@ -1,6 +1,5 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { denoiseAudio, isTauri } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, denoiseAudio, getCachedAudioBuffer, isTauri } from '#/modules/AudioEngine/useCases';
 
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 
@@ -11,10 +10,11 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
     const taskId = addTask({ type: 'denoise', status: 'processing' });
     try {
         const start = performance.now();
-        const buffer = audioBufferCache.get(clipId);
+        const buffer = getCachedAudioBuffer({ bufferId: clipId });
         if (!buffer) {
             throw createAiGenerationError('Audio buffer not found for clip');
         }
+        const denoisedBufferId = `${clipId}-denoised`;
 
         let outNoiseFloor = -60;
 
@@ -25,7 +25,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             const ctx = new OfflineAudioContext(1, res.samples.length, buffer.sampleRate);
             const outBuffer = ctx.createBuffer(1, res.samples.length, buffer.sampleRate);
             outBuffer.getChannelData(0).set(res.samples);
-            audioBufferCache.set(`${clipId}-denoised`, outBuffer);
+            cacheAudioBuffer({ buffer: outBuffer, bufferId: denoisedBufferId });
         } else {
             const mono = buffer.getChannelData(0);
             const hop = 1024;
@@ -60,7 +60,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             const outCtx = new OfflineAudioContext(1, output.length, buffer.sampleRate);
             const outBuffer = outCtx.createBuffer(1, output.length, buffer.sampleRate);
             outBuffer.getChannelData(0).set(output);
-            audioBufferCache.set(`${clipId}-denoised`, outBuffer);
+            cacheAudioBuffer({ buffer: outBuffer, bufferId: denoisedBufferId });
         }
 
         updateTask(taskId, {
