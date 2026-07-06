@@ -7,12 +7,14 @@ type GetCachedAudioBufferWaveformPeaksInput = {
     endSample?: number;
 };
 
+type GetCachedAudioBufferWaveformPeaksOutput = Float32Array;
+
 export function getCachedAudioBufferWaveformPeaks({
     bufferId,
     numBins,
     startSample,
     endSample,
-}: GetCachedAudioBufferWaveformPeaksInput): Float32Array {
+}: GetCachedAudioBufferWaveformPeaksInput): GetCachedAudioBufferWaveformPeaksOutput {
     if (startSample === undefined && endSample === undefined) {
         return audioBufferCache.getWaveformPeaks(bufferId, numBins);
     }
