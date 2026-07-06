@@ -5,7 +5,11 @@ import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { updatePad } from '../../stores/toasterStore';
-import { enter16Levels, exit16Levels, is16LevelsActive, trigger16Level } from '../sixteenLevels';
+import { enter16Levels } from '../enter16Levels';
+import { exit16Levels } from '../exit16Levels';
+import { get16LevelsTarget } from '../get16LevelsTarget';
+import { is16LevelsActive } from '../is16LevelsActive';
+import { trigger16Level } from '../trigger16Level';
 import { triggerToasterPad } from '../triggerPad';
 
 vi.mock('../triggerPad', () => ({
@@ -43,6 +47,8 @@ describe('trigger16Level', () => {
 
         expect(is16LevelsActive('d1')).toBe(true);
         expect(is16LevelsActive('d2')).toBe(false);
+        expect(get16LevelsTarget('d1')).toEqual({ deviceId: 'd1', padIndex: 5, target: 'velocity' });
+        expect(get16LevelsTarget('d2')).toBeNull();
 
         // A trigger for the other device is ignored.
         trigger16Level(0, 'd2');
@@ -54,6 +60,7 @@ describe('trigger16Level', () => {
 
         exit16Levels('d1');
         expect(is16LevelsActive('d1')).toBe(false);
+        expect(get16LevelsTarget('d1')).toBeNull();
     });
 
     // Regression — Finding #48: the param was sent through the rAF-coalesced
