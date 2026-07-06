@@ -1,10 +1,15 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { addTrack, addClip } from '#/modules/Arrangement/useCases';
+import { setScrollX } from '#/modules/Arrangement/stores';
+import { addTrack, addClip, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type Clip, type Track } from '../../../models/TrackViewTypes';
+import { defaultWorkspaceState } from '../../../models/WorkspaceState';
+import { useTracks } from '../../hooks/useTracks';
+import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { ArrangeView } from '../ArrangeView';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -17,18 +22,27 @@ vi.mock('#/modules/Arrangement/presentations/views/TimelineSurface', () => ({
 
 vi.mock('#/modules/Arrangement/presentations/views/TimelineMinimap', () => ({
     TimelineMinimap: () => <div data-testid="timeline-minimap">Timeline Minimap</div>,
+    MINIMAP_HEIGHT: 28,
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/ArrangementBar', () => ({
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
+    ARRANGEMENT_BAR_HEIGHT: 22,
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/MarkerLane', () => ({
     MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
+    MARKER_LANE_HEIGHT: 20,
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/BeatRulerBar', () => ({
     BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
+    BEAT_RULER_HEIGHT: 18,
+}));
+
+vi.mock('#/modules/Arrangement/presentations/views/AdjustmentLayerStrip', () => ({
+    AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
+    getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/TimelineChromeSurface', () => ({
@@ -121,6 +135,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
     addClip: vi.fn(),
     importMidiFile: vi.fn(),
+    setTimelineHorizontalScrollbarScrollX: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -131,9 +146,103 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
+const makeClip = ({ endBeat }: { endBeat: number }): Clip => ({
+    id: 'clip-1',
+    trackId: 'track-1',
+    name: 'Clip 1',
+    startBeat: 0,
+    endBeat,
+    type: 'audio',
+    fadeInBeats: 0,
+    fadeOutBeats: 0,
+    gain: 1,
+    color: '#7c3aed',
+    locked: false,
+    muted: false,
+});
+
+const makeTrack = ({ clipEndBeat }: { clipEndBeat: number }): Track => ({
+    id: 'track-1',
+    name: 'Track 1',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    armed: false,
+    gain: 1,
+    pan: 0,
+    color: '#7c3aed',
+    clips: [makeClip({ endBeat: clipEndBeat })],
+    devices: [],
+    midiFx: [],
+    sends: [],
+    frozen: false,
+    freezeState: { status: 'unfrozen' },
+    parentId: null,
+    collapsed: false,
+    inputMonitoring: 'auto',
+    hidden: false,
+    disabled: false,
+    height: 64,
+    outputId: 'master',
+    automationMode: 'read',
+    groupId: null,
+    soloSafe: false,
+    notes: '',
+    inputId: null,
+    activeAlternativeId: 'main',
+    alternatives: [],
+    vcaGroupId: null,
+    midiOutputTrackId: null,
+    followChordTrack: false,
+});
+
+const renderOverflowingTimeline = (): HTMLElement => {
+    vi.mocked(useTracks).mockReturnValue({
+        tracks: [makeTrack({ clipEndBeat: 400 })],
+        selectedTrackId: 'track-1',
+    });
+
+    render(<ArrangeView />);
+
+    const thumb = document.querySelector('.daw-scrollbar-thumb');
+    if (!(thumb instanceof HTMLElement)) {
+        throw new TypeError('Expected horizontal scrollbar thumb to render');
+    }
+    return thumb;
+};
+
+const readFirstScrollbarCall = (): { scrollX: number; maxScrollX: number } => {
+    const input = vi.mocked(setTimelineHorizontalScrollbarScrollX).mock.calls[0]?.[0];
+    if (!input) {
+        throw new Error('Expected horizontal scrollbar write use case to be called');
+    }
+    return input;
+};
+
 describe('ArrangeView', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.defineProperty(window, 'innerWidth', {
+            configurable: true,
+            value: 1000,
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 1000,
+        });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 200,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+    });
+
+    afterEach(() => {
+        fireEvent.mouseUp(window);
+        vi.restoreAllMocks();
     });
 
     it('should render without crashing', () => {
@@ -204,5 +313,54 @@ describe('ArrangeView', () => {
             expect.objectContaining({ trackId: 'track-1', audioBufferId: 'buf-1', type: 'audio' })
         );
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('should coalesce horizontal scrollbar drag writes through the Arrangement use case', () => {
+        let frameCallback: FrameRequestCallback | null = null;
+        const requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+            frameCallback = callback;
+            return 7;
+        });
+
+        const thumb = renderOverflowingTimeline();
+
+        fireEvent.mouseDown(thumb, { clientX: 0 });
+        fireEvent.mouseMove(window, { clientX: 100 });
+        fireEvent.mouseMove(window, { clientX: 200 });
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1);
+        expect(setTimelineHorizontalScrollbarScrollX).not.toHaveBeenCalled();
+        expect(setScrollX).not.toHaveBeenCalled();
+
+        if (frameCallback === null) {
+            throw new Error('Expected scrollbar drag to schedule a frame');
+        }
+        frameCallback(0);
+
+        const call = readFirstScrollbarCall();
+        expect(call.scrollX).toBeCloseTo(960);
+        expect(call.maxScrollX).toBe(3800);
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('should commit the pending horizontal scrollbar drag synchronously on mouseup through the Arrangement use case', () => {
+        const requestAnimationFrameSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(9);
+        const cancelAnimationFrameSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+        const thumb = renderOverflowingTimeline();
+
+        fireEvent.mouseDown(thumb, { clientX: 0 });
+        fireEvent.mouseMove(window, { clientX: 125 });
+
+        expect(requestAnimationFrameSpy).toHaveBeenCalledTimes(1);
+        expect(setTimelineHorizontalScrollbarScrollX).not.toHaveBeenCalled();
+
+        fireEvent.mouseUp(window);
+
+        expect(cancelAnimationFrameSpy).toHaveBeenCalledWith(9);
+        const call = readFirstScrollbarCall();
+        expect(call.scrollX).toBeCloseTo(600);
+        expect(call.maxScrollX).toBe(3800);
+        expect(setScrollX).not.toHaveBeenCalled();
     });
 });

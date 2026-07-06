@@ -25,8 +25,13 @@ import {
     MINIMAP_HEIGHT,
     getAdjustmentLayerStripHeight,
 } from '#/modules/Arrangement/presentations/views';
-import { adjustmentLayerStore, timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
-import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
+import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
+import {
+    addTrack,
+    addClip,
+    importMidiFile,
+    setTimelineHorizontalScrollbarScrollX,
+} from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -234,7 +239,7 @@ const TimelineHScrollbar = ({
 
         // Coalesce the high-frequency (~60Hz) mousemove writes through a
         // single requestAnimationFrame so each frame fans out at most one
-        // setScrollX to every track row/ruler/marker/adjustment strip,
+        // Arrangement scroll use case to every track row/ruler/marker/adjustment strip,
         // instead of one store write per native mousemove event.
         let pendingScrollX: number | null = null;
         let rafId: number | null = null;
@@ -242,7 +247,7 @@ const TimelineHScrollbar = ({
         const flush = (): void => {
             rafId = null;
             if (pendingScrollX !== null) {
-                setScrollX(pendingScrollX);
+                setTimelineHorizontalScrollbarScrollX({ scrollX: pendingScrollX, maxScrollX });
                 pendingScrollX = null;
             }
         };
@@ -250,7 +255,7 @@ const TimelineHScrollbar = ({
         const onMouseMove = (ev: MouseEvent): void => {
             const delta = ev.clientX - startClientX;
             const scrollDelta = trackWidth > 0 ? (delta / trackWidth) * maxScrollX : 0;
-            pendingScrollX = Math.max(0, Math.min(maxScrollX, startScrollX + scrollDelta));
+            pendingScrollX = startScrollX + scrollDelta;
             if (rafId === null) {
                 rafId = requestAnimationFrame(flush);
             }
@@ -266,7 +271,7 @@ const TimelineHScrollbar = ({
             // Commit the final position synchronously so the thumb settles
             // exactly where the pointer was released even if no frame ran.
             if (pendingScrollX !== null) {
-                setScrollX(pendingScrollX);
+                setTimelineHorizontalScrollbarScrollX({ scrollX: pendingScrollX, maxScrollX });
                 pendingScrollX = null;
             }
         };
