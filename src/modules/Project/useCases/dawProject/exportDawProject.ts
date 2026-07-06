@@ -7,7 +7,7 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 import { type ProjectData } from '../../models/ProjectData';
 import { arrangementStore } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
-import { syncCurrentArrangementToStore } from '../arrangement/helpers';
+import { syncCurrentArrangementToStore } from '../arrangement/syncCurrentArrangementToStore';
 
 import { buildDawProjectZip } from './buildDawProjectZip';
 import { serializeMetadataXml } from './serializeMetadataXml';

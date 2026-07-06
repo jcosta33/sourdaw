@@ -1,27 +1,89 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ArrangementSnapshot } from '../../../stores/arrangementStore';
-import { loadSnapshot } from '../helpers';
+import { loadSnapshot } from '../loadSnapshot';
+
+type SnapshotTrack = ArrangementSnapshot['tracks']['tracks'][number];
+
+type SetStoreMock<TValue> = {
+    set: (new_value: TValue) => void;
+};
+
+const mocks = vi.hoisted(() => {
+    function create_set_store_mock<TValue>(): SetStoreMock<TValue> {
+        return { set: vi.fn<(new_value: TValue) => void>() };
+    }
+
+    return {
+        automation_store: create_set_store_mock<ArrangementSnapshot['automation']>(),
+        marker_store: create_set_store_mock<NonNullable<ArrangementSnapshot['markers']>>(),
+        midi_store: create_set_store_mock<ArrangementSnapshot['midi']>(),
+        normalize_track: vi.fn<(track: SnapshotTrack, index: number, tracks: SnapshotTrack[]) => SnapshotTrack>(
+            (track) => track
+        ),
+        take_lane_store: create_set_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(),
+        tempo_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(),
+        time_signature_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(),
+        track_store: create_set_store_mock<ArrangementSnapshot['tracks']>(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    markerStore: { set: vi.fn() },
-    takeLaneStore: { set: vi.fn() },
-    trackStore: { set: vi.fn() },
+    markerStore: mocks.marker_store,
+    takeLaneStore: mocks.take_lane_store,
+    trackStore: mocks.track_store,
 }));
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    normalizeTrack: (track: unknown) => track,
+    normalizeTrack: mocks.normalize_track,
 }));
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: { set: vi.fn() } }));
-vi.mock('#/modules/MIDI/stores', () => ({ midiStore: { set: vi.fn() } }));
+
+vi.mock('#/modules/Automation/stores', () => ({ automationStore: mocks.automation_store }));
+
+vi.mock('#/modules/MIDI/stores', () => ({ midiStore: mocks.midi_store }));
+
 vi.mock('#/modules/Transport/stores', () => ({
-    tempoMapStore: { set: vi.fn() },
-    timeSignatureMapStore: { set: vi.fn() },
+    tempoMapStore: mocks.tempo_map_store,
+    timeSignatureMapStore: mocks.time_signature_map_store,
 }));
+
+function create_track(overrides: Partial<SnapshotTrack> = {}): SnapshotTrack {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#ffffff',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 72,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'main',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        ...overrides,
+    };
+}
 
 const baseSnapshot: ArrangementSnapshot = {
     id: 'a1',
@@ -34,21 +96,44 @@ const baseSnapshot: ArrangementSnapshot = {
 describe('loadSnapshot', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.normalize_track.mockImplementation((track) => track);
     });
 
-    it('clears the shared tempo/timeSig/marker/takeLane stores when the snapshot omits those fields', () => {
+    it('should normalize tracks and write Automation and MIDI stores', () => {
+        const raw_track = create_track({ id: 'raw-track', name: 'Raw Track' });
+        const normalized_track = create_track({ id: 'raw-track', name: 'Normalized Track' });
+        const snapshot: ArrangementSnapshot = {
+            ...baseSnapshot,
+            tracks: { tracks: [raw_track], selectedTrackId: 'raw-track' },
+            automation: { lanes: [] },
+            midi: { notesByClipId: { 'clip-1': [] }, ccByClipId: {}, pitchBendByClipId: {} },
+        };
+        mocks.normalize_track.mockReturnValue(normalized_track);
+
+        loadSnapshot(snapshot);
+
+        expect(mocks.normalize_track).toHaveBeenCalledWith(raw_track, 0, [raw_track]);
+        expect(mocks.track_store.set).toHaveBeenCalledWith({
+            tracks: [normalized_track],
+            selectedTrackId: 'raw-track',
+        });
+        expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
+        expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
+    });
+
+    it('should clear the shared tempo/timeSig/marker/takeLane stores when the snapshot omits those fields', () => {
         // A snapshot captured from an arrangement that had no tempo map, markers,
         // or take lanes. Switching to it must not leave the previous arrangement's
         // values installed in the shared stores.
         loadSnapshot(baseSnapshot);
 
-        expect(vi.mocked(tempoMapStore.set)).toHaveBeenCalledWith({ changes: [] });
-        expect(vi.mocked(timeSignatureMapStore.set)).toHaveBeenCalledWith({ changes: [] });
-        expect(vi.mocked(markerStore.set)).toHaveBeenCalledWith({ markers: [], sections: [] });
-        expect(vi.mocked(takeLaneStore.set)).toHaveBeenCalledWith({ lanes: [] });
+        expect(mocks.tempo_map_store.set).toHaveBeenCalledWith({ changes: [] });
+        expect(mocks.time_signature_map_store.set).toHaveBeenCalledWith({ changes: [] });
+        expect(mocks.marker_store.set).toHaveBeenCalledWith({ markers: [], sections: [] });
+        expect(mocks.take_lane_store.set).toHaveBeenCalledWith({ lanes: [] });
     });
 
-    it('writes the snapshot values when present', () => {
+    it('should write the snapshot values when present', () => {
         const snapshot: ArrangementSnapshot = {
             ...baseSnapshot,
             tempoMap: { changes: [{ id: 't1', beat: 0, tempo: 140, curve: 'instant' }] },
@@ -59,12 +144,12 @@ describe('loadSnapshot', () => {
 
         loadSnapshot(snapshot);
 
-        expect(vi.mocked(tempoMapStore.set)).toHaveBeenCalledWith(snapshot.tempoMap);
-        expect(vi.mocked(timeSignatureMapStore.set)).toHaveBeenCalledWith(snapshot.timeSignatureMap);
-        expect(vi.mocked(markerStore.set)).toHaveBeenCalledWith(snapshot.markers);
-        expect(vi.mocked(takeLaneStore.set)).toHaveBeenCalledWith(snapshot.takeLanes);
-        expect(vi.mocked(trackStore.set)).toHaveBeenCalled();
-        expect(vi.mocked(automationStore.set)).toHaveBeenCalledWith(snapshot.automation);
-        expect(vi.mocked(midiStore.set)).toHaveBeenCalledWith(snapshot.midi);
+        expect(mocks.tempo_map_store.set).toHaveBeenCalledWith(snapshot.tempoMap);
+        expect(mocks.time_signature_map_store.set).toHaveBeenCalledWith(snapshot.timeSignatureMap);
+        expect(mocks.marker_store.set).toHaveBeenCalledWith(snapshot.markers);
+        expect(mocks.take_lane_store.set).toHaveBeenCalledWith(snapshot.takeLanes);
+        expect(mocks.track_store.set).toHaveBeenCalledWith(snapshot.tracks);
+        expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
+        expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
     });
 });
