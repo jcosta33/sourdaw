@@ -1,10 +1,10 @@
 import { inject } from '#/infra/di/inject';
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPatch } from '../../models/GrinderPatch';
 import { loadGrinderPatch } from '../../stores/grinderStore';
 
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import { createFindDeviceRef } from './helpers';
 import { syncGrinderPatchToAudio } from './syncGrinderPatchToAudio';
 
 export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(({

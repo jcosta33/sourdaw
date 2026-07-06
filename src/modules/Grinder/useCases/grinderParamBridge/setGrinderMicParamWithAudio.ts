@@ -1,10 +1,12 @@
 import { inject } from '#/infra/di/inject';
+import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderMic } from '../../models/GrinderPatch';
 import { setGrinderMicParam } from '../../stores/grinderStore';
 
+import { createFlushParam } from './createFlushParam';
 import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
-import { createFindDeviceRef, createFlushParam, paramBatcher } from './helpers';
+import { paramBatcher } from './helpers';
 
 export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies)(({
     getAllTracks: getAllTracksFn,
@@ -12,7 +14,7 @@ export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies
     persistDeviceParam: persistDeviceParamFn,
 }) => {
     const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+    const flushParam = createFlushParam({ updateDeviceParamFn, persistDeviceParamFn });
 
     return function setGrinderMicParamWithAudio<Key extends keyof GrinderMic>(
         deviceId: string,
