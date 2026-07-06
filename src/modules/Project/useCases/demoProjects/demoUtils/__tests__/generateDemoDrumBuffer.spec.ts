@@ -3,13 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateDemoDrumBuffer } from '../generateDemoDrumBuffer';
 
 const mocks = vi.hoisted(() => ({
-    audioBufferCacheSet: vi.fn(),
+    cache_audio_buffer: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        set: mocks.audioBufferCacheSet,
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: mocks.cache_audio_buffer,
 }));
 
 type FakeConnection = {
@@ -33,6 +31,7 @@ type FakeParamRampCall = {
 };
 
 const created_contexts: FakeOfflineAudioContext[] = [];
+let render_error: Error | null = null;
 
 function createFakeParam() {
     const set_value_calls: FakeParamSetCall[] = [];
@@ -213,6 +212,11 @@ class FakeOfflineAudioContext {
 
     startRendering(): Promise<{ id: string }> {
         this.start_render_count += 1;
+
+        if (render_error !== null) {
+            return Promise.reject(render_error);
+        }
+
         return Promise.resolve(this.rendered_buffer);
     }
 }
@@ -220,7 +224,8 @@ class FakeOfflineAudioContext {
 describe('generateDemoDrumBuffer', () => {
     beforeEach(() => {
         created_contexts.length = 0;
-        mocks.audioBufferCacheSet.mockReset();
+        render_error = null;
+        mocks.cache_audio_buffer.mockReset();
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
     });
@@ -239,7 +244,10 @@ describe('generateDemoDrumBuffer', () => {
         expect(context.length).toBe(88_200);
         expect(context.sampleRate).toBe(44_100);
         expect(context.start_render_count).toBe(1);
-        expect(mocks.audioBufferCacheSet).toHaveBeenCalledExactlyOnceWith('demo-drum-buffer', context.rendered_buffer);
+        expect(mocks.cache_audio_buffer).toHaveBeenCalledExactlyOnceWith({
+            buffer: context.rendered_buffer,
+            bufferId: 'demo-drum-buffer',
+        });
     });
 
     it('should schedule representative electro oscillator and noise branches', async () => {
@@ -260,5 +268,15 @@ describe('generateDemoDrumBuffer', () => {
         expect(context.oscillators[1].frequency.value).toBe(200);
         expect(context.oscillators[1].start_times).toEqual([0.5]);
         expect(context.oscillators[1].stop_times).toEqual([0.6]);
+    });
+
+    it('should swallow render failures without caching a buffer', async () => {
+        render_error = new Error('render failed');
+
+        await expect(generateDemoDrumBuffer('failed-drum-buffer', 4, 120, 'kick')).resolves.toBeUndefined();
+
+        expect(created_contexts).toHaveLength(1);
+        expect(created_contexts[0].start_render_count).toBe(1);
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
     });
 });
