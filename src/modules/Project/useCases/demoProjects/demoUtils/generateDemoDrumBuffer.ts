@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { createNoiseBurst } from './createNoiseBurst';
 
@@ -120,7 +120,7 @@ export async function generateDemoDrumBuffer(
         }
 
         const rendered = await ctx.startRendering();
-        audioBufferCache.set(bufferId, rendered);
+        cacheAudioBuffer({ buffer: rendered, bufferId });
     } catch {
         // ignore
     }
