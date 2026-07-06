@@ -16,8 +16,8 @@ import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 
-import { serializeProjectMidi } from './midiStateMapping';
 import { serializeArrangementTracks } from './serializeArrangementTracks';
+import { serializeProjectMidi } from './serializeProjectMidi';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
  * referenced by a TrackStoreState so the export can embed the raw PCM. */
