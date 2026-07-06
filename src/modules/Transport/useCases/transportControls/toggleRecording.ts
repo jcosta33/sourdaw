@@ -1,12 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     resumeEngine,
     getAudioContext,
     scheduleClick,
     startAudioRecording,
     getCompensationDelay,
+    cacheAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -36,7 +36,7 @@ function beginActualRecording(): void {
             const recClip = clips.find((context) => context.trackId === track.id);
             void startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${crypto.randomUUID()}`;
-                audioBufferCache.set(bufferId, buffer);
+                cacheAudioBuffer({ buffer, bufferId });
 
                 if (recClip) {
                     const transport = getTransportState();
