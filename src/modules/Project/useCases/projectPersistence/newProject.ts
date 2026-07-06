@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -50,7 +49,7 @@ export function newProject(name = 'Untitled Project'): void {
         initialized: true,
     });
     removeProjectJson();
-    audioBufferCache.clear();
+    clearCachedAudioBuffers();
     clearUndoHistory();
 
     // Start debounced incremental auto-save for the new project.
