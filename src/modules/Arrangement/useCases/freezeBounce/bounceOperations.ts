@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -58,7 +58,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     }
 
     const audioBufferId = `bounce-${trackId}-${Date.now()}`;
-    audioBufferCache.set(audioBufferId, renderedBuffer);
+    cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
 
     const bouncedClip: Clip = {
         id: `bounced-clip-${crypto.randomUUID()}`,
@@ -194,7 +194,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     }
 
     const audioBufferId = `bounce-sel-${trackId}-${Date.now()}`;
-    audioBufferCache.set(audioBufferId, renderedBuffer);
+    cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
 
     const bouncedClip: Clip = {
         id: `bounced-sel-${crypto.randomUUID()}`,
