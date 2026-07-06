@@ -212,8 +212,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         }
 
         if (actions.length > 0) {
-            const historyGroup = {
-                id: group.groupId,
+            recordAiActionGroup({
                 prompt,
                 actions: executedLabels.map((length) => ({
                     kind: 'appAction' as const,
@@ -221,10 +220,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                     label: length.label,
                 })),
                 groupId: group.groupId,
-                timestamp: Date.now(),
-                reverted: false,
-            };
-            recordAiActionGroup(historyGroup);
+            });
         }
     };
 
