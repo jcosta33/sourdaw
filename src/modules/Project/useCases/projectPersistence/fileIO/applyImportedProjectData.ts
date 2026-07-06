@@ -1,6 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -81,7 +80,10 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         .flatMap((time) => time.clips.map((context) => context.bufferId))
         .filter((id): id is string => Boolean(id));
 
-    await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);
+    await restoreCachedAudioBuffersFromIdb({
+        audioContext: ctx,
+        bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
+    });
 
     if (trackStore.value) {
         trackStore.set({ ...trackStore.value });
