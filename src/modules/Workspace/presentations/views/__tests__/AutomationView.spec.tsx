@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { type ReadableStore } from '#/infra/store/types';
 import { scrollTimelineViewportFromWheel } from '#/modules/Arrangement/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -16,7 +17,7 @@ vi.mock('../../hooks/useTracks', () => ({
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn(<StoreData,>(_store: ReadableStore<StoreData>, defaultValue: StoreData): StoreData => defaultValue),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
