@@ -1,12 +1,9 @@
 /**
- * AI Fill & Transition Generation — drum fills, risers, sweeps, and transitions.
+ * AI Fill & Transition Generation shared data.
  */
 
-import { type GeneratedFill } from '../../models/FillTransitionTypes';
-import { markerStore } from '../../stores/markerStore';
-
 /** Standard GM drum map pitches */
-const DRUM_MAP = {
+export const DRUM_MAP = {
     kick: 36,
     snare: 38,
     hiHat: 42,
@@ -19,7 +16,15 @@ const DRUM_MAP = {
     floorTom: 43,
 } as const;
 
-const FILL_PATTERNS: Record<string, Array<{ offset: number; pitch: number; velocity: number }>> = {
+export type DrumFillStyle = 'simple' | 'descending' | 'sixteenth' | 'syncopated';
+
+export type DrumFillPatternHit = {
+    offset: number;
+    pitch: number;
+    velocity: number;
+};
+
+export const FILL_PATTERNS: Record<DrumFillStyle, DrumFillPatternHit[]> = {
     simple: [
         { offset: 0, pitch: DRUM_MAP.snare, velocity: 100 },
         { offset: 0.5, pitch: DRUM_MAP.snare, velocity: 90 },
@@ -42,117 +47,3 @@ const FILL_PATTERNS: Record<string, Array<{ offset: number; pitch: number; veloc
         { offset: 0.75, pitch: DRUM_MAP.tom1, velocity: 100 },
     ],
 };
-
-export function generateDrumFill(
-    atBeat: number,
-    durationBeats: number = 2,
-    style: 'simple' | 'descending' | 'sixteenth' | 'syncopated' = 'descending'
-): GeneratedFill {
-    const pattern = FILL_PATTERNS[style] ?? FILL_PATTERNS.descending!;
-    const notes: GeneratedFill['notes'] = [];
-
-    const barsSpanned = Math.max(1, Math.floor(durationBeats));
-    for (let beat = 0; beat < barsSpanned; beat++) {
-        for (const hit of pattern) {
-            const noteStart = atBeat + beat + hit.offset;
-            const progress = (beat + hit.offset) / barsSpanned;
-            const dynVelocity = Math.min(127, Math.round(hit.velocity * (0.8 + progress * 0.4)));
-
-            notes.push({
-                pitch: hit.pitch,
-                startBeat: noteStart,
-                duration: 0.25,
-                velocity: dynVelocity,
-            });
-        }
-    }
-
-    notes.push({
-        pitch: DRUM_MAP.crash,
-        startBeat: atBeat + durationBeats,
-        duration: 1,
-        velocity: 120,
-    });
-
-    return { notes, durationBeats, style: 'drum-fill', confidence: 0.85 };
-}
-
-function generateLinearPitchRun(
-    atBeat: number,
-    durationBeats: number,
-    startPitch: number,
-    endPitch: number,
-    velStart: number,
-    velEnd: number,
-    steps: number = Math.floor(durationBeats * 4)
-): GeneratedFill['notes'] {
-    const notes: GeneratedFill['notes'] = [];
-
-    for (let index = 0; index < steps; index++) {
-        const progress = index / steps;
-
-        notes.push({
-            pitch: Math.round(startPitch + (endPitch - startPitch) * progress),
-            startBeat: atBeat + (index * durationBeats) / steps,
-            duration: durationBeats / steps,
-            velocity: Math.min(127, Math.round(velStart + (velEnd - velStart) * progress)),
-        });
-    }
-
-    return notes;
-}
-
-export function generateRiser(
-    atBeat: number,
-    durationBeats: number = 4,
-    startPitch: number = 60,
-    endPitch: number = 84
-): GeneratedFill {
-    const notes = generateLinearPitchRun(atBeat, durationBeats, startPitch, endPitch, 60, 127);
-    return { notes, durationBeats, style: 'riser', confidence: 0.75 };
-}
-
-export function generateSweepDown(
-    atBeat: number,
-    durationBeats: number = 2,
-    startPitch: number = 84,
-    endPitch: number = 36
-): GeneratedFill {
-    const notes = generateLinearPitchRun(atBeat, durationBeats, startPitch, endPitch, 100, 60);
-    return { notes, durationBeats, style: 'sweep-down', confidence: 0.7 };
-}
-
-export function detectTransitionPoints(): Array<{ beat: number; fromSection: string; toSection: string }> {
-    const markers = markerStore.value;
-    if (!markers) {
-        return [];
-    }
-
-    const transitions: Array<{ beat: number; fromSection: string; toSection: string }> = [];
-    const sections = [...markers.sections].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
-
-    for (let index = 0; index < sections.length - 1; index++) {
-        const current = sections[index]!;
-        const next = sections[index + 1]!;
-        transitions.push({
-            beat: current.endBeat - 2,
-            fromSection: current.name,
-            toSection: next.name,
-        });
-    }
-
-    return transitions;
-}
-
-export function generateAllTransitionFills(): GeneratedFill[] {
-    const points = detectTransitionPoints();
-    return points.map((param) => {
-        if (param.toSection.toLowerCase().includes('chorus') || param.toSection.toLowerCase().includes('drop')) {
-            return generateRiser(param.beat, 4);
-        }
-        if (param.toSection.toLowerCase().includes('break') || param.toSection.toLowerCase().includes('outro')) {
-            return generateSweepDown(param.beat, 2);
-        }
-        return generateDrumFill(param.beat, 2, 'descending');
-    });
-}
