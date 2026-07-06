@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export function verifyAudioBufferReferences(): void {
@@ -11,12 +11,16 @@ export function verifyAudioBufferReferences(): void {
     const missingClips: string[] = [];
     for (const track of state.tracks) {
         for (const clip of track.clips) {
-            if (clip.type === 'audio' && clip.audioBufferId && !audioBufferCache.has(clip.audioBufferId)) {
+            if (
+                clip.type === 'audio' &&
+                clip.audioBufferId &&
+                getCachedAudioBuffer({ bufferId: clip.audioBufferId }) === null
+            ) {
                 missingClips.push(clip.name);
             }
         }
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-            if (!audioBufferCache.has(track.freezeState.frozenBufferId)) {
+            if (getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId }) === null) {
                 missingClips.push(`Frozen track ${track.name}`);
             }
         }
