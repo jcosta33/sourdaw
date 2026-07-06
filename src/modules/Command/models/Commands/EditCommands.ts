@@ -1,8 +1,9 @@
 import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
 
 import { deselectAllClips } from '../../useCases/deselectAllClips';
+import { redo } from '../../useCases/redo';
 import { selectAllClips } from '../../useCases/selectAllClips';
-import { undo, redo } from '../../useCases/undoRedo';
+import { undo } from '../../useCases/undo';
 import { type CommandEntry } from '../CommandEntry';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */

@@ -23,7 +23,8 @@ export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
 export type { Macro } from './macro/recording/stopMacroRecording';
 
-export { undo, redo } from './undoRedo';
+export { undo } from './undo';
+export { redo } from './redo';
 export { revertActionGroup } from './revertActionGroup';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';

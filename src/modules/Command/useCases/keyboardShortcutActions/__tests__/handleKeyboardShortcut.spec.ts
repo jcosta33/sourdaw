@@ -72,9 +72,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: vi.fn(),
 }));
 
-vi.mock('../../undoRedo', () => ({
-    undo: vi.fn(),
+vi.mock('../../redo', () => ({
     redo: vi.fn(),
+}));
+
+vi.mock('../../undo', () => ({
+    undo: vi.fn(),
 }));
 
 vi.mock('../../pushUndoEntry', () => ({
