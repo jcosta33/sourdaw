@@ -1,21 +1,188 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as subject from '../helpers';
+import { type ArrangementSnapshot, type ArrangementStoreState } from '../../../stores/arrangementStore';
 
-describe('helpers', () => {
-    it('should export loadSnapshot', () => {
-        expect(subject.loadSnapshot).toBeDefined();
-        const time = typeof subject.loadSnapshot;
-        expect(time === 'function' || time === 'object').toBe(true);
+type StoreMock<TValue> = {
+    value: TValue | null;
+};
+
+type WritableStoreMock<TValue> = StoreMock<TValue> & {
+    set: (value: TValue | null) => void;
+};
+
+const mocks = vi.hoisted(() => {
+    function create_store_mock<TValue>(value: TValue | null): StoreMock<TValue> {
+        return { value };
+    }
+
+    function create_writable_store_mock<TValue>(value: TValue | null): WritableStoreMock<TValue> {
+        return { value, set: vi.fn<(new_value: TValue | null) => void>() };
+    }
+
+    return {
+        arrangement_store: create_writable_store_mock<ArrangementStoreState>(null),
+        automation_store: create_store_mock<ArrangementSnapshot['automation']>(null),
+        marker_store: create_store_mock<NonNullable<ArrangementSnapshot['markers']>>(null),
+        midi_store: create_store_mock<ArrangementSnapshot['midi']>(null),
+        take_lane_store: create_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(null),
+        tempo_map_store: create_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(null),
+        time_signature_map_store: create_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(null),
+        track_store: create_store_mock<ArrangementSnapshot['tracks']>(null),
+    };
+});
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    markerStore: mocks.marker_store,
+    takeLaneStore: mocks.take_lane_store,
+    trackStore: mocks.track_store,
+}));
+
+vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: mocks.automation_store,
+}));
+
+vi.mock('#/modules/MIDI/stores', () => ({
+    midiStore: mocks.midi_store,
+}));
+
+vi.mock('#/modules/Transport/stores', () => ({
+    tempoMapStore: mocks.tempo_map_store,
+    timeSignatureMapStore: mocks.time_signature_map_store,
+}));
+
+vi.mock('../../../stores/arrangementStore', () => ({
+    arrangementStore: mocks.arrangement_store,
+}));
+
+function reset_store_values(): void {
+    vi.clearAllMocks();
+    mocks.arrangement_store.value = null;
+    mocks.automation_store.value = null;
+    mocks.marker_store.value = null;
+    mocks.midi_store.value = null;
+    mocks.take_lane_store.value = null;
+    mocks.tempo_map_store.value = null;
+    mocks.time_signature_map_store.value = null;
+    mocks.track_store.value = null;
+}
+
+describe('arrangement snapshot helpers', () => {
+    beforeEach(() => {
+        reset_store_values();
     });
-    it('should export syncCurrentArrangementToStore', () => {
-        expect(subject.syncCurrentArrangementToStore).toBeDefined();
-        const time = typeof subject.syncCurrentArrangementToStore;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should capture empty fallback snapshot shapes when stores are uninitialized', async () => {
+        const { takeSnapshot } = await import('../takeSnapshot');
+
+        expect(takeSnapshot('arr-empty', 'Empty')).toEqual({
+            id: 'arr-empty',
+            name: 'Empty',
+            tracks: { tracks: [], selectedTrackId: null },
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            tempoMap: undefined,
+            timeSignatureMap: undefined,
+            markers: undefined,
+            takeLanes: undefined,
+        });
     });
-    it('should export takeSnapshot', () => {
-        expect(subject.takeSnapshot).toBeDefined();
-        const time = typeof subject.takeSnapshot;
-        expect(time === 'function' || time === 'object').toBe(true);
+
+    it('should capture present Arrangement Automation MIDI and Transport snapshot values', async () => {
+        const { takeSnapshot } = await import('../takeSnapshot');
+        const tracks: ArrangementSnapshot['tracks'] = { tracks: [], selectedTrackId: 'track-1' };
+        const automation: ArrangementSnapshot['automation'] = { lanes: [] };
+        const midi: ArrangementSnapshot['midi'] = {
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: { 'clip-1': [] },
+            pitchBendByClipId: { 'clip-1': [] },
+        };
+        const tempoMap: NonNullable<ArrangementSnapshot['tempoMap']> = {
+            changes: [{ id: 'tempo-1', beat: 0, tempo: 140, curve: 'instant' }],
+        };
+        const timeSignatureMap: NonNullable<ArrangementSnapshot['timeSignatureMap']> = {
+            changes: [{ id: 'sig-1', beat: 0, numerator: 3, denominator: 4 }],
+        };
+        const markers: NonNullable<ArrangementSnapshot['markers']> = {
+            markers: [{ id: 'marker-1', beat: 4, name: 'Verse', color: '#ffffff' }],
+            sections: [],
+        };
+        const takeLanes: NonNullable<ArrangementSnapshot['takeLanes']> = { lanes: [] };
+        mocks.track_store.value = tracks;
+        mocks.automation_store.value = automation;
+        mocks.midi_store.value = midi;
+        mocks.tempo_map_store.value = tempoMap;
+        mocks.time_signature_map_store.value = timeSignatureMap;
+        mocks.marker_store.value = markers;
+        mocks.take_lane_store.value = takeLanes;
+
+        const snapshot = takeSnapshot('arr-live', 'Live');
+
+        expect(snapshot).toEqual({
+            id: 'arr-live',
+            name: 'Live',
+            tracks,
+            automation,
+            midi,
+            tempoMap,
+            timeSignatureMap,
+            markers,
+            takeLanes,
+        });
+        expect(snapshot.tracks).toBe(tracks);
+        expect(snapshot.automation).toBe(automation);
+        expect(snapshot.midi).toBe(midi);
+    });
+
+    it('should replace only the active arrangement snapshot during sync', async () => {
+        const { syncCurrentArrangementToStore } = await import('../syncCurrentArrangementToStore');
+        const activeArrangement: ArrangementSnapshot = {
+            id: 'arr-active',
+            name: 'Active',
+            tracks: { tracks: [], selectedTrackId: null },
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        };
+        const inactiveArrangement: ArrangementSnapshot = {
+            id: 'arr-inactive',
+            name: 'Inactive',
+            tracks: { tracks: [], selectedTrackId: 'old-track' },
+            automation: { lanes: [] },
+            midi: { notesByClipId: { old: [] }, ccByClipId: {}, pitchBendByClipId: {} },
+        };
+        const state: ArrangementStoreState = {
+            arrangements: [activeArrangement, inactiveArrangement],
+            activeArrangementId: 'arr-active',
+        };
+        const liveTracks: ArrangementSnapshot['tracks'] = { tracks: [], selectedTrackId: 'live-track' };
+        const liveAutomation: ArrangementSnapshot['automation'] = { lanes: [] };
+        const liveMidi: ArrangementSnapshot['midi'] = {
+            notesByClipId: { 'clip-live': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.arrangement_store.value = state;
+        mocks.track_store.value = liveTracks;
+        mocks.automation_store.value = liveAutomation;
+        mocks.midi_store.value = liveMidi;
+
+        syncCurrentArrangementToStore();
+
+        expect(mocks.arrangement_store.set).toHaveBeenCalledWith({
+            ...state,
+            arrangements: [
+                {
+                    id: 'arr-active',
+                    name: 'Active',
+                    tracks: liveTracks,
+                    automation: liveAutomation,
+                    midi: liveMidi,
+                    tempoMap: undefined,
+                    timeSignatureMap: undefined,
+                    markers: undefined,
+                    takeLanes: undefined,
+                },
+                inactiveArrangement,
+            ],
+        });
     });
 });

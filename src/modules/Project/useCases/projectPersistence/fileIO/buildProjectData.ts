@@ -14,7 +14,7 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
-import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
+import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
 import { serializeArrangementTracks } from './serializeArrangementTracks';
 import { serializeProjectMidi } from './serializeProjectMidi';

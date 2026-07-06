@@ -9,7 +9,7 @@ import { exportProjectFile } from '../exportProjectFile';
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../../arrangement/helpers', () => ({ syncCurrentArrangementToStore: vi.fn() }));
+vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({

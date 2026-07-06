@@ -157,7 +157,7 @@ vi.mock('../../../stores/projectStore', () => ({
     projectStore: mocks.project_store,
 }));
 
-vi.mock('../../arrangement/helpers', () => ({
+vi.mock('../../arrangement/syncCurrentArrangementToStore', () => ({
     syncCurrentArrangementToStore: mocks.sync_current_arrangement_to_store,
 }));
 
