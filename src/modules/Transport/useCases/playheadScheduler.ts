@@ -25,8 +25,9 @@ import { transportStore } from '../stores/transportStore';
 import { evaluateFollowActions } from './evaluateFollowActions';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
+import { disposeAudioClipScheduling } from './scheduling/disposeAudioClipScheduling';
 import { resetMetronomeBeat } from './scheduling/resetMetronomeBeat';
-import { scheduleAudioClips, disposeAudioClipScheduling } from './scheduling/scheduleAudioClips';
+import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { scheduleMetronome } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 
