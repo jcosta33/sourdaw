@@ -1,5 +1,5 @@
 /**
- * Recording session state and internal helpers for automation recording.
+ * Recording session state for automation recording.
  * This state is internal to the recording subsystem — not reusable elsewhere.
  *
  * The mutable session collections (active sessions, buffered points, touch
@@ -12,8 +12,6 @@
  */
 
 import { type AutomationPoint } from '../../models/Automation';
-import { automationStore } from '../../stores/automationStore';
-import { batchAddAutomationPoints } from '../automation/batchAddAutomationPoints';
 // Automation-local enum (AGENTS.md §95 — model isolation). Mirrors Arrangement's AutomationMode.
 type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
@@ -61,50 +59,3 @@ const sessionState: RecordingSessionState = createRecordingSessionState();
 export const activeRecording = sessionState.activeRecording;
 export const pendingPoints = sessionState.pendingPoints;
 export const touchActive = sessionState.touchActive;
-
-export function makeKey(trackId: string, parameterId: string): string {
-    return `${trackId}::${parameterId}`;
-}
-
-export function findLaneId(trackId: string, parameterId: string): string | null {
-    const state = automationStore.value;
-    if (!state) {
-        return null;
-    }
-    const lane = state.lanes.find((length) => length.trackId === trackId && length.parameterId === parameterId);
-    return lane?.id ?? null;
-}
-
-export function clearPointsInRange(laneId: string, fromBeat: number, toBeat: number): void {
-    const state = automationStore.value;
-    if (!state) {
-        return;
-    }
-    automationStore.set({
-        lanes: state.lanes.map((length) => {
-            if (length.id !== laneId) {
-                return length;
-            }
-            return {
-                ...length,
-                points: length.points.filter((param) => param.beat < fromBeat || param.beat > toBeat),
-            };
-        }),
-    });
-}
-
-export function flushPendingPoints(key: string): void {
-    const points = pendingPoints.get(key);
-    const session = activeRecording.get(key);
-    if (!points || points.length === 0 || !session) {
-        return;
-    }
-
-    const laneId = findLaneId(session.trackId, session.parameterId);
-    if (!laneId) {
-        return;
-    }
-
-    batchAddAutomationPoints(laneId, points);
-    pendingPoints.set(key, []);
-}

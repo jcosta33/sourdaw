@@ -15,8 +15,10 @@ const { activeRecording, touchActive, flushPendingPoints } = vi.hoisted(() => {
 vi.mock('../recordingSessionState', () => ({
     activeRecording,
     touchActive,
+}));
+
+vi.mock('../flushPendingPoints', () => ({
     flushPendingPoints,
-    makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
 }));
 
 describe('releaseTouchAutomation', () => {

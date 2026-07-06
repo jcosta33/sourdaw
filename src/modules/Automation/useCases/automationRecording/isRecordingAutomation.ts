@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { activeRecording, touchActive, makeKey } from './recordingSessionState';
+import { makeKey } from './makeKey';
+import { activeRecording, touchActive } from './recordingSessionState';
 
 export function isRecordingAutomation(trackId: string, parameterId: string): boolean {
     const key = makeKey(trackId, parameterId);

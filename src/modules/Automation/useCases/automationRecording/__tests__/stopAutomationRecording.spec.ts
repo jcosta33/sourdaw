@@ -85,8 +85,17 @@ vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
     touchActive,
+}));
+
+vi.mock('../findLaneId', () => ({
     findLaneId,
+}));
+
+vi.mock('../clearPointsInRange', () => ({
     clearPointsInRange,
+}));
+
+vi.mock('../flushPendingPoints', () => ({
     flushPendingPoints,
 }));
 

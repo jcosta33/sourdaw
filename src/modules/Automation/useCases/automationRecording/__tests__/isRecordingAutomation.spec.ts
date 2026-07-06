@@ -30,7 +30,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
 vi.mock('../recordingSessionState', () => ({
     activeRecording,
     touchActive,
-    makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
 }));
 
 function setTracks(tracks: TestTrack[]): void {
