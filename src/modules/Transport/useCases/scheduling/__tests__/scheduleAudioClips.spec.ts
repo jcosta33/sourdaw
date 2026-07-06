@@ -5,7 +5,9 @@ import { createBufferSource, getCachedAudioBuffer } from '#/modules/AudioEngine/
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { scheduleAudioClips, disposeAudioClipScheduling, sessionState } from '../scheduleAudioClips';
+import { sessionState } from '../audioClipSchedulingState';
+import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
+import { scheduleAudioClips } from '../scheduleAudioClips';
 
 // trackStore holds a single active audio track; resolveClipsWithComping supplies
 // the clip(s) under test so the clip shape is controlled directly by each test.

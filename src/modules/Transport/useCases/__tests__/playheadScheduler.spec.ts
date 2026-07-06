@@ -8,7 +8,7 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
-import { disposeAudioClipScheduling } from '../scheduling/scheduleAudioClips';
+import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 
 type FakeWorker = {
@@ -114,6 +114,8 @@ vi.mock('../scheduling/resetMetronomeBeat', () => ({
 }));
 vi.mock('../scheduling/scheduleAudioClips', () => ({
     scheduleAudioClips: vi.fn(),
+}));
+vi.mock('../scheduling/disposeAudioClipScheduling', () => ({
     disposeAudioClipScheduling: vi.fn(),
 }));
 vi.mock('../scheduling/applyAutomation/applyVcaGains', () => ({
