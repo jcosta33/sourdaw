@@ -17,7 +17,10 @@ vi.mock('../../engineAccess/getAudioContext', () => ({
 import { trackStore } from '#/modules/Arrangement/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 
-import * as subject from '../helpers';
+import { externalLatencyRegistry } from '../externalLatencyRegistry';
+import { getDeviceLatencyMs } from '../getDeviceLatencyMs';
+import { getMaxTrackLatency } from '../getMaxTrackLatency';
+import { getTrackLatency } from '../getTrackLatency';
 
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 type MutableSidechainStore = { value: { routes: unknown[] } | null };
@@ -52,22 +55,35 @@ describe('helpers', () => {
     beforeEach(() => {
         mockTrackStore.value = null;
         mockSidechainStore.value = null;
+        externalLatencyRegistry.clear();
     });
 
     it('should export getDeviceLatencyMs', () => {
-        expect(subject.getDeviceLatencyMs).toBeDefined();
-        const time = typeof subject.getDeviceLatencyMs;
+        expect(getDeviceLatencyMs).toBeDefined();
+        const time = typeof getDeviceLatencyMs;
         expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getMaxTrackLatency', () => {
-        expect(subject.getMaxTrackLatency).toBeDefined();
-        const time = typeof subject.getMaxTrackLatency;
+        expect(getMaxTrackLatency).toBeDefined();
+        const time = typeof getMaxTrackLatency;
         expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getTrackLatency', () => {
-        expect(subject.getTrackLatency).toBeDefined();
-        const time = typeof subject.getTrackLatency;
+        expect(getTrackLatency).toBeDefined();
+        const time = typeof getTrackLatency;
         expect(time === 'function' || time === 'object').toBe(true);
+    });
+
+    describe('getDeviceLatencyMs', () => {
+        it('uses the mocked sample rate for sidechain compressor device latency', () => {
+            expect(getDeviceLatencyMs('sc-1', 'builtin-sidechain-compressor')).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
+        });
+
+        it('prefers externally reported device latency', () => {
+            externalLatencyRegistry.set('reported-device', 12.5);
+
+            expect(getDeviceLatencyMs('reported-device', 'builtin-eq')).toBe(12.5);
+        });
     });
 
     describe('getTrackLatency sidechain downstream', () => {
@@ -96,7 +112,7 @@ describe('helpers', () => {
                 ],
             };
 
-            const result = subject.getTrackLatency('source');
+            const result = getTrackLatency('source');
 
             // Without the sidechain walk this is 0; with it, the bus's
             // compressor latency (~2.667ms) propagates downstream.
@@ -116,7 +132,7 @@ describe('helpers', () => {
             };
             mockSidechainStore.value = { routes: [] };
 
-            expect(subject.getTrackLatency('source').totalLatencyMs).toBe(0);
+            expect(getTrackLatency('source').totalLatencyMs).toBe(0);
         });
 
         it('combines sidechain-downstream latency with the source own device latency', () => {
@@ -145,7 +161,7 @@ describe('helpers', () => {
                 ],
             };
 
-            const result = subject.getTrackLatency('source');
+            const result = getTrackLatency('source');
 
             expect(result.deviceLatencyMs).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
             // own device latency + downstream sidechain-target latency.
@@ -177,8 +193,29 @@ describe('helpers', () => {
                 ],
             };
 
-            expect(() => subject.getTrackLatency('a')).not.toThrow();
-            expect(subject.getTrackLatency('a').totalLatencyMs).toBe(0);
+            expect(() => getTrackLatency('a')).not.toThrow();
+            expect(getTrackLatency('a').totalLatencyMs).toBe(0);
+        });
+    });
+
+    describe('getMaxTrackLatency', () => {
+        it('returns the largest total latency across tracks', () => {
+            mockTrackStore.value = {
+                tracks: [
+                    makeTrack({
+                        id: 'source',
+                        sends: [{ busId: 'bus' }],
+                    }),
+                    makeTrack({
+                        id: 'bus',
+                        devices: [{ id: 'sc-1', type: 'builtin-sidechain-compressor' }],
+                    }),
+                    makeTrack({ id: 'dry' }),
+                ],
+            };
+            mockSidechainStore.value = { routes: [] };
+
+            expect(getMaxTrackLatency()).toBeCloseTo(SIDECHAIN_COMP_MS, 6);
         });
     });
 });

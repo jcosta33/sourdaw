@@ -1,4 +1,5 @@
-import { getMaxTrackLatency, getTrackLatency } from './helpers';
+import { getMaxTrackLatency } from './getMaxTrackLatency';
+import { getTrackLatency } from './getTrackLatency';
 
 export function getCompensationDelay(trackId: string): number {
     const maxLatencyMs = getMaxTrackLatency();

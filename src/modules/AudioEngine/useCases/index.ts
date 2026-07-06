@@ -94,7 +94,7 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
-export { getTrackLatency } from './latencyCompensation/compensation/helpers';
+export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 

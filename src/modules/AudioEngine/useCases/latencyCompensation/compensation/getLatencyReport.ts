@@ -3,7 +3,8 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { type TrackLatency, type LatencyReport } from '../../../models/LatencyCompensationTypes';
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 
-import { getMaxTrackLatency, getTrackLatency } from './helpers';
+import { getMaxTrackLatency } from './getMaxTrackLatency';
+import { getTrackLatency } from './getTrackLatency';
 
 export function getLatencyReport(): LatencyReport {
     const state = trackStore.value;

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { getTrackLatency } from '../compensation/helpers';
+import { getTrackLatency } from '../compensation/getTrackLatency';
 
 const { mocks } = vi.hoisted(() => ({
     mocks: {
