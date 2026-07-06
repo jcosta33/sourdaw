@@ -1,6 +1,6 @@
 import { isAppError } from '#/infra/errors/isAppError';
 import { generateAudio } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { addTask } from './addTask';
 import { ensureAudioGenerationAvailable } from './ensureAudioGenerationAvailable';
@@ -14,7 +14,7 @@ export async function handleGenerateAudioFallback(prompt: string, durationStr: s
 
         const duration = parseInt(durationStr) || 8;
         const buffer = await generateAudio(prompt, duration);
-        audioBufferCache.set(`generated-${crypto.randomUUID()}`, buffer);
+        cacheAudioBuffer({ buffer });
 
         updateTask(taskId, {
             status: 'success',

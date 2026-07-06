@@ -28,6 +28,7 @@ export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
+export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
