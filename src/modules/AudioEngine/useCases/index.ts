@@ -35,6 +35,7 @@ export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAud
 export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAudioBuffersBySize';
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
+export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
