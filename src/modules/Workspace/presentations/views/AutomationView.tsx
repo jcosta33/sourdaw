@@ -6,7 +6,8 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
-import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores';
+import { timelineViewStore } from '#/modules/Arrangement/stores';
+import { scrollTimelineViewportFromWheel } from '#/modules/Arrangement/useCases';
 
 import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles/toggleAutomationPanel';
 import { useTracks } from '../hooks/useTracks';
@@ -36,12 +37,11 @@ export const AutomationView = (): ReactElement => {
     const containerWidth = containerRef.current?.clientWidth ?? 800;
 
     const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-        if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-            scrollTimeline(event.deltaX || event.deltaY);
-        } else {
-            const currentY = timelineViewStore.value?.scrollY ?? 0;
-            setScrollY(Math.max(0, currentY + event.deltaY));
-        }
+        scrollTimelineViewportFromWheel({
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            shiftKey: event.shiftKey,
+        });
     };
 
     return (
