@@ -1,6 +1,5 @@
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
     startAudioRecording,
@@ -8,6 +7,7 @@ import {
     getAudioContext,
     audioEngine,
     scheduleAdjustmentLayers,
+    cacheAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
 import {
     startAutomationRecording,
@@ -276,7 +276,7 @@ export function startPlayheadScheduler(): void {
                     const recClip = clips.find((context) => context.trackId === track.id);
                     void startAudioRecording(track.id, (buffer) => {
                         const bufferId = `rec-${crypto.randomUUID()}`;
-                        audioBufferCache.set(bufferId, buffer);
+                        cacheAudioBuffer({ buffer, bufferId });
                         if (recClip) {
                             // Route the cross-module write through Arrangement's own
                             // use case rather than mutating trackStore directly (audit
