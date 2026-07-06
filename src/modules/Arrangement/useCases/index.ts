@@ -212,7 +212,8 @@ export { interpolateAutomationValue } from './automationQueries/interpolateAutom
 export { rdpSimplify } from './automationQueries/rdpSimplify';
 export { getAutomationRegions } from './automationQueries/getAutomationRegions';
 export { getMarkerState } from './timelineQueries';
-export { detectSongStructure, detectAndApplySongStructure } from './songStructureDetection';
+export { detectAndApplySongStructure } from './detectAndApplySongStructure';
+export { detectSongStructure } from './detectSongStructure';
 export { getFactoryPresets } from './soundPresetLibrary';
 export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
