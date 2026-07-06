@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { generateAudio as genAudio } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -39,8 +39,7 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
                 `[Audio AI] Generated ${String(audioBuffer.duration.toFixed(1))}s of audio (${String(audioBuffer.sampleRate)}Hz)`
             );
 
-            const bufferId = crypto.randomUUID();
-            audioBufferCache.set(bufferId, audioBuffer);
+            const bufferId = cacheAudioBuffer({ buffer: audioBuffer });
 
             // Convert the rendered audio's real-time duration into beats using the
             // project tempo (beats = seconds * BPM / 60) rather than assuming
