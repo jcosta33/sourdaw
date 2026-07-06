@@ -5,7 +5,7 @@ import {
     trackStore,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
@@ -86,7 +86,7 @@ export async function buildProjectData(): Promise<BuiltProjectData | null> {
             allBufferIds.add(id);
         }
     }
-    const audioBuffers = await audioBufferCache.exportBuffers([...allBufferIds]);
+    const audioBuffers = await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] });
 
     const resolvedIds = new Set(Object.keys(audioBuffers));
     const missingBufferCount = [...allBufferIds].filter((id) => !resolvedIds.has(id)).length;
