@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { performMusicalAnalysis } from '../../services/analysisService';
 import { libraryStore } from '../../stores/libraryStore';
@@ -15,8 +15,8 @@ vi.mock('../../services/analysisService', () => ({
     performMusicalAnalysis: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { get: vi.fn() },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(),
 }));
 
 vi.mock('../../repositories/libraryPersistence/persistSamples', () => ({
@@ -30,7 +30,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 describe('analyzeSample', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(audioBufferCache.get).mockReset();
+        vi.mocked(getCachedAudioBuffer).mockReset();
         vi.mocked(performMusicalAnalysis).mockReset();
         mocks.persist_samples.mockReset();
         mocks.persist_samples.mockResolvedValue(undefined);
@@ -64,7 +64,7 @@ describe('analyzeSample', () => {
     });
 
     function install_cached_buffer(): void {
-        vi.mocked(audioBufferCache.get).mockReturnValue({
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({
             length: 44100,
             sampleRate: 44100,
             getChannelData: () => new Float32Array(100),
@@ -85,6 +85,7 @@ describe('analyzeSample', () => {
 
         await analyzeSample('s1');
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 's1' });
         const sample = libraryStore.value?.samples[0];
         expect(sample?.sync.status).toBe('analyzed');
         expect(sample?.analysis?.bpm).toBe(125);
@@ -168,6 +169,7 @@ describe('analyzeSample', () => {
     it('should not persist when the audio buffer is unavailable', async () => {
         await analyzeSample('s1');
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 's1' });
         expect(performMusicalAnalysis).not.toHaveBeenCalled();
         expect(mocks.persist_samples).not.toHaveBeenCalled();
     });
