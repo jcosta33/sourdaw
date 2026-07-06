@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -13,7 +13,7 @@ export function reverseClip(clipId: string): void {
         if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             continue;
         }
-        const buffer = audioBufferCache.get(clip.audioBufferId);
+        const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
         if (!buffer) {
             return;
         }
@@ -27,7 +27,7 @@ export function reverseClip(clipId: string): void {
             }
         }
         const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
-        audioBufferCache.set(newId, reversed);
+        cacheAudioBuffer({ buffer: reversed, bufferId: newId });
         updateClip(clipId, (context) => ({ ...context, audioBufferId: newId, name: `${context.name} (reversed)` }));
         return;
     }

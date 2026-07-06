@@ -1,12 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { reverseClip } from '../reverseClip';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     updateClip: vi.fn(),
-    audioBufferCacheGet: vi.fn(),
-    audioBufferCacheSet: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -17,11 +17,9 @@ vi.mock('#/modules/Arrangement/repositories/track/updateClip', () => ({
     updateClip: mocks.updateClip,
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: mocks.audioBufferCacheGet,
-        set: mocks.audioBufferCacheSet,
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 
 describe('reverseClip', () => {
@@ -40,7 +38,13 @@ describe('reverseClip', () => {
         } as any;
     });
 
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('reverses an audio clip buffer and updates its ID', () => {
+        vi.spyOn(Date, 'now').mockReturnValue(12345);
+
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [mockClip] }],
@@ -52,7 +56,7 @@ describe('reverseClip', () => {
 
         const reversedData = new Float32Array(100);
 
-        mocks.audioBufferCacheGet.mockReturnValue({
+        mocks.getCachedAudioBuffer.mockReturnValue({
             numberOfChannels: 1,
             length: 100,
             sampleRate: 44100,
@@ -68,12 +72,16 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(mocks.audioBufferCacheSet).toHaveBeenCalled();
+        expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
+            buffer: reversedBuffer,
+            bufferId: 'reversed-buf1-12345',
+        });
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
 
         const updater = mocks.updateClip.mock.calls[0][1];
         const result = updater(mockClip);
-        expect(result.audioBufferId).toMatch(/^reversed-buf1-/);
+        expect(result.audioBufferId).toBe('reversed-buf1-12345');
         expect(result.name).toBe('Sample (reversed)');
 
         // Verify the math
@@ -87,6 +95,6 @@ describe('reverseClip', () => {
         });
 
         reverseClip('c1');
-        expect(mocks.audioBufferCacheSet).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
 });
