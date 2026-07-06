@@ -12,8 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/u
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore, defaultTrackState } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -263,7 +262,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 const neededIds = exportTracks
                     .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
-                await audioBufferCache.restoreFromIdb(ctx, neededIds.length > 0 ? neededIds : undefined);
+                await restoreCachedAudioBuffersFromIdb({
+                    audioContext: ctx,
+                    bufferIds: neededIds.length > 0 ? neededIds : undefined,
+                });
             } else {
                 // Engine not yet initialised (pre-first-gesture) — proceed without
                 // restore; buffers may already be warm from a previous operation.
