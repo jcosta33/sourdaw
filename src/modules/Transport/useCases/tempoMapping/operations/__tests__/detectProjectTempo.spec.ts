@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../detectProjectTempo';
+import { detectTempoFromOnsets } from '../detectTempoFromOnsets';
 
 describe('detectTempoFromOnsets', () => {
-    it('returns an empty map when fewer than three onsets are provided', () => {
-        const result = subject.detectTempoFromOnsets([0, 0.5]);
+    it('should return an empty map when fewer than three onsets are provided', () => {
+        const result = detectTempoFromOnsets([0, 0.5]);
 
         expect(result.points).toEqual([]);
         expect(result.averageBpm).toBe(0);
@@ -12,27 +12,29 @@ describe('detectTempoFromOnsets', () => {
         expect(result.totalBeats).toBe(0);
     });
 
-    it('returns an empty map when every interval is outside the accepted range', () => {
+    it('should return an empty map when every interval is outside the accepted range', () => {
         const onsets = [0, 3, 6, 9];
-        const result = subject.detectTempoFromOnsets(onsets);
+        const result = detectTempoFromOnsets(onsets);
 
         expect(result.averageBpm).toBe(0);
         expect(result.points).toEqual([]);
     });
 
-    it('estimates ~120 BPM from steady half-second spacing', () => {
+    it('should estimate a confident 120 BPM from steady half-second spacing', () => {
         const period = 0.5;
         const onsets = [0, period, 2 * period, 3 * period, 4 * period];
-        const result = subject.detectTempoFromOnsets(onsets);
+        const result = detectTempoFromOnsets(onsets);
 
         expect(result.averageBpm).toBe(120);
-        expect(result.points.length).toBeGreaterThan(0);
+        expect(result.points).toHaveLength(4);
+        expect(result.points.map((point) => point.bpm)).toEqual([120, 120, 120, 120]);
+        expect(result.confidence).toBeGreaterThan(0.99);
         expect(result.totalBeats).toBe(result.points.length);
-        expect(result.minBpm).toBeGreaterThan(0);
-        expect(result.maxBpm).toBeGreaterThanOrEqual(result.minBpm);
+        expect(result.minBpm).toBe(120);
+        expect(result.maxBpm).toBe(120);
     });
 
-    it('smooths each point with a centered window of up to 5 estimates (windowed-sum equivalence)', () => {
+    it('should smooth each point with a centered window of up to 5 estimates', () => {
         // Varied gaps -> varied bpm estimates, so a centered moving average actually
         // differs frame to frame. Guards the O(1) windowed running-sum refactor against
         // any drift from the original centered-window (index-2 .. index+2, clamped) mean.
@@ -42,47 +44,24 @@ describe('detectTempoFromOnsets', () => {
             onsets.push(onsets[onsets.length - 1]! + gap);
         }
 
-        const result = subject.detectTempoFromOnsets(onsets);
+        const result = detectTempoFromOnsets(onsets);
 
         // Reproduce the pre-smoothing pipeline independently.
         const intervals: number[] = [];
-        for (let i = 1; i < onsets.length; i++) {
-            intervals.push(onsets[i]! - onsets[i - 1]!);
+        for (let index = 1; index < onsets.length; index++) {
+            intervals.push(onsets[index]! - onsets[index - 1]!);
         }
-        const bpmEstimates = intervals.filter((d) => d > 0.15 && d < 2.0).map((d) => 60 / d);
+        const bpmEstimates = intervals.filter((gap) => gap > 0.15 && gap < 2.0).map((gap) => 60 / gap);
 
         expect(result.points).toHaveLength(bpmEstimates.length);
 
         // Naive O(N^2) reference centered moving average.
-        for (let i = 0; i < bpmEstimates.length; i++) {
-            const lo = Math.max(0, i - 2);
-            const hi = Math.min(bpmEstimates.length, i + 3);
-            const window = bpmEstimates.slice(lo, hi);
-            const expectedSmoothed = window.reduce((a, b) => a + b, 0) / window.length;
-            expect(result.points[i]!.bpm).toBeCloseTo(Math.round(expectedSmoothed * 10) / 10, 10);
+        for (let index = 0; index < bpmEstimates.length; index++) {
+            const lowIndex = Math.max(0, index - 2);
+            const highIndex = Math.min(bpmEstimates.length, index + 3);
+            const window = bpmEstimates.slice(lowIndex, highIndex);
+            const expectedSmoothed = window.reduce((sum, bpm) => sum + bpm, 0) / window.length;
+            expect(result.points[index]!.bpm).toBeCloseTo(Math.round(expectedSmoothed * 10) / 10, 10);
         }
-    });
-});
-
-describe('detectProjectTempo module exports', () => {
-    it('should export applyTempoMap', () => {
-        expect(subject.applyTempoMap).toBeDefined();
-        const time = typeof subject.applyTempoMap;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export detectProjectTempo', () => {
-        expect(subject.detectProjectTempo).toBeDefined();
-        const time = typeof subject.detectProjectTempo;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export detectTempoFromOnsets', () => {
-        expect(subject.detectTempoFromOnsets).toBeDefined();
-        const time = typeof subject.detectTempoFromOnsets;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export estimateOnsetsFromClips', () => {
-        expect(subject.estimateOnsetsFromClips).toBeDefined();
-        const time = typeof subject.estimateOnsetsFromClips;
-        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

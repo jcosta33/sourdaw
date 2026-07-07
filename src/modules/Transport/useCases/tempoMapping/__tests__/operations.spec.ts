@@ -3,13 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from '../operations/detectProjectTempo';
+import { applyTempoMap } from '../operations/applyTempoMap';
+import { detectProjectTempo } from '../operations/detectProjectTempo';
+import { estimateOnsetsFromClips } from '../operations/estimateOnsetsFromClips';
 
 const trackCell = vi.hoisted(() => ({
     value: null as { tracks: Array<{ kind: string; clips: Array<{ startBeat: number; endBeat: number }> }> } | null,
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: trackCell,
 }));
 
@@ -33,22 +35,28 @@ describe('estimateOnsetsFromClips', () => {
         expect(estimateOnsetsFromClips()).toEqual([]);
     });
 
-    it('should derive simulated onsets from midi clip spans', () => {
+    it('should derive sorted onsets from midi clip spans using the current tempo', () => {
         trackCell.value = {
             tracks: [
                 {
                     kind: 'midi',
-                    clips: [{ startBeat: 0, endBeat: 2 }],
+                    clips: [
+                        { startBeat: 2, endBeat: 4 },
+                        { startBeat: 0, endBeat: 2 },
+                    ],
+                },
+                {
+                    kind: 'audio',
+                    clips: [{ startBeat: 10, endBeat: 12 }],
                 },
             ],
         };
 
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, tempo: 120 });
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, tempo: 60 });
 
         const onsets = estimateOnsetsFromClips();
 
-        expect(onsets.length).toBeGreaterThan(0);
-        expect(onsets[0]).toBeLessThanOrEqual(onsets[onsets.length - 1]!);
+        expect(onsets).toEqual([0, 1, 2, 3]);
     });
 });
 
@@ -86,6 +94,21 @@ describe('applyTempoMap', () => {
 
         expect(updateTransportState).toHaveBeenCalledWith({ tempo: 128 });
     });
+
+    it('should not update when average BPM is zero', () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
+
+        applyTempoMap({
+            points: [],
+            averageBpm: 0,
+            minBpm: 0,
+            maxBpm: 0,
+            confidence: 0,
+            totalBeats: 0,
+        });
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+    });
 });
 
 describe('detectProjectTempo', () => {
@@ -94,7 +117,7 @@ describe('detectProjectTempo', () => {
         trackCell.value = null;
     });
 
-    it('does not update transport when there are no MIDI onsets', () => {
+    it('should not update transport when there are no MIDI onsets', () => {
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, tempo: 120 });
 
         detectProjectTempo();
@@ -102,7 +125,7 @@ describe('detectProjectTempo', () => {
         expect(updateTransportState).not.toHaveBeenCalled();
     });
 
-    it('updates tempo when MIDI clips yield a confident tempo map', () => {
+    it('should update tempo when MIDI clips yield a confident tempo map', () => {
         trackCell.value = {
             tracks: [
                 {
