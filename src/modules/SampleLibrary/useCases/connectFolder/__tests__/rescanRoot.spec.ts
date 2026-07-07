@@ -7,10 +7,8 @@ const mocks = vi.hoisted(() => ({
     storeValue: { value: null as unknown },
 }));
 
-vi.mock('../helpers', () => ({
-    scanBrowserDirectory: mocks.scanBrowserDirectory,
-    scanTauriDirectory: mocks.scanTauriDirectory,
-}));
+vi.mock('../scanBrowserDirectory', () => ({ scanBrowserDirectory: mocks.scanBrowserDirectory }));
+vi.mock('../scanTauriDirectory', () => ({ scanTauriDirectory: mocks.scanTauriDirectory }));
 
 vi.mock('../../../stores/libraryStore', () => ({
     get libraryStore() {

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { cancelScan } from '../cancelScan';
-import { getScanAbortController, setScanAbortController } from '../helpers';
+import { getScanAbortController } from '../getScanAbortController';
+import { setScanAbortController } from '../setScanAbortController';
 
 describe('cancelScan', () => {
     afterEach(() => {

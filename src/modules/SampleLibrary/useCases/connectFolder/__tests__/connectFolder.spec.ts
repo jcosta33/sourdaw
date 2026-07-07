@@ -14,10 +14,8 @@ vi.mock('../../../stores/libraryStore', () => ({
     setScanProgress: vi.fn(),
 }));
 
-vi.mock('../helpers', () => ({
-    scanBrowserDirectory: vi.fn(),
-    scanTauriDirectory: vi.fn(),
-}));
+vi.mock('../scanBrowserDirectory', () => ({ scanBrowserDirectory: vi.fn() }));
+vi.mock('../scanTauriDirectory', () => ({ scanTauriDirectory: vi.fn() }));
 
 import { addLibraryRoot } from '../../../stores/libraryStore';
 import { connectFolder } from '../connectFolder';

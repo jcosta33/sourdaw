@@ -4,7 +4,8 @@ import { type LibraryRoot } from '../../models/LibraryTypes';
 import { pickTauriSampleFolder } from '../../repositories/pickTauriSampleFolder';
 import { addLibraryRoot } from '../../stores/libraryStore';
 
-import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
+import { scanBrowserDirectory } from './scanBrowserDirectory';
+import { scanTauriDirectory } from './scanTauriDirectory';
 
 async function connectFolderBrowser(): Promise<string | null> {
     // Check for File System Access API support
