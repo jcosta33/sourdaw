@@ -5,7 +5,8 @@ import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess/getAud
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
-import { startSequencer, stopSequencer } from '../sequencerPlayback';
+import { startSequencer } from '../startSequencer';
+import { stopSequencer } from '../stopSequencer';
 import { setPadEngineImmediate } from '../toasterParamBridge/setPadEngineImmediate';
 import { triggerToasterPad } from '../triggerPad';
 
