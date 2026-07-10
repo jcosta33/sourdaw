@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { exportProjectFile } from '../exportProjectFile';
@@ -7,18 +9,18 @@ import { exportProjectFile } from '../exportProjectFile';
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../../arrangement/helpers', () => ({ syncCurrentArrangementToStore: vi.fn() }));
+vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
+}));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
     markerStore: { value: { markers: [] } },
     takeLaneStore: { value: undefined },
     adjustmentLayerStore: { value: { layers: [] } },
-}));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { exportBuffers: vi.fn().mockResolvedValue({}) },
 }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] } } }));
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -47,6 +49,8 @@ vi.mock('../../../../stores/projectStore', () => ({
 describe('exportProjectFile', () => {
     beforeEach(() => {
         vi.mocked(downloadProjectFile).mockClear();
+        vi.mocked(exportCachedAudioBuffers).mockClear();
+        vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
     });
 
     it('writes the current project version into the exported data', async () => {

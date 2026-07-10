@@ -27,7 +27,8 @@ import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline'
 import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
-import { startSequencer, stopSequencer } from '../../useCases/sequencerPlayback';
+import { startSequencer } from '../../useCases/startSequencer';
+import { stopSequencer } from '../../useCases/stopSequencer';
 import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
 import { triggerToasterPad } from '../../useCases/triggerPad';

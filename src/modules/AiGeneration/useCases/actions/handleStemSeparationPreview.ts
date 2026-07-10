@@ -1,7 +1,6 @@
 import { isAppError } from '#/infra/errors/isAppError';
 import { separateStems } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav, cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 
@@ -16,7 +15,7 @@ export async function handleStemSeparationPreview(clipId: string) {
     });
     const start = performance.now();
     try {
-        const buffer = audioBufferCache.get(clipId);
+        const buffer = getCachedAudioBuffer({ bufferId: clipId });
         if (!buffer) {
             throw createAiGenerationError('Audio buffer not found for clip');
         }
@@ -26,7 +25,7 @@ export async function handleStemSeparationPreview(clipId: string) {
 
         const stemNames = Object.keys(stemResults);
         for (const [name, stemBuffer] of Object.entries(stemResults)) {
-            audioBufferCache.set(`${clipId}-${name}`, stemBuffer);
+            cacheAudioBuffer({ buffer: stemBuffer, bufferId: `${clipId}-${name}` });
         }
 
         updateTask(taskId, {

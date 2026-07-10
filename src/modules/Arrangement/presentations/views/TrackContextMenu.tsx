@@ -22,10 +22,10 @@ import { importMidiFile } from '../../useCases/importMidiFile';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { removeTrack } from '../../useCases/removeTrack';
 import { renameTrack } from '../../useCases/renameTrack';
+import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
-import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 
 import { BounceOptionsDialog } from './BounceOptionsDialog';
 

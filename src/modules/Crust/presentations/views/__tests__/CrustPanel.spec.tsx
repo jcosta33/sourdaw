@@ -1,8 +1,26 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { crustStore, defaultCrustState, type CrustState } from '../../../stores/crustStore';
 import { CrustPanel } from '../CrustPanel';
+
+const useCaseMocks = vi.hoisted(() => ({
+    resetCrustPanelMeters: vi.fn(),
+    resetCrustTruePeakIndicator: vi.fn(),
+    setCrustPanelUiLevel: vi.fn(),
+}));
+
+vi.mock('../../../useCases/resetCrustPanelMeters', () => ({
+    resetCrustPanelMeters: useCaseMocks.resetCrustPanelMeters,
+}));
+
+vi.mock('../../../useCases/resetCrustTruePeakIndicator', () => ({
+    resetCrustTruePeakIndicator: useCaseMocks.resetCrustTruePeakIndicator,
+}));
+
+vi.mock('../../../useCases/setCrustPanelUiLevel', () => ({
+    setCrustPanelUiLevel: useCaseMocks.setCrustPanelUiLevel,
+}));
 
 // useStore is mocked so each case can hand CrustPanel an exact CrustState and
 // observe what the view derives from it. Any other store (e.g. MIDI-learn state
@@ -116,5 +134,29 @@ describe('CrustPanel', () => {
         const props = lastWaveformProps();
         expect(props.inputDb).not.toBe(-60);
         expect(props.outputDb).not.toBe(-60);
+    });
+
+    it('should route level chip writes through the Crust panel UI-level use case', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'L4' }));
+
+        expect(useCaseMocks.setCrustPanelUiLevel).toHaveBeenCalledWith(4);
+    });
+
+    it('should route footer meter reset through the Crust panel meter use case', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+        expect(useCaseMocks.resetCrustPanelMeters).toHaveBeenCalledTimes(1);
+    });
+
+    it('should route true peak reset through the Crust true peak use case', () => {
+        render(<CrustPanel deviceId="crust-1" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reset true peak indicator' }));
+
+        expect(useCaseMocks.resetCrustTruePeakIndicator).toHaveBeenCalledTimes(1);
     });
 });

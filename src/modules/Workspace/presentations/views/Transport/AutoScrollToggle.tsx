@@ -5,7 +5,8 @@ import { ChevronsRight } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { timelineViewStore, toggleAutoScroll } from '#/modules/Arrangement/stores';
+import { timelineViewStore } from '#/modules/Arrangement/stores';
+import { toggleTimelineAutoScroll } from '#/modules/Arrangement/useCases';
 
 export const AutoScrollToggle = (): ReactElement => {
     const timelineViewState = useStore(timelineViewStore, {
@@ -24,7 +25,9 @@ export const AutoScrollToggle = (): ReactElement => {
                     size="icon-sm"
                     aria-label="Auto-scroll follows playhead"
                     aria-pressed={autoScrollEnabled}
-                    onClick={toggleAutoScroll}
+                    onClick={() => {
+                        toggleTimelineAutoScroll();
+                    }}
                 >
                     <ChevronsRight className="size-3.5" aria-hidden="true" />
                 </Button>

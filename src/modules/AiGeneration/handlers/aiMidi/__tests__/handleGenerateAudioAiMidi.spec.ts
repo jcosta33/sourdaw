@@ -5,7 +5,7 @@ import { handleGenerateAudioAiMidi } from '../handleGenerateAudioAiMidi';
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
-    cacheSet: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     generateAudio: vi.fn(),
@@ -19,8 +19,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { set: mocks.cacheSet },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -48,6 +48,7 @@ describe('handleGenerateAudioAiMidi', () => {
         vi.clearAllMocks();
         // Default: 120 BPM, playhead at 0 (matches the legacy assumption).
         mocks.getTransportState.mockReturnValue({ tempo: 120, playheadPosition: 0 });
+        mocks.cacheAudioBuffer.mockReturnValue('generated-buffer-id');
     });
 
     it('bails if audio generation is unavailable', async () => {
@@ -78,7 +79,7 @@ describe('handleGenerateAudioAiMidi', () => {
 
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'AI Audio', kind: 'audio' });
         expect(mocks.generateAudio).toHaveBeenCalledWith('epic drum loop', 4);
-        expect(mocks.cacheSet).toHaveBeenCalledWith(expect.any(String), mockBuffer);
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: mockBuffer });
 
         // 4.5s at 120 BPM = 4.5 * 120 / 60 = 9 beats.
         expect(mocks.addClip).toHaveBeenCalledWith(
@@ -88,6 +89,7 @@ describe('handleGenerateAudioAiMidi', () => {
                 endBeat: 9,
                 name: 'AI: epic drum loop',
                 type: 'audio',
+                audioBufferId: 'generated-buffer-id',
             })
         );
     });

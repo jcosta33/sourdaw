@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
 import { getDrumKitById as getNativeDrumKitById } from '../../../models/FactoryDrumKits';
-import { type NativeDrumKit, cloneSynthParams, defaultSynthParams, toDrumKit, toDrumKitVoice } from '../helpers';
+import { cloneSynthParams } from '../cloneSynthParams';
+import { defaultSynthParams } from '../helpers';
+import { toDrumKit } from '../toDrumKit';
+import { toDrumKitVoice } from '../toDrumKitVoice';
+
+import type { NativeDrumKit } from '../helpers';
 
 describe('helpers', () => {
     it('should return a new object from cloneSynthParams', () => {

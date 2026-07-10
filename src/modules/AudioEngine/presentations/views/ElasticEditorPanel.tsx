@@ -4,8 +4,8 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTrackState, trackStore, getWarpState, warpStates } from '#/modules/Arrangement/stores';
-import { setStretchMode } from '#/modules/Arrangement/useCases';
+import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
+import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -61,6 +61,8 @@ type DragState = {
     pointerId: number;
     altKey: boolean;
     ctrlKey: boolean;
+    startOriginalBeat: number;
+    startWarpedBeat: number;
 };
 
 const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
@@ -248,6 +250,8 @@ export const ElasticEditorPanel = (): ReactElement => {
                 pointerId: event.pointerId,
                 altKey: event.altKey,
                 ctrlKey: event.ctrlKey,
+                startOriginalBeat: hit.originalBeat,
+                startWarpedBeat: hit.warpedBeat,
             };
             didDragRef.current = false;
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -264,20 +268,35 @@ export const ElasticEditorPanel = (): ReactElement => {
         const x = getCanvasX(event);
         const beatRaw = Math.max(0, x / beatWidth);
         const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1) : beatRaw;
-        mutateMarker(clipId, drag.markerId, (m) => {
-            if (drag.altKey || event.altKey) {
-                return { ...m, originalBeat: beat };
-            }
-            return { ...m, warpedBeat: beat };
+        updateWarpMarkerBeat({
+            clipId,
+            markerId: drag.markerId,
+            field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
+            beat,
         });
         refreshWarp();
     };
 
-    const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
-        if (dragRef.current) {
-            (event.target as HTMLCanvasElement).releasePointerCapture(dragRef.current.pointerId);
+    const finishMarkerDrag = (): void => {
+        const drag = dragRef.current;
+        if (!drag) {
+            return;
         }
+        commitWarpMarkerBeatDrag({
+            clipId,
+            markerId: drag.markerId,
+            beforeOriginalBeat: drag.startOriginalBeat,
+            beforeWarpedBeat: drag.startWarpedBeat,
+        });
         dragRef.current = null;
+    };
+
+    const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
+        const drag = dragRef.current;
+        if (drag) {
+            (event.target as HTMLCanvasElement).releasePointerCapture(drag.pointerId);
+        }
+        finishMarkerDrag();
     };
 
     const onContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
@@ -413,6 +432,8 @@ export const ElasticEditorPanel = (): ReactElement => {
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
+                    onPointerCancel={finishMarkerDrag}
+                    onLostPointerCapture={finishMarkerDrag}
                     onContextMenu={onContextMenu}
                 />
             </div>
@@ -495,15 +516,6 @@ function visibleMarkers(
         const x = m.warpedBeat * beatWidth;
         return x >= minX && x <= maxX;
     });
-}
-
-function mutateMarker(clipId: string, markerId: string, updater: (m: WarpMarkerView) => WarpMarkerView): void {
-    const current = warpStates.get(clipId);
-    if (!current) {
-        return;
-    }
-    const nextMarkers = current.markers.map((m) => (m.id === markerId ? updater(m as WarpMarkerView) : m));
-    warpStates.set(clipId, { ...current, markers: nextMarkers });
 }
 
 type DrawArgs = {

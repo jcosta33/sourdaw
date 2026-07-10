@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { redo, undo } from '../../../useCases/undoRedo';
+import { redo } from '../../../useCases/redo';
+import { undo } from '../../../useCases/undo';
 import { handleRedo } from '../handleRedo';
 import { handleUndo } from '../handleUndo';
 
-vi.mock('../../../useCases/undoRedo', () => ({
+vi.mock('../../../useCases/redo', () => ({
     redo: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../useCases/undo', () => ({
     undo: vi.fn().mockResolvedValue(undefined),
 }));
 

@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { deleteTrackTemplate } from '../../useCases/trackTemplate';
+import { deleteTrackTemplate } from '../../useCases/deleteTrackTemplate';
 
 export const handleDeleteTrackTemplate = createHandler<'deleteTrackTemplate'>({
     execute: (alpha) => {

@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+
 import { ClipAudioAiSection } from '../ClipAudioAiSection';
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
@@ -30,6 +32,7 @@ vi.mock('#/components/ui/button', () => ({
         variant,
         size,
         className,
+        'aria-label': ariaLabel,
     }: {
         children: React.ReactNode;
         onClick?: () => void;
@@ -37,6 +40,7 @@ vi.mock('#/components/ui/button', () => ({
         variant?: string;
         size?: string;
         className?: string;
+        'aria-label'?: string;
     }) => (
         <button
             type="button"
@@ -45,6 +49,7 @@ vi.mock('#/components/ui/button', () => ({
             data-variant={variant}
             data-size={size}
             className={className}
+            aria-label={ariaLabel}
         >
             {children}
         </button>
@@ -137,10 +142,8 @@ vi.mock('#/modules/AudioAnalysis/useCases/audioToMidi', () => ({
     audioToMidi: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
-    audioBufferCache: {
-        has: vi.fn(() => false),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(() => null),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -167,6 +170,7 @@ describe('ClipAudioAiSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
     });
 
     it('should render without crashing', () => {
@@ -187,6 +191,33 @@ describe('ClipAudioAiSection', () => {
     it('should render apply denoise button', () => {
         render(<ClipAudioAiSection {...defaultProps} />);
         expect(screen.getByRole('button', { name: /Apply Denoise/ })).toBeInTheDocument();
+    });
+
+    it('should render original and denoised controls when the denoised buffer is cached', () => {
+        const denoised_audio_buffer = {
+            duration: 1,
+            length: 1,
+            numberOfChannels: 1,
+            sampleRate: 48_000,
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+            getChannelData: vi.fn(() => new Float32Array(1)),
+        } satisfies AudioBuffer;
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(denoised_audio_buffer);
+
+        render(<ClipAudioAiSection {...defaultProps} />);
+
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1-denoised' });
+        expect(screen.getByRole('button', { name: 'Listen to original audio' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Listen to denoised audio' })).toBeInTheDocument();
+    });
+
+    it('should not render original and denoised controls when the denoised buffer is missing', () => {
+        render(<ClipAudioAiSection {...defaultProps} />);
+
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1-denoised' });
+        expect(screen.queryByRole('button', { name: 'Listen to original audio' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Listen to denoised audio' })).not.toBeInTheDocument();
     });
 
     it('should render separate stems button', () => {

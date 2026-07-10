@@ -1,9 +1,35 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { normalizeClip } from '#/modules/Arrangement/useCases';
+import { getWarpState } from '#/modules/Arrangement/stores';
+import {
+    addManualWarpMarker,
+    commitWarpMarkerBeatDrag,
+    moveWarpMarker,
+    normalizeClip,
+} from '#/modules/Arrangement/useCases';
+import { getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
 import { WaveformEditor } from '../WaveformEditor';
+
+const original_canvas_get_context_descriptor = Object.getOwnPropertyDescriptor(
+    HTMLCanvasElement.prototype,
+    'getContext'
+);
+const original_client_width_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+const original_client_height_descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+
+function restore_property_descriptor(
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor | undefined
+): void {
+    if (descriptor) {
+        Object.defineProperty(target, propertyKey, descriptor);
+        return;
+    }
+    Reflect.deleteProperty(target, propertyKey);
+}
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({
@@ -110,10 +136,8 @@ vi.mock('#/utils/UI/resolveToken', () => ({
     resolveToken: vi.fn(() => '#151515'),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
-    audioBufferCache: {
-        getWaveformPeaks: vi.fn(() => []),
-    },
+vi.mock('#/modules/AudioEngine/useCases/getCachedAudioBufferWaveformPeaks', () => ({
+    getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -126,7 +150,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         subscribeReact: vi.fn(() => () => {}),
     },
     defaultTrackState: { tracks: [] },
-    addWarpMarker: vi.fn(),
     getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
     warpStates: new Map(),
 }));
@@ -137,6 +160,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     normalizeClip: vi.fn(),
     reverseClip: vi.fn(),
     moveWarpMarker: vi.fn(),
+    addManualWarpMarker: vi.fn(),
+    commitWarpMarkerBeatDrag: vi.fn(),
     removeWarpMarker: vi.fn(),
     setStretchMode: vi.fn(),
     disableWarp: vi.fn(),
@@ -202,6 +227,12 @@ describe('WaveformEditor', () => {
         vi.clearAllMocks();
     });
 
+    afterEach(() => {
+        restore_property_descriptor(HTMLCanvasElement.prototype, 'getContext', original_canvas_get_context_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientWidth', original_client_width_descriptor);
+        restore_property_descriptor(HTMLElement.prototype, 'clientHeight', original_client_height_descriptor);
+    });
+
     it('should render without crashing', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform zoom')).toBeInTheDocument();
@@ -222,9 +253,62 @@ describe('WaveformEditor', () => {
         expect(screen.getByLabelText('Waveform editor')).toBeInTheDocument();
     });
 
+    it('should request waveform peaks through the AudioEngine use case', () => {
+        const canvasContext = {
+            scale: vi.fn(),
+            fillRect: vi.fn(),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            closePath: vi.fn(),
+            fill: vi.fn(),
+            setLineDash: vi.fn(),
+            fillText: vi.fn(),
+        };
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+            configurable: true,
+            value: vi.fn((contextId: string) => {
+                if (contextId === '2d') {
+                    return canvasContext;
+                }
+                return null;
+            }),
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 127,
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+            configurable: true,
+            get: () => 48,
+        });
+
+        render(<WaveformEditor {...defaultProps} />);
+
+        expect(vi.mocked(getCachedAudioBufferWaveformPeaks)).toHaveBeenCalledWith({
+            bufferId: 'clip-1',
+            numBins: 127,
+        });
+    });
+
     it('should have correct aria-label for canvas', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Waveform editor')).toBeInTheDocument();
+    });
+
+    it('should add manual warp marker through the Arrangement use case on double click', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
+
+        expect(vi.mocked(addManualWarpMarker)).toHaveBeenCalledWith({ clipId: 'clip-1', beat: 2 });
     });
 
     it('should run a waveform context menu action and close the menu', () => {
@@ -239,5 +323,52 @@ describe('WaveformEditor', () => {
 
         expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-1');
         expect(screen.queryByRole('menuitem', { name: 'Normalize' })).not.toBeInTheDocument();
+    });
+
+    it('should commit marker drag undo on pointer up', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        fireEvent.pointerUp(canvas, { pointerId: 7 });
+
+        expect(vi.mocked(moveWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1', 2.1);
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+            clipId: 'clip-1',
+            markerId: 'm1',
+            beforeOriginalBeat: 0.5,
+            beforeWarpedBeat: 1,
+        });
+    });
+
+    it('should commit marker drag undo on pointer cancel', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 0.5, warpedBeat: 1 }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        const canvas = screen.getByLabelText('Waveform editor');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, { clientX: 40, pointerId: 7 });
+        fireEvent.pointerMove(canvas, { clientX: 84, pointerId: 7 });
+        fireEvent.pointerCancel(canvas, { pointerId: 7 });
+
+        expect(vi.mocked(commitWarpMarkerBeatDrag)).toHaveBeenCalledWith({
+            clipId: 'clip-1',
+            markerId: 'm1',
+            beforeOriginalBeat: 0.5,
+            beforeWarpedBeat: 1,
+        });
     });
 });

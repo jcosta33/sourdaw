@@ -1,0 +1,99 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+    cache_audio_buffer: vi.fn(),
+    decode_audio_data: vi.fn(),
+    get_audio_context: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: mocks.cache_audio_buffer,
+    getAudioContext: mocks.get_audio_context,
+}));
+
+function create_audio_buffer(): AudioBuffer {
+    const channel_data = new Float32Array([0, 0.25, -0.25, 0]);
+    return {
+        copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
+            destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
+        },
+        copyToChannel: (source, _channel_number, start_in_channel = 0) => {
+            channel_data.set(source, start_in_channel);
+        },
+        duration: channel_data.length / 48_000,
+        getChannelData: () => channel_data,
+        length: channel_data.length,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+    };
+}
+
+describe('decodeDawProjectAssets', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('should decode audio assets and cache buffers through the AudioEngine use case', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        const buffer = create_audio_buffer();
+        mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
+        mocks.decode_audio_data.mockResolvedValue(buffer);
+
+        const result = await decodeDawProjectAssets(new Map([['audio/drum-loop.wav', new Uint8Array([1, 2, 3])]]));
+
+        expect(result.failedPaths).toEqual([]);
+        expect(result.bufferIdsByPath).toEqual(
+            new Map([['audio/drum-loop.wav', 'audio-11111111-1111-4111-8111-111111111111']])
+        );
+        expect(mocks.cache_audio_buffer).toHaveBeenCalledWith({
+            buffer,
+            bufferId: 'audio-11111111-1111-4111-8111-111111111111',
+        });
+    });
+
+    it('should return empty maps without decoding or caching when input has no assets', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
+
+        const result = await decodeDawProjectAssets(new Map());
+
+        expect(result.bufferIdsByPath).toEqual(new Map());
+        expect(result.failedPaths).toEqual([]);
+        expect(mocks.decode_audio_data).not.toHaveBeenCalled();
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
+    });
+
+    it('should mark every asset as failed when no audio context exists', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        mocks.get_audio_context.mockReturnValue(null);
+
+        const result = await decodeDawProjectAssets(
+            new Map([
+                ['audio/drums.wav', new Uint8Array([1])],
+                ['audio/bass.wav', new Uint8Array([2])],
+            ])
+        );
+
+        expect(result.bufferIdsByPath).toEqual(new Map());
+        expect(result.failedPaths).toEqual(['audio/drums.wav', 'audio/bass.wav']);
+        expect(mocks.decode_audio_data).not.toHaveBeenCalled();
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
+    });
+
+    it('should report decode failures without caching failed buffers', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
+        mocks.decode_audio_data.mockRejectedValue(new Error('decode failed'));
+
+        const result = await decodeDawProjectAssets(new Map([['audio/broken.wav', new Uint8Array([9])]]));
+
+        expect(result.bufferIdsByPath).toEqual(new Map());
+        expect(result.failedPaths).toEqual(['audio/broken.wav']);
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
+    });
+});

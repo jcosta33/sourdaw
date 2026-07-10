@@ -1,8 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack, getTrackStoreState, removeTrack } from '#/modules/Arrangement/useCases';
 import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav, cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -44,7 +43,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
             notifyUser('Stem separation failed: clip has no audio buffer', 'error');
             throw new Error('Clip has no audio buffer');
         }
-        const sourceBuffer = audioBufferCache.get(clip.audioBufferId);
+        const sourceBuffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
         if (!sourceBuffer) {
             notifyUser('Stem separation failed: audio buffer not found in cache', 'error');
             throw new Error('Audio buffer not found in cache');
@@ -74,8 +73,7 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
                 if (!stemTrack) {
                     continue;
                 }
-                const stemBufferId = crypto.randomUUID();
-                audioBufferCache.set(stemBufferId, stemBuffer);
+                const stemBufferId = cacheAudioBuffer({ buffer: stemBuffer });
                 addClip({
                     trackId: stemTrack.id,
                     startBeat: clip.startBeat,

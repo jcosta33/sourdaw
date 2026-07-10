@@ -26,7 +26,7 @@ import {
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores';
+import { toggleAiHistoryPanel } from '#/modules/AiRuntime/useCases';
 
 import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
 
@@ -244,7 +244,9 @@ export const PromptBar = (): ReactElement => {
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={toggleAiHistoryPanel}
+                    onClick={() => {
+                        toggleAiHistoryPanel();
+                    }}
                     title="AI action history"
                     aria-label="Toggle AI action history"
                     type="button"

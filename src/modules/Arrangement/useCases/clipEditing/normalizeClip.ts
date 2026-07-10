@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -14,7 +14,7 @@ export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', 
         if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             continue;
         }
-        const buffer = audioBufferCache.get(clip.audioBufferId);
+        const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
         if (!buffer) {
             return;
         }

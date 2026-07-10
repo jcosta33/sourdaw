@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { audioToMidi } from '../audioToMidi';
-
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(() => ({ id: 'new-midi-clip' })),
     getAllTracks: vi.fn(),
-    audioBufferCacheGet: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
     addMidiNote: vi.fn(),
     getTransportState: vi.fn(),
     executeAppAction: vi.fn(),
@@ -16,8 +14,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: mocks.getAllTracks,
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { get: mocks.audioBufferCacheGet },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -31,6 +29,10 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+
+import { audioToMidi } from '../audioToMidi';
 
 const SAMPLE_RATE = 44100;
 const HOP_SIZE = 512;
@@ -78,10 +80,11 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
             .mockReturnValueOnce([audioTrack]) // resolveMidiTrackId: existing-track check
             .mockReturnValueOnce([audioTrack]) // resolveMidiTrackId: idsBefore snapshot
             .mockReturnValue([audioTrack, createdTrack]); // after dispatch + later reads
-        mocks.audioBufferCacheGet.mockReturnValue(loudBuffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
 
         audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.executeAppAction).toHaveBeenCalledWith({
             type: 'addTrack',
             payload: { name: 'Drum (MIDI)', kind: 'midi' },
@@ -96,10 +99,11 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
         const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
         const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
         mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.audioBufferCacheGet.mockReturnValue(loudBuffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
 
         audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 't1' }));
     });
@@ -109,10 +113,11 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
         const audioTrack = { id: 't1', kind: 'audio', clips: [audioClip] };
         // Dispatch is a no-op (e.g. uninitialised store): no new MIDI track ever appears.
         mocks.getAllTracks.mockReturnValue([audioTrack]);
-        mocks.audioBufferCacheGet.mockReturnValue(loudBuffer());
+        mocks.getCachedAudioBuffer.mockReturnValue(loudBuffer());
 
         audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 });
 
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.executeAppAction).toHaveBeenCalled();
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.addMidiNote).not.toHaveBeenCalled();
@@ -141,9 +146,10 @@ describe('audioToMidi pitched mode (clamped pitch-window path coverage)', () => 
         const audioClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Tone' };
         const midiTrack = { id: 't1', kind: 'midi', clips: [audioClip] };
         mocks.getAllTracks.mockReturnValue([midiTrack]);
-        mocks.audioBufferCacheGet.mockReturnValue(buffer);
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
 
         expect(() => audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).not.toThrow();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.addMidiNote).toHaveBeenCalled();
         // The window never reads out of bounds, so every emitted pitch is a valid MIDI value.
         for (const call of mocks.addMidiNote.mock.calls) {

@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip } from '../models/Track';
@@ -14,7 +14,7 @@ export function snapSplitBeatToZeroCrossing(clip: Clip, splitBeat: number): numb
         return splitBeat;
     }
 
-    const buffer = audioBufferCache.get(clip.audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
     if (!buffer) {
         return splitBeat;
     }

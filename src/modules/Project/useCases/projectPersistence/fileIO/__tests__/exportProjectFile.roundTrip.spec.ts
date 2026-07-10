@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
+import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
+import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { exportProjectFile } from '../exportProjectFile';
 
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
@@ -14,11 +17,11 @@ import { exportProjectFile } from '../exportProjectFile';
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../../arrangement/helpers', () => ({ syncCurrentArrangementToStore: vi.fn() }));
+vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { exportBuffers: vi.fn().mockResolvedValue({}) },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
 }));
 
 function written(): ProjectData {
@@ -28,6 +31,9 @@ function written(): ProjectData {
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
         vi.mocked(downloadProjectFile).mockClear();
+        vi.mocked(notifyUser).mockClear();
+        vi.mocked(exportCachedAudioBuffers).mockClear();
+        vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
         trackStore.set({
             tracks: [
                 normalizeTrack({
@@ -64,12 +70,14 @@ describe('exportProjectFile round-trip shape', () => {
             pitchBendByClipId: {},
         });
         transportStore.set({ ...transportStore.value!, tempo: 99 });
+        arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
 
     afterEach(() => {
         trackStore.set({ tracks: [], selectedTrackId: null });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         transportStore.set({ ...defaultTransportState });
+        arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
 
     it('writes the serialized bufferId/sampleStartBeat — not the runtime audioBufferId', async () => {
@@ -92,5 +100,140 @@ describe('exportProjectFile round-trip shape', () => {
     it('writes the live transport tempo into the export', async () => {
         await exportProjectFile();
         expect(written().transport.tempo).toBe(99);
+    });
+
+    it('should export cached audio buffers collected from current tracks and all arrangements', async () => {
+        const current_track = normalizeTrack({
+            id: 'track-current',
+            name: 'Current',
+            kind: 'audio',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-current-freeze' },
+            clips: [
+                {
+                    id: 'clip-current',
+                    trackId: 'track-current',
+                    name: 'current take',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio',
+                    audioBufferId: 'buf-current-clip',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                },
+            ],
+            alternatives: [
+                {
+                    id: 'alt-current',
+                    name: 'Current Alt',
+                    clips: [
+                        {
+                            id: 'clip-current-alt',
+                            trackId: 'track-current',
+                            name: 'current alt',
+                            startBeat: 4,
+                            endBeat: 8,
+                            type: 'audio',
+                            audioBufferId: 'buf-current-alt',
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '#fff',
+                            locked: false,
+                            muted: false,
+                        },
+                    ],
+                },
+            ],
+        });
+        const arrangement_track = normalizeTrack({
+            id: 'track-arrangement',
+            name: 'Arrangement',
+            kind: 'audio',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-arrangement-freeze' },
+            clips: [
+                {
+                    id: 'clip-arrangement',
+                    trackId: 'track-arrangement',
+                    name: 'arrangement take',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio',
+                    audioBufferId: 'buf-arrangement-clip',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                },
+            ],
+            alternatives: [
+                {
+                    id: 'alt-arrangement',
+                    name: 'Arrangement Alt',
+                    clips: [
+                        {
+                            id: 'clip-arrangement-alt',
+                            trackId: 'track-arrangement',
+                            name: 'arrangement alt',
+                            startBeat: 4,
+                            endBeat: 8,
+                            type: 'audio',
+                            audioBufferId: 'buf-arrangement-alt',
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '#fff',
+                            locked: false,
+                            muted: false,
+                        },
+                    ],
+                },
+            ],
+        });
+        const cached_buffer = { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] };
+        vi.mocked(exportCachedAudioBuffers).mockResolvedValue({
+            'buf-current-clip': cached_buffer,
+            'buf-arrangement-alt': cached_buffer,
+        });
+        trackStore.set({ tracks: [current_track], selectedTrackId: null });
+        arrangementStore.set({
+            arrangements: [
+                {
+                    id: 'arrangement-a',
+                    name: 'Arrangement A',
+                    tracks: { tracks: [arrangement_track], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                },
+            ],
+            activeArrangementId: 'arrangement-a',
+        });
+
+        await exportProjectFile();
+
+        const expected_buffer_ids = [
+            'buf-current-freeze',
+            'buf-current-clip',
+            'buf-current-alt',
+            'buf-arrangement-freeze',
+            'buf-arrangement-clip',
+            'buf-arrangement-alt',
+        ];
+        const export_input = vi.mocked(exportCachedAudioBuffers).mock.calls[0]?.[0];
+        expect(export_input?.bufferIds).toEqual(expect.arrayContaining(expected_buffer_ids));
+        expect(export_input?.bufferIds).toHaveLength(expected_buffer_ids.length);
+        expect(written().audioBuffers).toEqual({
+            'buf-current-clip': cached_buffer,
+            'buf-arrangement-alt': cached_buffer,
+        });
+        expect(notifyUser).toHaveBeenCalledWith(
+            '4 audio files could not be bundled with the export — the project may not play back correctly on another machine.',
+            'warning'
+        );
     });
 });

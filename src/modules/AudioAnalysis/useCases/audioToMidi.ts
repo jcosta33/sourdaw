@@ -1,5 +1,5 @@
 import { addClip, getAllTracks } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 
@@ -107,7 +107,7 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     }
 
     const bufferId = clip.audioBufferId ?? clipId;
-    const buffer = audioBufferCache.get(bufferId);
+    const buffer = getCachedAudioBuffer({ bufferId });
     if (!buffer) {
         return;
     }

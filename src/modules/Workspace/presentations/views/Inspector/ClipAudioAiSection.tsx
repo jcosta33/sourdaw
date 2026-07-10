@@ -15,7 +15,7 @@ import {
     summarizeFeatures,
     audioToMidi,
 } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../../models/TrackViewTypes';
@@ -35,7 +35,9 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
     const [analysisResult, setAnalysisResult] = useState<string | null>(null);
     const [pitchResult, setPitchResult] = useState<string | null>(null);
 
-    const hasDenoised = clip.audioBufferId ? audioBufferCache.has(`${clip.audioBufferId}-denoised`) : false;
+    const hasDenoised = clip.audioBufferId
+        ? Boolean(getCachedAudioBuffer({ bufferId: `${clip.audioBufferId}-denoised` }))
+        : false;
 
     const handleDenoise = async (): Promise<void> => {
         setIsDenoising(true);

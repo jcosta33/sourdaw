@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => {
         removeMarker: vi.fn(),
         toggleMarkerLock: vi.fn(),
         setStretchMode: vi.fn(),
+        updateWarpMarkerBeat: vi.fn(),
+        commitWarpMarkerBeatDrag: vi.fn(),
         setDefaultAlgorithm: vi.fn(),
         getWaveformPeaks: vi.fn(() => new Float32Array(200).fill(0.3)),
         trackStoreValue: {
@@ -113,7 +115,15 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,
-        setStretchMode: (...args: unknown[]) => mocks.setStretchMode(...args),
+        setStretchMode: (...args: unknown[]) => {
+            mocks.setStretchMode(...args);
+        },
+        updateWarpMarkerBeat: (...args: unknown[]) => {
+            mocks.updateWarpMarkerBeat(...args);
+        },
+        commitWarpMarkerBeatDrag: (...args: unknown[]) => {
+            mocks.commitWarpMarkerBeatDrag(...args);
+        },
     };
 });
 
@@ -267,6 +277,7 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         const canvas = screen.getByTestId('elastic-waveform-canvas');
         canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
 
         fireEvent.pointerDown(canvas, {
             clientX: 40,
@@ -277,6 +288,97 @@ describe('ElasticEditorPanel', () => {
         expect(mocks.addManualMarker).not.toHaveBeenCalled();
         expect(mocks.removeMarker).not.toHaveBeenCalled();
         expect(mocks.toggleMarkerLock).not.toHaveBeenCalled();
+    });
+
+    it('should update warpedBeat through the Arrangement use case during snapped marker drag', () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, {
+            clientX: 40,
+            pointerId: 4,
+        });
+        fireEvent.pointerMove(canvas, {
+            clientX: 69,
+            pointerId: 4,
+            ctrlKey: true,
+        });
+        fireEvent.pointerUp(canvas, {
+            pointerId: 4,
+        });
+
+        expect(mocks.updateWarpMarkerBeat).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            field: 'warpedBeat',
+            beat: 1.75,
+        });
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            beforeOriginalBeat: 1,
+            beforeWarpedBeat: 1,
+        });
+    });
+
+    it('should update originalBeat through the Arrangement use case during alt marker drag', () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        canvas.releasePointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, {
+            clientX: 40,
+            pointerId: 4,
+            altKey: true,
+        });
+        fireEvent.pointerMove(canvas, {
+            clientX: 72,
+            pointerId: 4,
+            altKey: true,
+        });
+        fireEvent.pointerUp(canvas, {
+            pointerId: 4,
+        });
+
+        expect(mocks.updateWarpMarkerBeat).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            field: 'originalBeat',
+            beat: 1.8,
+        });
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            beforeOriginalBeat: 1,
+            beforeWarpedBeat: 1,
+        });
+    });
+
+    it('should commit marker drag undo when pointer capture is canceled', () => {
+        render(<ElasticEditorPanel />);
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+
+        fireEvent.pointerDown(canvas, {
+            clientX: 40,
+            pointerId: 4,
+        });
+        fireEvent.pointerMove(canvas, {
+            clientX: 69,
+            pointerId: 4,
+        });
+        fireEvent.pointerCancel(canvas, {
+            pointerId: 4,
+        });
+
+        expect(mocks.commitWarpMarkerBeatDrag).toHaveBeenCalledWith({
+            clipId: 'c1',
+            markerId: 'm1',
+            beforeOriginalBeat: 1,
+            beforeWarpedBeat: 1,
+        });
     });
 
     it('invokes quantizeTransients on Quantize button when markers exist and detection ran', () => {

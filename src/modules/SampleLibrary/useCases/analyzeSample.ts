@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { persistSamples } from '../repositories/libraryPersistence/persistSamples';
 import { performMusicalAnalysis } from '../services/analysisService';
@@ -30,7 +30,7 @@ export async function analyzeSample(sampleId: string): Promise<void> {
     try {
         // Only analyze if the audio buffer is actually available in cache.
         // A silent dummy buffer would produce meaningless analysis results.
-        const buffer = audioBufferCache.get(sample.id);
+        const buffer = getCachedAudioBuffer({ bufferId: sample.id });
         if (!buffer) {
             return;
         }

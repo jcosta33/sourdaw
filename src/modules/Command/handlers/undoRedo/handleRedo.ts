@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { redo } from '../../useCases/undoRedo';
+import { redo } from '../../useCases/redo';
 
 export const handleRedo = createHandler<'redo'>({
     execute: () => {

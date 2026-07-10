@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 
-import { isNoteRepeating, startNoteRepeat, stopNoteRepeat } from '../noteRepeat';
+import { isNoteRepeating } from '../isNoteRepeating';
+import { startNoteRepeat } from '../startNoteRepeat';
+import { stopNoteRepeat } from '../stopNoteRepeat';
 import { triggerToasterPad } from '../triggerPad';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({

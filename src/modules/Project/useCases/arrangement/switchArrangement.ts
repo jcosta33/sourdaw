@@ -4,7 +4,8 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { arrangementStore } from '../../stores/arrangementStore';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-import { loadSnapshot, syncCurrentArrangementToStore } from './helpers';
+import { loadSnapshot } from './loadSnapshot';
+import { syncCurrentArrangementToStore } from './syncCurrentArrangementToStore';
 
 export function switchArrangement(id: string): void {
     const state = arrangementStore.value;

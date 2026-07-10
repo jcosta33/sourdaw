@@ -71,27 +71,3 @@ export const defaultSynthParams: SynthParams = {
 
 export type NativeDrumKit = NonNullable<ReturnType<typeof getDrumKitByIdFromFactory>>;
 export type NativeDrumKitVoice = NativeDrumKit['voices'][number];
-
-export function cloneSynthParams(params: DrumKitVoice['params']): SynthParams {
-    return { ...params };
-}
-
-export function toDrumKitVoice(voice: NativeDrumKitVoice): DrumKitVoice {
-    return {
-        name: voice.name,
-        pitchRange: [voice.pitchRange[0], voice.pitchRange[1]],
-        params: cloneSynthParams(voice.params),
-    };
-}
-
-export function toDrumKit(kit: NativeDrumKit | null): DrumKit | null {
-    if (!kit) {
-        return null;
-    }
-
-    return {
-        id: kit.id,
-        name: kit.name,
-        voices: kit.voices.map(toDrumKitVoice),
-    };
-}

@@ -5,7 +5,8 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type AutomationPoint } from '../../models/Automation';
 
 import { getAutomationRecordingDependencies } from './getAutomationRecordingDependencies';
-import { RECORDING_MODES, activeRecording, pendingPoints, touchActive, makeKey } from './recordingSessionState';
+import { makeKey } from './makeKey';
+import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { TrackContextMenu } from '../TrackContextMenu';
 
 // Mock external dependencies
@@ -47,7 +48,7 @@ vi.mock('../../../useCases/importAudioClipToTrack', () => ({
     importAudioClipToTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackTemplate', () => ({
+vi.mock('../../../useCases/saveTrackAsTemplate', () => ({
     saveTrackAsTemplate: vi.fn(),
 }));
 
@@ -202,5 +203,19 @@ describe('TrackContextMenu', () => {
         const track = screen.getByTestId('track');
         fireEvent.contextMenu(track);
         expect(screen.getByText(/Input Monitor:/)).toBeInTheDocument();
+    });
+
+    it('should save the current track as a template', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div data-testid="track">Track Content</div>
+            </TrackContextMenu>
+        );
+        const track = screen.getByTestId('track');
+        fireEvent.contextMenu(track);
+
+        fireEvent.click(screen.getByText('Save as Template'));
+
+        expect(vi.mocked(saveTrackAsTemplate)).toHaveBeenCalledWith('track1', 'Test Track');
     });
 });

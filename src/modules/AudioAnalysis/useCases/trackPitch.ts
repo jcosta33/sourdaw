@@ -4,7 +4,7 @@
 
 import { PitchDetector } from 'pitchy';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 import { type PitchResult, type PitchTrackingOptions } from './pitchDetection';
@@ -27,7 +27,7 @@ function freqToNoteName(freq: number): string {
 export function trackPitch(audioBufferId: string, options: PitchTrackingOptions = {}): PitchResult[] {
     const { windowSize = 2048, hopSize = 512, clarityThreshold = 0.8, minVolumeDb = -40 } = options;
 
-    const buffer = audioBufferCache.get(audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: audioBufferId });
     if (!buffer) {
         return [];
     }

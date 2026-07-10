@@ -3,12 +3,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
-import { setScrollX } from '../../../stores/timelineViewStore';
 import { TimelineMinimap } from '../TimelineMinimap';
+
+const timelineMinimapUseCaseMocks = vi.hoisted(() => ({
+    setTimelineMinimapScrollX: vi.fn(),
+    setTimelineMinimapAutoScroll: vi.fn(),
+}));
+
+const transportStoreMock = vi.hoisted(() => ({
+    value: { isPlaying: false },
+}));
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
+}));
+
+vi.mock('#/modules/Transport/stores', () => ({
+    transportStore: transportStoreMock,
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
@@ -28,6 +40,14 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     setScrollY: vi.fn(),
     setScrollX: vi.fn(),
     setAutoScroll: vi.fn(),
+}));
+
+vi.mock('../../../useCases/setTimelineMinimapScrollX', () => ({
+    setTimelineMinimapScrollX: timelineMinimapUseCaseMocks.setTimelineMinimapScrollX,
+}));
+
+vi.mock('../../../useCases/setTimelineMinimapAutoScroll', () => ({
+    setTimelineMinimapAutoScroll: timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll,
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
@@ -52,6 +72,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('TimelineMinimap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        transportStoreMock.value = { isPlaying: false };
         global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
     });
 
@@ -94,6 +115,31 @@ describe('TimelineMinimap', () => {
         expect(minimap).toBeInTheDocument();
     });
 
+    it('should route outside-viewport click jumps through the minimap scroll use case', () => {
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        vi.spyOn(slider, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 28));
+
+        fireEvent.mouseDown(slider, { button: 0, clientX: 100 });
+
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
+        const [[scrollX]] = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls;
+        expect(scrollX).toBeCloseTo(284, 6);
+    });
+
+    it('should route viewport drags through the minimap scroll use case', () => {
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        vi.spyOn(slider, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 28));
+
+        fireEvent.mouseDown(slider, { button: 0, clientX: 10 });
+        fireEvent.mouseMove(document, { clientX: 100 });
+
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
+        const [[scrollX]] = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls;
+        expect(scrollX).toBeCloseTo(345.6, 6);
+    });
+
     it('should render with correct height', () => {
         const { container } = renderWithTooltip(<TimelineMinimap />);
         expect(container.firstChild).toHaveStyle({ height: '28px' });
@@ -110,13 +156,36 @@ describe('TimelineMinimap', () => {
 
         // scrollX=0, pixelsPerBeat=12, step=4 beats => 48px
         fireEvent.keyDown(slider, { key: 'ArrowRight' });
-        expect(setScrollX).toHaveBeenLastCalledWith(48);
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(48);
 
         fireEvent.keyDown(slider, { key: 'ArrowLeft' });
-        expect(setScrollX).toHaveBeenLastCalledWith(-48);
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(-48);
 
         fireEvent.keyDown(slider, { key: 'Home' });
-        expect(setScrollX).toHaveBeenLastCalledWith(0);
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenLastCalledWith(0);
+    });
+
+    it('should route playback auto-scroll disabling through the minimap auto-scroll use case', () => {
+        transportStoreMock.value = { isPlaying: true };
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+
+        fireEvent.keyDown(slider, { key: 'ArrowRight' });
+
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).toHaveBeenCalledTimes(1);
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).toHaveBeenCalledWith(false);
+    });
+
+    it('should route mouse playback auto-scroll disabling through the minimap auto-scroll use case', () => {
+        transportStoreMock.value = { isPlaying: true };
+        renderWithTooltip(<TimelineMinimap />);
+        const slider = screen.getByRole('slider');
+        vi.spyOn(slider, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 200, 28));
+
+        fireEvent.mouseDown(slider, { button: 0, clientX: 10 });
+
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).toHaveBeenCalledTimes(1);
+        expect(timelineMinimapUseCaseMocks.setTimelineMinimapAutoScroll).toHaveBeenCalledWith(false);
     });
 
     it('detaches global drag listeners when unmounted mid-drag (no leak)', () => {

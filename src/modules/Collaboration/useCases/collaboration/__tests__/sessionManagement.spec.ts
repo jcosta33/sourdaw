@@ -2,9 +2,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createSession, leaveSession, onPresence } from '../sessionManagement';
 
+type TestClip = {
+    id: string;
+    assetHash?: string;
+    audioBufferId?: string;
+};
+
+type TestTrack = {
+    clips: TestClip[];
+};
+
+type TestTrackStoreState = {
+    tracks: TestTrack[];
+};
+
+type AssetTransferCallbacks = {
+    onAssetAvailable?: (hash: string) => void;
+};
+
 const mocks = vi.hoisted(() => {
     const automergeStart = vi.fn();
     const collaborationStoreValue = { value: {} as Record<string, unknown> };
+    const trackStoreValue: { value: TestTrackStoreState | null } = { value: { tracks: [] } };
+    const assetTransferCallbacks: AssetTransferCallbacks = {};
+    const assetTransferGetAsset = vi.fn<(hash: string) => Blob | null | undefined>();
+    const audioContextDecodeAudioData = vi.fn<(audioData: ArrayBuffer) => Promise<AudioBuffer>>();
+    const getAudioContext = vi.fn(() => ({
+        decodeAudioData: audioContextDecodeAudioData,
+    }));
+    const getCachedAudioBuffer = vi.fn<(input: { bufferId: string }) => AudioBuffer | null>();
+    const cacheAudioBuffer = vi.fn<(input: { buffer: AudioBuffer; bufferId?: string }) => string>();
     // Write-through set so multi-step handler flows (which read-then-write the
     // store) compose; records every call for assertions.
     const collaborationStoreSet = vi.fn((next: Record<string, unknown>) => {
@@ -42,9 +69,14 @@ const mocks = vi.hoisted(() => {
                 handlePeerMessage: vi.fn(),
             };
         }),
-        AssetTransfer: vi.fn(function AssetTransferMock(this: Record<string, unknown>) {
+        AssetTransfer: vi.fn(function AssetTransferMock(
+            this: Record<string, unknown>,
+            _peerManager: unknown,
+            callbacks: AssetTransferCallbacks
+        ) {
+            assetTransferCallbacks.onAssetAvailable = callbacks.onAssetAvailable;
             Object.assign(this, {
-                getAsset: vi.fn(),
+                getAsset: assetTransferGetAsset,
                 handleMessage: vi.fn(),
             });
         }),
@@ -62,6 +94,13 @@ const mocks = vi.hoisted(() => {
         branchStoreValue: { value: { branches: [] } },
         branchStoreSubscribe: vi.fn(() => vi.fn()),
         branchStoreSet: vi.fn(),
+        trackStoreValue,
+        assetTransferCallbacks,
+        assetTransferGetAsset,
+        audioContextDecodeAudioData,
+        getAudioContext,
+        getCachedAudioBuffer,
+        cacheAudioBuffer,
     };
 });
 
@@ -94,6 +133,21 @@ vi.mock('../../../stores/collaborationStore', () => ({
     },
 }));
 
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioContext: mocks.getAudioContext,
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
+}));
+
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     setupProjectionBridge: mocks.setupProjectionBridge,
@@ -112,10 +166,54 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     },
 }));
 
+function createTestAudioBuffer(): AudioBuffer {
+    const channel_data = new Float32Array(128);
+    return {
+        copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
+            destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
+        },
+        copyToChannel: (source, _channel_number, start_in_channel = 0) => {
+            channel_data.set(source, start_in_channel);
+        },
+        duration: channel_data.length / 48_000,
+        getChannelData: () => channel_data,
+        length: channel_data.length,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+    };
+}
+
+async function flushAssetResolution(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+}
+
+function getAssetAvailableCallback(): (hash: string) => void {
+    const callback = mocks.assetTransferCallbacks.onAssetAvailable;
+    if (!callback) {
+        throw new Error('Expected AssetTransfer onAssetAvailable callback to be captured');
+    }
+    return callback;
+}
+
 describe('collaboration sessionManagement', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.collaborationStoreValue.value = {};
+        mocks.trackStoreValue.value = { tracks: [] };
+        mocks.branchStoreValue.value = { branches: [] };
+        mocks.assetTransferCallbacks.onAssetAvailable = undefined;
+        mocks.assetTransferGetAsset.mockReset();
+        mocks.audioContextDecodeAudioData.mockReset();
+        mocks.getAudioContext.mockReset();
+        mocks.getCachedAudioBuffer.mockReset();
+        mocks.cacheAudioBuffer.mockReset();
+        mocks.getAudioContext.mockReturnValue({
+            decodeAudioData: mocks.audioContextDecodeAudioData,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        mocks.cacheAudioBuffer.mockImplementation(({ bufferId }) => bufferId ?? 'generated-test-buffer');
     });
 
     it('createSession initializes sub-systems and updates store', () => {
@@ -154,6 +252,59 @@ describe('collaboration sessionManagement', () => {
                 peers: [],
             })
         );
+    });
+
+    describe('asset resolution', () => {
+        it('should decode a matching transferred asset and cache it through AudioEngine use cases', async () => {
+            const decodedAudioBuffer = createTestAudioBuffer();
+            const assetBlob = new Blob([new Uint8Array([1, 2, 3])]);
+            mocks.trackStoreValue.value = {
+                tracks: [
+                    {
+                        clips: [
+                            { id: 'clip-1', assetHash: 'asset-hash-1', audioBufferId: 'buffer-1' },
+                            { id: 'clip-2', assetHash: 'other-asset-hash', audioBufferId: 'buffer-2' },
+                        ],
+                    },
+                ],
+            };
+            mocks.assetTransferGetAsset.mockReturnValue(assetBlob);
+            mocks.audioContextDecodeAudioData.mockResolvedValue(decodedAudioBuffer);
+
+            createSession('Host');
+            getAssetAvailableCallback()('asset-hash-1');
+            await flushAssetResolution();
+
+            expect(mocks.assetTransferGetAsset).toHaveBeenCalledWith('asset-hash-1');
+            expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1' });
+            expect(mocks.audioContextDecodeAudioData).toHaveBeenCalledTimes(1);
+            expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
+                bufferId: 'buffer-1',
+                buffer: decodedAudioBuffer,
+            });
+        });
+
+        it('should skip decoding when the matching asset buffer is already cached', async () => {
+            const cachedAudioBuffer = createTestAudioBuffer();
+            const assetBlob = new Blob([new Uint8Array([1, 2, 3])]);
+            mocks.trackStoreValue.value = {
+                tracks: [
+                    {
+                        clips: [{ id: 'clip-1', assetHash: 'asset-hash-1', audioBufferId: 'buffer-1' }],
+                    },
+                ],
+            };
+            mocks.assetTransferGetAsset.mockReturnValue(assetBlob);
+            mocks.getCachedAudioBuffer.mockReturnValue(cachedAudioBuffer);
+
+            createSession('Host');
+            getAssetAvailableCallback()('asset-hash-1');
+            await flushAssetResolution();
+
+            expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1' });
+            expect(mocks.audioContextDecodeAudioData).not.toHaveBeenCalled();
+            expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
     });
 
     describe('incoming peer-message handling (security)', () => {

@@ -8,8 +8,8 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
 import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
-import { trackStore, timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores';
-import { setAutomationMode } from '#/modules/Arrangement/useCases';
+import { trackStore, timelineViewStore } from '#/modules/Arrangement/stores';
+import { scrollTimelineViewportHorizontallyFromWheel, setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases';
 
@@ -154,9 +154,11 @@ export const AutomationBottomPanel = (): ReactElement => {
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';
 
     const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-        if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-            scrollTimeline(event.deltaX || event.deltaY);
-        }
+        scrollTimelineViewportHorizontallyFromWheel({
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            shiftKey: event.shiftKey,
+        });
     };
 
     const handleAddLane = (paramId: string, paramName: string) => {

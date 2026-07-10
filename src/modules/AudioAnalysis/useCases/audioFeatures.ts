@@ -10,7 +10,7 @@
 
 import Meyda from 'meyda';
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ export function extractFeatures(audioBufferId: string, options: AnalysisOptions 
     // bufferSize still yields output instead of an exception.
     const bufferSize = toPowerOfTwo(options.bufferSize ?? 2048);
 
-    const buffer = audioBufferCache.get(audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: audioBufferId });
     if (!buffer) {
         return [];
     }

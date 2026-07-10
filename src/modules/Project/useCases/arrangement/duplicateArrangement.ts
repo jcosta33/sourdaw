@@ -4,7 +4,8 @@ import { arrangementStore } from '../../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../../stores/arrangementStore';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-import { loadSnapshot, syncCurrentArrangementToStore } from './helpers';
+import { loadSnapshot } from './loadSnapshot';
+import { syncCurrentArrangementToStore } from './syncCurrentArrangementToStore';
 
 export function duplicateArrangement(id: string, newName?: string): void {
     const state = arrangementStore.value;

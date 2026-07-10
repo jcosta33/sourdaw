@@ -1,8 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
 import { addTrack } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -33,13 +31,8 @@ export function newProject(name = 'Untitled Project'): void {
     // fresh project never shares a reference with the module-level default.
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
 
-    addTrack({ name: 'Master', kind: 'master' });
-
-    // Don't auto-select the master track — nothing should be selected on a fresh project
-    const currentTrackState = trackStore.value;
-    if (currentTrackState) {
-        trackStore.set({ ...currentTrackState, selectedTrackId: null });
-    }
+    // Don't auto-select the master track — nothing should be selected on a fresh project.
+    addTrack({ name: 'Master', kind: 'master', select: false });
 
     projectStore.set({
         name,
@@ -56,7 +49,7 @@ export function newProject(name = 'Untitled Project'): void {
         initialized: true,
     });
     removeProjectJson();
-    audioBufferCache.clear();
+    clearCachedAudioBuffers();
     clearUndoHistory();
 
     // Start debounced incremental auto-save for the new project.

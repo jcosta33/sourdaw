@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const silentBuffer = {
     sampleRate: 44100,
@@ -21,29 +21,30 @@ function tonalA3Buffer(): { sampleRate: number; getChannelData: () => Float32Arr
 
 const tonalBuffer = tonalA3Buffer();
 
-// Production imports `audioBufferCache` from `#/modules/AudioEngine/stores`;
-// mocking that exact path is what makes the injected fake buffer visible to
-// the detector (the previous `#/modules/AudioEngine/useCases` mock was inert,
-// so the detector read the real empty store and early-returned before the DSP).
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: vi.fn((id: string) => {
-            if (id === 'silent') {
-                return silentBuffer;
-            }
-            if (id === 'tonalA') {
-                return tonalBuffer;
-            }
-            return null;
-        }),
-    },
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => {
+        if (bufferId === 'silent') {
+            return silentBuffer;
+        }
+        if (bufferId === 'tonalA') {
+            return tonalBuffer;
+        }
+        return null;
+    }),
 }));
+
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { detectKey } from '../keyDetection';
 
 describe('detectKey', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
     it('returns null when the audio buffer is missing', () => {
         expect(detectKey('missing')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
     });
 
     it('returns null on a silent buffer because the Goertzel pass finds no chroma energy', () => {
@@ -51,6 +52,7 @@ describe('detectKey', () => {
         // all-zero signal and produces zero chroma, so the function returns
         // null — proving the DSP executed (not an early store miss).
         expect(detectKey('silent')).toBeNull();
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'silent' });
     });
 
     it('detects pitch class A from a 220 Hz (A3) tone', () => {
@@ -60,5 +62,6 @@ describe('detectKey', () => {
         expect(result).not.toBeNull();
         expect(result?.key).toBe('A');
         expect(result?.confidence).toBeGreaterThan(0);
+        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'tonalA' });
     });
 });

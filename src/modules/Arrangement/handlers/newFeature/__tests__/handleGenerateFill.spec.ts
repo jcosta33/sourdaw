@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
 }));
 
-vi.mock('../../../useCases/fillTransitionGeneration/generation', () => ({
+vi.mock('../../../useCases/fillTransitionGeneration/generateDrumFill', () => ({
     generateDrumFill: mocks.generateDrumFill,
 }));
 

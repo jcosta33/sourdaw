@@ -9,6 +9,7 @@ import {
     type CreateAdjustmentLayerApplierOutput,
     type TrackGainPanApplier,
 } from './adjustmentLayerApplier';
+import { sharedAdjustmentLayerApplierState } from './sharedAdjustmentLayerApplierState';
 
 import type { AdjustmentLayerTickInput } from '../../models/AudioEngineState';
 
@@ -27,17 +28,7 @@ import type { AdjustmentLayerTickInput } from '../../models/AudioEngineState';
  *    the active stack. Inline DSP insertion is deferred (see spec §M2).
  */
 
-type ApplierSingleton = {
-    inner: CreateAdjustmentLayerApplierOutput;
-    userGainByTrack: Map<string, number>;
-    userPanByTrack: Map<string, number>;
-    gainOverridesByTrack: Map<string, Map<string, number>>;
-    panOverridesByTrack: Map<string, Map<string, number>>;
-    batchAppliedRecords: AppliedLayerRecord[];
-    trackStoreUnsubscribe: () => void;
-};
-
-let singleton: ApplierSingleton | null = null;
+type ApplierSingleton = NonNullable<typeof sharedAdjustmentLayerApplierState.singleton>;
 
 function buildSingleton(): ApplierSingleton {
     const userGainByTrack = new Map<string, number>();
@@ -191,10 +182,10 @@ function buildSingleton(): ApplierSingleton {
 }
 
 function ensureSingleton(): ApplierSingleton {
-    if (!singleton) {
-        singleton = buildSingleton();
+    if (!sharedAdjustmentLayerApplierState.singleton) {
+        sharedAdjustmentLayerApplierState.singleton = buildSingleton();
     }
-    return singleton;
+    return sharedAdjustmentLayerApplierState.singleton;
 }
 
 function toEngineTick(records: AppliedLayerRecord[]): AdjustmentLayerTickInput[] {
@@ -235,12 +226,4 @@ export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierO
             audioEngine.resetAdjustmentLayers?.();
         },
     };
-}
-
-export function resetSharedAdjustmentLayerApplierForTest(): void {
-    if (singleton) {
-        singleton.trackStoreUnsubscribe();
-    }
-    singleton = null;
-    adjustmentApplicationStore.set({ applied: [] });
 }

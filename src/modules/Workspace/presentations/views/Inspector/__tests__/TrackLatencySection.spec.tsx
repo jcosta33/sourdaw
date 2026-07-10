@@ -11,7 +11,7 @@ vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/getComp
     getCompensationDelay: () => mockGetCompensationDelay(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/helpers', () => ({
+vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency', () => ({
     getTrackLatency: () => mockGetTrackLatency(),
 }));
 

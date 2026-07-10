@@ -1,6 +1,5 @@
 import { markerStore, takeLaneStore, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -8,7 +7,7 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 import { type ProjectData } from '../../models/ProjectData';
 import { arrangementStore } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
-import { syncCurrentArrangementToStore } from '../arrangement/helpers';
+import { syncCurrentArrangementToStore } from '../arrangement/syncCurrentArrangementToStore';
 
 import { buildDawProjectZip } from './buildDawProjectZip';
 import { serializeMetadataXml } from './serializeMetadataXml';
@@ -53,7 +52,7 @@ export async function exportDawProject(): ExportDawProjectOutput {
     const audioFiles = new Map<string, Uint8Array>();
 
     for (const id of bufferIds) {
-        const buffer = audioBufferCache.get(id);
+        const buffer = getCachedAudioBuffer({ bufferId: id });
         if (!buffer) {
             continue;
         }

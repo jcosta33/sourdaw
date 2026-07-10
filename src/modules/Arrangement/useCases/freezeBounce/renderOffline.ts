@@ -1,5 +1,9 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { buildDeviceChain, getAudioContext, type DeviceNodeEntry } from '#/modules/AudioEngine/useCases';
+import {
+    buildDeviceChain,
+    getAudioContext,
+    getCachedAudioBuffer,
+    type DeviceNodeEntry,
+} from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -86,7 +90,7 @@ export async function renderTrackOffline(
 
         // Schedule content (clips or frozen buffer)
         if (time.frozen && time.frozenBufferId) {
-            const buffer = audioBufferCache.get(time.frozenBufferId);
+            const buffer = getCachedAudioBuffer({ bufferId: time.frozenBufferId });
             if (buffer) {
                 const source = offlineCtx.createBufferSource();
                 source.buffer = buffer;
@@ -134,7 +138,7 @@ export async function renderTrackOffline(
                 }
             } else if (time.kind === 'audio') {
                 for (const clip of time.clips) {
-                    const buffer = audioBufferCache.get(clip.audioBufferId ?? '');
+                    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId ?? '' });
                     if (!buffer) {
                         continue;
                     }

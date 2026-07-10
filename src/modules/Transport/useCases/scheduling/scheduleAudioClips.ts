@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     createBufferSource,
     ensureTrackStrip,
     getAudioContext,
+    getCachedAudioBuffer,
     getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
@@ -17,24 +17,11 @@ import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler';
 
+import { gainNodePool, sessionState } from './audioClipSchedulingState';
+import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
 import { scheduleFrozenTrack } from './scheduleMidiNotes';
 
 const MICRO_FADE_SECONDS = 0.003;
-
-/**
- * §109.1 — Holder-wrapped dedup Set. Hashes for which we have already
- * sent a peer request this session. Prevents spamming requestAsset()
- * every scheduler tick while waiting.
- */
-export const sessionState: { requestedAssets: Set<string> } = {
-    requestedAssets: new Set<string>(),
-};
-
-/**
- * Global pool for GainNodes to prevent main-thread GC allocations
- * during high-frequency audio scheduling ticks.
- */
-const gainNodePool: GainNode[] = [];
 
 function acquireGainNode(ctx: BaseAudioContext): GainNode {
     const node = gainNodePool.pop();
@@ -54,25 +41,6 @@ function releaseGainNode(node: GainNode, ctx: BaseAudioContext): void {
     } catch {
         // node might already be disconnected
     }
-}
-
-/**
- * Reset this module's process-lifetime holders so a stale `gainNodePool`
- * (which grows monotonically and is bound to a now-discarded AudioContext)
- * and a stale `requestedAssets` dedup do not survive an HMR reload or a
- * project switch. Disconnecting pooled nodes drops their reference into the
- * old graph so it can be collected.
- */
-export function disposeAudioClipScheduling(): void {
-    for (const node of gainNodePool) {
-        try {
-            node.disconnect();
-        } catch {
-            // node might already be disconnected
-        }
-    }
-    gainNodePool.length = 0;
-    sessionState.requestedAssets.clear();
 }
 
 // Vite HMR: clear the pool + asset dedup before this module is replaced so a
@@ -132,7 +100,7 @@ export function scheduleAudioClips(
                 continue;
             }
 
-            const buffer = audioBufferCache.get(clip.audioBufferId);
+            const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
             if (!buffer) {
                 const isRecordingClip = clip.audioBufferId.startsWith('rec-');
                 if (!isRecordingClip) {

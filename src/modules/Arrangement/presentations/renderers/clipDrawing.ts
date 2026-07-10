@@ -4,7 +4,7 @@
  * resize handles, fade curves, and loop markers.
  */
 
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
@@ -173,10 +173,13 @@ export const drawClip = (
         ctx.fillText(typeLabel, x + 6, trackY + 23, w - 12);
     }
 
+    const cachedAudioBuffer =
+        clip.type === 'audio' && clip.audioBufferId ? getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : null;
+
     if (clip.type === 'midi' && clip.midiNotes.length > 0) {
         drawMidiNotePreview(ctx, clip, x, trackY, w, trackHeight, padding);
-    } else if (clip.type === 'audio' && clip.audioBufferId && audioBufferCache.has(clip.audioBufferId)) {
-        drawWaveformPeaks(ctx, clip, model, x, trackY, w, trackHeight, padding);
+    } else if (clip.type === 'audio' && clip.audioBufferId && cachedAudioBuffer) {
+        drawWaveformPeaks(ctx, clip, cachedAudioBuffer, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
         drawWaveformHint(ctx, x, trackY, w, trackHeight, padding);
     }
@@ -459,6 +462,7 @@ const drawMidiNotePreview = (
 const drawWaveformPeaks = (
     ctx: CanvasRenderingContext2D,
     clip: ClipRenderModel,
+    buffer: AudioBuffer,
     model: TimelineRenderModel,
     x: number,
     trackY: number,
@@ -477,14 +481,15 @@ const drawWaveformPeaks = (
     const offsetBeats = clip.audioOffsetBeats ?? 0;
     const stretchRatio = clip.stretchRatio ?? 1;
     const clipBeats = clip.endBeat - clip.startBeat;
-    const buffer = audioBufferCache.get(clip.audioBufferId);
     const secondsPerBeat = 60 / model.tempo;
-    const sampleRate = buffer?.sampleRate ?? 44100;
+    const sampleRate = buffer.sampleRate;
     const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
     const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
     const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
 
-    const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+    const peaks = getCachedAudioBufferWaveformPeaks({
+        bufferId: clip.audioBufferId,
+        numBins,
         startSample,
         endSample,
     });

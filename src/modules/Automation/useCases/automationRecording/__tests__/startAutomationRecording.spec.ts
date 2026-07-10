@@ -50,7 +50,6 @@ vi.mock('../recordingSessionState', () => ({
     activeRecording,
     pendingPoints,
     touchActive,
-    makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
 }));
 
 vi.mock('../../../stores/automationStore', () => ({

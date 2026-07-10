@@ -28,6 +28,18 @@ export { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
+export { cacheAudioBuffer } from './cacheAudioBuffer';
+export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
+export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
+export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
+export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAudioBuffersBySize';
+export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
+export { getCachedAudioBuffer } from './getCachedAudioBuffer';
+export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
+export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
+export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
@@ -50,12 +62,10 @@ export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
 export { scheduleDeviceKeyOff } from './deviceControls/scheduleDeviceKeyOff';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
 export { registerTuningTable } from './deviceControls/tuningControls';
-export {
-    addMidiFxToStrip,
-    removeMidiFxFromStrip,
-    updateMidiFxParam,
-    updateMidiFxBypass,
-} from './deviceControls/midiFxControls';
+export { addMidiFxToStrip } from './deviceControls/addMidiFxToStrip';
+export { removeMidiFxFromStrip } from './deviceControls/removeMidiFxFromStrip';
+export { updateMidiFxBypass } from './deviceControls/updateMidiFxBypass';
+export { updateMidiFxParam } from './deviceControls/updateMidiFxParam';
 
 export { getAudioContext, audioEngine } from './engineAccess/getAudioContext';
 export { getEngineState } from './engineAccess/getEngineState';
@@ -84,7 +94,7 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
-export { getTrackLatency } from './latencyCompensation/compensation/helpers';
+export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 

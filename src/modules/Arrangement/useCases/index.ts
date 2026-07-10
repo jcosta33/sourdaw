@@ -17,6 +17,7 @@ export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
+export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
 export { freezeTrack } from './freezeBounce/freezeTrack';
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
@@ -127,7 +128,9 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
 export { deleteTime } from './timeOperations/deleteTime';
-export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
+export { duplicateTimeRange } from './timeOperations/duplicateTimeRange';
+export { insertTime } from './timeOperations/insertTime';
+export { setTimeOperationDependencies } from './timeOperations/timeOperationDependencies';
 
 export { addMarker } from './marker/markerOperations/addMarker';
 export { removeMarker } from './marker/markerOperations/removeMarker';
@@ -181,6 +184,10 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
+export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
+export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
+export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';
+export { toggleTimelineAutoScroll } from './toggleTimelineAutoScroll';
 
 // ── VCA ───────────────────────────────────────────────────────────────────────
 
@@ -195,14 +202,18 @@ export { toggleVcaMembership } from './vca/toggleVcaMembership';
 export { enableWarp } from './warp/enableWarp';
 export { disableWarp } from './warp/disableWarp';
 export { setStretchMode } from './warp/setStretchMode';
+export { addManualWarpMarker } from './warp/addManualWarpMarker';
 export { removeWarpMarker } from './warp/removeWarpMarker';
 export { moveWarpMarker } from './warp/moveWarpMarker';
+export { updateWarpMarkerBeat } from './warp/updateWarpMarkerBeat';
+export { commitWarpMarkerBeatDrag } from './warp/commitWarpMarkerBeatDrag';
 
 export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';
 export { rdpSimplify } from './automationQueries/rdpSimplify';
 export { getAutomationRegions } from './automationQueries/getAutomationRegions';
 export { getMarkerState } from './timelineQueries';
-export { detectSongStructure, detectAndApplySongStructure } from './songStructureDetection';
+export { detectAndApplySongStructure } from './detectAndApplySongStructure';
+export { detectSongStructure } from './detectSongStructure';
 export { getFactoryPresets } from './soundPresetLibrary';
 export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';

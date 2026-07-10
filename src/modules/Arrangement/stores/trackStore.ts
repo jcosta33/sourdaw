@@ -3,7 +3,20 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 import { normalizeTrack } from '../models/Track';
 
-import type { Track, Clip } from '../models/Track';
+import type {
+    AutomationMode,
+    Clip,
+    ClipKneadBlob,
+    ClipKneadState,
+    Device,
+    FreezeState,
+    InputMonitoring,
+    MidiFxDevice,
+    Send,
+    Track,
+    TrackAlternative,
+    TrackKind,
+} from '../models/Track';
 
 export type {
     AutomationMode,
@@ -33,10 +46,615 @@ export const defaultTrackState: TrackStoreState = {
     ghostClips: [],
 };
 
+type PlainObject = {
+    [key: string]: unknown;
+};
+
+type TrackTransientState = Pick<TrackStoreState, 'selectedTrackId' | 'ghostClips'>;
+
+type GetOwnValueInput = {
+    value: object;
+    key: string;
+};
+
+type OwnValue = { found: true; value: unknown } | { found: false };
+
+const defaultTrackTransientState: TrackTransientState = {
+    selectedTrackId: defaultTrackState.selectedTrackId,
+    ghostClips: defaultTrackState.ghostClips,
+};
+
+function is_plain_object(value: unknown): value is PlainObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function is_not_null<TValue>(value: TValue | null): value is TValue {
+    return value !== null;
+}
+
+function get_own_value(input: GetOwnValueInput): OwnValue {
+    const descriptor = Object.getOwnPropertyDescriptor(input.value, input.key);
+    if (!descriptor) {
+        return { found: false };
+    }
+
+    if (!('value' in descriptor)) {
+        return { found: true, value: undefined };
+    }
+
+    return { found: true, value: descriptor.value };
+}
+
+function is_finite_number(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function is_track_kind(value: unknown): value is TrackKind {
+    return value === 'audio' || value === 'midi' || value === 'bus' || value === 'master' || value === 'folder';
+}
+
+function is_input_monitoring(value: unknown): value is InputMonitoring {
+    return value === 'auto' || value === 'on' || value === 'off';
+}
+
+function is_automation_mode(value: unknown): value is AutomationMode {
+    return value === 'read' || value === 'write' || value === 'touch' || value === 'latch' || value === 'off';
+}
+
+function is_midi_fx_type(value: unknown): value is MidiFxDevice['type'] {
+    return value === 'arp' || value === 'velocity' || value === 'probability';
+}
+
+function is_freeze_status(value: unknown): value is FreezeState['status'] {
+    return value === 'unfrozen' || value === 'freezing' || value === 'frozen' || value === 'stale' || value === 'error';
+}
+
+function is_clip_type(value: unknown): value is Clip['type'] {
+    return value === 'audio' || value === 'midi';
+}
+
+function is_stretch_mode(value: unknown): value is NonNullable<Clip['stretchMode']> {
+    return value === 'off' || value === 'repitch' || value === 'timestretch';
+}
+
+function is_follow_action(value: unknown): value is NonNullable<Clip['followAction']> {
+    return (
+        value === 'stop' ||
+        value === 'play_next' ||
+        value === 'play_previous' ||
+        value === 'play_random' ||
+        value === 'play_first' ||
+        value === 'play_last'
+    );
+}
+
+function is_string_or_null(value: unknown): value is string | null {
+    return value === null || typeof value === 'string';
+}
+
+function normalize_parameter_values(value: unknown): MidiFxDevice['parameterValues'] {
+    if (!is_plain_object(value)) {
+        return {};
+    }
+
+    const parameter_values: MidiFxDevice['parameterValues'] = {};
+    for (const [key, parameter_value] of Object.entries(value)) {
+        if (is_finite_number(parameter_value)) {
+            parameter_values[key] = parameter_value;
+        }
+    }
+
+    return parameter_values;
+}
+
+function normalize_clip_overrides(value: unknown): Clip['overrides'] | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    const overrides: NonNullable<Clip['overrides']> = {};
+    for (const [key, override_value] of Object.entries(value)) {
+        if (typeof override_value === 'boolean') {
+            overrides[key] = override_value;
+        }
+    }
+
+    return overrides;
+}
+
+function normalize_clip_knead_blob(value: unknown): ClipKneadBlob | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (
+        typeof value.id !== 'string' ||
+        !is_finite_number(value.startTime) ||
+        !is_finite_number(value.endTime) ||
+        !is_finite_number(value.pitchCenterCents) ||
+        !Array.isArray(value.pitchCurveCents) ||
+        !value.pitchCurveCents.every(is_finite_number) ||
+        !is_finite_number(value.voicedConfidence)
+    ) {
+        return null;
+    }
+
+    return {
+        id: value.id,
+        startTime: value.startTime,
+        endTime: value.endTime,
+        pitchCenterCents: value.pitchCenterCents,
+        pitchCurveCents: value.pitchCurveCents,
+        voicedConfidence: value.voicedConfidence,
+    };
+}
+
+function normalize_clip_knead_state(value: unknown): ClipKneadState | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (
+        !Array.isArray(value.blobs) ||
+        !is_finite_number(value.retuneSpeedMs) ||
+        !is_finite_number(value.humanizePercent) ||
+        typeof value.formantPreserve !== 'boolean'
+    ) {
+        return null;
+    }
+
+    return {
+        blobs: value.blobs.map(normalize_clip_knead_blob).filter(is_not_null),
+        retuneSpeedMs: value.retuneSpeedMs,
+        humanizePercent: value.humanizePercent,
+        formantPreserve: value.formantPreserve,
+    };
+}
+
+function normalize_clip(value: unknown): Clip | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (
+        typeof value.id !== 'string' ||
+        typeof value.trackId !== 'string' ||
+        typeof value.name !== 'string' ||
+        !is_finite_number(value.startBeat) ||
+        !is_finite_number(value.endBeat) ||
+        !is_clip_type(value.type)
+    ) {
+        return null;
+    }
+
+    const clip: Clip = {
+        id: value.id,
+        trackId: value.trackId,
+        name: value.name,
+        startBeat: value.startBeat,
+        endBeat: value.endBeat,
+        type: value.type,
+        fadeInBeats: is_finite_number(value.fadeInBeats) ? value.fadeInBeats : 0,
+        fadeOutBeats: is_finite_number(value.fadeOutBeats) ? value.fadeOutBeats : 0,
+        gain: is_finite_number(value.gain) ? value.gain : 1,
+        color: typeof value.color === 'string' ? value.color : '',
+        locked: typeof value.locked === 'boolean' ? value.locked : false,
+        muted: typeof value.muted === 'boolean' ? value.muted : false,
+    };
+
+    if (typeof value.audioBufferId === 'string') {
+        clip.audioBufferId = value.audioBufferId;
+    }
+    if (typeof value.assetHash === 'string') {
+        clip.assetHash = value.assetHash;
+    }
+    if (is_finite_number(value.audioOffsetBeats)) {
+        clip.audioOffsetBeats = value.audioOffsetBeats;
+    }
+    if (is_finite_number(value.midiOffsetBeats)) {
+        clip.midiOffsetBeats = value.midiOffsetBeats;
+    }
+    if (is_stretch_mode(value.stretchMode)) {
+        clip.stretchMode = value.stretchMode;
+    }
+    if (is_finite_number(value.stretchRatio)) {
+        clip.stretchRatio = value.stretchRatio;
+    }
+    if (typeof value.loopEnabled === 'boolean') {
+        clip.loopEnabled = value.loopEnabled;
+    }
+    if (is_finite_number(value.loopLength)) {
+        clip.loopLength = value.loopLength;
+    }
+    if (is_follow_action(value.followAction)) {
+        clip.followAction = value.followAction;
+    }
+    if (typeof value.generating === 'boolean') {
+        clip.generating = value.generating;
+    }
+    if (typeof value.isGhost === 'boolean') {
+        clip.isGhost = value.isGhost;
+    }
+    if (typeof value.isInlineEditing === 'boolean') {
+        clip.isInlineEditing = value.isInlineEditing;
+    }
+    if (typeof value.parentClipId === 'string') {
+        clip.parentClipId = value.parentClipId;
+    }
+    if (typeof value.isLinkedInstance === 'boolean') {
+        clip.isLinkedInstance = value.isLinkedInstance;
+    }
+    if (is_finite_number(value.sourceKeyRoot)) {
+        clip.sourceKeyRoot = value.sourceKeyRoot;
+    }
+    if (typeof value.sourceScaleName === 'string') {
+        clip.sourceScaleName = value.sourceScaleName;
+    }
+    const overrides = normalize_clip_overrides(value.overrides);
+    if (overrides) {
+        clip.overrides = overrides;
+    }
+    const knead_state = normalize_clip_knead_state(value.kneadState);
+    if (knead_state) {
+        clip.kneadState = knead_state;
+    }
+
+    return clip;
+}
+
+function normalize_clip_array(value: unknown): Clip[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value.map(normalize_clip).filter(is_not_null);
+}
+
+function normalize_device(value: unknown): Device | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.type !== 'string') {
+        return null;
+    }
+
+    const device: Device = {
+        id: value.id,
+        name: value.name,
+        type: value.type,
+        bypassed: typeof value.bypassed === 'boolean' ? value.bypassed : false,
+        parameterValues: normalize_parameter_values(value.parameterValues),
+    };
+
+    if (typeof value.externalPluginId === 'string') {
+        device.externalPluginId = value.externalPluginId;
+    }
+    if (typeof value.externalInstanceId === 'string') {
+        device.externalInstanceId = value.externalInstanceId;
+    }
+
+    return device;
+}
+
+function normalize_device_array(value: unknown): Device[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value.map(normalize_device).filter(is_not_null);
+}
+
+function normalize_send(value: unknown): Send | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (typeof value.busId !== 'string') {
+        return null;
+    }
+
+    return {
+        busId: value.busId,
+        level: is_finite_number(value.level) ? value.level : 0,
+        preFader: typeof value.preFader === 'boolean' ? value.preFader : false,
+    };
+}
+
+function normalize_send_array(value: unknown): Send[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value.map(normalize_send).filter(is_not_null);
+}
+
+function normalize_midi_fx_device(value: unknown): MidiFxDevice | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (typeof value.id !== 'string' || !is_midi_fx_type(value.type)) {
+        return null;
+    }
+
+    return {
+        id: value.id,
+        type: value.type,
+        name: typeof value.name === 'string' ? value.name : value.type.charAt(0).toUpperCase() + value.type.slice(1),
+        bypassed: typeof value.bypassed === 'boolean' ? value.bypassed : false,
+        parameterValues: normalize_parameter_values(value.parameterValues),
+    };
+}
+
+function normalize_midi_fx_array(value: unknown): MidiFxDevice[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value.map(normalize_midi_fx_device).filter(is_not_null);
+}
+
+function normalize_track_alternative(value: unknown): TrackAlternative | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (typeof value.id !== 'string' || typeof value.name !== 'string') {
+        return null;
+    }
+
+    return {
+        id: value.id,
+        name: value.name,
+        clips: normalize_clip_array(value.clips) ?? [],
+    };
+}
+
+function normalize_track_alternative_array(value: unknown): TrackAlternative[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    return value.map(normalize_track_alternative).filter(is_not_null);
+}
+
+function normalize_freeze_state(value: unknown): FreezeState | null {
+    if (!is_plain_object(value) || !is_freeze_status(value.status)) {
+        return null;
+    }
+
+    const freeze_state: FreezeState = {
+        status: value.status,
+    };
+
+    if (typeof value.freezeId === 'string') {
+        freeze_state.freezeId = value.freezeId;
+    }
+    if (typeof value.frozenBufferId === 'string') {
+        freeze_state.frozenBufferId = value.frozenBufferId;
+    }
+    if (typeof value.frozenAudioHash === 'string') {
+        freeze_state.frozenAudioHash = value.frozenAudioHash;
+    }
+    if (typeof value.sourceContentHash === 'string') {
+        freeze_state.sourceContentHash = value.sourceContentHash;
+    }
+    if (typeof value.deviceChainHash === 'string') {
+        freeze_state.deviceChainHash = value.deviceChainHash;
+    }
+    if (is_finite_number(value.renderProgress)) {
+        freeze_state.renderProgress = value.renderProgress;
+    }
+    if (typeof value.errorMessage === 'string') {
+        freeze_state.errorMessage = value.errorMessage;
+    }
+    if (is_finite_number(value.renderedAt)) {
+        freeze_state.renderedAt = value.renderedAt;
+    }
+
+    if (is_plain_object(value.renderSettings)) {
+        const render_settings = value.renderSettings;
+        if (
+            is_finite_number(render_settings.sampleRate) &&
+            is_finite_number(render_settings.bitDepth) &&
+            is_finite_number(render_settings.channelCount) &&
+            is_finite_number(render_settings.tailLengthSeconds)
+        ) {
+            freeze_state.renderSettings = {
+                sampleRate: render_settings.sampleRate,
+                bitDepth: render_settings.bitDepth,
+                channelCount: render_settings.channelCount,
+                tailLengthSeconds: render_settings.tailLengthSeconds,
+            };
+        }
+    }
+
+    return freeze_state;
+}
+
+function apply_track_optional_fields(input: {
+    source: PlainObject;
+    target: Partial<Track> & { id: string; name: string; kind: TrackKind };
+}): void {
+    const source = input.source;
+    const target = input.target;
+    const clips = normalize_clip_array(source.clips);
+    const devices = normalize_device_array(source.devices);
+    const sends = normalize_send_array(source.sends);
+    const midi_fx = normalize_midi_fx_array(source.midiFx);
+    const alternatives = normalize_track_alternative_array(source.alternatives);
+    const freeze_state = normalize_freeze_state(source.freezeState);
+
+    if (typeof source.muted === 'boolean') {
+        target.muted = source.muted;
+    }
+    if (typeof source.soloed === 'boolean') {
+        target.soloed = source.soloed;
+    }
+    if (typeof source.armed === 'boolean') {
+        target.armed = source.armed;
+    }
+    if (is_finite_number(source.gain)) {
+        target.gain = source.gain;
+    }
+    if (is_finite_number(source.pan)) {
+        target.pan = source.pan;
+    }
+    if (typeof source.color === 'string') {
+        target.color = source.color;
+    }
+    if (clips) {
+        target.clips = clips;
+    }
+    if (devices) {
+        target.devices = devices;
+    }
+    if (sends) {
+        target.sends = sends;
+    }
+    if (midi_fx) {
+        target.midiFx = midi_fx;
+    }
+    if (typeof source.frozen === 'boolean') {
+        target.frozen = source.frozen;
+    }
+    if (typeof source.frozenBufferId === 'string') {
+        target.frozenBufferId = source.frozenBufferId;
+    }
+    if (freeze_state) {
+        target.freezeState = freeze_state;
+    }
+    if (is_string_or_null(source.parentId)) {
+        target.parentId = source.parentId;
+    }
+    if (typeof source.collapsed === 'boolean') {
+        target.collapsed = source.collapsed;
+    }
+    if (is_input_monitoring(source.inputMonitoring)) {
+        target.inputMonitoring = source.inputMonitoring;
+    }
+    if (typeof source.hidden === 'boolean') {
+        target.hidden = source.hidden;
+    }
+    if (typeof source.disabled === 'boolean') {
+        target.disabled = source.disabled;
+    }
+    if (is_finite_number(source.height)) {
+        target.height = source.height;
+    }
+    if (typeof source.outputId === 'string') {
+        target.outputId = source.outputId;
+    }
+    if (is_automation_mode(source.automationMode)) {
+        target.automationMode = source.automationMode;
+    }
+    if (is_string_or_null(source.groupId)) {
+        target.groupId = source.groupId;
+    }
+    if (typeof source.soloSafe === 'boolean') {
+        target.soloSafe = source.soloSafe;
+    }
+    if (typeof source.notes === 'string') {
+        target.notes = source.notes;
+    }
+    if (is_string_or_null(source.inputId)) {
+        target.inputId = source.inputId;
+    }
+    if (typeof source.activeAlternativeId === 'string') {
+        target.activeAlternativeId = source.activeAlternativeId;
+    }
+    if (alternatives) {
+        target.alternatives = alternatives;
+    }
+    if (is_string_or_null(source.vcaGroupId)) {
+        target.vcaGroupId = source.vcaGroupId;
+    }
+    if (is_string_or_null(source.midiOutputTrackId)) {
+        target.midiOutputTrackId = source.midiOutputTrackId;
+    }
+    if (typeof source.followChordTrack === 'boolean') {
+        target.followChordTrack = source.followChordTrack;
+    }
+    if (typeof source.showVariationLanes === 'boolean') {
+        target.showVariationLanes = source.showVariationLanes;
+    }
+}
+
+function normalize_track_row(value: unknown): Track | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (typeof value.id !== 'string' || !is_track_kind(value.kind)) {
+        return null;
+    }
+
+    const track_input: Partial<Track> & { id: string; name: string; kind: TrackKind } = {
+        id: value.id,
+        name: typeof value.name === 'string' ? value.name : '',
+        kind: value.kind,
+    };
+
+    apply_track_optional_fields({ source: value, target: track_input });
+
+    return normalizeTrack(track_input);
+}
+
+function normalize_tracks(value: unknown): Track[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.map(normalize_track_row).filter(is_not_null);
+}
+
+function get_valid_transient_state(value: unknown): TrackTransientState | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+
+    if (!is_string_or_null(value.selectedTrackId)) {
+        return null;
+    }
+
+    if ('ghostClips' in value && !Array.isArray(value.ghostClips)) {
+        return null;
+    }
+
+    return {
+        selectedTrackId: value.selectedTrackId,
+        ghostClips: Array.isArray(value.ghostClips) ? value.ghostClips.map(normalize_clip).filter(is_not_null) : [],
+    };
+}
+
+function get_current_track_transient_state(): TrackTransientState {
+    return get_valid_transient_state(trackStore.value) ?? defaultTrackTransientState;
+}
+
+function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
+    const transient_state = get_current_track_transient_state();
+    if (!is_plain_object(value)) {
+        return {
+            tracks: [],
+            selectedTrackId: transient_state.selectedTrackId,
+            ghostClips: transient_state.ghostClips,
+        };
+    }
+
+    const tracks_property = get_own_value({ value, key: 'tracks' });
+
+    return {
+        tracks: tracks_property.found ? normalize_tracks(tracks_property.value) : [],
+        selectedTrackId: transient_state.selectedTrackId,
+        ghostClips: transient_state.ghostClips,
+    };
+}
+
 export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
-        fromCrdt: (state) => ({ ...state, tracks: state.tracks.map(normalizeTrack) }),
+        fromCrdt: sanitize_track_store_state_from_crdt,
     }),
     initialData: defaultTrackState,
 });

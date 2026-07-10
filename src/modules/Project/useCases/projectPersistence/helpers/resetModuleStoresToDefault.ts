@@ -1,4 +1,4 @@
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { resetArrangementStoresForProject } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { bacteriaStore } from '#/modules/Bacteria/stores';
 import { crustStore, defaultCrustState } from '#/modules/Crust/stores';
@@ -17,14 +17,12 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
 export function resetModuleStoresToDefault(): void {
-    trackStore.set({ tracks: [], selectedTrackId: null });
+    resetArrangementStoresForProject();
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
-    markerStore.set({ markers: [], sections: [] });
-    takeLaneStore.set({ lanes: [] });
     setSidechainRoutes([]);
 
     // Reset per-device-instance stores (§13.1 — prevents stale device state

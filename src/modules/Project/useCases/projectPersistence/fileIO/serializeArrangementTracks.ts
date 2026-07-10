@@ -3,7 +3,7 @@ import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } from '../../../models/ProjectData';
 
-import { serializeProjectMidiNote } from './midiStateMapping';
+import { serializeProjectMidiNote } from './serializeProjectMidiNote';
 
 /** Per-clip note map as exported alongside the arrangement. */
 type NotesByClipId = MidiStoreState['notesByClipId'];

@@ -1,21 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import * as subject from '../helpers';
+import {
+    emptySnapshotAutomation,
+    emptySnapshotMarkers,
+    emptySnapshotMidi,
+    emptySnapshotTakeLanes,
+    emptySnapshotTempoMap,
+    emptySnapshotTimeSignatureMap,
+    emptySnapshotTracks,
+} from '../helpers';
 
-describe('helpers', () => {
-    it('should export loadSnapshot', () => {
-        expect(subject.loadSnapshot).toBeDefined();
-        const time = typeof subject.loadSnapshot;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export syncCurrentArrangementToStore', () => {
-        expect(subject.syncCurrentArrangementToStore).toBeDefined();
-        const time = typeof subject.syncCurrentArrangementToStore;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
-    it('should export takeSnapshot', () => {
-        expect(subject.takeSnapshot).toBeDefined();
-        const time = typeof subject.takeSnapshot;
-        expect(time === 'function' || time === 'object').toBe(true);
+describe('arrangement snapshot helper defaults', () => {
+    it('should expose empty snapshot fallback shapes', () => {
+        expect(emptySnapshotTracks).toEqual({ tracks: [], selectedTrackId: null });
+        expect(emptySnapshotAutomation).toEqual({ lanes: [] });
+        expect(emptySnapshotMidi).toEqual({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        expect(emptySnapshotTempoMap).toEqual({ changes: [] });
+        expect(emptySnapshotTimeSignatureMap).toEqual({ changes: [] });
+        expect(emptySnapshotMarkers).toEqual({ markers: [], sections: [] });
+        expect(emptySnapshotTakeLanes).toEqual({ lanes: [] });
     });
 });

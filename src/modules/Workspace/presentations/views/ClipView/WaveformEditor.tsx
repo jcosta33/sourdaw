@@ -14,7 +14,7 @@ import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
-import { defaultTrackState, trackStore, getWarpState, addWarpMarker } from '#/modules/Arrangement/stores';
+import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
     normalizeClip,
@@ -24,10 +24,11 @@ import {
     setStretchMode,
     removeWarpMarker,
     moveWarpMarker,
+    commitWarpMarkerBeatDrag,
+    addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, getCachedAudioBufferWaveformPeaks, isTauri } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
@@ -87,7 +88,7 @@ const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }:
     canvasContext.lineTo(width, middleY);
     canvasContext.stroke();
 
-    const peaks = audioBufferCache.getWaveformPeaks(clipId, Math.floor(width));
+    const peaks = getCachedAudioBufferWaveformPeaks({ bufferId: clipId, numBins: Math.floor(width) });
 
     const hasRealData = peaks.some((value) => value > 0);
 
@@ -174,7 +175,12 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const [waveCtxMenu, setWaveCtxMenu] = useState<WaveformMenu>(null);
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
-    const draggingMarkerRef = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
+    const draggingMarkerRef = useRef<{
+        id: string;
+        startX: number;
+        startOriginalBeat: number;
+        startWarpedBeat: number;
+    } | null>(null);
     const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDragRef = useRef(false);
 
@@ -258,7 +264,12 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         const x = getCanvasX(event);
         const hit = hitTestMarker(x);
         if (hit) {
-            draggingMarkerRef.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
+            draggingMarkerRef.current = {
+                id: hit.id,
+                startX: x,
+                startOriginalBeat: hit.originalBeat,
+                startWarpedBeat: hit.warpedBeat,
+            };
             didDragRef.current = false;
             setIsDraggingMarker(true);
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
@@ -282,9 +293,23 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         }
     };
 
-    const handlePointerUp = () => {
+    const finishMarkerDrag = (): void => {
+        const drag = draggingMarkerRef.current;
+        if (!drag) {
+            return;
+        }
+        commitWarpMarkerBeatDrag({
+            clipId,
+            markerId: drag.id,
+            beforeOriginalBeat: drag.startOriginalBeat,
+            beforeWarpedBeat: drag.startWarpedBeat,
+        });
         draggingMarkerRef.current = null;
         setIsDraggingMarker(false);
+    };
+
+    const handlePointerUp = () => {
+        finishMarkerDrag();
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -301,7 +326,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         if (hitMarker) {
             removeWarpMarker(clipId, hitMarker.id);
         } else {
-            addWarpMarker(clipId, beat, beat);
+            addManualWarpMarker({ clipId, beat });
         }
         refreshWarp();
     };
@@ -423,6 +448,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
+                    onPointerCancel={finishMarkerDrag}
+                    onLostPointerCapture={finishMarkerDrag}
                     onDoubleClick={handleDoubleClick}
                     onContextMenu={handleWaveContextMenu}
                 />

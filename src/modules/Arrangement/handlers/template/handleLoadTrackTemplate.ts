@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { loadTrackTemplate } from '../../useCases/trackTemplate';
+import { loadTrackTemplate } from '../../useCases/loadTrackTemplate';
 
 export const handleLoadTrackTemplate = createHandler<'loadTrackTemplate'>({
     execute: (alpha) => {

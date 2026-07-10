@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { trackStore } from '../../stores/trackStore';
 
@@ -11,7 +11,7 @@ export function getBufferForClip(clipId: string): { buffer: AudioBuffer; audioBu
     if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
         return null;
     }
-    const buffer = audioBufferCache.get(clip.audioBufferId);
+    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
     if (!buffer) {
         return null;
     }

@@ -1,5 +1,10 @@
+import { type DeviceRef } from '#/utils/createFindDeviceRef';
+
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
 
+import { getCabIrSlot } from './getCabIrSlot';
+import { getNeuralModelSlot } from './getNeuralModelSlot';
+import { getPedalOrderAudioEntries } from './getPedalOrderAudioEntries';
 import {
     AMP_MODELS,
     CAB_TYPES,
@@ -12,11 +17,7 @@ import {
     RECTIFIER_TYPES,
     ROUTING_MODES,
     TONE_STACK_TYPES,
-    type DeviceRef,
     DEFAULT_GRINDER_PEDAL_PARAMS,
-    getCabIrSlot,
-    getPedalOrderAudioEntries,
-    getNeuralModelSlot,
 } from './helpers';
 
 type SyncGrinderPatchToAudioInput = {

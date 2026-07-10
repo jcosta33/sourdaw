@@ -15,7 +15,8 @@ export { hasCrdtDoc } from './hasCrdtDoc';
 export { mutateCrdtDoc } from './mutateCrdtDoc';
 export type { MutateCrdtDocInput } from './mutateCrdtDoc';
 
-export { projectCrdtToStores, setupProjectionBridge } from './projection/projectProjection';
+export { projectCrdtToStores } from './projection/projectProjection';
+export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { replaceCrdtDoc } from './replaceCrdtDoc';

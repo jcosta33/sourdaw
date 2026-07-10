@@ -5,7 +5,7 @@ import { Folder, File, Star, Upload } from 'lucide-react';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';
@@ -97,7 +97,7 @@ export const SamplesTab = ({
                                                 isPlaying={preview.playingId === sample.id}
                                                 onPlay={() => {
                                                     const buffer = sample.audioBufferId
-                                                        ? audioBufferCache.get(sample.audioBufferId)
+                                                        ? getCachedAudioBuffer({ bufferId: sample.audioBufferId })
                                                         : undefined;
                                                     if (buffer) {
                                                         preview.play(sample.id, buffer);

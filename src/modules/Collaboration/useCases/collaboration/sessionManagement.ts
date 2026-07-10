@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
 import {
     setupProjectionBridge,
@@ -604,7 +603,7 @@ function cleanupSubsystems(): void {
 
 /**
  * When a peer sends us an audio asset, find all clips that reference its hash
- * and decode the blob into the audioBufferCache under their audioBufferId.
+ * and decode the blob into the AudioEngine buffer cache under their audioBufferId.
  * This lets the scheduler play the clip on the next playback start.
  */
 async function resolveAssetForClips(hash: string): Promise<void> {
@@ -626,13 +625,13 @@ async function resolveAssetForClips(hash: string): Promise<void> {
             if (clip.assetHash !== hash || !clip.audioBufferId) {
                 continue;
             }
-            if (audioBufferCache.has(clip.audioBufferId)) {
+            if (getCachedAudioBuffer({ bufferId: clip.audioBufferId })) {
                 continue;
             }
             try {
                 const arrayBuffer = await blob.arrayBuffer();
                 const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-                audioBufferCache.set(clip.audioBufferId, audioBuffer);
+                cacheAudioBuffer({ bufferId: clip.audioBufferId, buffer: audioBuffer });
             } catch {
                 logger.warn('[Collaboration] Failed to decode asset for clip', clip.id);
             }

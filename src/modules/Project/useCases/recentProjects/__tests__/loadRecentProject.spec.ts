@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
@@ -14,12 +16,10 @@ vi.mock('../../../repositories/project/storageOperations', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(),
+    getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
+    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
-}));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
@@ -53,6 +53,8 @@ describe('loadRecentProject', () => {
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
+        vi.mocked(getAudioContext).mockClear();
+        vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -66,6 +68,10 @@ describe('loadRecentProject', () => {
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
+        expect(getAudioContext).toHaveBeenCalledTimes(1);
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext: vi.mocked(getAudioContext).mock.results[0]?.value,
+        });
     });
 
     it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {

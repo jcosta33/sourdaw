@@ -8,20 +8,19 @@ import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '..
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
-// Capture the ids restoreFromIdb is asked to load — the keystone consequence is
+// Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { restoreFromIdb } = vi.hoisted(() => ({ restoreFromIdb: vi.fn().mockResolvedValue(0) }));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        restoreFromIdb: (...args: unknown[]) => restoreFromIdb(...args),
-        has: () => false,
-    },
+const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+    audioContext: {},
+    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getAudioContext: () => ({}) as AudioContext,
+    getAudioContext: () => audioContext,
+    getCachedAudioBuffer: () => null,
     resetAudioGraph: vi.fn(),
+    restoreCachedAudioBuffersFromIdb,
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
@@ -149,7 +148,7 @@ function makeProject(): ProjectData {
 
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
-        restoreFromIdb.mockClear();
+        restoreCachedAudioBuffersFromIdb.mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -163,13 +162,29 @@ describe('applyImportedProjectData round-trip hydration', () => {
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
 
-    it('resolves clip bufferIds and passes them to restoreFromIdb (keystone)', async () => {
+    it('resolves clip bufferIds and passes them to restoreCachedAudioBuffersFromIdb (keystone)', async () => {
         await applyImportedProjectData(makeProject());
 
-        expect(restoreFromIdb).toHaveBeenCalledTimes(1);
-        const passedIds = restoreFromIdb.mock.calls[0]?.[1] as string[] | undefined;
-        expect(passedIds).toEqual(expect.arrayContaining(['buf-1', 'buf-2']));
-        expect(passedIds).toHaveLength(2);
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext,
+            bufferIds: expect.arrayContaining(['buf-1', 'buf-2']),
+        });
+        const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
+        expect(call?.bufferIds).toHaveLength(2);
+    });
+
+    it('passes undefined bufferIds to restoreCachedAudioBuffersFromIdb when no clips reference buffers', async () => {
+        const project = makeProject();
+        project.arrangement.tracks = [baseTrack('track-audio', [])];
+
+        await applyImportedProjectData(project);
+
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext,
+            bufferIds: undefined,
+        });
     });
 
     it('hydrates the transport store from the imported transport block', async () => {

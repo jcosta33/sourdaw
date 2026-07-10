@@ -15,7 +15,7 @@ import { closeUndoHistory } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
-import { undoToIndex } from '../../useCases/undoRedo';
+import { undoToIndex } from '../../useCases/undoToIndex';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
 

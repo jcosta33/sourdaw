@@ -13,10 +13,13 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { useStore } from '#/infra/store/useStore';
 
 import { type CrustPatch, type CrustStreamingPreset } from '../../models/CrustPatch';
-import { crustStore, defaultCrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
+import { crustStore, defaultCrustState } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
+import { resetCrustPanelMeters } from '../../useCases/resetCrustPanelMeters';
+import { resetCrustTruePeakIndicator } from '../../useCases/resetCrustTruePeakIndicator';
+import { setCrustPanelUiLevel } from '../../useCases/setCrustPanelUiLevel';
 import { CrustControlZone } from '../components/CrustControlZone';
 import { CrustGainStrip } from '../components/CrustGainStrip';
 import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
@@ -135,7 +138,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             active={patch.uiLevel === level}
                             tone="copper"
                             size="sm"
-                            onClick={() => setCrustUiLevel(level)}
+                            onClick={() => setCrustPanelUiLevel(level)}
                         >
                             L{level}
                         </DawPluginChip>
@@ -348,12 +351,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         truepeakMax={truepeakMax}
                         truepeakExceeded={truepeakExceeded}
                         lufsTarget={lufsTarget}
-                        onResetTp={() => {
-                            const currentState = crustStore.value;
-                            if (currentState) {
-                                crustStore.set({ ...currentState, truepeakMax: -100, truepeakExceeded: false });
-                            }
-                        }}
+                        onResetTp={() => resetCrustTruePeakIndicator()}
                     />
                 </div>
             </div>
@@ -417,7 +415,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                     >
                         Delta
                     </DawPluginChip>
-                    <DawPluginChip type="button" tone="copper" size="sm" onClick={() => resetCrustMeters()}>
+                    <DawPluginChip type="button" tone="copper" size="sm" onClick={() => resetCrustPanelMeters()}>
                         Reset
                     </DawPluginChip>
                 </div>

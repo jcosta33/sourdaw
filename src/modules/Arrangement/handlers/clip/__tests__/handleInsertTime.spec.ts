@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     insertTime: vi.fn(),
 }));
 
-vi.mock('../../../useCases/timeOperations/duplicateTimeRange', () => ({
+vi.mock('../../../useCases/timeOperations/insertTime', () => ({
     insertTime: mocks.insertTime,
 }));
 

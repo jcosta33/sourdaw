@@ -25,7 +25,7 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     closeUndoHistory: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases/undoRedo', () => ({
+vi.mock('#/modules/Command/useCases/undoToIndex', () => ({
     undoToIndex: vi.fn(),
 }));
 
