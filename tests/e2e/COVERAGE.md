@@ -32,15 +32,21 @@
 
 ## Gap Analysis — Batches to Complete
 
-### Batch 1: Launch Screen & Project Entry `[IN PROGRESS]`
+### Batch 1: Launch Screen & Project Entry `[DONE — PR #187]`
 **Spec:** `launchFlows.spec.ts`
-- [ ] Template grid — browse templates, load EDM/Acoustic/etc
-- [ ] Demo project — load from demo grid
-- [ ] Import .dawproject file from launch screen `[TAURI-ONLY — skip]`
-- [ ] Recent projects menu — open, new project, import, export entries
-- [ ] Arrangement selector — switch/create/delete arrangements
-- [ ] Save project (Cmd+S) — verify dirty indicator clears
-**Bugs found:** _(none yet)_
+- [x] Template grid — browse templates, filter by category (Film)
+- [x] Template load — Lo-fi template loads into workspace
+- [x] Demo project — Nebula Drift loads from demo grid
+- [x] Back button — grid-to-home navigation
+- [x] Recent projects menu — all items verified (New, Template, Demo, Save, Export Audio, Export/Import Project File)
+- [x] Close menu with Escape
+- [x] Template chooser from menu
+- [x] Save project (Cmd+S) — verified localStorage persistence
+- [x] Project rename from transport bar
+- [ ] Arrangement selector — `[DEFERRED — requires >1 arrangement, selector hidden by default]`
+- [ ] Save project dirty indicator — `[BUG: markDirty() not called on addTrack]`
+**Bugs found:**
+- `markDirty()` (Project module) only called from arrangement operations, NOT from `addTrack`. Adding a track does not set `projectStore.dirty`, so the dirty indicator never appears. The TimelineSurface has a local `markDirty` for canvas redraws only. This may be by design (CRDT autosave handles persistence) or a bug.
 
 ### Batch 2: Transport Advanced Controls `[PENDING]`
 **Spec:** `transportAdvanced.spec.ts`
@@ -257,3 +263,4 @@
 | Session | Date | Batch | Status | PR |
 |---------|------|-------|--------|----|
 | 1 | 2026-07-10 | Setup (PROCESS.md + COVERAGE.md) | Done | _(n/a — committed to main)_ |
+| 2 | 2026-07-10 | Batch 1: Launch & Project Flows | Done — merged | [#187](https://github.com/jcosta33/sourdaw/pull/187) |
