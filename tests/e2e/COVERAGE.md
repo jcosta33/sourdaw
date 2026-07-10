@@ -268,3 +268,53 @@
 | 1 | 2026-07-10 | Setup (PROCESS.md + COVERAGE.md) | Done | _(n/a — committed to main)_ |
 | 2 | 2026-07-10 | Batch 1: Launch & Project Flows | Done — merged | [#187](https://github.com/jcosta33/sourdaw/pull/187) |
 | 3 | 2026-07-10 | Batch 2: Transport Advanced | Done — merged | [#189](https://github.com/jcosta33/sourdaw/pull/189) |
+| 4 | 2026-07-11 | Batch 3: Timeline Navigation | Done — merged | [#190](https://github.com/jcosta33/sourdaw/pull/190) |
+| 5 | 2026-07-11 | Batch 4: Keyboard Shortcuts | Done — merged | [#191](https://github.com/jcosta33/sourdaw/pull/191) |
+| 6 | 2026-07-11 | Batch 5: Inspector — Track | Done — merged | [#192](https://github.com/jcosta33/sourdaw/pull/192) |
+| 7 | 2026-07-11 | Batch 6: Inspector — Clip | Done — merged | [#193](https://github.com/jcosta33/sourdaw/pull/193) |
+| 8 | 2026-07-11 | Batch 7: Mixer Advanced | Done — merged | [#194](https://github.com/jcosta33/sourdaw/pull/194) |
+| 9 | 2026-07-11 | Batch 8: Routing & Analysis | Done — merged | [#195](https://github.com/jcosta33/sourdaw/pull/195) |
+| 10 | 2026-07-11 | Batch 9: Setlist & Loop Station | Done — merged | [#196](https://github.com/jcosta33/sourdaw/pull/196) |
+| 11 | 2026-07-11 | Batch 10: Modulation & Elastic | Done — merged | [#197](https://github.com/jcosta33/sourdaw/pull/197) |
+| 12 | 2026-07-11 | Batch 11: Virtual Keyboard | Done — merged | [#198](https://github.com/jcosta33/sourdaw/pull/198) |
+| 13 | 2026-07-11 | Batch 12: Instrument Panels | Done — merged | [#199](https://github.com/jcosta33/sourdaw/pull/199) |
+| 14 | 2026-07-11 | Batch 13: Effects Panels | Done — merged | [#200](https://github.com/jcosta33/sourdaw/pull/200) |
+| 15 | 2026-07-11 | Batch 14: AI Features | Done — merged | [#201](https://github.com/jcosta33/sourdaw/pull/201) |
+| 16 | 2026-07-11 | Batch 15: Collab & Preferences | Done — merged | [#202](https://github.com/jcosta33/sourdaw/pull/202) |
+| 17 | 2026-07-11 | Batch 16: Audio/MIDI Misc | Done — merged | [#203](https://github.com/jcosta33/sourdaw/pull/203) |
+
+---
+
+## Final Coverage Summary
+
+**Total: 34 spec files, ~136 tests across 16 batches.**
+
+### New specs added (16 files, ~112 tests)
+| Spec | Tests | Area |
+|------|-------|------|
+| `launchFlows.spec.ts` | 9 | Launch screen, templates, demos, project menu, save, rename |
+| `transportAdvanced.spec.ts` | 10 | Metronome, loop, punch, count-in, auto-scroll, solo, tools, capture, ripple, undo |
+| `timelineNavigation.spec.ts` | 6 | Chrome components, adjustment layers, zoom, playhead, minimap, context menu |
+| `keyboardShortcuts.spec.ts` | 11 | N, Cmd+B/I/M/J/K, Shift+K, ?, preferences, palette, M, L |
+| `inspectorTrack.spec.ts` | 11 | Inspector sections, arm/mute/solo, gain, devices, notes, VCA, automation, chord |
+| `inspectorClip.spec.ts` | 3 | Clip rename, duplication, MIDI editor open |
+| `mixerAdvanced.spec.ts` | 6 | Channel strips, width, snapshots, AI health, master, close |
+| `bottomDockRoutingAnalysis.spec.ts` | 6 | Routing, analysis, editor, automation tabs, switching, close |
+| `setlistLoopStation.spec.ts` | 7 | Loop station arm/create/stop/fixed-length, setlist add/navigate/auto-advance |
+| `modulationElastic.spec.ts` | 5 | Modulation matrix, automation tab, elastic tab, switching |
+| `virtualKeyboardChord.spec.ts` | 6 | Keys, octave up/down, velocity, close, note trigger |
+| `instrumentPanels.spec.ts` | 5 | Browser instruments, default synth, device panel, Toaster add, bypass |
+| `effectsPanels.spec.ts` | 6 | Gluten/Bacteria/Grinder/Proof add, remove, bypass round-trip |
+| `aiFeatures.spec.ts` | 6 | Generative panel, chat, action history, voice, Load AI, composer |
+| `collabPreferences.spec.ts` | 6 | Collab panel open/interactive/close, preferences open/content, Ableton Link |
+| `audioMidiMisc.spec.ts` | 8 | Status bar metrics, session view, MIDI lanes, browser tabs, dock toggle |
+
+### Known gaps (deferred)
+- **Dirty indicator on track add** — `markDirty()` not called from `addTrack` (Batch 1 bug note)
+- **Overdub toggle** — conditionally rendered, needs MIDI track context
+- **Tempo BPM editing** — ValueField has no accessible name
+- **Audio clip operations** (normalize, reverse, strip silence) — require audio clips
+- **Chord track** — lane only visible when chords exist (chicken-and-egg)
+- **Arrangement selector** — only visible with >1 arrangement
+- **Elastic editor** — only visible with audio clips
+- **Tauri-only flows** — native file dialogs, plugin hosting, .dawproject import/export
