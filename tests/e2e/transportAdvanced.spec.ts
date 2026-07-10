@@ -10,7 +10,7 @@ test.describe('Transport Advanced Controls', () => {
     });
 
     test('Can toggle the metronome and reveal its volume slider', async ({ page }) => {
-        const metronome = page.getByRole('button', { name: 'Metronome' });
+        const metronome = page.getByRole('button', { name: 'Metronome', exact: true });
         await expect(metronome).toHaveAttribute('aria-pressed', 'false');
 
         await metronome.click();
@@ -23,7 +23,7 @@ test.describe('Transport Advanced Controls', () => {
     });
 
     test('Can toggle loop mode', async ({ page }) => {
-        const loop = page.getByRole('button', { name: 'Loop' });
+        const loop = page.getByRole('button', { name: 'Loop', exact: true });
         await expect(loop).toHaveAttribute('aria-pressed', 'false');
 
         await loop.click();
@@ -94,19 +94,19 @@ test.describe('Transport Advanced Controls', () => {
     test('Can select different editing tools', async ({ page }) => {
         const tools = page.getByRole('radiogroup', { name: 'Editing tools' });
 
-        await expect(tools.getByRole('radio', { name: 'Select (S)' })).toBeChecked();
+        await expect(tools.getByRole('radio', { name: /Select/ })).toBeChecked();
 
-        await tools.getByRole('radio', { name: 'Draw (D/B)' }).click();
-        await expect(tools.getByRole('radio', { name: 'Draw (D/B)' })).toBeChecked();
+        await tools.getByRole('radio', { name: /Draw/ }).click();
+        await expect(tools.getByRole('radio', { name: /Draw/ })).toBeChecked();
 
-        await tools.getByRole('radio', { name: 'Marquee (E)' }).click();
-        await expect(tools.getByRole('radio', { name: 'Marquee (E)' })).toBeChecked();
+        await tools.getByRole('radio', { name: /Marquee/ }).click();
+        await expect(tools.getByRole('radio', { name: /Marquee/ })).toBeChecked();
 
-        await tools.getByRole('radio', { name: 'Cut (C)' }).click();
-        await expect(tools.getByRole('radio', { name: 'Cut (C)' })).toBeChecked();
+        await tools.getByRole('radio', { name: /Cut/ }).click();
+        await expect(tools.getByRole('radio', { name: /Cut/ })).toBeChecked();
 
-        await tools.getByRole('radio', { name: 'Select (S)' }).click();
-        await expect(tools.getByRole('radio', { name: 'Select (S)' })).toBeChecked();
+        await tools.getByRole('radio', { name: /Select/ }).click();
+        await expect(tools.getByRole('radio', { name: /Select/ })).toBeChecked();
     });
 
     test('Can toggle background capture', async ({ page }) => {
@@ -117,6 +117,9 @@ test.describe('Transport Advanced Controls', () => {
 
         const capture_on = page.getByRole('button', { name: 'Disable background capture' });
         await expect(capture_on).toHaveAttribute('aria-pressed', 'true');
+
+        await capture_on.click();
+        await expect(page.getByRole('button', { name: 'Enable background capture' })).toHaveAttribute('aria-pressed', 'false');
     });
 
     test('Can toggle ripple editing', async ({ page }) => {
@@ -132,11 +135,15 @@ test.describe('Transport Advanced Controls', () => {
 
     test('Undo button becomes enabled after an action', async ({ page }) => {
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        const track_list = page.getByRole('grid', { name: /Track list/i });
+
+        await expect(track_list.getByRole('row', { name: /MIDI/i })).toHaveCount(0);
 
         await page.keyboard.press(`${MOD}+k`);
         await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
 
+        await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible();
         await expect(undo).toBeEnabled();
     });
 });
