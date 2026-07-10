@@ -48,17 +48,20 @@
 **Bugs found:**
 - `markDirty()` (Project module) only called from arrangement operations, NOT from `addTrack`. Adding a track does not set `projectStore.dirty`, so the dirty indicator never appears. The TimelineSurface has a local `markDirty` for canvas redraws only. This may be by design (CRDT autosave handles persistence) or a bug.
 
-### Batch 2: Transport Advanced Controls `[PENDING]`
+### Batch 2: Transport Advanced Controls `[DONE — PR #189]`
 **Spec:** `transportAdvanced.spec.ts`
-- [ ] Metronome toggle + volume slider
-- [ ] Loop toggle (L key)
-- [ ] Overdub toggle (+)
-- [ ] Punch in/out toggle (I key)
-- [ ] Count-in toggle + bars cycle
-- [ ] Tempo editor — change BPM
-- [ ] Auto-scroll toggle
-- [ ] Solo mode selector — cycle modes
-- [ ] Background capture toggle
+- [x] Metronome toggle + volume slider reveal
+- [x] Loop toggle
+- [x] Punch in/out toggle
+- [x] Count-in toggle + bars cycle (1→2→4→1)
+- [x] Auto-scroll toggle (default on)
+- [x] Solo mode selector — SIP/AFL/PFL cycling
+- [x] Editing tools — Select/Draw/Marquee/Cut switching
+- [x] Background capture toggle (round-trip)
+- [x] Ripple editing toggle
+- [x] Undo button enabled state after action
+- [ ] Overdub toggle `[conditionally rendered — needs MIDI track context]`
+- [ ] Tempo editor BPM change `[no accessible name on ValueField — needs a11y improvement]`
 **Bugs found:** _(none yet)_
 
 ### Batch 3: Editing Tools & Timeline Navigation `[PENDING]`
@@ -264,3 +267,4 @@
 |---------|------|-------|--------|----|
 | 1 | 2026-07-10 | Setup (PROCESS.md + COVERAGE.md) | Done | _(n/a — committed to main)_ |
 | 2 | 2026-07-10 | Batch 1: Launch & Project Flows | Done — merged | [#187](https://github.com/jcosta33/sourdaw/pull/187) |
+| 3 | 2026-07-10 | Batch 2: Transport Advanced | Done — merged | [#189](https://github.com/jcosta33/sourdaw/pull/189) |
