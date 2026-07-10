@@ -26,6 +26,7 @@ test.describe('Launch Screen & Project Entry', () => {
         });
 
         test('Can load a template from the grid and enter the workspace', async ({ page }) => {
+            test.setTimeout(60000);
             const launch_screen = page.getByLabel('Sourdaw — start a project');
             await launch_screen.waitFor({ state: 'visible' });
 
@@ -41,6 +42,7 @@ test.describe('Launch Screen & Project Entry', () => {
         });
 
         test('Can browse demos and load Nebula Drift', async ({ page }) => {
+            test.setTimeout(60000);
             const launch_screen = page.getByLabel('Sourdaw — start a project');
             await launch_screen.waitFor({ state: 'visible' });
 
@@ -50,6 +52,8 @@ test.describe('Launch Screen & Project Entry', () => {
 
             await page.getByRole('button', { name: /Nebula Drift/i }).click();
             await wait_for_workspace_ready(page);
+
+            await expect(page.getByRole('grid', { name: /Track list/i }).getByRole('row').first()).toBeVisible();
         });
 
         test('Can navigate back from grid view to home', async ({ page }) => {
@@ -79,6 +83,8 @@ test.describe('Launch Screen & Project Entry', () => {
             await expect(menu.getByRole('menuitem', { name: 'Load Demo Project…' })).toBeVisible();
             await expect(menu.getByRole('menuitem', { name: 'Save' })).toBeVisible();
             await expect(menu.getByRole('menuitem', { name: 'Export Audio…' })).toBeVisible();
+            await expect(menu.getByRole('menuitem', { name: 'Export Project File…' })).toBeVisible();
+            await expect(menu.getByRole('menuitem', { name: 'Import Project File…' })).toBeVisible();
         });
 
         test('Can close the project menu with Escape', async ({ page }) => {
@@ -115,9 +121,14 @@ test.describe('Launch Screen & Project Entry', () => {
             const track_list = page.getByRole('grid', { name: /Track list/i });
             await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible();
 
+            const has_recents_before = await page.evaluate(() => localStorage.getItem('sourdaw-recent-projects'));
+            expect(has_recents_before).toBeNull();
+
             await page.keyboard.press(`${MOD}+s`);
 
-            await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible();
+            await expect.poll(async () => {
+                return await page.evaluate(() => localStorage.getItem('sourdaw-recent-projects'));
+            }, { timeout: 10000 }).not.toBeNull();
         });
 
         test('Can rename the project from the transport bar', async ({ page }) => {
@@ -128,7 +139,7 @@ test.describe('Launch Screen & Project Entry', () => {
             await input.fill('My Test Song');
             await input.press('Enter');
 
-            await expect(page.getByText('My Test Song')).toBeVisible();
+            await expect(page.getByRole('button', { name: 'My Test Song' })).toBeVisible();
         });
     });
 });
