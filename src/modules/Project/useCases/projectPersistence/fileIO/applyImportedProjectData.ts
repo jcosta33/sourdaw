@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ProjectData } from '../../../models/ProjectData';
@@ -15,15 +16,14 @@ import { hydrateProjectMidi } from './hydrateProjectMidi';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
     const complete_project_identity_transition = beginProjectIdentityTransition();
-    const current_project = projectStore.value;
-    if (current_project) {
-        projectStore.set({ ...current_project, loading: true, initialized: false });
-    }
 
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
     resetAudioGraph();
+
+    await createCrdtProject(data.meta.name);
+    complete_project_identity_transition();
 
     // Reset per-device-instance stores (§13.1) so stale device state from the
     // previously open project does not leak into the imported project;
@@ -67,7 +67,6 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         activeArrangementId: defaultArrangementId,
     });
 
-    complete_project_identity_transition();
     projectStore.set({
         name: data.meta.name,
         createdAt: data.meta.createdAt,

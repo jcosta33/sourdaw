@@ -48,6 +48,7 @@ type HistoryItem = { kind: 'ai'; group: AiActionGroupView } | { kind: 'action'; 
 export const AiActionHistoryPanel = (): ReactElement | null => {
     const aiState = useStore(aiActionHistoryStore, defaultAiState);
     const historyState = useStore(actionHistoryStore, defaultHistoryState);
+    const [clear_error, setClearError] = useState<string | null>(null);
 
     if (!aiState.panelOpen) {
         return null;
@@ -74,8 +75,14 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
     const visibleItems = items.slice(0, 50);
 
     const handleClearAll = () => {
-        clearAiHistory();
-        clearActionHistory();
+        setClearError(null);
+        try {
+            clearActionHistory();
+            clearAiHistory();
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setClearError(`Clear history failed: ${reason}`);
+        }
     };
 
     return (
@@ -109,6 +116,11 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                     </div>
                 }
             />
+            {clear_error ? (
+                <div role="alert" className="border-b border-border/50 px-3 py-1.5 text-[10px] text-[var(--color-state-danger)]">
+                    {clear_error}
+                </div>
+            ) : null}
             <ScrollArea className="flex-1 max-h-[50vh]">
                 {visibleItems.length === 0 ? (
                     <div className="p-3">

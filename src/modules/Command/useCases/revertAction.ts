@@ -54,7 +54,7 @@ export async function revertAction(entryId: string): RevertActionOutput {
         return { status: 'reconciled' };
     }
 
-    const claim = claimActionReplayCapability(entryId);
+    const claim = claimActionReplayCapability({ entryId, metadata: entry });
     if (!claim) {
         return { status: 'unavailable' };
     }

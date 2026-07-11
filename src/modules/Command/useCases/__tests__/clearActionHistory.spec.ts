@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    claimActionReplayCapability,
+    claimActionReplayCapability as claimStoredActionReplayCapability,
     clearActionReplayCapabilities,
     hasActionReplayCapability,
     hasActionReplayMarkReconciliation,
-    registerActionReplayCapability,
+    registerActionReplayCapability as registerStoredActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../../stores/actionReplayCapabilities';
 import { undoStore, pushUndo } from '../../stores/undoStore';
@@ -16,6 +16,26 @@ import type { CallbackUndoEntry } from '../commandQueries';
 const mocks = vi.hoisted(() => ({
     clear_metadata: vi.fn<() => void>(),
 }));
+
+type TestInverseAction = Parameters<typeof registerStoredActionReplayCapability>[0]['inverseAction'];
+
+function create_metadata(entry_id: string) {
+    return {
+        id: entry_id,
+        label: `Action ${entry_id}`,
+        actionKind: 'testAction',
+        source: 'manual' as const,
+        timestamp: 10,
+    };
+}
+
+function registerActionReplayCapability(input: { entryId: string; inverseAction: TestInverseAction }): void {
+    registerStoredActionReplayCapability({ ...input, metadata: create_metadata(input.entryId) });
+}
+
+function claimActionReplayCapability(entry_id: string) {
+    return claimStoredActionReplayCapability({ entryId: entry_id, metadata: create_metadata(entry_id) });
+}
 
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {

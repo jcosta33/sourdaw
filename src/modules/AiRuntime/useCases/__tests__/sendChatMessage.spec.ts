@@ -191,4 +191,41 @@ describe('sendChatMessage injectables', () => {
             })
         );
     });
+
+    it('should persist and report the executed subset when a later prompt action fails', async () => {
+        const later_failure = new Error('second action was not dispatched');
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [
+                { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+            ],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(later_failure);
+
+        await sendChatMessage('delete drums and clip');
+
+        expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: delete drums and clip', ['removeTrack']);
+        const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistant_message?.id,
+            expect.objectContaining({
+                error: later_failure.message,
+                content: expect.stringMatching(/partially.*do not retry the whole command/is),
+            })
+        );
+    });
 });

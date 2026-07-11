@@ -1,23 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
+import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { audioContext, clearActionHistory, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+const { audioContext, clearActionHistory, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
     clearActionHistory: vi.fn(),
+    createCrdtProjectMock: vi.fn().mockResolvedValue(undefined),
     resetActionReplayAuthority: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: createCrdtProjectMock }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioContext,
@@ -158,7 +162,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
         restoreCachedAudioBuffersFromIdb.mockClear();
         clearActionHistory.mockClear();
         clearActionHistory.mockReset();
+        createCrdtProjectMock.mockClear();
         resetActionReplayAuthority.mockClear();
+        vi.mocked(resetModuleStoresToDefault).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -191,7 +197,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
         expect(clearActionHistory).toHaveBeenCalledTimes(1);
         expect(resetActionReplayAuthority.mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(createCrdtProject).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(vi.mocked(createCrdtProject).mock.invocationCallOrder[0]).toBeLessThan(
             clearActionHistory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
         expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
             restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
@@ -249,7 +261,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         await expect(applyImportedProjectData(makeProject())).rejects.toThrow('target scrub failed');
 
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: false, loading: true }));
+        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
     });
 });

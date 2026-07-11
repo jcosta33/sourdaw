@@ -7,6 +7,17 @@ type ActionReplayClaim = {
     readonly inverseAction: AppAction;
     readonly generation: number;
     readonly entryEpoch: number;
+    readonly metadataFingerprint: string;
+};
+
+type ActionReplayMetadata = {
+    readonly id: string;
+    readonly label: string;
+    readonly actionKind: string;
+    readonly source: 'manual' | 'prompt' | 'voice' | 'ai';
+    readonly timestamp: number;
+    readonly groupId?: string;
+    readonly groupLabel?: string;
 };
 
 type ActionReplayActiveRecord = {
@@ -22,6 +33,7 @@ let next_action_replay_entry_epoch = 0;
 type RegisterActionReplayCapabilityInput = {
     entryId: string;
     inverseAction: AppAction;
+    metadata: ActionReplayMetadata;
 };
 
 function pruneActionReplayCapabilities(): void {
@@ -58,7 +70,23 @@ function hasMatchingClaim({ record, claim }: HasMatchingClaimInput): boolean {
     return record.claim.generation === claim.generation && record.claim.entryEpoch === claim.entryEpoch;
 }
 
-export function registerActionReplayCapability({ entryId, inverseAction }: RegisterActionReplayCapabilityInput): void {
+function getActionReplayMetadataFingerprint(metadata: ActionReplayMetadata): string {
+    return JSON.stringify([
+        metadata.id,
+        metadata.label,
+        metadata.actionKind,
+        metadata.source,
+        metadata.timestamp,
+        metadata.groupId ?? null,
+        metadata.groupLabel ?? null,
+    ]);
+}
+
+export function registerActionReplayCapability({
+    entryId,
+    inverseAction,
+    metadata,
+}: RegisterActionReplayCapabilityInput): void {
     action_replay_capabilities.delete(entryId);
     action_replay_tombstones.delete(entryId);
     action_replay_capabilities.set(entryId, {
@@ -67,6 +95,7 @@ export function registerActionReplayCapability({ entryId, inverseAction }: Regis
             inverseAction,
             generation: action_replay_generation,
             entryEpoch: advanceActionReplayEntryEpoch(),
+            metadataFingerprint: getActionReplayMetadataFingerprint(metadata),
         },
     });
     pruneActionReplayCapabilities();
@@ -76,14 +105,51 @@ export function hasActionReplayCapability(entryId: string): boolean {
     return action_replay_capabilities.get(entryId)?.state === 'available';
 }
 
-export function claimActionReplayCapability(entryId: string): ActionReplayClaim | null {
+type ClaimActionReplayCapabilityInput = {
+    entryId: string;
+    metadata: ActionReplayMetadata;
+};
+
+export function claimActionReplayCapability({ entryId, metadata }: ClaimActionReplayCapabilityInput): ActionReplayClaim | null {
     const record = action_replay_capabilities.get(entryId);
-    if (record?.state !== 'available') {
+    if (
+        record?.state !== 'available' ||
+        record.claim.metadataFingerprint !== getActionReplayMetadataFingerprint(metadata)
+    ) {
         return null;
     }
 
     action_replay_capabilities.set(entryId, { state: 'claimed', claim: record.claim });
     return record.claim;
+}
+
+type HasCurrentActionReplayCapabilityInput = {
+    entryId: string;
+    metadata: ActionReplayMetadata;
+};
+
+export function hasCurrentActionReplayCapability({
+    entryId,
+    metadata,
+}: HasCurrentActionReplayCapabilityInput): boolean {
+    const record = action_replay_capabilities.get(entryId);
+    return (
+        record?.state === 'available' &&
+        record.claim.metadataFingerprint === getActionReplayMetadataFingerprint(metadata)
+    );
+}
+
+export function syncActionReplayCapabilityMetadata(entries: readonly ActionReplayMetadata[]): void {
+    const entries_by_id = new Map(entries.map((entry) => [entry.id, entry]));
+    for (const [entry_id, record] of action_replay_capabilities) {
+        const current = entries_by_id.get(entry_id);
+        if (
+            current === undefined ||
+            record.claim.metadataFingerprint !== getActionReplayMetadataFingerprint(current)
+        ) {
+            revokeActionReplayCapability(entry_id);
+        }
+    }
 }
 
 type RestoreActionReplayCapabilityInput = {

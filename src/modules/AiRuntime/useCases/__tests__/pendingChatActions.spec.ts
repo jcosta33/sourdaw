@@ -259,13 +259,18 @@ describe('pending chat action confirmation', () => {
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
         expect(result).toEqual({ status: 'failed', reason: missing_handler.message });
-        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
-        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Confirmed: delete drums', ['removeTrack']);
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({
                 error: missing_handler.message,
                 pendingActionConfirmationStatus: 'failed',
+                content: expect.stringMatching(/partially.*do not retry the whole command/is),
             })
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('failed');

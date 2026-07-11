@@ -1,6 +1,6 @@
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
-import { hasActionReplayCapability, hasActionReplayMarkReconciliation } from '../stores/actionReplayCapabilities';
+import { hasActionReplayMarkReconciliation, hasCurrentActionReplayCapability } from '../stores/actionReplayCapabilities';
 
 type GetActionReplayStatusOutput = { status: 'ready' } | { status: 'reconcile-mark' } | { status: 'unavailable' };
 
@@ -14,7 +14,7 @@ export function getActionReplayStatus(entryId: string): GetActionReplayStatusOut
         return { status: 'reconcile-mark' };
     }
 
-    if (hasActionReplayCapability(entryId)) {
+    if (hasCurrentActionReplayCapability({ entryId, metadata: entry })) {
         return { status: 'ready' };
     }
 

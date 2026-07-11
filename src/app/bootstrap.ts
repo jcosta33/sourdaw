@@ -53,7 +53,9 @@ import {
     setActionHistoryMetadataPort,
     setCommandEventBus,
     setPitchEditDependencies,
+    syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     getDsoSnapshotHandlers,
     markActionHistoryEntryReverted,
@@ -108,6 +110,10 @@ setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
+});
+syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
+actionHistoryStore.subscribe((state) => {
+    syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
 setArrangementEventBus(eventBus);

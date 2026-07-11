@@ -168,6 +168,32 @@ describe('AiActionHistoryPanel', () => {
 
         expect(module_mocks.clear_ai_history).toHaveBeenCalledTimes(1);
         expect(module_mocks.clear_action_history).toHaveBeenCalledTimes(1);
+        expect(module_mocks.clear_action_history.mock.invocationCallOrder[0]).toBeLessThan(
+            module_mocks.clear_ai_history.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+    });
+
+    it('should preserve AI display rows and surface failure when authoritative history scrub fails', () => {
+        mock_ai_state.groups = [
+            {
+                id: 'g1',
+                prompt: 'Keep this row',
+                actions: [{ kind: 'appAction', actionType: 'track.add', label: 'Action 1' }],
+                groupId: 'group-1',
+                timestamp: Date.now(),
+                reverted: false,
+            },
+        ];
+        module_mocks.clear_action_history.mockImplementation(() => {
+            throw new Error('target scrub failed');
+        });
+        render(<AiActionHistoryPanel />);
+
+        fireEvent.click(screen.getByLabelText('Clear action history'));
+
+        expect(module_mocks.clear_ai_history).not.toHaveBeenCalled();
+        expect(screen.getByText('Keep this row')).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('Clear history failed: target scrub failed');
     });
 
     it('should label mark-only reconciliation as a history retry', () => {

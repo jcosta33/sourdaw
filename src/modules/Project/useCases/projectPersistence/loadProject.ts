@@ -17,10 +17,6 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
     const complete_project_identity_transition = beginProjectIdentityTransition();
-    const current = projectStore.value;
-    if (current) {
-        projectStore.set({ ...current, loading: true, initialized: false });
-    }
 
     try {
         const loaded = await loadCrdtProject();
@@ -51,7 +47,7 @@ export async function loadProject(): Promise<boolean> {
     // Ensure loading flag is cleared — hydrate may not trigger a notification
     // if the value didn't change, so set it explicitly.
     const project = projectStore.value;
-    if (project?.loading) {
+    if (project) {
         projectStore.set({ ...project, loading: false, initialized: true });
     }
 

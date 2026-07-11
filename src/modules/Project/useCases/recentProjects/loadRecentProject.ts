@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
@@ -29,15 +30,13 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             return false;
         }
 
-        const current_project = projectStore.value;
-        if (current_project) {
-            projectStore.set({ ...current_project, loading: true, initialized: false });
-        }
-
         // Validated — stop any in-flight playback and tear down the previous
-        // project's audio graph before we hydrate stores for the new project.
+        // project's audio graph before activating storage for the new project.
         stopPlayback();
         resetAudioGraph();
+
+        await createCrdtProject(data.meta.name);
+        complete_project_identity_transition();
 
         // Reset per-device-instance stores (§13.1) so stale device state from the
         // previously open project does not leak into the project being loaded;
@@ -46,7 +45,6 @@ export async function loadRecentProject(key: string): Promise<boolean> {
 
         hydrateModuleStoresFromProjectData(data);
 
-        complete_project_identity_transition();
         projectStore.set({
             name: data.meta.name,
             createdAt: data.meta.createdAt,

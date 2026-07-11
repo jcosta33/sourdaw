@@ -1,13 +1,33 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
-    claimActionReplayCapability,
+    claimActionReplayCapability as claimStoredActionReplayCapability,
     clearActionReplayCapabilities,
     hasActionReplayCapability,
-    registerActionReplayCapability,
+    registerActionReplayCapability as registerStoredActionReplayCapability,
     restoreActionReplayCapability,
     revokeActionReplayCapability,
 } from '../actionReplayCapabilities';
+
+type TestInverseAction = Parameters<typeof registerStoredActionReplayCapability>[0]['inverseAction'];
+
+function create_metadata(entry_id: string) {
+    return {
+        id: entry_id,
+        label: `Action ${entry_id}`,
+        actionKind: 'testAction',
+        source: 'manual' as const,
+        timestamp: 10,
+    };
+}
+
+function registerActionReplayCapability(input: { entryId: string; inverseAction: TestInverseAction }): void {
+    registerStoredActionReplayCapability({ ...input, metadata: create_metadata(input.entryId) });
+}
+
+function claimActionReplayCapability(entry_id: string) {
+    return claimStoredActionReplayCapability({ entryId: entry_id, metadata: create_metadata(entry_id) });
+}
 
 describe('action replay capabilities', () => {
     beforeEach(() => {

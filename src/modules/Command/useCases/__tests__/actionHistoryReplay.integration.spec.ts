@@ -22,6 +22,7 @@ import { executeAppAction } from '../executeAppAction';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { revertAction } from '../revertAction';
+import { syncActionReplayMetadata } from '../syncActionReplayMetadata';
 
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type TogglePlaybackAction = Extract<AppAction, { type: 'togglePlayback' }>;
@@ -39,6 +40,7 @@ async function flush_pending_frame(): Promise<void> {
 
 describe('Command action-history replay integration', () => {
     const executed_actions: string[] = [];
+    let unsubscribe_action_history: (() => void) | null = null;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -51,6 +53,9 @@ describe('Command action-history replay integration', () => {
             record: recordActionHistoryEntry,
             markReverted: markActionHistoryEntryReverted,
             clear: clearCrdtActionHistory,
+        });
+        unsubscribe_action_history = actionHistoryStore.subscribe((state) => {
+            syncActionReplayMetadata(state?.entries ?? []);
         });
         clearHandlerRegistry();
         resetActionReplayAuthority();
@@ -77,6 +82,8 @@ describe('Command action-history replay integration', () => {
     });
 
     afterEach(async () => {
+        unsubscribe_action_history?.();
+        unsubscribe_action_history = null;
         clearHandlerRegistry();
         resetActionReplayAuthority();
         clearUndoHistory();
@@ -86,6 +93,50 @@ describe('Command action-history replay integration', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.restoreAllMocks();
+    });
+
+    it('should revoke local authority on hydrated metadata replacement and clear-readd continuity break', async () => {
+        const first_entry_id = '00000000-0000-4000-8000-000000000010';
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(first_entry_id);
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const original_entry = actionHistoryStore.value?.entries.find((entry) => entry.id === first_entry_id);
+        if (!original_entry) {
+            throw new Error('Expected original action metadata');
+        }
+
+        mutateCrdtDoc<IntegrationDocument>({
+            id: 'root',
+            changeFn: (document) => {
+                document.actionHistory = {
+                    entries: [
+                        {
+                            id: original_entry.id,
+                            label: 'Peer replacement',
+                            actionKind: original_entry.actionKind,
+                            source: original_entry.source,
+                            timestamp: original_entry.timestamp,
+                            reverted: original_entry.reverted,
+                        },
+                    ],
+                };
+            },
+        });
+        actionHistoryStore.hydrate();
+
+        expect(getActionReplayStatus(first_entry_id)).toEqual({ status: 'unavailable' });
+
+        const second_entry_id = '00000000-0000-4000-8000-000000000011';
+        vi.mocked(crypto.randomUUID).mockReturnValueOnce(second_entry_id);
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const second_entry = actionHistoryStore.value?.entries.find((entry) => entry.id === second_entry_id);
+        if (!second_entry) {
+            throw new Error('Expected second action metadata');
+        }
+
+        clearCrdtActionHistory();
+        recordActionHistoryEntry(second_entry);
+
+        expect(getActionReplayStatus(second_entry_id)).toEqual({ status: 'unavailable' });
     });
 
     it('should wire record, eviction revoke, revert mark, authority reset, and metadata clear', async () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -21,6 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearActionHistory: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -107,10 +109,16 @@ describe('loadRecentProject', () => {
         expect(clearActionHistory).toHaveBeenCalledTimes(1);
         const reset_authority_order = vi.mocked(resetActionReplayAuthority).mock.invocationCallOrder[0];
         const read_order = vi.mocked(readNamedProjectJson).mock.invocationCallOrder[0];
-        const hydrate_order = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
+        const create_target_order = vi.mocked(createCrdtProject).mock.invocationCallOrder[0];
         const target_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[0];
         expect(reset_authority_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
-        expect(target_clear_order).toBeGreaterThan(hydrate_order ?? Number.NEGATIVE_INFINITY);
+        expect(create_target_order).toBeLessThan(target_clear_order ?? Number.POSITIVE_INFINITY);
+        expect(target_clear_order).toBeLessThan(
+            vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(target_clear_order).toBeLessThan(
+            vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
         expect(target_clear_order).toBeLessThan(
             vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
@@ -136,7 +144,9 @@ describe('loadRecentProject', () => {
         const ok = await loadRecentProject('sourdaw:project:Large Project');
 
         expect(ok).toBe(false);
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: false, loading: true }));
+        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
     });
 });

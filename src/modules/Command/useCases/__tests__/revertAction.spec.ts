@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
-import { clearActionReplayCapabilities, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
+import {
+    clearActionReplayCapabilities,
+    registerActionReplayCapability as registerStoredActionReplayCapability,
+} from '../../stores/actionReplayCapabilities';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { revertAction } from '../revertAction';
 
@@ -54,6 +57,15 @@ function create_entry(overrides: Partial<TestHistoryEntry> = {}): TestHistoryEnt
         reverted: false,
         ...overrides,
     };
+}
+
+type TestInverseAction = Parameters<typeof registerStoredActionReplayCapability>[0]['inverseAction'];
+
+function registerActionReplayCapability(input: { entryId: string; inverseAction: TestInverseAction }): void {
+    registerStoredActionReplayCapability({
+        ...input,
+        metadata: create_entry({ id: input.entryId }),
+    });
 }
 
 describe('revertAction', () => {

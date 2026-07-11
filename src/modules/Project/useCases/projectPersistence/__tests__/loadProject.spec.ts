@@ -63,7 +63,13 @@ describe('loadProject', () => {
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
+            module_mocks.reset_module_stores.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(projectCrdtToStores).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
+            module_mocks.project_store_set.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
 
@@ -88,6 +94,6 @@ describe('loadProject', () => {
         expect(clearUndoHistory).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(module_mocks.set_auto_save_handle).not.toHaveBeenCalled();
-        expect(projectStore.set).toHaveBeenCalledTimes(1);
+        expect(projectStore.set).not.toHaveBeenCalled();
     });
 });
