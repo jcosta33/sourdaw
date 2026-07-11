@@ -14,14 +14,7 @@ const mocks = vi.hoisted(() => ({
     streamNativeCompletion: vi.fn(),
     resolveDsoNames: vi.fn(() => []),
     validateDsos: vi.fn(() => []),
-    executeDsos: vi.fn(async () => ({ summaries: ['Changed track'], failures: [] })),
-    transactSnapshot: vi.fn(async (callback: () => Promise<void>) => {
-        await callback();
-        return { before: new Map(), after: new Map() };
-    }),
-    commitActionUndoEntry: vi.fn(),
-    generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'AI edit' })),
-    pushAiActionGroup: vi.fn(),
+    commitDsoEditPlan: vi.fn(async () => ({ summaries: ['Changed track'], failures: [] })),
     appendChatMessage: vi.fn(),
     updateChatMessage: vi.fn(),
     setChatGenerating: vi.fn(),
@@ -69,19 +62,16 @@ vi.mock('../../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: () => null,
 }));
 
-vi.mock('../compileDso', () => ({
+vi.mock('../resolveDsoNames', () => ({
     resolveDsoNames: mocks.resolveDsoNames,
+}));
+
+vi.mock('../validateDsos', () => ({
     validateDsos: mocks.validateDsos,
-    executeDsos: mocks.executeDsos,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    transactSnapshot: mocks.transactSnapshot,
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    generateGroupId: mocks.generateGroupId,
-    commitActionUndoEntry: mocks.commitActionUndoEntry,
+vi.mock('../commitDsoEditPlan', () => ({
+    commitDsoEditPlan: mocks.commitDsoEditPlan,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -90,10 +80,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreState.value;
         },
     },
-}));
-
-vi.mock('../../../stores/aiActionHistoryStore', () => ({
-    pushAiActionGroup: mocks.pushAiActionGroup,
 }));
 
 vi.mock('../../../stores/chatStore', () => ({
@@ -128,8 +114,7 @@ describe('executeDsoEdit', () => {
         mocks.generateSchemaConstrainedNativeCompletion.mockResolvedValue(null);
         mocks.resolveDsoNames.mockReturnValue([]);
         mocks.validateDsos.mockReturnValue([]);
-        mocks.executeDsos.mockResolvedValue({ summaries: ['Changed track'], failures: [] });
-        mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'AI edit' });
+        mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Changed track'], failures: [] });
         mocks.trackStoreState.value = {
             tracks: [
                 {
@@ -141,10 +126,6 @@ describe('executeDsoEdit', () => {
             ],
             selectedTrackId: 'track-1',
         };
-        mocks.transactSnapshot.mockImplementation(async (callback: () => Promise<void>) => {
-            await callback();
-            return { before: new Map(), after: new Map() };
-        });
         mocks.streamNativeCompletion.mockImplementation(
             async (
                 _messages: Array<{ role: string; content: string }>,
@@ -214,9 +195,7 @@ describe('executeDsoEdit', () => {
 
         expect(result.success).toBe(true);
         expect(result.summaries).toEqual([]);
-        expect(mocks.executeDsos).not.toHaveBeenCalled();
-        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.commitDsoEditPlan).not.toHaveBeenCalled();
         expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
             expect.objectContaining({
                 prompt: 'delete drums',
@@ -306,9 +285,7 @@ describe('executeDsoEdit', () => {
 
         expect(result.success).toBe(true);
         expect(result.summaries).toEqual([]);
-        expect(mocks.executeDsos).not.toHaveBeenCalled();
-        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.commitDsoEditPlan).not.toHaveBeenCalled();
         expect(pendingActionConfirmationStore.value?.confirmations).toEqual([
             expect.objectContaining({
                 actionLabels: ['Remove track "Drums"', 'Mute track "Drums"'],
@@ -467,7 +444,7 @@ describe('executeDsoEdit', () => {
         mocks.dsoBackendAvailable.value = true;
         mocks.backend.value = 'native';
         mocks.nativeEngineReady.value = true;
-        mocks.executeDsos.mockResolvedValue({ summaries: ['Muted track'], failures: [] });
+        mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Muted track'], failures: [] });
         mocks.streamNativeCompletion.mockImplementation(
             async (
                 _messages: Array<{ role: string; content: string }>,
@@ -488,21 +465,14 @@ describe('executeDsoEdit', () => {
 
         expect(result.success).toBe(true);
         expect(result.summaries).toEqual(['Muted track']);
-        expect(mocks.executeDsos).toHaveBeenCalledWith([{ op: 'mute_track', track_id: 'track-1', muted: true }]);
-        expect(mocks.commitActionUndoEntry).toHaveBeenCalledWith(
-            expect.objectContaining({
-                label: 'AI: mute drums',
-                source: 'ai',
-                groupId: 'group-1',
-            })
-        );
-        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
-            expect.objectContaining({
-                prompt: 'mute drums',
-                actions: [{ kind: 'jsonEdit', label: 'Muted track' }],
-                groupId: 'group-1',
-            })
-        );
+        expect(mocks.commitDsoEditPlan).toHaveBeenCalledWith({
+            plan: expect.objectContaining({
+                dsos: [{ op: 'mute_track', track_id: 'track-1', muted: true }],
+            }),
+            userRequest: 'mute drums',
+            assistantMessageId: expect.any(String),
+            reasoning: undefined,
+        });
         expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
     });
 });

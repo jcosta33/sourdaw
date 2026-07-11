@@ -5,8 +5,9 @@ import { type EditPlan } from '../../models/DsoTypes';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { updateChatMessage } from '../../stores/chatStore';
 
-import { executeDsos, type DsoExecutionResult, validateDsos } from './compileDso';
+import { executeDsos } from './executeDsos';
 import { logEdit } from './logEdit';
+import { validateDsos } from './validateDsos';
 
 type CommitDsoEditPlanInput = {
     plan: EditPlan;
@@ -14,6 +15,8 @@ type CommitDsoEditPlanInput = {
     assistantMessageId: string;
     reasoning: string | undefined;
 };
+
+type DsoExecutionResult = Awaited<ReturnType<typeof executeDsos>>;
 
 type CommitDsoEditPlanOutput = Promise<DsoExecutionResult>;
 

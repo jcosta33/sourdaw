@@ -15,17 +15,10 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
-    commitActionUndoEntry: vi.fn(),
     pushAiActionGroup: vi.fn(),
     updateChatMessage: vi.fn(),
     notifyAiChange: vi.fn(),
-    validateDsos: vi.fn(() => []),
-    executeDsos: vi.fn(async () => ({ summaries: ['Removed track'], failures: [] })),
-    transactSnapshot: vi.fn(async (callback: () => Promise<void>) => {
-        await callback();
-        return { before: new Map(), after: new Map() };
-    }),
-    logEdit: vi.fn(),
+    commitDsoEditPlan: vi.fn(async () => ({ summaries: ['Removed track'], failures: [] })),
     trackStoreState: {
         value: {
             tracks: [
@@ -45,11 +38,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
-    commitActionUndoEntry: mocks.commitActionUndoEntry,
-}));
-
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    transactSnapshot: mocks.transactSnapshot,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -60,25 +48,20 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('../../stores/aiActionHistoryStore', () => ({
-    pushAiActionGroup: mocks.pushAiActionGroup,
-}));
-
 vi.mock('../../stores/chatStore', () => ({
     updateChatMessage: mocks.updateChatMessage,
+}));
+
+vi.mock('../../stores/aiActionHistoryStore', () => ({
+    pushAiActionGroup: mocks.pushAiActionGroup,
 }));
 
 vi.mock('../notifyAiChange', () => ({
     notifyAiChange: mocks.notifyAiChange,
 }));
 
-vi.mock('../dsoEditor/compileDso', () => ({
-    validateDsos: mocks.validateDsos,
-    executeDsos: mocks.executeDsos,
-}));
-
-vi.mock('../dsoEditor/logEdit', () => ({
-    logEdit: mocks.logEdit,
+vi.mock('../dsoEditor/commitDsoEditPlan', () => ({
+    commitDsoEditPlan: mocks.commitDsoEditPlan,
 }));
 
 const pendingAction: RuntimeAction = { type: 'removeTrack', payload: { trackId: 'track-1' } };
@@ -97,8 +80,7 @@ describe('pending chat action confirmation', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
-        mocks.validateDsos.mockReturnValue([]);
-        mocks.executeDsos.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
+        mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
         mocks.trackStoreState.value = {
             tracks: [
                 {
@@ -110,10 +92,6 @@ describe('pending chat action confirmation', () => {
             ],
             selectedTrackId: 'track-1',
         };
-        mocks.transactSnapshot.mockImplementation(async (callback: () => Promise<void>) => {
-            await callback();
-            return { before: new Map(), after: new Map() };
-        });
     });
 
     it('should execute a proposed action group only after explicit confirmation', async () => {
@@ -172,31 +150,17 @@ describe('pending chat action confirmation', () => {
             reasoning: 'track removal is destructive',
         });
 
-        expect(mocks.executeDsos).not.toHaveBeenCalled();
-        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.commitDsoEditPlan).not.toHaveBeenCalled();
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-dso-1' });
 
         expect(result).toEqual({ status: 'executed' });
-        expect(mocks.validateDsos).toHaveBeenCalledWith(pendingDsoPlan.dsos);
-        expect(mocks.executeDsos).toHaveBeenCalledWith(pendingDsoPlan.dsos);
-        expect(mocks.commitActionUndoEntry).toHaveBeenCalledWith(
-            expect.objectContaining({
-                label: 'AI: remove drums',
-                action: expect.objectContaining({ type: 'restoreDsoSnapshot' }),
-                inverseAction: expect.objectContaining({ type: 'restoreDsoSnapshot' }),
-                source: 'ai',
-                groupId: 'group-1',
-            })
-        );
-        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
-            expect.objectContaining({
-                prompt: 'delete drums',
-                actions: [{ kind: 'jsonEdit', label: 'Removed track' }],
-                groupId: 'group-1',
-            })
-        );
+        expect(mocks.commitDsoEditPlan).toHaveBeenCalledWith({
+            plan: pendingDsoPlan,
+            userRequest: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            reasoning: 'track removal is destructive',
+        });
         expect(mocks.notifyAiChange).toHaveBeenCalledWith('Confirmed: delete drums', ['dsoEdit']);
         expect(getPendingActionConfirmation('confirm-dso-1')?.status).toBe('executed');
         expect(getPendingActionConfirmation('confirm-dso-1')?.executedActions).toEqual([
@@ -238,10 +202,7 @@ describe('pending chat action confirmation', () => {
             status: 'failed',
             reason: 'The destructive edit target changed: Remove track "Drums"',
         });
-        expect(mocks.validateDsos).not.toHaveBeenCalled();
-        expect(mocks.executeDsos).not.toHaveBeenCalled();
-        expect(mocks.commitActionUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+        expect(mocks.commitDsoEditPlan).not.toHaveBeenCalled();
         expect(getPendingActionConfirmation('confirm-dso-stale')?.status).toBe('failed');
         expect(getPendingActionConfirmation('confirm-dso-stale')?.error).toBe(
             'The destructive edit target changed: Remove track "Drums"'
