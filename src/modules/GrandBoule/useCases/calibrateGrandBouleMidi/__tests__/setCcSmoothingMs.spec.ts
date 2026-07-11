@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setCcSmoothingMs';
-
+import { setCcSmoothingMs } from '../setCcSmoothingMs';
+const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setCcSmoothingMs', () => {
-    it('should export setCcSmoothingMs', () => {
-        expect(subject.setCcSmoothingMs).toBeDefined();
-        const t = typeof subject.setCcSmoothingMs;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        expect(() => setCcSmoothingMs({ store: mock_store } as never)).not.toThrow();
+    });
+    it('does nothing when state is null', () => {
+        expect(() => setCcSmoothingMs({ store: { value: null, set: () => {} } } as never)).not.toThrow();
     });
 });

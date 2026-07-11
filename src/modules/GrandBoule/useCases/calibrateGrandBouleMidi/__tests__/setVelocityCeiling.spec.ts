@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setVelocityCeiling';
-
+import { setVelocityCeiling } from '../setVelocityCeiling';
+const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setVelocityCeiling', () => {
-    it('should export setVelocityCeiling', () => {
-        expect(subject.setVelocityCeiling).toBeDefined();
-        const t = typeof subject.setVelocityCeiling;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        expect(() => setVelocityCeiling({ store: mock_store } as never)).not.toThrow();
+    });
+    it('does nothing when state is null', () => {
+        expect(() => setVelocityCeiling({ store: { value: null, set: () => {} } } as never)).not.toThrow();
     });
 });

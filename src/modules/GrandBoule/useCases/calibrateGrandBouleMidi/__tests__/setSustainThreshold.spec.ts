@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setSustainThreshold';
-
+import { setSustainThreshold } from '../setSustainThreshold';
+const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setSustainThreshold', () => {
-    it('should export setSustainThreshold', () => {
-        expect(subject.setSustainThreshold).toBeDefined();
-        const t = typeof subject.setSustainThreshold;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        expect(() => setSustainThreshold({ store: mock_store } as never)).not.toThrow();
+    });
+    it('does nothing when state is null', () => {
+        expect(() => setSustainThreshold({ store: { value: null, set: () => {} } } as never)).not.toThrow();
     });
 });
