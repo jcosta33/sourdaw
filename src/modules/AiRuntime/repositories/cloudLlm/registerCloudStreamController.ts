@@ -1,7 +1,6 @@
-import { activeCloudStreamControllers } from './activeCloudStreamControllers';
+import { cloudSession } from './cloudSession';
 
 /** Register a controller for an in-flight cloud stream. Returns the controller. */
 export function registerCloudStreamController(controller: AbortController): AbortController {
-    activeCloudStreamControllers.add(controller);
-    return controller;
+    return cloudSession.register_controller(controller);
 }

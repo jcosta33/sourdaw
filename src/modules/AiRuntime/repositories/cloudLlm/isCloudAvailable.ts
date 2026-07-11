@@ -1,5 +1,5 @@
-import { cloudAuthState } from './cloudAuthState';
+import { cloudSession } from './cloudSession';
 
 export function isCloudAvailable(): boolean {
-    return cloudAuthState.apiKey !== null && cloudAuthState.client !== null;
+    return cloudSession.is_available();
 }

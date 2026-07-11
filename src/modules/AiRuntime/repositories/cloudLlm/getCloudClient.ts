@@ -1,9 +1,9 @@
-import { cloudAuthState } from './cloudAuthState';
+import { cloudSession } from './cloudSession';
 
 import type Anthropic from '@anthropic-ai/sdk';
 
 type GetCloudClientOutput = Anthropic | null;
 
 export function getCloudClient(): GetCloudClientOutput {
-    return cloudAuthState.client;
+    return cloudSession.get_client();
 }

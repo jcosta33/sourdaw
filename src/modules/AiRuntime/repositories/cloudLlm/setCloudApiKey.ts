@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { cloudAuthState } from './cloudAuthState';
+import { cloudSession } from './cloudSession';
 
 // SECURITY: this is a local-first DAW. The user supplies their own
 // Anthropic API key which is why we pass `dangerouslyAllowBrowser: true`.
@@ -13,8 +13,8 @@ import { cloudAuthState } from './cloudAuthState';
 export const setCloudApiKey = inject({ logger })(
     ({ logger }) =>
         function setCloudApiKey(key: string): void {
-            cloudAuthState.apiKey = key;
-            cloudAuthState.client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+            const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+            cloudSession.replace_credentials({ api_key: key, client });
             logger.info('[Cloud AI] API key set');
         }
 );
