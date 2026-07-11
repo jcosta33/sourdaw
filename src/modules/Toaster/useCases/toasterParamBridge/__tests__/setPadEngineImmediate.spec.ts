@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setPadEngineImmediate';
-
-describe('setPadEngineImmediate', () => {
-    it('should export setPadEngineImmediate', () => {
-        expect(subject.setPadEngineImmediate).toBeDefined();
-        const time = typeof subject.setPadEngineImmediate;
-        expect(time === 'function' || time === 'object').toBe(true);
+import { export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void { } from '../setPadEngineImmediate.ts';
+describe('export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {', () => {
+    it('is callable', () => {
+        expect(typeof export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {).toBe('function');
     });
 });

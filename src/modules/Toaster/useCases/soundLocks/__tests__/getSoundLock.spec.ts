@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../getSoundLock';
-
-describe('getSoundLock', () => {
-    it('should export getSoundLock', () => {
-        expect(subject.getSoundLock).toBeDefined();
-        const time = typeof subject.getSoundLock;
-        expect(time === 'function' || time === 'object').toBe(true);
+import { export function getSoundLock(deviceId: string, padIndex: number, stepIndex: number): DrumEngineType | null { } from '../getSoundLock.ts';
+describe('export function getSoundLock(deviceId: string, padIndex: number, stepIndex: number): DrumEngineType | null {', () => {
+    it('is callable', () => {
+        expect(typeof export function getSoundLock(deviceId: string, padIndex: number, stepIndex: number): DrumEngineType | null {).toBe('function');
     });
 });

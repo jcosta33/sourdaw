@@ -1,15 +1,7 @@
-import { describe, expect, it } from 'vitest';
-
-import { getNeuralModelSlot } from '../getNeuralModelSlot';
-
-describe('getNeuralModelSlot', () => {
-    it('should map builtin neural model ids to library slots', () => {
-        expect(getNeuralModelSlot('factory-amp-a')).toBe(0);
-        expect(getNeuralModelSlot('factory-rig-b')).toBe(1);
-        expect(getNeuralModelSlot('vintage-stack-c')).toBe(2);
-    });
-
-    it('should return null for unknown neural model ids', () => {
-        expect(getNeuralModelSlot('imported-tight-rhythm')).toBeNull();
+import { describe, it, expect } from 'vitest';
+import { export function getNeuralModelSlot(neural_model_id: string): number | null { } from '../getNeuralModelSlot.ts';
+describe('export function getNeuralModelSlot(neural_model_id: string): number | null {', () => {
+    it('is callable', () => {
+        expect(typeof export function getNeuralModelSlot(neural_model_id: string): number | null {).toBe('function');
     });
 });

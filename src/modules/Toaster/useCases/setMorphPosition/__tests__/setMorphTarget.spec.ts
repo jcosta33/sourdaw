@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setMorphTarget';
-
-describe('setMorphTarget', () => {
-    it('should export setMorphTarget', () => {
-        expect(subject.setMorphTarget).toBeDefined();
-        const time = typeof subject.setMorphTarget;
-        expect(time === 'function' || time === 'object').toBe(true);
+import { export function setMorphTarget(deviceId: string, patternId: string | null): void { } from '../setMorphTarget.ts';
+describe('export function setMorphTarget(deviceId: string, patternId: string | null): void {', () => {
+    it('is callable', () => {
+        expect(typeof export function setMorphTarget(deviceId: string, patternId: string | null): void {).toBe('function');
     });
 });

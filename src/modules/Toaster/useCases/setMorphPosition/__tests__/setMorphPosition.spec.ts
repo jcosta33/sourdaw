@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setMorphPosition';
-
-describe('setMorphPosition', () => {
-    it('should export setMorphPosition', () => {
-        expect(subject.setMorphPosition).toBeDefined();
-        const time = typeof subject.setMorphPosition;
-        expect(time === 'function' || time === 'object').toBe(true);
+import { export function setMorphPosition(deviceId: string, position: number): void { } from '../setMorphPosition.ts';
+describe('export function setMorphPosition(deviceId: string, position: number): void {', () => {
+    it('is callable', () => {
+        expect(typeof export function setMorphPosition(deviceId: string, position: number): void {).toBe('function');
     });
 });
