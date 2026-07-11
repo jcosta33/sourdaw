@@ -8,7 +8,7 @@ import { scheduleDrumVoice } from '../drumSynthVoices';
 // connected; the last-source `onended` handler should disconnect every node in
 // the voice graph. A test fires the recorded `onended` callbacks and asserts
 // that no node is left connected — the teardown discipline mirrored from
-// builtinSynth.ts.
+// the built-in synth scheduler.
 
 type FakeNode = {
     connected: boolean;

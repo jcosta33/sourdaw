@@ -1,9 +1,9 @@
 /**
  * Use case: drum kit note scheduling.
- * Delegates to factoryDrumKits for kit data and builtinSynth for audio scheduling.
+ * Delegates to factoryDrumKits for kit data and scheduleNote for audio scheduling.
  */
 
-import { scheduleNote } from './builtinSynth';
+import { scheduleNote } from './scheduleNote';
 
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
 

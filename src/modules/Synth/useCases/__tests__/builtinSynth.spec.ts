@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 
 import { type SynthParams } from '#/modules/AudioEngine/useCases';
 
-import * as subject from '../builtinSynth';
+import { getSynthParamsFromDevices } from '../getSynthParamsFromDevices';
+import { scheduleNote } from '../scheduleNote';
+import { scheduleNoteOffline } from '../scheduleNoteOffline';
+
+const subject = { getSynthParamsFromDevices, scheduleNote, scheduleNoteOffline };
 
 // --- Minimal fake Web Audio graph ---------------------------------------
 // jsdom has no Web Audio APIs and the global mock only stubs createGain.

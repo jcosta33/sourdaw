@@ -15,7 +15,7 @@
 import { type DrumVoiceType } from '../models/DrumSynthTypes';
 
 // Disconnect every node in a voice's graph once its longest-running source
-// ends, mirroring the `onended` teardown discipline in builtinSynth.ts. Without
+// ends, mirroring the built-in synth scheduler's `onended` teardown discipline. Without
 // this, stopped 808 nodes stay connected to `dest` until GC collects them; on a
 // dense pattern that lets AudioNodes accumulate. `disconnect` on an
 // already-disconnected node throws, so each call is guarded.
