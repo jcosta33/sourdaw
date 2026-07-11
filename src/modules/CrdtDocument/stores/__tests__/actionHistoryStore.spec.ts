@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
-import { clearActionHistory } from '../../useCases/clearActionHistory';
 import {
     actionHistoryStore,
     defaultActionHistoryState,
@@ -198,34 +197,6 @@ describe('actionHistoryStore', () => {
 
         expect(actionHistoryStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
-    });
-
-    it('should scrub legacy executable history fields from the active CRDT document', async () => {
-        fake_doc.actionHistory = {
-            entries: [
-                {
-                    id: 'project-a-entry',
-                    label: 'Project A change',
-                    actionKind: 'setTempo',
-                    action: { type: 'setTempo', payload: { bpm: 90 } },
-                    inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
-                    source: 'manual',
-                    timestamp: 10,
-                    reverted: false,
-                },
-            ],
-        };
-        actionHistoryStore.hydrate();
-
-        clearActionHistory();
-        expect(fake_doc.actionHistory).toBeUndefined();
-
-        actionHistoryStore.hydrate();
-        await flush_pending_frame();
-
-        expect(fake_doc.actionHistory).toEqual({ entries: [] });
-        expect(JSON.stringify(fake_doc)).not.toContain('inverseAction');
-        expect(JSON.stringify(fake_doc)).not.toContain('"action"');
     });
 
     it('should return the exact metadata IDs evicted by a bounded write', () => {

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearActionHistory } from '#/modules/Command/useCases';
+import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
+import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { loadRecentProject } from '../loadRecentProject';
@@ -20,7 +21,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearActionHistory: vi.fn(), clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearActionHistory: vi.fn(),
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
@@ -57,6 +62,9 @@ describe('loadRecentProject', () => {
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
         vi.mocked(clearActionHistory).mockClear();
+        vi.mocked(clearActionHistory).mockReset();
+        vi.mocked(resetActionReplayAuthority).mockClear();
+        projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -95,14 +103,15 @@ describe('loadRecentProject', () => {
 
         await loadRecentProject('sourdaw:project:Large Project');
 
-        expect(clearActionHistory).toHaveBeenCalledTimes(2);
-        const first_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[0];
+        expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
+        const reset_authority_order = vi.mocked(resetActionReplayAuthority).mock.invocationCallOrder[0];
         const read_order = vi.mocked(readNamedProjectJson).mock.invocationCallOrder[0];
         const hydrate_order = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
-        const second_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[1];
-        expect(first_clear_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
-        expect(second_clear_order).toBeGreaterThan(hydrate_order ?? Number.NEGATIVE_INFINITY);
-        expect(second_clear_order).toBeLessThan(
+        const target_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[0];
+        expect(reset_authority_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
+        expect(target_clear_order).toBeGreaterThan(hydrate_order ?? Number.NEGATIVE_INFINITY);
+        expect(target_clear_order).toBeLessThan(
             vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
@@ -116,5 +125,18 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
+    it('should abort normal use when target scrub fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(clearActionHistory).mockImplementation(() => {
+            throw new Error('target scrub failed');
+        });
+
+        const ok = await loadRecentProject('sourdaw:project:Large Project');
+
+        expect(ok).toBe(false);
+        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: false, loading: true }));
     });
 });

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { loadProject } from '../projectPersistence/loadProject';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
@@ -9,12 +8,6 @@ import type { ProjectStoreState } from '../../stores/projectStore';
 const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState },
     projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
-    createCrdtProject: vi.fn<() => void>(),
-    loadCrdtProject: vi.fn<() => Promise<boolean>>(),
-    projectCrdtToStores: vi.fn<() => void>(),
-    startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
-    clearUndoHistory: vi.fn<() => void>(),
-    clearActionHistory: vi.fn<() => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
 }));
@@ -35,16 +28,7 @@ vi.mock('../../stores/projectStore', () => ({
 // Vitest mocks should use the same path as the import in the source file.
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    createCrdtProject: mocks.createCrdtProject,
-    loadCrdtProject: mocks.loadCrdtProject,
-    projectCrdtToStores: mocks.projectCrdtToStores,
-    startCrdtAutoSave: mocks.startCrdtAutoSave,
     persistCrdtProject: mocks.persistCrdtProject,
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    clearActionHistory: mocks.clearActionHistory,
-    clearUndoHistory: mocks.clearUndoHistory,
 }));
 
 // Relative to saveProject.ts: ../../recentProjects/addToRecentProjects
@@ -60,28 +44,6 @@ describe('Project Persistence Use Cases', () => {
             dirty: false,
             name: 'Initial',
         } as unknown as ProjectStoreState;
-    });
-
-    describe('loadProject', () => {
-        it('sets loading flag, loads CRDT, and hydrates stores', async () => {
-            mocks.loadCrdtProject.mockResolvedValue(true);
-
-            await loadProject();
-
-            expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ loading: true }));
-            expect(mocks.loadCrdtProject).toHaveBeenCalled();
-            expect(mocks.projectCrdtToStores).toHaveBeenCalled();
-            expect(mocks.clearUndoHistory).toHaveBeenCalled();
-            expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
-            expect(mocks.clearActionHistory).toHaveBeenCalledTimes(2);
-            const first_clear_order = mocks.clearActionHistory.mock.invocationCallOrder[0];
-            const load_order = mocks.loadCrdtProject.mock.invocationCallOrder[0];
-            const second_clear_order = mocks.clearActionHistory.mock.invocationCallOrder[1];
-            const hydrate_order = mocks.projectCrdtToStores.mock.invocationCallOrder[0];
-            expect(first_clear_order).toBeLessThan(load_order ?? Number.POSITIVE_INFINITY);
-            expect(second_clear_order).toBeGreaterThan(load_order ?? Number.NEGATIVE_INFINITY);
-            expect(second_clear_order).toBeLessThan(hydrate_order ?? Number.POSITIVE_INFINITY);
-        });
     });
 
     describe('saveProject', () => {

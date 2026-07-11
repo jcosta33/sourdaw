@@ -1,9 +1,9 @@
-import { clearActionHistory } from '#/modules/Command/useCases';
+import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 type CompleteProjectIdentityTransition = () => void;
 
 export function beginProjectIdentityTransition(): CompleteProjectIdentityTransition {
-    clearActionHistory();
+    resetActionReplayAuthority();
 
     let completed = false;
     return () => {

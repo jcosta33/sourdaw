@@ -19,7 +19,7 @@ export async function loadProject(): Promise<boolean> {
     const complete_project_identity_transition = beginProjectIdentityTransition();
     const current = projectStore.value;
     if (current) {
-        projectStore.set({ ...current, loading: true });
+        projectStore.set({ ...current, loading: true, initialized: false });
     }
 
     try {

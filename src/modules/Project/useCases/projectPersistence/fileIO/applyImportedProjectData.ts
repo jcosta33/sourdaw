@@ -15,6 +15,10 @@ import { hydrateProjectMidi } from './hydrateProjectMidi';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
     const complete_project_identity_transition = beginProjectIdentityTransition();
+    const current_project = projectStore.value;
+    if (current_project) {
+        projectStore.set({ ...current_project, loading: true, initialized: false });
+    }
 
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
@@ -29,20 +33,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);
 
-    // 2. Hydrate Project Store (Meta & Tuning)
-    projectStore.set({
-        name: data.meta.name,
-        createdAt: data.meta.createdAt,
-        updatedAt: data.meta.updatedAt,
-        keyRoot: data.meta.keyRoot,
-        scaleName: data.meta.scaleName,
-        tuning: data.meta.tuning,
-        dirty: false,
-        loading: false,
-        initialized: true,
-    });
-
-    // 3. Hydrate Arrangement Store
+    // 2. Hydrate Arrangement Store
     // Note: The current ProjectData schema collapses to a single arrangement on
     // import (multi-arrangement reconstruction is deferred — see the inventory
     // decisions backlog). We wrap the imported arrangement in one snapshot.
@@ -77,6 +68,17 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     });
 
     complete_project_identity_transition();
+    projectStore.set({
+        name: data.meta.name,
+        createdAt: data.meta.createdAt,
+        updatedAt: data.meta.updatedAt,
+        keyRoot: data.meta.keyRoot,
+        scaleName: data.meta.scaleName,
+        tuning: data.meta.tuning,
+        dirty: false,
+        loading: false,
+        initialized: true,
+    });
 
     const ctx = getAudioContext();
     // Reconstruct audio buffers if they exist in the metadata (future proofing)

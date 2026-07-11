@@ -6,14 +6,16 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { audioContext, clearActionHistory, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+const { audioContext, clearActionHistory, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
     clearActionHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 
@@ -23,7 +25,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     restoreCachedAudioBuffersFromIdb,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearActionHistory, clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearActionHistory,
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority,
+}));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are
@@ -151,6 +157,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         restoreCachedAudioBuffersFromIdb.mockClear();
         clearActionHistory.mockClear();
+        clearActionHistory.mockReset();
+        resetActionReplayAuthority.mockClear();
+        projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -179,11 +188,12 @@ describe('applyImportedProjectData round-trip hydration', () => {
     it('should reset replay authority before import writes and after imported state is active', async () => {
         await applyImportedProjectData(makeProject());
 
-        expect(clearActionHistory).toHaveBeenCalledTimes(2);
-        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
-            restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
+        expect(resetActionReplayAuthority.mock.invocationCallOrder[0]).toBeLessThan(
+            clearActionHistory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(clearActionHistory.mock.invocationCallOrder[1]).toBeLessThan(
+        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
             restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
@@ -230,5 +240,16 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const state = arrangementStore.value!;
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
+    });
+
+    it('should abort normal use when target scrub fails', async () => {
+        clearActionHistory.mockImplementation(() => {
+            throw new Error('target scrub failed');
+        });
+
+        await expect(applyImportedProjectData(makeProject())).rejects.toThrow('target scrub failed');
+
+        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: false, loading: true }));
     });
 });

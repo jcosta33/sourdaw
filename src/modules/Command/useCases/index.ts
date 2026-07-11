@@ -31,6 +31,7 @@ export { revertActionGroup } from './revertActionGroup';
 export { getActionReplayStatus } from './getActionReplayStatus';
 export { revertAction } from './revertAction';
 export { clearActionHistory } from './clearActionHistory';
+export { resetActionReplayAuthority } from './resetActionReplayAuthority';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';

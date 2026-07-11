@@ -29,6 +29,11 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             return false;
         }
 
+        const current_project = projectStore.value;
+        if (current_project) {
+            projectStore.set({ ...current_project, loading: true, initialized: false });
+        }
+
         // Validated — stop any in-flight playback and tear down the previous
         // project's audio graph before we hydrate stores for the new project.
         stopPlayback();
@@ -41,6 +46,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
 
         hydrateModuleStoresFromProjectData(data);
 
+        complete_project_identity_transition();
         projectStore.set({
             name: data.meta.name,
             createdAt: data.meta.createdAt,
@@ -54,7 +60,6 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         });
 
         writeProjectJson(raw);
-        complete_project_identity_transition();
 
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
         if (trackStore.value) {
