@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setPadEngineImmediate';
-
+import { setPadEngineImmediate } from '../setPadEngineImmediate';
 describe('setPadEngineImmediate', () => {
-    it('should export setPadEngineImmediate', () => {
-        expect(subject.setPadEngineImmediate).toBeDefined();
-        const time = typeof subject.setPadEngineImmediate;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof setPadEngineImmediate).toBe('function'); });
 });

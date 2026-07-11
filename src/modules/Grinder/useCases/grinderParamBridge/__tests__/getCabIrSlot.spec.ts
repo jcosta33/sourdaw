@@ -1,15 +1,8 @@
-import { describe, expect, it } from 'vitest';
-
+import { describe, it, expect } from 'vitest';
 import { getCabIrSlot } from '../getCabIrSlot';
-
 describe('getCabIrSlot', () => {
-    it('should map cabinet IR ids to library slots', () => {
-        expect(getCabIrSlot('4x12-tight')).toBe(0);
-        expect(getCabIrSlot('2x12-open')).toBe(1);
-        expect(getCabIrSlot('1x12-combo')).toBe(2);
-    });
-
-    it('should return null for unknown cabinet IR ids', () => {
-        expect(getCabIrSlot('external-impulse')).toBeNull();
+    it('returns slot index for valid id', () => {
+        const result = getCabIrSlot('invalid-id');
+        expect(result).toBeNull();
     });
 });

@@ -1,11 +1,15 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setGrandBouleMasterGain';
-
+import { describe, it, expect, vi } from 'vitest';
+import { setGrandBouleMasterGain } from '../setGrandBouleMasterGain';
+const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 describe('setGrandBouleMasterGain', () => {
-    it('should export setGrandBouleMasterGain', () => {
-        expect(subject.setGrandBouleMasterGain).toBeDefined();
-        const t = typeof subject.setGrandBouleMasterGain;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('updates store when state exists', () => {
+        const set = vi.fn();
+        setGrandBouleMasterGain({ store: { value: { masterGain: 0.5 }, set }, engine: mock_engine, gain: 0.8 } as never);
+        expect(set).toHaveBeenCalledTimes(1);
+    });
+    it('does nothing when state is null', () => {
+        const set = vi.fn();
+        setGrandBouleMasterGain({ store: { value: null, set }, engine: mock_engine, gain: 0.8 } as never);
+        expect(set).not.toHaveBeenCalled();
     });
 });

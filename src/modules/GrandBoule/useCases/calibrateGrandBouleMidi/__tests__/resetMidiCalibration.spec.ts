@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../resetMidiCalibration';
-
+import { resetMidiCalibration } from '../resetMidiCalibration';
+const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('resetMidiCalibration', () => {
-    it('should export resetMidiCalibration', () => {
-        expect(subject.resetMidiCalibration).toBeDefined();
-        const t = typeof subject.resetMidiCalibration;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        expect(() => resetMidiCalibration({ store: mock_store } as never)).not.toThrow();
+    });
+    it('does nothing when state is null', () => {
+        expect(() => resetMidiCalibration({ store: { value: null, set: () => {} } } as never)).not.toThrow();
     });
 });
