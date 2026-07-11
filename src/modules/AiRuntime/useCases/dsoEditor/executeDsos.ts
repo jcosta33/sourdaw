@@ -685,26 +685,46 @@ type ExecuteDsosOutput = Promise<{
 }>;
 
 /**
+ * Complete executeDsos invocations are serialized because each run observes
+ * mutable project state while resolving the `latest` device sentinel.
+ * No current path recursively calls executeDsos; a future recursive caller
+ * would wait behind its parent and must be refactored before being introduced.
+ */
+let executeDsosQueue: Promise<void> = Promise.resolve();
+
+/**
  * Execute a list of validated DSOs against the DAW stores.
  * Returns human-readable summaries of each applied operation alongside the
  * failures of any DSO that threw — callers must surface failures rather than
  * report unconditional success.
  */
 export async function executeDsos(dsos: Dso[]): ExecuteDsosOutput {
-    const context: DsoExecContext = { lastInsertedDeviceId: null };
-    const summaries: string[] = [];
-    const failures: Array<{ op: Dso['op']; reason: string }> = [];
+    const previousRun = executeDsosQueue;
+    let releaseRun: (() => void) | undefined;
+    executeDsosQueue = new Promise<void>((resolve) => {
+        releaseRun = resolve;
+    });
 
-    for (const dso of dsos) {
-        try {
-            await executeSingleDso(dso, context);
-            summaries.push(describeDso(dso));
-        } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            logger.warn(`Failed to execute DSO ${dso.op}:`, error);
-            failures.push({ op: dso.op, reason });
+    try {
+        await previousRun;
+
+        const context: DsoExecContext = { lastInsertedDeviceId: null };
+        const summaries: string[] = [];
+        const failures: Array<{ op: Dso['op']; reason: string }> = [];
+
+        for (const dso of dsos) {
+            try {
+                await executeSingleDso(dso, context);
+                summaries.push(describeDso(dso));
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                logger.warn(`Failed to execute DSO ${dso.op}:`, error);
+                failures.push({ op: dso.op, reason });
+            }
         }
-    }
 
-    return { summaries, failures };
+        return { summaries, failures };
+    } finally {
+        releaseRun?.();
+    }
 }
