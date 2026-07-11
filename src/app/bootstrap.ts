@@ -23,6 +23,7 @@ import {
     setArrangementEventBus,
     setTimeOperationDependencies,
 } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,
@@ -69,7 +70,7 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
-import { getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
+import { markDirty, getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
@@ -215,6 +216,8 @@ registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });
 initStalenessDetection();
+
+trackStore.subscribe(() => markDirty());
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.
 // Detects WebGPU capability and populates model registry from OPFS cache.

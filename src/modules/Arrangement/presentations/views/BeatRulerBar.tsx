@@ -342,6 +342,7 @@ export const BeatRulerBar = (): React.ReactElement => {
                 disableLooping();
             }}
             title="Click to seek · Drag to scrub · Shift+drag to set loop region · Double-click to disable loop"
+            aria-label="Beat ruler"
         >
             <canvas ref={setCanvas} className="block w-full" style={{ height: BEAT_RULER_HEIGHT }} />
         </TimelineChromeSurface>
