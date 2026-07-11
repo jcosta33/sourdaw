@@ -74,7 +74,7 @@ describe('handleAnalyzeMix', () => {
         const failure = new Error('master analyser unusable');
         vi.mocked(analyzeMix).mockRejectedValue(failure);
 
-        await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
+        await expect(handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined })).rejects.toBe(failure);
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 7 });

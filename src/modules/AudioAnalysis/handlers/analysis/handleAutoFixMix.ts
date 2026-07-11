@@ -78,6 +78,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
             logger.error(error instanceof Error ? error : new Error(`Auto-fix mix failed: ${String(error)}`));
             mixAnalysisDisplayLifecycle.fail({ token });
+            throw error;
         }
     },
     describe: () => ({ label: 'Auto-fix mix issues' }),

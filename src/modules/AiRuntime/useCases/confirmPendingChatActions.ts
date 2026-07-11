@@ -94,6 +94,9 @@ export async function confirmPendingChatActions(
     }
 
     if (execution_failure_reason) {
+        const history_failure_warning = action_history_failed_after_commit
+            ? ' Action history also failed for an earlier applied action.'
+            : '';
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
@@ -104,7 +107,7 @@ export async function confirmPendingChatActions(
             error: execution_failure_reason,
             content:
                 executedLabels.length > 0
-                    ? `Partially executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}. Do not retry the whole command.`
+                    ? `Partially executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}.${history_failure_warning} Do not retry the whole command.`
                     : `Failed to execute confirmed actions:\n\n${execution_failure_reason}`,
         });
         return { status: 'failed', reason: execution_failure_reason };

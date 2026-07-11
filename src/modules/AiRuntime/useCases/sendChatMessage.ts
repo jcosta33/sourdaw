@@ -145,12 +145,15 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 }
 
                 if (execution_failure_reason) {
+                    const history_failure_warning = action_history_failed_after_commit
+                        ? ' Action history also failed for an earlier applied action.'
+                        : '';
                     updateChatMessage(assistantMsgId, {
                         isStreaming: false,
                         error: execution_failure_reason,
                         content:
                             executedLabels.length > 0
-                                ? `Partially executed:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}. Do not retry the whole command.`
+                                ? `Partially executed:\n\n${executedLabels.map((entry) => `- **${entry.action.type.replaceAll('_', ' ')}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}.${history_failure_warning} Do not retry the whole command.`
                                 : 'Failed to execute prompt command.',
                     });
                     return;

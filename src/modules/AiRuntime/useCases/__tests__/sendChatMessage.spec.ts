@@ -228,4 +228,41 @@ describe('sendChatMessage injectables', () => {
             })
         );
     });
+
+    it('should report both earlier committed history failure and later dispatch failure', async () => {
+        const committed_failure = new Error('first action history failed');
+        const later_failure = new Error('second action was not dispatched');
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [
+                { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                { type: 'removeClip', payload: { clipId: 'clip-1' } },
+            ],
+            rawText: 'delete drums and clip',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
+
+        await sendChatMessage('delete drums and clip');
+
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistant_message?.id,
+            expect.objectContaining({
+                error: later_failure.message,
+                content: expect.stringMatching(/partially.*later action failed.*history.*do not retry the whole command/is),
+            })
+        );
+    });
 });

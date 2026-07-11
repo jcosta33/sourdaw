@@ -20,7 +20,7 @@ type MarkCommittedReplayInput = {
     claim: ActionReplayClaim;
 };
 
-function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void {
+function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): 'marked' | 'unavailable' {
     try {
         const outcome = actionHistoryMetadataPort.markReverted({
             entryId,
@@ -28,7 +28,7 @@ function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void
         });
         if (outcome.status === 'unavailable') {
             consumeActionReplayClaim({ entryId, claim });
-            return;
+            return 'unavailable';
         }
     } catch (error) {
         retainActionReplayMarkReconciliation({ entryId, claim });
@@ -36,6 +36,7 @@ function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void
     }
 
     consumeActionReplayClaim({ entryId, claim });
+    return 'marked';
 }
 
 type RetryActionReplayMarkInput = {
@@ -52,7 +53,12 @@ function retryActionReplayMark({ entryId, claim }: RetryActionReplayMarkInput): 
     return outcome.status === 'marked';
 }
 
-type RevertActionOutput = Promise<{ status: 'executed' } | { status: 'reconciled' } | { status: 'unavailable' }>;
+type RevertActionOutput = Promise<
+    | { status: 'executed' }
+    | { status: 'executed-unmarked' }
+    | { status: 'reconciled' }
+    | { status: 'unavailable' }
+>;
 
 export async function revertAction(entryId: string): RevertActionOutput {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
@@ -84,14 +90,18 @@ export async function revertAction(entryId: string): RevertActionOutput {
         });
     } catch (error) {
         if (error instanceof AppActionCommittedError) {
+            let mark_outcome: 'marked' | 'unavailable';
             try {
-                markCommittedReplay({ entryId, claim });
+                mark_outcome = markCommittedReplay({ entryId, claim });
             } catch (mark_error) {
                 throw new AggregateError(
                     [error, mark_error],
                     `Action replay committed but metadata reconciliation failed: ${entryId}`,
                     { cause: mark_error }
                 );
+            }
+            if (mark_outcome === 'unavailable') {
+                return { status: 'executed-unmarked' };
             }
             throw error;
         }
@@ -100,6 +110,6 @@ export async function revertAction(entryId: string): RevertActionOutput {
         throw error;
     }
 
-    markCommittedReplay({ entryId, claim });
-    return { status: 'executed' };
+    const mark_outcome = markCommittedReplay({ entryId, claim });
+    return mark_outcome === 'marked' ? { status: 'executed' } : { status: 'executed-unmarked' };
 }

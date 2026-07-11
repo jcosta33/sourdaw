@@ -178,7 +178,7 @@ describe('Command action-history replay integration', () => {
         actionHistoryStore.hydrate();
         resolve_inverse?.();
 
-        await expect(replay).resolves.toEqual({ status: 'executed' });
+        await expect(replay).resolves.toEqual({ status: 'executed-unmarked' });
         expect(actionHistoryStore.value?.entries[0]).toEqual(
             expect.objectContaining({ id: entry.id, label: 'Peer replacement', reverted: false })
         );

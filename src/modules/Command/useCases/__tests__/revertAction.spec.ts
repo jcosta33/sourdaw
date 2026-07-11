@@ -163,6 +163,20 @@ describe('revertAction', () => {
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
     });
 
+    it('should report executed-unmarked when committed execution finds replacement metadata', async () => {
+        const entry = create_entry();
+        const committed_failure = new AppActionCommittedError('togglePlayback', new Error('inverse history failed'));
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockRejectedValueOnce(committed_failure);
+        mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        await expect(revertAction(entry.id)).resolves.toEqual({ status: 'executed-unmarked' });
+
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+
     it('should not restore a pending replay capability after history is cleared', async () => {
         const entry = create_entry();
         const failure = new Error('replay failed after clear');

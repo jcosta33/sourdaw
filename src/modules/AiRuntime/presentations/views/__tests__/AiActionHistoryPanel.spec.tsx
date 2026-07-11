@@ -21,6 +21,8 @@ type MockActionHistoryEntry = {
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     reverted: boolean;
+    groupId?: string;
+    groupLabel?: string;
 };
 
 const module_mocks = vi.hoisted(() => ({
@@ -34,7 +36,11 @@ const module_mocks = vi.hoisted(() => ({
     get_action_replay_status: vi.fn<(entry_id: string) => { status: 'ready' | 'reconcile-mark' | 'unavailable' }>(
         () => ({ status: 'ready' })
     ),
-    revert_action: vi.fn<(entry_id: string) => Promise<{ status: 'executed' | 'reconciled' | 'unavailable' }>>(
+    revert_action: vi.fn<
+        (
+            entry_id: string
+        ) => Promise<{ status: 'executed' | 'executed-unmarked' | 'reconciled' | 'unavailable' }>
+    >(
         async () => ({ status: 'executed' })
     ),
 }));
@@ -253,5 +259,49 @@ describe('AiActionHistoryPanel', () => {
         fireEvent.click(screen.getByLabelText('Revert this change'));
 
         await waitFor(() => expect(screen.getByText('Revert failed: history write failed')).toBeInTheDocument());
+    });
+
+    it('should warn when the inverse applied after its metadata row was replaced', async () => {
+        mock_history_state.entries = [
+            {
+                id: 'e1',
+                label: 'Original action',
+                actionKind: 'workspace.select',
+                timestamp: 10,
+                reverted: false,
+                source: 'manual',
+            },
+        ];
+        module_mocks.revert_action.mockResolvedValue({ status: 'executed-unmarked' });
+        render(<AiActionHistoryPanel />);
+
+        fireEvent.click(screen.getByLabelText('Revert this change'));
+
+        await waitFor(() =>
+            expect(screen.getByText('Change applied, but history row changed')).toBeInTheDocument()
+        );
+        expect(screen.queryByText('Reverted')).not.toBeInTheDocument();
+    });
+
+    it('should reset row-local replay status when immutable metadata changes at the same ID', async () => {
+        mock_history_state.entries = [
+            {
+                id: 'e1',
+                label: 'Original action',
+                actionKind: 'workspace.select',
+                timestamp: 10,
+                reverted: false,
+                source: 'manual',
+            },
+        ];
+        const view = render(<AiActionHistoryPanel />);
+        fireEvent.click(screen.getByLabelText('Revert this change'));
+        await waitFor(() => expect(screen.getByText('Reverted')).toBeInTheDocument());
+
+        mock_history_state.entries = [{ ...mock_history_state.entries[0]!, label: 'Peer replacement' }];
+        view.rerender(<AiActionHistoryPanel />);
+
+        expect(screen.getByText('Peer replacement')).toBeInTheDocument();
+        expect(screen.queryByText('Reverted')).not.toBeInTheDocument();
     });
 });

@@ -312,4 +312,37 @@ describe('pending chat action confirmation', () => {
             })
         );
     });
+
+    it('should report committed history failure together with a later confirmation failure', async () => {
+        const committed_failure = new Error('first action history failed');
+        const later_failure = new Error('second action missing handler');
+        mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums and clip',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction, secondPendingAction],
+            actionLabels: ['Remove track', 'Remove clip'],
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'failed', reason: later_failure.message });
+        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
+            { actionType: 'removeTrack', label: 'Remove track' },
+        ]);
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                error: later_failure.message,
+                content: expect.stringMatching(/partially.*later action failed.*history.*do not retry the whole command/is),
+            })
+        );
+    });
 });

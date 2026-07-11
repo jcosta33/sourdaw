@@ -33,6 +33,8 @@ type ActionHistoryEntryView = {
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     reverted: boolean;
+    groupId?: string;
+    groupLabel?: string;
 };
 
 const defaultAiState = { groups: [] as AiActionGroupView[], panelOpen: false };
@@ -136,7 +138,10 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                         item.kind === 'ai' ? (
                             <AiGroupItem key={`ai-${item.group.id}`} group={item.group} />
                         ) : (
-                            <ActionItem key={`action-${item.entry.id}-${idx}`} entry={item.entry} />
+                            <ActionItem
+                                key={`action-${getActionHistoryEntryIdentity(item.entry)}-${idx}`}
+                                entry={item.entry}
+                            />
                         )
                     )
                 )}
@@ -197,7 +202,9 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
 
 const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
     const replay_status = getActionReplayStatus(entry.id);
-    const [operation_status, setOperationStatus] = useState<'idle' | 'pending' | 'executed' | 'reconciled'>('idle');
+    const [operation_status, setOperationStatus] = useState<
+        'idle' | 'pending' | 'executed' | 'executed-unmarked' | 'reconciled'
+    >('idle');
     const [operation_error, setOperationError] = useState<string | null>(null);
 
     const handleRevert = async () => {
@@ -205,7 +212,11 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
         setOperationError(null);
         try {
             const result = await revertAction(entry.id);
-            if (result.status === 'executed' || result.status === 'reconciled') {
+            if (
+                result.status === 'executed' ||
+                result.status === 'executed-unmarked' ||
+                result.status === 'reconciled'
+            ) {
                 setOperationStatus(result.status);
                 return;
             }
@@ -225,10 +236,19 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
         subtitle = replay_status.status === 'reconcile-mark' ? 'Updating history...' : 'Reverting...';
     } else if (operation_status === 'executed') {
         subtitle = 'Reverted';
+    } else if (operation_status === 'executed-unmarked') {
+        subtitle = 'Change applied, but history row changed';
     } else if (operation_status === 'reconciled') {
         subtitle = 'History repaired';
     } else if (replay_status.status === 'reconcile-mark') {
         subtitle = 'History update pending';
+    }
+
+    let subtitle_class_name: string | undefined;
+    if (operation_error) {
+        subtitle_class_name = 'text-[var(--color-state-danger)]';
+    } else if (operation_status === 'executed-unmarked') {
+        subtitle_class_name = 'text-[var(--color-state-warning)]';
     }
 
     let endSlotContent: ReactElement | null = null;
@@ -237,6 +257,7 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
     } else if (
         (replay_status.status === 'ready' || replay_status.status === 'reconcile-mark') &&
         operation_status !== 'executed' &&
+        operation_status !== 'executed-unmarked' &&
         operation_status !== 'reconciled'
     ) {
         const is_reconciliation = replay_status.status === 'reconcile-mark';
@@ -268,11 +289,23 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             startSlot={<User className="size-3 text-muted-foreground/50" />}
             title={entry.label}
             subtitle={subtitle}
-            subtitleClassName={operation_error ? 'text-[var(--color-state-danger)]' : undefined}
+            subtitleClassName={subtitle_class_name}
             endSlot={endSlotContent}
         />
     );
 };
+
+function getActionHistoryEntryIdentity(entry: ActionHistoryEntryView): string {
+    return JSON.stringify([
+        entry.id,
+        entry.label,
+        entry.actionKind,
+        entry.source,
+        entry.timestamp,
+        entry.groupId ?? null,
+        entry.groupLabel ?? null,
+    ]);
+}
 
 function formatTimeAgo(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
