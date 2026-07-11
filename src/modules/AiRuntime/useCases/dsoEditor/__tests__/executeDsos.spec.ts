@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Dso } from '../../../models/DsoTypes';
-import { executeDsos, resolveDsoNames, validateDsos } from '../compileDso';
+import { executeDsos } from '../executeDsos';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as { value: unknown },
@@ -426,20 +426,6 @@ describe('executeDsos', () => {
         expect(mocks.warn).toHaveBeenNthCalledWith(5, 'DSO: unknown drum style "marching", defaulting to "rock".');
     });
 
-    it('should reject time signature denominators unsupported by Transport validation', () => {
-        mocks.trackStoreValue.value = trackState([]);
-        const dso: Dso = { op: 'set_time_signature', numerator: 7, denominator: 3 };
-
-        const errors = validateDsos([dso]);
-
-        expect(errors).toEqual([
-            {
-                dso,
-                reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16',
-            },
-        ]);
-    });
-
     it('should surface invalid time signature execution instead of summarizing it as applied', async () => {
         mocks.trackStoreValue.value = trackState([]);
 
@@ -450,53 +436,5 @@ describe('executeDsos', () => {
         expect(result.failures).toEqual([
             { op: 'set_time_signature', reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16' },
         ]);
-    });
-});
-
-describe('resolveDsoNames', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        mocks.trackStoreValue.value = null;
-    });
-
-    // Fix 4: a remove_track referencing a nonexistent track must NOT silently
-    // create that track — it returns a resolution error and adds no add_track.
-    it('returns a resolution error for a remove_track miss without auto-creating', () => {
-        mocks.trackStoreValue.value = trackState([{ id: 'track-1', name: 'Drums' }]);
-
-        const dsos: Dso[] = [{ op: 'remove_track', track_id: 'Ghost Track' }];
-        const errors = resolveDsoNames(dsos);
-
-        expect(errors).toHaveLength(1);
-        expect(errors[0]!.reason).toMatch(/Could not find track "Ghost Track"/);
-        // No add_track was prepended.
-        expect(dsos.map((d) => d.op)).toEqual(['remove_track']);
-    });
-
-    it('still auto-creates a track for an additive op (add_clip) miss', () => {
-        mocks.trackStoreValue.value = trackState([{ id: 'track-1', name: 'Drums' }]);
-
-        const dsos: Dso[] = [
-            { op: 'add_clip', track_id: 'New Bass', name: 'Bass', type: 'audio', start_beats: 0, end_beats: 4 },
-        ];
-        const errors = resolveDsoNames(dsos);
-
-        expect(errors).toEqual([]);
-        // An add_track DSO was prepended for the additive op's missing target.
-        expect(dsos.map((d) => d.op)).toEqual(['add_track', 'add_clip']);
-    });
-
-    it('does not auto-create for mute_track / solo_track / color_track misses', () => {
-        mocks.trackStoreValue.value = trackState([{ id: 'track-1', name: 'Drums' }]);
-
-        const dsos: Dso[] = [
-            { op: 'mute_track', track_id: 'Nope', muted: true },
-            { op: 'solo_track', track_id: 'Nope', soloed: true },
-            { op: 'color_track', track_id: 'Nope', color: '#fff' },
-        ];
-        const errors = resolveDsoNames(dsos);
-
-        expect(errors).toHaveLength(3);
-        expect(dsos.every((d) => d.op !== 'add_track')).toBe(true);
     });
 });

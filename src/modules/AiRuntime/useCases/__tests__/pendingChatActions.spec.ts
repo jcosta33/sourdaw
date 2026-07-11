@@ -72,8 +72,11 @@ vi.mock('../notifyAiChange', () => ({
     notifyAiChange: mocks.notifyAiChange,
 }));
 
-vi.mock('../dsoEditor/compileDso', () => ({
+vi.mock('../dsoEditor/validateDsos', () => ({
     validateDsos: mocks.validateDsos,
+}));
+
+vi.mock('../dsoEditor/executeDsos', () => ({
     executeDsos: mocks.executeDsos,
 }));
 

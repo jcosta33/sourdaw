@@ -69,9 +69,15 @@ vi.mock('../../../repositories/webLlm/getLlmEngine', () => ({
     getLlmEngine: () => null,
 }));
 
-vi.mock('../compileDso', () => ({
+vi.mock('../resolveDsoNames', () => ({
     resolveDsoNames: mocks.resolveDsoNames,
+}));
+
+vi.mock('../validateDsos', () => ({
     validateDsos: mocks.validateDsos,
+}));
+
+vi.mock('../executeDsos', () => ({
     executeDsos: mocks.executeDsos,
 }));
 

@@ -31,11 +31,12 @@ import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isD
 
 import { buildProjectSummary } from './buildProjectSummary';
 import { commitDsoEditPlan } from './commitDsoEditPlan';
-import { resolveDsoNames, validateDsos, type DsoExecutionResult } from './compileDso';
 import { buildDsoPrompt } from './dsoPrompt';
 import { getDsoConfirmationTargets } from './getDsoConfirmationTargets';
 import { parseEditPlan } from './parseEditPlan';
+import { resolveDsoNames } from './resolveDsoNames';
 import { serializeLogicalState } from './serializeLogicalState';
+import { validateDsos } from './validateDsos';
 
 export type DsoEditResult = {
     success: boolean;
@@ -226,7 +227,9 @@ function finish(): void {
     llmStatusStore.set({ state: 'ready', modelId: 'qwen3-8b' });
 }
 
-function formatResultFailures(failures: DsoExecutionResult['failures']): string | undefined {
+type FormatResultFailuresInput = Awaited<ReturnType<typeof commitDsoEditPlan>>['failures'];
+
+function formatResultFailures(failures: FormatResultFailuresInput): string | undefined {
     if (failures.length === 0) {
         return undefined;
     }
