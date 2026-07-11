@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../cycleChannelStripWidth';
-
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }) }));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { cycleChannelStripWidth } from '../cycleChannelStripWidth';
 describe('cycleChannelStripWidth', () => {
-    it('should export cycleChannelStripWidth', () => {
-        expect(subject.cycleChannelStripWidth).toBeDefined();
-        const time = typeof subject.cycleChannelStripWidth;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof cycleChannelStripWidth).toBe('function'); });
+    it('runs without crash', () => { expect(() => cycleChannelStripWidth()).not.toThrow(); });
 });

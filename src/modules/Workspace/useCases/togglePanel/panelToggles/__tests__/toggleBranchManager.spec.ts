@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../toggleBranchManager';
-
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }) }));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleBranchManager } from '../toggleBranchManager';
 describe('toggleBranchManager', () => {
-    it('should export toggleBranchManager', () => {
-        expect(subject.toggleBranchManager).toBeDefined();
-        const time = typeof subject.toggleBranchManager;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof toggleBranchManager).toBe('function'); });
+    it('runs without crash', () => { expect(() => toggleBranchManager()).not.toThrow(); });
 });

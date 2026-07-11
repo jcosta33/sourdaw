@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../setTrackListWidth';
-
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }) }));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { setTrackListWidth } from '../setTrackListWidth';
 describe('setTrackListWidth', () => {
-    it('should export setTrackListWidth', () => {
-        expect(subject.setTrackListWidth).toBeDefined();
-        const time = typeof subject.setTrackListWidth;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof setTrackListWidth).toBe('function'); });
+    it('runs without crash', () => { expect(() => setTrackListWidth()).not.toThrow(); });
 });

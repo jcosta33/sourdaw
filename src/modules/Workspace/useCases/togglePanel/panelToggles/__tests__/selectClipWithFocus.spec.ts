@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../selectClipWithFocus';
-
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }) }));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { selectClipWithFocus } from '../selectClipWithFocus';
 describe('selectClipWithFocus', () => {
-    it('should export selectClipWithFocus', () => {
-        expect(subject.selectClipWithFocus).toBeDefined();
-        const time = typeof subject.selectClipWithFocus;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof selectClipWithFocus).toBe('function'); });
+    it('runs without crash', () => { expect(() => selectClipWithFocus()).not.toThrow(); });
 });

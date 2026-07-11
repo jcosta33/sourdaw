@@ -1,11 +1,8 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../toggleAutomationPanel';
-
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }) }));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleAutomationPanel } from '../toggleAutomationPanel';
 describe('toggleAutomationPanel', () => {
-    it('should export toggleAutomationPanel', () => {
-        expect(subject.toggleAutomationPanel).toBeDefined();
-        const time = typeof subject.toggleAutomationPanel;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('is a function', () => { expect(typeof toggleAutomationPanel).toBe('function'); });
+    it('runs without crash', () => { expect(() => toggleAutomationPanel()).not.toThrow(); });
 });

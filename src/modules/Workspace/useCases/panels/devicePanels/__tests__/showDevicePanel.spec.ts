@@ -1,9 +1,6 @@
-import { describe, it, expect } from 'vitest';
-
-import * as subject from '../showDevicePanel';
-
-describe('showDevicePanel', () => {
-    it('should load the module', () => {
-        expect(subject).toBeDefined();
-    });
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('#/infra/di/inject', () => ({ inject: () => (fn: () => any) => fn({ eventBus: { emit: vi.fn() } }) }));
+import { export const showDevicePanel = inject({ eventBus: WorkspaceEventBus })( } from '../showDevicePanel';
+describe('export const showDevicePanel = inject({ eventBus: WorkspaceEventBus })(', () => {
+    it('is defined', () => { expect(export const showDevicePanel = inject({ eventBus: WorkspaceEventBus })().toBeDefined(); });
 });
