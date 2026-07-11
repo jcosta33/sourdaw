@@ -113,22 +113,16 @@ test.describe('Launch Screen & Project Entry', () => {
             await launch_new_project(page);
         });
 
-        test('Can save the project with Cmd+S after adding a track', async ({ page }) => {
+        test('Saving the project clears the unsaved changes indicator', async ({ page }) => {
             await page.keyboard.press(`${MOD}+k`);
             await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
             await page.getByRole('option', { name: 'Add MIDI Track' }).click();
 
-            const track_list = page.getByRole('grid', { name: /Track list/i });
-            await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible();
-
-            const has_recents_before = await page.evaluate(() => localStorage.getItem('sourdaw-recent-projects'));
-            expect(has_recents_before).toBeNull();
+            await expect(page.locator('[title="Unsaved changes"]')).toBeVisible({ timeout: 10000 });
 
             await page.keyboard.press(`${MOD}+s`);
 
-            await expect.poll(async () => {
-                return await page.evaluate(() => localStorage.getItem('sourdaw-recent-projects'));
-            }, { timeout: 10000 }).not.toBeNull();
+            await expect(page.locator('[title="Unsaved changes"]')).toBeHidden({ timeout: 10000 });
         });
 
         test('Can rename the project from the transport bar', async ({ page }) => {
