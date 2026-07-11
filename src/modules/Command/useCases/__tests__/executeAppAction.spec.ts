@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vite
 
 import { type Logger } from '#/infra/logger/types';
 
+import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
@@ -93,12 +94,15 @@ describe('executeAppAction', () => {
         vi.restoreAllMocks();
     });
 
-    it('logs error if no handler is found', async () => {
+    it('should reject as not dispatched and log when no handler is found', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
 
-        await executeAppAction(action);
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionNotDispatchedError);
 
         expect(mocks.logger.error).toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('executes a registered handler', async () => {
@@ -206,6 +210,28 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toThrow('handler failed');
 
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should surface a committed error when metadata recording fails after handler execution', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const metadata_failure = new Error('metadata failed');
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+        });
+        mocks.recordActionHistoryMetadata.mockImplementation(() => {
+            throw metadata_failure;
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+
+        await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(handler.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(1);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        const reported_error = mocks.logger.error.mock.calls.at(-1)?.[0];
+        expect(reported_error).toBeInstanceOf(AppActionCommittedError);
+        expect(reported_error?.cause).toBe(metadata_failure);
     });
 
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an

@@ -6,6 +6,7 @@ import {
     hasActionReplayCapability,
     registerActionReplayCapability,
     restoreActionReplayCapability,
+    revokeActionReplayCapability,
 } from '../actionReplayCapabilities';
 
 describe('action replay capabilities', () => {
@@ -50,6 +51,85 @@ describe('action replay capabilities', () => {
         restoreActionReplayCapability({ entryId: 'entry-1', claim });
 
         expect(hasActionReplayCapability('entry-1')).toBe(false);
+    });
+
+    it('should not restore a claim after its exact entry ID is revoked', () => {
+        registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'togglePlayback' } });
+        const claim = claimActionReplayCapability('entry-1');
+        if (claim === null) {
+            throw new Error('Expected the capability to be claimed');
+        }
+
+        revokeActionReplayCapability('entry-1');
+        restoreActionReplayCapability({ entryId: 'entry-1', claim });
+
+        expect(hasActionReplayCapability('entry-1')).toBe(false);
+    });
+
+    it('should restore only the latest claim after the same entry ID is registered again', () => {
+        registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'togglePlayback' } });
+        const stale_claim = claimActionReplayCapability('entry-1');
+        if (stale_claim === null) {
+            throw new Error('Expected the first capability to be claimed');
+        }
+        registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'stopPlayback' } });
+        const current_claim = claimActionReplayCapability('entry-1');
+        if (current_claim === null) {
+            throw new Error('Expected the replacement capability to be claimed');
+        }
+
+        restoreActionReplayCapability({ entryId: 'entry-1', claim: stale_claim });
+        restoreActionReplayCapability({ entryId: 'entry-1', claim: current_claim });
+
+        expect(claimActionReplayCapability('entry-1')?.inverseAction).toEqual({ type: 'stopPlayback' });
+    });
+
+    it('should not let 200 stale restores displace newer capabilities', () => {
+        const stale_claims: Array<{
+            entryId: string;
+            claim: NonNullable<ReturnType<typeof claimActionReplayCapability>>;
+        }> = [];
+        for (let index = 0; index < 200; index += 1) {
+            const entry_id = `stale-entry-${index}`;
+            registerActionReplayCapability({ entryId: entry_id, inverseAction: { type: 'togglePlayback' } });
+            const claim = claimActionReplayCapability(entry_id);
+            if (claim === null) {
+                throw new Error(`Expected stale capability ${entry_id} to be claimed`);
+            }
+            stale_claims.push({ entryId: entry_id, claim });
+            revokeActionReplayCapability(entry_id);
+        }
+        for (let index = 0; index < 200; index += 1) {
+            registerActionReplayCapability({
+                entryId: `current-entry-${index}`,
+                inverseAction: { type: 'stopPlayback' },
+            });
+        }
+
+        for (const stale_claim of stale_claims) {
+            restoreActionReplayCapability(stale_claim);
+        }
+
+        for (let index = 0; index < 200; index += 1) {
+            expect(hasActionReplayCapability(`current-entry-${index}`)).toBe(true);
+            expect(hasActionReplayCapability(`stale-entry-${index}`)).toBe(false);
+        }
+    });
+
+    it('should not let an exact-revoke tombstone consume a newer capability slot', () => {
+        for (let index = 0; index < 200; index += 1) {
+            registerActionReplayCapability({
+                entryId: `entry-${index}`,
+                inverseAction: { type: 'togglePlayback' },
+            });
+        }
+
+        revokeActionReplayCapability('entry-0');
+        registerActionReplayCapability({ entryId: 'entry-200', inverseAction: { type: 'stopPlayback' } });
+
+        expect(hasActionReplayCapability('entry-0')).toBe(false);
+        expect(hasActionReplayCapability('entry-1')).toBe(true);
+        expect(hasActionReplayCapability('entry-200')).toBe(true);
     });
 
     it('should prune the oldest capabilities at the history bound', () => {

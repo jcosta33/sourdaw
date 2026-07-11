@@ -1,6 +1,6 @@
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
-import { hasActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { hasActionReplayCapability, hasActionReplayMarkReconciliation } from '../stores/actionReplayCapabilities';
 
 export function canRevertAction(entryId: string): boolean {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
@@ -8,5 +8,5 @@ export function canRevertAction(entryId: string): boolean {
         return false;
     }
 
-    return hasActionReplayCapability(entryId);
+    return hasActionReplayCapability(entryId) || hasActionReplayMarkReconciliation(entryId);
 }

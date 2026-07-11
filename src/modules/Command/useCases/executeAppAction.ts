@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
+import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandlerMap } from '../stores/handlerRegistry';
 
@@ -30,8 +31,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const handler = getHandlerMap()[action.type] as ActionHandler<any> | undefined;
             if (!handler) {
-                logger.error(new Error(`No handler registered for action: ${action.type}`));
-                return;
+                const error = new AppActionNotDispatchedError(action.type);
+                logger.error(error);
+                throw error;
             }
 
             // Capture undo info BEFORE executing — this lets describe() snapshot current
@@ -53,51 +55,72 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             try {
                 await handler.execute(action);
             } catch (error) {
+                try {
+                    clearSemanticContext();
+                } catch (clear_error) {
+                    logger.error(
+                        new Error(`Semantic context cleanup failed for action: ${action.type}`, {
+                            cause: clear_error,
+                        })
+                    );
+                }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                 throw error;
-            } finally {
-                clearSemanticContext();
             }
 
-            // Record to macro playback
-            recordAction(action);
+            try {
+                clearSemanticContext();
+            } catch (error) {
+                const committed_error = new AppActionCommittedError(action.type, error);
+                logger.error(committed_error);
+                throw committed_error;
+            }
 
-            if (!options?.skipUndo) {
-                // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                if (handler.undoable) {
-                    const entry_id = crypto.randomUUID();
-                    const inverse_action = undoResult?.inverseAction ?? null;
-                    const evicted_entry_ids = actionHistoryMetadataPort.record({
-                        id: entry_id,
-                        label,
-                        actionKind: action.type,
-                        source: options?.source ?? 'manual',
-                        timestamp: Date.now(),
-                        groupId: options?.groupId,
-                        groupLabel: options?.groupLabel,
-                        reverted: false,
-                    });
-                    for (const evicted_entry_id of evicted_entry_ids) {
-                        revokeActionReplayCapability(evicted_entry_id);
+            try {
+                // Record to macro playback
+                recordAction(action);
+
+                if (!options?.skipUndo) {
+                    // Record undoable actions to global history (skip UI-only actions like panel toggles)
+                    if (handler.undoable) {
+                        const entry_id = crypto.randomUUID();
+                        const inverse_action = undoResult?.inverseAction ?? null;
+                        const evicted_entry_ids = actionHistoryMetadataPort.record({
+                            id: entry_id,
+                            label,
+                            actionKind: action.type,
+                            source: options?.source ?? 'manual',
+                            timestamp: Date.now(),
+                            groupId: options?.groupId,
+                            groupLabel: options?.groupLabel,
+                            reverted: false,
+                        });
+                        for (const evicted_entry_id of evicted_entry_ids) {
+                            revokeActionReplayCapability(evicted_entry_id);
+                        }
+                        if (inverse_action) {
+                            registerActionReplayCapability({ entryId: entry_id, inverseAction: inverse_action });
+                        }
                     }
-                    if (inverse_action) {
-                        registerActionReplayCapability({ entryId: entry_id, inverseAction: inverse_action });
+
+                    if (undoResult) {
+                        const entry = createUndoEntry(
+                            undoResult.label,
+                            action,
+                            undoResult.inverseAction ?? null,
+                            options?.source ?? 'manual'
+                        );
+                        if (options?.groupId) {
+                            entry.groupId = options.groupId;
+                            entry.groupLabel = options.groupLabel;
+                        }
+                        commitUndoEntry(entry);
                     }
                 }
-
-                if (undoResult) {
-                    const entry = createUndoEntry(
-                        undoResult.label,
-                        action,
-                        undoResult.inverseAction ?? null,
-                        options?.source ?? 'manual'
-                    );
-                    if (options?.groupId) {
-                        entry.groupId = options.groupId;
-                        entry.groupLabel = options.groupLabel;
-                    }
-                    commitUndoEntry(entry);
-                }
+            } catch (error) {
+                const committed_error = new AppActionCommittedError(action.type, error);
+                logger.error(committed_error);
+                throw committed_error;
             }
         }
 );

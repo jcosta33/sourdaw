@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    claimActionReplayCapability,
     clearActionReplayCapabilities,
     hasActionReplayCapability,
+    hasActionReplayMarkReconciliation,
     registerActionReplayCapability,
+    retainActionReplayMarkReconciliation,
 } from '../../stores/actionReplayCapabilities';
 import { undoStore, pushUndo } from '../../stores/undoStore';
 import { clearActionHistory } from '../clearActionHistory';
@@ -53,5 +56,19 @@ describe('clearActionHistory', () => {
         clearActionHistory();
 
         expect(undoStore.value?.past).toEqual([linear_entry]);
+    });
+
+    it('should invalidate pending mark-only reconciliation state', () => {
+        registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'togglePlayback' } });
+        const claim = claimActionReplayCapability('entry-1');
+        if (claim === null) {
+            throw new Error('Expected the capability to be claimed');
+        }
+        retainActionReplayMarkReconciliation({ entryId: 'entry-1', claim });
+        expect(hasActionReplayMarkReconciliation('entry-1')).toBe(true);
+
+        clearActionHistory();
+
+        expect(hasActionReplayMarkReconciliation('entry-1')).toBe(false);
     });
 });

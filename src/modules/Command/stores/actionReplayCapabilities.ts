@@ -1,14 +1,23 @@
 import { type AppAction } from '../useCases/commandQueries';
 
 const MAX_ACTION_REPLAY_CAPABILITIES = 200;
+const MAX_ACTION_REPLAY_TOMBSTONES = 200;
 
 type ActionReplayClaim = {
     readonly inverseAction: AppAction;
     readonly generation: number;
+    readonly entryEpoch: number;
 };
 
-const action_replay_capabilities = new Map<string, ActionReplayClaim>();
+type ActionReplayActiveRecord = {
+    readonly state: 'available' | 'claimed' | 'pending-mark';
+    readonly claim: ActionReplayClaim;
+};
+
+const action_replay_capabilities = new Map<string, ActionReplayActiveRecord>();
+const action_replay_tombstones = new Map<string, number>();
 let action_replay_generation = 0;
+let next_action_replay_entry_epoch = 0;
 
 type RegisterActionReplayCapabilityInput = {
     entryId: string;
@@ -25,27 +34,56 @@ function pruneActionReplayCapabilities(): void {
     }
 }
 
+function pruneActionReplayTombstones(): void {
+    while (action_replay_tombstones.size > MAX_ACTION_REPLAY_TOMBSTONES) {
+        const oldest_entry_id = action_replay_tombstones.keys().next().value;
+        if (oldest_entry_id === undefined) {
+            return;
+        }
+        action_replay_tombstones.delete(oldest_entry_id);
+    }
+}
+
+function advanceActionReplayEntryEpoch(): number {
+    next_action_replay_entry_epoch += 1;
+    return next_action_replay_entry_epoch;
+}
+
+type HasMatchingClaimInput = {
+    record: ActionReplayActiveRecord;
+    claim: ActionReplayClaim;
+};
+
+function hasMatchingClaim({ record, claim }: HasMatchingClaimInput): boolean {
+    return record.claim.generation === claim.generation && record.claim.entryEpoch === claim.entryEpoch;
+}
+
 export function registerActionReplayCapability({ entryId, inverseAction }: RegisterActionReplayCapabilityInput): void {
     action_replay_capabilities.delete(entryId);
+    action_replay_tombstones.delete(entryId);
     action_replay_capabilities.set(entryId, {
-        inverseAction,
-        generation: action_replay_generation,
+        state: 'available',
+        claim: {
+            inverseAction,
+            generation: action_replay_generation,
+            entryEpoch: advanceActionReplayEntryEpoch(),
+        },
     });
     pruneActionReplayCapabilities();
 }
 
 export function hasActionReplayCapability(entryId: string): boolean {
-    return action_replay_capabilities.has(entryId);
+    return action_replay_capabilities.get(entryId)?.state === 'available';
 }
 
 export function claimActionReplayCapability(entryId: string): ActionReplayClaim | null {
-    const claim = action_replay_capabilities.get(entryId);
-    if (claim === undefined) {
+    const record = action_replay_capabilities.get(entryId);
+    if (record?.state !== 'available') {
         return null;
     }
 
-    action_replay_capabilities.delete(entryId);
-    return claim;
+    action_replay_capabilities.set(entryId, { state: 'claimed', claim: record.claim });
+    return record.claim;
 }
 
 type RestoreActionReplayCapabilityInput = {
@@ -54,23 +92,74 @@ type RestoreActionReplayCapabilityInput = {
 };
 
 export function restoreActionReplayCapability({ entryId, claim }: RestoreActionReplayCapabilityInput): void {
+    if (claim.generation !== action_replay_generation || action_replay_tombstones.has(entryId)) {
+        return;
+    }
+
+    const record = action_replay_capabilities.get(entryId);
+    if (record === undefined || record.state !== 'claimed' || !hasMatchingClaim({ record, claim })) {
+        return;
+    }
+
+    action_replay_capabilities.set(entryId, { state: 'available', claim });
+}
+
+export function revokeActionReplayCapability(entryId: string): void {
+    action_replay_capabilities.delete(entryId);
+    action_replay_tombstones.delete(entryId);
+    action_replay_tombstones.set(entryId, advanceActionReplayEntryEpoch());
+    pruneActionReplayTombstones();
+}
+
+type ConsumeActionReplayClaimInput = {
+    entryId: string;
+    claim: ActionReplayClaim;
+};
+
+export function consumeActionReplayClaim({ entryId, claim }: ConsumeActionReplayClaimInput): void {
+    const record = action_replay_capabilities.get(entryId);
+    if (record === undefined || record.state !== 'claimed' || !hasMatchingClaim({ record, claim })) {
+        return;
+    }
+
+    action_replay_capabilities.delete(entryId);
+}
+
+type RetainActionReplayMarkReconciliationInput = {
+    entryId: string;
+    claim: ActionReplayClaim;
+};
+
+export function retainActionReplayMarkReconciliation({
+    entryId,
+    claim,
+}: RetainActionReplayMarkReconciliationInput): void {
     if (claim.generation !== action_replay_generation) {
         return;
     }
 
-    if (action_replay_capabilities.has(entryId)) {
+    const record = action_replay_capabilities.get(entryId);
+    if (record === undefined || record.state !== 'claimed' || !hasMatchingClaim({ record, claim })) {
         return;
     }
 
-    action_replay_capabilities.set(entryId, claim);
-    pruneActionReplayCapabilities();
+    action_replay_capabilities.set(entryId, { state: 'pending-mark', claim });
 }
 
-export function revokeActionReplayCapability(entryId: string): void {
+export function hasActionReplayMarkReconciliation(entryId: string): boolean {
+    return action_replay_capabilities.get(entryId)?.state === 'pending-mark';
+}
+
+export function completeActionReplayMarkReconciliation(entryId: string): void {
+    if (action_replay_capabilities.get(entryId)?.state !== 'pending-mark') {
+        return;
+    }
+
     action_replay_capabilities.delete(entryId);
 }
 
 export function clearActionReplayCapabilities(): void {
     action_replay_generation += 1;
     action_replay_capabilities.clear();
+    action_replay_tombstones.clear();
 }

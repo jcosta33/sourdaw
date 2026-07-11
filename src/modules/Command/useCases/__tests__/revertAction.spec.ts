@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { canRevertAction } from '../canRevertAction';
 import { revertAction } from '../revertAction';
@@ -112,6 +113,34 @@ describe('revertAction', () => {
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
     });
 
+    it('should restore a claim without marking when replay was not dispatched', async () => {
+        const entry = create_entry();
+        const failure = new AppActionNotDispatchedError('togglePlayback');
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockRejectedValueOnce(failure);
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        await expect(revertAction(entry.id)).rejects.toBe(failure);
+
+        expect(canRevertAction(entry.id)).toBe(true);
+        expect(mocks.mark_reverted).not.toHaveBeenCalled();
+    });
+
+    it('should mark the original reverted without restoring after committed metadata failure', async () => {
+        const entry = create_entry();
+        const failure = new AppActionCommittedError('togglePlayback', new Error('metadata failed'));
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockRejectedValueOnce(failure);
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        await expect(revertAction(entry.id)).rejects.toBe(failure);
+
+        expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
+        expect(canRevertAction(entry.id)).toBe(false);
+        expect(await revertAction(entry.id)).toBe(false);
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+
     it('should not restore a pending replay capability after history is cleared', async () => {
         const entry = create_entry();
         const failure = new Error('replay failed after clear');
@@ -135,6 +164,24 @@ describe('revertAction', () => {
         await expect(replay).rejects.toBe(failure);
         expect(canRevertAction(entry.id)).toBe(false);
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
+    });
+
+    it('should retry only metadata marking after the inverse committed and marking failed', async () => {
+        const entry = create_entry();
+        const mark_failure = new Error('mark failed');
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.mark_reverted.mockImplementationOnce(() => {
+            throw mark_failure;
+        });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        await expect(revertAction(entry.id)).rejects.toBe(mark_failure);
+
+        expect(canRevertAction(entry.id)).toBe(true);
+        expect(await revertAction(entry.id)).toBe(true);
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.mark_reverted).toHaveBeenCalledTimes(2);
+        expect(canRevertAction(entry.id)).toBe(false);
     });
 
     it('should claim before awaiting so overlapping replays cannot execute twice', async () => {
