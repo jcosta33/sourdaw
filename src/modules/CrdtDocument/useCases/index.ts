@@ -9,6 +9,8 @@ export { persistCrdtProject } from './persistCrdtProject';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';
+export { markActionHistoryEntryReverted } from './markActionHistoryEntryReverted';
+export { recordActionHistoryEntry } from './recordActionHistoryEntry';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
@@ -25,8 +27,6 @@ export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
 export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
 export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
-export { revertAction } from './revertAction/revertAction';
-export { canRevertAction } from './revertAction/canRevertAction';
 export { saveSnapshot } from './saveSnapshot';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';

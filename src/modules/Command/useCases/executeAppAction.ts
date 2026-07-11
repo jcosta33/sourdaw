@@ -1,9 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { pushActionHistoryEntry, setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
+import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
+import { registerActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandlerMap } from '../stores/handlerRegistry';
 
+import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { commitUndoEntry } from './commitUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
@@ -18,7 +20,9 @@ export type ExecuteOptions = {
     skipUndo?: boolean;
 };
 
-export const executeAppAction = inject({ logger })(
+type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+
+export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
@@ -61,18 +65,21 @@ export const executeAppAction = inject({ logger })(
             if (!options?.skipUndo) {
                 // Record undoable actions to global history (skip UI-only actions like panel toggles)
                 if (handler.undoable) {
-                    pushActionHistoryEntry({
-                        id: crypto.randomUUID(),
+                    const entry_id = crypto.randomUUID();
+                    const inverse_action = undoResult?.inverseAction ?? null;
+                    actionHistoryMetadataPort.record({
+                        id: entry_id,
                         label,
                         actionKind: action.type,
-                        action,
-                        inverseAction: undoResult?.inverseAction ?? null,
                         source: options?.source ?? 'manual',
                         timestamp: Date.now(),
                         groupId: options?.groupId,
                         groupLabel: options?.groupLabel,
                         reverted: false,
                     });
+                    if (inverse_action) {
+                        registerActionReplayCapability({ entryId: entry_id, inverseAction: inverse_action });
+                    }
                 }
 
                 if (undoResult) {

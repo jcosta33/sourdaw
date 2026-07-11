@@ -9,8 +9,8 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
+import { canRevertAction, clearActionHistory, revertAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import { canRevertAction, clearActionHistory, revertAction } from '#/modules/CrdtDocument/useCases';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
@@ -30,8 +30,6 @@ type ActionHistoryEntryView = {
     id: string;
     label: string;
     actionKind: string;
-    action: { type: string; payload?: unknown };
-    inverseAction: { type: string; payload?: unknown } | null;
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     reverted: boolean;
@@ -186,7 +184,7 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
 };
 
 const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
-    const revertable = canRevertAction(entry);
+    const revertable = canRevertAction(entry.id);
 
     let endSlotContent: ReactElement | null = null;
     if (entry.reverted) {

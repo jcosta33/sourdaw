@@ -51,13 +51,41 @@ describe('sanitize_action_history_state', () => {
         expect(sanitize_action_history_state('corrupt')).toEqual(defaultActionHistoryState);
     });
 
-    it('should preserve valid entries, clear hydrated inverses, and drop malformed action rows', () => {
+    it('should retain display metadata but strip executable fields from hydrated rows', () => {
+        expect(
+            sanitize_action_history_state({
+                entries: [
+                    {
+                        id: 'entry-1',
+                        label: 'Add track',
+                        actionKind: 'addTrack',
+                        action: { type: 'addTrack', payload: { name: 'Bass' } },
+                        inverseAction: { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                        source: 'manual',
+                        timestamp: 10,
+                        reverted: false,
+                    },
+                ],
+            })
+        ).toEqual({
+            entries: [
+                {
+                    id: 'entry-1',
+                    label: 'Add track',
+                    actionKind: 'addTrack',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+            ],
+        });
+    });
+
+    it('should preserve valid metadata and drop malformed metadata rows', () => {
         const valid_entry = {
             id: 'entry-1',
             label: 'Add track',
             actionKind: 'app-action',
-            action: { type: 'addTrack', payload: { name: 'Bass' } },
-            inverseAction: { type: 'removeTrack', payload: { trackId: 'track-1' } },
             source: 'manual',
             timestamp: 10,
             groupId: 'group-1',
@@ -69,13 +97,11 @@ describe('sanitize_action_history_state', () => {
             sanitize_action_history_state({
                 entries: [
                     valid_entry,
-                    { ...valid_entry, id: 'bad-action', action: { payload: {} } },
-                    { ...valid_entry, id: 'bad-inverse', inverseAction: { payload: {} } },
                     { ...valid_entry, id: 'bad-source', source: 'robot' },
                     { ...valid_entry, id: 'bad-timestamp', timestamp: Number.NaN },
                 ],
             })
-        ).toEqual({ entries: [{ ...valid_entry, inverseAction: null }] });
+        ).toEqual({ entries: [valid_entry] });
     });
 
     it('should strip unknown fields and malformed optional group labels', () => {
@@ -86,8 +112,6 @@ describe('sanitize_action_history_state', () => {
                         id: 'entry-1',
                         label: 'Add track',
                         actionKind: 'app-action',
-                        action: { type: 'addTrack', payload: { name: 'Bass' }, stale: true },
-                        inverseAction: null,
                         source: 'ai',
                         timestamp: 10,
                         groupId: 42,
@@ -104,8 +128,6 @@ describe('sanitize_action_history_state', () => {
                     id: 'entry-1',
                     label: 'Add track',
                     actionKind: 'app-action',
-                    action: { type: 'addTrack', payload: { name: 'Bass' } },
-                    inverseAction: null,
                     source: 'ai',
                     timestamp: 10,
                     groupLabel: 'Group',
@@ -120,8 +142,6 @@ describe('sanitize_action_history_state', () => {
             id: `entry-${index}`,
             label: `Action ${index}`,
             actionKind: 'app-action',
-            action: { type: 'togglePlayback' },
-            inverseAction: null,
             source: 'manual' as const,
             timestamp: index,
             reverted: false,
@@ -163,8 +183,6 @@ describe('actionHistoryStore', () => {
                     id: 'entry-1',
                     label: 'Add track',
                     actionKind: 'app-action',
-                    action: { type: 'addTrack' },
-                    inverseAction: null,
                     source: 'manual',
                     timestamp: 10,
                     reverted: false,

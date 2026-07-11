@@ -23,11 +23,11 @@ describe('runAppAction', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
-    it('returns the result of executeAppAction (Promise or void)', async () => {
-        mocks.executeAppAction.mockResolvedValueOnce('success');
+    it('should return the void result of executeAppAction', async () => {
+        mocks.executeAppAction.mockResolvedValueOnce(undefined);
         const action: Parameters<typeof runAppAction>[0] = { type: 'removeTrack', payload: { trackId: '456' } };
 
         const result = await runAppAction(action);
-        expect(result).toBe('success');
+        expect(result).toBeUndefined();
     });
 });

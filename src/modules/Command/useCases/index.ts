@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { describeAction } from './actionLabels';
+export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { setCommandEventBus } from './commandEventBus';
 
 export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
@@ -26,6 +27,9 @@ export type { Macro } from './macro/recording/stopMacroRecording';
 export { undo } from './undo';
 export { redo } from './redo';
 export { revertActionGroup } from './revertActionGroup';
+export { canRevertAction } from './canRevertAction';
+export { revertAction } from './revertAction';
+export { clearActionHistory } from './clearActionHistory';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';

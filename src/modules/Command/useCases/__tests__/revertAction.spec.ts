@@ -1,0 +1,128 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { clearActionReplayCapabilities, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
+import { canRevertAction } from '../canRevertAction';
+import { revertAction } from '../revertAction';
+
+type TestHistoryEntry = {
+    id: string;
+    label: string;
+    actionKind: string;
+    source: 'manual' | 'prompt' | 'voice' | 'ai';
+    timestamp: number;
+    reverted: boolean;
+};
+
+type TestHistoryState = {
+    entries: TestHistoryEntry[];
+};
+
+const mocks = vi.hoisted(() => {
+    const action_history_store: { value: TestHistoryState } = { value: { entries: [] } };
+
+    return {
+        action_history_store,
+        execute_app_action: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
+        mark_reverted: vi.fn<(entry_id: string) => void>(),
+    };
+});
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({
+    actionHistoryStore: mocks.action_history_store,
+}));
+
+vi.mock('../executeAppAction', () => ({
+    executeAppAction: mocks.execute_app_action,
+}));
+
+vi.mock('../actionHistoryMetadataPort', () => ({
+    actionHistoryMetadataPort: {
+        record: vi.fn(),
+        markReverted: mocks.mark_reverted,
+        clear: vi.fn(),
+    },
+}));
+
+function create_entry(overrides: Partial<TestHistoryEntry> = {}): TestHistoryEntry {
+    return {
+        id: 'entry-1',
+        label: 'Set tempo',
+        actionKind: 'setTempo',
+        source: 'manual',
+        timestamp: 10,
+        reverted: false,
+        ...overrides,
+    };
+}
+
+describe('revertAction', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        clearActionReplayCapabilities();
+        mocks.action_history_store.value = { entries: [] };
+        mocks.execute_app_action.mockResolvedValue(undefined);
+    });
+
+    it('should reject hydrated, peer-supplied, and unknown IDs without a session capability', async () => {
+        mocks.action_history_store.value = { entries: [create_entry()] };
+
+        expect(canRevertAction('entry-1')).toBe(false);
+        expect(await revertAction('entry-1')).toBe(false);
+        expect(await revertAction('unknown-entry')).toBe(false);
+        expect(mocks.execute_app_action).not.toHaveBeenCalled();
+    });
+
+    it('should replay a claimed inverse once and mark metadata only after execution', async () => {
+        const entry = create_entry();
+        const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
+        const order: string[] = [];
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockImplementation(async () => {
+            order.push('execute');
+        });
+        mocks.mark_reverted.mockImplementation(() => {
+            order.push('mark');
+        });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+
+        expect(canRevertAction(entry.id)).toBe(true);
+        expect(await revertAction(entry.id)).toBe(true);
+        expect(order).toEqual(['execute', 'mark']);
+        expect(mocks.execute_app_action).toHaveBeenCalledWith(inverse_action, {
+            source: entry.source,
+            groupLabel: `Reverted: ${entry.label}`,
+        });
+        expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
+        expect(canRevertAction(entry.id)).toBe(false);
+        expect(await revertAction(entry.id)).toBe(false);
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+
+    it('should restore the claimed capability and leave metadata active when execution fails', async () => {
+        const entry = create_entry();
+        const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
+        const failure = new Error('replay failed');
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockRejectedValueOnce(failure);
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+
+        await expect(revertAction(entry.id)).rejects.toBe(failure);
+
+        expect(canRevertAction(entry.id)).toBe(true);
+        expect(mocks.mark_reverted).not.toHaveBeenCalled();
+    });
+
+    it('should claim before awaiting so overlapping replays cannot execute twice', async () => {
+        const entry = create_entry();
+        const inverse_action = { type: 'togglePlayback' } as const;
+        mocks.action_history_store.value = { entries: [entry] };
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+
+        const first_replay = revertAction(entry.id);
+        const second_result = await revertAction(entry.id);
+
+        expect(second_result).toBe(false);
+        await first_replay;
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+});

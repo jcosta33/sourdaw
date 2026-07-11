@@ -18,8 +18,6 @@ type MockActionHistoryEntry = {
     id: string;
     label: string;
     actionKind: string;
-    action: { type: string; payload?: unknown };
-    inverseAction: { type: string; payload?: unknown } | null;
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     reverted: boolean;
@@ -32,10 +30,9 @@ const module_mocks = vi.hoisted(() => ({
     toggle_ai_history_panel: vi.fn<() => void>(),
     clear_ai_history: vi.fn<() => void>(),
     clear_action_history: vi.fn<() => void>(),
-    store_clear_action_history: vi.fn<() => void>(),
     revert_ai_action_group: vi.fn<() => void>(),
-    can_revert_action: vi.fn<() => boolean>(() => true),
-    revert_action: vi.fn<() => void>(),
+    can_revert_action: vi.fn<(entry_id: string) => boolean>(() => true),
+    revert_action: vi.fn<(entry_id: string) => void>(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -50,14 +47,13 @@ vi.mock('#/modules/AiRuntime/stores/aiActionHistoryStore', () => ({
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     actionHistoryStore: module_mocks.action_history_store,
-    clearActionHistory: module_mocks.store_clear_action_history,
 }));
 
 vi.mock('#/modules/AiRuntime/useCases/aiHistoryActions', () => ({
     revertAiActionGroup: module_mocks.revert_ai_action_group,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/Command/useCases', () => ({
     clearActionHistory: module_mocks.clear_action_history,
     canRevertAction: module_mocks.can_revert_action,
     revertAction: module_mocks.revert_action,
@@ -133,8 +129,6 @@ describe('AiActionHistoryPanel', () => {
                 id: 'e1',
                 label: 'User action',
                 actionKind: 'workspace.select',
-                action: { type: 'workspace.select' },
-                inverseAction: null,
                 timestamp: Date.now(),
                 reverted: false,
                 source: 'manual',
@@ -157,8 +151,6 @@ describe('AiActionHistoryPanel', () => {
                 id: 'e1',
                 label: 'User action',
                 actionKind: 'workspace.select',
-                action: { type: 'workspace.select' },
-                inverseAction: null,
                 timestamp: Date.now(),
                 reverted: false,
                 source: 'manual',
@@ -170,6 +162,5 @@ describe('AiActionHistoryPanel', () => {
 
         expect(module_mocks.clear_ai_history).toHaveBeenCalledTimes(1);
         expect(module_mocks.clear_action_history).toHaveBeenCalledTimes(1);
-        expect(module_mocks.store_clear_action_history).not.toHaveBeenCalled();
     });
 });

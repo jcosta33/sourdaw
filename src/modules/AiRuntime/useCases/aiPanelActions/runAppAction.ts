@@ -5,6 +5,5 @@ import { executeAppAction } from '#/modules/Command/useCases';
 type AppAction = Parameters<typeof executeAppAction>[0];
 
 export function runAppAction(action: AppAction): Promise<void> {
-    // executeAppAction is typed as `any` via the inject() DI pattern; cast the return to its declared type
-    return executeAppAction(action) as Promise<void>;
+    return executeAppAction(action);
 }

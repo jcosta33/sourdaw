@@ -3,17 +3,10 @@ import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeSto
 
 const DOC_PREFIX_ROOT = 'root';
 
-export type ActionHistoryAction = {
-    type: string;
-    payload?: unknown;
-};
-
 export type ActionHistoryEntry = {
     id: string;
     label: string;
     actionKind: string;
-    action: ActionHistoryAction;
-    inverseAction: ActionHistoryAction | null;
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     groupId?: string;
@@ -30,19 +23,8 @@ const MAX_HISTORY = 200;
 export const defaultActionHistoryState: ActionHistoryState = { entries: [] };
 
 const ACTION_HISTORY_STATE_KEYS = ['entries'] as const;
-const ACTION_HISTORY_ENTRY_REQUIRED_KEYS = [
-    'id',
-    'label',
-    'actionKind',
-    'action',
-    'inverseAction',
-    'source',
-    'timestamp',
-    'reverted',
-] as const;
+const ACTION_HISTORY_ENTRY_REQUIRED_KEYS = ['id', 'label', 'actionKind', 'source', 'timestamp', 'reverted'] as const;
 const ACTION_HISTORY_ENTRY_OPTIONAL_KEYS = ['groupId', 'groupLabel'] as const;
-const ACTION_HISTORY_ACTION_REQUIRED_KEYS = ['type'] as const;
-const ACTION_HISTORY_ACTION_OPTIONAL_KEYS = ['payload'] as const;
 
 type HasExactKeysInput = {
     value: object;
@@ -86,38 +68,10 @@ function is_action_history_source(value: unknown): value is ActionHistoryEntry['
     return value === 'manual' || value === 'prompt' || value === 'voice' || value === 'ai';
 }
 
-function is_valid_action_history_action(value: unknown): value is ActionHistoryAction {
-    return value !== null && typeof value === 'object' && 'type' in value && typeof value.type === 'string';
-}
-
-function is_exact_action_history_action(value: unknown): value is ActionHistoryAction {
-    return (
-        is_valid_action_history_action(value) &&
-        has_exact_keys({
-            value,
-            required_keys: ACTION_HISTORY_ACTION_REQUIRED_KEYS,
-            optional_keys: ACTION_HISTORY_ACTION_OPTIONAL_KEYS,
-        })
-    );
-}
-
-function normalize_action_history_action(action: ActionHistoryAction): ActionHistoryAction {
-    if (Object.hasOwn(action, 'payload')) {
-        return {
-            type: action.type,
-            payload: action.payload,
-        };
-    }
-
-    return { type: action.type };
-}
-
 type SanitizableActionHistoryEntry = {
     id: string;
     label: string;
     actionKind: string;
-    action: ActionHistoryAction;
-    inverseAction: ActionHistoryAction | null;
     source: ActionHistoryEntry['source'];
     timestamp: number;
     groupId?: string;
@@ -143,14 +97,6 @@ function get_sanitizable_action_history_entry(value: unknown): SanitizableAction
         return null;
     }
 
-    if (!is_valid_action_history_action(record.action)) {
-        return null;
-    }
-
-    if (record.inverseAction !== null && !is_valid_action_history_action(record.inverseAction)) {
-        return null;
-    }
-
     if (!is_action_history_source(record.source)) {
         return null;
     }
@@ -167,8 +113,6 @@ function get_sanitizable_action_history_entry(value: unknown): SanitizableAction
         id: record.id,
         label: record.label,
         actionKind: record.actionKind,
-        action: record.action,
-        inverseAction: record.inverseAction,
         source: record.source,
         timestamp: record.timestamp,
         reverted: record.reverted,
@@ -202,9 +146,7 @@ function is_exact_action_history_entry(value: unknown): value is ActionHistoryEn
             value,
             required_keys: ACTION_HISTORY_ENTRY_REQUIRED_KEYS,
             optional_keys: ACTION_HISTORY_ENTRY_OPTIONAL_KEYS,
-        }) &&
-        is_exact_action_history_action(entry.action) &&
-        entry.inverseAction === null
+        })
     );
 }
 
@@ -213,11 +155,6 @@ function normalize_action_history_entry(entry: SanitizableActionHistoryEntry): A
         id: entry.id,
         label: entry.label,
         actionKind: entry.actionKind,
-        action: normalize_action_history_action(entry.action),
-        // Hydrated history is untrusted persisted data; keep display/action
-        // metadata, but do not retain inverse actions until Command owns a
-        // runtime payload validator for every AppAction.
-        inverseAction: null,
         source: entry.source,
         timestamp: entry.timestamp,
         reverted: entry.reverted,
