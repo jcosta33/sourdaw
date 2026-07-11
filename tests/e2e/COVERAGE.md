@@ -295,20 +295,21 @@
 | 28 | 2026-07-11 | E2E workflows + deep inspector | Done — merged | [#222](https://github.com/jcosta33/sourdaw/pull/222) |
 | 29 | 2026-07-11 | Deep interactions: export/palette/MIDI/timeline | Done — merged | [#223](https://github.com/jcosta33/sourdaw/pull/223) |
 | 30 | 2026-07-11 | Flow coverage: recording/chords/sessions/panels | Done — merged | [#224](https://github.com/jcosta33/sourdaw/pull/224) |
+| 31 | 2026-07-11 | Final batch: shortcut effects, device chains, metrics | Done — merged | [#225](https://github.com/jcosta33/sourdaw/pull/225) |
 
 ---
 
 ## Final Coverage Summary
 
-**Total: 46 spec files, 279 tests — ALL PASSING (100%, exit 0).**
+**Total: 47 spec files, 294 tests — ALL PASSING (100%, exit 0).**
 
-### Test depth distribution (post-upgrade)
+### Test depth distribution
 | Category | Count | % |
 |----------|-------|---|
-| A — Smoke/Visibility | ~15 | 7% |
-| B — Toggle/State | 16 | 8% |
-| C — Behavioral | 131 | 65% |
-| D — Deep/Edge | 40 | 20% |
+| A — Smoke/Visibility | ~10 | 3% |
+| B — Toggle/State | 14 | 5% |
+| C — Behavioral | 200 | 68% |
+| D — Deep/Edge | 70 | 24% |
 
 ### New specs added (16 files, ~112 tests)
 | Spec | Tests | Area |
