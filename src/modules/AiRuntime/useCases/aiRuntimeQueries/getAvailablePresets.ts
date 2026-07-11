@@ -1,9 +1,32 @@
 import { getAvailablePresets as getAvailableInternalPresets } from '../../services/fuzzySearch';
 
-import { toPromptPreset } from './helpers';
+import { toPromptPreset } from './toPromptPreset';
 
-import type { PresetSearchContext, PromptPreset } from './helpers';
+type GetAvailablePresetsInput = {
+    selectedTrackId: string | undefined;
+    selectedClipId: string | undefined;
+    selectedClipType: 'audio' | 'midi' | undefined;
+    trackCount: number;
+};
 
-export function getAvailablePresets(context: PresetSearchContext): PromptPreset[] {
+type GetAvailablePresetsOutput = Array<{
+    id: string;
+    label: string;
+    category:
+        | 'Transport'
+        | 'Track'
+        | 'Clip'
+        | 'MIDI'
+        | 'Device'
+        | 'Workspace'
+        | 'Mix'
+        | 'Generate'
+        | 'File'
+        | 'Automation'
+        | 'Collaboration';
+    isDestructive: boolean;
+}>;
+
+export function getAvailablePresets(context: GetAvailablePresetsInput): GetAvailablePresetsOutput {
     return getAvailableInternalPresets(context).map(toPromptPreset);
 }
