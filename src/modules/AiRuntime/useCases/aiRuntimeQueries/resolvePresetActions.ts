@@ -1,4 +1,4 @@
-import { type executeAppAction } from '#/modules/Command/useCases';
+import { type describeAction } from '#/modules/Command/useCases';
 
 import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
 
@@ -12,7 +12,7 @@ type ResolvePresetActionsInput = {
     };
 };
 
-type ResolvePresetActionsOutput = Array<Parameters<typeof executeAppAction>[0]>;
+type ResolvePresetActionsOutput = Array<Parameters<typeof describeAction>[0]>;
 
 export function resolvePresetActions({ presetId, context }: ResolvePresetActionsInput): ResolvePresetActionsOutput {
     const preset = PRESET_ACTIONS.find((candidate) => candidate.id === presetId);

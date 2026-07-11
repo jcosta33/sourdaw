@@ -17,7 +17,7 @@ import {
     recordAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { type AppAction, executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
+import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
 
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { workspaceStore } from '../../stores/workspaceStore';
@@ -207,8 +207,8 @@ export const usePromptExecution = (): PromptExecutionState => {
         const executedLabels: Array<{ action: PromptAction; label: string }> = [];
 
         for (const action of actions) {
-            await executeAppAction(action as AppAction, { ...group, source: 'prompt' });
-            executedLabels.push({ action, label: describeAction(action as AppAction) });
+            await executeAppAction(action, { ...group, source: 'prompt' });
+            executedLabels.push({ action, label: describeAction(action) });
         }
 
         if (actions.length > 0) {
