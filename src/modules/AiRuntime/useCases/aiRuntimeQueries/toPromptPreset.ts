@@ -1,7 +1,29 @@
-import { type PresetAction } from '../../models/PresetActions/Registry';
-import { type PromptPreset } from '../../models/PromptPreset';
+type ToPromptPresetInput = {
+    id: string;
+    label: string;
+    category:
+        | 'Transport'
+        | 'Track'
+        | 'Clip'
+        | 'MIDI'
+        | 'Device'
+        | 'Workspace'
+        | 'Mix'
+        | 'Generate'
+        | 'File'
+        | 'Automation'
+        | 'Collaboration';
+    isDestructive?: boolean;
+};
 
-export function toPromptPreset(preset: PresetAction): PromptPreset {
+type ToPromptPresetOutput = {
+    id: string;
+    label: string;
+    category: ToPromptPresetInput['category'];
+    isDestructive: boolean;
+};
+
+export function toPromptPreset(preset: ToPromptPresetInput): ToPromptPresetOutput {
     return {
         id: preset.id,
         label: preset.label,

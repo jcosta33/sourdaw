@@ -1,48 +1,46 @@
-import { type ModelInfo, type NativeModelInfo } from '../../models/ModelInfo';
+import {
+    CLOUD_MODEL_INFO as model_cloud_model_info,
+    NATIVE_MODEL_INFO as model_native_model_info,
+    WEBLLM_MODELS as model_webllm_models,
+} from '../../models/ModelInfo';
 
-export const WEBLLM_MODELS: ModelInfo[] = [
-    {
-        id: 'Qwen3-1.7B-q4f16_1-MLC',
-        displayName: 'Light',
-        parameterCount: '1.7B',
-        description: 'Fast responses, low resource usage. Best for simple edits.',
-        downloadSize: '~1.1 GB',
-        ramUsage: '~1.8 GB',
-    },
-    {
-        id: 'Qwen3-4B-q4f16_1-MLC',
-        displayName: 'Standard',
-        parameterCount: '4B',
-        description: 'Good quality with moderate resource usage. Recommended.',
-        downloadSize: '~2.5 GB',
-        ramUsage: '~3.5 GB',
-    },
-    {
-        id: 'Qwen3-8B-q4f16_1-MLC',
-        displayName: 'Pro',
-        parameterCount: '8B',
-        description: 'Best quality. Needs a capable GPU with 8 GB+ VRAM.',
-        downloadSize: '~5.0 GB',
-        ramUsage: '~6.5 GB',
-    },
-];
-
-export const NATIVE_MODEL_INFO: NativeModelInfo = {
-    id: 'qwen3-8b-native',
-    displayName: 'Qwen3 8B',
-    parameterCount: '8B',
-    description:
-        'In-process inference via Metal/CUDA GPU. Schema-constrained DSO generation via Constraint::JsonSchema.',
-    downloadSize: '~5.0 GB (first run only)',
-    ramUsage: '~6.0 GB',
-    huggingFaceId: 'Qwen/Qwen3-8B',
+type ModelInfoProjection = {
+    id: string;
+    displayName: string;
+    description: string;
+    downloadSize: string;
+    ramUsage: string;
+    parameterCount: string;
 };
 
-export const CLOUD_MODEL_INFO: ModelInfo = {
-    id: 'claude-sonnet-cloud',
-    displayName: 'Claude Sonnet (Cloud)',
-    description: 'Cloud AI via Anthropic API. Fallback for chat only — not used for DSO edit planning.',
-    downloadSize: 'None',
-    ramUsage: 'None',
-    parameterCount: 'N/A',
+type NativeModelInfoProjection = ModelInfoProjection & {
+    huggingFaceId: string;
+};
+
+export const WEBLLM_MODELS: ModelInfoProjection[] = model_webllm_models.map((model_info) => ({
+    id: model_info.id,
+    displayName: model_info.displayName,
+    description: model_info.description,
+    downloadSize: model_info.downloadSize,
+    ramUsage: model_info.ramUsage,
+    parameterCount: model_info.parameterCount,
+}));
+
+export const NATIVE_MODEL_INFO: NativeModelInfoProjection = {
+    id: model_native_model_info.id,
+    displayName: model_native_model_info.displayName,
+    description: model_native_model_info.description,
+    downloadSize: model_native_model_info.downloadSize,
+    ramUsage: model_native_model_info.ramUsage,
+    parameterCount: model_native_model_info.parameterCount,
+    huggingFaceId: model_native_model_info.huggingFaceId,
+};
+
+export const CLOUD_MODEL_INFO: ModelInfoProjection = {
+    id: model_cloud_model_info.id,
+    displayName: model_cloud_model_info.displayName,
+    description: model_cloud_model_info.description,
+    downloadSize: model_cloud_model_info.downloadSize,
+    ramUsage: model_cloud_model_info.ramUsage,
+    parameterCount: model_cloud_model_info.parameterCount,
 };

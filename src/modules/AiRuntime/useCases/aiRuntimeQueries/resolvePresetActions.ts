@@ -1,11 +1,20 @@
-import { PRESET_ACTIONS, type PresetContext } from '../../models/PresetActions/Registry';
+import { type executeAppAction } from '#/modules/Command/useCases';
 
-export type ResolvePresetActionsInput = {
+import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
+
+type ResolvePresetActionsInput = {
     presetId: string;
-    context: PresetContext;
+    context: {
+        selectedTrackId: string | undefined;
+        selectedClipId: string | undefined;
+        selectedClipType: 'audio' | 'midi' | undefined;
+        trackCount: number;
+    };
 };
 
-export function resolvePresetActions({ presetId, context }: ResolvePresetActionsInput) {
+type ResolvePresetActionsOutput = Array<Parameters<typeof executeAppAction>[0]>;
+
+export function resolvePresetActions({ presetId, context }: ResolvePresetActionsInput): ResolvePresetActionsOutput {
     const preset = PRESET_ACTIONS.find((candidate) => candidate.id === presetId);
     if (!preset) {
         return [];
