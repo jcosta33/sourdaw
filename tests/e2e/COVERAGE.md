@@ -289,12 +289,15 @@
 | 22 | 2026-07-11 | Phase 3: Cover 126 uncovered elements | Done — merged | [#214](https://github.com/jcosta33/sourdaw/pull/214) |
 | 23 | 2026-07-11 | Phase 4-5: Dynamic elements, error/edge cases | Done — merged | [#215](https://github.com/jcosta33/sourdaw/pull/215) |
 | 24 | 2026-07-11 | Phase 6: Fix 2 flaky tests | Done — pushed to main | _(direct)_ |
+| 25 | 2026-07-11 | Remaining element coverage | Done — merged | [#219](https://github.com/jcosta33/sourdaw/pull/219) |
+| 26 | 2026-07-11 | Deep coverage: modulator/setlist/AI/takes | Done — merged | [#220](https://github.com/jcosta33/sourdaw/pull/220) |
+| 27 | 2026-07-11 | Fix flaky browser scroll test | Done — pushed to main | _(direct)_ |
 
 ---
 
 ## Final Coverage Summary
 
-**Total: 40 spec files, 202 tests — 200 passing (99%), 2 intermittent.**
+**Total: 43 spec files, 237 tests — ALL PASSING (100%).**
 
 ### Test depth distribution (post-upgrade)
 | Category | Count | % |
