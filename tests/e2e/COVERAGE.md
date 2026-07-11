@@ -282,12 +282,14 @@
 | 15 | 2026-07-11 | Batch 14: AI Features | Done — merged | [#201](https://github.com/jcosta33/sourdaw/pull/201) |
 | 16 | 2026-07-11 | Batch 15: Collab & Preferences | Done — merged | [#202](https://github.com/jcosta33/sourdaw/pull/202) |
 | 17 | 2026-07-11 | Batch 16: Audio/MIDI Misc | Done — merged | [#203](https://github.com/jcosta33/sourdaw/pull/203) |
+| 18 | 2026-07-11 | Additional UI gaps | Done — merged | [#204](https://github.com/jcosta33/sourdaw/pull/204) |
+| 19 | 2026-07-11 | Bug fix: markDirty on track add | Done — merged | [#205](https://github.com/jcosta33/sourdaw/pull/205) |
 
 ---
 
 ## Final Coverage Summary
 
-**Total: 34 spec files, ~136 tests across 16 batches.**
+**Total: 35 spec files, 144 tests — ALL PASSING.**
 
 ### New specs added (16 files, ~112 tests)
 | Spec | Tests | Area |
@@ -310,11 +312,14 @@
 | `audioMidiMisc.spec.ts` | 8 | Status bar metrics, session view, MIDI lanes, browser tabs, dock toggle |
 
 ### Known gaps (deferred)
-- **Dirty indicator on track add** — `markDirty()` not called from `addTrack` (Batch 1 bug note)
+- ~~**Dirty indicator on track add**~~ — **FIXED in PR #205** (`markDirty()` now subscribed to `trackStore` in bootstrap)
 - **Overdub toggle** — conditionally rendered, needs MIDI track context
 - **Tempo BPM editing** — ValueField has no accessible name
 - **Audio clip operations** (normalize, reverse, strip silence) — require audio clips
-- **Chord track** — lane only visible when chords exist (chicken-and-egg)
+- **Chord track** — only visible with chords; tested via Pop Song template (additionalUi.spec.ts)
 - **Arrangement selector** — only visible with >1 arrangement
 - **Elastic editor** — only visible with audio clips
 - **Tauri-only flows** — native file dialogs, plugin hosting, .dawproject import/export
+
+### Bug fixes
+- **PR #205** — `markDirty()` not called on track add. Fixed by subscribing to `trackStore` changes in bootstrap. The dirty indicator now correctly appears when adding tracks and disappears after save.
