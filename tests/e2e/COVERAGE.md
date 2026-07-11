@@ -292,12 +292,15 @@
 | 25 | 2026-07-11 | Remaining element coverage | Done — merged | [#219](https://github.com/jcosta33/sourdaw/pull/219) |
 | 26 | 2026-07-11 | Deep coverage: modulator/setlist/AI/takes | Done — merged | [#220](https://github.com/jcosta33/sourdaw/pull/220) |
 | 27 | 2026-07-11 | Fix flaky browser scroll test | Done — pushed to main | _(direct)_ |
+| 28 | 2026-07-11 | E2E workflows + deep inspector | Done — merged | [#222](https://github.com/jcosta33/sourdaw/pull/222) |
+| 29 | 2026-07-11 | Deep interactions: export/palette/MIDI/timeline | Done — merged | [#223](https://github.com/jcosta33/sourdaw/pull/223) |
+| 30 | 2026-07-11 | Flow coverage: recording/chords/sessions/panels | Done — merged | [#224](https://github.com/jcosta33/sourdaw/pull/224) |
 
 ---
 
 ## Final Coverage Summary
 
-**Total: 43 spec files, 237 tests — ALL PASSING (100%).**
+**Total: 46 spec files, 279 tests — ALL PASSING (100%, exit 0).**
 
 ### Test depth distribution (post-upgrade)
 | Category | Count | % |
