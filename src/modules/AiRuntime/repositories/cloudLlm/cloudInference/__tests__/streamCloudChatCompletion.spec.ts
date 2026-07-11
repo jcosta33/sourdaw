@@ -10,9 +10,15 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn(),
 }));
 
-vi.mock('../../keyManagement', () => ({
+vi.mock('../../getCloudClient', () => ({
     getCloudClient: mocks.getCloudClient,
+}));
+
+vi.mock('../../registerCloudStreamController', () => ({
     registerCloudStreamController: mocks.registerCloudStreamController,
+}));
+
+vi.mock('../../unregisterCloudStreamController', () => ({
     unregisterCloudStreamController: mocks.unregisterCloudStreamController,
 }));
 

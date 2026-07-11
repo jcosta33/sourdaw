@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { generateCloudToolCalls } from '../cloudInference/generateCloudToolCalls';
-import * as keyManagement from '../keyManagement';
+import { getCloudClient } from '../getCloudClient';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -13,23 +13,23 @@ const { mockLogger } = vi.hoisted(() => ({
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
-vi.mock('../keyManagement', () => ({
+vi.mock('../getCloudClient', () => ({
     getCloudClient: vi.fn(),
 }));
 
 describe('generateCloudToolCalls', () => {
     beforeEach(() => {
-        vi.mocked(keyManagement.getCloudClient).mockReset();
+        vi.mocked(getCloudClient).mockReset();
         vi.clearAllMocks();
     });
 
     it('should throw when cloud client is not configured', async () => {
-        vi.mocked(keyManagement.getCloudClient).mockReturnValue(null);
+        vi.mocked(getCloudClient).mockReturnValue(null);
         await expect(generateCloudToolCalls('state', 'hi')).rejects.toThrow(/Cloud AI not configured/);
     });
 
     it('should map tool_use blocks from Claude response', async () => {
-        vi.mocked(keyManagement.getCloudClient).mockReturnValue({
+        vi.mocked(getCloudClient).mockReturnValue({
             messages: {
                 create: vi.fn().mockResolvedValue({
                     content: [
@@ -41,7 +41,7 @@ describe('generateCloudToolCalls', () => {
                     ],
                 }),
             },
-        } as unknown as ReturnType<typeof keyManagement.getCloudClient>);
+        } as unknown as ReturnType<typeof getCloudClient>);
 
         const results = await generateCloudToolCalls('{}', 'faster');
 

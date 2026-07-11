@@ -1,4 +1,4 @@
-import { isCloudAvailable as repoIsCloudAvailable } from '../../repositories/cloudLlm/keyManagement';
+import { isCloudAvailable as repoIsCloudAvailable } from '../../repositories/cloudLlm/isCloudAvailable';
 
 /**
  * Public boundary for "is the cloud AI backend configured?".

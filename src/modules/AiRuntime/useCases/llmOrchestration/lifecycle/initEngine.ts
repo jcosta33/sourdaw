@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { createAiRuntimeError } from '../../../errors/AiRuntimeError';
-import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
 import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { llmStatusStore } from '../../../stores/llmStatusStore';

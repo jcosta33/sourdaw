@@ -6,7 +6,7 @@ import { type ChatMessage } from '../models/Chat';
 import { CHAT_SYSTEM_PROMPT } from '../models/ChatSystemPrompt';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
+import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
 import { isNativeEngineReady } from '../repositories/nativeEngine/isNativeEngineReady';
 import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';

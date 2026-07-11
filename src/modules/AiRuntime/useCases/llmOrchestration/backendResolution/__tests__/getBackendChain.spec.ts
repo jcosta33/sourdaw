@@ -11,7 +11,7 @@ vi.mock('../helpers', () => ({
     resolveBackend: mocks.resolveBackend,
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/cloudLlm/keyManagement', () => ({
+vi.mock('#/modules/AiRuntime/repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: mocks.isCloudAvailable,
 }));
 

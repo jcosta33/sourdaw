@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { getCloudClient, registerCloudStreamController, unregisterCloudStreamController } from '../keyManagement';
+import { getCloudClient } from '../getCloudClient';
+import { registerCloudStreamController } from '../registerCloudStreamController';
+import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
 import { CLOUD_MODEL } from './helpers';
 

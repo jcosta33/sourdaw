@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     isCloudAvailable: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/cloudLlm/keyManagement', () => ({
+vi.mock('#/modules/AiRuntime/repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: mocks.isCloudAvailable,
 }));
 
