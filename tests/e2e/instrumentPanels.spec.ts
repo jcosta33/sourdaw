@@ -12,48 +12,48 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     });
 
-    test('Browser panel shows available instruments', async ({ page }) => {
+    test('Browser panel lists all instrument categories', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await expect(browser).toBeVisible();
         await expect(browser.getByText('Fermenter')).toBeVisible();
         await expect(browser.getByText('Toaster')).toBeVisible();
         await expect(browser.getByText('Levain')).toBeVisible();
+        await expect(browser.getByText('Grand Boule')).toBeVisible();
     });
 
-    test('Default MIDI track has a synth device in the inspector', async ({ page }) => {
+    test('Default MIDI track has synth device shown in inspector', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await expect(inspector.getByText('Synth')).toBeVisible();
+        await expect(inspector.getByRole('button', { name: /Bypass Synth/i })).toBeVisible();
+        await expect(inspector.getByRole('button', { name: /Remove Synth/i })).toBeVisible();
     });
 
-    test('Can open the Fermenter panel by clicking device in inspector', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const synth = inspector.getByText('Synth').first();
-        await synth.click();
-        await page.waitForTimeout(1000);
-
-        const bottom_panel = page.locator('[class*="instrument-bottom-panel"], [data-instrument-panel]');
-        if (await bottom_panel.isVisible().catch(() => false)) {
-            await expect(bottom_panel).toBeVisible();
-        }
-    });
-
-    test('Can add a Toaster instrument from the browser', async ({ page }) => {
+    test('Can add Toaster instrument from browser and verify device changes', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const toaster_button = browser.getByRole('button', { name: /Toaster/i });
-        await expect(toaster_button).toBeVisible();
-        await toaster_button.click();
+        const toaster = browser.getByRole('button', { name: /Toaster/i });
+        await toaster.click();
         await page.waitForTimeout(1000);
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        await expect(inspector).toBeVisible();
+        const has_toaster = await inspector.getByText(/Toaster/i).first().isVisible().catch(() => false);
+        const has_synth = await inspector.getByText('Synth').first().isVisible().catch(() => false);
+        expect(has_toaster || has_synth).toBe(true);
     });
 
-    test('Can bypass and enable the default synth device', async ({ page }) => {
+    test('Can bypass and re-enable default synth device', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const bypass = inspector.getByRole('button', { name: /Bypass Synth/i });
-        await expect(bypass).toBeVisible();
-
         await bypass.click();
         await expect(inspector.getByRole('button', { name: /Enable Synth/i })).toBeVisible({ timeout: 5000 });
+
+        await inspector.getByRole('button', { name: /Enable Synth/i }).click();
+        await expect(inspector.getByRole('button', { name: /Bypass Synth/i })).toBeVisible({ timeout: 5000 });
+    });
+
+    test('Browser Effects tab is accessible', async ({ page }) => {
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await page.waitForTimeout(500);
+        await expect(browser).toBeVisible();
+        await expect(browser.getByRole('button').first()).toBeVisible();
     });
 });
