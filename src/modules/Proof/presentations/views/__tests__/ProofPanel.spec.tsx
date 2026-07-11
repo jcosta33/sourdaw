@@ -14,7 +14,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 // persistDeviceParam writes into the Arrangement track store; isolate this view
 // test from that cross-module write.
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     persistDeviceParam: vi.fn(),
 }));
 
