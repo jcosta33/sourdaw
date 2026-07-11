@@ -18,7 +18,7 @@ export const TempoEditor = (): ReactElement => {
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <div>
+                    <div aria-label="Tempo BPM">
                         <ValueField
                             value={time.transport.tempo}
                             onChange={time.setTempoValue}
