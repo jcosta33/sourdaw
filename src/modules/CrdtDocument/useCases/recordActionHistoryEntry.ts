@@ -2,6 +2,8 @@ import { pushActionHistoryEntry, type ActionHistoryEntry } from '../stores/actio
 
 type RecordActionHistoryEntryInput = ActionHistoryEntry;
 
-export function recordActionHistoryEntry(entry: RecordActionHistoryEntryInput): void {
-    pushActionHistoryEntry(entry);
+type RecordActionHistoryEntryOutput = string[];
+
+export function recordActionHistoryEntry(entry: RecordActionHistoryEntryInput): RecordActionHistoryEntryOutput {
+    return pushActionHistoryEntry(entry);
 }

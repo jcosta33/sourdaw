@@ -18,7 +18,9 @@ describe('action replay capabilities', () => {
         registerActionReplayCapability({ entryId: 'entry-1', inverseAction });
 
         expect(hasActionReplayCapability('entry-1')).toBe(true);
-        expect(claimActionReplayCapability('entry-1')).toEqual(inverseAction);
+        const claim = claimActionReplayCapability('entry-1');
+        expect(claim?.inverseAction).toEqual(inverseAction);
+        expect(claim?.generation).toBeTypeOf('number');
         expect(claimActionReplayCapability('entry-1')).toBeNull();
         expect(hasActionReplayCapability('entry-1')).toBe(false);
     });
@@ -27,14 +29,27 @@ describe('action replay capabilities', () => {
         const inverseAction = { type: 'setTempo', payload: { bpm: 120 } } as const;
         registerActionReplayCapability({ entryId: 'entry-1', inverseAction });
 
-        const claimedAction = claimActionReplayCapability('entry-1');
-        if (claimedAction === null) {
+        const claim = claimActionReplayCapability('entry-1');
+        if (claim === null) {
             throw new Error('Expected the capability to be claimed');
         }
 
-        restoreActionReplayCapability({ entryId: 'entry-1', inverseAction: claimedAction });
+        restoreActionReplayCapability({ entryId: 'entry-1', claim });
 
-        expect(claimActionReplayCapability('entry-1')).toEqual(inverseAction);
+        expect(claimActionReplayCapability('entry-1')?.inverseAction).toEqual(inverseAction);
+    });
+
+    it('should not restore a claim from a generation cleared while replay was pending', () => {
+        registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'togglePlayback' } });
+        const claim = claimActionReplayCapability('entry-1');
+        if (claim === null) {
+            throw new Error('Expected the capability to be claimed');
+        }
+
+        clearActionReplayCapabilities();
+        restoreActionReplayCapability({ entryId: 'entry-1', claim });
+
+        expect(hasActionReplayCapability('entry-1')).toBe(false);
     });
 
     it('should prune the oldest capabilities at the history bound', () => {

@@ -10,13 +10,13 @@ export type ActionHistoryMetadata = {
 };
 
 export type ActionHistoryMetadataPort = {
-    record: (entry: ActionHistoryMetadata) => void;
+    record: (entry: ActionHistoryMetadata) => string[];
     markReverted: (entryId: string) => void;
     clear: () => void;
 };
 
 const no_action_history_metadata_port: ActionHistoryMetadataPort = {
-    record: () => undefined,
+    record: () => [],
     markReverted: () => undefined,
     clear: () => undefined,
 };

@@ -112,6 +112,31 @@ describe('revertAction', () => {
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
     });
 
+    it('should not restore a pending replay capability after history is cleared', async () => {
+        const entry = create_entry();
+        const failure = new Error('replay failed after clear');
+        let reject_execution: ((error: Error) => void) | undefined;
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockImplementation(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    reject_execution = (error) => reject(error);
+                })
+        );
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        const replay = revertAction(entry.id);
+        clearActionReplayCapabilities();
+        if (reject_execution === undefined) {
+            throw new Error('Expected replay execution to be pending');
+        }
+        reject_execution(failure);
+
+        await expect(replay).rejects.toBe(failure);
+        expect(canRevertAction(entry.id)).toBe(false);
+        expect(mocks.mark_reverted).not.toHaveBeenCalled();
+    });
+
     it('should claim before awaiting so overlapping replays cannot execute twice', async () => {
         const entry = create_entry();
         const inverse_action = { type: 'togglePlayback' } as const;

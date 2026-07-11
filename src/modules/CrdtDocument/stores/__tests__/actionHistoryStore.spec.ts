@@ -5,6 +5,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import {
     actionHistoryStore,
     defaultActionHistoryState,
+    pushActionHistoryEntry,
     sanitize_action_history_state,
     type ActionHistoryState,
 } from '../actionHistoryStore';
@@ -196,5 +197,30 @@ describe('actionHistoryStore', () => {
 
         expect(actionHistoryStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
+    });
+
+    it('should return the exact metadata IDs evicted by a bounded write', () => {
+        const entries = Array.from({ length: 200 }, (_, index) => ({
+            id: `entry-${index}`,
+            label: `Action ${index}`,
+            actionKind: 'app-action',
+            source: 'manual' as const,
+            timestamp: index,
+            reverted: false,
+        }));
+        actionHistoryStore.set({ entries });
+
+        const evicted_entry_ids = pushActionHistoryEntry({
+            id: 'entry-200',
+            label: 'Action 200',
+            actionKind: 'app-action',
+            source: 'manual',
+            timestamp: 200,
+            reverted: false,
+        });
+
+        expect(evicted_entry_ids).toEqual(['entry-0']);
+        expect(actionHistoryStore.value?.entries[0]?.id).toBe('entry-1');
+        expect(actionHistoryStore.value?.entries.at(-1)?.id).toBe('entry-200');
     });
 });

@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
-import { registerActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandlerMap } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
@@ -67,7 +67,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 if (handler.undoable) {
                     const entry_id = crypto.randomUUID();
                     const inverse_action = undoResult?.inverseAction ?? null;
-                    actionHistoryMetadataPort.record({
+                    const evicted_entry_ids = actionHistoryMetadataPort.record({
                         id: entry_id,
                         label,
                         actionKind: action.type,
@@ -77,6 +77,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         groupLabel: options?.groupLabel,
                         reverted: false,
                     });
+                    for (const evicted_entry_id of evicted_entry_ids) {
+                        revokeActionReplayCapability(evicted_entry_id);
+                    }
                     if (inverse_action) {
                         registerActionReplayCapability({ entryId: entry_id, inverseAction: inverse_action });
                     }

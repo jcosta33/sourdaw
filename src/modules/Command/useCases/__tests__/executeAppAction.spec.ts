@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
 
@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => ({
     } satisfies Logger,
     setSemanticContext: vi.fn<(ctx: SetSemanticContextInput) => void>(),
     clearSemanticContext: vi.fn<() => void>(),
-    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => void>(),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(),
     markActionHistoryMetadataReverted: vi.fn<(entryId: string) => void>(),
     clearActionHistoryMetadata: vi.fn<() => void>(),
     commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
@@ -86,6 +86,11 @@ describe('executeAppAction', () => {
         vi.clearAllMocks();
         clearHandlerRegistry();
         clearActionReplayCapabilities();
+        mocks.recordActionHistoryMetadata.mockReturnValue([]);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('logs error if no handler is found', async () => {
@@ -148,6 +153,48 @@ describe('executeAppAction', () => {
         expect(hasActionReplayCapability(history_entry.id)).toBe(true);
     });
 
+    it('should revoke an exact capability when 200 non-replayable metadata rows evict its entry', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const replayable_entry_id = '00000000-0000-4000-8000-000000000001';
+        const metadata_entry_ids: string[] = [];
+        const random_uuid_spy = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(replayable_entry_id);
+        mocks.recordActionHistoryMetadata.mockImplementation((entry) => {
+            metadata_entry_ids.push(entry.id);
+            if (metadata_entry_ids.length <= 200) {
+                return [];
+            }
+            return metadata_entry_ids.splice(0, metadata_entry_ids.length - 200);
+        });
+        registerHandlerMap({
+            [action.type]: create_mock_handler<SetSnapValueAction>({
+                describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+            }),
+        });
+
+        await executeAppAction(action);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(true);
+
+        clearHandlerRegistry();
+        registerHandlerMap({
+            [action.type]: create_mock_handler<SetSnapValueAction>({
+                describe: () => ({ label: 'Non-replayable' }),
+            }),
+        });
+        for (let index = 0; index < 200; index += 1) {
+            await executeAppAction(action);
+        }
+
+        expect(metadata_entry_ids).toHaveLength(200);
+        expect(metadata_entry_ids).not.toContain(replayable_entry_id);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(false);
+
+        random_uuid_spy.mockReturnValueOnce(replayable_entry_id);
+        await executeAppAction(action);
+
+        expect(metadata_entry_ids).toContain(replayable_entry_id);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(false);
+    });
+
     it('should not mint a replay capability when typed action execution fails', async () => {
         const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const handler = create_mock_handler<SetSnapValueAction>({
@@ -184,7 +231,10 @@ describe('executeAppAction', () => {
         });
         registerHandlerMap({ [action.type]: handler });
         mocks.commitUndoEntry.mockImplementation(() => order.push('commitUndoEntry'));
-        mocks.recordActionHistoryMetadata.mockImplementation(() => order.push('recordActionHistoryMetadata'));
+        mocks.recordActionHistoryMetadata.mockImplementation(() => {
+            order.push('recordActionHistoryMetadata');
+            return [];
+        });
 
         await executeAppAction(action);
 

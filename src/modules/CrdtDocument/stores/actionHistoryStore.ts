@@ -209,13 +209,17 @@ export const actionHistoryStore = createStore<ActionHistoryState>({
     sanitize: sanitize_action_history_state,
 });
 
-export function pushActionHistoryEntry(entry: ActionHistoryEntry): void {
+export function pushActionHistoryEntry(entry: ActionHistoryEntry): string[] {
     const state = actionHistoryStore.value;
     if (!state) {
-        return;
+        return [];
     }
-    const entries = [...state.entries, entry].slice(-MAX_HISTORY);
+    const unbounded_entries = [...state.entries, entry];
+    const evicted_entry_count = Math.max(0, unbounded_entries.length - MAX_HISTORY);
+    const evicted_entry_ids = unbounded_entries.slice(0, evicted_entry_count).map((history_entry) => history_entry.id);
+    const entries = unbounded_entries.slice(evicted_entry_count);
     actionHistoryStore.set({ entries });
+    return evicted_entry_ids;
 }
 
 export function markEntryReverted(entryId: string): void {

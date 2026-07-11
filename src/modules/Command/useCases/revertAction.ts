@@ -11,18 +11,18 @@ export async function revertAction(entryId: string): Promise<boolean> {
         return false;
     }
 
-    const inverse_action = claimActionReplayCapability(entryId);
-    if (!inverse_action) {
+    const claim = claimActionReplayCapability(entryId);
+    if (!claim) {
         return false;
     }
 
     try {
-        await executeAppAction(inverse_action, {
+        await executeAppAction(claim.inverseAction, {
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });
     } catch (error) {
-        restoreActionReplayCapability({ entryId, inverseAction: inverse_action });
+        restoreActionReplayCapability({ entryId, claim });
         throw error;
     }
 
