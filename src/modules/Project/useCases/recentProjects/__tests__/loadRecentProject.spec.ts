@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import { clearActionHistory } from '#/modules/Command/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -19,7 +20,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ clearActionHistory: vi.fn(), clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
@@ -55,6 +56,7 @@ describe('loadRecentProject', () => {
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
+        vi.mocked(clearActionHistory).mockClear();
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -86,6 +88,23 @@ describe('loadRecentProject', () => {
         const resetOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
         const hydrateOrder = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
         expect(resetOrder).toBeLessThan(hydrateOrder);
+    });
+
+    it('should reset replay authority before reading and after activating the recent project', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await loadRecentProject('sourdaw:project:Large Project');
+
+        expect(clearActionHistory).toHaveBeenCalledTimes(2);
+        const first_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[0];
+        const read_order = vi.mocked(readNamedProjectJson).mock.invocationCallOrder[0];
+        const hydrate_order = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
+        const second_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[1];
+        expect(first_clear_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
+        expect(second_clear_order).toBeGreaterThan(hydrate_order ?? Number.NEGATIVE_INFINITY);
+        expect(second_clear_order).toBeLessThan(
+            vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
     });
 
     it('returns false when neither localStorage nor IndexedDB has the project', async () => {

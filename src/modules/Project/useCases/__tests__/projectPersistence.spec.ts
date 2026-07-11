@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
     clearUndoHistory: vi.fn<() => void>(),
+    clearActionHistory: vi.fn<() => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
 }));
@@ -42,6 +43,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    clearActionHistory: mocks.clearActionHistory,
     clearUndoHistory: mocks.clearUndoHistory,
 }));
 
@@ -71,6 +73,14 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
             expect(mocks.clearUndoHistory).toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
+            expect(mocks.clearActionHistory).toHaveBeenCalledTimes(2);
+            const first_clear_order = mocks.clearActionHistory.mock.invocationCallOrder[0];
+            const load_order = mocks.loadCrdtProject.mock.invocationCallOrder[0];
+            const second_clear_order = mocks.clearActionHistory.mock.invocationCallOrder[1];
+            const hydrate_order = mocks.projectCrdtToStores.mock.invocationCallOrder[0];
+            expect(first_clear_order).toBeLessThan(load_order ?? Number.POSITIVE_INFINITY);
+            expect(second_clear_order).toBeGreaterThan(load_order ?? Number.NEGATIVE_INFINITY);
+            expect(second_clear_order).toBeLessThan(hydrate_order ?? Number.POSITIVE_INFINITY);
         });
     });
 

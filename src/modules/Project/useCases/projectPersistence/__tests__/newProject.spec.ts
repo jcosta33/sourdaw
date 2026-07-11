@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearActionHistory, clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
@@ -34,6 +34,7 @@ vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    clearActionHistory: vi.fn(),
     clearUndoHistory: vi.fn(),
 }));
 
@@ -47,8 +48,15 @@ describe('newProject injectable', () => {
         vi.clearAllMocks();
     });
 
-    it('should forward to injected collaborators in fresh-project order', () => {
+    it('should reset replay authority before and after the new CRDT becomes active', async () => {
         newProject('Test');
+
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(createCrdtProject).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+
+        await vi.waitFor(() => expect(clearActionHistory).toHaveBeenCalledTimes(2));
 
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
@@ -59,6 +67,10 @@ describe('newProject injectable', () => {
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+
+        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[1]).toBeGreaterThan(
+            vi.mocked(createCrdtProject).mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY
+        );
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];

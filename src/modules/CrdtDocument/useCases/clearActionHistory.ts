@@ -1,5 +1,6 @@
-import { actionHistoryStore } from '../stores/actionHistoryStore';
+import { actionHistoryStore, defaultActionHistoryState } from '../stores/actionHistoryStore';
 
 export function clearActionHistory(): void {
-    actionHistoryStore.set({ entries: [] });
+    actionHistoryStore.clear();
+    actionHistoryStore.set(defaultActionHistoryState);
 }

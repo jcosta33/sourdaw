@@ -6,6 +6,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { type ProjectData } from '../../../models/ProjectData';
 import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
+import { beginProjectIdentityTransition } from '../beginProjectIdentityTransition';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
@@ -13,6 +14,8 @@ import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferen
 import { hydrateProjectMidi } from './hydrateProjectMidi';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
+    const complete_project_identity_transition = beginProjectIdentityTransition();
+
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
@@ -72,6 +75,8 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         ],
         activeArrangementId: defaultArrangementId,
     });
+
+    complete_project_identity_transition();
 
     const ctx = getAudioContext();
     // Reconstruct audio buffers if they exist in the metadata (future proofing)

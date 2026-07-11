@@ -10,11 +10,13 @@ import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 
+import { beginProjectIdentityTransition } from './beginProjectIdentityTransition';
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
+    const complete_project_identity_transition = beginProjectIdentityTransition();
     const current = projectStore.value;
     if (current) {
         projectStore.set({ ...current, loading: true });
@@ -29,6 +31,8 @@ export async function loadProject(): Promise<boolean> {
         logger.warn('[loadProject] CRDT load failed, creating new project:', error);
         await createCrdtProject('Untitled Project');
     }
+
+    complete_project_identity_transition();
 
     // Reset per-device-instance stores (§13.1) before hydration so stale device
     // state from a previously open project does not leak into the loaded one. The

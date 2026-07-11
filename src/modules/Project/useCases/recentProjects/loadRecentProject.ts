@@ -7,11 +7,13 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
+import { beginProjectIdentityTransition } from '../projectPersistence/beginProjectIdentityTransition';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
 export async function loadRecentProject(key: string): Promise<boolean> {
+    const complete_project_identity_transition = beginProjectIdentityTransition();
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
@@ -52,6 +54,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         });
 
         writeProjectJson(raw);
+        complete_project_identity_transition();
 
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
         if (trackStore.value) {

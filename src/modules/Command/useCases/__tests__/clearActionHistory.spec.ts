@@ -41,6 +41,14 @@ describe('clearActionHistory', () => {
         expect(hasActionReplayCapability('entry-1')).toBe(false);
     });
 
+    it('should prevent a project-A inverse from being claimed after project-B transition reset', () => {
+        registerActionReplayCapability({ entryId: 'project-a-entry', inverseAction: { type: 'togglePlayback' } });
+
+        clearActionHistory();
+
+        expect(claimActionReplayCapability('project-a-entry')).toBeNull();
+    });
+
     it('should preserve an existing linear undo entry', () => {
         const linear_entry: CallbackUndoEntry = {
             kind: 'callback',

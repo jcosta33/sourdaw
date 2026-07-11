@@ -9,20 +9,29 @@ import { removeProjectJson } from '../../repositories/project/storageOperations'
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 
+import { beginProjectIdentityTransition } from './beginProjectIdentityTransition';
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export function newProject(name = 'Untitled Project'): void {
+    const complete_project_identity_transition = beginProjectIdentityTransition();
+
     // Stop any in-flight playback and tear down the previous project's audio
     // graph before we start mutating stores for the new project.
     stopPlayback();
     resetAudioGraph();
 
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
-    createCrdtProject(name).catch((error) => {
-        logger.warn('[newProject] Failed to initialize CRDT structure:', error);
-    });
+    createCrdtProject(name)
+        .then(() => {
+            complete_project_identity_transition();
+            stopActiveAutoSave();
+            setAutoSaveHandle(startCrdtAutoSave());
+        })
+        .catch((error) => {
+            logger.warn('[newProject] Failed to initialize CRDT structure:', error);
+        });
 
     resetModuleStoresToDefault();
 
@@ -51,8 +60,4 @@ export function newProject(name = 'Untitled Project'): void {
     removeProjectJson();
     clearCachedAudioBuffers();
     clearUndoHistory();
-
-    // Start debounced incremental auto-save for the new project.
-    stopActiveAutoSave();
-    setAutoSaveHandle(startCrdtAutoSave());
 }

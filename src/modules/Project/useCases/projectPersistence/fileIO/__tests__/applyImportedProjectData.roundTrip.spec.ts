@@ -11,8 +11,9 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+const { audioContext, clearActionHistory, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
+    clearActionHistory: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 
@@ -22,7 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     restoreCachedAudioBuffersFromIdb,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({ clearActionHistory, clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are
@@ -149,6 +150,7 @@ function makeProject(): ProjectData {
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         restoreCachedAudioBuffersFromIdb.mockClear();
+        clearActionHistory.mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -172,6 +174,18 @@ describe('applyImportedProjectData round-trip hydration', () => {
         });
         const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
         expect(call?.bufferIds).toHaveLength(2);
+    });
+
+    it('should reset replay authority before import writes and after imported state is active', async () => {
+        await applyImportedProjectData(makeProject());
+
+        expect(clearActionHistory).toHaveBeenCalledTimes(2);
+        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
+            restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
+        expect(clearActionHistory.mock.invocationCallOrder[1]).toBeLessThan(
+            restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
+        );
     });
 
     it('passes undefined bufferIds to restoreCachedAudioBuffersFromIdb when no clips reference buffers', async () => {
