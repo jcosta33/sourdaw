@@ -1,5 +1,5 @@
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
-import { setCloudApiKey } from '../../repositories/cloudLlm/keyManagement';
+import { setCloudApiKey } from '../../repositories/cloudLlm/setCloudApiKey';
 
 /**
  * Configure the cloud AI backend with an API key.

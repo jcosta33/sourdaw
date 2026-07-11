@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     info: vi.fn(),
 }));
 
-vi.mock('../../keyManagement', () => ({
+vi.mock('../../getCloudClient', () => ({
     getCloudClient: mocks.getCloudClient,
 }));
 

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     setCloudApiKey: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/repositories/cloudLlm/keyManagement', () => ({
+vi.mock('#/modules/AiRuntime/repositories/cloudLlm/setCloudApiKey', () => ({
     setCloudApiKey: mocks.setCloudApiKey,
 }));
 

@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { mcpToOpenAiTools } from '../../mcpToolAdapter/mcpToOpenAiTools';
-import { getCloudClient } from '../keyManagement';
+import { getCloudClient } from '../getCloudClient';
 
 import { CLOUD_MODEL } from './helpers';
 

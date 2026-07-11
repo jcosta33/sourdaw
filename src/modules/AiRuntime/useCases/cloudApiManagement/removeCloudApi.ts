@@ -1,4 +1,4 @@
-import { clearCloudApiKey } from '../../repositories/cloudLlm/keyManagement';
+import { clearCloudApiKey } from '../../repositories/cloudLlm/clearCloudApiKey';
 
 /**
  * Remove the cloud API key and disable the cloud backend.

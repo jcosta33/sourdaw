@@ -1,4 +1,4 @@
-import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
 
 import { resolveBackend } from './helpers';
 

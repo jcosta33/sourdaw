@@ -24,7 +24,7 @@ vi.mock('../../../../repositories/webLlm/initWebLlmEngine', () => ({
     initWebLlmEngine: mocks.initWebLlmEngine,
 }));
 
-vi.mock('../../../../repositories/cloudLlm/keyManagement', () => ({
+vi.mock('../../../../repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: mocks.isCloudAvailable,
 }));
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+import { isCloudAvailable } from '../../../repositories/cloudLlm/isCloudAvailable';
 import { initNativeEngine } from '../../../repositories/nativeEngine/initNativeEngine';
 import { initWebLlmEngine } from '../../../repositories/webLlm/initWebLlmEngine';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
@@ -35,7 +35,7 @@ vi.mock('../../../repositories/webLlm/initWebLlmEngine', () => ({
     initWebLlmEngine: vi.fn(() => Promise.resolve({})),
 }));
 
-vi.mock('../../../repositories/cloudLlm/keyManagement', () => ({
+vi.mock('../../../repositories/cloudLlm/isCloudAvailable', () => ({
     isCloudAvailable: vi.fn(() => false),
 }));
 
