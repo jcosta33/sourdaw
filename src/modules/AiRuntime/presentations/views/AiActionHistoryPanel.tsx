@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
+import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User, RefreshCw } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -9,7 +9,7 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
-import { canRevertAction, clearActionHistory, revertAction } from '#/modules/Command/useCases';
+import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -184,20 +184,67 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
 };
 
 const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
-    const revertable = canRevertAction(entry.id);
+    const replay_status = getActionReplayStatus(entry.id);
+    const [operation_status, setOperationStatus] = useState<'idle' | 'pending' | 'executed' | 'reconciled'>('idle');
+    const [operation_error, setOperationError] = useState<string | null>(null);
+
+    const handleRevert = async () => {
+        setOperationStatus('pending');
+        setOperationError(null);
+        try {
+            const result = await revertAction(entry.id);
+            if (result.status === 'executed' || result.status === 'reconciled') {
+                setOperationStatus(result.status);
+                return;
+            }
+            setOperationStatus('idle');
+            setOperationError('Revert is no longer available');
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setOperationStatus('idle');
+            setOperationError(`Revert failed: ${reason}`);
+        }
+    };
+
+    let subtitle = formatTimeAgo(entry.timestamp);
+    if (operation_error) {
+        subtitle = operation_error;
+    } else if (operation_status === 'pending') {
+        subtitle = replay_status.status === 'reconcile-mark' ? 'Updating history...' : 'Reverting...';
+    } else if (operation_status === 'executed') {
+        subtitle = 'Reverted';
+    } else if (operation_status === 'reconciled') {
+        subtitle = 'History repaired';
+    } else if (replay_status.status === 'reconcile-mark') {
+        subtitle = 'History update pending';
+    }
 
     let endSlotContent: ReactElement | null = null;
     if (entry.reverted) {
         endSlotContent = <span className="text-[8px] italic text-muted-foreground">undone</span>;
-    } else if (revertable) {
+    } else if (
+        (replay_status.status === 'ready' || replay_status.status === 'reconcile-mark') &&
+        operation_status !== 'executed' &&
+        operation_status !== 'reconciled'
+    ) {
+        const is_reconciliation = replay_status.status === 'reconcile-mark';
+        const action_label = is_reconciliation ? 'Retry history update' : 'Revert this change';
         endSlotContent = (
             <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => void revertAction(entry.id)}
-                title="Revert this change"
+                onClick={handleRevert}
+                disabled={operation_status === 'pending'}
+                title={action_label}
+                aria-label={action_label}
             >
-                <Undo2 className="size-3 text-muted-foreground/50" />
+                {is_reconciliation ? (
+                    <RefreshCw
+                        className={`size-3 text-muted-foreground/50 ${operation_status === 'pending' ? 'animate-spin' : ''}`}
+                    />
+                ) : (
+                    <Undo2 className="size-3 text-muted-foreground/50" />
+                )}
             </Button>
         );
     }
@@ -208,7 +255,8 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             dimmed={entry.reverted}
             startSlot={<User className="size-3 text-muted-foreground/50" />}
             title={entry.label}
-            subtitle={formatTimeAgo(entry.timestamp)}
+            subtitle={subtitle}
+            subtitleClassName={operation_error ? 'text-[var(--color-state-danger)]' : undefined}
             endSlot={endSlotContent}
         />
     );

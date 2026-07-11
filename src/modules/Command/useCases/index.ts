@@ -9,6 +9,7 @@ export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQ
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { isAppActionCommittedError } from './isAppActionCommittedError';
 export type { ExecuteOptions } from './executeAppAction';
 
 export { getMacroHandlers } from './getMacroHandlers';
@@ -27,7 +28,7 @@ export type { Macro } from './macro/recording/stopMacroRecording';
 export { undo } from './undo';
 export { redo } from './redo';
 export { revertActionGroup } from './revertActionGroup';
-export { canRevertAction } from './canRevertAction';
+export { getActionReplayStatus } from './getActionReplayStatus';
 export { revertAction } from './revertAction';
 export { clearActionHistory } from './clearActionHistory';
 export { clearUndoHistory } from './clearUndoHistory';

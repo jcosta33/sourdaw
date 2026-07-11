@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MixAnalysisPanel } from '../MixAnalysisPanel';
@@ -50,6 +50,7 @@ describe('MixAnalysisPanel', () => {
         mockState.result = null;
         mockState.isAnalyzing = false;
         mockState.panelOpen = true;
+        vi.mocked(runAppAction).mockResolvedValue(undefined);
     });
 
     it('should render without crashing when panel is open', () => {
@@ -124,5 +125,14 @@ describe('MixAnalysisPanel', () => {
         const autoFixButton = screen.getByText('Auto-Fix');
         fireEvent.click(autoFixButton);
         expect(runAppAction).toHaveBeenCalledWith({ type: 'autoFixMix' });
+    });
+
+    it('should surface action execution rejection in the panel', async () => {
+        vi.mocked(runAppAction).mockRejectedValue(new Error('analysis unavailable'));
+        render(<MixAnalysisPanel />);
+
+        fireEvent.click(screen.getByLabelText('Refresh mix analysis'));
+
+        await waitFor(() => expect(screen.getByText('Mix action failed: analysis unavailable')).toBeInTheDocument());
     });
 });

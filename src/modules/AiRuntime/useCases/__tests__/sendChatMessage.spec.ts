@@ -8,6 +8,7 @@ import { sendChatMessage } from '../sendChatMessage';
 const mocks = vi.hoisted(() => ({
     chatStoreValue: { value: null as ChatState | null },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    isAppActionCommittedError: vi.fn<(error: unknown) => boolean>(() => false),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     parsePromptToActions: vi.fn<() => Promise<IntentResult>>(),
@@ -30,6 +31,7 @@ vi.mock('../../repositories/nativeEngine/isNativeEngineReady', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    isAppActionCommittedError: mocks.isAppActionCommittedError,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -67,6 +69,7 @@ describe('sendChatMessage injectables', () => {
         vi.clearAllMocks();
         mocks.chatStoreValue.value = null;
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.parsePromptToActions.mockResolvedValue({
@@ -119,6 +122,72 @@ describe('sendChatMessage injectables', () => {
                 content: expect.stringContaining('requires confirmation'),
                 pendingActionConfirmationId: expect.stringMatching(/^prompt-confirmation-/),
                 pendingActionConfirmationStatus: 'proposed',
+            })
+        );
+    });
+
+    it('should update the existing executing row when a prompt action is not dispatched', async () => {
+        const missing_handler = new Error('No handler registered for action: removeTrack');
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            rawText: 'delete drums',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppAction.mockRejectedValueOnce(missing_handler);
+
+        await sendChatMessage('delete drums');
+
+        expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
+        const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(assistant_message?.role).toBe('assistant');
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistant_message?.id,
+            expect.objectContaining({
+                isStreaming: false,
+                content: 'Failed to execute prompt command.',
+                error: missing_handler.message,
+            })
+        );
+        expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
+    });
+
+    it('should record a committed prompt action as executed and warn against retrying', async () => {
+        const committed_failure = new Error('Action committed but history failed');
+        mocks.chatStoreValue.value = {
+            messages: [],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        };
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [{ type: 'removeTrack', payload: { trackId: 'track-1' } }],
+            rawText: 'delete drums',
+            requiresConfirmation: false,
+        });
+        mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
+
+        await sendChatMessage('delete drums');
+
+        expect(mocks.appendChatMessage).toHaveBeenCalledTimes(2);
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        expect(mocks.notifyAiChange).toHaveBeenCalledWith('Executed: delete drums', ['removeTrack']);
+        const assistant_message = mocks.appendChatMessage.mock.calls[1]?.[0];
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            assistant_message?.id,
+            expect.objectContaining({
+                isStreaming: false,
+                content: expect.stringMatching(/applied.*history.*do not retry/is),
             })
         );
     });

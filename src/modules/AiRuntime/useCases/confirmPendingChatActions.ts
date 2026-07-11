@@ -1,4 +1,9 @@
-import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command/useCases';
+import {
+    describeAction,
+    executeAppAction,
+    generateGroupId,
+    isAppActionCommittedError,
+} from '#/modules/Command/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type DsoConfirmationTarget } from '../models/DsoTypes';
@@ -50,10 +55,18 @@ export async function confirmPendingChatActions(
 
     const group = generateGroupId(confirmation.prompt);
     const executedLabels: Array<{ actionType: string; label: string }> = [];
+    let action_history_failed_after_commit = false;
 
     try {
         for (const action of confirmation.actions) {
-            await executeAppAction(action, { ...group, source: 'prompt' });
+            try {
+                await executeAppAction(action, { ...group, source: 'prompt' });
+            } catch (error) {
+                if (!isAppActionCommittedError(error)) {
+                    throw error;
+                }
+                action_history_failed_after_commit = true;
+            }
             const execution = { actionType: action.type, label: describeAction(action) };
             executedLabels.push(execution);
             recordPendingActionExecution({ confirmationId: confirmation.id, execution });
@@ -95,7 +108,9 @@ export async function confirmPendingChatActions(
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
-        content: `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
+        content: action_history_failed_after_commit
+            ? `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nAction history failed after the change was applied. Do not retry these confirmed actions.`
+            : `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
     });
 
     return { status: 'executed' };

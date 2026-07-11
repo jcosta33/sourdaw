@@ -1,5 +1,10 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command/useCases';
+import {
+    describeAction,
+    executeAppAction,
+    generateGroupId,
+    isAppActionCommittedError,
+} from '#/modules/Command/useCases';
 
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type ChatMessage } from '../models/Chat';
@@ -53,6 +58,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
     // ── Prompt Command Mode ──────────────────────────────────────────────
     if (state.chatMode === 'prompt') {
         const aborter = new AbortController();
+        let prompt_assistant_message_id: string | null = null;
         setActiveAborter(aborter);
 
         try {
@@ -71,6 +77,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 });
 
                 const assistantMsgId = `msg-${crypto.randomUUID()}`;
+                prompt_assistant_message_id = assistantMsgId;
                 appendChatMessage({
                     id: assistantMsgId,
                     role: 'assistant',
@@ -101,9 +108,17 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 const group = generateGroupId(userText);
                 const executedLabels: Array<{ action: RuntimeAction; label: string }> = [];
+                let action_history_failed_after_commit = false;
 
                 for (const action of result.actions) {
-                    await executeAppAction(action, { ...group, source: 'prompt' });
+                    try {
+                        await executeAppAction(action, { ...group, source: 'prompt' });
+                    } catch (error) {
+                        if (!isAppActionCommittedError(error)) {
+                            throw error;
+                        }
+                        action_history_failed_after_commit = true;
+                    }
                     executedLabels.push({ action, label: describeAction(action) });
                 }
 
@@ -128,7 +143,9 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    content: `Executed:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
+                    content: action_history_failed_after_commit
+                        ? `Applied:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}\n\nAction history failed after the change was applied. Do not retry this command.`
+                        : `Executed:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
                 });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.
@@ -152,19 +169,28 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 });
             }
         } catch (error) {
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'user',
-                content: userText,
-                timestamp: Date.now(),
-            });
-            appendChatMessage({
-                id: `msg-${crypto.randomUUID()}`,
-                role: 'assistant',
-                content: 'Failed to process prompt command.',
-                error: String(error),
-                timestamp: Date.now(),
-            });
+            const reason = error instanceof Error ? error.message : String(error);
+            if (prompt_assistant_message_id) {
+                updateChatMessage(prompt_assistant_message_id, {
+                    isStreaming: false,
+                    content: 'Failed to execute prompt command.',
+                    error: reason,
+                });
+            } else {
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'user',
+                    content: userText,
+                    timestamp: Date.now(),
+                });
+                appendChatMessage({
+                    id: `msg-${crypto.randomUUID()}`,
+                    role: 'assistant',
+                    content: 'Failed to process prompt command.',
+                    error: reason,
+                    timestamp: Date.now(),
+                });
+            }
         } finally {
             setActiveAborter(null);
             setChatGenerating(false);

@@ -31,30 +31,32 @@ function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void
     consumeActionReplayClaim({ entryId, claim });
 }
 
-function retryActionReplayMark(entryId: string): boolean {
+function retryActionReplayMark(entryId: string): void {
     actionHistoryMetadataPort.markReverted(entryId);
     completeActionReplayMarkReconciliation(entryId);
-    return true;
 }
 
-export async function revertAction(entryId: string): Promise<boolean> {
+type RevertActionOutput = Promise<{ status: 'executed' } | { status: 'reconciled' } | { status: 'unavailable' }>;
+
+export async function revertAction(entryId: string): RevertActionOutput {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
     if (!entry) {
-        return false;
+        return { status: 'unavailable' };
     }
 
     if (entry.reverted) {
         completeActionReplayMarkReconciliation(entryId);
-        return false;
+        return { status: 'unavailable' };
     }
 
     if (hasActionReplayMarkReconciliation(entryId)) {
-        return retryActionReplayMark(entryId);
+        retryActionReplayMark(entryId);
+        return { status: 'reconciled' };
     }
 
     const claim = claimActionReplayCapability(entryId);
     if (!claim) {
-        return false;
+        return { status: 'unavailable' };
     }
 
     try {
@@ -81,5 +83,5 @@ export async function revertAction(entryId: string): Promise<boolean> {
     }
 
     markCommittedReplay({ entryId, claim });
-    return true;
+    return { status: 'executed' };
 }

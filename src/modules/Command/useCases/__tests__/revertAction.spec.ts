@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
-import { canRevertAction } from '../canRevertAction';
+import { getActionReplayStatus } from '../getActionReplayStatus';
 import { revertAction } from '../revertAction';
 
 type TestHistoryEntry = {
@@ -67,9 +67,9 @@ describe('revertAction', () => {
     it('should reject hydrated, peer-supplied, and unknown IDs without a session capability', async () => {
         mocks.action_history_store.value = { entries: [create_entry()] };
 
-        expect(canRevertAction('entry-1')).toBe(false);
-        expect(await revertAction('entry-1')).toBe(false);
-        expect(await revertAction('unknown-entry')).toBe(false);
+        expect(getActionReplayStatus('entry-1')).toEqual({ status: 'unavailable' });
+        expect(await revertAction('entry-1')).toEqual({ status: 'unavailable' });
+        expect(await revertAction('unknown-entry')).toEqual({ status: 'unavailable' });
         expect(mocks.execute_app_action).not.toHaveBeenCalled();
     });
 
@@ -86,16 +86,16 @@ describe('revertAction', () => {
         });
         registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
 
-        expect(canRevertAction(entry.id)).toBe(true);
-        expect(await revertAction(entry.id)).toBe(true);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
         expect(order).toEqual(['execute', 'mark']);
         expect(mocks.execute_app_action).toHaveBeenCalledWith(inverse_action, {
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });
         expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
-        expect(canRevertAction(entry.id)).toBe(false);
-        expect(await revertAction(entry.id)).toBe(false);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
     });
 
@@ -109,7 +109,7 @@ describe('revertAction', () => {
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
 
-        expect(canRevertAction(entry.id)).toBe(true);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
     });
 
@@ -122,7 +122,7 @@ describe('revertAction', () => {
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
 
-        expect(canRevertAction(entry.id)).toBe(true);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
     });
 
@@ -136,8 +136,8 @@ describe('revertAction', () => {
         await expect(revertAction(entry.id)).rejects.toBe(failure);
 
         expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
-        expect(canRevertAction(entry.id)).toBe(false);
-        expect(await revertAction(entry.id)).toBe(false);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
     });
 
@@ -162,7 +162,7 @@ describe('revertAction', () => {
         reject_execution(failure);
 
         await expect(replay).rejects.toBe(failure);
-        expect(canRevertAction(entry.id)).toBe(false);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
     });
 
@@ -177,11 +177,11 @@ describe('revertAction', () => {
 
         await expect(revertAction(entry.id)).rejects.toBe(mark_failure);
 
-        expect(canRevertAction(entry.id)).toBe(true);
-        expect(await revertAction(entry.id)).toBe(true);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'reconcile-mark' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'reconciled' });
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
         expect(mocks.mark_reverted).toHaveBeenCalledTimes(2);
-        expect(canRevertAction(entry.id)).toBe(false);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
     });
 
     it('should claim before awaiting so overlapping replays cannot execute twice', async () => {
@@ -193,7 +193,7 @@ describe('revertAction', () => {
         const first_replay = revertAction(entry.id);
         const second_result = await revertAction(entry.id);
 
-        expect(second_result).toBe(false);
+        expect(second_result).toEqual({ status: 'unavailable' });
         await first_replay;
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
     });

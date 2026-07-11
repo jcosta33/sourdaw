@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiActionHistoryPanel } from '../AiActionHistoryPanel';
@@ -31,8 +31,12 @@ const module_mocks = vi.hoisted(() => ({
     clear_ai_history: vi.fn<() => void>(),
     clear_action_history: vi.fn<() => void>(),
     revert_ai_action_group: vi.fn<() => void>(),
-    can_revert_action: vi.fn<(entry_id: string) => boolean>(() => true),
-    revert_action: vi.fn<(entry_id: string) => void>(),
+    get_action_replay_status: vi.fn<(entry_id: string) => { status: 'ready' | 'reconcile-mark' | 'unavailable' }>(
+        () => ({ status: 'ready' })
+    ),
+    revert_action: vi.fn<(entry_id: string) => Promise<{ status: 'executed' | 'reconciled' | 'unavailable' }>>(
+        async () => ({ status: 'executed' })
+    ),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -55,7 +59,7 @@ vi.mock('#/modules/AiRuntime/useCases/aiHistoryActions', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearActionHistory: module_mocks.clear_action_history,
-    canRevertAction: module_mocks.can_revert_action,
+    getActionReplayStatus: module_mocks.get_action_replay_status,
     revertAction: module_mocks.revert_action,
 }));
 
@@ -81,6 +85,8 @@ describe('AiActionHistoryPanel', () => {
         mock_ai_state.groups = [];
         mock_ai_state.panelOpen = true;
         mock_history_state.entries = [];
+        module_mocks.get_action_replay_status.mockReturnValue({ status: 'ready' });
+        module_mocks.revert_action.mockResolvedValue({ status: 'executed' });
     });
 
     it('should render without crashing when panel is open', () => {
@@ -162,5 +168,64 @@ describe('AiActionHistoryPanel', () => {
 
         expect(module_mocks.clear_ai_history).toHaveBeenCalledTimes(1);
         expect(module_mocks.clear_action_history).toHaveBeenCalledTimes(1);
+    });
+
+    it('should label mark-only reconciliation as a history retry', () => {
+        mock_history_state.entries = [
+            {
+                id: 'e1',
+                label: 'User action',
+                actionKind: 'workspace.select',
+                timestamp: Date.now(),
+                reverted: false,
+                source: 'manual',
+            },
+        ];
+        module_mocks.get_action_replay_status.mockReturnValue({ status: 'reconcile-mark' });
+
+        render(<AiActionHistoryPanel />);
+
+        expect(screen.getByText('History update pending')).toBeInTheDocument();
+        expect(screen.getByLabelText('Retry history update')).toBeInTheDocument();
+    });
+
+    it('should render the reconciled result without executing the inverse label again', async () => {
+        mock_history_state.entries = [
+            {
+                id: 'e1',
+                label: 'User action',
+                actionKind: 'workspace.select',
+                timestamp: Date.now(),
+                reverted: false,
+                source: 'manual',
+            },
+        ];
+        module_mocks.get_action_replay_status.mockReturnValue({ status: 'reconcile-mark' });
+        module_mocks.revert_action.mockResolvedValue({ status: 'reconciled' });
+        render(<AiActionHistoryPanel />);
+
+        fireEvent.click(screen.getByLabelText('Retry history update'));
+
+        await waitFor(() => expect(screen.getByText('History repaired')).toBeInTheDocument());
+        expect(module_mocks.revert_action).toHaveBeenCalledWith('e1');
+    });
+
+    it('should surface replay rejection in the action row', async () => {
+        mock_history_state.entries = [
+            {
+                id: 'e1',
+                label: 'User action',
+                actionKind: 'workspace.select',
+                timestamp: Date.now(),
+                reverted: false,
+                source: 'manual',
+            },
+        ];
+        module_mocks.revert_action.mockRejectedValue(new Error('history write failed'));
+        render(<AiActionHistoryPanel />);
+
+        fireEvent.click(screen.getByLabelText('Revert this change'));
+
+        await waitFor(() => expect(screen.getByText('Revert failed: history write failed')).toBeInTheDocument());
     });
 });

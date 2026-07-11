@@ -13,6 +13,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    isAppActionCommittedError: vi.fn<(error: unknown) => boolean>(() => false),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     pushAiActionGroup: vi.fn(),
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    isAppActionCommittedError: mocks.isAppActionCommittedError,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -78,6 +80,7 @@ describe('pending chat action confirmation', () => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
@@ -241,8 +244,9 @@ describe('pending chat action confirmation', () => {
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('cancelled');
     });
 
-    it('should record failed confirmation execution without dropping the proposal record', async () => {
-        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('remove clip failed'));
+    it('should report a missing handler as not executed without dropping the proposal record', async () => {
+        const missing_handler = new Error('No handler registered for action: removeClip');
+        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(missing_handler);
         mocks.describeAction.mockReturnValueOnce('Remove track');
         proposePendingActionConfirmation({
             id: 'confirm-1',
@@ -254,20 +258,53 @@ describe('pending chat action confirmation', () => {
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
 
-        expect(result).toEqual({ status: 'failed', reason: 'remove clip failed' });
+        expect(result).toEqual({ status: 'failed', reason: missing_handler.message });
         expect(mocks.pushAiActionGroup).not.toHaveBeenCalled();
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
             'assistant-1',
             expect.objectContaining({
-                error: 'remove clip failed',
+                error: missing_handler.message,
                 pendingActionConfirmationStatus: 'failed',
             })
         );
         expect(getPendingActionConfirmation('confirm-1')?.status).toBe('failed');
-        expect(getPendingActionConfirmation('confirm-1')?.error).toBe('remove clip failed');
+        expect(getPendingActionConfirmation('confirm-1')?.error).toBe(missing_handler.message);
         expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
             { actionType: 'removeTrack', label: 'Remove track' },
         ]);
+    });
+
+    it('should record a committed confirmation action as executed and warn against retrying', async () => {
+        const committed_failure = new Error('Action committed but history failed');
+        mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
+        proposePendingActionConfirmation({
+            id: 'confirm-1',
+            prompt: 'delete drums',
+            assistantMessageId: 'assistant-1',
+            actions: [pendingAction],
+            actionLabels: ['Remove track'],
+        });
+
+        const result = await confirmPendingChatActions({ confirmationId: 'confirm-1' });
+
+        expect(result).toEqual({ status: 'executed' });
+        expect(getPendingActionConfirmation('confirm-1')?.status).toBe('executed');
+        expect(getPendingActionConfirmation('confirm-1')?.executedActions).toEqual([
+            { actionType: 'removeTrack', label: 'Remove track' },
+        ]);
+        expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                actions: [{ kind: 'appAction', actionType: 'removeTrack', label: 'Remove track' }],
+            })
+        );
+        expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+            'assistant-1',
+            expect.objectContaining({
+                pendingActionConfirmationStatus: 'executed',
+                content: expect.stringMatching(/applied.*history.*do not retry/is),
+            })
+        );
     });
 });

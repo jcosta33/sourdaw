@@ -7,6 +7,7 @@ import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
 import { executeAppAction } from '../executeAppAction';
+import { isAppActionCommittedError } from '../isAppActionCommittedError';
 
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
@@ -103,6 +104,14 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('should publicly discriminate committed failures without exposing the private error class', () => {
+        expect(isAppActionCommittedError(new AppActionCommittedError('togglePlayback', new Error('history')))).toBe(
+            true
+        );
+        expect(isAppActionCommittedError(new AppActionNotDispatchedError('togglePlayback'))).toBe(false);
+        expect(isAppActionCommittedError(new Error('handler failed'))).toBe(false);
     });
 
     it('executes a registered handler', async () => {
