@@ -2,12 +2,12 @@
  * Use case: resolve built-in synthesizer parameters from device descriptors.
  */
 
-import { type SynthParams } from '#/modules/AudioEngine/useCases';
+import { type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
 
-const defaultSynthParams: SynthParams = {
+const defaultSynthParams: BuiltinSynthParams = {
     waveform: 'sawtooth',
     attack: 0.01,
     decay: 0.2,
@@ -31,7 +31,7 @@ const defaultSynthParams: SynthParams = {
     filterVelocitySensitivity: 0,
 };
 
-const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
+const SYNTH_PARAM_KEYS: ReadonlyArray<keyof BuiltinSynthParams> = [
     'waveform',
     'attack',
     'decay',
@@ -58,14 +58,14 @@ const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
 const WAVEFORMS = new Set<string>(['sine', 'triangle', 'sawtooth', 'square']);
 const FILTER_TYPES = new Set<string>(['lowpass', 'highpass', 'bandpass']);
 
-const WAVEFORM_INDEX: Record<number, SynthParams['waveform']> = {
+const WAVEFORM_INDEX: Record<number, BuiltinSynthParams['waveform']> = {
     0: 'sine',
     1: 'triangle',
     2: 'sawtooth',
     3: 'square',
 };
 
-const FILTER_TYPE_INDEX: Record<number, SynthParams['filterType']> = {
+const FILTER_TYPE_INDEX: Record<number, BuiltinSynthParams['filterType']> = {
     0: 'lowpass',
     1: 'highpass',
     2: 'bandpass',
@@ -94,14 +94,14 @@ function resolveEnumParam<TValue extends string>(
  * Prefer this over `getSynthParamsForTrack` during offline rendering
  * to avoid re-reading the live store mid-render.
  */
-export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
+export function getSynthParamsFromDevices(devices: Device[]): BuiltinSynthParams {
     const synthDevice = devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
     if (!synthDevice) {
         return { ...defaultSynthParams };
     }
 
     const pv = synthDevice.parameterValues;
-    const result: SynthParams = { ...defaultSynthParams };
+    const result: BuiltinSynthParams = { ...defaultSynthParams };
 
     for (const key of SYNTH_PARAM_KEYS) {
         const raw = pv[key];
