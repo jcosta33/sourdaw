@@ -1,36 +1,8 @@
 /**
- * Use case: built-in synthesizer note scheduling and parameter resolution.
- * Delegates to SynthModels for types/defaults.
+ * Synth-private engine owner for realtime built-in synthesizer note scheduling.
  */
 
-import { type MpeParams, type SynthParams } from '#/modules/AudioEngine/useCases';
-
-// Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
-type Device = { type: string; parameterValues: Record<string, number> };
-
-const defaultSynthParams: SynthParams = {
-    waveform: 'sawtooth',
-    attack: 0.01,
-    decay: 0.2,
-    sustain: 0.7,
-    release: 0.3,
-    filterCutoff: 5000,
-    filterResonance: 1,
-    filterType: 'lowpass',
-    filterEnvAmount: 0,
-    detune: 0,
-    gain: 0.3,
-    osc2Waveform: 'sawtooth',
-    osc2Detune: 0,
-    osc2Mix: 0,
-    subOscLevel: 0,
-    noiseLevel: 0,
-    vibratoRate: 0,
-    vibratoDepth: 0,
-    vibratoDelay: 0.3,
-    stereoSpread: 0,
-    filterVelocitySensitivity: 0,
-};
+import { type BuiltinSynthMpeParams, type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 
 // Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation).
 // Cached by AudioContext sample rate — reused across every note until the
@@ -51,77 +23,31 @@ function getNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
     return buf;
 }
 
-const SYNTH_PARAM_KEYS: ReadonlyArray<keyof SynthParams> = [
-    'waveform',
-    'attack',
-    'decay',
-    'sustain',
-    'release',
-    'filterCutoff',
-    'filterResonance',
-    'filterType',
-    'filterEnvAmount',
-    'detune',
-    'gain',
-    'osc2Waveform',
-    'osc2Detune',
-    'osc2Mix',
-    'subOscLevel',
-    'noiseLevel',
-    'vibratoRate',
-    'vibratoDepth',
-    'vibratoDelay',
-    'stereoSpread',
-    'filterVelocitySensitivity',
-];
-
-const WAVEFORMS = new Set<string>(['sine', 'triangle', 'sawtooth', 'square']);
-const FILTER_TYPES = new Set<string>(['lowpass', 'highpass', 'bandpass']);
-
-const WAVEFORM_INDEX: Record<number, SynthParams['waveform']> = {
-    0: 'sine',
-    1: 'triangle',
-    2: 'sawtooth',
-    3: 'square',
-};
-
-const FILTER_TYPE_INDEX: Record<number, SynthParams['filterType']> = {
-    0: 'lowpass',
-    1: 'highpass',
-    2: 'bandpass',
-};
-
-function resolveEnumParam<TValue extends string>(
-    raw: number | string | undefined,
-    allowed: Set<string>,
-    indexMap: Record<number, TValue>,
-    fallback: TValue
-): TValue {
-    if (raw === undefined) {
-        return fallback;
-    }
-    if (typeof raw === 'string' && allowed.has(raw)) {
-        return raw as TValue;
-    }
-    if (typeof raw === 'number' && indexMap[raw] !== undefined) {
-        return indexMap[raw];
-    }
-    return fallback;
-}
-
 const MPE_BEND_RANGE_SEMITONES = 48;
 
-export function scheduleNote(
-    ctx: BaseAudioContext,
-    destination: AudioNode,
-    pitch: number,
-    startTime: number,
-    duration: number,
-    velocity: number,
-    params: SynthParams,
-    mpe?: MpeParams,
-    clipGain: number = 1.0
-): OscillatorNode & { _env: GainNode } {
+type ScheduleBuiltinSynthNoteInput = {
+    ctx: BaseAudioContext;
+    destination: AudioNode;
+    pitch: number;
+    startTime: number;
+    duration: number;
+    velocity: number;
+    params: BuiltinSynthParams;
+    mpe?: BuiltinSynthMpeParams;
+    clipGain: number;
+};
+
+export function scheduleBuiltinSynthNote({
+    ctx,
+    destination,
+    pitch,
+    startTime,
+    duration,
+    velocity,
+    params,
+    mpe,
+    clipGain,
+}: ScheduleBuiltinSynthNoteInput): OscillatorNode & { _env: GainNode } {
     // Clamp velocity to MIDI range before it drives any timing/gain math. An
     // out-of-range value would make velAttack negative (velocity > 190.5),
     // scheduling envelope/filter events in the past. Mirrors the clamp in
@@ -340,115 +266,4 @@ export function scheduleNote(
     const result = osc1 as OscillatorNode & { _env: GainNode };
     result._env = env;
     return result;
-}
-
-/**
- * Resolve synth params from an array of device descriptors.
- * Prefer this over `getSynthParamsForTrack` during offline rendering
- * to avoid re-reading the live store mid-render.
- */
-export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
-    const synthDevice = devices.find((d) => d.type === 'synth' || d.type.startsWith('builtin-synth'));
-    if (!synthDevice) {
-        return { ...defaultSynthParams };
-    }
-
-    const pv = synthDevice.parameterValues;
-    const result: SynthParams = { ...defaultSynthParams };
-
-    for (const key of SYNTH_PARAM_KEYS) {
-        const raw = pv[key];
-        if (raw === undefined) {
-            continue;
-        }
-
-        if (key === 'waveform') {
-            result.waveform = resolveEnumParam(raw, WAVEFORMS, WAVEFORM_INDEX, defaultSynthParams.waveform);
-        } else if (key === 'osc2Waveform') {
-            result.osc2Waveform = resolveEnumParam(raw, WAVEFORMS, WAVEFORM_INDEX, defaultSynthParams.osc2Waveform);
-        } else if (key === 'filterType') {
-            result.filterType = resolveEnumParam(raw, FILTER_TYPES, FILTER_TYPE_INDEX, defaultSynthParams.filterType);
-        } else {
-            // key is a numeric param at this point (waveform/osc2Waveform/filterType handled above)
-            result[key] = raw;
-        }
-    }
-
-    return result;
-}
-
-/**
- * Lightweight note scheduling for offline rendering.
- * Creates only 3 nodes per note (osc + filter + env) instead of 4-10+.
- * Skips: osc2, sub-osc, noise layer, vibrato LFO, stereo spread.
- * This reduces node count by ~60% while preserving core timbre.
- */
-export function scheduleNoteOffline(
-    ctx: BaseAudioContext,
-    destination: AudioNode,
-    pitch: number,
-    startTime: number,
-    duration: number,
-    velocity: number,
-    params: SynthParams
-): void {
-    // Clamp velocity to MIDI range (see scheduleNote). Keeps velAttack >= 0 so
-    // offline-rendered envelopes never schedule events before startTime.
-    const safeVelocity = Math.max(0, Math.min(127, velocity));
-    const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const velAttack = params.attack * (1.5 - safeVelocity / 127);
-    const peakGain = (safeVelocity / 127) * params.gain;
-    const sustainLevel = peakGain * params.sustain;
-
-    // Single oscillator
-    const osc = ctx.createOscillator();
-    osc.type = params.waveform;
-    osc.frequency.setValueAtTime(frequency, startTime);
-    osc.detune.value = params.detune;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type = params.filterType;
-    const velSens = params.filterVelocitySensitivity ?? 0;
-    const velocityScale = velSens > 0 ? 1 - velSens + velSens * (safeVelocity / 127) : 0.3 + 0.7 * (safeVelocity / 127);
-    const pitchScale = Math.sqrt(frequency / 440);
-    const filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
-
-    // Filter envelope: match realtime path
-    if (params.filterEnvAmount > 0) {
-        const filterPeak = Math.min(filterCutoff + params.filterEnvAmount, 20000);
-        filter.frequency.setValueAtTime(filterPeak, startTime);
-        const filterAttackEnd = startTime + params.attack;
-        const filterDecayEnd = filterAttackEnd + params.decay;
-        filter.frequency.setValueAtTime(filterPeak, filterAttackEnd);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(filterCutoff, 20), filterDecayEnd);
-    } else {
-        filter.frequency.setValueAtTime(filterCutoff, startTime);
-    }
-    filter.Q.setValueAtTime(params.filterResonance, startTime);
-
-    // Amplitude envelope
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(0, startTime);
-
-    const attackEnd = startTime + velAttack;
-    const decayEnd = attackEnd + params.decay;
-    const releaseStart = startTime + duration;
-    const releaseEnd = releaseStart + params.release;
-
-    env.gain.linearRampToValueAtTime(peakGain, attackEnd);
-    if (decayEnd < releaseStart) {
-        env.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
-        env.gain.setValueAtTime(sustainLevel, releaseStart);
-    } else {
-        env.gain.linearRampToValueAtTime(sustainLevel, releaseStart);
-    }
-    env.gain.linearRampToValueAtTime(0, releaseEnd);
-
-    // Chain: osc → filter → env → destination
-    osc.connect(filter);
-    filter.connect(env);
-    env.connect(destination);
-
-    osc.start(startTime);
-    osc.stop(releaseEnd + 0.01);
 }

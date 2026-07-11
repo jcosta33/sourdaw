@@ -45,7 +45,7 @@ const { mocks } = vi.hoisted(() => {
             stop,
             getSynthParamsFromDevices: vi.fn(() => synthParams),
             // scheduleNote always attaches the amplitude-envelope GainNode as
-            // `_env` (see builtinSynth). The audition note-off applies the
+            // `_env` (see the built-in synth scheduler). The audition note-off applies the
             // exponential smooth release through it.
             scheduleNote: vi.fn(
                 () =>

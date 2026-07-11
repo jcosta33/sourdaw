@@ -1,4 +1,6 @@
-export { scheduleNote, getSynthParamsFromDevices, scheduleNoteOffline } from './builtinSynth';
+export { scheduleNote } from './scheduleNote';
+export { getSynthParamsFromDevices } from './getSynthParamsFromDevices';
+export { scheduleNoteOffline } from './scheduleNoteOffline';
 export { addCvOutput } from './cvGate/cvOutputOperations/addCvOutput';
 export { removeCvOutput } from './cvGate/cvOutputOperations/removeCvOutput';
 export { setCvValue } from './cvGate/cvOutputOperations/setCvValue';

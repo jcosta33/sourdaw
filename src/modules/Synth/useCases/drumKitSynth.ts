@@ -1,18 +1,18 @@
 /**
  * Use case: drum kit note scheduling.
- * Delegates to factoryDrumKits for kit data and builtinSynth for audio scheduling.
+ * Delegates to factoryDrumKits for kit data and scheduleNote for audio scheduling.
  */
 
-import { scheduleNote } from './builtinSynth';
+import { type BuiltinSynthParams } from '../models/BuiltinSynthTypes';
 
-import type { SynthParams } from '#/modules/AudioEngine/useCases';
+import { scheduleNote } from './scheduleNote';
 
 // Synth-local shape (AGENTS.md §95 — model isolation). Structurally compatible
 // with AudioEngine's DrumKit model; no cross-module model import.
 export type DrumKitVoice = {
     name: string;
     pitchRange: [number, number];
-    params: SynthParams;
+    params: BuiltinSynthParams;
 };
 
 export type DrumKit = {
