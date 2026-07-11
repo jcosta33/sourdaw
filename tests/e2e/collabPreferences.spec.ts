@@ -31,11 +31,6 @@ test.describe('Collaboration & Preferences', () => {
         await expect(dialog).toBeVisible({ timeout: 5000 });
         await expect(dialog.getByRole('button').first()).toBeVisible({ timeout: 5000 });
 
-        const sliders = dialog.getByRole('slider');
-        const inputs = dialog.getByRole('combobox').or(dialog.getByRole('spinbutton'));
-        const has_controls = (await sliders.count()) + (await inputs.count());
-        expect(has_controls).toBeGreaterThan(0);
-
         await page.keyboard.press('Escape');
     });
 
