@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest';
-
-import * as subject from '../releaseGrandBouleNote';
-
+import { releaseGrandBouleNote } from '../releaseGrandBouleNote';
+const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 describe('releaseGrandBouleNote', () => {
-    it('should export releaseGrandBouleNote', () => {
-        expect(subject.releaseGrandBouleNote).toBeDefined();
-        const t = typeof subject.releaseGrandBouleNote;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash', () => {
+        expect(() => releaseGrandBouleNote({ engine: mock_engine, note: 60, channel: 0 } as never)).not.toThrow();
     });
 });
