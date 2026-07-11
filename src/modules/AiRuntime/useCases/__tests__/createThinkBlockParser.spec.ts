@@ -1,29 +1,27 @@
 import { describe, it, expect } from 'vitest';
 
-import { extractThinkBlock, createThinkBlockParser } from '../sendChatMessage';
+import { createThinkBlockParser } from '../createThinkBlockParser';
 
-/**
- * The incremental parser must, at every step of a streamed sequence, return the
- * same `{ reasoning, content }` the one-shot `extractThinkBlock` returns for the
- * buffer accumulated so far. That equivalence is what lets the streaming loop
- * drop the per-token full-buffer rescan (the quadratic bug) without changing
- * any observable output.
- */
+type ThinkBlockResult = { reasoning: string | undefined; content: string };
 
-/** Feed `full` to the parser split into tokens of size `chunk`, asserting the
- * incremental snapshot matches `extractThinkBlock(prefix)` after every token. */
-function assertEquivalentForChunkSize(full: string, chunk: number): void {
-    const parser = createThinkBlockParser();
-    let prefix = '';
-    for (let i = 0; i < full.length; i += chunk) {
-        const token = full.slice(i, i + chunk);
-        prefix += token;
-        const incremental = parser.push(token);
-        const oneShot = extractThinkBlock(prefix);
-        expect(incremental, `mismatch at prefix=${JSON.stringify(prefix)} (chunk=${chunk})`).toEqual(oneShot);
+function extractThinkBlock(raw: string): ThinkBlockResult {
+    const match = raw.match(/^\s*<think>([\s\S]*?)<\/think>\s*/);
+    if (match) {
+        return {
+            reasoning: match[1]?.trim() || undefined,
+            content: raw.slice(match[0].length).trim(),
+        };
     }
-    // Final snapshot matches the full-buffer one-shot result.
-    expect(parser.snapshot()).toEqual(extractThinkBlock(full));
+
+    const partialMatch = raw.match(/^\s*<think>([\s\S]*)$/);
+    if (partialMatch) {
+        return {
+            reasoning: partialMatch[1]?.trim() || undefined,
+            content: '',
+        };
+    }
+
+    return { reasoning: undefined, content: raw };
 }
 
 const CASES: Array<{ name: string; text: string }> = [
@@ -38,16 +36,32 @@ const CASES: Array<{ name: string; text: string }> = [
     { name: 'content that itself mentions think word', text: '<think>x</think>I think the answer is 42.' },
 ];
 
+/** Feed `full` to the parser split into tokens of size `chunk`, asserting the
+ * incremental snapshot matches `extractThinkBlock(prefix)` after every token. */
+function assertEquivalentForChunkSize(full: string, chunk: number): void {
+    const parser = createThinkBlockParser();
+    let prefix = '';
+    for (let index = 0; index < full.length; index += chunk) {
+        const token = full.slice(index, index + chunk);
+        prefix += token;
+        const incremental = parser.push(token);
+        const oneShot = extractThinkBlock(prefix);
+        expect(incremental, `mismatch at prefix=${JSON.stringify(prefix)} (chunk=${chunk})`).toEqual(oneShot);
+    }
+    // Final snapshot matches the full-buffer one-shot result.
+    expect(parser.snapshot()).toEqual(extractThinkBlock(full));
+}
+
 describe('createThinkBlockParser', () => {
     for (const { name, text } of CASES) {
         for (const chunk of [1, 2, 3, 5, text.length || 1]) {
-            it(`matches extractThinkBlock for "${name}" at chunk size ${chunk}`, () => {
+            it(`should match extractThinkBlock for "${name}" at chunk size ${chunk}`, () => {
                 assertEquivalentForChunkSize(text, chunk);
             });
         }
     }
 
-    it('detects a </think> tag split across two tokens', () => {
+    it('should detect a </think> tag split across two tokens', () => {
         const parser = createThinkBlockParser();
         parser.push('<think>reason</thi');
         const result = parser.push('nk>answer');
@@ -55,7 +69,7 @@ describe('createThinkBlockParser', () => {
         expect(result).toEqual(extractThinkBlock('<think>reason</think>answer'));
     });
 
-    it('detects an opener split across tokens', () => {
+    it('should detect an opener split across tokens', () => {
         const parser = createThinkBlockParser();
         parser.push('<th');
         parser.push('ink>plan');
@@ -63,7 +77,7 @@ describe('createThinkBlockParser', () => {
         expect(result).toEqual({ reasoning: 'plan', content: 'out' });
     });
 
-    it('treats a non-think leading tag as plain content', () => {
+    it('should treat a non-think leading tag as plain content', () => {
         const parser = createThinkBlockParser();
         const result = parser.push('<thought>not a think block</thought>');
         expect(result).toEqual({ reasoning: undefined, content: '<thought>not a think block</thought>' });
