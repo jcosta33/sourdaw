@@ -11,7 +11,7 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceOperations', () => ({
+vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceInPlace', () => ({
     bounceInPlace: mocks.bounceInPlace,
 }));
 

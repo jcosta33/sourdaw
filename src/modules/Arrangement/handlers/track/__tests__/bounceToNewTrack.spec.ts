@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     bounceToNewTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceOperations', () => ({
+vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceToNewTrack', () => ({
     bounceToNewTrack: mocks.bounceToNewTrack,
 }));
 

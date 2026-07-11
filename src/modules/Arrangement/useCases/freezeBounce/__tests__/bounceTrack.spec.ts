@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { normalizeTrack, type Clip, type Track } from '../../../models/Track';
-import { bounceSelection, bounceTrack, type BounceOptions } from '../bounceOperations';
+import { bounceTrack, type BounceOptions } from '../bounceTrack';
 
 import type { TrackStoreState } from '../../../stores/trackStore';
 
@@ -126,7 +126,7 @@ function getFirstUndoEntry(): [string, () => void, () => void] {
     return [call[0], call[1], call[2]];
 }
 
-describe('bounceOperations', () => {
+describe('bounceTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -198,53 +198,5 @@ describe('bounceOperations', () => {
 
         redo();
         expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(bouncedClip);
-    });
-
-    it('should cache selection bounce through the AudioEngine use case and preserve undo snapshots', async () => {
-        const renderedBuffer = createTestAudioBuffer();
-        const beforeClip = createAudioClip({ id: 'clip-before', startBeat: 0, endBeat: 1 });
-        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
-        const afterClip = createAudioClip({ id: 'clip-after', startBeat: 9, endBeat: 10 });
-        const sourceTrack = createAudioTrack({
-            clips: [beforeClip, selectedClip, afterClip],
-        });
-
-        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
-        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
-
-        await bounceSelection('track-1', 2, 6);
-
-        const expectedBufferId = 'bounce-sel-track-1-1234567890';
-        expect(mocks.renderTrackOffline).toHaveBeenCalledWith(
-            expect.objectContaining({
-                clips: [expect.objectContaining({ id: 'clip-selected', startBeat: 2, endBeat: 6 })],
-            }),
-            2,
-            6
-        );
-        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
-
-        const bouncedTrack = mocks.trackStore.value?.tracks[0];
-        expect(bouncedTrack?.clips).toEqual([
-            beforeClip,
-            afterClip,
-            expect.objectContaining({
-                id: 'bounced-sel-11111111-1111-4111-8111-111111111111',
-                trackId: 'track-1',
-                name: 'Guitar (selection bounce)',
-                startBeat: 2,
-                endBeat: 6,
-                audioBufferId: expectedBufferId,
-            }),
-        ]);
-
-        const [label, undo, redo] = getFirstUndoEntry();
-        expect(label).toBe('Bounce Selection');
-
-        undo();
-        expect(mocks.trackStore.value?.tracks).toEqual([sourceTrack]);
-
-        redo();
-        expect(mocks.trackStore.value?.tracks[0]?.clips).toEqual(bouncedTrack?.clips);
     });
 });

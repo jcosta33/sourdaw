@@ -31,9 +31,8 @@ vi.mock('../../../useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
     freezeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/bounceOperations', () => ({
-    bounceInPlace: vi.fn(),
-    bounceToNewTrack: vi.fn(),
+vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
+    bounceTrack: vi.fn(),
 }));
 
 vi.mock('../../../useCases/recording/armTrack', () => ({

@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { bounceInPlace } from '../../useCases/freezeBounce/bounceOperations';
+import { bounceInPlace } from '../../useCases/freezeBounce/bounceInPlace';
 
 export const handleBounceInPlace = createHandler<'bounceInPlace'>({
     execute: (action) => {

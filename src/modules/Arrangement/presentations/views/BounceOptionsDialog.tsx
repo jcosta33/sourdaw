@@ -9,7 +9,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 
-import { type BounceOptions } from '../../useCases/freezeBounce/bounceOperations';
+import { type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
 
 type BounceTrack = {
     name: string;
