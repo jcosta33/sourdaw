@@ -56,10 +56,7 @@ export type PromptFuzzyResult = {
     score: number;
 };
 
-type PromptAction = Parameters<typeof describeAction>[0];
-
-const resolvePromptPresetActions: (input: Parameters<typeof resolvePresetActions>[0]) => PromptAction[] =
-    resolvePresetActions;
+type PromptAction = ReturnType<typeof resolvePresetActions>[number];
 
 type PromptPreview = {
     actions: PromptAction[];
@@ -229,7 +226,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Execute preset directly ─────────────────────────────────────────
     const executePreset = async (result: PromptFuzzyResult): Promise<void> => {
-        const actions = resolvePromptPresetActions({
+        const actions = resolvePresetActions({
             presetId: result.preset.id,
             context: presetContext,
         });
