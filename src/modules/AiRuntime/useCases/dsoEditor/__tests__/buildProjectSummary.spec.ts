@@ -61,6 +61,17 @@ describe('buildProjectSummary', () => {
         });
     });
 
+    it('should return a defensive copy of recent edits', () => {
+        dsoEditorState.set({ revision: 2, recent_edits: ['Added drums'] });
+
+        const summary = buildProjectSummary();
+        summary.recent_edits.push('Mutated summary');
+
+        expect(summary.recent_edits).toEqual(['Added drums', 'Mutated summary']);
+        expect(dsoEditorState.value?.recent_edits).toEqual(['Added drums']);
+        expect(summary.recent_edits).not.toBe(dsoEditorState.value?.recent_edits);
+    });
+
     it('should truncate routing summary for many tracks', () => {
         mocks.trackStoreValue.value = {
             tracks: Array.from({ length: 10 }, (_, index) => ({ name: `T${index}` })),

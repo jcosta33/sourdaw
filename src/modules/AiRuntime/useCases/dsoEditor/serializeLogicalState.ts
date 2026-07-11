@@ -18,7 +18,7 @@ import {
     type LogicalState,
     type LogicalTrack,
 } from '../../models/DsoLogicalState';
-import { bumpDsoEditorRevision } from '../../stores/dsoEditorState';
+import { dsoEditorState } from '../../stores/dsoEditorState';
 
 type SerializeLogicalStateInput = {
     scopeTrackIds?: string[];
@@ -42,7 +42,14 @@ export function serializeLogicalState(options?: SerializeLogicalStateInput): Ser
 
     const scopeSet = options?.scopeTrackIds ? new Set(options.scopeTrackIds) : null;
 
-    const revision = bumpDsoEditorRevision();
+    let revision = 0;
+    dsoEditorState.update((currentState) => {
+        revision = (currentState?.revision ?? 0) + 1;
+        return {
+            revision,
+            recent_edits: currentState?.recent_edits ?? [],
+        };
+    });
 
     const tracks: Record<string, LogicalTrack> = {};
     const trackOrder: string[] = [];

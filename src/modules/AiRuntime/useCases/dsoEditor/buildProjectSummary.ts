@@ -3,9 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { type ProjectSummary } from '../../models/DsoLogicalState';
-import { getDsoEditorRecentEdits } from '../../stores/dsoEditorState';
-
-import { getRevision } from './getRevision';
+import { dsoEditorState } from '../../stores/dsoEditorState';
 
 type BuildProjectSummaryOutput = ProjectSummary;
 
@@ -13,15 +11,16 @@ export function buildProjectSummary(): BuildProjectSummaryOutput {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
+    const editorState = dsoEditorState.value;
 
     return {
-        project_revision: getRevision(),
+        project_revision: editorState?.revision ?? 0,
         track_count: trackState?.tracks.length ?? 0,
         selected_tracks: trackState?.selectedTrackId ? [trackState.selectedTrackId] : [],
         selected_clips: [...(workspaceState?.selectedClipIds ?? [])],
         tempo: transportState?.tempo ?? 120,
         routing_summary: buildRoutingSummary(),
-        recent_edits: getDsoEditorRecentEdits(),
+        recent_edits: [...(editorState?.recent_edits ?? [])],
     };
 }
 

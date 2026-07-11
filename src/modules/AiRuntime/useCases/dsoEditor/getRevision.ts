@@ -1,5 +1,5 @@
-import { getDsoEditorRevision } from '../../stores/dsoEditorState';
+import { dsoEditorState } from '../../stores/dsoEditorState';
 
 export function getRevision(): number {
-    return getDsoEditorRevision();
+    return dsoEditorState.value?.revision ?? 0;
 }

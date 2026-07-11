@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { dsoEditorState } from '../../../stores/dsoEditorState';
 import { serializeLogicalState } from '../serializeLogicalState';
@@ -51,6 +51,10 @@ describe('serializeLogicalState', () => {
         dsoEditorState.set({ revision: 0, recent_edits: [] });
     });
 
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('should serialize full state with defaults when stores are empty', () => {
         const state = serializeLogicalState();
 
@@ -68,6 +72,26 @@ describe('serializeLogicalState', () => {
         const secondState = serializeLogicalState();
 
         expect(secondState.project_revision).toBe(firstState.project_revision + 1);
+    });
+
+    it('should atomically increment and return the exact shared revision', () => {
+        dsoEditorState.set({ revision: 7, recent_edits: ['Added drums'] });
+        const updateSpy = vi.spyOn(dsoEditorState, 'update');
+
+        const state = serializeLogicalState();
+
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+        expect(state.project_revision).toBe(8);
+        expect(dsoEditorState.value).toEqual({ revision: 8, recent_edits: ['Added drums'] });
+    });
+
+    it('should initialize session state when serializing after a reset', () => {
+        dsoEditorState.clear();
+
+        const state = serializeLogicalState();
+
+        expect(state.project_revision).toBe(1);
+        expect(dsoEditorState.value).toEqual({ revision: 1, recent_edits: [] });
     });
 
     it('should serialize tracks, clips, and devices correctly', () => {
