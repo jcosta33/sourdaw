@@ -240,4 +240,23 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
 
         expect(automergeRepository.getRootId()).toBe('root');
     });
+
+    it('keeps the current repository document when activation ownership is stale', async () => {
+        automergeRepository.createProject('candidate');
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.project = 'candidate';
+        });
+        const candidate_bundle = automergeRepository.saveAll();
+
+        automergeRepository.reset();
+        automergeRepository.createProject('current');
+        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
+            document.project = 'current';
+        });
+
+        const activated = await automergeRepository.loadAll(candidate_bundle, () => false);
+
+        expect(activated).toBe(false);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.project).toBe('current');
+    });
 });

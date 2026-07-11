@@ -5,6 +5,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import {
     actionHistoryStore,
     defaultActionHistoryState,
+    markEntryReverted,
     pushActionHistoryEntry,
     sanitize_action_history_state,
     type ActionHistoryState,
@@ -222,5 +223,39 @@ describe('actionHistoryStore', () => {
         expect(evicted_entry_ids).toEqual(['entry-0']);
         expect(actionHistoryStore.value?.entries[0]?.id).toBe('entry-1');
         expect(actionHistoryStore.value?.entries.at(-1)?.id).toBe('entry-200');
+    });
+
+    it('should mark only the row whose ID and immutable fingerprint both match', () => {
+        actionHistoryStore.set({
+            entries: [
+                {
+                    id: 'shared-id',
+                    label: 'Local action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+                {
+                    id: 'shared-id',
+                    label: 'Peer replacement',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+            ],
+        });
+
+        const outcome = markEntryReverted({
+            entryId: 'shared-id',
+            expectedFingerprint: '["shared-id","Local action","setTempo","manual",10,null,null]',
+        });
+
+        expect(outcome).toEqual({ status: 'marked' });
+        expect(actionHistoryStore.value?.entries).toEqual([
+            expect.objectContaining({ label: 'Local action', reverted: true }),
+            expect.objectContaining({ label: 'Peer replacement', reverted: false }),
+        ]);
     });
 });

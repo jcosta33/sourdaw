@@ -5,7 +5,7 @@ import {
     claimActionReplayCapability,
     completeActionReplayMarkReconciliation,
     consumeActionReplayClaim,
-    hasActionReplayMarkReconciliation,
+    getActionReplayMarkReconciliation,
     restoreActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../stores/actionReplayCapabilities';
@@ -22,7 +22,14 @@ type MarkCommittedReplayInput = {
 
 function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void {
     try {
-        actionHistoryMetadataPort.markReverted(entryId);
+        const outcome = actionHistoryMetadataPort.markReverted({
+            entryId,
+            expectedFingerprint: claim.metadataFingerprint,
+        });
+        if (outcome.status === 'unavailable') {
+            consumeActionReplayClaim({ entryId, claim });
+            return;
+        }
     } catch (error) {
         retainActionReplayMarkReconciliation({ entryId, claim });
         throw error;
@@ -31,9 +38,18 @@ function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): void
     consumeActionReplayClaim({ entryId, claim });
 }
 
-function retryActionReplayMark(entryId: string): void {
-    actionHistoryMetadataPort.markReverted(entryId);
+type RetryActionReplayMarkInput = {
+    entryId: string;
+    claim: ActionReplayClaim;
+};
+
+function retryActionReplayMark({ entryId, claim }: RetryActionReplayMarkInput): boolean {
+    const outcome = actionHistoryMetadataPort.markReverted({
+        entryId,
+        expectedFingerprint: claim.metadataFingerprint,
+    });
     completeActionReplayMarkReconciliation(entryId);
+    return outcome.status === 'marked';
 }
 
 type RevertActionOutput = Promise<{ status: 'executed' } | { status: 'reconciled' } | { status: 'unavailable' }>;
@@ -49,9 +65,11 @@ export async function revertAction(entryId: string): RevertActionOutput {
         return { status: 'unavailable' };
     }
 
-    if (hasActionReplayMarkReconciliation(entryId)) {
-        retryActionReplayMark(entryId);
-        return { status: 'reconciled' };
+    const reconciliation_claim = getActionReplayMarkReconciliation({ entryId, metadata: entry });
+    if (reconciliation_claim) {
+        return retryActionReplayMark({ entryId, claim: reconciliation_claim })
+            ? { status: 'reconciled' }
+            : { status: 'unavailable' };
     }
 
     const claim = claimActionReplayCapability({ entryId, metadata: entry });

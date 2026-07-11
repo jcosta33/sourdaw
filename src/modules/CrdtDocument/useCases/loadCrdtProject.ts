@@ -10,10 +10,17 @@ import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
  * Load a CRDT project from persistence (IndexedDB).
  * Returns true if a project was loaded, false if none was found.
  */
-export async function loadCrdtProject(): Promise<boolean> {
+type LoadCrdtProjectInput = {
+    canActivate: () => boolean;
+};
+
+export async function loadCrdtProject({ canActivate }: LoadCrdtProjectInput): Promise<boolean> {
     const bundle = await loadAllFromIdb();
-    if (bundle) {
-        await automergeRepository.loadAll(bundle);
+    if (!canActivate() || !bundle) {
+        return false;
+    }
+    const activated = await automergeRepository.loadAll(bundle, canActivate);
+    if (activated && canActivate()) {
         restoreActiveBranchSlot();
         return true;
     }

@@ -22,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(true) }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearActionHistory: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -116,6 +116,10 @@ describe('loadRecentProject', () => {
         expect(target_clear_order).toBeLessThan(
             vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
+        expect(createCrdtProject).toHaveBeenCalledWith({
+            name: 'Large Project',
+            canActivate: expect.any(Function),
+        });
         expect(target_clear_order).toBeLessThan(
             vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
@@ -148,5 +152,31 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
         expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
+    });
+
+    it('should ignore an older recent-project read that resolves after a newer selection', async () => {
+        let resolve_first: ((raw: string) => void) | undefined;
+        let resolve_second: ((raw: string) => void) | undefined;
+        vi.mocked(readNamedProjectJson).mockImplementation(
+            (key) =>
+                new Promise<string>((resolve) => {
+                    if (key === 'first') {
+                        resolve_first = resolve;
+                    } else {
+                        resolve_second = resolve;
+                    }
+                })
+        );
+
+        const first = loadRecentProject('first');
+        const second = loadRecentProject('second');
+        resolve_second?.(validProject.replace('Large Project', 'Second'));
+        await expect(second).resolves.toBe(true);
+        resolve_first?.(validProject.replace('Large Project', 'First'));
+        await expect(first).resolves.toBe(false);
+
+        expect(projectStore.value?.name).toBe('Second');
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
+        expect(writeProjectJson).toHaveBeenCalledTimes(1);
     });
 });

@@ -22,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    createCrdtProject: vi.fn().mockResolvedValue(undefined),
+    createCrdtProject: vi.fn().mockResolvedValue(true),
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -67,7 +67,7 @@ describe('newProject injectable', () => {
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
-        expect(createCrdtProject).toHaveBeenCalledWith('Test');
+        expect(createCrdtProject).toHaveBeenCalledWith({ name: 'Test', canActivate: expect.any(Function) });
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
@@ -97,5 +97,32 @@ describe('newProject injectable', () => {
         await vi.waitFor(() => expect(clearActionHistory).toHaveBeenCalledTimes(1));
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(projectStore.value).toEqual(expect.objectContaining({ initialized: false, loading: true }));
+    });
+
+    it('should keep the latest project when create promises resolve in reverse order', async () => {
+        let resolve_first: (() => void) | undefined;
+        let resolve_second: (() => void) | undefined;
+        vi.mocked(createCrdtProject).mockImplementation(
+            ({ name }) =>
+                new Promise<boolean>((resolve) => {
+                    if (name === 'First') {
+                        resolve_first = () => resolve(true);
+                    } else {
+                        resolve_second = () => resolve(true);
+                    }
+                })
+        );
+
+        newProject('First');
+        newProject('Second');
+
+        resolve_second?.();
+        await vi.waitFor(() => expect(projectStore.value?.name).toBe('Second'));
+        resolve_first?.();
+        await Promise.resolve();
+
+        expect(projectStore.value?.name).toBe('Second');
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
+        expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
     });
 });

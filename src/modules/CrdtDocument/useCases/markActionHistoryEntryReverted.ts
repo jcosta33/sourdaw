@@ -1,7 +1,10 @@
 import { markEntryReverted } from '../stores/actionHistoryStore';
 
-type MarkActionHistoryEntryRevertedInput = string;
+type MarkActionHistoryEntryRevertedInput = {
+    entryId: string;
+    expectedFingerprint: string;
+};
 
-export function markActionHistoryEntryReverted(entryId: MarkActionHistoryEntryRevertedInput): void {
-    markEntryReverted(entryId);
+export function markActionHistoryEntryReverted(input: MarkActionHistoryEntryRevertedInput): ReturnType<typeof markEntryReverted> {
+    return markEntryReverted(input);
 }

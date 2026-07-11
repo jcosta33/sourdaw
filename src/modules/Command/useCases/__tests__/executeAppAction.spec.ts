@@ -56,7 +56,9 @@ const mocks = vi.hoisted(() => ({
     setSemanticContext: vi.fn<(ctx: SetSemanticContextInput) => void>(),
     clearSemanticContext: vi.fn<() => void>(),
     recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(),
-    markActionHistoryMetadataReverted: vi.fn<(entryId: string) => void>(),
+    markActionHistoryMetadataReverted: vi.fn<
+        (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
+    >(),
     clearActionHistoryMetadata: vi.fn<() => void>(),
     commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
     recordAction: vi.fn<(action: AppAction) => void>(),

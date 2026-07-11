@@ -16,19 +16,39 @@ import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
-    const complete_project_identity_transition = beginProjectIdentityTransition();
+    const transition = beginProjectIdentityTransition();
 
     try {
-        const loaded = await loadCrdtProject();
+        const loaded = await loadCrdtProject({ canActivate: transition.isCurrent });
+        if (!transition.isCurrent()) {
+            return false;
+        }
         if (!loaded) {
-            await createCrdtProject('Untitled Project');
+            const activated = await createCrdtProject({
+                name: 'Untitled Project',
+                canActivate: transition.isCurrent,
+            });
+            if (!activated || !transition.isCurrent()) {
+                return false;
+            }
         }
     } catch (error) {
+        if (!transition.isCurrent()) {
+            return false;
+        }
         logger.warn('[loadProject] CRDT load failed, creating new project:', error);
-        await createCrdtProject('Untitled Project');
+        const activated = await createCrdtProject({ name: 'Untitled Project', canActivate: transition.isCurrent });
+        if (!activated || !transition.isCurrent()) {
+            return false;
+        }
     }
 
-    complete_project_identity_transition();
+    if (!transition.isCurrent() || !transition.complete()) {
+        return false;
+    }
+    if (!transition.isCurrent()) {
+        return false;
+    }
 
     // Reset per-device-instance stores (§13.1) before hydration so stale device
     // state from a previously open project does not leak into the loaded one. The
@@ -47,15 +67,21 @@ export async function loadProject(): Promise<boolean> {
     // Ensure loading flag is cleared — hydrate may not trigger a notification
     // if the value didn't change, so set it explicitly.
     const project = projectStore.value;
-    if (project) {
+    if (project && transition.isCurrent()) {
         projectStore.set({ ...project, loading: false, initialized: true });
     }
 
+    if (!transition.isCurrent()) {
+        return false;
+    }
     clearUndoHistory();
 
     // Start debounced incremental auto-save so edits survive browser crashes.
     // Stop any previous auto-save loop first (e.g. if loadProject is called again).
     stopActiveAutoSave();
+    if (!transition.isCurrent()) {
+        return false;
+    }
     setAutoSaveHandle(startCrdtAutoSave());
 
     return true;

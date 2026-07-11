@@ -212,8 +212,23 @@ export function retainActionReplayMarkReconciliation({
     action_replay_capabilities.set(entryId, { state: 'pending-mark', claim });
 }
 
-export function hasActionReplayMarkReconciliation(entryId: string): boolean {
-    return action_replay_capabilities.get(entryId)?.state === 'pending-mark';
+type GetActionReplayMarkReconciliationInput = {
+    entryId: string;
+    metadata: ActionReplayMetadata;
+};
+
+export function getActionReplayMarkReconciliation({
+    entryId,
+    metadata,
+}: GetActionReplayMarkReconciliationInput): ActionReplayClaim | null {
+    const record = action_replay_capabilities.get(entryId);
+    if (
+        record?.state !== 'pending-mark' ||
+        record.claim.metadataFingerprint !== getActionReplayMetadataFingerprint(metadata)
+    ) {
+        return null;
+    }
+    return record.claim;
 }
 
 export function completeActionReplayMarkReconciliation(entryId: string): void {

@@ -30,6 +30,7 @@ vi.mock('../../repositories/crdtPersistence/loadAllFromIdb', () => ({ loadAllFro
 describe('loadCrdtProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.loadAll.mockResolvedValue(true);
         mocks.branchStoreValue = {
             branches: [{ branchId: 'main', rootDocId: 'root' }],
             activeBranchId: 'main',
@@ -40,10 +41,11 @@ describe('loadCrdtProject', () => {
         const mockBundle = new Map();
         mocks.loadAllFromIdb.mockResolvedValue(mockBundle);
 
-        const result = await loadCrdtProject();
+        const can_activate = () => true;
+        const result = await loadCrdtProject({ canActivate: can_activate });
 
         expect(result).toBe(true);
-        expect(mocks.loadAll).toHaveBeenCalledWith(mockBundle);
+        expect(mocks.loadAll).toHaveBeenCalledWith(mockBundle, can_activate);
     });
 
     it('should restore the last-active branch into the root slot', async () => {
@@ -58,7 +60,7 @@ describe('loadCrdtProject', () => {
         const branchDoc = { tag: 'feat-doc' };
         mocks.getDoc.mockImplementation((id: string) => (id === 'branch_feat' ? branchDoc : undefined));
 
-        await loadCrdtProject();
+        await loadCrdtProject({ canActivate: () => true });
 
         // Regression: reopening must land on the active branch, not whatever doc
         // last occupied the root slot.
@@ -72,7 +74,7 @@ describe('loadCrdtProject', () => {
             activeBranchId: 'main',
         };
 
-        await loadCrdtProject();
+        await loadCrdtProject({ canActivate: () => true });
 
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
@@ -88,9 +90,23 @@ describe('loadCrdtProject', () => {
         };
         mocks.getDoc.mockReturnValue(undefined);
 
-        const result = await loadCrdtProject();
+        const result = await loadCrdtProject({ canActivate: () => true });
 
         expect(result).toBe(true);
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
+    });
+
+    it('should not activate a bundle after transition ownership is lost', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        let current = true;
+        mocks.loadAll.mockImplementation(async () => {
+            current = false;
+            return false;
+        });
+
+        const result = await loadCrdtProject({ canActivate: () => current });
+
+        expect(result).toBe(false);
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
 });

@@ -17,7 +17,7 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 const { audioContext, clearActionHistory, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
     clearActionHistory: vi.fn(),
-    createCrdtProjectMock: vi.fn().mockResolvedValue(undefined),
+    createCrdtProjectMock: vi.fn().mockResolvedValue(true),
     resetActionReplayAuthority: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
@@ -264,5 +264,35 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
         expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
+    });
+
+    it('should ignore an older import whose target creation resolves after a newer import', async () => {
+        let resolve_first: (() => void) | undefined;
+        let resolve_second: (() => void) | undefined;
+        createCrdtProjectMock.mockImplementation(
+            ({ name }: { name: string }) =>
+                new Promise<boolean>((resolve) => {
+                    if (name === 'First') {
+                        resolve_first = () => resolve(true);
+                    } else {
+                        resolve_second = () => resolve(true);
+                    }
+                })
+        );
+        const first_project = makeProject();
+        first_project.meta.name = 'First';
+        const second_project = makeProject();
+        second_project.meta.name = 'Second';
+
+        const first = applyImportedProjectData(first_project);
+        const second = applyImportedProjectData(second_project);
+        resolve_second?.();
+        await expect(second).resolves.toBe(true);
+        resolve_first?.();
+        await expect(first).resolves.toBe(false);
+
+        expect(projectStore.value?.name).toBe('Second');
+        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
     });
 });

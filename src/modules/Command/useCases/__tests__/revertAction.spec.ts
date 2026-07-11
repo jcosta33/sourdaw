@@ -27,7 +27,9 @@ const mocks = vi.hoisted(() => {
     return {
         action_history_store,
         execute_app_action: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
-        mark_reverted: vi.fn<(entry_id: string) => void>(),
+        mark_reverted: vi.fn<
+            (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
+        >(),
     };
 });
 
@@ -74,6 +76,7 @@ describe('revertAction', () => {
         clearActionReplayCapabilities();
         mocks.action_history_store.value = { entries: [] };
         mocks.execute_app_action.mockResolvedValue(undefined);
+        mocks.mark_reverted.mockReturnValue({ status: 'marked' });
     });
 
     it('should reject hydrated, peer-supplied, and unknown IDs without a session capability', async () => {
@@ -95,6 +98,7 @@ describe('revertAction', () => {
         });
         mocks.mark_reverted.mockImplementation(() => {
             order.push('mark');
+            return { status: 'marked' };
         });
         registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
 
@@ -105,7 +109,10 @@ describe('revertAction', () => {
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });
-        expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
+        expect(mocks.mark_reverted).toHaveBeenCalledWith({
+            entryId: entry.id,
+            expectedFingerprint: '["entry-1","Set tempo","setTempo","manual",10,null,null]',
+        });
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
@@ -147,7 +154,10 @@ describe('revertAction', () => {
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
 
-        expect(mocks.mark_reverted).toHaveBeenCalledWith(entry.id);
+        expect(mocks.mark_reverted).toHaveBeenCalledWith({
+            entryId: entry.id,
+            expectedFingerprint: '["entry-1","Set tempo","setTempo","manual",10,null,null]',
+        });
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
@@ -194,6 +204,24 @@ describe('revertAction', () => {
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
         expect(mocks.mark_reverted).toHaveBeenCalledTimes(2);
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('should make mark-only reconciliation unavailable when metadata provenance changes', async () => {
+        const entry = create_entry();
+        const mark_failure = new Error('mark failed');
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.mark_reverted.mockImplementationOnce(() => {
+            throw mark_failure;
+        });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        await expect(revertAction(entry.id)).rejects.toBe(mark_failure);
+        mocks.action_history_store.value = { entries: [{ ...entry, label: 'Peer replacement' }] };
+        mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
+
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.mark_reverted).toHaveBeenCalledTimes(1);
     });
 
     it('should claim before awaiting so overlapping replays cannot execute twice', async () => {

@@ -22,11 +22,22 @@ describe('beginProjectIdentityTransition', () => {
     });
 
     it('should scrub target metadata only when the transition completes', () => {
-        const complete = beginProjectIdentityTransition();
+        const transition = beginProjectIdentityTransition();
 
-        complete();
-        complete();
+        expect(transition.complete()).toBe(true);
+        expect(transition.complete()).toBe(false);
 
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it('should make an older transition stale as soon as a newer transition begins', () => {
+        const first = beginProjectIdentityTransition();
+        const second = beginProjectIdentityTransition();
+
+        expect(first.isCurrent()).toBe(false);
+        expect(first.complete()).toBe(false);
+        expect(second.isCurrent()).toBe(true);
+        expect(second.complete()).toBe(true);
         expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 });

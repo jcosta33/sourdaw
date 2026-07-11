@@ -4,7 +4,7 @@ import {
     claimActionReplayCapability as claimStoredActionReplayCapability,
     clearActionReplayCapabilities,
     hasActionReplayCapability,
-    hasActionReplayMarkReconciliation,
+    getActionReplayMarkReconciliation,
     registerActionReplayCapability as registerStoredActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../../stores/actionReplayCapabilities';
@@ -40,7 +40,7 @@ function claimActionReplayCapability(entry_id: string) {
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
         record: vi.fn(),
-        markReverted: vi.fn(),
+        markReverted: vi.fn(() => ({ status: 'marked' as const })),
         clear: mocks.clear_metadata,
     },
 }));
@@ -93,10 +93,14 @@ describe('clearActionHistory', () => {
             throw new Error('Expected the capability to be claimed');
         }
         retainActionReplayMarkReconciliation({ entryId: 'entry-1', claim });
-        expect(hasActionReplayMarkReconciliation('entry-1')).toBe(true);
+        expect(
+            getActionReplayMarkReconciliation({ entryId: 'entry-1', metadata: create_metadata('entry-1') })
+        ).not.toBeNull();
 
         clearActionHistory();
 
-        expect(hasActionReplayMarkReconciliation('entry-1')).toBe(false);
+        expect(
+            getActionReplayMarkReconciliation({ entryId: 'entry-1', metadata: create_metadata('entry-1') })
+        ).toBeNull();
     });
 });

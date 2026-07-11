@@ -21,9 +21,18 @@ describe('createCrdtProject', () => {
     });
 
     it('should initialize the repository and compact', async () => {
-        await createCrdtProject('New Project');
+        const result = await createCrdtProject({ name: 'New Project', canActivate: () => true });
 
+        expect(result).toBe(true);
         expect(mocks.createProject).toHaveBeenCalledWith('New Project');
         expect(mocks.compactProject).toHaveBeenCalledOnce();
+    });
+
+    it('should not assign an inactive project to the repository', async () => {
+        const result = await createCrdtProject({ name: 'Stale Project', canActivate: () => false });
+
+        expect(result).toBe(false);
+        expect(mocks.createProject).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
     });
 });

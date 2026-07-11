@@ -15,21 +15,29 @@ import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferen
 import { hydrateProjectMidi } from './hydrateProjectMidi';
 
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
-    const complete_project_identity_transition = beginProjectIdentityTransition();
+    const transition = beginProjectIdentityTransition();
 
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
     resetAudioGraph();
 
-    await createCrdtProject(data.meta.name);
-    complete_project_identity_transition();
+    const activated = await createCrdtProject({ name: data.meta.name, canActivate: transition.isCurrent });
+    if (!activated || !transition.isCurrent() || !transition.complete()) {
+        return false;
+    }
+    if (!transition.isCurrent()) {
+        return false;
+    }
 
     // Reset per-device-instance stores (§13.1) so stale device state from the
     // previously open project does not leak into the imported project;
     // hydrateModuleStoresFromProjectData does not touch the device stores.
     resetModuleStoresToDefault();
 
+    if (!transition.isCurrent()) {
+        return false;
+    }
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);
 
@@ -67,6 +75,9 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         activeArrangementId: defaultArrangementId,
     });
 
+    if (!transition.isCurrent()) {
+        return false;
+    }
     projectStore.set({
         name: data.meta.name,
         createdAt: data.meta.createdAt,
@@ -91,6 +102,9 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
     });
 
+    if (!transition.isCurrent()) {
+        return false;
+    }
     if (trackStore.value) {
         trackStore.set({ ...trackStore.value });
     }

@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { markActionHistoryEntryReverted } from '../markActionHistoryEntryReverted';
 
 const mocks = vi.hoisted(() => ({
-    mark_entry_reverted: vi.fn<(entry_id: string) => void>(),
+    mark_entry_reverted: vi.fn<
+        (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
+    >(),
 }));
 
 vi.mock('../../stores/actionHistoryStore', () => ({
@@ -16,8 +18,17 @@ describe('markActionHistoryEntryReverted', () => {
     });
 
     it('should mark the requested metadata row as reverted', () => {
-        markActionHistoryEntryReverted('entry-1');
+        mocks.mark_entry_reverted.mockReturnValue({ status: 'marked' });
 
-        expect(mocks.mark_entry_reverted).toHaveBeenCalledWith('entry-1');
+        const result = markActionHistoryEntryReverted({
+            entryId: 'entry-1',
+            expectedFingerprint: '["entry-1","Set tempo","setTempo","manual",10,null,null]',
+        });
+
+        expect(result).toEqual({ status: 'marked' });
+        expect(mocks.mark_entry_reverted).toHaveBeenCalledWith({
+            entryId: 'entry-1',
+            expectedFingerprint: '["entry-1","Set tempo","setTempo","manual",10,null,null]',
+        });
     });
 });

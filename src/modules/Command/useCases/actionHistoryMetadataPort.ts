@@ -11,13 +11,15 @@ export type ActionHistoryMetadata = {
 
 export type ActionHistoryMetadataPort = {
     record: (entry: ActionHistoryMetadata) => string[];
-    markReverted: (entryId: string) => void;
+    markReverted: (input: { entryId: string; expectedFingerprint: string }) => {
+        status: 'marked' | 'unavailable';
+    };
     clear: () => void;
 };
 
 const no_action_history_metadata_port: ActionHistoryMetadataPort = {
     record: () => [],
-    markReverted: () => undefined,
+    markReverted: () => ({ status: 'unavailable' }),
     clear: () => undefined,
 };
 
@@ -29,6 +31,6 @@ export function setActionHistoryMetadataPort(port: ActionHistoryMetadataPort): v
 
 export const actionHistoryMetadataPort: ActionHistoryMetadataPort = {
     record: (entry) => action_history_metadata_port.record(entry),
-    markReverted: (entryId) => action_history_metadata_port.markReverted(entryId),
+    markReverted: (input) => action_history_metadata_port.markReverted(input),
     clear: () => action_history_metadata_port.clear(),
 };

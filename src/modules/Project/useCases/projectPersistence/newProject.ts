@@ -15,7 +15,7 @@ import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export function newProject(name = 'Untitled Project'): void {
-    const complete_project_identity_transition = beginProjectIdentityTransition();
+    const transition = beginProjectIdentityTransition();
     const current_project = projectStore.value;
     if (current_project) {
         projectStore.set({ ...current_project, loading: true, initialized: false });
@@ -27,9 +27,23 @@ export function newProject(name = 'Untitled Project'): void {
     resetAudioGraph();
 
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
-    createCrdtProject(name)
-        .then(() => {
-            complete_project_identity_transition();
+    createCrdtProject({ name, canActivate: transition.isCurrent })
+        .then((activated) => {
+            if (!activated || !transition.isCurrent() || !transition.complete()) {
+                return;
+            }
+            if (!transition.isCurrent()) {
+                return;
+            }
+            resetModuleStoresToDefault();
+            arrangementStore.set(structuredClone(defaultArrangementStoreState));
+            addTrack({ name: 'Master', kind: 'master', select: false });
+            removeProjectJson();
+            clearCachedAudioBuffers();
+            clearUndoHistory();
+            if (!transition.isCurrent()) {
+                return;
+            }
             projectStore.set({
                 name,
                 createdAt: Date.now(),
@@ -44,6 +58,9 @@ export function newProject(name = 'Untitled Project'): void {
                 },
                 initialized: true,
             });
+            if (!transition.isCurrent()) {
+                return;
+            }
             stopActiveAutoSave();
             setAutoSaveHandle(startCrdtAutoSave());
         })
@@ -51,17 +68,4 @@ export function newProject(name = 'Untitled Project'): void {
             logger.warn('[newProject] Failed to activate project:', error);
         });
 
-    resetModuleStoresToDefault();
-
-    // Seed a single empty arrangement from the store's canonical default so the
-    // seed shape and name ('Arrangement 1') stay defined in one place. Clone so a
-    // fresh project never shares a reference with the module-level default.
-    arrangementStore.set(structuredClone(defaultArrangementStoreState));
-
-    // Don't auto-select the master track — nothing should be selected on a fresh project.
-    addTrack({ name: 'Master', kind: 'master', select: false });
-
-    removeProjectJson();
-    clearCachedAudioBuffers();
-    clearUndoHistory();
 }

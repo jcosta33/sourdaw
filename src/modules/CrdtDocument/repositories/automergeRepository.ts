@@ -373,9 +373,7 @@ class AutomergeRepository {
      * crdtWorker.ts. The worker returns compacted binaries; main thread calls
      * load() once per doc (fast — no incremental chain to replay).
      */
-    async loadAll(bundle: DocumentBundle): Promise<void> {
-        this.docs.clear();
-
+    async loadAll(bundle: DocumentBundle, canActivate: () => boolean = () => true): Promise<boolean> {
         let compacted: [string, Uint8Array][];
         let rootId: string;
 
@@ -392,16 +390,25 @@ class AutomergeRepository {
         } catch (error) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', error);
+            if (!canActivate()) {
+                return false;
+            }
+            this.docs.clear();
             this._loadAllSync(bundle);
-            return;
+            return true;
         }
 
+        if (!canActivate()) {
+            return false;
+        }
+        this.docs.clear();
         for (const [id, bytes] of compacted) {
             this.docs.set(id, load<AnyDoc>(bytes));
         }
         this.rootId = rootId;
 
         this.notifyListeners();
+        return true;
     }
 
     /** Synchronous fallback for loadAll (used when worker is unavailable). */

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearActionHistory, clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
@@ -9,13 +9,11 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
-import { beginProjectIdentityTransition } from '../beginProjectIdentityTransition';
 import { loadProject } from '../loadProject';
 
 const module_mocks = vi.hoisted(() => ({
     project_store_value: { value: { loading: false, initialized: true } as ProjectStoreState },
     project_store_set: vi.fn(),
-    complete_transition: vi.fn<() => void>(),
     reset_module_stores: vi.fn(),
     stop_active_auto_save: vi.fn(),
     set_auto_save_handle: vi.fn(),
@@ -36,11 +34,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectCrdtToStores: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/MIDI/useCases', () => ({ migrateAbsoluteMidiNotes: vi.fn() }));
-vi.mock('../beginProjectIdentityTransition', () => ({
-    beginProjectIdentityTransition: vi.fn(() => module_mocks.complete_transition),
+vi.mock('#/modules/Command/useCases', () => ({
+    clearActionHistory: vi.fn(),
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({ migrateAbsoluteMidiNotes: vi.fn() }));
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: module_mocks.reset_module_stores,
 }));
@@ -50,25 +49,27 @@ vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: module_mocks.se
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(clearActionHistory).mockReset();
         module_mocks.project_store_value.value = { loading: false, initialized: true } as ProjectStoreState;
         vi.mocked(loadCrdtProject).mockResolvedValue(true);
+        vi.mocked(createCrdtProject).mockResolvedValue(true);
     });
 
     it('should complete target scrub before hydration and normal use', async () => {
         await loadProject();
 
-        expect(beginProjectIdentityTransition).toHaveBeenCalledTimes(1);
-        expect(module_mocks.complete_transition).toHaveBeenCalledTimes(1);
+        expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
-        expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
             module_mocks.reset_module_stores.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(projectCrdtToStores).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(module_mocks.complete_transition.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
             module_mocks.project_store_set.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
@@ -78,13 +79,16 @@ describe('loadProject', () => {
 
         await loadProject();
 
-        expect(createCrdtProject).toHaveBeenCalledWith('Untitled Project');
-        expect(module_mocks.complete_transition).toHaveBeenCalledTimes(1);
+        expect(createCrdtProject).toHaveBeenCalledWith({
+            name: 'Untitled Project',
+            canActivate: expect.any(Function),
+        });
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 
     it('should abort hydration and autosave when target scrub fails', async () => {
         const failure = new Error('target history scrub failed');
-        module_mocks.complete_transition.mockImplementation(() => {
+        vi.mocked(clearActionHistory).mockImplementation(() => {
             throw failure;
         });
 
@@ -95,5 +99,34 @@ describe('loadProject', () => {
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(module_mocks.set_auto_save_handle).not.toHaveBeenCalled();
         expect(projectStore.set).not.toHaveBeenCalled();
+    });
+
+    it('should ignore an older load that resolves after a newer load', async () => {
+        let resolve_first: ((loaded: boolean) => void) | undefined;
+        let resolve_second: ((loaded: boolean) => void) | undefined;
+        vi.mocked(loadCrdtProject)
+            .mockImplementationOnce(
+                () =>
+                    new Promise<boolean>((resolve) => {
+                        resolve_first = resolve;
+                    })
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<boolean>((resolve) => {
+                        resolve_second = resolve;
+                    })
+            );
+
+        const first = loadProject();
+        const second = loadProject();
+        resolve_second?.(true);
+        await expect(second).resolves.toBe(true);
+        resolve_first?.(true);
+        await expect(first).resolves.toBe(false);
+
+        expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
+        expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 });

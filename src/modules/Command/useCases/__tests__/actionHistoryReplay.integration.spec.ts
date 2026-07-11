@@ -30,7 +30,7 @@ type IntegrationDocument = { actionHistory?: unknown };
 
 const no_action_history_metadata_port = {
     record: () => [],
-    markReverted: () => undefined,
+    markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
 
@@ -137,6 +137,98 @@ describe('Command action-history replay integration', () => {
         recordActionHistoryEntry(second_entry);
 
         expect(getActionReplayStatus(second_entry_id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('should not mark a same-ID replacement that arrives while inverse execution is pending', async () => {
+        let resolve_inverse: (() => void) | undefined;
+        const pending_toggle_handler: ActionHandler<TogglePlaybackAction> = {
+            undoable: false,
+            execute: () =>
+                new Promise<void>((resolve) => {
+                    resolve_inverse = resolve;
+                }),
+            describe: () => ({ label: 'Toggle playback' }),
+        };
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        if (!entry) {
+            throw new Error('Expected replayable metadata');
+        }
+        clearHandlerRegistry();
+        registerHandlerMap({ togglePlayback: pending_toggle_handler });
+
+        const replay = revertAction(entry.id);
+        mutateCrdtDoc<IntegrationDocument>({
+            id: 'root',
+            changeFn: (document) => {
+                document.actionHistory = {
+                    entries: [
+                        {
+                            id: entry.id,
+                            label: 'Peer replacement',
+                            actionKind: entry.actionKind,
+                            source: entry.source,
+                            timestamp: entry.timestamp,
+                            reverted: false,
+                        },
+                    ],
+                };
+            },
+        });
+        actionHistoryStore.hydrate();
+        resolve_inverse?.();
+
+        await expect(replay).resolves.toEqual({ status: 'executed' });
+        expect(actionHistoryStore.value?.entries[0]).toEqual(
+            expect.objectContaining({ id: entry.id, label: 'Peer replacement', reverted: false })
+        );
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('should not retry marking after pending reconciliation metadata is replaced', async () => {
+        const mark_failure = new Error('mark failed');
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: () => {
+                throw mark_failure;
+            },
+            clear: clearCrdtActionHistory,
+        });
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        if (!entry) {
+            throw new Error('Expected replayable metadata');
+        }
+
+        await expect(revertAction(entry.id)).rejects.toBe(mark_failure);
+        mutateCrdtDoc<IntegrationDocument>({
+            id: 'root',
+            changeFn: (document) => {
+                document.actionHistory = {
+                    entries: [
+                        {
+                            id: entry.id,
+                            label: 'Peer replacement',
+                            actionKind: entry.actionKind,
+                            source: entry.source,
+                            timestamp: entry.timestamp,
+                            reverted: false,
+                        },
+                    ],
+                };
+            },
+        });
+        actionHistoryStore.hydrate();
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearCrdtActionHistory,
+        });
+
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+        expect(actionHistoryStore.value?.entries[0]).toEqual(
+            expect.objectContaining({ id: entry.id, label: 'Peer replacement', reverted: false })
+        );
     });
 
     it('should wire record, eviction revoke, revert mark, authority reset, and metadata clear', async () => {

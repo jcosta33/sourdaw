@@ -14,11 +14,14 @@ import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetM
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
 export async function loadRecentProject(key: string): Promise<boolean> {
-    const complete_project_identity_transition = beginProjectIdentityTransition();
+    const transition = beginProjectIdentityTransition();
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
         const raw = await readNamedProjectJson(key);
+        if (!transition.isCurrent()) {
+            return false;
+        }
         if (!raw) {
             logger.warn(`No project data found for key: ${key}`);
             return false;
@@ -35,16 +38,27 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         stopPlayback();
         resetAudioGraph();
 
-        await createCrdtProject(data.meta.name);
-        complete_project_identity_transition();
+        const activated = await createCrdtProject({ name: data.meta.name, canActivate: transition.isCurrent });
+        if (!activated || !transition.isCurrent() || !transition.complete()) {
+            return false;
+        }
+        if (!transition.isCurrent()) {
+            return false;
+        }
 
         // Reset per-device-instance stores (§13.1) so stale device state from the
         // previously open project does not leak into the project being loaded;
         // hydrateModuleStoresFromProjectData does not touch the device stores.
         resetModuleStoresToDefault();
 
+        if (!transition.isCurrent()) {
+            return false;
+        }
         hydrateModuleStoresFromProjectData(data);
 
+        if (!transition.isCurrent()) {
+            return false;
+        }
         projectStore.set({
             name: data.meta.name,
             createdAt: data.meta.createdAt,
@@ -57,9 +71,15 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             initialized: true,
         });
 
+        if (!transition.isCurrent()) {
+            return false;
+        }
         writeProjectJson(raw);
 
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
+        if (!transition.isCurrent()) {
+            return false;
+        }
         if (trackStore.value) {
             trackStore.set({ ...trackStore.value });
         }

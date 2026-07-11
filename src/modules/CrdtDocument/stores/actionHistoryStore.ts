@@ -222,12 +222,42 @@ export function pushActionHistoryEntry(entry: ActionHistoryEntry): string[] {
     return evicted_entry_ids;
 }
 
-export function markEntryReverted(entryId: string): void {
+type MarkEntryRevertedInput = {
+    entryId: string;
+    expectedFingerprint: string;
+};
+
+type MarkEntryRevertedOutput = { status: 'marked' } | { status: 'unavailable' };
+
+function get_action_history_entry_fingerprint(entry: ActionHistoryEntry): string {
+    return JSON.stringify([
+        entry.id,
+        entry.label,
+        entry.actionKind,
+        entry.source,
+        entry.timestamp,
+        entry.groupId ?? null,
+        entry.groupLabel ?? null,
+    ]);
+}
+
+export function markEntryReverted({ entryId, expectedFingerprint }: MarkEntryRevertedInput): MarkEntryRevertedOutput {
     const state = actionHistoryStore.value;
     if (!state) {
-        return;
+        return { status: 'unavailable' };
+    }
+    const current_entry = state.entries.find(
+        (entry) => entry.id === entryId && get_action_history_entry_fingerprint(entry) === expectedFingerprint
+    );
+    if (!current_entry) {
+        return { status: 'unavailable' };
     }
     actionHistoryStore.set({
-        entries: state.entries.map((event) => (event.id === entryId ? { ...event, reverted: true } : event)),
+        entries: state.entries.map((event) =>
+            event.id === entryId && get_action_history_entry_fingerprint(event) === expectedFingerprint
+                ? { ...event, reverted: true }
+                : event
+        ),
     });
+    return { status: 'marked' };
 }
