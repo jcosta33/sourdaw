@@ -18,7 +18,7 @@ export type ExecuteOptions = {
     skipUndo?: boolean;
 };
 
-export const executeAppAction: (action: AppAction, options?: ExecuteOptions) => Promise<void> = inject({ logger })(
+export const executeAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
