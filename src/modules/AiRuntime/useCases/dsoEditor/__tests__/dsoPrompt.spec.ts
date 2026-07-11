@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { type LogicalState, type ProjectSummary } from '../../../models/DsoLogicalState';
 import { buildDsoPrompt } from '../dsoPrompt';
-import { type LogicalState, type ProjectSummary } from '../serializeLogicalState';
 
 describe('buildDsoPrompt', () => {
     const mockSummary: ProjectSummary = {

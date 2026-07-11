@@ -45,8 +45,9 @@ mocks.streamNativeCompletion.mockImplementation(
 // Collaborators executeDsoEdit touches before/around the LLM call.
 vi.mock('./../serializeLogicalState', () => ({
     serializeLogicalState: () => ({}),
+}));
+vi.mock('./../buildProjectSummary', () => ({
     buildProjectSummary: () => '',
-    logEdit: vi.fn(),
 }));
 vi.mock('./../dsoPrompt', () => ({
     buildDsoPrompt: () => ({ system: 'sys', user: 'usr' }),

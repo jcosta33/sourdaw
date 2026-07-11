@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
     updateChatMessage: vi.fn(),
     setChatGenerating: vi.fn(),
     llmStatusSet: vi.fn(),
-    logEdit: vi.fn(),
     trackStoreState: {
         value: {
             tracks: [
@@ -109,8 +108,10 @@ vi.mock('../../../stores/llmStatusStore', () => ({
 
 vi.mock('../serializeLogicalState', () => ({
     serializeLogicalState: () => ({}),
+}));
+
+vi.mock('../buildProjectSummary', () => ({
     buildProjectSummary: () => '',
-    logEdit: mocks.logEdit,
 }));
 
 vi.mock('../dsoPrompt', () => ({

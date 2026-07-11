@@ -6,7 +6,7 @@ import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
 import { updateChatMessage } from '../../stores/chatStore';
 
 import { executeDsos, type DsoExecutionResult, validateDsos } from './compileDso';
-import { logEdit } from './serializeLogicalState';
+import { logEdit } from './logEdit';
 
 type CommitDsoEditPlanInput = {
     plan: EditPlan;

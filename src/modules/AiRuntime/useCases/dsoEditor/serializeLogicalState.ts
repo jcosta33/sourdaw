@@ -12,93 +12,20 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/Workspace/stores';
 
-// ── Types ────────────────────────────────────────────────────────────────────
+import {
+    type LogicalClip,
+    type LogicalDevice,
+    type LogicalState,
+    type LogicalTrack,
+} from '../../models/DsoLogicalState';
+import { bumpDsoEditorRevision } from '../../stores/dsoEditorState';
 
-export type LogicalTrack = {
-    name: string;
-    kind: string;
-    muted: boolean;
-    soloed: boolean;
-    armed: boolean;
-    gain: number;
-    pan: number;
-    color?: string;
-    clip_ids: string[];
-    device_ids: string[];
+type SerializeLogicalStateInput = {
+    scopeTrackIds?: string[];
+    includeNoteCount?: boolean;
 };
 
-export type LogicalClip = {
-    name: string;
-    type: 'audio' | 'midi';
-    track_id: string;
-    start_beat: number;
-    end_beat: number;
-    gain?: number;
-    note_count?: number;
-};
-
-export type LogicalDevice = {
-    name?: string;
-    type: string;
-    track_id: string;
-    bypassed: boolean;
-};
-
-export type LogicalState = {
-    project_revision: number;
-    transport: {
-        tempo: number;
-        time_signature: [number, number];
-        playhead_beat: number;
-    };
-    tracks: Record<string, LogicalTrack>;
-    track_order: string[];
-    clips: Record<string, LogicalClip>;
-    devices: Record<string, LogicalDevice>;
-    selection: {
-        track_ids: string[];
-        clip_ids: string[];
-    };
-};
-
-export type ProjectSummary = {
-    project_revision: number;
-    track_count: number;
-    selected_tracks: string[];
-    selected_clips: string[];
-    tempo: number;
-    routing_summary: string;
-    recent_edits: string[];
-};
-
-// ── Revision + recent edits log ──────────────────────────────────────────────
-// Held in a closure so the only way to mutate is via the exported functions.
-// HMR resets are acceptable here: the LLM-facing revision counter only needs
-// to be monotonic within a session, and recent-edits is a 5-entry history
-// that can safely start empty after a reload.
-
-const editLog: { revision: number; entries: string[] } = { revision: 0, entries: [] };
-
-export function getRevision(): number {
-    return editLog.revision;
-}
-
-export function logEdit(summary: string): void {
-    editLog.entries.push(summary);
-    if (editLog.entries.length > 5) {
-        editLog.entries.shift();
-    }
-}
-
-function bumpRevision(): number {
-    return ++editLog.revision;
-}
-
-function getRecentEdits(): string[] {
-    return [...editLog.entries];
-}
-
-// ── Serialization ────────────────────────────────────────────────────────────
+type SerializeLogicalStateOutput = LogicalState;
 
 /**
  * Serialize the current project as EASE-encoded logical state.
@@ -107,10 +34,7 @@ function getRecentEdits(): string[] {
  * - scopeTrackIds: limit to specific tracks (selective injection)
  * - includeNoteCount: include note counts in clips (for MIDI-related edits)
  */
-export function serializeLogicalState(options?: {
-    scopeTrackIds?: string[];
-    includeNoteCount?: boolean;
-}): LogicalState {
+export function serializeLogicalState(options?: SerializeLogicalStateInput): SerializeLogicalStateOutput {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
@@ -118,7 +42,7 @@ export function serializeLogicalState(options?: {
 
     const scopeSet = options?.scopeTrackIds ? new Set(options.scopeTrackIds) : null;
 
-    const revision = bumpRevision();
+    const revision = bumpDsoEditorRevision();
 
     const tracks: Record<string, LogicalTrack> = {};
     const trackOrder: string[] = [];
@@ -194,35 +118,4 @@ export function serializeLogicalState(options?: {
             clip_ids: [...(workspaceState?.selectedClipIds ?? [])],
         },
     };
-}
-
-/**
- * Build a compact project summary for prompt context.
- */
-export function buildProjectSummary(): ProjectSummary {
-    const trackState = trackStore.value;
-    const transportState = transportStore.value;
-    const workspaceState = workspaceStore.value;
-
-    return {
-        project_revision: editLog.revision,
-        track_count: trackState?.tracks.length ?? 0,
-        selected_tracks: trackState?.selectedTrackId ? [trackState.selectedTrackId] : [],
-        selected_clips: [...(workspaceState?.selectedClipIds ?? [])],
-        tempo: transportState?.tempo ?? 120,
-        routing_summary: buildRoutingSummary(),
-        recent_edits: getRecentEdits(),
-    };
-}
-
-function buildRoutingSummary(): string {
-    const trackState = trackStore.value;
-    if (!trackState || trackState.tracks.length === 0) {
-        return 'Empty project';
-    }
-    const names = trackState.tracks.slice(0, 8).map((time) => time.name);
-    if (trackState.tracks.length > 8) {
-        return `${names.join(', ')} +${trackState.tracks.length - 8} more → Master`;
-    }
-    return `${names.join(', ')} → Master`;
 }

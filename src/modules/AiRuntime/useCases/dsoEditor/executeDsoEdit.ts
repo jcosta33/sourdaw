@@ -29,12 +29,13 @@ import { proposePendingDsoConfirmation } from '../../stores/pendingActionConfirm
 import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
 
+import { buildProjectSummary } from './buildProjectSummary';
 import { commitDsoEditPlan } from './commitDsoEditPlan';
 import { resolveDsoNames, validateDsos, type DsoExecutionResult } from './compileDso';
 import { buildDsoPrompt } from './dsoPrompt';
 import { getDsoConfirmationTargets } from './getDsoConfirmationTargets';
 import { parseEditPlan } from './parseEditPlan';
-import { serializeLogicalState, buildProjectSummary } from './serializeLogicalState';
+import { serializeLogicalState } from './serializeLogicalState';
 
 export type DsoEditResult = {
     success: boolean;

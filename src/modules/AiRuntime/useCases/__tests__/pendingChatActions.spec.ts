@@ -77,7 +77,7 @@ vi.mock('../dsoEditor/compileDso', () => ({
     executeDsos: mocks.executeDsos,
 }));
 
-vi.mock('../dsoEditor/serializeLogicalState', () => ({
+vi.mock('../dsoEditor/logEdit', () => ({
     logEdit: mocks.logEdit,
 }));
 
