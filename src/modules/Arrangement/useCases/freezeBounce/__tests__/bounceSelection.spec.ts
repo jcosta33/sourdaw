@@ -19,20 +19,24 @@ type RenderTrackOffline = (
 
 type PushUndoEntry = (label: string, undoFn: () => void, redoFn: () => void) => void;
 
-type TestTrackStore = {
-    value: TrackStoreState | null;
-    set: ReturnType<typeof vi.fn<(state: TrackStoreState) => void>>;
-};
+const mocks = vi.hoisted(() => {
+    type TestTrackStore = {
+        value: TrackStoreState | null;
+        set: ReturnType<typeof vi.fn<(state: TrackStoreState) => void>>;
+    };
 
-const mocks = vi.hoisted(() => ({
-    cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
-    pushUndoEntry: vi.fn<PushUndoEntry>(),
-    renderTrackOffline: vi.fn<RenderTrackOffline>(),
-    trackStore: {
+    const trackStore: TestTrackStore = {
         value: null,
         set: vi.fn<(state: TrackStoreState) => void>(),
-    } satisfies TestTrackStore,
-}));
+    };
+
+    return {
+        cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
+        pushUndoEntry: vi.fn<PushUndoEntry>(),
+        renderTrackOffline: vi.fn<RenderTrackOffline>(),
+        trackStore,
+    };
+});
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
@@ -54,14 +58,14 @@ function createTestAudioBuffer(): AudioBuffer {
     const channelData = new Float32Array(128);
 
     return {
-        copyFromChannel: vi.fn((destination: Float32Array, _channelNumber: number, bufferOffset = 0) => {
+        copyFromChannel: (destination, _channelNumber, bufferOffset = 0) => {
             destination.set(channelData.subarray(bufferOffset, bufferOffset + destination.length));
-        }),
-        copyToChannel: vi.fn((source: Float32Array, _channelNumber: number, bufferOffset = 0) => {
+        },
+        copyToChannel: (source, _channelNumber, bufferOffset = 0) => {
             channelData.set(source, bufferOffset);
-        }),
+        },
         duration: 1,
-        getChannelData: vi.fn(() => channelData),
+        getChannelData: () => channelData,
         length: channelData.length,
         numberOfChannels: 2,
         sampleRate: 48000,
