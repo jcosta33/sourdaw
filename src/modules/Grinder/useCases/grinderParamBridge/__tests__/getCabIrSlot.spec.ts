@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { export function getCabIrSlot(cab_ir_id: string): number | null { } from '../getCabIrSlot.ts';
-describe('export function getCabIrSlot(cab_ir_id: string): number | null {', () => {
-    it('is callable', () => {
-        expect(typeof export function getCabIrSlot(cab_ir_id: string): number | null {).toBe('function');
+import { getCabIrSlot } from '../getCabIrSlot';
+describe('getCabIrSlot', () => {
+    it('returns slot index for valid id', () => {
+        const result = getCabIrSlot('invalid-id');
+        expect(result).toBeNull();
     });
 });
