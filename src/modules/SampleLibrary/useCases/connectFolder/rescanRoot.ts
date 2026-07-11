@@ -1,6 +1,7 @@
 import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
 
-import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
+import { scanBrowserDirectory } from './scanBrowserDirectory';
+import { scanTauriDirectory } from './scanTauriDirectory';
 
 /**
  * Rescan a library root — re-traverse and reconcile.
