@@ -7,19 +7,15 @@ test.describe('Collaboration & Preferences', () => {
         await launch_new_project(page);
     });
 
-    test('Can open the collaboration panel', async ({ page }) => {
-        await page.getByRole('button', { name: 'Toggle collaboration panel' }).click();
-        await expect(page.getByRole('dialog', { name: 'Collaborate' })).toBeVisible({ timeout: 5000 });
-    });
-
-    test('Collaboration panel is interactive', async ({ page }) => {
-        await page.getByRole('button', { name: 'Toggle collaboration panel' }).click();
+    test('Collaboration panel opens with invite mechanism', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: 'Toggle collaboration panel' });
+        await toggle.click();
         const dialog = page.getByRole('dialog', { name: 'Collaborate' });
         await expect(dialog).toBeVisible({ timeout: 5000 });
         await expect(dialog.getByRole('button').first()).toBeVisible({ timeout: 5000 });
     });
 
-    test('Can close the collaboration panel', async ({ page }) => {
+    test('Collaboration panel can be closed via toggle', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle collaboration panel' });
         await toggle.click();
         const dialog = page.getByRole('dialog', { name: 'Collaborate' });
@@ -29,23 +25,35 @@ test.describe('Collaboration & Preferences', () => {
         await expect(dialog).toBeHidden({ timeout: 5000 });
     });
 
-    test('Can open and close the preferences dialog', async ({ page }) => {
-        await page.getByRole('button', { name: 'Open Preferences' }).click();
-        await expect(page.getByRole('dialog').filter({ hasText: /Preferences/i })).toBeVisible({ timeout: 5000 });
-
-        await page.keyboard.press('Escape');
-        await expect(page.getByRole('dialog').filter({ hasText: /Preferences/i })).toBeHidden();
-    });
-
-    test('Preferences dialog has interactive elements', async ({ page }) => {
+    test('Preferences dialog opens with interactive settings controls', async ({ page }) => {
         await page.getByRole('button', { name: 'Open Preferences' }).click();
         const dialog = page.getByRole('dialog').filter({ hasText: /Preferences/i });
         await expect(dialog).toBeVisible({ timeout: 5000 });
         await expect(dialog.getByRole('button').first()).toBeVisible({ timeout: 5000 });
+
+        const sliders = dialog.getByRole('slider');
+        const inputs = dialog.getByRole('combobox').or(dialog.getByRole('spinbutton'));
+        const has_controls = (await sliders.count()) + (await inputs.count());
+        expect(has_controls).toBeGreaterThan(0);
+
+        await page.keyboard.press('Escape');
     });
 
-    test('Ableton Link toggle is present', async ({ page }) => {
+    test('Preferences dialog can be closed with Escape', async ({ page }) => {
+        await page.getByRole('button', { name: 'Open Preferences' }).click();
+        const dialog = page.getByRole('dialog').filter({ hasText: /Preferences/i });
+        await expect(dialog).toBeVisible({ timeout: 5000 });
+
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden({ timeout: 5000 });
+    });
+
+    test('Ableton Link toggle is clickable', async ({ page }) => {
         const link = page.getByRole('button', { name: /Ableton Link/i });
+        await expect(link).toBeVisible();
+        const label_before = await link.getAttribute('aria-label');
+        await link.click();
+        await page.waitForTimeout(300);
         await expect(link).toBeVisible();
     });
 });

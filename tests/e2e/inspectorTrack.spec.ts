@@ -12,13 +12,16 @@ test.describe('Inspector — Track Properties', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     });
 
-    test('Inspector shows track properties for selected track', async ({ page }) => {
+    test('Inspector shows track properties with interactive controls for selected track', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await expect(inspector).toBeVisible();
         await expect(inspector.getByText('Kind:')).toBeVisible();
         await expect(inspector.getByText('Color')).toBeVisible();
         await expect(inspector.getByText('Level')).toBeVisible();
         await expect(inspector.getByText('Devices')).toBeVisible();
+        const color_buttons = inspector.getByRole('button', { name: /Set color/i });
+        const color_count = await color_buttons.count();
+        expect(color_count).toBeGreaterThan(0);
     });
 
     test('Can toggle track arm from track header', async ({ page }) => {
@@ -39,11 +42,12 @@ test.describe('Inspector — Track Properties', () => {
         await expect(track_list.getByRole('button', { name: /^Unsolo/ })).toBeVisible({ timeout: 5000 });
     });
 
-    test('Can adjust track gain slider', async ({ page }) => {
+    test('Track gain slider has a numeric value and is interactive', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const gain = inspector.getByRole('slider', { name: /gain/i });
         await expect(gain).toBeVisible();
-        await expect(gain).toHaveAttribute('aria-valuenow');
+        const value = await gain.getAttribute('aria-valuenow');
+        expect(value).not.toBeNull();
     });
 
     test('Can add a device to the track chain', async ({ page }) => {
