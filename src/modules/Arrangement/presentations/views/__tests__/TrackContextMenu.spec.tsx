@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
 import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { TrackContextMenu } from '../TrackContextMenu';
 
@@ -31,9 +32,8 @@ vi.mock('../../../useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
     freezeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/bounceOperations', () => ({
-    bounceInPlace: vi.fn(),
-    bounceToNewTrack: vi.fn(),
+vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
+    bounceTrack: vi.fn(),
 }));
 
 vi.mock('../../../useCases/recording/armTrack', () => ({
@@ -168,6 +168,30 @@ describe('TrackContextMenu', () => {
         const track = screen.getByTestId('track');
         fireEvent.contextMenu(track);
         expect(screen.getByText('Bounce...')).toBeInTheDocument();
+    });
+
+    it('should submit the default bounce options for the current track', () => {
+        renderWithTooltip(
+            <TrackContextMenu track={mockTrack}>
+                <div>Track Content</div>
+            </TrackContextMenu>
+        );
+
+        fireEvent.contextMenu(screen.getByText('Track Content'));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Bounce...' }));
+
+        const dialog = screen.getByRole('dialog', { name: 'Bounce Test Track' });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Render' }));
+
+        expect(vi.mocked(bounceTrack)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(bounceTrack)).toHaveBeenCalledWith('track1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: true,
+            normalization: 'protection',
+            tailHandling: 'auto',
+            destination: 'new-track',
+        });
     });
 
     it('should render Delete Track menu item', () => {

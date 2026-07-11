@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { bounceSelection } from '../../useCases/freezeBounce/bounceOperations';
+import { bounceSelection } from '../../useCases/freezeBounce/bounceSelection';
 
 export const handleConsolidateSelection = createHandler<'consolidateSelection'>({
     execute: async (alpha) => {

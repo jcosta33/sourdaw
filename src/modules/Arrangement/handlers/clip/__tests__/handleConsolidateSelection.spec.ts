@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     bounceSelection: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/bounceOperations', () => ({
+vi.mock('../../../useCases/freezeBounce/bounceSelection', () => ({
     bounceSelection: mocks.bounceSelection,
 }));
 

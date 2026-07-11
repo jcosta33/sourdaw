@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     bounceInPlace: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceOperations', () => ({
+vi.mock('#/modules/Arrangement/useCases/freezeBounce/bounceInPlace', () => ({
     bounceInPlace: mocks.bounceInPlace,
 }));
 
