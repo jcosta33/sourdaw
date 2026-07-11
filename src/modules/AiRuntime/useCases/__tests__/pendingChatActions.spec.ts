@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createAppActionCommittedError } from '#/modules/Command/useCases';
+
 import { type EditPlan } from '../../models/DsoTypes';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import {
@@ -13,7 +15,6 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    isAppActionCommittedError: vi.fn<(error: unknown) => boolean>(() => false),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     pushAiActionGroup: vi.fn(),
@@ -35,9 +36,9 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
-    isAppActionCommittedError: mocks.isAppActionCommittedError,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -80,7 +81,6 @@ describe('pending chat action confirmation', () => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
         mocks.executeAppAction.mockResolvedValue(undefined);
-        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.commitDsoEditPlan.mockResolvedValue({ summaries: ['Removed track'], failures: [] });
@@ -281,9 +281,11 @@ describe('pending chat action confirmation', () => {
     });
 
     it('should record a committed confirmation action as executed and warn against retrying', async () => {
-        const committed_failure = new Error('Action committed but history failed');
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'removeTrack',
+            cause: new Error('Action committed but history failed'),
+        });
         mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
-        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums',
@@ -314,10 +316,12 @@ describe('pending chat action confirmation', () => {
     });
 
     it('should report committed history failure together with a later confirmation failure', async () => {
-        const committed_failure = new Error('first action history failed');
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'removeTrack',
+            cause: new Error('first action history failed'),
+        });
         const later_failure = new Error('second action missing handler');
         mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
-        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
         proposePendingActionConfirmation({
             id: 'confirm-1',
             prompt: 'delete drums and clip',

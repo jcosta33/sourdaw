@@ -8,6 +8,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRe
 import { shortcutStore } from '../../stores/shortcutStore';
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
+import { createAppActionCommittedError } from '../createAppActionCommittedError';
 
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
@@ -116,6 +117,16 @@ describe('executeAppAction', () => {
         expect(isAppActionCommittedError(new Error('handler failed'))).toBe(false);
     });
 
+    it('should create a public Error value that retains committed classification', () => {
+        const failure = createAppActionCommittedError({
+            actionType: 'autoFixMix',
+            cause: new Error('later nested write failed'),
+        });
+
+        expect(failure).toBeInstanceOf(Error);
+        expect(isAppActionCommittedError(failure)).toBe(true);
+    });
+
     it('executes a registered handler', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const handler = create_mock_handler<SetEditingToolAction>();
@@ -220,6 +231,23 @@ describe('executeAppAction', () => {
 
         await expect(executeAppAction(action)).rejects.toThrow('handler failed');
 
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should preserve handler-provided committed classification', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'autoFixMix',
+            cause: new Error('later nested write failed'),
+        });
+        const handler = create_mock_handler<SetSnapValueAction>({
+            execute: () => Promise.reject(committed_failure),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBe(committed_failure);
+
+        expect(isAppActionCommittedError(committed_failure)).toBe(true);
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 

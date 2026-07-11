@@ -9,6 +9,7 @@ import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '..
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
@@ -166,6 +167,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         resetActionReplayAuthority.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -285,7 +287,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
         second_project.meta.name = 'Second';
 
         const first = applyImportedProjectData(first_project);
+        await vi.waitFor(() => expect(createCrdtProjectMock).toHaveBeenCalledTimes(1));
         const second = applyImportedProjectData(second_project);
+        await vi.waitFor(() => expect(createCrdtProjectMock).toHaveBeenCalledTimes(2));
         resolve_second?.();
         await expect(second).resolves.toBe(true);
         resolve_first?.();

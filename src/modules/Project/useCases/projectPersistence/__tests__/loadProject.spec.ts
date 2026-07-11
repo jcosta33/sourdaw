@@ -10,6 +10,7 @@ import {
 
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
 import { loadProject } from '../loadProject';
+import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
 const module_mocks = vi.hoisted(() => ({
     project_store_value: { value: { loading: false, initialized: true } as ProjectStoreState },
@@ -53,6 +54,7 @@ describe('loadProject', () => {
         module_mocks.project_store_value.value = { loading: false, initialized: true } as ProjectStoreState;
         vi.mocked(loadCrdtProject).mockResolvedValue(true);
         vi.mocked(createCrdtProject).mockResolvedValue(true);
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
     it('should complete target scrub before hydration and normal use', async () => {
@@ -119,7 +121,9 @@ describe('loadProject', () => {
             );
 
         const first = loadProject();
+        await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(1));
         const second = loadProject();
+        await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(2));
         resolve_second?.(true);
         await expect(second).resolves.toBe(true);
         resolve_first?.(true);
@@ -128,5 +132,19 @@ describe('loadProject', () => {
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(clearActionHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it('should abort before repository load when collaboration shutdown fails', async () => {
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                throw new Error('shutdown failed');
+            },
+        });
+
+        await expect(loadProject()).resolves.toBe(false);
+
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+        expect(createCrdtProject).not.toHaveBeenCalled();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
     });
 });

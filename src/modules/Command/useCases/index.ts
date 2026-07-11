@@ -9,6 +9,7 @@ export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQ
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
 export type { ExecuteOptions } from './executeAppAction';
 

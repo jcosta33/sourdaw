@@ -11,6 +11,7 @@ import { removeProjectJson } from '../../../repositories/project/storageOperatio
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { newProject } from '../newProject';
+import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
 vi.mock('#/modules/Transport/useCases/transportControls/stopPlayback', () => ({
     stopPlayback: vi.fn(),
@@ -51,6 +52,7 @@ describe('newProject injectable', () => {
         vi.mocked(clearActionHistory).mockReset();
         vi.mocked(startCrdtAutoSave).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
     it('should reset replay authority before and after the new CRDT becomes active', async () => {
@@ -114,7 +116,9 @@ describe('newProject injectable', () => {
         );
 
         newProject('First');
+        await vi.waitFor(() => expect(createCrdtProject).toHaveBeenCalledTimes(1));
         newProject('Second');
+        await vi.waitFor(() => expect(createCrdtProject).toHaveBeenCalledTimes(2));
 
         resolve_second?.();
         await vi.waitFor(() => expect(projectStore.value?.name).toBe('Second'));
@@ -124,5 +128,33 @@ describe('newProject injectable', () => {
         expect(projectStore.value?.name).toBe('Second');
         expect(clearActionHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('should shut down the old peer transport before repository replacement can notify', async () => {
+        let finish_shutdown: (() => void) | undefined;
+        let old_peer_active = true;
+        const documents_seen_by_old_peer: string[] = [];
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: () =>
+                new Promise<void>((resolve) => {
+                    finish_shutdown = () => {
+                        old_peer_active = false;
+                        resolve();
+                    };
+                }),
+        });
+        vi.mocked(createCrdtProject).mockImplementation(async ({ name }) => {
+            if (old_peer_active) {
+                documents_seen_by_old_peer.push(name);
+            }
+            return true;
+        });
+
+        newProject('Project B');
+        expect(createCrdtProject).not.toHaveBeenCalled();
+        finish_shutdown?.();
+        await vi.waitFor(() => expect(createCrdtProject).toHaveBeenCalledTimes(1));
+
+        expect(documents_seen_by_old_peer).toEqual([]);
     });
 });

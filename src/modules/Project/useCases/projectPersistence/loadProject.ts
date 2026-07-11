@@ -19,6 +19,15 @@ export async function loadProject(): Promise<boolean> {
     const transition = beginProjectIdentityTransition();
 
     try {
+        if (!(await transition.prepare())) {
+            return false;
+        }
+    } catch (error) {
+        logger.error(new Error('Failed to end collaboration before loading project', { cause: error }));
+        return false;
+    }
+
+    try {
         const loaded = await loadCrdtProject({ canActivate: transition.isCurrent });
         if (!transition.isCurrent()) {
             return false;

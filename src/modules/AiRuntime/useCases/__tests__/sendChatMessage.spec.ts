@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createAppActionCommittedError } from '#/modules/Command/useCases';
+
 import { type ChatState } from '../../models/Chat';
 import { type IntentResult } from '../../models/IntentResult';
 import { type ProjectContext } from '../getProjectContext';
@@ -8,7 +10,6 @@ import { sendChatMessage } from '../sendChatMessage';
 const mocks = vi.hoisted(() => ({
     chatStoreValue: { value: null as ChatState | null },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    isAppActionCommittedError: vi.fn<(error: unknown) => boolean>(() => false),
     describeAction: vi.fn(() => 'Remove track'),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
     parsePromptToActions: vi.fn<() => Promise<IntentResult>>(),
@@ -29,9 +30,9 @@ vi.mock('../../repositories/nativeEngine/isNativeEngineReady', () => ({
     isNativeEngineReady: vi.fn(() => true),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
-    isAppActionCommittedError: mocks.isAppActionCommittedError,
     describeAction: mocks.describeAction,
     generateGroupId: mocks.generateGroupId,
 }));
@@ -69,7 +70,6 @@ describe('sendChatMessage injectables', () => {
         vi.clearAllMocks();
         mocks.chatStoreValue.value = null;
         mocks.executeAppAction.mockResolvedValue(undefined);
-        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.parsePromptToActions.mockResolvedValue({
@@ -158,7 +158,10 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('should record a committed prompt action as executed and warn against retrying', async () => {
-        const committed_failure = new Error('Action committed but history failed');
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'removeTrack',
+            cause: new Error('Action committed but history failed'),
+        });
         mocks.chatStoreValue.value = {
             messages: [],
             isGenerating: false,
@@ -171,7 +174,6 @@ describe('sendChatMessage injectables', () => {
             requiresConfirmation: false,
         });
         mocks.executeAppAction.mockRejectedValueOnce(committed_failure);
-        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
 
         await sendChatMessage('delete drums');
 
@@ -230,7 +232,10 @@ describe('sendChatMessage injectables', () => {
     });
 
     it('should report both earlier committed history failure and later dispatch failure', async () => {
-        const committed_failure = new Error('first action history failed');
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'removeTrack',
+            cause: new Error('first action history failed'),
+        });
         const later_failure = new Error('second action was not dispatched');
         mocks.chatStoreValue.value = {
             messages: [],
@@ -247,7 +252,6 @@ describe('sendChatMessage injectables', () => {
             requiresConfirmation: false,
         });
         mocks.executeAppAction.mockRejectedValueOnce(committed_failure).mockRejectedValueOnce(later_failure);
-        mocks.isAppActionCommittedError.mockImplementation((error) => error === committed_failure);
 
         await sendChatMessage('delete drums and clip');
 

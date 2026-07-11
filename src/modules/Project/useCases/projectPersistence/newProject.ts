@@ -27,7 +27,14 @@ export function newProject(name = 'Untitled Project'): void {
     resetAudioGraph();
 
     // 1. Initialize CRDT Document structure so subsequent .set() calls persist
-    createCrdtProject({ name, canActivate: transition.isCurrent })
+    transition
+        .prepare()
+        .then((prepared) => {
+            if (!prepared || !transition.isCurrent()) {
+                return false;
+            }
+            return createCrdtProject({ name, canActivate: transition.isCurrent });
+        })
         .then((activated) => {
             if (!activated || !transition.isCurrent() || !transition.complete()) {
                 return;

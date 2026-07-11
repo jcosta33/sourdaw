@@ -17,6 +17,10 @@ import { hydrateProjectMidi } from './hydrateProjectMidi';
 export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
     const transition = beginProjectIdentityTransition();
 
+    if (!(await transition.prepare())) {
+        return false;
+    }
+
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { type AppAction } from '#/modules/Command/useCases';
+import { isAppActionCommittedError, type AppAction } from '#/modules/Command/useCases';
 
 import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix';
 import { handleAutoFixMix } from '../handleAutoFixMix';
@@ -40,7 +40,8 @@ vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
 }));
 
@@ -263,7 +264,12 @@ describe('handleAutoFixMix', () => {
         );
         mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(later_failure);
 
-        await expect(handleAutoFixMix.execute({ type: 'autoFixMix' })).rejects.toBe(later_failure);
+        let reported_error: unknown;
+        try {
+            await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        } catch (error) {
+            reported_error = error;
+        }
 
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
         expect(mocks.executeAppAction.mock.calls[0]?.[0]).toEqual(
@@ -271,6 +277,7 @@ describe('handleAutoFixMix', () => {
         );
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
         expect(mocks.loggerError).toHaveBeenCalledWith(later_failure);
+        expect(isAppActionCommittedError(reported_error)).toBe(true);
     });
 
     afterEach(() => {

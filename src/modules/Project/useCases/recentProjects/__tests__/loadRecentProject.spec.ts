@@ -9,6 +9,7 @@ import { readNamedProjectJson, writeProjectJson } from '../../../repositories/pr
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
+import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
 import { loadRecentProject } from '../loadRecentProject';
 
 vi.mock('../../../repositories/project/storageOperations', () => ({
@@ -67,6 +68,7 @@ describe('loadRecentProject', () => {
         vi.mocked(clearActionHistory).mockReset();
         vi.mocked(resetActionReplayAuthority).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -169,7 +171,9 @@ describe('loadRecentProject', () => {
         );
 
         const first = loadRecentProject('first');
+        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledTimes(1));
         const second = loadRecentProject('second');
+        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledTimes(2));
         resolve_second?.(validProject.replace('Large Project', 'Second'));
         await expect(second).resolves.toBe(true);
         resolve_first?.(validProject.replace('Large Project', 'First'));

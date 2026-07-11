@@ -16,6 +16,9 @@ import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verif
 export async function loadRecentProject(key: string): Promise<boolean> {
     const transition = beginProjectIdentityTransition();
     try {
+        if (!(await transition.prepare())) {
+            return false;
+        }
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
         const raw = await readNamedProjectJson(key);

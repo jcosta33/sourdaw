@@ -1,7 +1,10 @@
 import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 
+import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
+
 type ProjectIdentityTransition = {
     isCurrent: () => boolean;
+    prepare: () => Promise<boolean>;
     complete: () => boolean;
 };
 
@@ -13,12 +16,25 @@ export function beginProjectIdentityTransition(): ProjectIdentityTransition {
     resetActionReplayAuthority();
 
     let completed = false;
+    let prepared = false;
+    let preparation: Promise<boolean> | null = null;
     const is_current = () => epoch === latest_project_identity_transition_epoch;
 
     return {
         isCurrent: is_current,
+        prepare: () => {
+            preparation ??= (async () => {
+                await projectIdentityTransitionDependencies.leaveCollaborationSession();
+                if (!is_current()) {
+                    return false;
+                }
+                prepared = true;
+                return true;
+            })();
+            return preparation;
+        },
         complete: () => {
-            if (completed || !is_current()) {
+            if (completed || !prepared || !is_current()) {
                 return false;
             }
             clearActionHistory();

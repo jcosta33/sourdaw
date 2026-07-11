@@ -44,7 +44,7 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
-import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
+import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,
@@ -83,6 +83,7 @@ import {
     getSongStructureHandlers,
     getVersionControlHandlers,
     getDawProjectHandlers,
+    setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
@@ -132,6 +133,7 @@ setYeastEventBus(eventBus);
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
+setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 window.addEventListener('beforeunload', () => {
     // Attempt GC on window close
