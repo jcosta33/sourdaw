@@ -1,6 +1,6 @@
 import { filterTemplates as filterModelTemplates } from '../../models/MidiPatternLibrary';
 
-import { toPublicPatternTemplate } from './helpers';
+import { toPublicPatternTemplate } from './toPublicPatternTemplate';
 
 type PatternTemplateFilters = Parameters<typeof filterModelTemplates>[0];
 

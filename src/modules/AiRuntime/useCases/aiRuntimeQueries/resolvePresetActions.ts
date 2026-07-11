@@ -1,10 +1,8 @@
-import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
-
-import type { PresetSearchContext } from './helpers';
+import { PRESET_ACTIONS, type PresetContext } from '../../models/PresetActions/Registry';
 
 export type ResolvePresetActionsInput = {
     presetId: string;
-    context: PresetSearchContext;
+    context: PresetContext;
 };
 
 export function resolvePresetActions({ presetId, context }: ResolvePresetActionsInput) {

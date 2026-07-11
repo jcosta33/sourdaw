@@ -1,9 +1,9 @@
+import { type PresetContext } from '../../models/PresetActions/Registry';
+import { type PromptPreset } from '../../models/PromptPreset';
 import { getAvailablePresets as getAvailableInternalPresets } from '../../services/fuzzySearch';
 
-import { toPromptPreset } from './helpers';
+import { toPromptPreset } from './toPromptPreset';
 
-import type { PresetSearchContext, PromptPreset } from './helpers';
-
-export function getAvailablePresets(context: PresetSearchContext): PromptPreset[] {
+export function getAvailablePresets(context: PresetContext): PromptPreset[] {
     return getAvailableInternalPresets(context).map(toPromptPreset);
 }

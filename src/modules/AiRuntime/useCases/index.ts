@@ -12,7 +12,8 @@ export { setVoiceTranscribingStatus } from './setVoiceTranscribingStatus';
 export { toggleAiHistoryPanel } from './toggleAiHistoryPanel';
 export { recordAiActionGroup } from './recordAiActionGroup';
 
-export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, isComplexPrompt } from './aiRuntimeQueries/helpers';
+export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS } from './aiRuntimeQueries/modelInfo';
+export { isComplexPrompt } from './aiRuntimeQueries/isComplexPrompt';
 export { getActiveModelId } from './aiRuntimeQueries/getActiveModelId';
 export { streamCloudChatCompletion } from './aiRuntimeQueries/streamCloudChatCompletion';
 export { generateWebLlmCompletion } from './aiRuntimeQueries/generateWebLlmCompletion';
@@ -23,8 +24,6 @@ export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
 export { PATTERN_TEMPLATES } from './aiRuntimeQueries/PATTERN_TEMPLATES';
 export { filterTemplates } from './aiRuntimeQueries/filterTemplates';
-export type { ModelInfo, MixAnalysis, MixIssue } from './aiRuntimeQueries/helpers';
-export type { FuzzyResult } from './aiRuntimeQueries/searchPresets';
 
 export { configureCloudApi } from './cloudApiManagement/configureCloudApi';
 export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
