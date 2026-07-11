@@ -9,7 +9,7 @@ import {
     getAiOrganizationHandlers,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, trackStore } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
     getPluginById,
@@ -23,7 +23,6 @@ import {
     setArrangementEventBus,
     setTimeOperationDependencies,
 } from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,
@@ -70,7 +69,12 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
-import { markDirty, getSongStructureHandlers, getVersionControlHandlers, getDawProjectHandlers } from '#/modules/Project/useCases';
+import {
+    markDirty,
+    getSongStructureHandlers,
+    getVersionControlHandlers,
+    getDawProjectHandlers,
+} from '#/modules/Project/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
