@@ -5,7 +5,7 @@
  * It outputs ONLY the constrained EditPlan JSON schema.
  * All few-shot examples from the spec are included.
  */
-import { type LogicalState, type ProjectSummary } from './serializeLogicalState';
+import { type LogicalState, type ProjectSummary } from '../../models/DsoLogicalState';
 
 // ── System prompt ────────────────────────────────────────────────────────────
 

@@ -57,7 +57,7 @@ vi.mock('../../../stores/chatStore', () => ({
     updateChatMessage: mocks.updateChatMessage,
 }));
 
-vi.mock('../serializeLogicalState', () => ({
+vi.mock('../logEdit', () => ({
     logEdit: mocks.logEdit,
 }));
 
