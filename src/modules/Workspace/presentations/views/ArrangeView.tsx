@@ -281,7 +281,7 @@ const TimelineHScrollbar = ({
     };
 
     return (
-        <TimelineChromeSurface tone="subtle" className="select-none" style={{ height: 10 }}>
+        <TimelineChromeSurface tone="subtle" className="select-none" style={{ height: 10 }} aria-label="Timeline horizontal scrollbar">
             <div
                 className="daw-scrollbar-thumb absolute rounded-full"
                 style={{
