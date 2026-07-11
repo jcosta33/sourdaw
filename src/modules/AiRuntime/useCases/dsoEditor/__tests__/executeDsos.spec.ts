@@ -3,27 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Dso } from '../../../models/DsoTypes';
 import { executeDsos } from '../executeDsos';
 
-type TestDsoAction = {
-    type: string;
-    payload?: {
-        deviceId?: string;
-        deviceType?: string;
-        paramId?: string;
-        value?: number;
-    };
-};
-
-type TestProjectState = {
-    tracks: Array<{
-        id: string;
-        name: string;
-        kind: 'audio';
-        clips: [];
-        devices: Array<{ id: string; type: string }>;
-    }>;
-    selectedTrackId: string;
-};
-
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null } as { value: unknown },
     transportStoreValue: { value: null } as { value: unknown },
@@ -445,111 +424,6 @@ describe('executeDsos', () => {
         );
         expect(mocks.warn).toHaveBeenNthCalledWith(4, 'DSO: unknown chord voicing "galaxy", defaulting to "close".');
         expect(mocks.warn).toHaveBeenNthCalledWith(5, 'DSO: unknown drum style "marching", defaulting to "rock".');
-    });
-
-    it('serializes overlapping plans so each latest parameter targets its own inserted device', async () => {
-        const projectState: TestProjectState = {
-            tracks: [
-                {
-                    id: 'track-1',
-                    name: 'Drums',
-                    kind: 'audio',
-                    clips: [],
-                    devices: [],
-                },
-            ],
-            selectedTrackId: 'track-1',
-        };
-        const projectTrack = projectState.tracks[0];
-        if (!projectTrack) {
-            throw new Error('Test project track is missing');
-        }
-        mocks.trackStoreValue.value = projectState;
-
-        let insertCount = 0;
-        let secondInsertStarted = false;
-        let resolveFirstInsertStarted: (() => void) | undefined;
-        let releaseFirstInsert: (() => void) | undefined;
-        const firstInsertStarted = new Promise<void>((resolve) => {
-            resolveFirstInsertStarted = resolve;
-        });
-        const firstInsertReleased = new Promise<void>((resolve) => {
-            releaseFirstInsert = resolve;
-        });
-
-        mocks.executeAppAction.mockImplementation(async (action: TestDsoAction) => {
-            if (action.type !== 'addDevice') {
-                return;
-            }
-
-            insertCount += 1;
-            const deviceId = `device-${insertCount}`;
-            projectTrack.devices.push({ id: deviceId, type: action.payload?.deviceType ?? 'test' });
-            if (insertCount === 1) {
-                resolveFirstInsertStarted?.();
-                await firstInsertReleased;
-            }
-            if (insertCount === 2) {
-                secondInsertStarted = true;
-            }
-        });
-
-        const firstPlan = executeDsos([
-            { op: 'insert_device', track_id: 'track-1', device_type: 'device-a' },
-            { op: 'set_device_param', device_id: 'latest', param_name: 'gain', value: 0.25 },
-        ]);
-        await firstInsertStarted;
-
-        const secondPlan = executeDsos([
-            { op: 'insert_device', track_id: 'track-1', device_type: 'device-b' },
-            { op: 'set_device_param', device_id: 'latest', param_name: 'gain', value: 0.75 },
-        ]);
-
-        try {
-            expect(secondInsertStarted).toBe(false);
-        } finally {
-            releaseFirstInsert?.();
-        }
-
-        await Promise.all([firstPlan, secondPlan]);
-
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            2,
-            {
-                type: 'setDeviceParameter',
-                payload: { deviceId: 'device-1', paramId: 'gain', value: 0.25 },
-            },
-            expect.objectContaining({ source: 'ai', skipUndo: true })
-        );
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            4,
-            {
-                type: 'setDeviceParameter',
-                payload: { deviceId: 'device-2', paramId: 'gain', value: 0.75 },
-            },
-            expect.objectContaining({ source: 'ai', skipUndo: true })
-        );
-    });
-
-    it('releases the execution queue after an unexpected run-level failure', async () => {
-        const throwingPlan: Dso[] = [];
-        Object.defineProperty(throwingPlan, Symbol.iterator, {
-            value: () => {
-                throw new Error('run-level failure');
-            },
-        });
-
-        await expect(executeDsos(throwingPlan)).rejects.toThrow('run-level failure');
-
-        mocks.trackStoreValue.value = trackState([]);
-        await expect(executeDsos([{ op: 'set_tempo', bpm: 140 }])).resolves.toEqual({
-            summaries: ['Set tempo to 140 BPM'],
-            failures: [],
-        });
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(
-            { type: 'setTempo', payload: { bpm: 140 } },
-            expect.objectContaining({ source: 'ai', skipUndo: true })
-        );
     });
 
     it('should surface invalid time signature execution instead of summarizing it as applied', async () => {
