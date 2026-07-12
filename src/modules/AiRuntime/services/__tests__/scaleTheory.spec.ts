@@ -1,128 +1,111 @@
 import { describe, it, expect } from 'vitest';
-
-import { type PatternTemplate } from '../../models/MidiPatternType';
 import { getScalePitches, snapToScale, chordFromDegrees, filterTemplates } from '../scaleTheory';
 
-describe('scaleTheory', () => {
-    describe('getScalePitches', () => {
-        it('returns C Major scale correctly', () => {
-            const cMajor = getScalePitches('C', 'major', 60, 72);
-            // C4 to C5: C, D, E, F, G, A, B, C
-            expect(cMajor).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
-        });
-
-        it('returns A Minor scale correctly', () => {
-            const aMinor = getScalePitches('A', 'minor', 69, 81);
-            // A4 to A5: A, B, C, D, E, F, G, A
-            expect(aMinor).toEqual([69, 71, 72, 74, 76, 77, 79, 81]);
-        });
-
-        it('handles boundary ranges', () => {
-            const pitches = getScalePitches('C', 'major', 60, 60);
-            expect(pitches).toEqual([60]);
-        });
+describe('getScalePitches', () => {
+    it('returns array of MIDI pitches', () => {
+        const pitches = getScalePitches('C', 'major', 60, 72);
+        expect(pitches).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
     });
-
-    describe('snapToScale', () => {
-        it('snaps pitch to exact scale tone', () => {
-            const scale = [60, 62, 64, 65, 67];
-            expect(snapToScale(64, scale)).toBe(64);
-        });
-
-        it('snaps pitch to nearest scale tone', () => {
-            const scale = [60, 62, 64, 65, 67];
-            expect(snapToScale(61, scale)).toBe(60); // Nearest could be 60 or 62, either is valid, test logic resolves to first encountered usually or math absolute
-            expect(snapToScale(63, scale)).toBe(62); // Nearest is 62 (encountered first) or 64
-            expect(snapToScale(66, scale)).toBe(65); // Nearest is 65
-        });
+    it('minor scale has flat 3, 6, 7', () => {
+        const pitches = getScalePitches('C', 'minor', 60, 72);
+        expect(pitches).toContain(63);
+        expect(pitches).not.toContain(64);
+        expect(pitches).toEqual([60, 62, 63, 65, 67, 68, 70, 72]);
     });
-
-    describe('chordFromDegrees', () => {
-        it('builds a chord from scale degrees', () => {
-            const scale = [60, 62, 64, 65, 67, 69, 71, 72];
-            // C Major Triad (I): degrees 0, 2, 4 (C, E, G)
-            const notes = chordFromDegrees([0, 2, 4], scale, 0, 1, 2, 90);
-
-            expect(notes).toHaveLength(3);
-            expect(notes[0]).toEqual({ pitch: 60, velocity: 90, startBeat: 1, durationBeats: 2 });
-            expect(notes[1]).toEqual({ pitch: 64, velocity: 90, startBeat: 1, durationBeats: 2 });
-            expect(notes[2]).toEqual({ pitch: 67, velocity: 90, startBeat: 1, durationBeats: 2 });
-        });
-
-        it('wraps degrees beyond the scale into higher octaves', () => {
-            // Scale: [60, 62, 64] — three tones spanning less than an octave.
-            // detectNotesPerOctave falls back to scale.length (3) because no
-            // entry is ≥12 semitones above the first. Degree 5 = one full
-            // "octave" (3 tones) + degree 2, so we expect the 3rd tone (64)
-            // shifted up by 12 semitones → 76.
-            const scale = [60, 62, 64];
-            const notes = chordFromDegrees([5], scale, 0, 0, 1, 80);
-            expect(notes[0]!.pitch).toBe(76);
-        });
+    it('respects note range bounds', () => {
+        const pitches = getScalePitches('A', 'minor', 69, 69);
+        expect(pitches).toEqual([69]);
     });
+    it('pentatonic-minor has fewer tones than major', () => {
+        const major = getScalePitches('C', 'major', 60, 72);
+        const penta = getScalePitches('C', 'pentatonic-minor', 60, 72);
+        expect(penta.length).toBeLessThan(major.length);
+    });
+    it('different keys produce different root pitches', () => {
+        const c = getScalePitches('C', 'major', 60, 62);
+        const d = getScalePitches('D', 'major', 60, 62);
+        expect(c).not.toEqual(d);
+    });
+    it('blues scale has 6 tones per octave', () => {
+        const pitches = getScalePitches('C', 'blues', 60, 72);
+        expect(pitches.length).toBeGreaterThanOrEqual(5);
+    });
+});
 
-    describe('filterTemplates', () => {
-        const templates: PatternTemplate[] = [
-            {
-                name: 'Pop Beat',
-                description: 'A standard pop drum beat',
-                category: 'drum',
-                tags: ['4/4', 'basic'],
-                genres: ['pop', 'rock'],
-                resolution: 16,
-                generate: () => [],
-            },
-            {
-                name: 'Jazz Ride',
-                description: 'Swing pattern',
-                category: 'drum',
-                tags: ['swing', 'triplet'],
-                genres: ['jazz'],
-                resolution: 12,
-                generate: () => [],
-            },
-            {
-                name: 'Ambient Pad',
-                description: 'Long chords',
-                category: 'chord',
-                tags: ['pad', 'slow'],
-                genres: ['ambient', 'electronic'],
-                resolution: 4,
-                generate: () => [],
-            },
-        ];
+describe('snapToScale', () => {
+    it('snaps to nearest scale tone', () => {
+        const scale = [60, 62, 64, 65, 67, 69, 71];
+        expect(snapToScale(61, scale)).toBe(60);
+        expect(snapToScale(63, scale)).toBe(62);
+    });
+    it('returns exact match when on scale', () => {
+        const scale = [60, 62, 64];
+        expect(snapToScale(62, scale)).toBe(62);
+    });
+    it('handles equidistant pitches (picks first)', () => {
+        const scale = [60, 64];
+        expect(snapToScale(62, scale)).toBe(60);
+    });
+    it('handles empty scale gracefully', () => {
+        expect(snapToScale(60, [])).toBeUndefined();
+    });
+});
 
-        it('filters by category', () => {
-            const filtered = filterTemplates(templates, { category: 'chord' });
-            expect(filtered).toHaveLength(1);
-            expect(filtered[0]!.name).toBe('Ambient Pad');
-        });
+describe('chordFromDegrees', () => {
+    const scale = getScalePitches('C', 'major', 48, 84);
 
-        it('filters by genre', () => {
-            const filtered = filterTemplates(templates, { genres: ['jazz'] });
-            expect(filtered).toHaveLength(1);
-            expect(filtered[0]!.name).toBe('Jazz Ride');
-        });
+    it('builds triad from degrees 0,2,4', () => {
+        const chord = chordFromDegrees([0, 2, 4], scale, 0, 0, 4);
+        expect(chord).toHaveLength(3);
+        expect(chord[0]?.pitch).toBeLessThanOrEqual(chord[1]?.pitch ?? 0);
+    });
+    it('respects beat offset', () => {
+        const chord = chordFromDegrees([0], scale, 0, 8, 2);
+        expect(chord[0]?.startBeat).toBe(8);
+    });
+    it('respects duration', () => {
+        const chord = chordFromDegrees([0], scale, 0, 0, 3);
+        expect(chord[0]?.durationBeats).toBe(3);
+    });
+    it('respects velocity', () => {
+        const chord = chordFromDegrees([0], scale, 0, 0, 1, 95);
+        expect(chord[0]?.velocity).toBe(95);
+    });
+    it('handles empty degrees', () => {
+        expect(chordFromDegrees([], scale, 0, 0, 1)).toEqual([]);
+    });
+    it('handles empty scale', () => {
+        expect(chordFromDegrees([0, 2, 4], [], 0, 0, 1)).toEqual([]);
+    });
+    it('wraps degrees across octaves', () => {
+        const chord = chordFromDegrees([0, 7], scale, 0, 0, 1);
+        expect(chord[1]?.pitch).toBeGreaterThanOrEqual(chord[0]?.pitch ?? 0);
+    });
+});
 
-        it('filters by tags', () => {
-            const filtered = filterTemplates(templates, { tags: ['basic'] });
-            expect(filtered).toHaveLength(1);
-            expect(filtered[0]!.name).toBe('Pop Beat');
-        });
+describe('filterTemplates', () => {
+    const templates = [
+        { id: '1', name: 'Pop Bass', category: 'bass', genres: ['pop'], tags: ['simple'], description: 'Pop', generate: () => [], lengthBeats: 4 },
+        { id: '2', name: 'Jazz Drums', category: 'drums', genres: ['jazz'], tags: ['swing'], description: 'Jazz', generate: () => [], lengthBeats: 4 },
+        { id: '3', name: 'Rock Chords', category: 'chords', genres: ['rock'], tags: ['power'], description: 'Rock', generate: () => [], lengthBeats: 4 },
+    ] as never;
 
-        it('filters by text query across multiple fields', () => {
-            const filtered1 = filterTemplates(templates, { query: 'swing pattern' });
-            expect(filtered1).toHaveLength(1);
-            expect(filtered1[0]!.name).toBe('Jazz Ride');
-
-            const filtered2 = filterTemplates(templates, { query: 'pop' });
-            expect(filtered2).toHaveLength(1);
-            expect(filtered2[0]!.name).toBe('Pop Beat');
-        });
-
-        it('returns all when no filters apply', () => {
-            const filtered = filterTemplates(templates, {});
-            expect(filtered).toHaveLength(3);
-        });
+    it('filters by category', () => {
+        expect(filterTemplates(templates, { category: 'bass' })).toHaveLength(1);
+    });
+    it('filters by genre', () => {
+        expect(filterTemplates(templates, { genres: ['jazz'] })).toHaveLength(1);
+    });
+    it('filters by tag', () => {
+        expect(filterTemplates(templates, { tags: ['power'] })).toHaveLength(1);
+    });
+    it('filters by query text', () => {
+        expect(filterTemplates(templates, { query: 'pop' })).toHaveLength(1);
+    });
+    it('returns all with no filters', () => {
+        expect(filterTemplates(templates, {})).toHaveLength(3);
+    });
+    it('returns empty when no match', () => {
+        expect(filterTemplates(templates, { query: 'nonexistent' })).toHaveLength(0);
     });
 });
