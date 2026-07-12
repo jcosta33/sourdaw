@@ -308,12 +308,14 @@ module.exports = {
             name: 'components-no-usecase-access',
             severity: 'error',
             comment:
-                'Presentational components must not import use cases directly. Route business operations through hooks or views.',
+                'Leaf components (module presentations/components and shared src/components) must not ' +
+                'import any module useCases/ (same-module or foreign). Route business operations through ' +
+                'hooks or views; pass callbacks into leaves as props.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
-                path: '^$1$2/useCases/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/useCases/.+' + SOURCE_FILE_RE,
             },
         },
 

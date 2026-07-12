@@ -1,17 +1,15 @@
 /* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /*
- * Value-import-only cruise for the reachability rule. Type-only edges are omitted
- * because reachability rules cannot filter dependencyTypesNot — including them
- * would produce false positives on type imports through hooks.
+ * Value-import cruise for component → useCases reachability.
+ *
+ * `from` includes module leaf components and shared `src/components/**` so
+ * debt roots like RotaryKnob are identified, not only their consumers.
  *
  * Do NOT use depcruise --ignore-known for this config: that softens by
- * (from + rule name) only and swallows new targets under baselined components.
- * Full from→to edge gating lives in scripts/deps-check-reachability.mjs
- * (invoked by pnpm deps:validate).
- *
- * Cache does NOT hash this config. Own cache folder so it never shares stale
- * results with the main cruise.
+ * (from + rule name) only. Causal-edge gating lives in
+ * scripts/deps-check-reachability.mjs (first useCases hop attributed to the
+ * last forbidden-layer file — not every barrel endpoint).
  */
 
 const MODULE = 'src/modules/(?:Common/|Supporting/)?';
@@ -23,10 +21,12 @@ module.exports = {
             name: 'components-no-usecase-transitively',
             severity: 'error',
             comment:
-                'Components must not reach use cases — directly or via hooks, same-module or foreign. ' +
-                'If a file needs business operations, promote it to presentations/views/ (or a hook under ' +
-                'presentations/hooks/ owned by a view). Leaf components receive data/callbacks via props.',
-            from: { path: `^${MODULE}[^/]+/presentations/components/.+\\.(ts|tsx)$` },
+                'Leaf components (module presentations/components and src/components) must not ' +
+                'reach use cases — directly or via shared widgets/hooks. Promote to views/hooks ' +
+                'or pass callbacks as props. The validate script baselines causal imports only.',
+            from: {
+                path: `(^${MODULE}[^/]+/presentations/components/|^src/components/).+\\.(ts|tsx)$`,
+            },
             to: {
                 reachable: true,
                 path: `^${MODULE}[^/]+/useCases/.+\\.(ts|tsx)$`,

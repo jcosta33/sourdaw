@@ -1,6 +1,24 @@
 [
   {
     "type": "dependency",
+    "from": "src/components/daw/RotaryKnob.tsx",
+    "to": "src/modules/MIDI/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
+    "to": "src/modules/AiGeneration/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
     "to": "src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts",
     "rule": {
@@ -19,11 +37,65 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Command/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Project/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
     "to": "src/modules/Transport/stores/index.ts",
     "rule": {
       "severity": "error",
       "name": "components-no-business-store-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Workspace/presentations/views/TemplatePreviewThumb.tsx",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-view-access"
     }
   },
   {
@@ -37,11 +109,11 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
-    "to": "src/modules/Workspace/presentations/views/TemplatePreviewThumb.tsx",
+    "from": "src/modules/Workspace/presentations/components/Transport/VoiceButton.tsx",
+    "to": "src/modules/AiRuntime/useCases/index.ts",
     "rule": {
       "severity": "error",
-      "name": "components-no-view-access"
+      "name": "components-no-usecase-access"
     }
   }
 ]
