@@ -109,7 +109,7 @@ A TypeScript module is composed of a **public contract surface** and **private i
 
 ## 3.1 Public contract surface
 
-Each module exposes **four independently-importable contract surfaces**. Other modules target exactly one of these per import:
+Each module may expose **up to four** independently-importable contract surfaces — create only those it actually needs. Other modules target exactly one of these per import:
 
 ```text
 <module>/useCases/index.ts

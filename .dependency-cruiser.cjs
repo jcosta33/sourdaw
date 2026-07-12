@@ -11,6 +11,7 @@
 //   1) this main cruise + --ignore-known (error edges only; orphans stay warn)
 //   2) scripts/deps-check-reachability.mjs — full from→to reachability edges
 //   3) .dependency-cruiser.types.cjs — type-only edges (tsPreCompilationDeps)
+//   4) .dependency-cruiser.tests.cjs — test-inclusive barrel boundaries
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //

@@ -27,7 +27,8 @@ When a check already failed and you need to fix without gaming the validator, lo
 
 ### 1. Cross-module imports only through contract-folder barrels
 
-Each module exposes **four** barrels and nothing else:
+Each module may expose **up to four** permitted contract surfaces — create only
+those the module actually exposes (do not add empty barrels for symmetry):
 
 | Barrel | Role |
 |--------|------|
@@ -38,7 +39,8 @@ Each module exposes **four** barrels and nothing else:
 
 There is **no** module-root `index.ts`. Deep imports into contract folders or private
 paths (`models/`, `repositories/`, `handlers/`, `engine/`, …) are forbidden
-(`cross-module-index-only`, `contract-barrel-scope`).
+(`cross-module-index-only`, `contract-barrel-scope`) — including from tests
+(see the test-inclusive cruise in `pnpm deps:validate`).
 
 ```typescript
 // ✅ other module
@@ -209,8 +211,12 @@ them via a shared knob that pulls the command bus.
 
 - `AGENTS.md` — Frontend Domain-Driven Architecture
 - `docs/architecture/03-typescript-module.md` — module anatomy
-- `.dependency-cruiser.cjs` / `.dependency-cruiser.reachability.cjs` — machine rules
-- `pnpm deps:validate` — both cruises + known-violations baselines  
-  (main: edge-level ignore; reachability: **per dirty component `from`**, not per target — see reachability config header)
+- `.dependency-cruiser.cjs` — main value-graph rules + edge-level known-violations
+- `.dependency-cruiser.reachability.cjs` + `scripts/deps-check-reachability.mjs` — full
+  from→to→rule reachability gate (rejects new and stale edges; do not use bare
+  `--ignore-known` for reachability)
+- `.dependency-cruiser.types.cjs` — type-only edges (`tsPreCompilationDeps: "specify"`)
+- `.dependency-cruiser.tests.cjs` — test-inclusive barrel boundary cruise
+- `pnpm deps:validate` — all four steps with their baselines
 - `architecture-violations` — fix discipline when a check fails
 - `state-and-write-paths` — who may write which state

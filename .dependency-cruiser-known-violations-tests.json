@@ -1,0 +1,614 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/modules/AiGeneration/handlers/aiMidi/__tests__/handleAddNotes.spec.ts",
+    "to": "src/modules/MIDI/useCases/midiNoteCrud/addMidiNote.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiGeneration/useCases/__tests__/llmMidiGeneration.spec.ts",
+    "to": "src/modules/AiRuntime/useCases/aiRuntimeQueries/filterTemplates.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx",
+    "to": "src/modules/AiGeneration/stores/aiStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx",
+    "to": "src/modules/AiGeneration/useCases/actions/toggleAiPanel.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.spec.tsx",
+    "to": "src/modules/Transport/useCases/setLooping.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.spec.tsx",
+    "to": "src/modules/Transport/useCases/transportControls/seekPlayhead.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/TrackHeader/__tests__/InputSelector.spec.tsx",
+    "to": "src/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/TrackHeader/__tests__/TrackLevelIndicator.spec.tsx",
+    "to": "src/modules/AudioEngine/useCases/engineAccess/getTrackAnalyser.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/stores/__tests__/arrangementMiscStores.spec.ts",
+    "to": "src/modules/MIDI/models/MidiNote.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts",
+    "to": "src/modules/Transport/stores/transportStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/timelineInteractions/__tests__/getGridSnap.spec.ts",
+    "to": "src/modules/Workspace/useCases/workspaceQueries/helpers.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToGrid.spec.ts",
+    "to": "src/modules/Workspace/useCases/workspaceQueries/helpers.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/toggleTrackState/__tests__/selectTrack.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/hasToasterDevice.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/shouldCreateOfflineStrip.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Gluten/useCases/glutenParamBridge/__tests__/helpers.spec.ts",
+    "to": "src/modules/Arrangement/models/Track.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/GrandBoule/useCases/__tests__/createGrandBouleTrack.spec.ts",
+    "to": "src/modules/Arrangement/models/Track.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/GrandBoule/useCases/__tests__/createGrandBouleTrack.spec.ts",
+    "to": "src/modules/Arrangement/useCases/createTrack.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/MIDI/useCases/__tests__/getMidiLearnHandlers.spec.ts",
+    "to": "src/modules/Command/models/CommandRegistry.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts",
+    "to": "src/modules/Transport/models/TransportState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts",
+    "to": "src/modules/Arrangement/useCases/addTrack.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts",
+    "to": "src/modules/Transport/useCases/transportControls/stopPlayback.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts",
+    "to": "src/modules/Transport/models/TransportState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
+    "to": "src/modules/Arrangement/stores/markerStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
+    "to": "src/modules/Arrangement/stores/trackStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
+    "to": "src/modules/Automation/stores/automationStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
+    "to": "src/modules/MIDI/stores/midiStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
+    "to": "src/modules/Transport/stores/transportStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Toaster/useCases/__tests__/createDrumTrackStack.spec.ts",
+    "to": "src/modules/Arrangement/useCases/getTrackStoreState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Toaster/useCases/__tests__/createDrumTrackStack.spec.ts",
+    "to": "src/modules/Arrangement/useCases/setTrackStoreState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Toaster/useCases/__tests__/createDrumTrackStack.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/engineAccess/getAudioTime.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts",
+    "to": "src/modules/Arrangement/models/Track.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts",
+    "to": "src/modules/Arrangement/stores/trackStore.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts",
+    "to": "src/modules/Automation/useCases/automationRecording/startAutomationRecording.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts",
+    "to": "src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/__tests__/setMasterGain.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/engineAccess/setMasterGainValue.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/webMidiInput/resetMidiState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/webMidiInput/resetMidiState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/engineAccess/resumeEngine.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts",
+    "to": "src/modules/AudioEngine/useCases/webMidiInput/resetMidiState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts",
+    "to": "src/modules/Automation/useCases/automation/removeAutomationPoint.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts",
+    "to": "src/modules/Automation/useCases/getAutomationStoreState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts",
+    "to": "src/modules/Project/repositories/nativeFileDialog/pickFiles.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
+    "to": "src/modules/Project/useCases/projectPersistence/newProject.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/__tests__/MixerPanel.spec.tsx",
+    "to": "src/modules/Arrangement/useCases/mixerSnapshot/operations/saveMixerSnapshot.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/__tests__/TransportBar.spec.tsx",
+    "to": "src/modules/Transport/useCases/transportControls/togglePlayback.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx",
+    "to": "src/modules/Arrangement/useCases/device/bypassDevice.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/TrackAlternativesSection.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Mixer/__tests__/IOSection.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx",
+    "to": "src/modules/Transport/useCases/setMasterGain.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/PluginDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/PluginDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx",
+    "to": "src/modules/Arrangement/models/DeviceParameter.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/hasToasterDevice.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-relative-cross-module-imports"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-relative-cross-module-imports"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/offlineRender/__tests__/shouldCreateOfflineStrip.spec.ts",
+    "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-relative-cross-module-imports"
+    }
+  }
+]

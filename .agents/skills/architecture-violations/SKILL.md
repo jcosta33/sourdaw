@@ -222,6 +222,7 @@ should produce visible output is required to produce it.
    - **Main cruise** known-violations: full **from→to** edges — new dependency edges still fail. Orphan *warnings* are not baselined (stay visible).
    - **Reachability**: `scripts/deps-check-reachability.mjs` gates full **from→to** edges (not depcruise `--ignore-known`); new edges fail; stale baseline rows fail until refreshed with `pnpm deps:baseline:reachability`.
    - **Types cruise** (`.dependency-cruiser.types.cjs`): type-only edges + `no-usecase-type-exports-on-index` with its own baseline.
+   - **Tests cruise** (`.dependency-cruiser.tests.cjs`): test-inclusive `cross-module-index-only` / relative cross-module rules with their own baseline — private deep imports in specs fail here.
 2. **Compiler confirms the blast radius is closed.** Run `pnpm typecheck` and paste its output; zero errors confirms no consumer was left broken (rule 4).
 3. **Responsibility changed across every new/moved boundary.** For each boundary you touched, write one sentence naming what responsibility now lives on each side (rule 2). If you cannot, the boundary is fake — go back.
 4. **No new laundering surface.** Confirm in writing that no use-case file re-exports a repository/model/service symbol and no non-contract export was added to a contract barrel (rules 5–7). Paste the grep you used, e.g. for `export .* from '\.\./repositories` and `export .* from '\.\./models` across the files you changed.
@@ -236,6 +237,8 @@ beneath them. Checkboxes alone do not count.
 
 - `references/module-boundaries.md` — the four contract surfaces, correct/forbidden cross-module and same-module import examples, and contract-folder barrel authoring rules (deep mechanics for rule 5).
 - `references/use-cases-and-type-surfaces.md` — legitimate vs forbidden use cases, internal DTOs, the cross-module type-surface table, the `get<Module>Handlers` registry typing pattern, and the summary test (deep mechanics for rules 6–7).
-- `.dependency-cruiser.cjs` — includes pure-layer rules (`business-no-presentations`, `repositories-no-business`, `models-are-pure`, `events-are-pure`, `components-no-view-access`) and barrel rules. Note: `no-usecase-type-exports-on-index` only matches type-only edges and may not fire until type edges are enabled on the cruise.
-- `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively` (value imports only).
+- `.dependency-cruiser.cjs` — pure-layer + barrel rules (value graph; specs excluded).
+- `.dependency-cruiser.reachability.cjs` + `scripts/deps-check-reachability.mjs` — `components-no-usecase-transitively` (full from→to gate).
+- `.dependency-cruiser.types.cjs` — type-only edges (`tsPreCompilationDeps: "specify"`), including `no-usecase-type-exports-on-index`.
+- `.dependency-cruiser.tests.cjs` — test-inclusive barrel boundary cruise.
 - Sibling skill: `architecture` — authoring against these boundaries.
