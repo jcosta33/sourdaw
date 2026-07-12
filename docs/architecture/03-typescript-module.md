@@ -658,7 +658,7 @@ Use cases and other injectable functions declare their dependencies explicitly u
 
 Use cases and service repositories get collaborators only through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
 
-Do not wire application collaborators by **bare static imports** of repos or other use cases, or by **`Container.get()`** at module scope — that hides dependencies and breaks the test harness. See `docs/01-dependency-injection.md`.
+Do not wire **varying** collaborators by **`Container.get()`** at module scope. Prefer **`inject()`** for event buses, loggers, and other mockable services. Thin same-module repository functions that only read/write the owned store may stay as static imports (common in Arrangement) — see the `addTrack` sample below and `docs/01-dependency-injection.md`.
 
 ### Shape
 

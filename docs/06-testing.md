@@ -111,7 +111,7 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                                             |
 | An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                                      |
-| An internal module that is NOT wrapped with `inject()`          | Refactor the subject to use `inject()` — do not add new `vi.mock()` shims for app collaborators |
+| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map                        |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 

@@ -1,25 +1,26 @@
 # Dependency Injection
 
-Business-layer code wires collaborators through **`inject()`** from `#/infra/di/inject`. Use cases and repositories that perform I/O or call other application services declare dependencies in the dependency map; they are resolved at **call time**, not by ad hoc static imports of repos and use cases.
+Business-layer code wires **mockable** collaborators through **`inject()`** from `#/infra/di/inject` (event buses, loggers, nested injectables). Thin same-module repository functions that only access the owned store may stay as static imports — see Arrangement `addTrack`.
 
 **Canonical reference:** `docs/architecture/03-typescript-module.md` §4.11 — _Dependency injection with `inject()`_.
 
-**Testing:** `docs/06-testing.md` §5 — use **`injectDependencies()`** for injectables; do not rely on module-level `vi.mock()` for collaborators that belong in the `inject()` map.
+**Testing:** `docs/06-testing.md` §5 — use **`injectDependencies()`** for inject-map keys; `vi.mock` is OK for static repo imports that are not in the map.
 
 ---
 
-## `inject()` (required for use cases and service repositories)
+## `inject()` (use cases — typical Arrangement shape)
 
 ```typescript
 import { inject } from '#/infra/di/inject';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
-import { eventBus } from '#/app/registerDependencies';
+import { ArrangementEventBus } from './arrangementEventBus';
 
-export const addTrack = inject({ eventBus, getTrackState, setTrackState })(
-    ({ eventBus, getTrackState, setTrackState }) =>
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
         function addTrack(input: AddTrackInput): Track | null {
-            // … orchestration using injected deps only
+            const state = getTrackState(); // static thin repo OK
+            // … setTrackState + eventBus.emit
         }
 );
 ```
