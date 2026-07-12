@@ -19,3 +19,9 @@ follow the repository rules in `AGENTS.md` before editing code.
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build
+
+## Git hooks
+
+`pnpm install` configures the repository-local Git hooks path. The checked-in
+pre-push hook runs the same web and collaboration-server health gates as CI.
+Use standard Git `--no-verify` only when you intentionally need to bypass it.

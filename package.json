@@ -8,6 +8,7 @@
         "dev": "vite",
         "dev:no-hmr": "NO_HMR=1 vite",
         "build": "vite build",
+        "prepare": "sh scripts/install-git-hooks.sh",
         "preview": "vite preview",
         "test": "vitest",
         "test:run": "vitest run",
