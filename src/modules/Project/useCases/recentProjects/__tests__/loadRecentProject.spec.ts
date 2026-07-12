@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -25,7 +25,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(true) }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearActionHistory: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
@@ -64,8 +63,6 @@ describe('loadRecentProject', () => {
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
-        vi.mocked(clearActionHistory).mockClear();
-        vi.mocked(clearActionHistory).mockReset();
         vi.mocked(resetActionReplayAuthority).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
@@ -102,30 +99,27 @@ describe('loadRecentProject', () => {
         expect(resetOrder).toBeLessThan(hydrateOrder);
     });
 
-    it('should reset replay authority before reading and after activating the recent project', async () => {
+    it('should reset replay authority before reading the recent project', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
 
         await loadRecentProject('sourdaw:project:Large Project');
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
         const reset_authority_order = vi.mocked(resetActionReplayAuthority).mock.invocationCallOrder[0];
         const read_order = vi.mocked(readNamedProjectJson).mock.invocationCallOrder[0];
         const create_target_order = vi.mocked(createCrdtProject).mock.invocationCallOrder[0];
-        const target_clear_order = vi.mocked(clearActionHistory).mock.invocationCallOrder[0];
         expect(reset_authority_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
-        expect(create_target_order).toBeLessThan(target_clear_order ?? Number.POSITIVE_INFINITY);
-        expect(target_clear_order).toBeLessThan(
+        expect(create_target_order).toBeLessThan(
             vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
         expect(createCrdtProject).toHaveBeenCalledWith({
             name: 'Large Project',
             canActivate: expect.any(Function),
         });
-        expect(target_clear_order).toBeLessThan(
+        expect(create_target_order).toBeLessThan(
             vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(target_clear_order).toBeLessThan(
+        expect(create_target_order).toBeLessThan(
             vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
@@ -139,21 +133,6 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
-    });
-
-    it('should abort normal use when target scrub fails', async () => {
-        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
-        vi.mocked(clearActionHistory).mockImplementation(() => {
-            throw new Error('target scrub failed');
-        });
-
-        const ok = await loadRecentProject('sourdaw:project:Large Project');
-
-        expect(ok).toBe(false);
-        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
-        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
-        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
     });
 
     it('should ignore an older recent-project read that resolves after a newer selection', async () => {

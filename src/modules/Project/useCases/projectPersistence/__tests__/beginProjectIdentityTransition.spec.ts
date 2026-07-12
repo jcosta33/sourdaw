@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { beginProjectIdentityTransition } from '../beginProjectIdentityTransition';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
 vi.mock('#/modules/Command/useCases', () => ({
-    clearActionHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
 
@@ -20,10 +19,9 @@ describe('beginProjectIdentityTransition', () => {
         beginProjectIdentityTransition();
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-        expect(clearActionHistory).not.toHaveBeenCalled();
     });
 
-    it('should scrub target metadata only after collaboration shutdown and completion', async () => {
+    it('should complete identity ownership only after collaboration shutdown', async () => {
         const transition = beginProjectIdentityTransition();
 
         expect(transition.complete()).toBe(false);
@@ -31,7 +29,6 @@ describe('beginProjectIdentityTransition', () => {
         expect(transition.complete()).toBe(true);
         expect(transition.complete()).toBe(false);
 
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 
     it('should make an older transition stale as soon as a newer transition begins', async () => {
@@ -44,7 +41,6 @@ describe('beginProjectIdentityTransition', () => {
         expect(second.isCurrent()).toBe(true);
         await expect(second.prepare()).resolves.toBe(true);
         expect(second.complete()).toBe(true);
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 
     it('should reject preparation and prevent completion when collaboration shutdown fails', async () => {
@@ -58,6 +54,5 @@ describe('beginProjectIdentityTransition', () => {
 
         await expect(transition.prepare()).rejects.toBe(failure);
         expect(transition.complete()).toBe(false);
-        expect(clearActionHistory).not.toHaveBeenCalled();
     });
 });

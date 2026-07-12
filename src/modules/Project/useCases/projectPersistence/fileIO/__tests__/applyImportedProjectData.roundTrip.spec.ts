@@ -15,9 +15,8 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { audioContext, clearActionHistory, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+const { audioContext, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
-    clearActionHistory: vi.fn(),
     createCrdtProjectMock: vi.fn().mockResolvedValue(true),
     resetActionReplayAuthority: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
@@ -31,7 +30,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     restoreCachedAudioBuffersFromIdb,
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearActionHistory,
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority,
 }));
@@ -161,8 +159,6 @@ function makeProject(): ProjectData {
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         restoreCachedAudioBuffersFromIdb.mockClear();
-        clearActionHistory.mockClear();
-        clearActionHistory.mockReset();
         createCrdtProjectMock.mockClear();
         resetActionReplayAuthority.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
@@ -193,21 +189,17 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.bufferIds).toHaveLength(2);
     });
 
-    it('should reset replay authority before import writes and after imported state is active', async () => {
+    it('should reset replay authority before import writes', async () => {
         await applyImportedProjectData(makeProject());
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
         expect(resetActionReplayAuthority.mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(createCrdtProject).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
         expect(vi.mocked(createCrdtProject).mock.invocationCallOrder[0]).toBeLessThan(
-            clearActionHistory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
-        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
             vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
-        expect(clearActionHistory.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(vi.mocked(createCrdtProject).mock.invocationCallOrder[0]).toBeLessThan(
             restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
         );
     });
@@ -254,18 +246,6 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const state = arrangementStore.value!;
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
-    });
-
-    it('should abort normal use when target scrub fails', async () => {
-        clearActionHistory.mockImplementation(() => {
-            throw new Error('target scrub failed');
-        });
-
-        await expect(applyImportedProjectData(makeProject())).rejects.toThrow('target scrub failed');
-
-        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
-        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-        expect(projectStore.value).toEqual(expect.objectContaining({ initialized: true, loading: false }));
     });
 
     it('should ignore an older import whose target creation resolves after a newer import', async () => {

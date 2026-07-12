@@ -1,4 +1,4 @@
-import { clearActionHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 
@@ -37,7 +37,6 @@ export function beginProjectIdentityTransition(): ProjectIdentityTransition {
             if (completed || !prepared || !is_current()) {
                 return false;
             }
-            clearActionHistory();
             completed = true;
             return true;
         },

@@ -10,6 +10,7 @@ import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
 import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
+import { actionReplayRevisionStore } from '#/modules/Command/stores';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -50,6 +51,7 @@ type HistoryItem = { kind: 'ai'; group: AiActionGroupView } | { kind: 'action'; 
 export const AiActionHistoryPanel = (): ReactElement | null => {
     const aiState = useStore(aiActionHistoryStore, defaultAiState);
     const historyState = useStore(actionHistoryStore, defaultHistoryState);
+    const replay_revision = useStore(actionReplayRevisionStore, 0);
     const [clear_error, setClearError] = useState<string | null>(null);
 
     if (!aiState.panelOpen) {
@@ -139,7 +141,7 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                             <AiGroupItem key={`ai-${item.group.id}`} group={item.group} />
                         ) : (
                             <ActionItem
-                                key={`action-${getActionHistoryEntryIdentity(item.entry)}-${idx}`}
+                                key={`action-${getActionHistoryEntryIdentity(item.entry)}-${replay_revision}-${idx}`}
                                 entry={item.entry}
                             />
                         )

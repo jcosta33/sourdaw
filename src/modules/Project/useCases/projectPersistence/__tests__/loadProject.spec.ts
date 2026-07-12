@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearActionHistory, clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
@@ -36,7 +36,6 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearActionHistory: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
@@ -50,34 +49,23 @@ vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: module_mocks.se
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(clearActionHistory).mockReset();
         module_mocks.project_store_value.value = { loading: false, initialized: true } as ProjectStoreState;
-        vi.mocked(loadCrdtProject).mockResolvedValue(true);
+        vi.mocked(loadCrdtProject).mockResolvedValue('loaded');
         vi.mocked(createCrdtProject).mockResolvedValue(true);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
-    it('should complete target scrub before hydration and normal use', async () => {
+    it('should hydrate and start normal use after sanitized persistence is activated', async () => {
         await loadProject();
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
-            module_mocks.reset_module_stores.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
-        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
-            vi.mocked(projectCrdtToStores).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
-        expect(vi.mocked(clearActionHistory).mock.invocationCallOrder[0]).toBeLessThan(
-            module_mocks.project_store_set.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
     });
 
     it('should create a replacement document when persistence is empty', async () => {
-        vi.mocked(loadCrdtProject).mockResolvedValue(false);
+        vi.mocked(loadCrdtProject).mockResolvedValue('empty');
 
         await loadProject();
 
@@ -85,17 +73,14 @@ describe('loadProject', () => {
             name: 'Untitled Project',
             canActivate: expect.any(Function),
         });
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 
-    it('should abort hydration and autosave when target scrub fails', async () => {
-        const failure = new Error('target history scrub failed');
-        vi.mocked(clearActionHistory).mockImplementation(() => {
-            throw failure;
-        });
+    it('should abort without replacement or hydration when persisted sanitization fails', async () => {
+        vi.mocked(loadCrdtProject).mockResolvedValue('sanitization-failed');
 
-        await expect(loadProject()).rejects.toBe(failure);
+        await expect(loadProject()).resolves.toBe(false);
 
+        expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
         expect(clearUndoHistory).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
@@ -104,18 +89,18 @@ describe('loadProject', () => {
     });
 
     it('should ignore an older load that resolves after a newer load', async () => {
-        let resolve_first: ((loaded: boolean) => void) | undefined;
-        let resolve_second: ((loaded: boolean) => void) | undefined;
+        let resolve_first: ((loaded: 'loaded') => void) | undefined;
+        let resolve_second: ((loaded: 'loaded') => void) | undefined;
         vi.mocked(loadCrdtProject)
             .mockImplementationOnce(
                 () =>
-                    new Promise<boolean>((resolve) => {
+                    new Promise<'loaded'>((resolve) => {
                         resolve_first = resolve;
                     })
             )
             .mockImplementationOnce(
                 () =>
-                    new Promise<boolean>((resolve) => {
+                    new Promise<'loaded'>((resolve) => {
                         resolve_second = resolve;
                     })
             );
@@ -124,14 +109,13 @@ describe('loadProject', () => {
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(1));
         const second = loadProject();
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(2));
-        resolve_second?.(true);
+        resolve_second?.('loaded');
         await expect(second).resolves.toBe(true);
-        resolve_first?.(true);
+        resolve_first?.('loaded');
         await expect(first).resolves.toBe(false);
 
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
-        expect(clearActionHistory).toHaveBeenCalledTimes(1);
     });
 
     it('should abort before repository load when collaboration shutdown fails', async () => {

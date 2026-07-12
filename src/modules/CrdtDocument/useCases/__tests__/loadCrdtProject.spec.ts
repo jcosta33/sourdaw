@@ -44,7 +44,7 @@ describe('loadCrdtProject', () => {
         const can_activate = () => true;
         const result = await loadCrdtProject({ canActivate: can_activate });
 
-        expect(result).toBe(true);
+        expect(result).toBe('loaded');
         expect(mocks.loadAll).toHaveBeenCalledWith(mockBundle, can_activate);
     });
 
@@ -92,7 +92,7 @@ describe('loadCrdtProject', () => {
 
         const result = await loadCrdtProject({ canActivate: () => true });
 
-        expect(result).toBe(true);
+        expect(result).toBe('loaded');
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
 
@@ -106,7 +106,7 @@ describe('loadCrdtProject', () => {
 
         const result = await loadCrdtProject({ canActivate: () => current });
 
-        expect(result).toBe(false);
+        expect(result).toBe('stale');
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
 });

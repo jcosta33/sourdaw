@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
     claimActionReplayCapability as claimStoredActionReplayCapability,
     clearActionReplayCapabilities,
+    completeActionReplayMarkReconciliation,
+    consumeActionReplayClaim,
     hasActionReplayCapability,
     registerActionReplayCapability as registerStoredActionReplayCapability,
+    retainActionReplayMarkReconciliation,
     restoreActionReplayCapability,
     revokeActionReplayCapability,
 } from '../actionReplayCapabilities';
+import { actionReplayRevisionStore } from '../actionReplayRevisionStore';
 
 type TestInverseAction = Parameters<typeof registerStoredActionReplayCapability>[0]['inverseAction'];
 
@@ -35,15 +39,66 @@ describe('action replay capabilities', () => {
     });
 
     it('should atomically claim a typed inverse once', () => {
+        const revision_before_register = actionReplayRevisionStore.getSnapshot();
         const inverseAction = { type: 'togglePlayback' } as const;
         registerActionReplayCapability({ entryId: 'entry-1', inverseAction });
 
+        expect(actionReplayRevisionStore.getSnapshot()).toBe((revision_before_register ?? 0) + 1);
+
         expect(hasActionReplayCapability('entry-1')).toBe(true);
+        const revision_before_claim = actionReplayRevisionStore.getSnapshot();
         const claim = claimActionReplayCapability('entry-1');
+        expect(actionReplayRevisionStore.getSnapshot()).toBe((revision_before_claim ?? 0) + 1);
         expect(claim?.inverseAction).toEqual(inverseAction);
         expect(claim?.generation).toBeTypeOf('number');
         expect(claimActionReplayCapability('entry-1')).toBeNull();
         expect(hasActionReplayCapability('entry-1')).toBe(false);
+    });
+
+    it('should expose a read-only scalar revision and bump every authority-state transition', () => {
+        expect('set' in actionReplayRevisionStore).toBe(false);
+        expect('update' in actionReplayRevisionStore).toBe(false);
+        let expected_revision = actionReplayRevisionStore.getSnapshot() ?? 0;
+        const expect_revision_bump = (operation: () => void) => {
+            operation();
+            expected_revision += 1;
+            expect(actionReplayRevisionStore.getSnapshot()).toBe(expected_revision);
+        };
+
+        expect_revision_bump(() =>
+            registerActionReplayCapability({ entryId: 'entry-1', inverseAction: { type: 'togglePlayback' } })
+        );
+        const first_claim = claimActionReplayCapability('entry-1');
+        if (!first_claim) {
+            throw new Error('Expected first replay claim');
+        }
+        expected_revision += 1;
+        expect(actionReplayRevisionStore.getSnapshot()).toBe(expected_revision);
+        expect_revision_bump(() => restoreActionReplayCapability({ entryId: 'entry-1', claim: first_claim }));
+
+        const reconciliation_claim = claimActionReplayCapability('entry-1');
+        if (!reconciliation_claim) {
+            throw new Error('Expected reconciliation replay claim');
+        }
+        expected_revision += 1;
+        expect(actionReplayRevisionStore.getSnapshot()).toBe(expected_revision);
+        expect_revision_bump(() =>
+            retainActionReplayMarkReconciliation({ entryId: 'entry-1', claim: reconciliation_claim })
+        );
+        expect_revision_bump(() => completeActionReplayMarkReconciliation('entry-1'));
+
+        expect_revision_bump(() =>
+            registerActionReplayCapability({ entryId: 'entry-2', inverseAction: { type: 'togglePlayback' } })
+        );
+        const consumed_claim = claimActionReplayCapability('entry-2');
+        if (!consumed_claim) {
+            throw new Error('Expected consumed replay claim');
+        }
+        expected_revision += 1;
+        expect(actionReplayRevisionStore.getSnapshot()).toBe(expected_revision);
+        expect_revision_bump(() => consumeActionReplayClaim({ entryId: 'entry-2', claim: consumed_claim }));
+        expect_revision_bump(() => revokeActionReplayCapability('entry-2'));
+        expect_revision_bump(clearActionReplayCapabilities);
     });
 
     it('should restore a claimed inverse after a failed replay', () => {

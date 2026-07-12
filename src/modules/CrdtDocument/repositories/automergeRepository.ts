@@ -393,18 +393,27 @@ class AutomergeRepository {
             if (!canActivate()) {
                 return false;
             }
-            this.docs.clear();
-            this._loadAllSync(bundle);
+            const candidate = this._loadAllSync(bundle);
+            if (!canActivate()) {
+                return false;
+            }
+            this.docs = candidate.docs;
+            this.rootId = candidate.rootId;
+            this.notifyListeners();
             return true;
         }
 
         if (!canActivate()) {
             return false;
         }
-        this.docs.clear();
+        const candidate_docs = new Map<DocId, Doc<AnyDoc>>();
         for (const [id, bytes] of compacted) {
-            this.docs.set(id, load<AnyDoc>(bytes));
+            candidate_docs.set(id, load<AnyDoc>(bytes));
         }
+        if (!canActivate()) {
+            return false;
+        }
+        this.docs = candidate_docs;
         this.rootId = rootId;
 
         this.notifyListeners();
@@ -412,7 +421,9 @@ class AutomergeRepository {
     }
 
     /** Synchronous fallback for loadAll (used when worker is unavailable). */
-    private _loadAllSync(bundle: DocumentBundle): void {
+    private _loadAllSync(bundle: DocumentBundle): { docs: Map<DocId, Doc<AnyDoc>>; rootId: DocId } {
+        const candidate_docs = new Map<DocId, Doc<AnyDoc>>();
+        let rootId: DocId = DOC_PREFIX_ROOT;
         const baseDocs = new Map<DocId, Uint8Array>();
         const incrementals: Array<{ id: DocId; bytes: Uint8Array }> = [];
 
@@ -425,13 +436,13 @@ class AutomergeRepository {
         }
 
         for (const [id, bytes] of baseDocs) {
-            this.docs.set(id, load<AnyDoc>(bytes));
+            candidate_docs.set(id, load<AnyDoc>(bytes));
             // Match the root id exactly. `startsWith` also matched sibling ids
             // like `root-2`/`rootBackup`, so with several matches the
             // last-iterated one won and root assignment depended on Map
             // iteration order.
             if (id === DOC_PREFIX_ROOT) {
-                this.rootId = id;
+                rootId = id;
             }
         }
 
@@ -439,19 +450,19 @@ class AutomergeRepository {
 
         for (const { id: key, bytes } of incrementals) {
             const docId = key.substring(0, key.indexOf(':incremental:'));
-            const doc = this.docs.get(docId);
+            const doc = candidate_docs.get(docId);
             if (doc) {
-                this.docs.set(docId, loadIncremental(doc, bytes));
+                candidate_docs.set(docId, loadIncremental(doc, bytes));
             } else {
                 logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
-        for (const [id, doc] of this.docs) {
-            this.docs.set(id, load(save(doc)));
+        for (const [id, doc] of candidate_docs) {
+            candidate_docs.set(id, load(save(doc)));
         }
 
-        this.notifyListeners();
+        return { docs: candidate_docs, rootId };
     }
 
     /**

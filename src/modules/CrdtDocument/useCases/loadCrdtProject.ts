@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
+import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
 import { branchStore } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
@@ -14,17 +15,34 @@ type LoadCrdtProjectInput = {
     canActivate: () => boolean;
 };
 
-export async function loadCrdtProject({ canActivate }: LoadCrdtProjectInput): Promise<boolean> {
+type LoadCrdtProjectOutput = Promise<'loaded' | 'empty' | 'stale' | 'sanitization-failed'>;
+
+export async function loadCrdtProject({ canActivate }: LoadCrdtProjectInput): LoadCrdtProjectOutput {
     const bundle = await loadAllFromIdb();
-    if (!canActivate() || !bundle) {
-        return false;
+    if (!canActivate()) {
+        return 'stale';
     }
-    const activated = await automergeRepository.loadAll(bundle, canActivate);
+    if (!bundle) {
+        return 'empty';
+    }
+
+    let sanitized_bundle;
+    try {
+        sanitized_bundle = sanitizePersistedActionHistoryBundle({ bundle });
+    } catch (error) {
+        logger.error(new Error('Persisted action-history sanitization failed', { cause: error }));
+        return 'sanitization-failed';
+    }
+
+    if (!canActivate()) {
+        return 'stale';
+    }
+    const activated = await automergeRepository.loadAll(sanitized_bundle, canActivate);
     if (activated && canActivate()) {
         restoreActiveBranchSlot();
-        return true;
+        return 'loaded';
     }
-    return false;
+    return 'stale';
 }
 
 /**

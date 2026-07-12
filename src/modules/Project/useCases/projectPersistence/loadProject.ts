@@ -28,11 +28,14 @@ export async function loadProject(): Promise<boolean> {
     }
 
     try {
-        const loaded = await loadCrdtProject({ canActivate: transition.isCurrent });
+        const load_status = await loadCrdtProject({ canActivate: transition.isCurrent });
         if (!transition.isCurrent()) {
             return false;
         }
-        if (!loaded) {
+        if (load_status === 'sanitization-failed' || load_status === 'stale') {
+            return false;
+        }
+        if (load_status === 'empty') {
             const activated = await createCrdtProject({
                 name: 'Untitled Project',
                 canActivate: transition.isCurrent,

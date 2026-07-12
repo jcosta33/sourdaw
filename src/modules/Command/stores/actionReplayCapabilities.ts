@@ -1,5 +1,7 @@
 import { type AppAction } from '../useCases/commandQueries';
 
+import { bumpActionReplayRevision } from './actionReplayRevisionStore';
+
 const MAX_ACTION_REPLAY_CAPABILITIES = 200;
 const MAX_ACTION_REPLAY_TOMBSTONES = 200;
 
@@ -99,6 +101,7 @@ export function registerActionReplayCapability({
         },
     });
     pruneActionReplayCapabilities();
+    bumpActionReplayRevision();
 }
 
 export function hasActionReplayCapability(entryId: string): boolean {
@@ -120,6 +123,7 @@ export function claimActionReplayCapability({ entryId, metadata }: ClaimActionRe
     }
 
     action_replay_capabilities.set(entryId, { state: 'claimed', claim: record.claim });
+    bumpActionReplayRevision();
     return record.claim;
 }
 
@@ -168,6 +172,7 @@ export function restoreActionReplayCapability({ entryId, claim }: RestoreActionR
     }
 
     action_replay_capabilities.set(entryId, { state: 'available', claim });
+    bumpActionReplayRevision();
 }
 
 export function revokeActionReplayCapability(entryId: string): void {
@@ -175,6 +180,7 @@ export function revokeActionReplayCapability(entryId: string): void {
     action_replay_tombstones.delete(entryId);
     action_replay_tombstones.set(entryId, advanceActionReplayEntryEpoch());
     pruneActionReplayTombstones();
+    bumpActionReplayRevision();
 }
 
 type ConsumeActionReplayClaimInput = {
@@ -189,6 +195,7 @@ export function consumeActionReplayClaim({ entryId, claim }: ConsumeActionReplay
     }
 
     action_replay_capabilities.delete(entryId);
+    bumpActionReplayRevision();
 }
 
 type RetainActionReplayMarkReconciliationInput = {
@@ -210,6 +217,7 @@ export function retainActionReplayMarkReconciliation({
     }
 
     action_replay_capabilities.set(entryId, { state: 'pending-mark', claim });
+    bumpActionReplayRevision();
 }
 
 type GetActionReplayMarkReconciliationInput = {
@@ -237,10 +245,12 @@ export function completeActionReplayMarkReconciliation(entryId: string): void {
     }
 
     action_replay_capabilities.delete(entryId);
+    bumpActionReplayRevision();
 }
 
 export function clearActionReplayCapabilities(): void {
     action_replay_generation += 1;
     action_replay_capabilities.clear();
     action_replay_tombstones.clear();
+    bumpActionReplayRevision();
 }
