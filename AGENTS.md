@@ -65,6 +65,7 @@ When asked to perform cross-module refactoring, move files, or update imports ac
 ### Git — what you may NOT do
 
 - **Do not run destructive git commands:** `git reset --hard`, `git clean`, `git push --force`, `git branch -D`, `git checkout -- .`, `git restore .`, or any command that discards uncommitted work.
+- **Do not switch branches, merge, or rebase** unless the current task or user explicitly instructs it; an orchestrator-authorized PR merge flow counts as explicit instruction.
 - **Do not commit unrelated files.** Stage only the files you intentionally changed.
 - **Do not amend published commits** or rebase commits that have already been pushed.
 - **Do not push to any remote** unless the task explicitly says to.
