@@ -1,42 +1,25 @@
 .DS_Store
 node_modules
-dist
-dist-ssr
-coverage
-*.local
+dist/
+coverage/
+
 .env
 .env.*
 !.env.example
 
-# Tauri
-target
-src-tauri/target/
+# Rust / Tauri
+target/
 
 # Editor
 .vscode/
-!.vscode/extensions.json
 *.sw?
 
-# Agent task files are worktree-specific and not shared
-.agents/tasks/*
-.agents/prompts/*
-!.agents/tasks/.gitkeep
-
-# Isolated git worktrees (always inside the repo — never sibling checkouts)
+# Agent worktrees
 .agents/worktrees/
-.claude/worktrees/
-
-# Knip output (regenerated per session; dead-code audit lives in ../sourdaw-hq/audits/deadcode.md)
-knip-results.txt
 
 # Playwright
 playwright-report/
 test-results/
 
-# Agent UI Scripts
+# Generated agent UI screenshots
 .agents/ui-scripts/*.png
-
-# Suspec — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
-.agents/tmp/
-tmp/
-.suspec/
