@@ -27,6 +27,21 @@ This repository does not require a Suspec CLI, MCP service, config, checker, or
 artifact-conversion step. Follow the repository rules below and the relevant
 global skills directly.
 
+## Agent worktrees
+
+Isolated git worktrees for agent and parallel branch work live **inside this
+repository**, never as sibling checkouts next to the repo root.
+
+- **Canonical path:** `.agents/worktrees/<name>/`
+- Create with: `git worktree add .agents/worktrees/<name> -b <branch>`
+- That directory (and `.claude/worktrees/` for harness compatibility) is
+  gitignored — worktree contents must not be committed from the main checkout.
+- When a task says you are in a worktree, operate only inside that worktree path
+  and its branch; do not edit the main checkout for that work.
+
+Domain skills stay in `.agents/skills/`. Optional worktree-local task scratch
+may use `.agents/tasks/` (also gitignored).
+
 ## 🧠 Agent Autonomy & Engineering Mindset
 
 You are a proactive, cognizant software engineer. Formulate your own paths to success within the established architecture. To scale autonomous work, you must transition from simple task execution to exhaustive self-validation.

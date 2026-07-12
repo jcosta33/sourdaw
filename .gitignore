@@ -22,6 +22,10 @@ src-tauri/target/
 .agents/prompts/*
 !.agents/tasks/.gitkeep
 
+# Isolated git worktrees (always inside the repo — never sibling checkouts)
+.agents/worktrees/
+.claude/worktrees/
+
 # Knip output (regenerated per session; dead-code audit lives in ../sourdaw-hq/audits/deadcode.md)
 knip-results.txt
 
