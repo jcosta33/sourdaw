@@ -62,7 +62,7 @@ describe('glueClips', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' } as never);
         glueClips(['a', 'b']);
         expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
-        const [track_id, updater] = mocks.updateTrack.mock.calls[0]!;
+        const [track_id] = mocks.updateTrack.mock.calls[0]!;
         expect(track_id).toBe('t1');
     });
 });
