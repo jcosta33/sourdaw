@@ -2,10 +2,10 @@
 set -eu
 
 script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
-checkout_root=$(CDPATH= cd "$script_dir/.." && pwd)
+checkout_root=$(CDPATH= cd "$script_dir/.." && pwd -P)
 
 if ! worktree_state=$(git -C "$checkout_root" rev-parse --is-inside-work-tree 2>/dev/null); then
-    if [ -e "$checkout_root/.git" ]; then
+    if [ -e "$checkout_root/.git" ] || [ -L "$checkout_root/.git" ]; then
         printf '%s\n' "error: invalid Git checkout at $checkout_root" >&2
         exit 1
     fi
@@ -22,6 +22,12 @@ fi
 if ! repo_root=$(git -C "$checkout_root" rev-parse --show-toplevel 2>/dev/null); then
     printf '%s\n' "error: unable to resolve Git checkout at $checkout_root" >&2
     exit 1
+fi
+repo_root=$(CDPATH= cd "$repo_root" && pwd -P)
+
+if [ "$repo_root" != "$checkout_root" ]; then
+    printf '%s\n' 'Skipping Git hook installation: source directory is nested inside another Git checkout'
+    exit 0
 fi
 
 hooks_path="$repo_root/.githooks"

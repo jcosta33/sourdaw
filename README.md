@@ -18,7 +18,7 @@ Install both dependency sets before the first push from a checkout:
 
 ```sh
 pnpm install
-npm --prefix server ci
+npm --prefix server ci --include=dev
 ```
 
 `pnpm install` also configures the checked-in Git hooks. Server dependencies are

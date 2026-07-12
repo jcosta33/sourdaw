@@ -33,6 +33,9 @@ printf '%s\n' \
     'if [ "${FAKE_SERVER_DEPS:-ready}" = "missing" ] && [ "${3:-}" = "ls" ]; then' \
     '    exit 1' \
     'fi' \
+    'if [ "${NODE_ENV:-}" = "production" ] && [ "${3:-}" = "ls" ]; then' \
+    '    case " $* " in *" --include=dev "*) ;; *) exit 42 ;; esac' \
+    'fi' \
     > "$fake_bin/npm"
 chmod +x "$fake_bin/pnpm" "$fake_bin/npm"
 
@@ -81,14 +84,16 @@ case "$server_output" in
     *'run: npm --prefix server ci'*) ;;
     *) exit 1 ;;
 esac
-printf '%s\n' 'npm --prefix server ls --depth=0 --silent' > "$temp_root/expected-server-missing.log"
+printf '%s\n' 'npm --prefix server ls --depth=0 --silent --include=dev' > "$temp_root/expected-server-missing.log"
 diff -u "$temp_root/expected-server-missing.log" "$temp_root/server-missing.log"
 
 PATH="$fake_bin:$PATH" \
     COMMAND_LOG="$temp_root/server-success.log" \
+    NODE_ENV=production \
+    npm_config_omit=dev \
     sh "$temp_root/scripts/health-gates-server.sh" >/dev/null
 printf '%s\n' \
-    'npm --prefix server ls --depth=0 --silent' \
+    'npm --prefix server ls --depth=0 --silent --include=dev' \
     'npm run build' \
     > "$temp_root/expected-server-success.log"
 diff -u "$temp_root/expected-server-success.log" "$temp_root/server-success.log"
@@ -97,4 +102,4 @@ printf '%s\n' \
     "lint heartbeat exit: $lint_status" \
     'lint heartbeat and early stop: PASS' \
     "missing server dependencies exit: $server_status" \
-    'server remediation and normal build sequence: PASS'
+    'server remediation and production build dependency sequence: PASS'

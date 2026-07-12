@@ -11,6 +11,7 @@
         "prepare": "sh scripts/install-git-hooks.sh",
         "preview": "vite preview",
         "test": "vitest",
+        "test:health-gates": "sh scripts/test-health-gate-scripts.sh && sh scripts/test-git-hook-installation.sh",
         "test:run": "vitest run",
         "test:generate-usecase-specs": "node --experimental-strip-types scripts/generate-missing-use-case-specs.ts",
         "test:e2e": "playwright test",

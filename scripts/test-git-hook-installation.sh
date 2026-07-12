@@ -9,12 +9,39 @@ seed_repo="$temp_root/seed"
 installer_worktree="$temp_root/installer-worktree"
 remaining_worktree="$temp_root/remaining-worktree"
 hook_log="$temp_root/hook.log"
+nested_parent="$temp_root/nested-parent"
+nested_source="$nested_parent/nested-source"
+dangling_source="$temp_root/dangling-source"
 
 cleanup() {
     rm -rf "$temp_root"
 }
 trap cleanup 0
 trap 'exit 1' 1 2 15
+
+git init --quiet "$nested_parent"
+git -C "$nested_parent" config core.hooksPath parent-hooks
+mkdir -p "$nested_source/scripts"
+cp "$repo_root/scripts/install-git-hooks.sh" "$nested_source/scripts/install-git-hooks.sh"
+parent_path_before=$(git -C "$nested_parent" config --local --get core.hooksPath)
+nested_output=$(sh "$nested_source/scripts/install-git-hooks.sh")
+parent_path_after=$(git -C "$nested_parent" config --local --get core.hooksPath)
+test "$nested_output" = 'Skipping Git hook installation: source directory is nested inside another Git checkout'
+test "$parent_path_before" = 'parent-hooks'
+test "$parent_path_after" = "$parent_path_before"
+
+mkdir -p "$dangling_source/scripts"
+cp "$repo_root/scripts/install-git-hooks.sh" "$dangling_source/scripts/install-git-hooks.sh"
+ln -s "$temp_root/missing-git-dir" "$dangling_source/.git"
+set +e
+dangling_output=$(sh "$dangling_source/scripts/install-git-hooks.sh" 2>&1)
+dangling_status=$?
+set -e
+test "$dangling_status" -eq 1
+case "$dangling_output" in
+    'error: invalid Git checkout at '*) ;;
+    *) exit 1 ;;
+esac
 
 git init --quiet "$seed_repo"
 git -C "$seed_repo" config user.email hooks-test@example.com
@@ -64,6 +91,11 @@ remaining_root_after_removal=$(sed -n '1p' "$hook_log")
 test "$remaining_root_after_removal" = "$remaining_worktree"
 
 printf '%s\n' \
+    "nested parent core.hooksPath before: $parent_path_before" \
+    "$nested_output" \
+    "nested parent core.hooksPath after: $parent_path_after" \
+    "dangling .git symlink exit: $dangling_status" \
+    "$dangling_output" \
     "shared core.hooksPath: $shared_path" \
     "installer worktree core.hooksPath: $installer_path" \
     "remaining worktree core.hooksPath: $remaining_path" \
