@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { deleteTime } from '../deleteTime';
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +11,7 @@ vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: moc
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../stores/markerStore', () => ({ markerStore: { value: { markers: [] }, set: vi.fn() } }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] }, set: vi.fn() } }));
-vi.mock('#/modules/Transport/stores', () => ({ 
+vi.mock('#/modules/Transport/stores', () => ({
     tempoMapStore: { value: { changes: [] }, set: vi.fn() },
     timeSignatureMapStore: { value: { changes: [] }, set: vi.fn() },
 }));
@@ -31,12 +32,15 @@ describe('deleteTime', () => {
 
     it('processes time deletion with tracks and clips', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{
-                id: 't1', clips: [
-                    { id: 'c1', startBeat: 0, endBeat: 4 },
-                    { id: 'c2', startBeat: 4, endBeat: 8 },
-                ],
-            }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 4, endBeat: 8 },
+                    ],
+                },
+            ],
             selectedTrackId: 't1',
         } as never);
         expect(() => deleteTime(2, 6)).not.toThrow();

@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../setVirtualKeyboardOctave';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { setVirtualKeyboardOctave } from '../setVirtualKeyboardOctave';
 
 describe('setVirtualKeyboardOctave', () => {
-    it('should export setVirtualKeyboardOctave', () => {
-        expect(subject.setVirtualKeyboardOctave).toBeDefined();
-        const time = typeof subject.setVirtualKeyboardOctave;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof setVirtualKeyboardOctave).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => setVirtualKeyboardOctave()).not.toThrow();
     });
 });

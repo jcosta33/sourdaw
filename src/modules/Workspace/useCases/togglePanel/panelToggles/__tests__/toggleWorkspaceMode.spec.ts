@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../toggleWorkspaceMode';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleWorkspaceMode } from '../toggleWorkspaceMode';
 
 describe('toggleWorkspaceMode', () => {
-    it('should export toggleWorkspaceMode', () => {
-        expect(subject.toggleWorkspaceMode).toBeDefined();
-        const time = typeof subject.toggleWorkspaceMode;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof toggleWorkspaceMode).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => toggleWorkspaceMode()).not.toThrow();
     });
 });

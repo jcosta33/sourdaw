@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../closeCommandPalette';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { closeCommandPalette } from '../closeCommandPalette';
 
 describe('closeCommandPalette', () => {
-    it('should export closeCommandPalette', () => {
-        expect(subject.closeCommandPalette).toBeDefined();
-        const time = typeof subject.closeCommandPalette;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof closeCommandPalette).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => closeCommandPalette()).not.toThrow();
     });
 });

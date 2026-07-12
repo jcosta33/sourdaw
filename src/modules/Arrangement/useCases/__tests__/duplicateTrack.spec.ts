@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { duplicateTrack } from '../duplicateTrack';
 
 const mocks = vi.hoisted(() => ({
@@ -24,14 +25,20 @@ describe('duplicateTrack', () => {
 
     it('creates a new track when source exists', () => {
         mocks.getTrackById.mockReturnValue({
-            id: 't1', name: 'Synth', kind: 'midi', alternatives: [{ id: 'a1', clips: [] }], clips: [],
+            id: 't1',
+            name: 'Synth',
+            kind: 'midi',
+            alternatives: [{ id: 'a1', clips: [] }],
+            clips: [],
         });
         expect(() => duplicateTrack('t1')).not.toThrow();
     });
 
     it('handles track with MIDI clips', () => {
         mocks.getTrackById.mockReturnValue({
-            id: 't1', name: 'MIDI', kind: 'midi',
+            id: 't1',
+            name: 'MIDI',
+            kind: 'midi',
             alternatives: [{ id: 'a1', clips: [{ id: 'c1', type: 'midi', startBeat: 0, endBeat: 4 }] }],
             clips: [],
         });
@@ -40,7 +47,9 @@ describe('duplicateTrack', () => {
 
     it('handles track with audio clips', () => {
         mocks.getTrackById.mockReturnValue({
-            id: 't1', name: 'Audio', kind: 'audio',
+            id: 't1',
+            name: 'Audio',
+            kind: 'audio',
             alternatives: [{ id: 'a1', clips: [{ id: 'c1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
             clips: [],
         });
@@ -49,7 +58,11 @@ describe('duplicateTrack', () => {
 
     it('handles track with no alternatives', () => {
         mocks.getTrackById.mockReturnValue({
-            id: 't1', name: 'Empty', kind: 'midi', alternatives: [], clips: [],
+            id: 't1',
+            name: 'Empty',
+            kind: 'midi',
+            alternatives: [],
+            clips: [],
         });
         expect(() => duplicateTrack('t1')).not.toThrow();
     });

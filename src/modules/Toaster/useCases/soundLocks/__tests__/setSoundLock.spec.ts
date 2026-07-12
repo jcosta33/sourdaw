@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../setSoundLock';
+import { setSoundLock } from '../setSoundLock';
 
 describe('setSoundLock', () => {
-    it('should export setSoundLock', () => {
-        expect(subject.setSoundLock).toBeDefined();
-        const time = typeof subject.setSoundLock;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof setSoundLock).toBe('function');
     });
 });

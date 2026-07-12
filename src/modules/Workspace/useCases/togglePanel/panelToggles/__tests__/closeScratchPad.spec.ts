@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../closeScratchPad';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { closeScratchPad } from '../closeScratchPad';
 
 describe('closeScratchPad', () => {
-    it('should export closeScratchPad', () => {
-        expect(subject.closeScratchPad).toBeDefined();
-        const time = typeof subject.closeScratchPad;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof closeScratchPad).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => closeScratchPad()).not.toThrow();
     });
 });

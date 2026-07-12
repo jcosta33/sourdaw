@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { MarkovChain } from '../MarkovChain';
 
 describe('MarkovChain', () => {

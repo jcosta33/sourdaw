@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../toggleClipInSelection';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleClipInSelection } from '../toggleClipInSelection';
 
 describe('toggleClipInSelection', () => {
-    it('should export toggleClipInSelection', () => {
-        expect(subject.toggleClipInSelection).toBeDefined();
-        const time = typeof subject.toggleClipInSelection;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof toggleClipInSelection).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => toggleClipInSelection()).not.toThrow();
     });
 });

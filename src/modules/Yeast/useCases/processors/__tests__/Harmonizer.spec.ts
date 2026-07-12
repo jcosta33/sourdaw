@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { Harmonizer } from '../Harmonizer';
+
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { Harmonizer } from '../Harmonizer';
 
 const transport: TransportInfo = { isPlaying: true, tempo: 120, sampleRate: 48000, positionInBeats: 0 };
-const note_on = (t: number, n: number, v = 100): MidiEvent => ({ timeSamples: t, kind: { type: 'noteOn', channel: 0, note: n, velocity: v } });
-const note_off = (t: number, n: number): MidiEvent => ({ timeSamples: t, kind: { type: 'noteOff', channel: 0, note: n } });
+const note_on = (t: number, n: number, v = 100): MidiEvent => ({
+    timeSamples: t,
+    kind: { type: 'noteOn', channel: 0, note: n, velocity: v },
+});
+const note_off = (t: number, n: number): MidiEvent => ({
+    timeSamples: t,
+    kind: { type: 'noteOff', channel: 0, note: n },
+});
 
 describe('Harmonizer', () => {
     it('passes through original note and adds harmony', () => {

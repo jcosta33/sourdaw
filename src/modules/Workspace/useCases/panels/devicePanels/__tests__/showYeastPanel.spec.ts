@@ -1,9 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../showYeastPanel';
+vi.mock('#/infra/di/inject', () => ({
+    inject:
+        <T extends Record<string, unknown>>(deps: T) =>
+        (factory: (d: T) => unknown) =>
+            factory(
+                Object.fromEntries(
+                    Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }])
+                ) as T
+            ),
+}));
+import { showYeastPanel } from '../showYeastPanel';
 
 describe('showYeastPanel', () => {
-    it('should load the module', () => {
-        expect(subject).toBeDefined();
+    it('is a function', () => {
+        expect(typeof showYeastPanel).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => (showYeastPanel as (id: string | null) => void)('test-id')).not.toThrow();
     });
 });

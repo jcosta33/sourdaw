@@ -7,10 +7,27 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 
 ## Agent workflow
 
-Development work is driven by the sibling Suspec workspace at
-`../sourdaw-works`. Start with the assigned task packet in
-`../sourdaw-works/tasks/`, read the linked process/spec material there, and
-follow the repository rules in `AGENTS.md` before editing code.
+Development work uses proportional intent, independent review, and findings
+records around implementation. Implementation is the work itself, not a
+separate record. Checked-in feature specs live under `specs/` as an explicit
+project exception; captured source material lives under `specs/intake/`.
+Transient task and review artifacts live outside this repository beside the
+agent's Codex-native plans, notes, or state. The agent chooses the location and
+carries its exact full path throughout the work. Load relevant global skills,
+follow `AGENTS.md`, and preserve empirical evidence for verification claims.
+No Suspec CLI or MCP service is required.
+
+## Setup
+
+Install both dependency sets before the first push from a checkout:
+
+```sh
+pnpm install
+npm --prefix server ci --include=dev
+```
+
+`pnpm install` also configures the checked-in Git hooks. Server dependencies are
+separate setup; the pre-push gate does not run `npm ci`.
 
 ## Common commands
 
@@ -19,3 +36,9 @@ follow the repository rules in `AGENTS.md` before editing code.
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build
+
+## Git hooks
+
+The checked-in pre-push hook runs the same web and collaboration-server health
+gates as CI. Use standard Git `--no-verify` only when you intentionally need to
+bypass it.

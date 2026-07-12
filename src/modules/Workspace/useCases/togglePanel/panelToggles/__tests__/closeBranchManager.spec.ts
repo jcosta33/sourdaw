@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../closeBranchManager';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { closeBranchManager } from '../closeBranchManager';
 
 describe('closeBranchManager', () => {
-    it('should export closeBranchManager', () => {
-        expect(subject.closeBranchManager).toBeDefined();
-        const time = typeof subject.closeBranchManager;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof closeBranchManager).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => closeBranchManager()).not.toThrow();
     });
 });

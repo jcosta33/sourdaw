@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../toggleVirtualKeyboard';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleVirtualKeyboard } from '../toggleVirtualKeyboard';
 
 describe('toggleVirtualKeyboard', () => {
-    it('should export toggleVirtualKeyboard', () => {
-        expect(subject.toggleVirtualKeyboard).toBeDefined();
-        const time = typeof subject.toggleVirtualKeyboard;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof toggleVirtualKeyboard).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => toggleVirtualKeyboard()).not.toThrow();
     });
 });

@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../toggleCollaborationPanel';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleCollaborationPanel } from '../toggleCollaborationPanel';
 
 describe('toggleCollaborationPanel', () => {
-    it('should export toggleCollaborationPanel', () => {
-        expect(subject.toggleCollaborationPanel).toBeDefined();
-        const time = typeof subject.toggleCollaborationPanel;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof toggleCollaborationPanel).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => toggleCollaborationPanel()).not.toThrow();
     });
 });

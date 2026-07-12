@@ -1,11 +1,20 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../resetGrandBoulePerNoteParams';
+import { resetGrandBoulePerNoteParams } from '../resetGrandBoulePerNoteParams';
 
+const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 describe('resetGrandBoulePerNoteParams', () => {
-    it('should export resetGrandBoulePerNoteParams', () => {
-        expect(subject.resetGrandBoulePerNoteParams).toBeDefined();
-        const t = typeof subject.resetGrandBoulePerNoteParams;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash', () => {
+        const setPerNoteMap = () => {};
+        const perNoteMap = new Map();
+        expect(() =>
+            resetGrandBoulePerNoteParams({
+                store: { value: {}, set: () => {} },
+                engine: mock_engine,
+                key: 40,
+                perNoteMap,
+                setPerNoteMap,
+            } as never)
+        ).not.toThrow();
     });
 });

@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../toggleUndoHistory';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { toggleUndoHistory } from '../toggleUndoHistory';
 
 describe('toggleUndoHistory', () => {
-    it('should export toggleUndoHistory', () => {
-        expect(subject.toggleUndoHistory).toBeDefined();
-        const time = typeof subject.toggleUndoHistory;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof toggleUndoHistory).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => toggleUndoHistory()).not.toThrow();
     });
 });

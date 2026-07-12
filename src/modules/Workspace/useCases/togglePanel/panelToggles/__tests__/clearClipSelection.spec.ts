@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../clearClipSelection';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { clearClipSelection } from '../clearClipSelection';
 
 describe('clearClipSelection', () => {
-    it('should export clearClipSelection', () => {
-        expect(subject.clearClipSelection).toBeDefined();
-        const time = typeof subject.clearClipSelection;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof clearClipSelection).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => clearClipSelection()).not.toThrow();
     });
 });

@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../panicGrandBoule';
+import { panicGrandBoule } from '../panicGrandBoule';
 
+const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 describe('panicGrandBoule', () => {
-    it('should export panicGrandBoule', () => {
-        expect(subject.panicGrandBoule).toBeDefined();
-        const t = typeof subject.panicGrandBoule;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash', () => {
+        expect(() => panicGrandBoule({ engine: mock_engine } as never)).not.toThrow();
     });
 });

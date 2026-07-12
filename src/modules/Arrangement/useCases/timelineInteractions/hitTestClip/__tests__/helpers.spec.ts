@@ -1,9 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../helpers';
+vi.mock('#/infra/di/inject', () => ({
+    inject: (deps: Record<string, unknown>) => (factory: (d: Record<string, unknown>) => unknown) =>
+        factory(
+            Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))
+        ),
+}));
+vi.mock('#/helpers/createHandler', () => ({ createHandler: (config: unknown) => config }));
+import { RULER_HEIGHT } from '../helpers';
 
-describe('helpers', () => {
-    it('should load the module', () => {
-        expect(subject).toBeDefined();
+describe('RULER_HEIGHT', () => {
+    it('is defined', () => {
+        expect(RULER_HEIGHT).toBeDefined();
     });
 });

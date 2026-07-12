@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../setGrandBouleUnaCorda';
+import { setGrandBouleUnaCorda } from '../setGrandBouleUnaCorda';
+
+const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 
 describe('setGrandBouleUnaCorda', () => {
-    it('should export setGrandBouleUnaCorda', () => {
-        expect(subject.setGrandBouleUnaCorda).toBeDefined();
-        const t = typeof subject.setGrandBouleUnaCorda;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        const store = { value: { pedals: {}, params: {} }, set: () => {} } as never;
+        expect(() => setGrandBouleUnaCorda({ store, engine: mock_engine } as never)).not.toThrow();
+    });
+
+    it('does nothing when state is null', () => {
+        const store = { value: null, set: () => {} } as never;
+        expect(() => setGrandBouleUnaCorda({ store, engine: mock_engine } as never)).not.toThrow();
     });
 });

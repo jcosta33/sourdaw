@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../setSoloMode';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { setSoloMode } from '../setSoloMode';
 
 describe('setSoloMode', () => {
-    it('should export setSoloMode', () => {
-        expect(subject.setSoloMode).toBeDefined();
-        const time = typeof subject.setSoloMode;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof setSoloMode).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => setSoloMode()).not.toThrow();
     });
 });

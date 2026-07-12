@@ -1,11 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import * as subject from '../setSnapValue';
+vi.mock('../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+}));
+vi.mock('../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { setSnapValue } from '../setSnapValue';
 
 describe('setSnapValue', () => {
-    it('should export setSnapValue', () => {
-        expect(subject.setSnapValue).toBeDefined();
-        const time = typeof subject.setSnapValue;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('is a function', () => {
+        expect(typeof setSnapValue).toBe('function');
+    });
+    it('runs without crash', () => {
+        expect(() => setSnapValue()).not.toThrow();
     });
 });

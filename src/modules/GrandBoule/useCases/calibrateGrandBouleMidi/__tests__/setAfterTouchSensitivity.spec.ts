@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../setAfterTouchSensitivity';
+import { setAfterTouchSensitivity } from '../setAfterTouchSensitivity';
 
+const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setAfterTouchSensitivity', () => {
-    it('should export setAfterTouchSensitivity', () => {
-        expect(subject.setAfterTouchSensitivity).toBeDefined();
-        const t = typeof subject.setAfterTouchSensitivity;
-        expect(t === 'function' || t === 'object').toBe(true);
+    it('runs without crash when state exists', () => {
+        expect(() => setAfterTouchSensitivity({ store: mock_store } as never)).not.toThrow();
+    });
+    it('does nothing when state is null', () => {
+        expect(() => setAfterTouchSensitivity({ store: { value: null, set: () => {} } } as never)).not.toThrow();
     });
 });

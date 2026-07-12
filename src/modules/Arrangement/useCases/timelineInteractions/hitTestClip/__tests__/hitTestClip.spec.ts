@@ -49,19 +49,23 @@ describe('hitTestClip', () => {
     it('processes clip hit without crash', () => {
         mocks.getTrackAtY.mockReturnValue({ index: 0 });
         mocks.buildTimelineRenderModel.mockReturnValue({
-            tracks: [{
-                id: 'track-1',
-                height: 80,
-                clips: [{
-                    id: 'clip-1',
-                    startBeat: 0,
-                    endBeat: 4,
-                    type: 'midi',
-                    isInlineEditing: false,
-                    midiNotes: [],
-                }],
-                variationLanes: [],
-            }],
+            tracks: [
+                {
+                    id: 'track-1',
+                    height: 80,
+                    clips: [
+                        {
+                            id: 'clip-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            type: 'midi',
+                            isInlineEditing: false,
+                            midiNotes: [],
+                        },
+                    ],
+                    variationLanes: [],
+                },
+            ],
         } as never);
 
         const result = hitTestClip(100, 40);
@@ -71,19 +75,23 @@ describe('hitTestClip', () => {
     it('returns null when coordinate is outside clip bounds', () => {
         mocks.getTrackAtY.mockReturnValue({ index: 0 });
         mocks.buildTimelineRenderModel.mockReturnValue({
-            tracks: [{
-                id: 'track-1',
-                height: 80,
-                clips: [{
-                    id: 'clip-1',
-                    startBeat: 0,
-                    endBeat: 4,
-                    type: 'midi',
-                    isInlineEditing: false,
-                    midiNotes: [],
-                }],
-                variationLanes: [],
-            }],
+            tracks: [
+                {
+                    id: 'track-1',
+                    height: 80,
+                    clips: [
+                        {
+                            id: 'clip-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            type: 'midi',
+                            isInlineEditing: false,
+                            midiNotes: [],
+                        },
+                    ],
+                    variationLanes: [],
+                },
+            ],
         } as never);
 
         const result = hitTestClip(500, 40);
