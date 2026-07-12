@@ -1,5 +1,6 @@
 .dependency-cruiser-known-violations.json
 .dependency-cruiser-known-violations-reachability.json
+.dependency-cruiser-known-violations-tests.json
 .dependency-cruiser-known-violations-types.json
 node_modules
 target

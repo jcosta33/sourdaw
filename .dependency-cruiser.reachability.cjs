@@ -5,9 +5,9 @@
  * because reachability rules cannot filter dependencyTypesNot — including them
  * would produce false positives on type imports through hooks.
  *
- * Run alongside `.dependency-cruiser.cjs` via `pnpm deps:validate`.
- * Cache does NOT hash this config — own folder so it never shares stale results
- * with the main cruise.
+ * The architecture checker collapses the endpoint matrix to causal edges: the
+ * last leaf component on a path → the first useCases node. It compares those
+ * exact edges to the baseline and rejects both new and stale debt.
  */
 
 const MODULE = 'src/modules/(?:Common/|Supporting/)?';
@@ -47,11 +47,6 @@ module.exports = {
             aliasFields: ['browser'],
         },
         skipAnalysisNotInRules: true,
-        cache: {
-            folder: 'node_modules/.cache/dependency-cruiser-reachability',
-            strategy: 'metadata',
-            compress: true,
-        },
         tsConfig: { fileName: 'tsconfig.json' },
     },
 };

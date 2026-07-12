@@ -5,8 +5,9 @@
  *
  * The main / reachability / type cruises exclude `*.spec.*` / `*.test.*`, so
  * cross-module private imports inside tests are invisible there. This cruise
- * keeps tests in the graph and enforces barrel boundaries from test and
- * __tests__ support files only (production edges stay on the main cruise).
+ * keeps tests in the graph, treats `vi.mock()` targets as dependencies, and
+ * enforces barrel boundaries from tests, __tests__ support, and setupTests.ts
+ * (production edges stay on the main cruise).
  *
  * Orphan / dev-dependency rules intentionally omitted — those are
  * production-specific and already pathNot-exempt specs on the main cruise.
@@ -15,13 +16,19 @@
  */
 
 const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-// Group 1 = prefix, group 2 = module name (same as main config)
-const MODULE_ROOT = '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+)/';
+// Group 1 = prefix (including optional namespace), group 2 = module name.
+const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
 
 // from: module-rooted test / __tests__ files (keeps $1$2 for same-module pathNot)
 const FROM_MODULE_TEST = [
     MODULE_ROOT + '.*\\.(spec|test)' + SOURCE_FILE_RE,
     MODULE_ROOT + '.*__tests__/.*' + SOURCE_FILE_RE,
+];
+
+const FROM_EXTERNAL_TEST = [
+    '^src/(?!modules/).*[.](spec|test)' + SOURCE_FILE_RE,
+    '^src/(?!modules/).*__tests__/.*' + SOURCE_FILE_RE,
+    '^src/setupTests\\.ts$',
 ];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
@@ -63,6 +70,34 @@ module.exports = {
                 dependencyTypesNot: ['aliased', 'aliased-tsconfig', 'aliased-tsconfig-paths'],
             },
         },
+        {
+            name: 'external-tests-contract-only',
+            severity: 'error',
+            comment:
+                'Tests and global test support outside src/modules must use module contract-folder barrels. ' +
+                'Private hooks, models, stores, and deep use-case files remain private.',
+            from: {
+                path: FROM_EXTERNAL_TEST,
+            },
+            to: {
+                path: '^src/modules/',
+                pathNot:
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+            },
+        },
+        {
+            name: 'external-tests-no-relative-module-imports',
+            severity: 'error',
+            comment: 'Tests outside src/modules must use #/ contract aliases for module imports.',
+            from: {
+                path: FROM_EXTERNAL_TEST,
+            },
+            to: {
+                path: '^src/modules/',
+                dependencyTypes: ['local'],
+                dependencyTypesNot: ['aliased', 'aliased-tsconfig', 'aliased-tsconfig-paths'],
+            },
+        },
     ],
     options: {
         doNotFollow: {
@@ -79,12 +114,9 @@ module.exports = {
         },
         // Include type-only edges so `import type { Track } from '.../models/Track'` is visible.
         tsPreCompilationDeps: true,
+        // Mock targets are runtime dependencies of the test harness too.
+        exoticRequireStrings: ['vi.mock'],
         skipAnalysisNotInRules: true,
-        cache: {
-            folder: 'node_modules/.cache/dependency-cruiser-tests',
-            strategy: 'metadata',
-            compress: true,
-        },
         tsConfig: { fileName: 'tsconfig.json' },
     },
 };

@@ -1,5 +1,7 @@
-export { detectTransients, type TransientHit } from './elasticAudio/detectTransients';
-export { detectTransientsForClip, type DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
+export { detectTransients } from './elasticAudio/detectTransients';
+export type { TransientHit } from './elasticAudio/detectTransients';
+export { detectTransientsForClip } from './elasticAudio/detectTransientsForClip';
+export type { DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
 export { markElasticDetectionComplete } from './elasticAudio/markElasticDetectionComplete';
 export { selectElasticMarkers } from './elasticAudio/selectElasticMarkers';
 export { openElasticEditor } from './elasticAudio/openElasticEditor';

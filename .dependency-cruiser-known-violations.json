@@ -19,11 +19,101 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/AiRuntime/models/MidiPatternLibrary.ts",
+    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/models/Patterns/BassPatterns.ts",
+    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/models/Patterns/ChordPatterns.ts",
+    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/models/Patterns/MelodyPatterns.ts",
+    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
     "to": "src/modules/AiGeneration/useCases/index.ts",
     "rule": {
       "severity": "error",
       "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
+    "to": "src/modules/Arrangement/useCases/getTrackStoreState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
+    "to": "src/modules/Workspace/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/findClipById.ts",
+    "to": "src/modules/Arrangement/useCases/getTrackStoreState.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts",
+    "to": "src/modules/Transport/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
     }
   },
   {
@@ -42,6 +132,411 @@
     "rule": {
       "severity": "error",
       "name": "business-no-presentations"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/repositories/webMidi/lifecycle/initWebMidi.ts",
+    "to": "src/modules/Arrangement/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "repositories-no-business"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/CommandRegistry.ts",
+    "to": "src/modules/Command/services/commandSearch.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/AiCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/AiCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/AutomationCommands.ts",
+    "to": "src/modules/Automation/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/AutomationCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Arrangement/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipIds.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedTrackId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ClipCommands.ts",
+    "to": "src/modules/Transport/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/EditCommands.ts",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/EditCommands.ts",
+    "to": "src/modules/Command/useCases/deselectAllClips.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/EditCommands.ts",
+    "to": "src/modules/Command/useCases/redo.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/EditCommands.ts",
+    "to": "src/modules/Command/useCases/selectAllClips.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/EditCommands.ts",
+    "to": "src/modules/Command/useCases/undo.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ElasticCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ElasticCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/MidiCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/MidiCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/MiscCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/MiscCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/MiscCommands.ts",
+    "to": "src/modules/Workspace/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ProjectCommands.ts",
+    "to": "src/modules/Project/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ProjectCommands.ts",
+    "to": "src/modules/Workspace/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TrackCommands.ts",
+    "to": "src/modules/Arrangement/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TrackCommands.ts",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TrackCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TrackCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedTrackId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TransportCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getLastClipEndBeat.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TransportCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/goToNextMarker.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TransportCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/goToPreviousMarker.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/TransportCommands.ts",
+    "to": "src/modules/Transport/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Arrangement/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Command/useCases/selectionHelpers/getSelectedClipId.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Transport/stores/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/Commands/ViewCommands.ts",
+    "to": "src/modules/Workspace/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/UndoEntry.ts",
+    "to": "src/modules/Command/useCases/commandQueries.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/models/UndoEntry.ts",
+    "to": "src/modules/Command/useCases/createCallbackUndoEntry.ts",
+    "rule": {
+      "severity": "error",
+      "name": "models-are-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Extension/services/scripting.ts",
+    "to": "src/modules/Command/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Extension/services/scripting.ts",
+    "to": "src/modules/Extension/stores/extension.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
     }
   },
   {
@@ -123,6 +618,24 @@
     "rule": {
       "severity": "error",
       "name": "components-no-usecase-access"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/services/yeastWorkletProcessor.ts",
+    "to": "src/modules/Yeast/useCases/MidiRack.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/services/yeastWorkletProcessor.ts",
+    "to": "src/modules/Yeast/useCases/processorFactory.ts",
+    "rule": {
+      "severity": "error",
+      "name": "services-must-stay-pure"
     }
   }
 ]

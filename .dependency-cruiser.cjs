@@ -2,16 +2,13 @@
 /** @type {import('dependency-cruiser').IConfiguration} */
 
 // ----------------------------------------------------------------------------
-// NOTE: the cruise result is cached (metadata strategy) and the cache does NOT
-// hash this config. After editing rules, clear
-// `node_modules/.cache/dependency-cruiser*` (and the reachability cache if
-// present) or results will be stale.
-//
-// `pnpm deps:validate` pipeline:
-//   1) this main cruise + --ignore-known (error edges only; orphans stay warn)
-//   2) .dependency-cruiser.reachability.cjs + --ignore-known (value-import reachability)
-//   3) .dependency-cruiser.types.cjs — type-only edges (tsPreCompilationDeps)
-//   4) .dependency-cruiser.tests.cjs — test-inclusive barrel boundaries
+// `pnpm deps:validate` runs scripts/check-dependency-boundaries.mjs. The script
+// executes every cruise with --no-cache and compares current error evidence to
+// its exact baseline, rejecting both new and stale rows:
+//   1) this main cruise (value edges; warnings remain visible)
+//   2) .dependency-cruiser.reachability.cjs (causal component → useCases edges)
+//   3) .dependency-cruiser.types.cjs (type-only boundary edges)
+//   4) .dependency-cruiser.tests.cjs (test-inclusive barrel boundaries)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
@@ -52,9 +49,9 @@ const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 
-// Group 1 = prefix ("src/modules/" or Common/Supporting variant)
+// Group 1 = prefix (including an optional Common/Supporting namespace)
 // Group 2 = module name
-const MODULE_ROOT = '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+)/';
+const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
 
 // Private presentation subfolders
 const PRIVATE_PRESENTATION_FOLDERS =
@@ -153,12 +150,28 @@ module.exports = {
         },
 
         {
+            name: 'external-module-contracts-only',
+            severity: 'error',
+            comment:
+                'Shared UI, app composition, and routes may import modules only through contract-folder barrels. ' +
+                'Private module files remain private outside src/modules/ too.',
+            from: {
+                path: '^src/(app|components|routes)/',
+            },
+            to: {
+                path: '^src/modules/',
+                pathNot:
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+            },
+        },
+
+        {
             name: 'module-index-contract-only',
             severity: 'error',
             comment:
-                'Module root index.ts (legacy, during migration) may only re-export from useCases/, events/, stores/, ' +
-                'and presentations/views/ within the same module. ' +
-                'Root module index.ts is retired (0 remain); this rule stays as a guard if one reappears. ' +
+                'The architecture checker rejects module-root index.ts files outright. If this config is run ' +
+                'directly, this defense-in-depth rule prevents a reintroduced root barrel from exporting anything ' +
+                'except useCases/, events/, stores/, and presentations/views/ within the same module. ' +
                 'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, or worklets/ is forbidden.',
@@ -435,16 +448,16 @@ module.exports = {
             severity: 'error',
             comment:
                 'Repositories are the IO / persistence edge: they must not import useCases/, handlers/, ' +
-                'or presentations/ from any module (including foreign contract barrels). Orchestration ' +
-                'belongs in use cases. Same-module stores/ remain allowed — Sourdaw repositories commonly ' +
-                'project owned store state.',
+                'presentations/, events/, or foreign stores. Orchestration and cross-module contracts belong ' +
+                'in use cases. Same-module stores remain allowed for existing thin persistence adapters.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'repositories/.+' + SOURCE_FILE_RE,
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|handlers|presentations)/.+' +
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|handlers|presentations|events|stores)/.+' +
                     SOURCE_FILE_RE,
+                pathNot: '^$1$2/stores/',
             },
         },
 
@@ -452,14 +465,17 @@ module.exports = {
             name: 'models-are-pure',
             severity: 'error',
             comment:
-                'Domain models must not climb into IO/UI/runtime layers: no repositories/, handlers/, ' +
-                'presentations/, engine/, worklets/, or runtime/. (Command catalog models still reach ' +
-                'useCases/stores in places — that is tracked debt; this rule blocks the worse climbs.)',
+                'Domain models are pure module-owned data. They must not import useCases, stores, events, IO, ' +
+                'handlers, services, validators, transformers, presentation, engine, worklets, or runtime ' +
+                'from any module. Existing Command catalog violations are explicit baseline debt.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'models/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(repositories|handlers|presentations|engine|worklets|runtime)/.+' + SOURCE_FILE_RE,
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|events|handlers|services|validators|transformers|presentations|engine|worklets|runtime)/.+' +
+                    SOURCE_FILE_RE,
             },
         },
 
@@ -485,12 +501,49 @@ module.exports = {
             name: 'transformers-must-stay-pure',
             severity: 'error',
             comment:
-                'Transformers must remain pure. They may not import repositories/, useCases/, or presentation-layer stores.',
+                'Transformers must remain pure. They may not import business, IO, event, UI, engine, or runtime layers.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'transformers/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(repositories|useCases|presentations/stores)/.+' + SOURCE_FILE_RE,
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(repositories|useCases|stores|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'services-must-stay-pure',
+            severity: 'error',
+            comment:
+                'Services are stateless domain helpers. They may not import use cases, stores, repositories, ' +
+                'events, handlers, presentation, engine, worklets, or runtime from any module.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'services/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'validators-must-stay-pure',
+            severity: 'error',
+            comment:
+                'Validators are pure domain checks. They may not import use cases, stores, repositories, ' +
+                'events, handlers, presentation, engine, worklets, or runtime from any module.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'validators/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    SOURCE_FILE_RE,
             },
         },
 
@@ -507,7 +560,8 @@ module.exports = {
             },
             to: {
                 path:
-                    '^$1$2/(useCases|repositories|stores|services|validators|events|engine|runtime|presentations)/.+' +
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
         },
@@ -520,7 +574,7 @@ module.exports = {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/|@tauri-apps/)',
+                path: '^(application/|src/helpers/)|/@tauri-apps/',
             },
         },
 

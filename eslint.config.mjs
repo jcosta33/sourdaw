@@ -2923,6 +2923,20 @@ export default defineConfig(
         },
     },
 
+    // ─── Node scripts ───────────────────────────────────────────────────────
+    {
+        files: ['scripts/**/*.{js,mjs,cjs}'],
+        extends: [tseslint.configs.disableTypeChecked, eslintPluginReact.configs['disable-type-checked']],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+            parserOptions: {
+                project: false,
+            },
+        },
+    },
+
     // ─── d.ts files ──────────────────────────────────────────────────────────
     {
         files: ['**/*.d.ts'],

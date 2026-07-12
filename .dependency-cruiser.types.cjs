@@ -1,33 +1,68 @@
 /* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /*
- * Type-edge cruise: includes `import type` / type-only edges so rules that
- * depend on dependencyTypes: ['type-only'] actually fire.
+ * Type-edge cruise: applies architecture boundary rules to `import type` /
+ * type-only edges that the value-edge cruise cannot see.
  *
  * Run via `pnpm deps:validate` (third cruise) with its own known-violations baseline.
- * Cache folder is separate — config is not hashed into the cache key.
+ * The architecture checker runs this with --no-cache and exact baseline
+ * comparison so repaired debt cannot remain silently authorized.
  */
 
-const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
+const mainConfig = require('./.dependency-cruiser.cjs');
+
+const TYPE_ONLY_RULE_NAMES = new Set([
+    'cross-module-index-only',
+    'external-module-contracts-only',
+    'module-index-contract-only',
+    'contract-barrel-scope',
+    'no-models-repos-transformers-in-index',
+    'no-relative-cross-module-imports',
+    'no-internal-barrel-import',
+    'no-usecase-type-exports-on-index',
+    'presentation-no-direct-services-validators-transformers',
+    'presentation-stores-private-even-intra-module',
+    'presentation-context-private-even-intra-module',
+    'components-no-usecase-access',
+    'components-no-business-store-access',
+    'components-no-presentation-store-access',
+    'components-no-view-access',
+    'presentation-no-direct-repositories',
+    'presentation-no-direct-handlers',
+    'presentation-no-engine-runtime-imports',
+    'business-no-presentations',
+    'usecases-only-write-boundary-to-repositories',
+    'repositories-no-business',
+    'models-are-pure',
+    'events-are-pure',
+    'transformers-must-stay-pure',
+    'services-must-stay-pure',
+    'validators-must-stay-pure',
+    'worklets-no-module-runtime-imports',
+    'worklets-no-app-helper-or-tauri',
+    'react-only-in-presentation',
+    'react-dom-only-in-presentation',
+    'application-to-modules-public-surface-only',
+    'shared-no-module-imports',
+    'helpers-no-module-imports',
+    'utils-no-module-imports',
+    'infra-no-module-imports',
+]);
+
+const typeOnlyRules = mainConfig.forbidden
+    .filter((rule) => TYPE_ONLY_RULE_NAMES.has(rule.name))
+    .map((rule) => ({
+        ...rule,
+        name: rule.name === 'no-usecase-type-exports-on-index' ? rule.name : `${rule.name}-type-only`,
+        to: {
+            ...rule.to,
+            dependencyTypes: ['type-only'],
+        },
+    }));
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
-    forbidden: [
-        {
-            name: 'no-usecase-type-exports-on-index',
-            severity: 'error',
-            comment:
-                'Contract barrels must not re-export types from useCases/. Types from useCases/ stay private; ' +
-                'consumers use ReturnType/Parameters or local shapes; shared payloads go via events/.',
-            from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
-            },
-            to: {
-                path: '^$1/useCases/',
-                dependencyTypes: ['type-only'],
-            },
-        },
-    ],
+    forbidden: typeOnlyRules,
     options: {
         doNotFollow: {
             path: ['node_modules'],
@@ -46,11 +81,6 @@ module.exports = {
             aliasFields: ['browser'],
         },
         skipAnalysisNotInRules: true,
-        cache: {
-            folder: 'node_modules/.cache/dependency-cruiser-types',
-            strategy: 'metadata',
-            compress: true,
-        },
         tsConfig: { fileName: 'tsconfig.json' },
     },
 };
