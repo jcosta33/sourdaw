@@ -132,6 +132,37 @@ for (const violation of violations) {
         causalByKey.set(key, edge);
     }
 }
+
+// Also harvest **direct** forbidden→useCases deps from the module graph.
+// Reachability paths sometimes only surface one barrel hop (e.g. LaunchScreen
+// via TemplatePreviewThumb→Project) while the leaf still directly imports
+// several useCases barrels — those must be distinct causal roots.
+for (const mod of cruise.modules ?? []) {
+    const source = mod.source ?? mod;
+    if (typeof source !== 'string' || !isForbiddenLayer(source)) {
+        continue;
+    }
+    for (const dep of mod.dependencies ?? []) {
+        const resolved = dep.resolved ?? '';
+        if (!USECASES_RE.test(resolved)) {
+            continue;
+        }
+        const edge = {
+            type: 'reachability-causal',
+            from: source,
+            to: resolved,
+            rule: {
+                severity: 'error',
+                name: 'components-no-usecase-transitively',
+            },
+        };
+        const key = keyOf(edge);
+        if (!causalByKey.has(key)) {
+            causalByKey.set(key, edge);
+        }
+    }
+}
+
 const current = [...causalByKey.values()].sort((left, right) =>
     keyOf(left).localeCompare(keyOf(right))
 );

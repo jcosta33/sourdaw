@@ -9,7 +9,8 @@
 //
 // `pnpm deps:validate` pipeline:
 //   1) this main cruise + --ignore-known (error edges only; orphans stay warn)
-//   2) scripts/deps-check-reachability.mjs — full from→to reachability edges
+//   2) scripts/deps-check-reachability.mjs — causal component→useCases edges
+//      (last forbidden-layer file → first useCases hop; not full endpoint matrix)
 //   3) .dependency-cruiser.types.cjs — type-only edges (tsPreCompilationDeps)
 //   4) .dependency-cruiser.tests.cjs — test-inclusive barrel boundaries
 // ----------------------------------------------------------------------------
@@ -323,11 +324,11 @@ module.exports = {
             name: 'components-no-business-store-access',
             severity: 'error',
             comment:
-                'Presentational leaf components must not import any module business-layer stores/ ' +
-                '(same-module or foreign contract barrels). Views and hooks retain the public read ' +
-                'contract; pass state into leaf components as props.',
+                'Leaf components (module presentations/components and shared src/components) must not ' +
+                'import any module business-layer stores/ (same-module or foreign). Views and hooks ' +
+                'retain the public read contract; pass state into leaf components as props.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
                 // Any module's business stores (not presentations/stores)
