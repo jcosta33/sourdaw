@@ -10,7 +10,7 @@ See `package.json` for all scripts.
 - **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
 - **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
 - **Type check (tests):** `pnpm typecheck:test` — currently scoped to Yeast processors (`tsconfig.test.json`); do not claim “all specs typecheck” from `pnpm typecheck` alone.
-- **Module boundaries:** `pnpm deps:validate` (main cruise + reachability causal gate + type-edge cruise + test-inclusive cruise). New **error** edges fail; known debt is baselined.
+- **Module boundaries:** `pnpm deps:validate` (main + reachability + type-edge + test-inclusive cruises). New **error** edges fail; known debt is baselined.
 
 After cross-module moves or bulk import changes, re-run `pnpm deps:validate` before claiming done (at least every ~10 files during large refactors).
 
@@ -39,7 +39,7 @@ Hard gate via `pnpm deps:validate` (main **error** rules + reachability + types 
 - Cross-module imports target **only** contract-folder barrels: `useCases/`, `stores/`, `events/`, `presentations/views/` (each folder’s `index.ts`). No module-root `index.ts`. No deep imports into private folders (`models/`, `repositories/`, `handlers/`, `engine/`, …). (**error**)
 - Same module: relative imports only — not `#/modules/<Self>/…`. (**error**)
 - Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import use cases/handlers/presentations. Models and events stay pure. (**error**)
-- Leaf `presentations/components/` and shared `src/components/` must not **directly** import business stores or use cases. (**error**, direct edges; reachability gate tracks causal component→useCases roots separately)
+- Leaf `presentations/components/` and shared `src/components/` must not import business stores or use cases (direct + transitive reachability). (**error**)
 - Worklets stay isolated from app/helpers/Tauri. (**error**)
 - **Tauri IPC only from `repositories/`** — policy; depcruise **`warn`** (`tauri-ipc-only-in-repositories`), not an error gate.
 - Tests cruise: cross-module **barrel** + **no relative cross-module** only (not the full production layer suite).

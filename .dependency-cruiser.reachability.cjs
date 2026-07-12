@@ -1,15 +1,13 @@
 /* (c) Copyright Sourdaw Ltd., all rights reserved. */
 
 /*
- * Value-import cruise for component → useCases reachability.
+ * Value-import-only cruise for the reachability rule. Type-only edges are omitted
+ * because reachability rules cannot filter dependencyTypesNot — including them
+ * would produce false positives on type imports through hooks.
  *
- * `from` includes module leaf components and shared `src/components/**` so
- * debt roots like RotaryKnob are identified, not only their consumers.
- *
- * Do NOT use depcruise --ignore-known for this config: that softens by
- * (from + rule name) only. Causal-edge gating lives in
- * scripts/deps-check-reachability.mjs (first useCases hop attributed to the
- * last forbidden-layer file — not every barrel endpoint).
+ * Run alongside `.dependency-cruiser.cjs` via `pnpm deps:validate`.
+ * Cache does NOT hash this config — own folder so it never shares stale results
+ * with the main cruise.
  */
 
 const MODULE = 'src/modules/(?:Common/|Supporting/)?';
@@ -22,8 +20,8 @@ module.exports = {
             severity: 'error',
             comment:
                 'Leaf components (module presentations/components and src/components) must not ' +
-                'reach use cases — directly or via shared widgets/hooks. Promote to views/hooks ' +
-                'or pass callbacks as props. The validate script baselines causal imports only.',
+                'reach use cases — directly or via hooks. Promote to views/hooks or pass callbacks ' +
+                'as props.',
             from: {
                 path: `(^${MODULE}[^/]+/presentations/components/|^src/components/).+\\.(ts|tsx)$`,
             },

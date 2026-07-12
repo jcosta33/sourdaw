@@ -9,8 +9,7 @@
 //
 // `pnpm deps:validate` pipeline:
 //   1) this main cruise + --ignore-known (error edges only; orphans stay warn)
-//   2) scripts/deps-check-reachability.mjs — causal component→useCases edges
-//      (last forbidden-layer file → first useCases hop; not full endpoint matrix)
+//   2) .dependency-cruiser.reachability.cjs + --ignore-known (value-import reachability)
 //   3) .dependency-cruiser.types.cjs — type-only edges (tsPreCompilationDeps)
 //   4) .dependency-cruiser.tests.cjs — test-inclusive barrel boundaries
 // ----------------------------------------------------------------------------
