@@ -23,6 +23,7 @@ export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
+export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
 
 export { restoreSnapshot } from './restoreSnapshot';

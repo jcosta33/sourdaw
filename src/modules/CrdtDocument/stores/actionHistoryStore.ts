@@ -183,12 +183,8 @@ function is_exact_action_history_state(value: unknown): value is ActionHistorySt
     );
 }
 
-export function sanitize_action_history_state(value: unknown): ActionHistoryState {
+export function normalize_action_history_state(value: unknown): ActionHistoryState {
     const entries = get_entry_values(value);
-
-    if (is_exact_action_history_state(value) && entries !== null && entries.length <= MAX_HISTORY) {
-        return value;
-    }
 
     if (entries === null) {
         return defaultActionHistoryState;
@@ -201,6 +197,14 @@ export function sanitize_action_history_state(value: unknown): ActionHistoryStat
             .map(normalize_action_history_entry)
             .slice(-MAX_HISTORY),
     };
+}
+
+export function sanitize_action_history_state(value: unknown): ActionHistoryState {
+    const entries = get_entry_values(value);
+    if (is_exact_action_history_state(value) && entries !== null && entries.length <= MAX_HISTORY) {
+        return value;
+    }
+    return normalize_action_history_state(value);
 }
 
 export const actionHistoryStore = createStore<ActionHistoryState>({

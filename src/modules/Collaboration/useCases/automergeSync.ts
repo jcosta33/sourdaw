@@ -17,6 +17,7 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
+    sanitizeIncomingCrdtDocument,
     DOC_PREFIX_ROOT,
     DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
@@ -186,6 +187,14 @@ export class AutomergeSync {
             return;
         }
 
+        let sanitized_doc: Doc<unknown>;
+        try {
+            sanitized_doc = sanitizeIncomingCrdtDocument(newDoc);
+        } catch (error) {
+            logger.warn('[AutomergeSync] Remote document sanitation failed', peerId, docId, error);
+            return;
+        }
+
         peerStates.set(docId, newSyncState);
         this.syncStates.set(peerId, peerStates);
 
@@ -195,7 +204,7 @@ export class AutomergeSync {
         resetActionReplayAuthority();
         this.isApplyingRemoteSync = true;
         try {
-            replaceCrdtDoc({ id: docId, doc: newDoc });
+            replaceCrdtDoc({ id: docId, doc: sanitized_doc });
         } finally {
             this.isApplyingRemoteSync = false;
         }

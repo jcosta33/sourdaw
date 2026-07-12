@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
+import { replaceAllInIdb } from '../repositories/crdtPersistence/replaceAllInIdb';
 import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
 import { branchStore } from '../stores/branchStore';
 
@@ -29,8 +30,12 @@ export async function loadCrdtProject({ canActivate }: LoadCrdtProjectInput): Lo
     let sanitized_bundle;
     try {
         sanitized_bundle = sanitizePersistedActionHistoryBundle({ bundle });
+        if (!canActivate()) {
+            return 'stale';
+        }
+        await replaceAllInIdb(sanitized_bundle);
     } catch (error) {
-        logger.error(new Error('Persisted action-history sanitization failed', { cause: error }));
+        logger.error(new Error('Persisted action-history sanitation or durable replacement failed', { cause: error }));
         return 'sanitization-failed';
     }
 

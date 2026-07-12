@@ -86,6 +86,7 @@ describe('AutomergeSync replay authority integration', () => {
         setActionHistoryMetadataPort(no_action_history_metadata_port);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        removeCrdtDoc('branch_feat');
     });
 
     it('should revoke a local capability before applying an accepted peer sync', async () => {

@@ -7,10 +7,14 @@ import { loadCrdtProject } from '../loadCrdtProject';
 
 const mocks = vi.hoisted(() => ({
     loadAllFromIdb: vi.fn(),
+    replaceAllInIdb: vi.fn(),
 }));
 
 vi.mock('../../repositories/crdtPersistence/loadAllFromIdb', () => ({
     loadAllFromIdb: mocks.loadAllFromIdb,
+}));
+vi.mock('../../repositories/crdtPersistence/replaceAllInIdb', () => ({
+    replaceAllInIdb: mocks.replaceAllInIdb,
 }));
 
 vi.stubGlobal(
@@ -25,8 +29,14 @@ type PersistedRootDocument = {
     actionHistory?: {
         entries: Array<{
             id: string;
+            label: string;
+            actionKind: string;
+            source: 'manual';
+            timestamp: number;
+            reverted: boolean;
             action: { type: string };
             inverseAction: { type: string };
+            unknownField: string;
         }>;
     };
 };
@@ -39,8 +49,14 @@ function create_persisted_bundle(): Map<string, Uint8Array> {
             entries: [
                 {
                     id: 'legacy-entry',
+                    label: 'Legacy root action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 1,
+                    reverted: false,
                     action: { type: 'setTempo' },
                     inverseAction: { type: 'setTempo' },
+                    unknownField: 'drop me',
                 },
             ],
         };
@@ -60,8 +76,14 @@ function create_branched_persisted_bundle(): Map<string, Uint8Array> {
             entries: [
                 {
                     id: 'branch-legacy-entry',
+                    label: 'Legacy branch action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 2,
+                    reverted: false,
                     action: { type: 'setTempo' },
                     inverseAction: { type: 'setTempo' },
+                    unknownField: 'drop me',
                 },
             ],
         };
@@ -72,6 +94,8 @@ function create_branched_persisted_bundle(): Map<string, Uint8Array> {
 
 describe('loadCrdtProject persisted action-history sanitization', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.replaceAllInIdb.mockResolvedValue(undefined);
         automergeRepository.reset();
         automergeRepository.createProject('A');
         automergeRepository.changeDoc<PersistedRootDocument>('root', (document) => {
@@ -110,7 +134,24 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         const result = await loadCrdtProject({ canActivate: () => true });
 
         expect(result).toBe('loaded');
-        expect(observed_documents).toEqual([{ project: 'B', actionHistory: undefined }]);
+        expect(mocks.replaceAllInIdb).toHaveBeenCalledTimes(1);
+        expect(observed_documents).toEqual([
+            {
+                project: 'B',
+                actionHistory: {
+                    entries: [
+                        {
+                            id: 'legacy-entry',
+                            label: 'Legacy root action',
+                            actionKind: 'setTempo',
+                            source: 'manual',
+                            timestamp: 1,
+                            reverted: false,
+                        },
+                    ],
+                },
+            },
+        ]);
     });
 
     it('should leave the active repository and listeners untouched when sanitization fails', async () => {
@@ -121,6 +162,7 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         const result = await loadCrdtProject({ canActivate: () => true });
 
         expect(result).toBe('sanitization-failed');
+        expect(mocks.replaceAllInIdb).not.toHaveBeenCalled();
         expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('A');
         expect(listener).not.toHaveBeenCalled();
     });
@@ -161,9 +203,34 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
         const result = await loadCrdtProject({ canActivate: () => true });
 
         expect(result).toBe('loaded');
+        expect(mocks.replaceAllInIdb).toHaveBeenCalledTimes(1);
+        const root_metadata = {
+            entries: [
+                {
+                    id: 'legacy-entry',
+                    label: 'Legacy root action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 1,
+                    reverted: false,
+                },
+            ],
+        };
+        const branch_metadata = {
+            entries: [
+                {
+                    id: 'branch-legacy-entry',
+                    label: 'Legacy branch action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 2,
+                    reverted: false,
+                },
+            ],
+        };
         expect(observed_action_history).toEqual([
-            { root: undefined, branch: undefined },
-            { root: undefined, branch: undefined },
+            { root: root_metadata, branch: branch_metadata },
+            { root: branch_metadata, branch: branch_metadata },
         ]);
         expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('B branch');
     });

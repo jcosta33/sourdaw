@@ -1,6 +1,7 @@
 import { change, load, loadIncremental, save } from '@automerge/automerge';
 
 import { type DocumentBundle } from '../models/CrdtDocumentTypes';
+import { normalize_action_history_state } from '../stores/actionHistoryStore';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -37,8 +38,9 @@ export function sanitizePersistedActionHistoryBundle({
         }
 
         if (document.actionHistory !== undefined) {
+            const sanitized_history = normalize_action_history_state(document.actionHistory);
             document = change(document, (draft) => {
-                delete draft.actionHistory;
+                draft.actionHistory = sanitized_history;
             });
         }
 
