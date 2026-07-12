@@ -6,7 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - ../fermenter/research.md
-  - ../../intake/spec-of-the-gaps.md
+  - ../intake/spec-of-the-gaps.md
 ---
 
 # Fermenter GPU compute and visualization

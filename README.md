@@ -7,12 +7,15 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 
 ## Agent workflow
 
-Development work uses proportional intent, implementation, independent review,
-and findings records. Checked-in feature specs live under `specs/` as an
-explicit project exception; captured source material lives under `specs/intake/`.
-Transient task and review records belong outside this repository at the explicit
-full path supplied by the session owner. Load relevant global skills, follow
-`AGENTS.md`, and preserve empirical evidence for verification claims.
+Development work uses proportional intent, independent review, and findings
+records around implementation. Implementation is the work itself, not a
+separate record. Checked-in feature specs live under `specs/` as an explicit
+project exception; captured source material lives under `specs/intake/`.
+Transient task and review artifacts live outside this repository beside the
+agent's Codex-native plans, notes, or state. The agent chooses the location and
+carries its exact full path throughout the work. Load relevant global skills,
+follow `AGENTS.md`, and preserve empirical evidence for verification claims.
+No Suspec CLI or MCP service is required.
 
 ## Setup
 

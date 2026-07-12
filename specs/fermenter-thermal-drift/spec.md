@@ -6,7 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - ../fermenter/research.md
-  - ../../intake/full-spec.md
+  - ../intake/full-spec.md
 ---
 
 # Fermenter incommensurate thermal drift

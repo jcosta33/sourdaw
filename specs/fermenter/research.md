@@ -5,8 +5,8 @@ title: Fermenter outstanding synthesis features
 status: open
 owner: The Sourdaw team
 sources:
-  - ../../intake/spec-of-the-gaps.md
-  - ../../intake/implementation-gaps.md
+  - ../intake/spec-of-the-gaps.md
+  - ../intake/implementation-gaps.md
 ---
 
 # Research: Fermenter outstanding synthesis features

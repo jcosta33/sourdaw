@@ -6,14 +6,16 @@ This document provides the canonical instructions and architectural rules that Y
 
 ## Project methodology
 
-Use proportional intent, implementation, review, and findings records. Checked-in
-specs under `specs/<feature>/` are an explicit project exception: preserve their
-status and content unless the assigned work says otherwise. `specs/intake/` holds
+Use proportional intent, review, and findings records around implementation
+work. Implementation is the work itself, not a separate record. Checked-in specs
+under `specs/<feature>/` are an explicit project exception: preserve their status
+and content unless the assigned work says otherwise. `specs/intake/` holds
 captured source material that has not yet been normalized into a feature spec.
 
-Transient task and review records, when a workflow requires them, live outside
-this repository at the explicit full path supplied by the session owner. Do not
-create transient task, review, or scratch artifacts here unless the work
+Transient task and review artifacts, when a workflow requires them, live outside
+this repository beside the agent's Codex-native plans, notes, or state. The agent
+chooses the location, then carries its exact full path throughout the work. Do
+not create transient task, review, or scratch artifacts here unless the work
 explicitly assigns a checked-in path.
 
 Load global skills when their descriptions match the domain being changed. Review

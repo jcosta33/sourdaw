@@ -6,7 +6,7 @@ status: done
 owner: The Sourdaw team
 sources:
   - research.md
-  - ../../intake/full-spec.md
+  - ../intake/full-spec.md
 ---
 
 # Fermenter core instrument
