@@ -386,7 +386,9 @@ export default TrackCard;
 ### Import paths
 
 - Use absolute imports with the `#/` alias for cross-module paths.
-- Avoid deep relative imports like `../../../..`; prefer `#/modules/Domain/...` or `#/helpers/...`.
+- Cross-module module imports must target a **contract barrel** only:
+  `#/modules/<M>/useCases|stores|events|presentations/views` — never a deep file under that folder, and never a module-root `#/modules/<M>`.
+- Prefer `#/utils/...` or `#/infra/...` for shared non-module code (not emptied `#/helpers/...` unless a real helper lives there).
 
 ---
 

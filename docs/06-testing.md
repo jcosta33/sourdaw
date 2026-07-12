@@ -371,56 +371,11 @@ No mocks. No `beforeEach`. Input in, output out.
 
 Treat exactly like transformers — pure functions, no mocks, input/output assertions. One file per validator, one `describe` per exported function.
 
-### 6.7 Stores (the custom `Store<T>` class)
+### 6.7 Stores (`#/infra/store`)
 
-Subject: `src/helpers/Store/Store.ts`.
+Subject: `createStore` / `useStore` under `src/infra/store/`.
 
-Instantiate the real `Store<T>` with `MemoryStorage`. Test the observable contract: `value`, `set`, `subscribe`, `notify`.
-
-```typescript
-// src/helpers/Store/__tests__/Store.spec.ts
-import { describe, it, expect, vi } from 'vitest';
-import { Store } from '../Store';
-import { MemoryStorage } from '../Storage/MemoryStorage';
-import { loggerMock } from './logger.mock';
-
-describe('Store', () => {
-    it('should return initialData from value when storage is empty', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        expect(store.value).toEqual({ count: 0 });
-    });
-
-    it('should notify subscribers on set', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        const subscriber = vi.fn();
-        store.subscribe(subscriber);
-
-        store.set({ count: 1 });
-
-        expect(subscriber).toHaveBeenCalledWith({ count: 1 });
-    });
-
-    it('should return an unsubscribe function from subscribe', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        const subscriber = vi.fn();
-        const unsubscribe = store.subscribe(subscriber);
-
-        unsubscribe();
-        store.set({ count: 1 });
-
-        expect(subscriber).not.toHaveBeenCalled();
-    });
-});
-```
+Test the observable contract against the real factory: initial snapshot, `set`, subscribe/unsubscribe (and storage adapters if used). Prefer existing tests under `src/infra/store/` as the pattern source over inventing a parallel `Store` class path.
 
 ### 6.8 Event subscribers
 

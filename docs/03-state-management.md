@@ -10,7 +10,7 @@ Our state management philosophy is to keep domain state in plain, framework-agno
 
 ### The vanilla store
 
-Our custom `Store` class (located at `src/helpers/Store/Store.ts`) provides a simple but powerful foundation for creating observable state containers. It is framework-agnostic and can be used anywhere in the application.
+Our custom `Store` (factory at `#/infra/store/createStore`, React bind at `#/infra/store/useStore`) provides a simple but powerful foundation for creating observable state containers. It is framework-agnostic and can be used anywhere in the application.
 
 ---
 

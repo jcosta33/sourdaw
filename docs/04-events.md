@@ -53,7 +53,7 @@ export type TrackRemovedPayload = { trackId: string };
 
 // app/registerDependencies.ts
 import { createEventBus } from '#/infra/events/createEventBus';
-import { type TrackAddedPayload } from '#/modules/Arrangement/events/TrackAddedEvent';
+import { type TrackAddedPayload } from '#/modules/Arrangement/events';
 import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
 
 export type AppEvents = {
