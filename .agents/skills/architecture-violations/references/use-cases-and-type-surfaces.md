@@ -170,8 +170,9 @@ map type from `AppAction` so each entry is `ActionHandler<ThatAction>` and
 2. **Mapped registry type** — `type DomainHandlersMap = { [Action in DomainAppAction as Action['type']]: ActionHandler<Action> };`
 3. **Assembly** — `get<Module>Handlers` returns a plain object literal `{ actionKey: handle…, … }` with type `DomainHandlersMap`, importing each `handle…` **directly** from `handlers/…` (no intermediate "map barrel" file). `createHandler` builds each handler in `handlers/`. **`get<Module>Handlers`** does not call `createHandler` itself.
 
-Re-export the map type from the `get<Module>Handlers` file when other modules or
-tests need the same contract.
+Do **not** re-export handler-map types from `useCases/index.ts` (no use-case type
+exports on the barrel). Prefer `ReturnType<typeof getXHandlers>` or a local type in
+the consumer; same-module tests may import the type relatively from the `get*Handlers` file.
 
 ## 7. Summary test
 

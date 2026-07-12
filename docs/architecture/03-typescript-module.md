@@ -934,8 +934,10 @@ useCases
   -> events
 
 repositories
-  -> external APIs only
+  -> external APIs / metal (Tauri, FS, decode, …)
+  -> same-module models, transformers, services, stores (read/write of owned store state is common)
   -> shared helpers/types if truly generic
+  -> NOT useCases, handlers, presentations, or foreign modules' privates
 
 validators
   -> models
@@ -1357,7 +1359,7 @@ They are the public UI surface for the module.
 | Anti-pattern                                                | Why it is bad                             | Preferred fix                                   |
 | ----------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
 | class-based domain models owning logic and runtime concerns | mixes truth and behavior awkwardly        | use plain types + functions                     |
-| repository emits business events and mutates stores         | I/O layer becomes business layer          | move orchestration to use case                  |
+| repository emits domain events or multi-step orchestration  | I/O layer becomes business layer          | move orchestration to use case; thin store get/set for owned state may stay in-repo |
 | use case directly calls browser/Tauri APIs everywhere       | write boundary leaks I/O details          | isolate I/O in repositories                     |
 | presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                    |
 | presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared |

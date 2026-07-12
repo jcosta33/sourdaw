@@ -92,8 +92,9 @@ presentations/  →  useCases/  →  repositories/ | stores/ | services/
 - Business/IO **must not** import `presentations/` (`business-no-presentations`).
 - Only `useCases/` orchestrate `repositories/` (`usecases-only-write-boundary-to-repositories`).
 - Repositories must not climb into useCases/handlers/presentations
-  (`repositories-no-business`). Same-module store access from repositories is allowed
-  in this codebase when they project store state.
+  (`repositories-no-business`). Same-module `stores/` access is allowed (including
+  thin get/set of owned state — e.g. transport/workspace persistence helpers). Multi-step
+  orchestration and domain event emission still belong in use cases.
 
 **Why:** reversing the arrow couples domain logic to React lifecycle and makes RT paths
 unknowable.
@@ -104,9 +105,13 @@ Workspace, Command panels, and device UIs are **composition roots**. Views and h
 import foreign **barrels** (`useCases`, `stores`, `events`, `presentations/views`). They
 must not import foreign private folders.
 
-Leaf **components** must not import useCases (direct or transitive —
-`components-no-usecase-access`, reachability cruise) or views (`components-no-view-access`).
-Promote to a view or pass props/callbacks.
+Leaf **components** must not import:
+
+- useCases (direct: `components-no-usecase-access`; transitive: reachability cruise)
+- business `stores/` (`components-no-business-store-access`)
+- views (`components-no-view-access`)
+
+Promote to a view/hook or pass props/callbacks.
 
 **Why:** forbidding *all* foreign useCases would force a wrapper per action in a DAW
 shell; forbidding components from owning business calls keeps leaves dumb.
@@ -173,13 +178,13 @@ known listener.
 ✅ Segregate types per module. A use case is a business operation. Duplication of consumer
 types is accepted by design. If no legitimate route exists, stop and report the rule.
 
-### HIGH — Component owns business calls
+### HIGH — Component owns business calls or store reads
 
-❌ `presentations/components/Foo.tsx` imports useCases or reaches them via a shared knob
-that pulls the command bus.
+❌ `presentations/components/Foo.tsx` imports useCases or business stores, or reaches
+them via a shared knob that pulls the command bus.
 
-✅ View/hook owns the call; component receives values and callbacks
-(reachability: `components-no-usecase-transitively`).
+✅ View/hook owns the call/subscription; component receives values and callbacks
+(`components-no-usecase-*`, `components-no-business-store-access`).
 
 ### HIGH — Foreign store write
 
