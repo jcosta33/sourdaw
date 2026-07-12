@@ -122,5 +122,5 @@ Isolation: crash/hang isolation is runtime state, never project truth; a failed 
 ## References
 
 - [docs/architecture/04-plugin-hosting-security.md](../../../docs/architecture/04-plugin-hosting-security.md) — hosting security policy.
-- [.agents/decisions/0003-engine-owned-plugin-runtime-owner.md](../../decisions/0003-engine-owned-plugin-runtime-owner.md) — engine-owned plugin runtime.
-- [.agents/decisions/0004-plugin-hosting-security-policy.md](../../decisions/0004-plugin-hosting-security-policy.md) — security policy decision.
+- [docs/adrs/0003-engine-owned-plugin-runtime-owner.md](../../../docs/adrs/0003-engine-owned-plugin-runtime-owner.md) — engine-owned plugin runtime.
+- [docs/adrs/0004-plugin-hosting-security-policy.md](../../../docs/adrs/0004-plugin-hosting-security-policy.md) — security policy decision.

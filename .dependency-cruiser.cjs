@@ -367,7 +367,7 @@ module.exports = {
                 'Presentational components must not import views (own or foreign). Views compose components; ' +
                 'lift data to the parent view and pass it as props.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
                 path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/views/.+' + SOURCE_FILE_RE,

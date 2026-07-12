@@ -31,9 +31,24 @@ const FROM_EXTERNAL_TEST = [
     '^src/setupTests\\.ts$',
 ];
 
+const FROM_ANY_TEST = [...FROM_MODULE_TEST, ...FROM_EXTERNAL_TEST];
+
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
     forbidden: [
+        {
+            name: 'test-dependencies-must-resolve',
+            severity: 'error',
+            comment:
+                'Test imports and vi.mock() targets must resolve. An unresolved target cannot be checked against ' +
+                'module boundaries and may hide a retired barrel or misspelled private path.',
+            from: {
+                path: FROM_ANY_TEST,
+            },
+            to: {
+                couldNotResolve: true,
+            },
+        },
         {
             name: 'cross-module-index-only',
             severity: 'error',

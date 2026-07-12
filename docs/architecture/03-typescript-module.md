@@ -713,7 +713,7 @@ Classes resolve to their registered instance in the container. Injectables resol
 - **Memoized.** The first call to an injectable resolves its dependencies and calls the factory exactly once. The invoker is cached on the `Container` keyed by the injectable's token. Subsequent calls are a direct function invocation — no re-walk.
 - **Cache reset on `Container.clear()`.** Test setup (`injectDependencies`) relies on this: it clears the container before registering mocks, so the next invocation re-resolves against the fresh mocks.
 - **Circular dependencies throw with a chain.** `A → B → A` fails at first invocation with the full chain in the message. Break the cycle by introducing an event or restructuring.
-- **Async dependencies are forbidden.** If any value in the dependency map is a Promise, `inject()` throws at construction time. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
+- **Async dependencies are forbidden.** If any value in the dependency map is a Promise, the injectable throws during dependency resolution on its first invocation. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
 
 ### What to wrap with `inject()`
 

@@ -51,7 +51,7 @@ Use design tokens and project-standard primitives. Optimize for dark-UI legibili
 
 ### 6. No happy-path-only coding
 
-Plan for audio-thread failure, async projection failure, and network failure: error boundaries, fallback UIs, structured pending/error for async UI.
+Plan for audio-thread failure, async projection failure, network failure, and unavailable rendering backends: error boundaries, fallback UIs, structured pending/error for async UI. Platform-dependent renderer selection must preserve a working fallback, such as WebGPU to Canvas.
 
 **Why:** a DAW depends on an audio thread and async projections that genuinely fail.
 

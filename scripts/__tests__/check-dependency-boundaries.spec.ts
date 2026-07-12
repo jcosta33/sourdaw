@@ -7,6 +7,7 @@ import {
     compareRows,
     findMixedTypeValueExports,
     isModuleRootIndex,
+    isUseCaseBarrel,
 } from '../check-dependency-boundaries.mjs';
 
 const require = createRequire(import.meta.url);
@@ -94,7 +95,9 @@ describe('check-dependency-boundaries', () => {
     it('should recognize only module-root index files', () => {
         expect(isModuleRootIndex('src/modules/Foo/index.ts')).toBe(true);
         expect(isModuleRootIndex('src/modules/Common/Foo/index.ts')).toBe(true);
+        expect(isModuleRootIndex('src\\modules\\Foo\\index.ts')).toBe(true);
         expect(isModuleRootIndex('src/modules/Foo/useCases/index.ts')).toBe(false);
+        expect(isUseCaseBarrel('src\\modules\\Foo\\useCases\\index.ts')).toBe(true);
     });
 
     it('should capture namespaced modules as distinct modules', () => {
@@ -116,6 +119,11 @@ describe('check-dependency-boundaries', () => {
         expect(matches('src/components/daw/__tests__/RotaryKnob.spec.tsx')).toBe(true);
         expect(matches('src/setupTests.ts')).toBe(true);
         expect(testConfig.options.exoticRequireStrings).toContain('vi.mock');
+
+        const unresolvedRule = testConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'test-dependencies-must-resolve'
+        );
+        expect(unresolvedRule.to.couldNotResolve).toBe(true);
     });
 
     it('should isolate worklets from foreign modules and resolved Tauri packages', () => {
@@ -128,6 +136,20 @@ describe('check-dependency-boundaries', () => {
 
         expect(new RegExp(moduleRule.to.path).test('src/modules/Bar/useCases/run.ts')).toBe(true);
         expect(new RegExp(tauriRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+    });
+
+    it('should keep changed zero-debt rules behaviorally exercised', () => {
+        const viewRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'components-no-view-access'
+        );
+        const reactRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'react-only-in-presentation'
+        );
+
+        expect(new RegExp(viewRule.from.path).test('src/components/SharedControl.tsx')).toBe(true);
+        expect(new RegExp(viewRule.from.path).test('src/modules/Foo/presentations/components/Leaf.tsx')).toBe(true);
+        expect(new RegExp(reactRule.to.path).test('/node_modules/react/index.js')).toBe(true);
+        expect(new RegExp(reactRule.to.path).test('/node_modules/react/jsx-runtime.js')).toBe(false);
     });
 
     it('should apply architecture boundaries to type-only edges', () => {

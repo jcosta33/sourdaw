@@ -7,19 +7,19 @@ description: >-
   dynamic for static reading, or click through a stateful flow to debug it — even
   if the prompt only says "look at the UI" or "check the screen". Do not add files
   under `tests/e2e/`, invoke the `playwright test` runner, or hand-roll a one-off
-  browser launch for inspection. Skip authoring CI assertions with
+  browser launch for inspection. Skip authoring maintained E2E assertions with
   `@playwright/test`, unit/component tests, and non-UI work.
 ---
 
 ## Purpose
 
-Agents need to look at and poke the running app without polluting the CI test suite. Dropping ad-hoc inspection into `tests/e2e/`, using the `playwright test` runner, or hand-rolling browser launches leaves orphaned processes and output no other agent can parse. This bridge keeps ephemeral UI investigation in its own lane with a shared setup and a machine-readable result contract.
+Agents need to look at and poke the running app without polluting the maintained E2E suite. Dropping ad-hoc inspection into `tests/e2e/`, using the `playwright test` runner, or hand-rolling browser launches leaves orphaned processes and output no other agent can parse. This bridge keeps ephemeral UI investigation in its own lane with a shared setup and a machine-readable result contract.
 
 ## Core rules
 
 ### 1. Agent scripts live in `.agents/ui-scripts/`
 
-Never place ad-hoc agent scripts in `tests/e2e/`, which is reserved for `@playwright/test` CI assertions.
+Never place ad-hoc agent scripts in `tests/e2e/`, which is reserved for maintained `@playwright/test` assertions.
 
 **Why:** throwaway probes and version-controlled gates have opposite lifecycles; mixing them makes the suite flaky and probes unfindable.
 
@@ -69,7 +69,7 @@ try {
         success: false,
         error: error instanceof Error ? error.message : String(error),
     }, null, 2));
-    process.exit(1);
+    process.exitCode = 1;
 } finally {
     await browser.close();
 }
@@ -79,7 +79,7 @@ try {
 
 ## What does not belong
 
-- CI assertions for the version-controlled suite (`tests/e2e/` + `@playwright/test`).
+- Maintained assertions for the version-controlled suite (`tests/e2e/` + `@playwright/test`).
 - Treating `.agents/ui-scripts/` probes as a maintained test API.
 - Production fixes driven only by a probe without a proper task gate.
 - Arbitrary stdout debug logging that breaks the JSON contract.
@@ -94,10 +94,10 @@ try {
 
 ### CRITICAL — Using the Playwright test runner for a probe
 
-❌ Wrong: `npx playwright test my-probe.spec.ts` (probe) or bare `npx playwright` for CI suite
+❌ Wrong: `npx playwright test my-probe.spec.ts` (probe) or bare `npx playwright` for the maintained E2E suite
 
 ✅ Correct (probe): `node --experimental-strip-types .agents/ui-scripts/my-probe.ts`
-✅ Correct (CI E2E suite, when used): `pnpm test:e2e`
+✅ Correct (maintained E2E suite, when used): `pnpm test:e2e`
 
 ### HIGH — Hand-rolled browser launch
 
@@ -126,4 +126,4 @@ try {
 ## References
 
 - `.agents/ui-scripts/utils.ts` — `setupAgentBrowser` shared launcher.
-- [docs/06-testing.md](../../../docs/06-testing.md) — Vitest/unit testing (not this bridge); CI E2E stays under `tests/e2e/`.
+- [docs/06-testing.md](../../../docs/06-testing.md) — Vitest/unit testing (not this bridge); maintained E2E stays under `tests/e2e/`.

@@ -177,8 +177,16 @@ export function findMixedTypeValueExports(sourceText, fileName = 'index.ts') {
     return findings;
 }
 
+function toPosixPath(filePath) {
+    return filePath.replaceAll('\\', '/');
+}
+
 export function isModuleRootIndex(filePath) {
-    return /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/index\.ts$/.test(filePath);
+    return /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/index\.ts$/.test(toPosixPath(filePath));
+}
+
+export function isUseCaseBarrel(filePath) {
+    return /\/useCases\/index\.ts$/.test(toPosixPath(filePath));
 }
 
 function walkFiles(directory) {
@@ -195,15 +203,18 @@ function walkFiles(directory) {
 }
 
 function staticGuardFindings() {
-    const files = walkFiles(resolve(root, 'src/modules'));
+    const files = walkFiles(resolve(root, 'src/modules')).map((absolutePath) => ({
+        absolutePath,
+        repoPath: toPosixPath(relative(root, absolutePath)),
+    }));
     const rootIndexes = files
-        .map((filePath) => relative(root, filePath))
+        .map(({ repoPath }) => repoPath)
         .filter(isModuleRootIndex)
         .map((file) => ({ file, line: 1, reason: 'module-root index.ts is retired' }));
     const mixedExports = files
-        .filter((filePath) => /\/useCases\/index\.ts$/.test(filePath))
-        .flatMap((filePath) =>
-            findMixedTypeValueExports(readFileSync(filePath, 'utf8'), relative(root, filePath)).map((finding) => ({
+        .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
+        .flatMap(({ absolutePath, repoPath }) =>
+            findMixedTypeValueExports(readFileSync(absolutePath, 'utf8'), repoPath).map((finding) => ({
                 ...finding,
                 reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
             }))

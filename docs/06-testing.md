@@ -173,18 +173,18 @@ Use the canonical shape from §5 (and the real `useCases/__tests__/addTrack.spec
 
 ### 6.2 Repositories — Tauri IPC
 
-Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence.ts` — wraps Tauri `invoke`.
+Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence/nativeCreateProject.ts` — wraps the module's `invokeCommand` adapter.
 
-Mock `@tauri-apps/api/core` at the module boundary.
+Mock `invokeCommand` at the repository-folder boundary. Its own repository test covers the Tauri `invoke` call.
 
 ```typescript
-// src/modules/CrdtDocument/repositories/__tests__/nativeCrdtPersistence.spec.ts
+// src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/nativeCrdtPersistence.spec.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { invoke } from '@tauri-apps/api/core';
-import { nativeCreateProject } from '../nativeCrdtPersistence';
+import { invokeCommand } from '../invokeCommand';
+import { nativeCreateProject } from '../nativeCreateProject';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('../invokeCommand', () => ({
+    invokeCommand: vi.fn(),
 }));
 
 describe('nativeCreateProject', () => {
@@ -193,11 +193,11 @@ describe('nativeCreateProject', () => {
     });
 
     it('should invoke collab_create_project with the given name and sample rate', async () => {
-        vi.mocked(invoke).mockResolvedValue(true);
+        vi.mocked(invokeCommand).mockResolvedValue(true);
 
         const result = await nativeCreateProject('My Project', 48000);
 
-        expect(vi.mocked(invoke)).toHaveBeenCalledWith('collab_create_project', {
+        expect(invokeCommand).toHaveBeenCalledWith('collab_create_project', {
             name: 'My Project',
             sampleRate: 48000,
         });
@@ -205,7 +205,7 @@ describe('nativeCreateProject', () => {
     });
 
     it('should return false when the native layer returns null', async () => {
-        vi.mocked(invoke).mockResolvedValue(null);
+        vi.mocked(invokeCommand).mockResolvedValue(null);
 
         const result = await nativeCreateProject('My Project', 48000);
 
@@ -316,7 +316,7 @@ Test the observable contract against the real factory: initial snapshot, `set`, 
 
 ### 6.8 Event subscribers
 
-Files that wire a domain handler via `eventBus.on(...)`. For integration-style subscriber tests, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire the subscriber, then emit events and assert on side effects.
+Files that wire a domain handler via `eventBus.on(...)`. For a focused subscriber test, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire one subscriber, then emit events and assert on its side effects. Do not cross product-module boundaries.
 
 ```typescript
 // src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts
@@ -500,7 +500,7 @@ injectDependencies(subjectUnderTest, { eventBus /* other deps */ });
 
 The spy gives you typed `eventBus.emit` and `eventBus.on` as `Mock`s directly. Retrieve registered handlers via `eventBus.on.mock.calls[n][1]` and invoke them to test subscriber behaviour (see §6.8).
 
-Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a real bus in integration-style tests, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
+Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a focused EventBus contract or subscriber test, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
 
 Subjects that need collaborators must be wrapped with `inject()` so tests can supply mocks via `injectDependencies()` (§5).
 
@@ -643,7 +643,7 @@ mod tests {
 
 ### Tauri backend tests
 
-Commands in `src-tauri/src/commands/` are not currently tested. When we add tests, they will live in-crate as `#[cfg(test)]` modules and exercise the command functions directly — not the IPC layer.
+Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in files including `filesystem.rs`, `native_llm.rs`, `plugin_gui.rs`, and `plugins.rs`. Add command tests beside the Rust module they exercise; test command behavior directly rather than routing through Tauri IPC.
 
 ---
 
@@ -665,7 +665,7 @@ Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global
 
 Do not:
 
-- **Write integration tests yet.** If a test can only be written by wiring up two modules' real code, delete it and write the unit tests for each module separately.
+- **Build cross-module integration flows in Vitest.** Keep real collaborator use focused within one owner, such as one subscriber with an in-memory EventBus; use Playwright only when a user flow genuinely needs end-to-end coverage.
 - **Test real Web Audio rendering.** AudioContext-in-jsdom does not exist. Use the mock from §7.4.
 - **Mock event payloads or `AppError` values.** They are cheap plain objects. Construct them for real.
 - **Write React Query tests.** This codebase does not use TanStack Query for core state — state flows through `Store<T>`.

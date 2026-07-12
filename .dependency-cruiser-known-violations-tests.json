@@ -245,6 +245,15 @@
   {
     "type": "dependency",
     "from": "src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx",
+    "to": "../TimelineContextMenus",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx",
     "to": "src/modules/Automation/stores/automationStore.ts",
     "rule": {
       "severity": "error",
@@ -325,6 +334,24 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx",
+    "to": "../../../useCases/freezeBounce/freezeTrack/freezeTrack",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx",
+    "to": "../../../useCases/freezeBounce/freezeTrack/unfreezeTrack",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx",
     "to": "src/modules/Workspace/stores/preferencesStore.ts",
     "rule": {
@@ -388,6 +415,24 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts",
+    "to": "../repositories/track/getTrackById",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts",
+    "to": "../repositories/track/updateTrack",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts",
     "to": "src/modules/Automation/stores/automationStore.ts",
     "rule": {
@@ -402,6 +447,33 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/adjustmentLayer/__tests__/createAdjustmentLayer.spec.ts",
+    "to": "../../stores/adjustmentLayer",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerMix.spec.ts",
+    "to": "../../stores/adjustmentLayer",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts",
+    "to": "../../../models/Device",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -460,11 +532,47 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
+    "to": "../../../stores/timelineViewStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
+    "to": "../../buildTimelineRenderModel",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
+    "to": "../getTrackAtY",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/toggleTrackState/__tests__/selectTrack.spec.ts",
     "to": "src/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack.ts",
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/referenceMixComparison/__tests__/analyzeMix.spec.ts",
+    "to": "#/modules/Arrangement",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -483,6 +591,78 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/__tests__/decodeAudioBytesWasm.spec.ts",
+    "to": "/wasm/daw-wasm-decoder/daw_wasm_decoder.js",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts",
+    "to": "../repositories/offlineScheduler/automationScheduling",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts",
+    "to": "../stores/audioBufferCache",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts",
+    "to": "./buildDeviceChain",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts",
+    "to": "../repositories/offlineScheduler/automationScheduling",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts",
+    "to": "../stores/audioBufferCache",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts",
+    "to": "./buildDeviceChain",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/helpers.spec.ts",
+    "to": "../../engineAccess/getAudioContext",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -600,6 +780,15 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Plugin/presentations/views/__tests__/ProofChamberPanel.spec.tsx",
+    "to": "../../stores/chamberStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -1117,6 +1306,123 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Transport/useCases/punchRecording/__tests__/definePunchRegion.spec.ts",
+    "to": "../../repositories/punchRecordingIdCounter/getNextPunchId",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/punchRecording/__tests__/startBackgroundCapture.spec.ts",
+    "to": "../../repositories/punchRecordingIdCounter/getNextCaptureId",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/resetMetronomeBeat.spec.ts",
+    "to": "../../models/TempoMap",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/resetMetronomeBeat.spec.ts",
+    "to": "../../models/TimeSignatureMap",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/resetMetronomeBeat.spec.ts",
+    "to": "../../stores/tempoMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/resetMetronomeBeat.spec.ts",
+    "to": "../../stores/timeSignatureMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts",
+    "to": "../../models/TempoMap",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts",
+    "to": "../../stores/tempoMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts",
+    "to": "../../models/TempoMap",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts",
+    "to": "../../models/TimeSignatureMap",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts",
+    "to": "../../stores/tempoMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts",
+    "to": "../../stores/timeSignatureMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts",
+    "to": "../../stores/tempoMapStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts",
     "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
     "rule": {
@@ -1226,6 +1532,15 @@
   {
     "type": "dependency",
     "from": "src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts",
+    "to": "#/modules/Arrangement",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts",
     "to": "src/modules/Automation/useCases/automation/removeAutomationPoint.ts",
     "rule": {
       "severity": "error",
@@ -1248,6 +1563,15 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
+    "to": "#/modules/Arrangement",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -1284,6 +1608,33 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/__tests__/AppShell.spec.tsx",
+    "to": "../../hooks/useTimelineCoordinates",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/__tests__/AppShell.spec.tsx",
+    "to": "#/modules/Command/presentations/hooks/useCommandLifecycle",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/__tests__/AppShell.spec.tsx",
+    "to": "#/modules/Command/presentations/hooks/useCommandShortcuts",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -1662,6 +2013,15 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/AutomationView/__tests__/TrackAutomationSection.spec.tsx",
+    "to": "#/modules/Automation/useCases/automationStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -2252,6 +2612,15 @@
   {
     "type": "dependency",
     "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx",
+    "to": "#/modules/Automation/useCases/automationStore",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx",
     "to": "src/modules/Arrangement/useCases/getBuiltinPlugins.ts",
     "rule": {
       "severity": "error",
@@ -2382,6 +2751,24 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx",
+    "to": "#/modules/Arrangement/useCases/freezeBounce/freezeTrack/freezeTrack",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx",
+    "to": "#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
@@ -2584,6 +2971,15 @@
   },
   {
     "type": "dependency",
+    "from": "src/modules/Workspace/presentations/views/Inspector/layouts/__tests__/ChorusLayout.spec.tsx",
+    "to": "../../../components/ModulationLFO",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/modules/Workspace/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx",
     "to": "src/modules/Arrangement/__tests__/TrackDummy.ts",
     "rule": {
@@ -2652,6 +3048,555 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/clearClipSelection.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/clearClipSelection.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeBranchManager.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeBranchManager.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeCommandPalette.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeCommandPalette.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeScratchPad.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeScratchPad.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeUndoHistory.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/closeUndoHistory.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/cycleChannelStripWidth.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/cycleChannelStripWidth.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openInspector.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openInspector.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openMixer.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openMixer.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openVirtualKeyboard.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/openVirtualKeyboard.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/selectClip.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/selectClip.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/selectClipWithFocus.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/selectClipWithFocus.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setSnapValue.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setSnapValue.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setSoloMode.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setSoloMode.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setTrackListWidth.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setTrackListWidth.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setVirtualKeyboardOctave.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setVirtualKeyboardOctave.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setVirtualKeyboardVelocity.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/setVirtualKeyboardVelocity.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleAutomationPanel.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleAutomationPanel.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleBranchManager.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleBranchManager.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleChatPanel.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleChatPanel.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleClipInSelection.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleClipInSelection.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleCollaborationPanel.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleCollaborationPanel.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleCommandPalette.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleCommandPalette.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleInspector.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleInspector.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleMixer.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleMixer.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleTrackList.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleTrackList.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleUndoHistory.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleUndoHistory.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleVirtualKeyboard.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleVirtualKeyboard.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleWorkspaceMode.spec.ts",
+    "to": "../../../repositories/getWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleWorkspaceMode.spec.ts",
+    "to": "../../../repositories/updateWorkspaceState",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/useCases/processors/__tests__/ChordMemory.spec.ts",
+    "to": "../../models/MidiEvent",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/useCases/processors/__tests__/GrooveModule.spec.ts",
+    "to": "../../models/MidiEvent",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/useCases/processors/__tests__/Harmonizer.spec.ts",
+    "to": "../../models/MidiEvent",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/useCases/processors/__tests__/NoteRepeater.spec.ts",
+    "to": "../../models/MidiEvent",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Yeast/useCases/processors/__tests__/VelocityProcessor.spec.ts",
+    "to": "../../models/MidiEvent",
+    "rule": {
+      "severity": "error",
+      "name": "test-dependencies-must-resolve"
     }
   },
   {
