@@ -27,7 +27,7 @@ Never place ad-hoc agent scripts in `tests/e2e/`, which is reserved for `@playwr
 
 Write standard Node scripts using the `playwright` core library and execute them with `node --experimental-strip-types .agents/ui-scripts/<script-name>.ts`. Do not use the Playwright test runner for probes.
 
-**Why:** the test runner adds assertion/reporter machinery you do not want for a one-off probe; plain `tsx` keeps stdout clean for the JSON contract.
+**Why:** the test runner adds assertion/reporter machinery you do not want for a one-off probe; a plain Node script keeps stdout clean for the JSON contract.
 
 ### 3. Use `setupAgentBrowser`
 
