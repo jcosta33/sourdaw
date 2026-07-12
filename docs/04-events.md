@@ -87,20 +87,23 @@ Publish events from business operations, typically at the end of a use case afte
 #### Publishing from use cases
 
 ```typescript
-// Arrangement/useCases/addTrack.ts
+// Arrangement/useCases/addTrack.ts — inject the module event bus token
+import { inject } from '#/infra/di/inject';
+import { ArrangementEventBus } from './arrangementEventBus';
 
-import { eventBus } from '#/app/bootstrap';
-
-export function addTrack(input: AddTrackInput): Track | null {
-    const state = getTrackState();
-    if (!state) return null;
-
-    const track = createTrack(input);
-    setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
-
-    eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-    return track;
-}
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
+        function addTrack(input: AddTrackInput): Track | null {
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
+            const track = createTrack(input);
+            setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            return track;
+        }
+);
 ```
 
 > [!IMPORTANT]
