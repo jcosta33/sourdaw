@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-vi.mock('#/infra/di/inject', () => ({ inject: () => (fn: () => any) => fn({}) }));
-describe('export function swipeGroupComp(grpId: string, takeSetIdVal: string, startBeat: number, endBeat: number): void {', () => {
-    it('is callable', () => {
-        try { import('src/modules/Arrangement/useCases/groupComping/compGroupOperations/swipeGroupComp.ts'.replace('src/','')); } catch {}
-        expect(true).toBe(true);
+vi.mock('#/infra/di/inject', () => ({
+    inject: (deps: Record<string, unknown>) => (factory: (d: Record<string, unknown>) => unknown) =>
+        factory(Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))),
+}));
+vi.mock('#/helpers/createHandler', () => ({ createHandler: (config: unknown) => config }));
+import { swipeGroupComp } from '../swipeGroupComp';
+describe('swipeGroupComp', () => {
+    it('is defined', () => {
+        expect(swipeGroupComp).toBeDefined();
     });
 });

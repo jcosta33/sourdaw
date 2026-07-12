@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-vi.mock('#/infra/di/inject', () => ({ inject: () => (fn: () => any) => fn({}) }));
-describe('export function hitTestTrack(canvasY: number): string | null {', () => {
-    it('is callable', () => {
-        try { import('src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestTrack.ts'.replace('src/','')); } catch {}
-        expect(true).toBe(true);
+vi.mock('#/infra/di/inject', () => ({
+    inject: (deps: Record<string, unknown>) => (factory: (d: Record<string, unknown>) => unknown) =>
+        factory(Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))),
+}));
+vi.mock('#/helpers/createHandler', () => ({ createHandler: (config: unknown) => config }));
+import { hitTestTrack } from '../hitTestTrack';
+describe('hitTestTrack', () => {
+    it('is defined', () => {
+        expect(hitTestTrack).toBeDefined();
     });
 });
