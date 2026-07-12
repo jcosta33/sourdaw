@@ -118,56 +118,44 @@ Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick
 ### Canonical test shape for an injectable
 
 ```typescript
-// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
-import { describe, it, expect } from 'vitest';
-import { spy } from '#/infra/di/testing/spy';
+// Real pattern for Arrangement/useCases/addTrack.ts:
+// inject only ArrangementEventBus; thin repos are static imports (often vi.mock'd).
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/infra/logger/createLogger';
-import { TrackRepo } from '../../repositories/TrackRepo';
 import { addTrack } from '../addTrack';
 
-describe('addTrack', () => {
-    it('should append the track to the repo and emit track.added', () => {
-        const trackRepo = spy<TrackRepo>({
-            getState: () => ({ tracks: [], selectedTrackId: null }),
-        });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
+vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: vi.fn() }));
+vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: vi.fn() }));
 
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
+describe('addTrack', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should append the track and emit track.added', async () => {
+        const { getTrackState } = await import('../../repositories/track/getTrackState');
+        const { setTrackState } = await import('../../repositories/track/setTrackState');
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null });
+
+        const eventBus = { emit: vi.fn().mockResolvedValue(undefined) };
+        injectDependencies(addTrack, { eventBus });
 
         const result = addTrack({ name: 'Drums', kind: 'audio' });
 
         expect(result).not.toBeNull();
-        expect(trackRepo.setState).toHaveBeenCalledWith(
-            expect.objectContaining({
-                tracks: [result],
-                selectedTrackId: result!.id,
-            })
+        expect(setTrackState).toHaveBeenCalled();
+        expect(eventBus.emit).toHaveBeenCalledWith(
+            'track.added',
+            expect.objectContaining({ name: 'Drums' })
         );
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
-    });
-
-    it('should return null when the repo state is uninitialized', () => {
-        const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        expect(addTrack({ name: 'Drums', kind: 'audio' })).toBeNull();
-        expect(trackRepo.setState).not.toHaveBeenCalled();
-        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 });
 ```
 
 Notes on this shape:
 
-- `injectDependencies` calls `Container.clear()` before registering mocks and throws if any dependency is missing a mock — tests cannot accidentally leak state or forget a dep.
-- `spy<T>()` returns a typed object where every accessed method is a `vi.fn()` typed to the original signature. `trackRepo.setState.toHaveBeenCalledWith(...)` works with no cast.
-- Inline overrides (`{ getState: () => (...) }`) are wrapped in `vi.fn(impl)` automatically — they still record calls, they just have a default implementation.
-- Every test builds fresh spies. No `beforeEach` is needed for container or spy cleanup.
+- `injectDependencies` mocks **only** the inject map keys (here `eventBus`). Static repo imports are mocked with `vi.mock` when needed.
+- Prefer the real `addTrack.spec.ts` under Arrangement as the source of truth when examples drift.
 
 ---
 
@@ -181,58 +169,7 @@ Subject: `src/modules/Arrangement/useCases/addTrack.ts` — wrapped with `inject
 
 Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mock()`, no casts.
 
-```typescript
-// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
-import { describe, it, expect } from 'vitest';
-import { spy } from '#/infra/di/testing/spy';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/infra/logger/createLogger';
-import { TrackRepo } from '../../repositories/TrackRepo';
-import { addTrack } from '../addTrack';
-import { TrackDummy } from '../../__tests__/TrackDummy';
-
-describe('addTrack', () => {
-    it('should append the track to the repo and emit track.added', () => {
-        const existing = TrackDummy.create({ id: 'track-1' });
-        const trackRepo = spy<TrackRepo>({
-            getState: () => ({ tracks: [existing], selectedTrackId: 'track-1' }),
-        });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        const result = addTrack({ name: 'Lead Vocals', kind: 'audio' });
-
-        expect(result).not.toBeNull();
-        expect(trackRepo.setState).toHaveBeenCalledWith({
-            tracks: [existing, result],
-            selectedTrackId: result!.id,
-        });
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Lead Vocals' }));
-    });
-
-    it('should return null and not emit when the repo is uninitialized', () => {
-        const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        const result = addTrack({ name: 'Lead Vocals', kind: 'audio' });
-
-        expect(result).toBeNull();
-        expect(trackRepo.setState).not.toHaveBeenCalled();
-        expect(eventBus.emit).not.toHaveBeenCalled();
-    });
-});
-```
-
-Notes:
-
-- Event payloads are plain objects — assert on the string key and payload shape directly.
-- `injectDependencies` clears DI state and validates the mock map — no `beforeEach` container cleanup is needed for injectables.
-- If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.11`.
+Use the canonical shape from §5 (and the real `useCases/__tests__/addTrack.spec.ts` in Arrangement). Do not invent `TrackRepo` / `Logger` inject deps that the subject does not declare.
 
 ### 6.2 Repositories — Tauri IPC
 

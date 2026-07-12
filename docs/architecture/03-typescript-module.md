@@ -663,35 +663,36 @@ Do not wire application collaborators by **bare static imports** of repos or oth
 ### Shape
 
 ```typescript
+// Real shape (Arrangement/useCases/addTrack.ts): inject collaborators that vary in tests;
+// pure repos may stay static imports when they are thin store accessors.
 import { inject } from '#/infra/di/inject';
-import { Logger } from '#/infra/logger/createLogger';
-import { TrackRepo } from '../repositories/TrackRepo';
-import { createTrack } from '../models/Track';
-import { eventBus } from '#/app/bootstrap';
+import { createTrack as createTrackModel } from '../models/Track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
+import { ArrangementEventBus } from './arrangementEventBus';
 
-type AddTrackInput = { name: string; kind: TrackKind };
+type AddTrackInput = { name: string; kind: TrackKind; select?: boolean };
 
-export const addTrack = inject({ logger: Logger, trackRepo: TrackRepo })(
-    ({ logger, trackRepo }) =>
-        (input: AddTrackInput): Track | null => {
-            const state = trackRepo.getState();
-            if (state === null) {
-                logger.log('addTrack called before store was ready');
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
+        function addTrack(input: AddTrackInput): Track | null {
+            const state = getTrackState();
+            if (!state) {
                 return null;
             }
-            const track = createTrack(input);
-            trackRepo.setState({
+            const track = createTrackModel(input);
+            setTrackState({
                 ...state,
                 tracks: [...state.tracks, track],
-                selectedTrackId: track.id,
+                selectedTrackId: input.select === false ? state.selectedTrackId : track.id,
             });
-            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
             return track;
         }
 );
 ```
 
-At call time, `addTrack(input)` resolves each dependency from the `Container` and invokes the factory with the resolved map. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
+At call time, `addTrack(input)` resolves each dependency in the map and invokes the factory. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
 
 **The factory must return a function** (the invoker). The curried API is `inject(deps)(factory)` — the first call takes the dependency map, the second takes the factory. Objects/services flow into the injectable via the dependency map, not as the factory's return.
 
@@ -732,11 +733,11 @@ If a function has no outbound side-effect dependencies, it does not need `inject
 
 ### Bootstrap discipline
 
-Container registrations live in `src/app/bootstrap.ts`. The rules:
+App singletons are wired from **`src/app/registerDependencies.ts`** (imported early from **`src/app/bootstrap.ts`**). Module event buses often register themselves (e.g. `ArrangementEventBus` + `Container.set`). The rules:
 
-- **All class-token registrations happen in `bootstrap.ts` before any use case runs.** Use `register(Token, instance)` for this — it throws on duplicate registration, catching accidental double-wires.
+- **Register app-level tokens before use cases run** (logger, root event bus, etc.) via the real `register` / `Container.set` paths used in this repo.
 - **Injectables self-register.** Don't hand-register an injectable's token in bootstrap; the resolver does it lazily on first call.
-- **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead. Module-top-level `get()` calls race with bootstrap and trip the strict-mode guard in dev/test.
+- **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead.
 
 ### Strict mode
 
