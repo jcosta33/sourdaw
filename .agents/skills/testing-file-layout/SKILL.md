@@ -42,7 +42,7 @@ From `useCases/__tests__/addTrack.spec.ts`:
 import { addTrack } from '../addTrack';
 ```
 
-Cross-module imports still go through contract barrels — not private `models/` or deep use-case paths (`cross-module-index-only` on the tests cruise).
+Cross-module imports still go through contract barrels — not private `models/` or deep use-case paths. The test cruise covers module tests, tests outside `src/modules`, and `src/setupTests.ts`.
 
 **Why:** sibling-relative imports keep the subject local; foreign deep imports are the same architecture violation production code has.
 
@@ -116,4 +116,4 @@ Never claim green without a run. Prefer the specific file over the full suite.
 ## References
 
 - [docs/06-testing.md](../../../docs/06-testing.md) — Vitest layout, mocks, DI in tests.
-- `.dependency-cruiser.tests.cjs` — test-inclusive barrel rules (`pnpm deps:validate` step 4).
+- `.dependency-cruiser.tests.cjs` — test-inclusive barrel rules, ratcheted by `scripts/check-dependency-boundaries.mjs`.

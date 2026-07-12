@@ -19,9 +19,10 @@ DAW state.
 The primitives below assume a **TypeScript 6.0** and **Rust 1.85+** toolchain as the
 floor. If the project pins an older toolchain, treat the affected primitive as out of
 scope rather than introducing a build break. Resolve and run the toolchain checks
-(`pnpm typecheck`, `pnpm lint`, `pnpm deps:validate`, `pnpm build`, `pnpm test:run`)
-before relying on any swap — a stabilized primitive on paper is still a build break if
-the project's version is below the floor.
+(`pnpm typecheck`, `pnpm deps:validate`, `pnpm build`, file-scoped
+`pnpm exec eslint <files>`, and `pnpm test:run <path>`) before relying on any swap —
+a stabilized primitive on paper is still a build break if the project's version is
+below the floor.
 
 These are performance and ergonomics swaps, not behavior changes. A SIMD or
 `const`-block rewrite can compile and still change numeric output, so verify

@@ -101,9 +101,9 @@ Every `it` block starts with `should` or `should not`, followed by a concise des
 
 The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.11`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
 
-- **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
-- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
-- **`spy<T>(overrides?)`** — `#/infra/di/testing/spy` — creates a typed spy. Every accessed method is a `vi.fn()` typed to the original signature — no casts needed. Optional `overrides` pre-seed specific methods or properties (function overrides stay assertable as `vi.fn()`).
+- **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries internal DI metadata used by the test seam.
+- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers mocks against the subject's dependencies. Throws if a declared dependency is missing from `mocks`. Returns the subject for chaining.
+- **`spy<T>()`** — `#/infra/di/testing/spy` — creates a typed lazy spy. Every accessed method is a cached `vi.fn()` typed to the original signature; configure those mocks after access. The helper takes no overrides argument.
 
 ### When to use which
 
@@ -167,7 +167,7 @@ Every example below uses a real file from the codebase as its subject.
 
 Subject: `src/modules/Arrangement/useCases/addTrack.ts` — wrapped with `inject()`, reads a repo, writes the repo, emits an event.
 
-Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mock()`, no casts.
+Use the canonical shape from §5: `spy<T>()` + `injectDependencies()` for dependencies in the inject map. Do not `vi.mock()` an injected dependency; static repository imports may use the module mock shown above.
 
 Use the canonical shape from §5 (and the real `useCases/__tests__/addTrack.spec.ts` in Arrangement). Do not invent `TrackRepo` / `Logger` inject deps that the subject does not declare.
 

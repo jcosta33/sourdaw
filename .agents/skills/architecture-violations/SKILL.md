@@ -71,7 +71,7 @@ A multi-export wrapper over a repository is a barrel in disguise. Split to one f
 
 ### 8. Protect pure layers and RT paths when remediating
 
-Do not “fix” `business-no-presentations`, `repositories-no-business`, `models-are-pure`, or `events-are-pure` by path tricks. Prefer a real move. Worklet depcruise rules only apply when code lives under `src/modules/<M>/worklets/**` (often unexercised). RT-adjacent code must not gain alloc/lock/UI/shell leakage.
+Do not “fix” `business-no-presentations`, `repositories-no-business`, model/event/service/validator/transformer purity, or worklet isolation by path tricks. Prefer a real move. Worklet depcruise rules only apply when code lives under `src/modules/<M>/worklets/**` (often unexercised). RT-adjacent code must not gain alloc/lock/UI/shell leakage.
 
 **Why:** pure-layer and RT rules exist because the wrong dependency is a product hazard, not a style preference.
 
@@ -86,7 +86,7 @@ Multiple features casually mutating shared state destroy undo semantics. Removin
 - Stack-specific or vendor patterns unrelated to module boundaries.
 - Net-new product behavior inside an already-correct boundary.
 - Dependency upgrades or non-architectural bug fixes.
-- Silencing `pnpm deps:validate` by editing rules or bloating known-violations without an intentional debt decision.
+- Silencing `pnpm deps:validate` by editing rules or refreshing an exact baseline without an intentional debt decision. New and stale baseline rows both fail.
 
 ## Anti-patterns
 
@@ -129,4 +129,4 @@ Multiple features casually mutating shared state destroy undo semantics. Removin
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — contract-folder barrels and public surface.
-- `.dependency-cruiser.cjs` — main boundary rules. `pnpm deps:validate` also runs reachability, types, and tests cruises.
+- `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — main rules and exact main/reachability/type/test debt ratchet.

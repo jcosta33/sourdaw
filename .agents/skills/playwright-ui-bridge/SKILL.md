@@ -96,7 +96,7 @@ try {
 
 ❌ Wrong: `npx playwright test my-probe.spec.ts` (probe) or bare `npx playwright` for CI suite
 
-✅ Correct (probe): `node --experimental-strip-types .agents/ui-scripts/my-probe.ts`  
+✅ Correct (probe): `node --experimental-strip-types .agents/ui-scripts/my-probe.ts`
 ✅ Correct (CI E2E suite, when used): `pnpm test:e2e`
 
 ### HIGH — Hand-rolled browser launch

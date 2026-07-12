@@ -901,7 +901,7 @@ runtime/
 worklets/
 ```
 
-If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
+If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Keep value and type exports in separate declarations: mixed `export { fn, type Input }` syntax hides the type edge from dependency-cruiser and is rejected by the architecture checker. Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
 
 ---
 
@@ -938,7 +938,7 @@ repositories
   -> external APIs / metal (Tauri, FS, decode, …)
   -> same-module models, transformers, services, stores (read/write of owned store state is common)
   -> shared helpers/types if truly generic
-  -> NOT useCases, handlers, presentations, or foreign modules' privates
+  -> NOT useCases, handlers, presentations, events, or foreign module stores/contracts
 
 validators
   -> models

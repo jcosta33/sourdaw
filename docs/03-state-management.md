@@ -136,12 +136,6 @@ export const PanelHeader = ({ title }: { title: string }): ReactElement => {
 
 ---
 
-## Read-only stores
+## Async and server state
 
-For state that is fetched from an external source and is not mutated on the client (e.g., user permissions, session data), a `ReadonlyStore` is available. It follows the same principles as the standard `Store` but with a few key differences:
-
-- It is created via an asynchronous `ReadonlyStore.create()` method.
-- It requires a `getDataFn` for fetching and refreshing its data.
-- It does not have a `set()` method, enforcing a strict read-only pattern.
-
-The setup is analogous to the standard `Store`, using a singleton getter and a React hook for component subscriptions.
+Use TanStack Query for fetched data with loading, caching, invalidation, or refetch semantics. Sourdaw does not have a `ReadonlyStore` API; do not invent one or put server data in a vanilla store.

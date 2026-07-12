@@ -39,9 +39,9 @@ App wiring starts from **`src/app/registerDependencies.ts`** (imported first fro
 
 Class constructors and symbols can be used as keys; see `Container.ts` and §4.11.
 
-### Lazy proxy
+### Bootstrap ordering
 
-If resolution runs before bootstrap finishes, the container may return a lazy proxy and log a warning. Fix bootstrap order — do not work around this with module-top-level `Container.get()` in use case files.
+`Container.get()` throws when a token has not been registered. Fix bootstrap order — do not work around an early read with module-top-level `Container.get()` in use-case or presentation files.
 
 ---
 

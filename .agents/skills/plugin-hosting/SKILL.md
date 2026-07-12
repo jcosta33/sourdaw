@@ -31,6 +31,8 @@ Do not conflate them.
 
 Keep distinct: (1) discovery, (2) scan metadata, (3) capability reporting, (4) instantiation, (5) parameter inspection, (6) state save/restore, (7) editor window management, (8) audio processing, (9) crash/failure isolation. If one abstraction owns too many, it is probably wrong.
 
+Scan metadata is cacheable and failure-isolated: one bad plugin must not abort the scan. Capability reporting reads that metadata without instantiating a live plugin.
+
 **Why:** each concern fails, scales, and threads differently; one abstraction forces one wrong model onto all of them.
 
 ### 3. Third-party plugin GUIs belong in native windows
@@ -120,5 +122,5 @@ Isolation: crash/hang isolation is runtime state, never project truth; a failed 
 ## References
 
 - [docs/architecture/04-plugin-hosting-security.md](../../../docs/architecture/04-plugin-hosting-security.md) — hosting security policy.
-- [docs/adrs/0003-engine-owned-plugin-runtime-owner.md](../../../docs/adrs/0003-engine-owned-plugin-runtime-owner.md) — engine-owned plugin runtime.
-- [docs/adrs/0004-plugin-hosting-security-policy.md](../../../docs/adrs/0004-plugin-hosting-security-policy.md) — security policy decision.
+- [.agents/decisions/0003-engine-owned-plugin-runtime-owner.md](../../decisions/0003-engine-owned-plugin-runtime-owner.md) — engine-owned plugin runtime.
+- [.agents/decisions/0004-plugin-hosting-security-policy.md](../../decisions/0004-plugin-hosting-security-policy.md) — security policy decision.

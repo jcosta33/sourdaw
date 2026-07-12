@@ -64,6 +64,8 @@ Never on RT-adjacent paths: unbounded allocation, locks, DOM/React updates, file
 
 Engine owns: live graph, schedule windows, playhead execution, meter accumulators.
 
+Latency-compensation values may come from project/plugin/routing truth; applying them to live playback is engine/runtime work.
+
 Project truth owns: tracks, clips, routing defs, saved params, tempo map, markers.
 
 UI may display summaries and request changes via commands — never owns playback phase, playhead progression, loop execution, or scheduling boundaries. Presentation must not import engine/runtime (`presentation-no-engine-runtime-imports`). React stays in presentation (`react-only-in-presentation`).

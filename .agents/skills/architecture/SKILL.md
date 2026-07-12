@@ -25,7 +25,7 @@ Each module may expose **up to four** permitted contract surfaces — create onl
 - `#/modules/<M>/events` — typed cross-module payloads
 - `#/modules/<M>/presentations/views` — composable view entry points
 
-There is **no** module-root `index.ts`. Deep imports into private paths (`models/`, `repositories/`, `handlers/`, `engine/`, …) are forbidden — including from tests.
+There is **no** module-root `index.ts` (the architecture checker rejects one even when empty). Deep imports into private paths (`models/`, `repositories/`, `handlers/`, `engine/`, …) are forbidden — including from tests and shared/app/route code.
 
 ```typescript
 // ✅
@@ -72,19 +72,20 @@ presentations/  →  useCases/  →  repositories/ | stores/ | services/
 - Business/IO must not import `presentations/` (`business-no-presentations`).
 - Only `useCases/` orchestrate `repositories/` (`usecases-only-write-boundary-to-repositories`).
 - Repositories must not import any-module `useCases|handlers|presentations` (`repositories-no-business`).
-- Models stay pure (`models-are-pure`); events stay pure (`events-are-pure`).
+- Repositories also avoid foreign stores/events; same-module stores remain an existing thin-adapter pattern.
+- Models, events, services, validators, and transformers stay pure (`*-are-pure` / `*-must-stay-pure`).
 
 **Why:** reversing the arrow couples domain logic to React lifecycle and makes RT paths unknowable.
 
 ### 5. Leaf components stay dumb; composition shells use barrels
 
-Views and hooks may import foreign contract barrels. Leaf `presentations/components/` and `src/components/` must not **directly** import business stores or useCases (`components-no-business-store-access`, `components-no-usecase-access`); no **transitive** useCases reach (`components-no-usecase-transitively`); no views (`components-no-view-access`). Presentation must not import repositories, handlers, or engine: **same-module** via `presentation-no-direct-*` (**error**); **cross-module** deep private via `cross-module-index-only` (**error**).
+Views and hooks may import foreign contract barrels. Leaf `presentations/components/` and `src/components/` must not **directly** import business stores or useCases (`components-no-business-store-access`, `components-no-usecase-access`); no **transitive** useCases reach (`components-no-usecase-transitively`); no views (`components-no-view-access`). Shared UI/app/routes are also contract-barrel-only (`external-module-contracts-only`). Presentation must not import repositories, handlers, or engine: **same-module** via `presentation-no-direct-*` (**error**); **cross-module** deep private via `cross-module-index-only` (**error**).
 
 **Why:** leaf components that own business calls become untestable mini-views and trip the reachability gate.
 
 ### 6. Use-case types stay private; one function per file
 
-Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index` on the types cruise). Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers are private under `handlers/`; cross-module access only via `get<Module>Handlers` from `useCases/`.
+Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index` on the types cruise). Never combine value and type specifiers in one export declaration; the architecture checker rejects that syntax so the type edge cannot hide. Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers are private under `handlers/`; cross-module access only via `get<Module>Handlers` from `useCases/`.
 
 **Why:** type re-exports freeze private shapes; multi-export wrappers become laundering barrels.
 
@@ -142,4 +143,4 @@ I/O (storage, Web Audio setup, Tauri IPC) belongs in `repositories/`. Engine rec
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — module anatomy, contract barrels, layering.
-- `.dependency-cruiser.cjs` — machine-validated boundary rules. Run `pnpm deps:validate` (main + reachability + types + tests cruises).
+- `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — cache-free exact debt ratchet. Run `pnpm deps:validate`.

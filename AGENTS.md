@@ -10,7 +10,7 @@ See `package.json` for all scripts.
 - **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
 - **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
 - **Type check (tests):** `pnpm typecheck:test` — currently scoped to Yeast processors (`tsconfig.test.json`); do not claim “all specs typecheck” from `pnpm typecheck` alone.
-- **Module boundaries:** `pnpm deps:validate` (main + reachability + type-edge + test-inclusive cruises). New **error** edges fail; known debt is baselined.
+- **Module boundaries:** `pnpm deps:validate` (main + causal reachability + type-edge + test-inclusive cruises). New **error** edges and stale baseline rows fail; known debt is exact and reviewable.
 
 After cross-module moves or bulk import changes, re-run `pnpm deps:validate` before claiming done (at least every ~10 files during large refactors).
 
@@ -22,7 +22,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 - **`.agents/skills/`** — domain agent skills (architecture, web-audio, …).
 - **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
 
-Checked-in product specs (when present) live under `specs/`. Transient task/review scratch stays outside the repo or under gitignored `.agents/tasks/` unless the task names a checked-in path.
+Checked-in product specs live under `.agents/specs/`; unnormalized source material lives under `.agents/specs/intake/`. Accepted decisions live under `.agents/decisions/`.
 
 ## Path aliases
 
@@ -34,15 +34,15 @@ Prefer `#/` for cross-module and cross-folder imports. Inside a module, use **re
 
 ## Layer boundaries
 
-Hard gate via `pnpm deps:validate` (main **error** rules + reachability + types + tests cruises). New **error** edges fail; baselined debt is ignored until retired. **Warn** rules do not fail the gate.
+Hard gate via `pnpm deps:validate` (main **error** rules + causal reachability + types + tests cruises). New **error** edges fail; stale baseline rows fail when debt is retired. **Warn** rules stay visible without failing the gate.
 
 - Cross-module imports target **only** contract-folder barrels: `useCases/`, `stores/`, `events/`, `presentations/views/` (each folder’s `index.ts`). No module-root `index.ts`. No deep imports into private folders (`models/`, `repositories/`, `handlers/`, `engine/`, …). (**error**)
 - Same module: relative imports only — not `#/modules/<Self>/…`. (**error**)
-- Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import use cases/handlers/presentations. Models and events stay pure. (**error**)
+- Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import business/event contracts or foreign stores; same-module stores remain an existing adapter pattern. Models, events, services, validators, and transformers stay pure. (**error**)
 - Leaf `presentations/components/` and shared `src/components/`: no **direct** business-store or use-case imports (**error**, main cruise). No **transitive** reach of use cases (**error**, reachability cruise). Transitive store reach is **not** reachability-gated — still avoid via props/hooks (**policy**).
 - Worklets stay isolated from app/helpers/Tauri. (**error**)
 - **Tauri IPC only from `repositories/`** — policy; depcruise **`warn`** (`tauri-ipc-only-in-repositories`), not an error gate.
-- Tests cruise: cross-module **barrel** + **no relative cross-module** only (not the full production layer suite).
+- Tests cruise: cross-module **barrel** + **no relative cross-module** for module tests, external tests, and global test setup (not the full production layer suite).
 
 Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
 
