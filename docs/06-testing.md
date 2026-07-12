@@ -456,32 +456,26 @@ describe('useTracks', () => {
 });
 ```
 
-### 6.10 Presentation components
+### 6.10 Presentation components and views
 
-Use `@testing-library/react` from the user's perspective. Mock the use cases the component calls.
+Use `@testing-library/react` from the user's perspective.
+
+- **Leaf components** should not import useCases or business stores — pass props/callbacks from a **view/hook**, and test that surface (or pass mocked callbacks into the component).
+- **Views/hooks** may call use cases; mock those use cases (or the command bus) when testing the view.
 
 ```typescript
+// Prefer testing a view that owns the use-case call, or a component that receives onAddTrack:
 // src/modules/Arrangement/presentations/components/__tests__/AddTrackButton.spec.tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AddTrackButton } from '../AddTrackButton';
-import { addTrack } from '../../../useCases/addTrack';
-
-vi.mock('../../../useCases/addTrack', () => ({ addTrack: vi.fn() }));
 
 describe('AddTrackButton', () => {
-    it('should render the button label', () => {
-        render(<AddTrackButton kind="audio" />);
-        expect(screen.getByRole('button', { name: /add audio track/i })).toBeInTheDocument();
-    });
-
-    it('should call addTrack when clicked', () => {
-        render(<AddTrackButton kind="audio" />);
-        fireEvent.click(screen.getByRole('button'));
-        expect(vi.mocked(addTrack)).toHaveBeenCalledWith({
-            name: expect.any(String),
-            kind: 'audio',
-        });
+    it('should call the provided callback when clicked', () => {
+        const onAddTrack = vi.fn();
+        render(<AddTrackButton kind="audio" onAddTrack={onAddTrack} />);
+        fireEvent.click(screen.getByRole('button', { name: /add audio track/i }));
+        expect(onAddTrack).toHaveBeenCalled();
     });
 });
 ```

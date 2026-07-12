@@ -319,8 +319,8 @@ ProjectLoadError
 
 ### Rules
 
-- errors in `errors/` are part of the public contract
-- internal helper errors should stay internal
+- `errors/` is **module-private** (not a contract barrel — do not import cross-module)
+- domain errors stay in the owning module; surface failures via use-case results/events as designed
 - errors should be meaningful at the boundary where they surface
 
 ---
@@ -644,7 +644,7 @@ Transformers should be:
 - pure
 - side-effect-free
 - **module-private. Always.** Transformers never cross module boundaries — not via direct import, not via re-export through `useCases/`, `index.ts`, or any other folder. If module B finds itself reaching for a transformer in module A, the answer is one of: (1) module B owns its own transformer with its own shape, (2) the work belongs in a use case in module A that module B calls, or (3) the symbol was misclassified — it is not a transformer at all and belongs in `services/` or as a use case. "Sharing" a transformer is the signal that the design is wrong.
-- consumed only by use cases (and other intra-module transformers/services). **Hooks, components, and any other presentation-layer code must consume use cases, never transformers, services, validators, or repositories directly.** The presentation layer has exactly one downstream neighbour: `useCases/`.
+- consumed only by use cases (and other intra-module transformers/services). **Presentation must never import transformers, services, validators, or repositories.** Hooks/views may consume **useCases** and **store barrels**; leaf components prefer props from views/hooks.
 
 Transformers are not mini-services with hidden behavior, and they are not a public API. The same rule applies to `services/` and `validators/`: pure, intra-module, called only by use cases (or by other services in the same module).
 
@@ -710,7 +710,7 @@ Classes resolve to their registered instance in the container. Injectables resol
 ### Resolution semantics
 
 - **Memoized.** The first call to an injectable resolves its dependencies and calls the factory exactly once. The invoker is cached on the `Container` keyed by the injectable's token. Subsequent calls are a direct function invocation — no re-walk.
-- **Cache reset on `Container.reset()`.** Test setup (`injectDependencies`) relies on this: it calls `reset()` before registering mocks, so the next invocation re-resolves against the fresh mocks.
+- **Cache reset on `Container.clear()`.** Test setup (`injectDependencies`) relies on this: it clears the container before registering mocks, so the next invocation re-resolves against the fresh mocks.
 - **Circular dependencies throw with a chain.** `A → B → A` fails at first invocation with the full chain in the message. Break the cycle by introducing an event or restructuring.
 - **Async dependencies are forbidden.** If any value in the dependency map is a Promise, `inject()` throws at construction time. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
 
@@ -734,7 +734,7 @@ If a function has no outbound side-effect dependencies, it does not need `inject
 
 Container registrations live in `src/app/bootstrap.ts`. The rules:
 
-- **All class-token registrations happen in `bootstrap.ts` before any use case runs.** Use `registerOnce(Token, instance)` for this — it throws on duplicate registration, catching accidental double-wires.
+- **All class-token registrations happen in `bootstrap.ts` before any use case runs.** Use `register(Token, instance)` for this — it throws on duplicate registration, catching accidental double-wires.
 - **Injectables self-register.** Don't hand-register an injectable's token in bootstrap; the resolver does it lazily on first call.
 - **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead. Module-top-level `get()` calls race with bootstrap and trip the strict-mode guard in dev/test.
 
