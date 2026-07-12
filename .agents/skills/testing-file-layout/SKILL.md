@@ -61,7 +61,7 @@ When the subject is built with the project’s inject/container pattern, swap de
 ### 6. Hard gate: run the targeted spec and see it pass
 
 ```bash
-pnpm exec vitest run path/to/__tests__/file.spec.ts
+pnpm test:run path/to/__tests__/file.spec.ts
 ```
 
 Never claim green without a run. Prefer the specific file over the full suite.
@@ -87,7 +87,7 @@ Never claim green without a run. Prefer the specific file over the full suite.
 
 ❌ Wrong: “the test should pass now” with no output.
 
-✅ Correct: `pnpm exec vitest run <path-to-spec>` and confirm pass.
+✅ Correct: `pnpm test:run <path-to-spec>` and confirm pass.
 
 ### HIGH — Spec co-located beside source
 

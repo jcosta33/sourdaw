@@ -6,7 +6,7 @@ Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, 
 
 See `package.json` for all scripts.
 
-- **Tests:** `pnpm exec vitest run <path/to/file.spec.ts>` — always specify a file. Prefer a targeted path over the full suite; do not use watch mode for verification.
+- **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
 - **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass.
 - **Type check:** `pnpm typecheck`
 - **Module boundaries:** `pnpm deps:validate` (main cruise + reachability edge gate + type-edge cruise + test-inclusive cruise)
@@ -75,7 +75,3 @@ The must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) and
 - Do not run destructive git (`reset --hard`, `clean`, force-push, discard, branch -D) or push/amend published history unless explicitly asked.
 - Do not install/remove packages, edit CI/build config, or start long-lived background servers unless the task requires it.
 - Stage only files you intentionally changed. When unsure whether an action is safe: stop and ask.
-
-## Skills and docs
-
-Domain skills under `.agents/skills/` match by `description` — load the full skill when the work matches. Human docs: `docs/`, especially `docs/architecture/` and `docs/07-conventions.md`.
