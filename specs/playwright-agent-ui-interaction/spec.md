@@ -45,7 +45,7 @@ Verify with: `manual` — confirm `.agents/ui-scripts/` exists with a sample inv
 
 ### AC-004 — Agent scripts emit structured stdout
 
-A sample agent script run via `npx tsx` must print structured output (JSON or formatted
+A sample agent script run via `node --experimental-strip-types .agents/ui-scripts/<script>.ts` must print structured output (JSON or formatted
 text), including paths to captured screenshots.
 
 Verify with: `manual` — run the sample script and read its structured stdout and screenshot path

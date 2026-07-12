@@ -50,7 +50,7 @@ Verify with: `cargo clippy -p daw-engine -- -D warnings`
 A scripted Playwright scenario must fail CI if any `longtask` > 50 ms fires during
 normal editing gestures.
 
-Verify with: `pnpm test:perf`
+Verify with: `pnpm test:run` until a dedicated perf script lands (no `test:perf` in package.json today)
 
 ### AC-005 — Profiling methodology and reference traces
 
