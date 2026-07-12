@@ -1,8 +1,26 @@
 #!/bin/sh
 set -eu
 
-if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
-    printf '%s\n' 'error: install-git-hooks.sh must run inside a Git checkout' >&2
+script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+checkout_root=$(CDPATH= cd "$script_dir/.." && pwd)
+
+if ! worktree_state=$(git -C "$checkout_root" rev-parse --is-inside-work-tree 2>/dev/null); then
+    if [ -e "$checkout_root/.git" ]; then
+        printf '%s\n' "error: invalid Git checkout at $checkout_root" >&2
+        exit 1
+    fi
+
+    printf '%s\n' 'Skipping Git hook installation: not inside a Git checkout'
+    exit 0
+fi
+
+if [ "$worktree_state" != 'true' ]; then
+    printf '%s\n' 'error: install-git-hooks.sh requires a non-bare Git checkout' >&2
+    exit 1
+fi
+
+if ! repo_root=$(git -C "$checkout_root" rev-parse --show-toplevel 2>/dev/null); then
+    printf '%s\n' "error: unable to resolve Git checkout at $checkout_root" >&2
     exit 1
 fi
 
@@ -12,9 +30,10 @@ if [ ! -x "$hooks_path/pre-push" ]; then
     exit 1
 fi
 
-if git config --local --get extensions.worktreeConfig >/dev/null 2>&1; then
-    git config --worktree core.hooksPath "$hooks_path"
-else
-    git config --local core.hooksPath "$hooks_path"
+git -C "$repo_root" config --local core.hooksPath .githooks
+if worktree_config=$(git -C "$repo_root" config --local --type=bool --get extensions.worktreeConfig 2>/dev/null); then
+    if [ "$worktree_config" = 'true' ]; then
+        git -C "$repo_root" config --worktree core.hooksPath .githooks
+    fi
 fi
-printf '%s\n' "Configured Git hooks path: $hooks_path"
+printf '%s\n' 'Configured Git hooks path: .githooks'
