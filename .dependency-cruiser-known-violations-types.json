@@ -1,0 +1,236 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/useCases/index.ts",
+    "to": "src/modules/AiRuntime/useCases/getProjectContext.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/useCases/index.ts",
+    "to": "src/modules/AiRuntime/useCases/notifyAiChange.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AiRuntime/useCases/index.ts",
+    "to": "src/modules/AiRuntime/useCases/runAiActionWithToast.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/index.ts",
+    "to": "src/modules/Arrangement/useCases/resolveComping.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/audioFeatures.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/audioToMidi.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/detectOnsets.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/pitchDetection.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioAnalysis/useCases/index.ts",
+    "to": "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/audioEngineQueries/helpers.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/buildDeviceChain.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/nativeAiBridge/generateMidiAI.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/offlineRender/types.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/AudioEngine/useCases/index.ts",
+    "to": "src/modules/AudioEngine/useCases/webMidiInput/helpers.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Automation/useCases/index.ts",
+    "to": "src/modules/Automation/useCases/automationRecording/recordingDependencies.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Automation/useCases/index.ts",
+    "to": "src/modules/Automation/useCases/modulation/modulationDependencies.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/useCases/index.ts",
+    "to": "src/modules/Command/useCases/commandQueries.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/useCases/index.ts",
+    "to": "src/modules/Command/useCases/executeAppAction.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Command/useCases/index.ts",
+    "to": "src/modules/Command/useCases/macro/recording/stopMacroRecording.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/CrdtDocument/useCases/index.ts",
+    "to": "src/modules/CrdtDocument/useCases/mutateCrdtDoc.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/CrdtDocument/useCases/index.ts",
+    "to": "src/modules/CrdtDocument/useCases/replaceCrdtDoc.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/MIDI/useCases/index.ts",
+    "to": "src/modules/MIDI/useCases/arpeggiator.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/MIDI/useCases/index.ts",
+    "to": "src/modules/MIDI/useCases/midiLearn/midiLearnDependencies.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Transport/useCases/index.ts",
+    "to": "src/modules/Transport/useCases/transportQueries/helpers.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-usecase-type-exports-on-index"
+    }
+  }
+]

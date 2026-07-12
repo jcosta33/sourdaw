@@ -110,18 +110,17 @@ Leaf **components** stay dumb — prefer views/hooks for business access. Machin
 | Rule | What it actually bans |
 |------|------------------------|
 | `components-no-usecase-access` | **Same-module** `useCases/` only |
-| `components-no-business-store-access` | **Same-module** business `stores/` only |
+| `components-no-business-store-access` | **Any** module business `stores/` (same or foreign) |
 | `components-no-view-access` | **Any** module’s `presentations/views/` |
 | `components-no-usecase-transitively` (reachability) | Component that can **reach any** module’s `useCases/` (value graph) |
 
-Foreign `#/modules/<Other>/useCases` or `stores` barrels from a leaf component are **not**
-caught by the same-module direct rules; reachability covers useCases (with a per-`from`
-baseline). Skill discipline: still do not put shell work in `presentations/components/` —
-promote LaunchScreen-class UIs to `views/` or keep calls in hooks/views.
+Foreign useCases from a leaf component are covered by the reachability edge gate
+(`scripts/deps-check-reachability.mjs` — full from→to baseline). Foreign **stores** from a
+leaf component fail `components-no-business-store-access` directly. Views and hooks keep
+the public store read contract.
 
 **Why:** forbidding *all* foreign useCases from **views** would force a wrapper per action
 in a DAW shell; forbidding **leaf components** from owning business calls keeps leaves dumb.
-Do not claim a machine ban the regex does not implement.
 
 ### 6. Models and events stay pure; types do not leak through useCases barrels
 

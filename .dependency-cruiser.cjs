@@ -7,13 +7,10 @@
 // `node_modules/.cache/dependency-cruiser*` (and the reachability cache if
 // present) or results will be stale.
 //
-// Transitive component → useCase isolation lives in
-// `.dependency-cruiser.reachability.cjs` (value imports only). Run both via
-// `pnpm deps:validate` (each cruise has its own --ignore-known baseline).
-//
-// Reachability known-violations ratchets on **dirty component `from` paths**, not
-// each transitive target — see header in `.dependency-cruiser.reachability.cjs`.
-// Main-cruise known-violations still match full from→to dependency edges.
+// `pnpm deps:validate` pipeline:
+//   1) this main cruise + --ignore-known (error edges only; orphans stay warn)
+//   2) scripts/deps-check-reachability.mjs — full from→to reachability edges
+//   3) .dependency-cruiser.types.cjs — type-only edges (tsPreCompilationDeps)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
@@ -253,12 +250,9 @@ module.exports = {
             name: 'no-usecase-type-exports-on-index',
             severity: 'error',
             comment:
-                'Contract barrels must not re-export types from useCases/ — policy: use-case types stay private; ' +
-                'consumers use ReturnType/Parameters or local shapes (events for shared payloads). ' +
-                'MACHINE LIMIT: this rule only matches dependencyTypes type-only edges. Without ' +
-                "tsPreCompilationDeps: 'specify' on this cruise, pure `export type` re-exports often do not " +
-                'appear in the graph, so the rule may not fail today. Enabling type edges + baselining is a ' +
-                'separate ratchet; until then treat this as policy enforced by review/skills, not a hard gate.',
+                'Contract barrels must not re-export types from useCases/. Enforced on the type-edge cruise ' +
+                '(.dependency-cruiser.types.cjs with tsPreCompilationDeps: specify). Kept here so the rule ' +
+                'name is documented with the main contract set; the types cruise is the hard gate.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },
@@ -326,12 +320,15 @@ module.exports = {
             name: 'components-no-business-store-access',
             severity: 'error',
             comment:
-                'Presentational components must not import business-layer stores directly. Receive state via hooks or props.',
+                'Presentational leaf components must not import any module business-layer stores/ ' +
+                '(same-module or foreign contract barrels). Views and hooks retain the public read ' +
+                'contract; pass state into leaf components as props.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/stores/.+' + SOURCE_FILE_RE,
+                // Any module's business stores (not presentations/stores)
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/stores/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -435,13 +432,16 @@ module.exports = {
             severity: 'error',
             comment:
                 'Repositories are the IO / persistence edge: they must not import useCases/, handlers/, ' +
-                'or presentations/. Orchestration belongs in use cases. (Same-module stores/ are allowed — ' +
-                'Sourdaw repositories commonly project store state; do not use this rule to ban store access.)',
+                'or presentations/ from any module (including foreign contract barrels). Orchestration ' +
+                'belongs in use cases. Same-module stores/ remain allowed — Sourdaw repositories commonly ' +
+                'project owned store state.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'repositories/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(useCases|handlers|presentations)/.+' + SOURCE_FILE_RE,
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
             },
         },
 
@@ -464,13 +464,16 @@ module.exports = {
             name: 'events-are-pure',
             severity: 'error',
             comment:
-                'Event contracts must stay pure: only same-module events/, models/, and shared ' +
-                'helpers/utils/infra. No useCases/, repositories/, stores/, handlers/, presentations/, or engine/.',
+                'Event contracts must stay pure: same-module events/models and shared utils/infra only. ' +
+                'No useCases/, repositories/, stores/, handlers/, presentations/, or engine/ from any ' +
+                'module (including foreign contract barrels).',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'events/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(useCases|repositories|stores|handlers|presentations|engine|worklets|runtime|services|validators|transformers)/.+' +
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|handlers|presentations|engine|worklets|runtime|services|validators|transformers)/.+' +
                     SOURCE_FILE_RE,
             },
         },

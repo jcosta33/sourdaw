@@ -5,28 +5,13 @@
  * because reachability rules cannot filter dependencyTypesNot — including them
  * would produce false positives on type imports through hooks.
  *
- * Run alongside `.dependency-cruiser.cjs` via `pnpm deps:validate`.
+ * Do NOT use depcruise --ignore-known for this config: that softens by
+ * (from + rule name) only and swallows new targets under baselined components.
+ * Full from→to edge gating lives in scripts/deps-check-reachability.mjs
+ * (invoked by pnpm deps:validate).
  *
  * Cache does NOT hash this config. Own cache folder so it never shares stale
  * results with the main cruise.
- *
- * ## Known-violations baseline semantics (depcruiser limitation)
- *
- * `--ignore-known` softens reachability by **module `from` + rule name only**, not
- * by each `to` / `via` edge. The baseline file therefore stores **one compact entry
- * per dirty component** (unique `from`), not thousands of path dumps.
- *
- * Gate meaning for this cruise:
- *   - NEW component `from` that can reach a use case → fails (not in baseline).
- *   - NEW use-case target reachable from an already-baselined component → still
- *     ignored until that component is removed from the baseline.
- *
- * Main cruise dependency rules still match full from+to edges. Do not claim
- * edge-level ratcheting for reachability.
- *
- * Refresh baseline after intentional component cleanups:
- *   depcruise src -c .dependency-cruiser.reachability.cjs -T baseline -f /tmp/r.json
- *   then slim to unique from (or re-run the project’s slim script / keep one row per from).
  */
 
 const MODULE = 'src/modules/(?:Common/|Supporting/)?';
@@ -55,8 +40,6 @@ module.exports = {
         exclude: {
             path: '\\.(spec|test)\\.(ts|tsx)$',
         },
-        // Do not use includeOnly: Sourdaw main cruise omits it so React/Tauri npm
-        // path rules work; reachability only needs the module graph under src/.
         moduleSystems: ['cjs', 'es6'],
         enhancedResolveOptions: {
             extensions: ['.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.d.ts'],

@@ -219,8 +219,9 @@ Run this before declaring an architecture-violation fix done. Any step that
 should produce visible output is required to produce it.
 
 1. **Validator is green from a real run.** Run `pnpm deps:validate` yourself and paste the output verbatim into the task file's `## Self-review` (or wherever the consuming repo records verification). A passing claim without pasted output reads Unverified, not Pass.
-   - **Main cruise** known-violations: full **from→to** edges — new dependency edges still fail.
-   - **Reachability cruise** known-violations: softens by **component `from` + rule name** only — a baselined dirty component will not fail again when it reaches *additional* use cases; only a **new** dirty component fails. See `.dependency-cruiser.reachability.cjs` header.
+   - **Main cruise** known-violations: full **from→to** edges — new dependency edges still fail. Orphan *warnings* are not baselined (stay visible).
+   - **Reachability**: `scripts/deps-check-reachability.mjs` gates full **from→to** edges (not depcruise `--ignore-known`); new edges fail; stale baseline rows fail until refreshed with `pnpm deps:baseline:reachability`.
+   - **Types cruise** (`.dependency-cruiser.types.cjs`): type-only edges + `no-usecase-type-exports-on-index` with its own baseline.
 2. **Compiler confirms the blast radius is closed.** Run `pnpm typecheck` and paste its output; zero errors confirms no consumer was left broken (rule 4).
 3. **Responsibility changed across every new/moved boundary.** For each boundary you touched, write one sentence naming what responsibility now lives on each side (rule 2). If you cannot, the boundary is fake — go back.
 4. **No new laundering surface.** Confirm in writing that no use-case file re-exports a repository/model/service symbol and no non-contract export was added to a contract barrel (rules 5–7). Paste the grep you used, e.g. for `export .* from '\.\./repositories` and `export .* from '\.\./models` across the files you changed.
