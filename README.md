@@ -7,10 +7,12 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 
 ## Agent workflow
 
-Development work is driven by the sibling Suspec workspace at
-`../sourdaw-works`. Start with the assigned task packet in
-`../sourdaw-works/tasks/`, read the linked process/spec material there, and
-follow the repository rules in `AGENTS.md` before editing code.
+Development work uses proportional intent, implementation, independent review,
+and findings records. Checked-in feature specs live under `specs/` as an
+explicit project exception; captured source material lives under `specs/intake/`.
+Transient task and review records belong outside this repository at the explicit
+full path supplied by the session owner. Load relevant global skills, follow
+`AGENTS.md`, and preserve empirical evidence for verification claims.
 
 ## Setup
 
