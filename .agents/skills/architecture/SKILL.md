@@ -49,7 +49,7 @@ Inside `src/modules/Arrangement/`, import with relatives (`../stores/trackStore`
 
 ### 3. Stores are a public read contract; writes stay with the owner
 
-Other modules may subscribe via `useStore` / selectors. They must not call `store.set` on a foreign store — route mutations through the owning module's use cases or `executeAppAction`.
+Other modules may subscribe via `useStore` / selectors. They must not call `store.set` on a foreign store (**agent policy**; ESLint `sourdaw/no-foreign-store-write` is **warn** only — not a `deps:validate` error). Route mutations through the owning module's use cases or `executeAppAction`. Leaf components: no **direct** business-store import (**error** `components-no-business-store-access`).
 
 ```typescript
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -78,7 +78,7 @@ presentations/  →  useCases/  →  repositories/ | stores/ | services/
 
 ### 5. Leaf components stay dumb; composition shells use barrels
 
-Views and hooks may import foreign contract barrels. Leaf `presentations/components/` must not import business stores (`components-no-business-store-access`), useCases (`components-no-usecase-access`, `components-no-usecase-transitively`), or views (`components-no-view-access`). Presentation must not import repositories, handlers, or engine (`presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`).
+Views and hooks may import foreign contract barrels. Leaf `presentations/components/` and `src/components/` must not **directly** import business stores or useCases (`components-no-business-store-access`, `components-no-usecase-access`); no **transitive** useCases reach (`components-no-usecase-transitively`); no views (`components-no-view-access`). Presentation must not import repositories, handlers, or engine: **same-module** via `presentation-no-direct-*` (**error**); **cross-module** deep private via `cross-module-index-only` (**error**).
 
 **Why:** leaf components that own business calls become untestable mini-views and trip the reachability gate.
 
@@ -90,7 +90,7 @@ Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index
 
 ### 7. Repositories touch metal; engine does not import repositories
 
-All I/O (Tauri IPC, storage, Web Audio setup) goes in `repositories/` (`tauri-ipc-only-in-repositories`). The engine receives dependencies from use cases — never imports repositories itself.
+I/O (storage, Web Audio setup, Tauri IPC) belongs in `repositories/`. Engine receives deps from use cases — never imports repositories (**error** `usecases-only-write-boundary-to-repositories`). Tauri IPC placement is also **policy** with depcruise **warn** (`tauri-ipc-only-in-repositories`) — not an error gate.
 
 **Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 

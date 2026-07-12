@@ -71,7 +71,7 @@ A multi-export wrapper over a repository is a barrel in disguise. Split to one f
 
 ### 8. Protect pure layers and RT paths when remediating
 
-Do not “fix” `business-no-presentations`, `repositories-no-business`, `models-are-pure`, `events-are-pure`, or worklet rules by path tricks. Prefer a real move. RT-adjacent code must not gain alloc/lock/UI/shell leakage.
+Do not “fix” `business-no-presentations`, `repositories-no-business`, `models-are-pure`, or `events-are-pure` by path tricks. Prefer a real move. Worklet depcruise rules only apply when code lives under `src/modules/<M>/worklets/**` (often unexercised). RT-adjacent code must not gain alloc/lock/UI/shell leakage.
 
 **Why:** pure-layer and RT rules exist because the wrong dependency is a product hazard, not a style preference.
 

@@ -39,7 +39,7 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 ### 3. Stores are a public read contract, not a write API for business truth
 
-Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers). Outside: use cases or `executeAppAction`. Leaf components must not import business stores (`components-no-business-store-access`).
+Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers). Outside: use cases or `executeAppAction` (**policy**; foreign-write ESLint is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
 
 **Why:** Sourdaw keeps stores as read contracts; write discipline is what prevents global mutability.
 

@@ -25,7 +25,7 @@ Root the live engine in a single `AudioContext` for sources, worklets, buses, au
 
 ### 2. Use `AudioWorklet` for custom real-time DSP
 
-Custom low-latency DSP runs in `AudioWorklet`. Do not use `ScriptProcessorNode`. Worklets must not import app modules, helpers, or Tauri (`worklets-no-module-runtime-imports`, `worklets-no-app-helper-or-tauri`).
+Custom low-latency DSP runs in `AudioWorklet`. Do not use `ScriptProcessorNode`. Keep worklet code isolated from app modules, helpers, and Tauri (**policy / RT review**). Depcruise `worklets-no-*` rules are **error** but **forward-looking** — they match `src/modules/<M>/worklets/**` only; processors under `public/audio/worklets/` are outside those paths today.
 
 **Why:** `ScriptProcessorNode` runs on the main thread; worklets run on the audio render thread and must stay isolated.
 

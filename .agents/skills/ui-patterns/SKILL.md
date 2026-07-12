@@ -21,7 +21,7 @@ Presentation code that owns business truth, dense editors rendered as giant DOM 
 
 ### 1. Presentation only
 
-Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine (`presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`). React stays in presentation (`react-only-in-presentation`).
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine: **same-module** `presentation-no-direct-*` (**error**); **cross-module** deep private `cross-module-index-only` (**error**). React stays in presentation (`react-only-in-presentation`).
 
 **Why:** business rules in the tree duplicate across surfaces and couple domain logic to React lifecycle.
 
