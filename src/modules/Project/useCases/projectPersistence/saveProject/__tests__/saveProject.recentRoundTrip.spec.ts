@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { getRecentProjects } from '../../../recentProjects/helpers';
 import { loadRecentProject } from '../../../recentProjects/loadRecentProject';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { saveProject } from '../saveProject';
 
 import type { ProjectStoreState } from '../../../../stores/projectStore';
@@ -38,7 +39,9 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    createCrdtProject: vi.fn().mockResolvedValue(true),
     persistCrdtProject: mocks.persistCrdtProject,
+    projectActionHistoryToStore: vi.fn(),
 }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
@@ -52,7 +55,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -112,6 +118,7 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         mocks.projectStoreValue.value = makeProjectState();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.buildProjectData.mockResolvedValue({ data: makeProjectData(), missingBufferCount: 0 });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
     it('a saved project appears in the recent list and reopens with its name', async () => {
