@@ -253,8 +253,12 @@ module.exports = {
             name: 'no-usecase-type-exports-on-index',
             severity: 'error',
             comment:
-                'Module index.ts files (root or contract-folder) must not re-export types from useCases/. ' +
-                'Types from useCases/ are private. Other modules should use ReturnType/Parameters or define local shapes.',
+                'Contract barrels must not re-export types from useCases/ — policy: use-case types stay private; ' +
+                'consumers use ReturnType/Parameters or local shapes (events for shared payloads). ' +
+                'MACHINE LIMIT: this rule only matches dependencyTypes type-only edges. Without ' +
+                "tsPreCompilationDeps: 'specify' on this cruise, pure `export type` re-exports often do not " +
+                'appear in the graph, so the rule may not fail today. Enabling type edges + baselining is a ' +
+                'separate ratchet; until then treat this as policy enforced by review/skills, not a hard gate.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },

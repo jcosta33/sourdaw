@@ -235,6 +235,6 @@ beneath them. Checkboxes alone do not count.
 
 - `references/module-boundaries.md` — the four contract surfaces, correct/forbidden cross-module and same-module import examples, and contract-folder barrel authoring rules (deep mechanics for rule 5).
 - `references/use-cases-and-type-surfaces.md` — legitimate vs forbidden use cases, internal DTOs, the cross-module type-surface table, the `get<Module>Handlers` registry typing pattern, and the summary test (deep mechanics for rules 6–7).
-- `.dependency-cruiser.cjs` — includes pure-layer rules (`business-no-presentations`, `repositories-no-business`, `models-are-pure`, `events-are-pure`, `components-no-view-access`) and barrel rules.
+- `.dependency-cruiser.cjs` — includes pure-layer rules (`business-no-presentations`, `repositories-no-business`, `models-are-pure`, `events-are-pure`, `components-no-view-access`) and barrel rules. Note: `no-usecase-type-exports-on-index` only matches type-only edges and may not fire until type edges are enabled on the cruise.
 - `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively` (value imports only).
 - Sibling skill: `architecture` — authoring against these boundaries.

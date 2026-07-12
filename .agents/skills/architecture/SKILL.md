@@ -127,8 +127,9 @@ Do not claim a machine ban the regex does not implement.
 
 - `models/` private; never on a barrel (`no-models-repos-transformers-in-index`).
 - Consumer modules define **local** shapes or use `ReturnType` / `Parameters` of imported
-  functions — not `import type` from another module's useCases
-  (`no-usecase-type-exports-on-index`).
+  functions — not `import type` from another module's useCases. Policy name:
+  `no-usecase-type-exports-on-index` (depcruiser only sees type-only edges; without
+  `tsPreCompilationDeps: 'specify'` this is **review/skill policy**, not a reliable hard gate).
 - Cross-module type payloads live on `events/`.
 - Models must not climb into repos/handlers/presentations/engine (`models-are-pure`).
 - Events must not import orchestration/IO (`events-are-pure`).
