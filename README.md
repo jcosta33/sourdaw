@@ -12,6 +12,18 @@ Development work is driven by the sibling Suspec workspace at
 `../sourdaw-works/tasks/`, read the linked process/spec material there, and
 follow the repository rules in `AGENTS.md` before editing code.
 
+## Setup
+
+Install both dependency sets before the first push from a checkout:
+
+```sh
+pnpm install
+npm --prefix server ci --include=dev
+```
+
+`pnpm install` also configures the checked-in Git hooks. Server dependencies are
+separate setup; the pre-push gate does not run `npm ci`.
+
 ## Common commands
 
 - `pnpm dev` - start the Vite app
@@ -19,3 +31,9 @@ follow the repository rules in `AGENTS.md` before editing code.
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build
+
+## Git hooks
+
+The checked-in pre-push hook runs the same web and collaboration-server health
+gates as CI. Use standard Git `--no-verify` only when you intentionally need to
+bypass it.

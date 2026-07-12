@@ -28,46 +28,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate dependency boundaries
-        run: pnpm deps:validate
+      - name: Test health gate infrastructure
+        run: pnpm test:health-gates
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
+      - name: Web health gates
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: |
-          pnpm lint --quiet &
-          lint_pid=$!
-          (
-            sleep_pid=
-            trap 'set +e; kill "$sleep_pid" 2>/dev/null; exit 0' TERM
-            while kill -0 "$lint_pid" 2>/dev/null; do
-              echo "lint still running..."
-              sleep "${LINT_HEARTBEAT_SECONDS:-60}" &
-              sleep_pid=$!
-              wait "$sleep_pid" 2>/dev/null
-            done
-          ) &
-          heartbeat_pid=$!
-
-          set +e
-          wait "$lint_pid"
-          lint_status=$?
-          set -e
-
-          set +e
-          kill "$heartbeat_pid" 2>/dev/null
-          wait "$heartbeat_pid" 2>/dev/null
-          set -e
-          exit "$lint_status"
-
-      - name: Test
-        run: pnpm test:run --reporter=dot --silent=passed-only
-
-      - name: Build
-        run: pnpm build
+        run: ./scripts/health-gates-web.sh
 
   server:
     name: Collaboration server health gate
@@ -88,5 +55,4 @@ jobs:
         run: npm ci
 
       - name: Build server
-        working-directory: server
-        run: npm run build
+        run: ./scripts/health-gates-server.sh
