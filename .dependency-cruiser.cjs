@@ -2,6 +2,15 @@
 /** @type {import('dependency-cruiser').IConfiguration} */
 
 // ----------------------------------------------------------------------------
+// NOTE: the cruise result is cached (metadata strategy) and the cache does NOT
+// hash this config. After editing rules, clear
+// `node_modules/.cache/dependency-cruiser*` (and the reachability cache if
+// present) or results will be stale.
+//
+// Transitive component → useCase isolation lives in
+// `.dependency-cruiser.reachability.cjs` (value imports only). Run both via
+// `pnpm deps:validate`.
+// ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
 // Module boundary model (contract-folder barrels — migration complete):
@@ -332,6 +341,20 @@ module.exports = {
         },
 
         {
+            name: 'components-no-view-access',
+            severity: 'error',
+            comment:
+                'Presentational components must not import views (own or foreign). Views compose components; ' +
+                'lift data to the parent view and pass it as props.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/views/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'presentation-no-direct-repositories',
             severity: 'error',
             comment:
@@ -373,6 +396,22 @@ module.exports = {
         // Business/core boundaries
         // --------------------------------------------------------------------
         {
+            name: 'business-no-presentations',
+            severity: 'error',
+            comment:
+                'Business and IO layers must not import from any presentations/ (own or foreign) — ' +
+                'dependencies flow UI → business → IO, never back up. Move the shared code down to the ' +
+                'layer that needs it, or keep renderer/UI factories under presentations/ and call them ' +
+                'from views/hooks only.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + '(?!presentations/).*' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'usecases-only-write-boundary-to-repositories',
             severity: 'error',
             comment: 'Within a module, only useCases/ may orchestrate repositories/.',
@@ -381,6 +420,51 @@ module.exports = {
             },
             to: {
                 path: '^$1$2/repositories/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'repositories-no-business',
+            severity: 'error',
+            comment:
+                'Repositories are the IO / persistence edge: they must not import useCases/, handlers/, ' +
+                'or presentations/. Orchestration belongs in use cases. (Same-module stores/ are allowed — ' +
+                'Sourdaw repositories commonly project store state; do not use this rule to ban store access.)',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'repositories/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/(useCases|handlers|presentations)/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'models-are-pure',
+            severity: 'error',
+            comment:
+                'Domain models must not climb into IO/UI/runtime layers: no repositories/, handlers/, ' +
+                'presentations/, engine/, worklets/, or runtime/. (Command catalog models still reach ' +
+                'useCases/stores in places — that is tracked debt; this rule blocks the worse climbs.)',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'models/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/(repositories|handlers|presentations|engine|worklets|runtime)/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'events-are-pure',
+            severity: 'error',
+            comment:
+                'Event contracts must stay pure: only same-module events/, models/, and shared ' +
+                'helpers/utils/infra. No useCases/, repositories/, stores/, handlers/, presentations/, or engine/.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'events/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/(useCases|repositories|stores|handlers|presentations|engine|worklets|runtime|services|validators|transformers)/.+' +
+                    SOURCE_FILE_RE,
             },
         },
 

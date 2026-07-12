@@ -1,0 +1,74 @@
+[
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
+    "to": "src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts",
+    "rule": {
+      "severity": "error",
+      "name": "business-no-presentations"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
+    "to": "src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts",
+    "rule": {
+      "severity": "error",
+      "name": "business-no-presentations"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Workspace/presentations/views/TemplatePreviewThumb.tsx",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-view-access"
+    }
+  },
+  {
+    "type": "module",
+    "from": "src/modules/AudioEngine/useCases/rave/decodeLatent.ts",
+    "to": "src/modules/AudioEngine/useCases/rave/decodeLatent.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "src/modules/AudioEngine/useCases/rave/encodeAudio.ts",
+    "to": "src/modules/AudioEngine/useCases/rave/encodeAudio.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "src/modules/AudioEngine/useCases/rave/interpolateLatent.ts",
+    "to": "src/modules/AudioEngine/useCases/rave/interpolateLatent.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "src/modules/AudioEngine/useCases/rave/timbreTransfer.ts",
+    "to": "src/modules/AudioEngine/useCases/rave/timbreTransfer.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "src/modules/MIDI/workers/controllerScriptingWorker.ts",
+    "to": "src/modules/MIDI/workers/controllerScriptingWorker.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  }
+]
