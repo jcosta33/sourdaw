@@ -6,7 +6,7 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 ## TypeScript soundness
 
-Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under _React 19 & Coding Conventions_ → **TypeScript — soundness**. Follow that section for implementation; this document does not repeat it.
+Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under **Always-on rules** → TypeScript soundness. Follow that section for implementation; this document does not repeat it.
 
 ## Prefer explicit control flow
 

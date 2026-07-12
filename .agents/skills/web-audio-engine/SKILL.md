@@ -1,207 +1,121 @@
 ---
 name: web-audio-engine
-type: agent-guide
 description: >-
-  Architect browser-side audio as a real-time-safe runtime executor over one AudioContext. ALWAYS
-  apply this skill when touching transport timing, clip scheduling, routing or buses, automation,
-  worklet processors, metering taps, offline rendering, or any low-latency audio path — even if it
-  looks like a small parameter tweak or a UI hook reading a meter. Do not store AudioContext/node/
-  worklet handles in React state, mix or schedule audio on the main thread, or rebuild the graph on
-  a parameter change directly. Skip this skill for non-audio UI work, project-state and persistence
-  design, AI intent parsing, or native/Tauri concerns.
+  Architect browser-side audio as a real-time-safe runtime executor over one
+  AudioContext. ALWAYS apply when touching transport timing, clip scheduling,
+  routing or buses, automation, worklet processors, metering taps, offline
+  rendering, or any low-latency audio path — even if it looks like a small
+  parameter tweak or a UI hook reading a meter. Do not store AudioContext/node/
+  worklet handles in React state, mix or schedule audio on the main thread, or
+  rebuild the graph on a parameter change. Skip non-audio UI, project-state and
+  persistence design, AI intent parsing, and native/Tauri concerns.
 ---
-
-# Skill: web-audio-engine
 
 ## Purpose
 
-This skill keeps the browser audio engine correct, fast, deterministic, and architecturally
-aligned. The failure mode it prevents: the engine drifting into a second source of truth —
-holding `AudioContext`/node handles in React state, mixing audio on the main thread, rebuilding
-the graph on every fader move, or letting the UI own playback time — which makes audio glitch,
-stall under load, and become impossible to reason about.
-
-The engine **is** the runtime executor for playback and processing, the owner of live timing
-and transport execution, the owner of browser-side graph topology and worklet lifecycle, and a
-derived projection of authoritative project state. It is **not** a UI concern, a global state
-bucket, a convenience layer for random audio operations, or a second source of truth.
-
-## Project context (the AGENTS.md contract)
-
-Use this repo's commands: `pnpm typecheck`, `pnpm lint`, `pnpm test:run`, `pnpm deps:validate`,
-`pnpm build`. Do not invent substitutes. RT-audio code must not allocate or block (a
-project-wide invariant). Module boundaries for engine code: `architecture` +
-`architecture-violations`.
+The engine is the runtime executor for playback and processing — owner of live timing, graph topology, and worklet lifecycle — and a derived projection of authoritative project state. It is not a UI concern, a global state bucket, or a second source of truth. Drift into React-held handles, main-thread mixing, or rebuild-on-fader is how audio glitches and becomes unreason-able.
 
 ## Core rules
 
 ### 1. Use one live `AudioContext`
 
-Root the live engine in a single `AudioContext`. Use it for source nodes, worklet nodes, buses,
-automation targets, metering taps, monitor outputs, and built-in devices. Do not create separate
-contexts for unrelated features (mixer, transport, preview playback, metering, plugin wrappers).
-Use explicit separate offline contexts only for offline render/export workflows.
+Root the live engine in a single `AudioContext` for sources, worklets, buses, automation targets, metering, and monitor output. Do not create separate live contexts for mixer, transport, preview, or meters. Use explicit `OfflineAudioContext` only for offline render/export/analysis.
 
-_Why: multiple live contexts cannot share a clock or a graph, so they drift, double-allocate
-hardware buffers, and make sample-accurate timing impossible._
+**Why:** multiple live contexts cannot share a clock or graph; they drift and double-allocate hardware buffers.
 
 ### 2. Use `AudioWorklet` for custom real-time DSP
 
-Any custom low-latency DSP must run in `AudioWorklet`: gain/pan utility processors, metering
-taps, clip playback/mixing helpers, sample-accurate automation application, low-latency analysis,
-custom filters/processors, buffer-domain utilities. Do not use `ScriptProcessorNode`.
+Custom low-latency DSP runs in `AudioWorklet`. Do not use `ScriptProcessorNode`. Worklets must not import app modules, helpers, or Tauri (`worklets-no-module-runtime-imports`, `worklets-no-app-helper-or-tauri`).
 
-_Why: `ScriptProcessorNode` runs on the main thread and is deprecated; worklets run on the audio
-render thread, which is the only place DSP can meet the deadline without glitching._
+**Why:** `ScriptProcessorNode` runs on the main thread; worklets run on the audio render thread and must stay isolated.
 
-### 3. Use `AudioParam` whenever possible
+### 3. Prefer `AudioParam` for continuous control
 
-When a value can be driven with `AudioParam`, prefer it — gain, pan, filter cutoff/resonance,
-envelope-driven parameters, time-varying FX parameters, automation targets. Do not simulate
-sample-accurate control with React state, UI timers, or arbitrary polling loops.
+When a value can be driven with `AudioParam`, prefer it. Do not simulate sample-accurate control with React state, UI timers, or polling loops.
 
-_Why: `AudioParam` is scheduled on the audio thread with sample accuracy; main-thread timers are
-quantised to frame cadence and jitter, so they can never be sample-accurate._
+**Why:** `AudioParam` is scheduled on the audio thread with sample accuracy; main-thread timers cannot be.
 
 ### 4. Separate parameter changes from topology changes
 
-This distinction is critical and assigns work to a path. Parameter changes (fader, pan,
-mute/bypass, automation values, modulation, device parameter updates) take fast paths and must
-**not** rebuild the graph. Topology changes (add/remove track, bus, plugin/device, routing
-rewiring, send/return changes, structure-changing clip replacement) may take slower reconciliation
-paths. Full taxonomy in `references/path-taxonomy.md`.
+- **Fast path** — fader/pan/mute/bypass, automation values, meter reads, transport nudges: no graph rebuild, minimal alloc.
+- **Slow path** — add/remove track/bus/device, rewire routing, structure-changing clip replace: explicit orchestration; never on hot gestures.
 
-_Why: a parameter gesture is a hot, frequent event; routing a hot gesture through a graph rebuild
-is the single most common engine performance bug._
+**Why:** routing a hot parameter gesture through a graph rebuild is the most common engine performance bug.
 
 ### 5. Reconcile rather than recreate
 
-Prefer targeted reconciliation over full teardown/rebuild: apply the changed parameter only,
-update the changed routing edge only, add/remove affected nodes only, rebuild only the affected
-subgraph when practical. The bad pattern is "something changed, rebuild the entire engine".
+Prefer targeted updates: changed parameter only, changed routing edge only, add/remove affected nodes only. Avoid “something changed → rebuild the entire engine”.
 
-_Why: a blanket rebuild tears down live nodes mid-playback, dropping audio and discarding
-runtime state that was expensive to construct._
+**Why:** blanket rebuild tears down live nodes mid-playback and drops expensive runtime state.
 
-### 6. Use `OfflineAudioContext` for export and analysis workflows
+### 6. Offline export is a separate, deterministic path
 
-Offline rendering must use an explicit offline path: recreate the necessary graph
-deterministically, apply project truth intentionally, run without UI timing assumptions, and
-avoid piggybacking on live playback state. Do not use the live engine as your export engine.
+Recreate the necessary graph from project truth intentionally. Do not piggyback on live playback state or UI timing.
 
-_Why: the live engine carries transient runtime state and UI-driven timing; reusing it for export
-makes renders non-deterministic and dependent on whatever the user happened to be doing._
+**Why:** the live engine carries transient runtime state; reusing it makes exports non-deterministic.
 
-## Fast path vs slow path (summary)
+### 7. Real-time safety on RT-adjacent paths
 
-- **Fast path** — parameter changes, transport nudges, automation value application, meter
-  snapshot reads, sample-accurate runtime control. Requirements: minimal overhead, no graph
-  rebuild, no heavy object churn, no cross-layer leakage.
-- **Slow path** — graph rebuilds, topology diffs, routing changes, device/plugin insertion or
-  removal, transport reset-level changes, offline render preparation. Requirements: explicit
-  orchestration, clear synchronization boundaries, no accidental triggering on hot user gestures
-  unless intentionally coalesced.
+Never on RT-adjacent paths: unbounded allocation, locks, DOM/React updates, filesystem/network I/O, Tauri commands, JSON parse, noisy logging, create/destroy churn in hot loops. Schedule with look-ahead (or equivalent); do not bind audio correctness to React render, mount order, rAF, or visibility.
 
-Full breakdown (parameter-vs-topology examples, reconciliation granularity) in
-`references/path-taxonomy.md`.
+**Why:** a missed audio deadline is an audible dropout; UI timing is best-effort and pausable.
 
-## Real-time safety rules
+### 8. Ownership: engine executes; project truth decides
 
-### Never do this on RT-adjacent paths
+Engine owns: live graph, schedule windows, playhead execution, meter accumulators.
 
-Do not: allocate unpredictably, acquire locks, perform DOM work, perform React state updates,
-perform filesystem/network I/O, call Tauri commands, parse JSON, log excessively, or
-create/destroy arbitrary runtime objects in hot loops.
+Project truth owns: tracks, clips, routing defs, saved params, tempo map, markers.
 
-_Why: every one of these can block or pause the audio render thread past its deadline, producing
-an audible dropout — there is no recovery from a missed audio deadline._
+UI may display summaries and request changes via commands — never owns playback phase, playhead progression, loop execution, or scheduling boundaries. Presentation must not import engine/runtime (`presentation-no-engine-runtime-imports`). React stays in presentation (`react-only-in-presentation`).
 
-### Worklet isolation rules
-
-Worklets must be isolated from React, presentation code, domain stores, Tauri APIs, arbitrary
-helper singletons, and non-worklet-safe shared utilities. Treat worklet code as RT-sensitive
-code, not general app code.
-
-_Why: worklet code runs on the render thread and has no access to the main-thread world safely;
-importing app helpers smuggles allocation, blocking, or undefined globals into the hot path._
-
-### Scheduling rules
-
-The engine should schedule with a clear look-ahead model or equivalent deterministic transport
-strategy. Do not make audio correctness depend on React render cadence, component mount order,
-browser animation-frame timing, or view visibility.
-
-_Why: rendering and visibility are best-effort and pausable; binding audio timing to them makes
-playback stutter whenever the UI is busy or the tab is backgrounded._
+**Why:** conflating runtime handles with project meaning makes save/load and collaboration impossible.
 
 ## What does not belong
 
-Belongs **outside** the engine: UI layout and editor state, selection, project-level ownership
-rules, save/load workflows, command parsing, AI intent interpretation, non-runtime validation,
-and view presentation formatting. The engine must not become the owner of persisted semantics or
-decide project meaning — it executes truth projections. Latency-compensation *values* may be
-derived from project/plugin/routing truth, but *applying* them to live playback is an engine
-responsibility. The UI may display transport summaries and request changes, but must never own
-playback phase, playhead progression, loop execution, or scheduling boundaries.
-
-Full ownership catalogue (engine-owned vs project-truth, latency, transport) in
-`references/ownership-map.md`.
+- UI layout, selection, and editor chrome.
+- Project-level ownership rules, save/load, command parsing, AI intent.
+- Non-runtime validation and view formatting.
+- Native plugin host isolation mechanics beyond shared RT rules.
 
 ## Anti-patterns
 
 ### CRITICAL — Runtime handles in React/stores
 
-❌ Store `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores  
-✅ Engine-owned runtime objects; expose controlled APIs and summaries only
+❌ Wrong: store `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores.
+
+✅ Correct: engine-owned runtime objects; expose controlled APIs and summaries only.
 
 ### CRITICAL — RT-unsafe work on the audio path
 
-❌ Allocate, lock, DOM/React, FS/network, Tauri, JSON parse on RT-adjacent paths  
-✅ Worklets + prepared schedules; slow path for topology
+❌ Wrong: allocate, lock, touch DOM/React, FS/network, Tauri, or parse JSON on RT-adjacent paths.
+
+✅ Correct: worklets + prepared schedules; slow path for topology.
 
 ### CRITICAL — Parameter gesture rebuilds graph
 
-❌ Moving a fader rebuilds routing or recreates nodes  
-✅ Parameter path vs topology path (rule 4)
+❌ Wrong: moving a fader rebuilds routing or recreates nodes.
+
+✅ Correct: fast parameter path vs slow topology path (rule 4).
 
 ### HIGH — Hook owns playback phase
 
-❌ Hook is the real owner of playhead/transport execution  
-✅ Hook sends commands and subscribes to engine summaries
+❌ Wrong: a hook is the real owner of playhead/transport execution.
+
+✅ Correct: hook sends commands and subscribes to engine summaries.
 
 ### HIGH — Export reuses live engine state
 
-❌ Offline render assumes current UI/runtime state is canonical  
-✅ Offline path reconstructs the graph intentionally
+❌ Wrong: offline render assumes current UI/runtime state is canonical.
+
+✅ Correct: offline path reconstructs the graph from project truth.
 
 ### MEDIUM — Extra live AudioContext for preview
 
-❌ Fresh context for one-shots/meters  
-✅ Route previews through the single live engine (or explicit offline context)
+❌ Wrong: fresh context for one-shots or meters.
 
-## Self-review gate
+✅ Correct: route previews through the single live engine (or explicit offline context).
 
-Before declaring audio-engine work complete, walk this checklist and record the answer to each.
-Any check whose answer is not a clear "yes" with a concrete reason is a blocker, not a pass.
+## References
 
-1. Does the engine own time/routing/playback rather than the UI?
-2. Is there exactly one live `AudioContext` (offline contexts only for render/export)?
-3. Are all custom processors in `AudioWorklet` (no `ScriptProcessorNode`)?
-4. Are parameter updates separated from topology updates (no rebuild on a parameter change)?
-5. Does the engine consume truth rather than become truth?
-6. Is reconciliation used rather than blanket rebuilds where practical?
-7. Are RT-sensitive paths free of UI/framework/native-bridge leakage and unbounded allocation?
-8. Is offline rendering explicit and deterministic?
-9. Did the change reduce, not increase, runtime leakage into the rest of the app?
-
-Then run and paste the project's static checks. **Not complete until the verbatim output of
-`pnpm typecheck`, `pnpm lint`, and `pnpm deps:validate` appears in the write-up, each in its own
-fenced block** — a "passes" claim without pasted output reads as Unverified, not Pass. If a
-touched path has tests, paste `pnpm exec vitest run <path>` output too.
-
-## Bundled resources
-
-- `references/path-taxonomy.md` — full fast/slow path taxonomy: parameter-vs-topology examples
-  and reconciliation granularity (rules 4–5).
-- `references/ownership-map.md` — full ownership catalogue: engine-owned vs project-truth,
-  what belongs where, latency, and transport guidance.
+- [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — where `engine/` sits in a module.
+- `.dependency-cruiser.cjs` — `worklets-*`, `presentation-no-engine-runtime-imports`, `react-only-in-presentation`.

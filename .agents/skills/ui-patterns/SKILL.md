@@ -1,187 +1,119 @@
 ---
 name: ui-patterns
-type: agent-guide
 description: >-
   Build and review React presentation-layer UI for the DAW: presentation-only
   components, dense editor surfaces on a renderer not the DOM, accessibility and
-  failure states built into the component shape, theming through tokens.
-  ALWAYS apply this skill when writing or reviewing React components, hooks,
-  contexts, or view models, when touching accessibility or keyboard behavior, when
-  building timeline / waveform / piano-roll / automation / spectrogram surfaces, or
-  when styling presentation — even if it looks like a "simple" component or a
-  one-line style tweak. Do not put validation, persistence, undo, or engine-control
-  logic into a hook, view model, or renderer hot path directly. Skip this skill for
-  engine/DSP/Rust work, pure business-rule or data-model changes, and build tooling
-  config.
+  failure states built into the component shape, theming through tokens. ALWAYS
+  apply when writing or reviewing React components, hooks, contexts, or view
+  models, when touching accessibility or keyboard behavior, when building
+  timeline / waveform / piano-roll / automation / spectrogram surfaces, or when
+  styling presentation. Do not put validation, persistence, undo, or
+  engine-control logic into a hook, view model, or renderer hot path. Skip
+  engine/DSP/Rust work, pure business-rule or data-model changes, and build
+  tooling config.
 ---
-
-# Skill: ui-patterns
 
 ## Purpose
 
-This is the authoritative skill for frontend UI implementation in the DAW. It exists to stop
-the presentation layer from quietly becoming a second business layer — hooks that mutate
-truth, view models that own validation and persistence, renderer hot paths that execute
-hidden commands — and to stop "happy-path-only" UI that ignores pending, loading, and
-failure states. The frontend should be the best possible interface to the DAW, not a place
-where business rules accrete.
-
-The failure mode this prevents: code that compiles, renders, and looks done, but has buried
-write authority outside explicit action boundaries, skipped a11y semantics, or assumed
-every async dependency succeeds.
+Presentation code that owns business truth, dense editors rendered as giant DOM forests, a11y bolted on late, or hand-memoized components that fight the React Compiler all produce the same outcome: untestable UI and RT-adjacent work on the wrong thread. This skill keeps the presentation layer presentation-only.
 
 ## Core rules
 
 ### 1. Presentation only
-React components, hooks, and contexts belong to presentation. They may render views,
-subscribe to projections/stores, call actions, coordinate view-scoped state, manage refs and
-render loops, and bind controls to semantics. They must not become the primary home of
-business rules.
-_Why: when business rules leak into presentation, truth has two owners and the DAW's data
-model can no longer be reasoned about from the engine/core layer alone._
+
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine (`presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`). React stays in presentation (`react-only-in-presentation`).
+
+**Why:** business rules in the tree duplicate across surfaces and couple domain logic to React lifecycle.
 
 ### 2. React owns layout; renderer surfaces own pixels
-Use React for layout, routing, panels, toolbars, forms, controls, inspectors, summaries, and
-the accessibility semantics around complex surfaces. Use Canvas/WebGL/WebGPU-style renderers
-for timeline lanes, waveform fields, piano roll, automation surfaces, spectrograms, dense
-overlays, and hot-path meters. Do not render dense editor surfaces as giant DOM forests.
-_Why: thousands of DOM nodes on an interaction hot path destroy frame budget; the DOM is the
-wrong tool for per-pixel dense editor surfaces._ Full backend/fallback guidance:
-`references/dense-surfaces.md`.
 
-### 3. Hooks stay thin
-Hooks may bind UI to actions, projections, selectors, telemetry, and refs. Hooks must not
-become the business layer, the persistence layer, the engine controller, or the undo/redo
-coordinator.
-_Why: a "thick" hook hides cross-feature mutation behind a render-time call, making writes
-untraceable and undo semantics inconsistent._
+Use Canvas/WebGL/WebGPU-style renderers for timeline lanes, waveforms, piano roll, automation, spectrograms, dense overlays, and hot-path meters — not giant DOM forests. React owns chrome, layout, and accessibility semantics around complex surfaces. Renderers may draw, hit-test, and run pointer/render loops; they must not own business writes. Writes still go through explicit actions.
+
+**Why:** DOM-per-clip does not scale; a renderer that mutates truth is an undocumented write path.
+
+### 3. Hooks stay thin; leaf components stay dumb
+
+Hooks bind presentation to explicit actions and read surfaces. Leaf `presentations/components/` must not import useCases or business stores (`components-no-usecase-access`, `components-no-business-store-access`, `components-no-usecase-transitively`). Views and hooks compose; pass props into leaves.
+
+**Why:** fat hooks and business-aware leaves become untestable mini-use-cases in the React tree.
 
 ### 4. Accessibility is part of component design
-A11y is not a post-processing step. Transport controls, faders, toggles, lists, dialogs, and
-dense surfaces must be designed with semantics and keyboard behavior in mind from the start.
-_Why: semantics retrofitted after the fact produce visual-only controls that screen readers
-and keyboard users cannot operate, and the redesign cost is far higher later._ Detailed
-semantics, toggle, and keyboard rules: `references/accessibility.md`.
+
+Prefer real buttons, inputs, sliders, lists, dialogs, menus, and labels. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable where feasible. Dense surfaces still need accessible support in surrounding chrome.
+
+**Why:** semantics retrofitted after the fact produce visual-only controls that fail a11y and often keyboard use.
 
 ### 5. Styling is systematic
-Use the project's design tokens / component system consistently. Do not fragment styling into
-many unrelated local approaches for the same class of UI.
-_Why: one-off styling for each instance of the same control drifts visually and makes
-dark-UI legibility and long-session ergonomics impossible to maintain._ Token/primitive/
-ergonomics detail: `references/styling.md`.
 
-### 6. Evaluate the holistic application state — no happy-path-only coding
-When implementing UI you must evaluate the holistic state of the application. Ask: Does the UI
-update optimistically? Are pending and loading states explicitly handled? What happens if the
-network request fails, or the audio thread crashes? Implement error boundaries, fallback UIs,
-and graceful degradation for any component that depends on async data or external state.
-Assume everything that can fail will fail.
-_Why: a DAW depends on an audio thread and async projections that genuinely do fail; UI that
-only models success leaves the user stranded with no feedback when they do._
+Use design tokens and project-standard primitives. Optimize for dark-UI legibility, dense but readable layouts, long-session usability, and stable affordances. Avoid one-off styling systems per feature.
+
+**Why:** fragmented styling becomes unmaintainable under DAW density.
+
+### 6. No happy-path-only coding
+
+Plan for audio-thread failure, async projection failure, and network failure: error boundaries, fallback UIs, structured pending/error for async UI.
+
+**Why:** a DAW depends on an audio thread and async projections that genuinely fail.
 
 ### 7. Prefer plain, compiler-friendly components
-Write simple components first. Do not add manual memoization patterns by default; keep
-component logic simple and compiler-friendly.
-_Why: premature memoization adds surface area the compiler already handles and obscures the
-data flow a reviewer needs to follow._
 
-### 8. Keep view models presentation-focused
-Presentation-layer shaping of data is fine. Presentation-layer ownership of validation,
-persistence, cross-feature mutation, or undo semantics is not.
-_Why: a view model that owns validation or persistence is a business model wearing a
-presentation name — the exact coupling rule 1 forbids, hidden one layer down._
+Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Never render with `&&` — use ternary or early `return null`. Consume Context with `use()`, not `useContext`.
 
-### 9. Writes go through explicit actions, even from renderers
-Renderer surfaces may own drawing, hit testing, pointer-interaction hot paths, and
-render-loop orchestration, and may interpret interactions. They must not become business
-write owners, persistence orchestrators, or hidden command executors. Writes still go through
-explicit actions with explicit boundaries.
-_Why: a renderer that mutates authoritative state inside its hot path is an undocumented
-command path no reviewer or undo system can see._
+**Why:** hand memoization fights the compiler; `&&` silently renders `0`/`''`; `forwardRef` is obsolete.
+
+### 8. View models stay presentation-focused; writes go through actions
+
+View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer may interpret interactions; authoritative writes still go through use cases / `executeAppAction`.
+
+**Why:** a view model or hit-test handler that writes truth is a use case in the wrong clothes.
 
 ## What does not belong
 
-- Business rules, validation, persistence, undo/redo coordination, and engine control —
-  these live behind explicit actions / `executeAppAction`, not in components, hooks,
-  view models, or renderer hot paths. See `architecture`, `architecture-violations`,
-  `state-and-write-paths`.
-- Leaf **components** must not own use-case calls (promote to views/hooks) —
-  `components-no-usecase-access` / reachability cruise.
-- DSP / Web Audio engine internals and RT-audio constraints — `web-audio-engine`.
+- Engine/DSP/Rust implementation.
+- Pure business-rule or data-model changes with no presentation surface.
+- Build tooling and package config.
+- Gaming architecture rules by moving business logic into hooks labeled “UI”.
 
 ## Anti-patterns
 
 ### CRITICAL — Hook owns business truth
 
-❌ Hook validates, mutates truth, coordinates runtime, and manages undo/history  
-✅ Hook binds presentation to explicit actions and read surfaces
+❌ Wrong: hook validates, persists, and orchestrates undo for a domain edit.
+
+✅ Correct: hook calls an explicit action/use case and binds read surfaces.
 
 ### CRITICAL — Renderer writes authoritative state
 
-❌ Renderer hot path mutates project truth without an action boundary  
-✅ Renderer interprets interactions; writes go through `executeAppAction` / owner use cases
+❌ Wrong: canvas pointer handler calls `trackStore.set` or mutates project truth inline.
+
+✅ Correct: interpret interaction → dispatch explicit action.
+
+### CRITICAL — Manual memoization / `forwardRef` / `&&` render
+
+❌ Wrong: `useMemo`/`useCallback`/`React.memo`, `forwardRef`, or `{count && <Badge />}`.
+
+✅ Correct: plain components; `ref` as prop; ternary or early return.
 
 ### HIGH — Dense editor as DOM forest
 
-❌ Timeline/piano roll as thousands of DOM nodes on hot paths  
-✅ Canvas/WebGL/WebGPU surface; React for layout and chrome
+❌ Wrong: one DOM node per clip/note for a full timeline.
+
+✅ Correct: renderer surface; React for layout and chrome.
 
 ### HIGH — A11y bolted on late
 
-❌ Visual-only controls, keyboard/semantics after the fact  
-✅ Semantics and keyboard built into the component shape (see `references/accessibility.md`)
+❌ Wrong: div-with-onClick transport controls, keyboard after the fact.
 
-### HIGH — Component imports useCases
+✅ Correct: semantic controls and keyboard built into the component shape.
 
-❌ Leaf component calls foreign or local useCases  
-✅ View/hook owns the call; props/callbacks into the component
+### HIGH — Component imports useCases or business stores
 
-### CRITICAL — Manual memoization (AGENTS reject)
+❌ Wrong: leaf `presentations/components/*` imports foreign `useCases` or business `stores`.
 
-❌ `useMemo` / `useCallback` / `React.memo` — hand-written memoization  
-✅ Plain components; React Compiler owns memoization for the entire app (code-review reject if hand-memoized)
+✅ Correct: views/hooks compose; pass props into leaf components.
 
-### CRITICAL — `forwardRef` or `&&` render traps
+## References
 
-❌ `forwardRef(...)` or `{count && <Row />}` (can render `0`/`''`)  
-✅ `ref` as a normal prop (React 19); ternary or early `return null`
-
-### HIGH — Context via `useContext`
-
-❌ `useContext(FooContext)`  
-✅ `use(FooContext)` per AGENTS
-
-## Self-review gate
-
-Before declaring frontend UI work complete, write a Self-review section and answer every
-question below with a written trace — checkboxes alone do not count. Use `pnpm deps:validate`,
-`pnpm typecheck`, `pnpm exec vitest run <path>`, `pnpm lint` — do not invent command names.
-
-1. Is this presentation code rather than business logic?
-2. Are hooks thin and boundary-respecting?
-3. Are dense rendering surfaces using the correct rendering model (renderer, not DOM forest)?
-4. Are semantics and keyboard behavior reasonable for the core workflows touched?
-5. Is accessibility built into the component shape, not bolted on?
-6. Does styling follow the project's token / component system?
-7. Are pending, loading, and failure states explicitly handled, with boundaries/fallbacks?
-8. Did the change reduce rather than increase presentation/business coupling?
-9. Did any renderer or view-model code quietly become a hidden business layer?
-
-Then paste real command output into the Self-review — do not summarize with "all passing":
-
-- `pnpm deps:validate` output (dependency-boundary validation). **Not complete until the
-  verbatim output appears in the Self-review section.**
-- `pnpm typecheck` output (types clean across the blast radius).
-- `pnpm exec vitest run <path>` for touched UI, and `pnpm lint` if styling/structure changed.
-
-Not complete until every question above has a written answer beneath it and `pnpm deps:validate`
-output is pasted verbatim.
-
-## Bundled resources
-
-- `references/accessibility.md` — semantic-controls-first rule, explicit toggle semantics,
-  required keyboard support for core workflows, and a11y around dense surfaces.
-- `references/dense-surfaces.md` — what renderer surfaces may and must not own, and
-  intentional platform-dependent fallback design.
-- `references/styling.md` — token-driven theming, project-standard UI primitives, and
-  DAW ergonomics (dark-UI legibility, density, long-session usability, stable affordances).
+- [docs/05-accessibility.md](../../../docs/05-accessibility.md) — a11y patterns for the app.
+- [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — presentation layer placement.
+- `.dependency-cruiser.cjs` — `components-no-*`, `presentation-no-*`, `react-only-in-presentation`.

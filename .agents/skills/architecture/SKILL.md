@@ -1,6 +1,5 @@
 ---
 name: architecture
-type: agent-guide
 description: >-
   Author module code against Sourdaw's DDD boundaries: contract barrels, stores as
   public read contracts, UI → business → IO flow, and composition shells. ALWAYS
@@ -8,81 +7,60 @@ description: >-
   imports, wiring use cases or stores, or designing presentation access to other
   domains. Do not invent a fifth barrel, deep-import private folders, or treat
   stores as free global write APIs — apply first. Skip pure styling, single-file
-  renames inside one folder, and violation *remediation* tactics (use
-  architecture-violations for those).
+  renames inside one folder, and violation remediation (use architecture-violations).
 ---
-
-# Skill: Architecture
 
 ## Purpose
 
-Modules must stay independently understandable. When the boundary leaks — a presentation
-file importing a foreign repository, a use case importing `presentations/`, a model
-climbing into the engine — the cost surfaces months later as cascading rewrites and
-RT-unsafe paths. This skill is how to **build** on the right side of the boundary.
-When a check already failed and you need to fix without gaming the validator, load
-`architecture-violations` instead.
+Modules must stay independently understandable. When the boundary leaks — a presentation file importing a foreign repository, a use case importing `presentations/`, a model climbing into the engine — the cost surfaces months later as cascading rewrites and RT-unsafe paths. This skill is how to build on the right side of the boundary. When a check already failed, load `architecture-violations` instead.
 
 ## Core rules
 
 ### 1. Cross-module imports only through contract-folder barrels
 
-Each module may expose **up to four** permitted contract surfaces — create only
-those the module actually exposes (do not add empty barrels for symmetry):
+Each module may expose **up to four** permitted contract surfaces — create only those it actually needs:
 
-| Barrel | Role |
-|--------|------|
-| `#/modules/<M>/useCases` | Callable operations (functions/constants only — no type re-exports) |
-| `#/modules/<M>/stores` | **Read** contract for domain/UI working state |
-| `#/modules/<M>/events` | Typed cross-module payloads |
-| `#/modules/<M>/presentations/views` | View entry points other modules may compose |
+- `#/modules/<M>/useCases` — operations (functions/constants only; no type re-exports)
+- `#/modules/<M>/stores` — **read** contract for domain/UI working state
+- `#/modules/<M>/events` — typed cross-module payloads
+- `#/modules/<M>/presentations/views` — composable view entry points
 
-There is **no** module-root `index.ts`. Deep imports into contract folders or private
-paths (`models/`, `repositories/`, `handlers/`, `engine/`, …) are forbidden
-(`cross-module-index-only`, `contract-barrel-scope`) — including from tests
-(see the test-inclusive cruise in `pnpm deps:validate`).
+There is **no** module-root `index.ts`. Deep imports into private paths (`models/`, `repositories/`, `handlers/`, `engine/`, …) are forbidden — including from tests.
 
 ```typescript
-// ✅ other module
+// ✅
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 
-// ❌ deep / private
+// ❌
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { type Track } from '#/modules/Arrangement/models/Track';
 ```
 
-**Why:** the barrel is the curated public surface. A deep import freezes private layout
-and lets model changes cascade across modules.
+Enforced by `cross-module-index-only`, `contract-barrel-scope`, `no-models-repos-transformers-in-index`, and the test-inclusive cruise.
+
+**Why:** the barrel is the curated public surface. A deep import freezes private layout and lets model changes cascade across modules.
 
 ### 2. Same module uses relative imports — never own barrels
 
-Inside `src/modules/Arrangement/`, import with relatives (`../stores/trackStore`,
-`./addTrack`). Do not `import { addTrack } from '#/modules/Arrangement/useCases'`.
+Inside `src/modules/Arrangement/`, import with relatives (`../stores/trackStore`, `./addTrack`). Do not import `#/modules/Arrangement/useCases` from inside Arrangement.
 
-**Why:** barrels are for **external** consumers. Intra-module barrel use creates cycles,
-hides the real file graph, and fights `no-self-barrel-import`.
+**Why:** barrels are for external consumers. Intra-module barrel use creates cycles and fails `no-self-barrel-import` / `no-internal-barrel-import`.
 
-### 3. Stores are a public **read** contract; writes stay with the owner
+### 3. Stores are a public read contract; writes stay with the owner
 
-Sourdaw **keeps** `stores/` as a contract (unlike kits that privatize stores). Other
-modules may subscribe via `useStore` / selectors. They must **not** call `store.set`
-on a foreign store — route mutations through the owning module's use cases or
-`executeAppAction`.
+Other modules may subscribe via `useStore` / selectors. They must not call `store.set` on a foreign store — route mutations through the owning module's use cases or `executeAppAction`.
 
 ```typescript
-// ✅ read foreign store
 import { trackStore } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
 const tracks = useStore(trackStore);
 
-// ✅ mutate via owner / command bus
 import { executeAppAction } from '#/modules/Command/useCases';
-await executeAppAction({ type: 'track/add', payload: { … } });
+await executeAppAction({ type: 'track/add', payload: { /* … */ } });
 ```
 
-**Why:** global **visibility** without global **mutability** keeps undo, CRDT, and
-invariants in one place. See `state-and-write-paths`.
+**Why:** global visibility without global mutability keeps undo, CRDT, and invariants in one place.
 
 ### 4. Dependency direction is UI → business → IO
 
@@ -91,132 +69,77 @@ presentations/  →  useCases/  →  repositories/ | stores/ | services/
                      handlers/ (private; registered for Command)
 ```
 
-- Business/IO **must not** import `presentations/` (`business-no-presentations`).
+- Business/IO must not import `presentations/` (`business-no-presentations`).
 - Only `useCases/` orchestrate `repositories/` (`usecases-only-write-boundary-to-repositories`).
-- Repositories must not climb into useCases/handlers/presentations
-  (`repositories-no-business`). Same-module `stores/` access is allowed (including
-  thin get/set of owned state — e.g. transport/workspace persistence helpers). Multi-step
-  orchestration and domain event emission still belong in use cases.
+- Repositories must not import any-module `useCases|handlers|presentations` (`repositories-no-business`).
+- Models stay pure (`models-are-pure`); events stay pure (`events-are-pure`).
 
-**Why:** reversing the arrow couples domain logic to React lifecycle and makes RT paths
-unknowable.
+**Why:** reversing the arrow couples domain logic to React lifecycle and makes RT paths unknowable.
 
-### 5. Presentation composition shells may call foreign useCases and stores
+### 5. Leaf components stay dumb; composition shells use barrels
 
-Workspace, Command panels, and device UIs are **composition roots**. Views and hooks may
-import foreign **barrels** (`useCases`, `stores`, `events`, `presentations/views`). They
-must not import foreign private folders.
+Views and hooks may import foreign contract barrels. Leaf `presentations/components/` must not import business stores (`components-no-business-store-access`), useCases (`components-no-usecase-access`, `components-no-usecase-transitively`), or views (`components-no-view-access`). Presentation must not import repositories, handlers, or engine (`presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`).
 
-Leaf **components** stay dumb — prefer views/hooks for business access. Machine rules:
+**Why:** leaf components that own business calls become untestable mini-views and trip the reachability gate.
 
-| Rule | What it actually bans |
-|------|------------------------|
-| `components-no-usecase-access` | **Same-module** `useCases/` only |
-| `components-no-business-store-access` | **Any** module business `stores/` (same or foreign) |
-| `components-no-view-access` | **Any** module’s `presentations/views/` |
-| `components-no-usecase-transitively` (reachability) | Component that can **reach any** module’s `useCases/` (value graph) |
+### 6. Use-case types stay private; one function per file
 
-Foreign useCases from a leaf component are covered by the reachability edge gate
-(`scripts/deps-check-reachability.mjs` — full from→to baseline). Foreign **stores** from a
-leaf component fail `components-no-business-store-access` directly. Views and hooks keep
-the public store read contract.
+Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index` on the types cruise). Consumers use `ReturnType`/`Parameters` or payloads via `events/`. Each use-case and repository file exports exactly one function. Handlers are private under `handlers/`; cross-module access only via `get<Module>Handlers` from `useCases/`.
 
-**Why:** forbidding *all* foreign useCases from **views** would force a wrapper per action
-in a DAW shell; forbidding **leaf components** from owning business calls keeps leaves dumb.
+**Why:** type re-exports freeze private shapes; multi-export wrappers become laundering barrels.
 
-### 6. Models and events stay pure; types do not leak through useCases barrels
+### 7. Repositories touch metal; engine does not import repositories
 
-- `models/` private; never on a barrel (`no-models-repos-transformers-in-index`).
-- Consumer modules define **local** shapes or use `ReturnType` / `Parameters` of imported
-  functions — not `import type` from another module's useCases. Policy name:
-  `no-usecase-type-exports-on-index` (depcruiser only sees type-only edges; without
-  `tsPreCompilationDeps: 'specify'` this is **review/skill policy**, not a reliable hard gate).
-- Cross-module type payloads live on `events/`.
-- Models must not climb into repos/handlers/presentations/engine (`models-are-pure`).
-- Events must not import orchestration/IO (`events-are-pure`).
+All I/O (Tauri IPC, storage, Web Audio setup) goes in `repositories/` (`tauri-ipc-only-in-repositories`). The engine receives dependencies from use cases — never imports repositories itself.
 
-**Why:** duplicated consumer types are intentional; shared model imports hide blast radius
-until production.
-
-### 7. One use case / repository function per file; handlers are private
-
-- Use cases and repositories: one exported function per file.
-- `handlers/` build `createHandler` maps; not contract. Cross-module only via
-  `get<Module>Handlers` on the useCases barrel for Command registration.
-- Presentation uses `executeAppAction` or granular use cases — never raw handler maps.
-
-**Why:** multi-export wrapper files become laundering barrels.
-
-### 8. Repositories touch metal; engine does not import repositories
-
-I/O (Tauri, filesystem, Web Audio setup, decode) lives in `repositories/`. The
-`engine/` path stays RT-oriented and does not orchestrate repositories directly —
-use cases inject or call repos.
-
-**Why:** keeps I/O and RT graphs separable and testable. See `web-audio-engine`,
-`tauri-platform`.
+**Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 
 ## What does not belong
 
-- **How to silence a red `deps:validate`** — that is `architecture-violations` (real fix,
-  not gaming).
-- **State taxonomy and write-path ownership detail** — `state-and-write-paths`.
-- **RT buffer/worklet rules** — `web-audio-engine`.
-- **Plugin scan/host lifecycle** — `plugin-hosting`.
-- Frontify/GraphQL-specific folder kits (`errors/` as public contract, store privacy).
+- Pure styling / className tweaks with no import or boundary change.
+- Single-file renames inside one folder that do not cross layers.
+- Gaming a red `deps:validate` — that is `architecture-violations`.
+- Inventing a fifth contract surface or a module-root `index.ts`.
 
 ## Anti-patterns
 
 ### CRITICAL — Cross-module private import
 
-❌ `import { Track } from '#/modules/Arrangement/models/Track'`  
-✅ Call a use case; keep a local type with only fields you need.
+❌ Wrong: `import { type Track } from '#/modules/Arrangement/models/Track'`
+
+✅ Correct: call Arrangement use cases / read stores / define a local shape; shared named types go through `events/` when required.
 
 ### CRITICAL — Business importing presentations
 
-❌ `useCases/initX.ts` imports `../presentations/renderers/…`  
-✅ Keep UI factories under presentations; call them from views/hooks only
-(`business-no-presentations`).
+❌ Wrong: `useCases/initTimelineRenderer` imports `presentations/renderers/…`
+
+✅ Correct: keep renderer factories under presentations and call them from views/hooks, or move pure factory code out of presentations.
 
 ### CRITICAL — Boundary evasion (malicious compliance)
 
-❌ Types/constants parked in `useCases/` so a blocked import becomes “legal”; fake use
-cases that only re-export repositories; events used as a disguised function call to one
-known listener.
+❌ Wrong: re-export a repository through a use-case file so the import path is “legal”.
 
-✅ Segregate types per module. A use case is a business operation. Duplication of consumer
-types is accepted by design. If no legitimate route exists, stop and report the rule.
+✅ Correct: a real typed use case that owns the operation; consumers import the function, not the private symbol.
 
 ### HIGH — Component owns business calls or store reads
 
-❌ `presentations/components/Foo.tsx` imports useCases or business stores, or reaches
-them via a shared knob that pulls the command bus.
+❌ Wrong: `presentations/components/VoiceButton.tsx` imports `AiRuntime/stores`
 
-✅ View/hook owns the call/subscription; component receives values and callbacks
-(`components-no-usecase-*`, `components-no-business-store-access`).
+✅ Correct: view/hook reads the store and passes props/callbacks into the leaf component.
 
 ### HIGH — Foreign store write
 
-❌ `trackStore.set(…)` from Workspace code.
+❌ Wrong: `trackStore.set(…)` from another module
 
-✅ `executeAppAction` / Arrangement use case that owns the write.
+✅ Correct: owning use case or `executeAppAction`.
 
 ### MEDIUM — Same-module barrel import
 
-❌ `import { addTrack } from '#/modules/Arrangement/useCases'` inside Arrangement.
+❌ Wrong: inside Arrangement, `import { addTrack } from '#/modules/Arrangement/useCases'`
 
-✅ Relative path to the defining file.
+✅ Correct: relative path to the defining file.
 
 ## References
 
-- `AGENTS.md` — Frontend Domain-Driven Architecture
-- `docs/architecture/03-typescript-module.md` — module anatomy
-- `.dependency-cruiser.cjs` — main value-graph rules + edge-level known-violations
-- `.dependency-cruiser.reachability.cjs` + `scripts/deps-check-reachability.mjs` — full
-  from→to→rule reachability gate (rejects new and stale edges; do not use bare
-  `--ignore-known` for reachability)
-- `.dependency-cruiser.types.cjs` — type-only edges (`tsPreCompilationDeps: "specify"`)
-- `.dependency-cruiser.tests.cjs` — test-inclusive barrel boundary cruise
-- `pnpm deps:validate` — all four steps with their baselines
-- `architecture-violations` — fix discipline when a check fails
-- `state-and-write-paths` — who may write which state
+- [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — module anatomy, contract barrels, layering.
+- `.dependency-cruiser.cjs` — machine-validated boundary rules. Run `pnpm deps:validate` (main + reachability + types + tests cruises).
