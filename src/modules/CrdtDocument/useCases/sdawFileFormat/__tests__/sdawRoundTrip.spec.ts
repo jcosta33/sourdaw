@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { encodeSdawFile } from '../encodeSdawFile';
+
 import { decodeSdawFile } from '../decodeSdawFile';
+import { encodeSdawFile } from '../encodeSdawFile';
 import { SDAW_MAGIC, FORMAT_VERSION } from '../helpers';
+
 import type { DocumentBundle } from '../../../models/CrdtDocumentTypes';
 
 describe('SDAW file format encode/decode', () => {
@@ -23,7 +25,9 @@ describe('SDAW file format encode/decode', () => {
     it('encoded file starts with SDAW magic', () => {
         const bundle = new Map() as DocumentBundle;
         const encoded = encodeSdawFile(bundle);
-        for (let i = 0; i < 4; i++) expect(encoded[i]).toBe(SDAW_MAGIC[i]);
+        for (let i = 0; i < 4; i++) {
+            expect(encoded[i]).toBe(SDAW_MAGIC[i]);
+        }
     });
 
     it('round-trip empty bundle', () => {
@@ -55,7 +59,9 @@ describe('SDAW file format encode/decode', () => {
 
     it('round-trip preserves large binary data', () => {
         const large = new Uint8Array(10000);
-        for (let i = 0; i < large.length; i++) large[i] = i % 256;
+        for (let i = 0; i < large.length; i++) {
+            large[i] = i % 256;
+        }
         const bundle = new Map([['large', large]]) as DocumentBundle;
         const encoded = encodeSdawFile(bundle);
         const decoded = decodeSdawFile(encoded);

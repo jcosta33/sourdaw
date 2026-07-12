@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { NoteRepeater } from '../NoteRepeater';
+
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { NoteRepeater } from '../NoteRepeater';
 
 const transport: TransportInfo = { isPlaying: true, tempo: 120, sampleRate: 48000, positionInBeats: 0 };
-const note_on = (t: number, n: number, v = 100): MidiEvent => ({ timeSamples: t, kind: { type: 'noteOn', channel: 0, note: n, velocity: v } });
+const note_on = (t: number, n: number, v = 100): MidiEvent => ({
+    timeSamples: t,
+    kind: { type: 'noteOn', channel: 0, note: n, velocity: v },
+});
 
 describe('NoteRepeater', () => {
     it('passes through original event', () => {
@@ -41,8 +45,12 @@ describe('NoteRepeater', () => {
         const out: MidiEvent[] = [];
         r.processMidi([note_on(0, 60)], out, transport);
         const ons = out.filter((e) => e.kind.type === 'noteOn');
-        if (ons[1]?.kind.type === 'noteOn') expect(ons[1].kind.note).toBe(72);
-        if (ons[2]?.kind.type === 'noteOn') expect(ons[2].kind.note).toBe(84);
+        if (ons[1]?.kind.type === 'noteOn') {
+            expect(ons[1].kind.note).toBe(72);
+        }
+        if (ons[2]?.kind.type === 'noteOn') {
+            expect(ons[2].kind.note).toBe(84);
+        }
     });
 
     it('clamps repeat count', () => {

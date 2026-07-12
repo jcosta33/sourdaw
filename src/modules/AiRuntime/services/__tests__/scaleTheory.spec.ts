@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { getScalePitches, snapToScale, chordFromDegrees, filterTemplates } from '../scaleTheory';
 
 describe('getScalePitches', () => {
@@ -85,9 +86,36 @@ describe('chordFromDegrees', () => {
 
 describe('filterTemplates', () => {
     const templates = [
-        { id: '1', name: 'Pop Bass', category: 'bass', genres: ['pop'], tags: ['simple'], description: 'Pop', generate: () => [], lengthBeats: 4 },
-        { id: '2', name: 'Jazz Drums', category: 'drums', genres: ['jazz'], tags: ['swing'], description: 'Jazz', generate: () => [], lengthBeats: 4 },
-        { id: '3', name: 'Rock Chords', category: 'chords', genres: ['rock'], tags: ['power'], description: 'Rock', generate: () => [], lengthBeats: 4 },
+        {
+            id: '1',
+            name: 'Pop Bass',
+            category: 'bass',
+            genres: ['pop'],
+            tags: ['simple'],
+            description: 'Pop',
+            generate: () => [],
+            lengthBeats: 4,
+        },
+        {
+            id: '2',
+            name: 'Jazz Drums',
+            category: 'drums',
+            genres: ['jazz'],
+            tags: ['swing'],
+            description: 'Jazz',
+            generate: () => [],
+            lengthBeats: 4,
+        },
+        {
+            id: '3',
+            name: 'Rock Chords',
+            category: 'chords',
+            genres: ['rock'],
+            tags: ['power'],
+            description: 'Rock',
+            generate: () => [],
+            lengthBeats: 4,
+        },
     ] as never;
 
     it('filters by category', () => {

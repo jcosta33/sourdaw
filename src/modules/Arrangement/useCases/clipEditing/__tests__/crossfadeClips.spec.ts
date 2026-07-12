@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { crossfadeClips } from '../crossfadeClips';
 
 const mocks = vi.hoisted(() => ({
@@ -20,12 +21,15 @@ describe('crossfadeClips', () => {
 
     it('processes crossfade with valid clips', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{
-                id: 't1', clips: [
-                    { id: 'a', startBeat: 0, endBeat: 4, type: 'audio' },
-                    { id: 'b', startBeat: 3.5, endBeat: 8, type: 'audio' },
-                ],
-            }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'a', startBeat: 0, endBeat: 4, type: 'audio' },
+                        { id: 'b', startBeat: 3.5, endBeat: 8, type: 'audio' },
+                    ],
+                },
+            ],
             selectedTrackId: 't1',
         } as never);
         expect(() => crossfadeClips('a', 'b', 0.5)).not.toThrow();

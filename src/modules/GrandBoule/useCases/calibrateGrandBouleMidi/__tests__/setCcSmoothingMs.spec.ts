@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { setCcSmoothingMs } from '../setCcSmoothingMs';
+
 const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setCcSmoothingMs', () => {
     it('runs without crash when state exists', () => {

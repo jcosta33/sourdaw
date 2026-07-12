@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { GrooveModule } from '../GrooveModule';
+
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { GrooveModule } from '../GrooveModule';
 
 const transport: TransportInfo = { isPlaying: true, tempo: 120, sampleRate: 48000, positionInBeats: 0 };
-const note_on = (t: number, n: number, v = 100): MidiEvent => ({ timeSamples: t, kind: { type: 'noteOn', channel: 0, note: n, velocity: v } });
+const note_on = (t: number, n: number, v = 100): MidiEvent => ({
+    timeSamples: t,
+    kind: { type: 'noteOn', channel: 0, note: n, velocity: v },
+});
 
 describe('GrooveModule', () => {
     it('constructs without crash', () => {

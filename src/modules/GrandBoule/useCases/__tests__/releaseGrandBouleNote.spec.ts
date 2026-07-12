@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { releaseGrandBouleNote } from '../releaseGrandBouleNote';
+
 const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
 describe('releaseGrandBouleNote', () => {
     it('runs without crash', () => {

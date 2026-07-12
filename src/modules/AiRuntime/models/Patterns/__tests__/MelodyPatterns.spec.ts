@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { melodyPatterns } from '../MelodyPatterns';
+
 describe('MelodyPatterns', () => {
     it('exports a non-empty array', () => {
         expect(Array.isArray(melodyPatterns)).toBe(true);

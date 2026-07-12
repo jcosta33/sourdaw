@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { resetMidiCalibration } from '../resetMidiCalibration';
+
 const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('resetMidiCalibration', () => {
     it('runs without crash when state exists', () => {

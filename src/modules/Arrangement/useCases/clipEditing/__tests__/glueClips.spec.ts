@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { glueClips } from '../glueClips';
+
 import type { getTrackState as originalGetTrackState } from '../../../repositories/track/getTrackState';
 import type { updateTrack as originalUpdateTrack } from '../../../repositories/track/updateTrack';
 

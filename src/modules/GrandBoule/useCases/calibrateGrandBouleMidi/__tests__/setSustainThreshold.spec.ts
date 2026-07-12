@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { setSustainThreshold } from '../setSustainThreshold';
+
 const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setSustainThreshold', () => {
     it('runs without crash when state exists', () => {

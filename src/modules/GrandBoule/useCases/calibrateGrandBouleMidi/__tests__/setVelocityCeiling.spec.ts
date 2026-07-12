@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { setVelocityCeiling } from '../setVelocityCeiling';
+
 const mock_store = { value: { midiCalibration: {} }, set: () => {} } as never;
 describe('setVelocityCeiling', () => {
     it('runs without crash when state exists', () => {

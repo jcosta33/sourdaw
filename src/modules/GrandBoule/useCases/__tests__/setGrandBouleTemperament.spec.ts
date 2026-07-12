@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { setGrandBouleTemperament } from '../setGrandBouleTemperament';
 
 const mock_engine = new Proxy({}, { get: () => () => {} }) as never;
