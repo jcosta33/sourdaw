@@ -116,7 +116,7 @@ refactored._
 The boundary between Rust and TypeScript is a common failure point for autonomous
 agents. When modifying Tauri commands, events, or state models, you MUST
 empirically verify the bridge: run `cargo test` or `cargo build` to regenerate
-the updated Specta/TS bindings, then run **cmdTypecheck** on the frontend to
+the updated Specta/TS bindings, then run **`pnpm typecheck`** on the frontend to
 prove the IPC payloads align.
 
 _Why: serialization mismatches are invisible to a mental model and only surface
@@ -158,10 +158,10 @@ on a user's Linux box or in production, where they are most expensive to find._
 - **Pattern-specific architecture rules** (module boundaries, barrel discipline,
   use-case layout) — those live in the architecture skills; this skill governs
   only the web-vs-native placement and shell discipline. If installed, see
-  `../architecture-violations/SKILL.md`.
+  `architecture` and `architecture-violations`.
 - **Plugin-host internals** (scanning, instance lifecycle, RT-safe host/plugin
   comms) — this skill decides only that hosting is native; the mechanics live in
-  the plugin-hosting skill. If installed, see `../plugin-hosting/SKILL.md`.
+  `plugin-hosting`.
 
 ## Refuses
 
@@ -172,13 +172,13 @@ on a user's Linux box or in production, where they are most expensive to find._
 | "Put it in Rust" whenever a feature is difficult | Move only what truly belongs there — native because the browser is absent/fragile, not because it is hard |
 | Expose runtime handles or implementation details across IPC | Send explicit DTOs only — serializable, typed, minimal, stable |
 | Frontend and Tauri each partially own the same workflow | One clear owner; the shell is transport/bridge, never a second source of truth |
-| Trust that the Rust→TS payload "looks right" | Regenerate bindings (`cargo build`/`cargo test`) and run cmdTypecheck; prove it compiles |
+| Trust that the Rust→TS payload "looks right" | Regenerate bindings (`cargo build`/`cargo test`) and run `pnpm typecheck`; prove it compiles |
 | Assume WebGPU / browser media / hardware access exists everywhere | Design intentional fallback paths; treat Linux as the realism floor |
 
 ## Self-review gate
 
 Before accepting any Tauri/platform change, walk this checklist and produce the
-required visible markers. **Not complete until the cmdTypecheck output (and, when
+required visible markers. **Not complete until the `pnpm typecheck` output (and, when
 bindings changed, the `cargo build`/`cargo test` output) appears verbatim in the
 review, and each box below is checked with a one-line justification.**
 
@@ -192,11 +192,8 @@ review, and each box below is checked with a one-line justification.**
 6. [ ] Is the shell thinner after this change, not thicker?
 7. [ ] **FFI proof:** if commands/events/state models changed, the regenerated
    Specta/TS bindings build and the frontend typechecks. Paste the verbatim tail
-   of `cargo build`/`cargo test` and of cmdTypecheck. A claim without pasted
+   of `cargo build`/`cargo test` and of `pnpm typecheck`. A claim without pasted
    output reads Unverified, not Pass.
 
-> Command slots (`cmdTypecheck`, `cmdTest`, `cmdBuild`, …) resolve against the
-> consuming repo's `AGENTS.md` Commands table. If a slot is missing or
-> undefined, ask before declaring verification done. `cargo build` / `cargo test`
-> are the project's Rust binding-generation and test commands; if your repo names
-> them differently, resolve against `AGENTS.md`.
+> Use this repo's real commands (`pnpm typecheck`, `pnpm test:run`, `pnpm build`,
+> `cargo build` / `cargo test` for Specta bindings). Do not invent substitutes.

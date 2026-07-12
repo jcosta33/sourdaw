@@ -102,34 +102,50 @@ command path no reviewer or undo system can see._
 ## What does not belong
 
 - Business rules, validation, persistence, undo/redo coordination, and engine control —
-  these live behind explicit actions in the core/engine layers, not in components, hooks,
-  view models, or renderer hot paths. (Architecture-boundary enforcement, if a sibling guide
-  is installed: `../architecture-violations/SKILL.md`.)
-- DSP / Web Audio engine internals and RT-audio constraints — out of scope here; that is
-  engine work, not presentation.
-- Project command values (test/lint/build/typecheck/validate). These resolve from the
-  consuming repo's `AGENTS.md` Commands table via the `cmd*` slots named in the self-review
-  gate — never hardcode them into a component or this skill.
+  these live behind explicit actions / `executeAppAction`, not in components, hooks,
+  view models, or renderer hot paths. See `architecture`, `architecture-violations`,
+  `state-and-write-paths`.
+- Leaf **components** must not own use-case calls (promote to views/hooks) —
+  `components-no-usecase-access` / reachability cruise.
+- DSP / Web Audio engine internals and RT-audio constraints — `web-audio-engine`.
 
 ## Anti-patterns
 
-| Temptation | Do instead |
-| --- | --- |
-| Hook validates, mutates truth, coordinates runtime, and manages undo/history | Hook binds presentation to explicit actions and read surfaces |
-| Timeline or piano roll rendered as thousands of DOM nodes on hot paths | Renderer surface for dense pixels; React for layout and orchestration |
-| Visual-only controls with weak semantics, a11y bolted on late | Semantics and keyboard behavior built into the component shape |
-| Ad hoc styling systems proliferate for the same class of UI | Consistent token / component usage |
-| Presentation structures own validation, persistence, or cross-feature write logic | Keep view models presentation-focused |
-| Renderer hot path mutates authoritative state without an action boundary | Renderer interprets interactions; writes go through explicit actions |
-| Async UI assumes the request/audio thread always succeeds | Error boundaries, pending/loading states, fallback UIs, graceful degradation |
-| Manual memoization sprinkled by default | Plain components first; let the compiler optimize |
+### CRITICAL — Hook owns business truth
+
+❌ Hook validates, mutates truth, coordinates runtime, and manages undo/history  
+✅ Hook binds presentation to explicit actions and read surfaces
+
+### CRITICAL — Renderer writes authoritative state
+
+❌ Renderer hot path mutates project truth without an action boundary  
+✅ Renderer interprets interactions; writes go through `executeAppAction` / owner use cases
+
+### HIGH — Dense editor as DOM forest
+
+❌ Timeline/piano roll as thousands of DOM nodes on hot paths  
+✅ Canvas/WebGL/WebGPU surface; React for layout and chrome
+
+### HIGH — A11y bolted on late
+
+❌ Visual-only controls, keyboard/semantics after the fact  
+✅ Semantics and keyboard built into the component shape (see `references/accessibility.md`)
+
+### HIGH — Component imports useCases
+
+❌ Leaf component calls foreign or local useCases  
+✅ View/hook owns the call; props/callbacks into the component
+
+### MEDIUM — Manual memoization by default
+
+❌ `useMemo`/`useCallback`/`React.memo` sprinkled everywhere  
+✅ Plain components; React Compiler owns memoization
 
 ## Self-review gate
 
 Before declaring frontend UI work complete, write a Self-review section and answer every
-question below with a written trace — checkboxes alone do not count. Resolve command names
-against the consuming repo's `AGENTS.md` Commands table; if a slot is missing or undefined,
-ask the user rather than inventing a command.
+question below with a written trace — checkboxes alone do not count. Use `pnpm deps:validate`,
+`pnpm typecheck`, `pnpm exec vitest run <path>`, `pnpm lint` — do not invent command names.
 
 1. Is this presentation code rather than business logic?
 2. Are hooks thin and boundary-respecting?
@@ -143,13 +159,12 @@ ask the user rather than inventing a command.
 
 Then paste real command output into the Self-review — do not summarize with "all passing":
 
-- `cmdValidate` output (dependency-boundary validation — proves no presentation→business
-  coupling was introduced). **Not complete until the verbatim `cmdValidate` output appears in
-  the Self-review section.**
-- `cmdTypecheck` output (types clean across the blast radius).
-- `cmdTest` output for the touched UI, and `cmdLint` if styling/structure changed.
+- `pnpm deps:validate` output (dependency-boundary validation). **Not complete until the
+  verbatim output appears in the Self-review section.**
+- `pnpm typecheck` output (types clean across the blast radius).
+- `pnpm exec vitest run <path>` for touched UI, and `pnpm lint` if styling/structure changed.
 
-Not complete until every question above has a written answer beneath it and the `cmdValidate`
+Not complete until every question above has a written answer beneath it and `pnpm deps:validate`
 output is pasted verbatim.
 
 ## Bundled resources

@@ -13,7 +13,7 @@ Agents need to look at and poke the running app — see how it renders, read liv
 
 ## Project context (the AGENTS.md contract)
 
-This skill ships its own runtime (the `playwright` core library + the bundled `setupAgentBrowser` util), so it does not depend on a Commands-table slot to run a script. It does lean on the standard slots for the self-review gate after any code change: resolve `cmdValidate`, `cmdTypecheck`, and `cmdTest` from the consuming repo's `AGENTS.md` Commands table. If `AGENTS.md` is missing or a slot is undefined, ask the user for the concrete command before pasting any "verification output" — do not guess. The dev server URL the bridge targets comes from `BASE_URL` (default `http://localhost:5173`); confirm the server is up before running.
+This skill ships its own runtime (the `playwright` core library + the bundled `setupAgentBrowser` util). After any production code change driven by an inspection finding, verify with `pnpm deps:validate`, `pnpm typecheck`, and focused `pnpm exec vitest run <path>` — do not invent commands. The dev server URL comes from `BASE_URL` (default `http://localhost:5173`); confirm the server is up before running.
 
 ## Core rules
 

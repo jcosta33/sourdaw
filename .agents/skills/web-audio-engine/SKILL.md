@@ -28,10 +28,10 @@ bucket, a convenience layer for random audio operations, or a second source of t
 
 ## Project context (the AGENTS.md contract)
 
-Resolve project commands from the consuming repo's `AGENTS.md` Commands table: `cmdTypecheck`,
-`cmdLint`, `cmdTest`, `cmdValidate` (dependency-boundary check), and `cmdBuild`. If `AGENTS.md`
-is missing or a slot is undefined, ask the user which command to run before claiming any
-verification — do not guess. RT-audio code must not allocate or block (a project-wide invariant).
+Use this repo's commands: `pnpm typecheck`, `pnpm lint`, `pnpm test:run`, `pnpm deps:validate`,
+`pnpm build`. Do not invent substitutes. RT-audio code must not allocate or block (a
+project-wide invariant). Module boundaries for engine code: `architecture` +
+`architecture-violations`.
 
 ## Core rules
 
@@ -175,9 +175,9 @@ Any check whose answer is not a clear "yes" with a concrete reason is a blocker,
 9. Did the change reduce, not increase, runtime leakage into the rest of the app?
 
 Then run and paste the project's static checks. **Not complete until the verbatim output of
-`cmdTypecheck`, `cmdLint`, and `cmdValidate` (the dependency-boundary check) appears in the
-write-up, each in its own fenced block** — a "passes" claim without pasted output reads as
-Unverified, not Pass. If a touched path has tests, paste `cmdTest` output too.
+`pnpm typecheck`, `pnpm lint`, and `pnpm deps:validate` appears in the write-up, each in its own
+fenced block** — a "passes" claim without pasted output reads as Unverified, not Pass. If a
+touched path has tests, paste `pnpm exec vitest run <path>` output too.
 
 ## Bundled resources
 

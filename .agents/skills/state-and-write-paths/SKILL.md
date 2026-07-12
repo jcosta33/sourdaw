@@ -47,15 +47,33 @@ spreads validation and history logic into callers where it rots._
 ### 3. Stores expose state; they are not the write model
 
 A store may expose truth, projections, runtime visibility, or UI state. A store must **not** quietly
-replace commands/actions as the mutation surface for meaningful business changes. _Why: a store that
-is read API + write API + event bus + orchestration is a service in disguise, and every consumer
-becomes a writer with no invariant enforcement._
+replace commands/actions as the mutation surface for meaningful business changes.
+
+**Why:** a store that is read API + write API + event bus + orchestration is a service in disguise,
+and every consumer becomes a writer with no invariant enforcement.
+
+Sourdaw makes module `stores/` a **contract barrel** for **reads** (`#/modules/<M>/stores`). That is
+intentional: composition shells subscribe with `useStore`. It is **not** a license for foreign
+`store.set`. Owner use cases / `executeAppAction` own writes.
+
+```typescript
+// ✅ read contract
+import { trackStore } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
+const snapshot = useStore(trackStore);
+
+// ❌ foreign write
+trackStore.set({ … });
+```
 
 ### 4. Shared stores are allowed; shared mutability is not
 
 Many parts of the app may read a shared store. That does **not** mean many parts may write it
-directly. A store may be globally visible without being globally writable. _Why: global write access
-is unbounded blast radius — any reader can corrupt state with no owning code to hold the line._
+directly. A store may be globally visible without being globally writable.
+
+**Why:** global write access is unbounded blast radius — any reader can corrupt state with no owning
+code to hold the line. Depcruiser does not yet encode foreign-store writes; this skill and the
+store-write-path remediation work do.
 
 ### 5. Every authoritative slice has exactly one owner
 
@@ -157,17 +175,40 @@ Telemetry is not project truth unless explicitly committed through an applicatio
 
 ## Anti-patterns
 
-| # | Temptation (wrong) | Do instead (right) |
-|---|---|---|
-| 1 | Add new state without deciding whether it is truth, projection, runtime, telemetry, or UI state | Classify first (rule 1), then place it |
-| 2 | Treat mutable derived state as authoritative | Own truth separately; keep projections derivable |
-| 3 | Let a store act as read API, write API, event bus, and orchestration layer | Stores expose state; commands/actions own meaningful writes |
-| 4 | Put an `AudioNode`, plugin instance, engine handle, or native window in a general shared store or truth store | Let the runtime own runtime objects |
-| 5 | Let meters or displayed playhead silently mutate truth | Keep telemetry read-oriented unless explicitly committed |
-| 6 | Have feature A mutate feature B's authoritative slice directly | Call the owning action/command |
-| 7 | Mutate nested objects from store snapshots in place | Use the explicit owning write path |
-| 8 | Let a query result become implicit editable truth without explicit adoption | Keep fetch/cache concerns distinct from authoritative editable truth |
-| 9 | Emit events everywhere to avoid declaring owners and actions | Define ownership clearly first, then emit events for meaningful occurrences |
+### CRITICAL — Store as write API for business truth
+
+❌ Callers across modules do `someStore.set(…)` for project-meaningful changes  
+✅ Owning use case or `executeAppAction` with undo/describe semantics
+
+### CRITICAL — Runtime object in a general store
+
+❌ `AudioContext`, `AudioNode`, plugin handle, native window in `stores/`  
+✅ Runtime owns runtime objects (`web-audio-engine`, `plugin-hosting`, `tauri-platform`)
+
+### CRITICAL — Feature A mutates feature B’s slice
+
+❌ Workspace code writes Arrangement `trackStore` fields directly  
+✅ Arrangement use case / command; Workspace only reads the store contract
+
+### HIGH — Unclassified new field
+
+❌ “Just one more store field” with no category  
+✅ Classify (rule 1) before placing (`references/state-categories.md`)
+
+### HIGH — Derived value stored as truth
+
+❌ Cache a selector result as authoritative project state  
+✅ Projection/selector; re-derive from truth
+
+### HIGH — Query cache treated as editable truth
+
+❌ Edit TanStack Query data as if it were the project document  
+✅ Adopt into project truth through the owning write path when editable
+
+### MEDIUM — Events instead of ownership
+
+❌ Emit events for every field so nobody declares a writer  
+✅ Command owns the write; events report meaningful occurrences
 
 ---
 

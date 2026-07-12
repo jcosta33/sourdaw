@@ -84,11 +84,26 @@ The skill keeps you in the right files; the doc keeps the tests themselves right
 
 - **Knip** excludes `**/*.spec.{ts,tsx}` from the project graph (`knip.json`) so
   specs are not treated as unused modules.
-- Run `cmdTest <path-to-spec>` for a single file.
+- Run a **single-file** Vitest pass: `pnpm exec vitest run path/to/__tests__/foo.spec.ts`
+  (never claim green from watch mode or an unrun suite).
 
-_Why: Knip's exclusion glob only works while every spec matches the `*.spec.*`
-naming and lives in the graph it scans; renaming a spec or moving it outside the
-scanned tree silently breaks dead-code detection._
+**Why:** Knip's exclusion glob only works while every spec matches the `*.spec.*`
+naming. A test that was never run is a claim, not a test.
+
+### 7. Prefer the DI seam over `vi.mock` for injectables
+
+Use cases and repositories wrapped with `inject` from `#/infra/di/inject` should be
+stubbed with `injectDependencies` from `#/infra/di/testing/injectDependencies` when
+you need a collaborator swapped.
+
+```typescript
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
+injectDependencies(getProduct, { getProductApi: vi.fn().mockResolvedValue(product) });
+```
+
+**Why:** `vi.mock` hijacks the module graph; the DI seam exercises the same resolution
+path production uses. See `docs/06-testing.md`.
 
 ## What does not belong
 
@@ -101,13 +116,30 @@ scanned tree silently breaks dead-code detection._
 
 ## Anti-patterns
 
-| Temptation                                                      | Do instead                                                                                  |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Place `*.spec.ts` next to `addTrack.ts` in `useCases/` (old co-location). | Move it to `useCases/__tests__/addTrack.spec.ts` and import the subject with `../addTrack`. |
-| Add an `index.ts` barrel inside `__tests__/` to re-export specs. | Leave `__tests__/` flat — no barrels (see `docs/06-testing.md` §10).                          |
-| Fix a bug straight from reading the code.                       | Write a failing test or reproduction script first; only then change behaviour.              |
-| Drop a shared dummy in whichever spec needs it.                | Hoist it to the canonical folder for its scope (module-wide, cross-module, or DI/event).    |
-| Guess the import depth after moving a nested spec.             | Recount `../` to the sibling source — one level up per `__tests__/` boundary crossed.        |
+### CRITICAL — Fix without a red reproduction
+
+❌ Change production code from a static read alone  
+✅ Failing test or script first; paste red-then-green output
+
+### CRITICAL — Claim green without running the file
+
+❌ “Should pass” / watch-mode glance  
+✅ `pnpm exec vitest run <that-spec>` and paste the summary
+
+### HIGH — Spec co-located beside source
+
+❌ `useCases/addTrack.spec.ts` next to `addTrack.ts`  
+✅ `useCases/__tests__/addTrack.spec.ts` with `import { addTrack } from '../addTrack'`
+
+### HIGH — Barrel inside `__tests__/`
+
+❌ `__tests__/index.ts` re-exporting specs  
+✅ Flat `__tests__/` folders only
+
+### MEDIUM — `vi.mock` for an injectable collaborator
+
+❌ Module-graph mock of a repository used only through `inject`  
+✅ `injectDependencies(useCase, { repo: vi.fn() })` when the subject is injectable
 
 ## Self-review gate
 
@@ -128,6 +160,6 @@ each item below has a written, output-backed answer in the self-review trace.
    transition is pasted. Not complete until the red-before / green-after output
    appears verbatim.
 6. **Single-file run** — the affected spec passes on its own. Not complete until
-   the `cmdTest <path-to-spec>` output appears verbatim, last two lines minimum.
-7. **Boundaries / types** — for any moved import paths, `cmdValidate` and
-   `cmdTypecheck` pass. Not complete until their output appears verbatim.
+   the `pnpm exec vitest run <path-to-spec>` output appears verbatim, last two lines minimum.
+7. **Boundaries / types** — for any moved import paths, `pnpm deps:validate` and
+   `pnpm typecheck` pass. Not complete until their output appears verbatim.

@@ -32,8 +32,8 @@ hosting isolated, RT-safe, and aligned with the DAW's project/runtime split.
 
 This is a conceptual architecture guide; it prescribes no project commands of its
 own. The self-review gate below resolves verification commands from the consuming
-repo's `AGENTS.md` Commands table — `cmdTypecheck`, `cmdLint`, `cmdValidate`,
-`cmdTest`. If `AGENTS.md` is missing or a slot is undefined, ask the user which
+repo commands — `pnpm typecheck`, `pnpm lint`, `pnpm deps:validate`,
+`pnpm test:run` (and `cargo test` for Rust crates). If a command is unclear, ask which
 command to run before claiming a check passed — do not guess.
 
 ## Core rules
@@ -213,17 +213,15 @@ is written down and the four command pastes appear verbatim in the self-review.*
 7. Did the change reduce or increase coupling between UI, truth, and runtime
    instances? State which.
 
-Then paste verbatim output for each, resolving each command from the consuming
-repo's `AGENTS.md` Commands table:
+Then paste verbatim output for each:
 
-- `cmdTypecheck` — types are sound (no `any`/`as` escapes at the new boundaries).
-- `cmdLint` — static checks clean.
-- `cmdValidate` — dependency-boundary validation passes (no new cross-module
-  imports outside a module root `index.ts`).
-- `cmdTest` — the test suite passes.
+- `pnpm typecheck` — types are sound (no `any`/`as` escapes at the new boundaries).
+- `pnpm lint` — static checks clean.
+- `pnpm deps:validate` — dependency-boundary validation (known baseline may ignore debt;
+  new hits still fail).
+- `pnpm test:run` and/or `cargo test` for touched paths.
 
-If any slot is undefined in `AGENTS.md`, that line reads **Unverified** and is a
-blocker — ask the user for the command rather than marking it Pass.
+A claim without pasted output reads Unverified, not Pass.
 
 ## Bundled resources
 

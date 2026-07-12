@@ -155,9 +155,10 @@ _Why: deleting the comment without doing the refactor is malicious compliance �
 ## What does not belong
 
 - **Stack-specific or vendor patterns** (React 19 idioms, Tauri command shapes, IndexedDB recipes) — those live in the consuming repo's `AGENTS.md` and the per-concern skills, not here. This skill governs boundary _discipline_, not framework usage.
-- **The full architecture overview** — this is a guardrail document, not an architecture tour. The canonical module rules live in `docs/architecture/03-typescript-module.md`; cross-module model isolation lives in `AGENTS.md`.
-- **State-ownership taxonomy** (truth vs projection vs runtime vs telemetry vs UI state) — rule 9 names the ownership invariant; the full classification of state kinds and write paths belongs to the state-and-write-paths discipline (`../state-and-write-paths/SKILL.md`, if installed).
-- **Concrete project commands** — resolve `cmdValidate`, `cmdTypecheck`, `cmdTest`, `cmdBuild`, `cmdLint` from the consuming repo's `AGENTS.md` Commands table. An empty or missing slot means **ask** — never invent a command.
+- **How to author a correct module in the first place** — that is `architecture` (barrels, stores-as-read-contract, composition shells, UI → business → IO).
+- **The full architecture overview** — canonical module rules live in `docs/architecture/03-typescript-module.md`; isolation rules live in `AGENTS.md`.
+- **State-ownership taxonomy** — rule 9 names the ownership invariant; full classification lives in `state-and-write-paths`.
+- **Concrete commands** — use `pnpm deps:validate`, `pnpm typecheck`, `pnpm test:run`, `pnpm lint` from this repo; never invent substitutes.
 
 ## Refuses
 
@@ -176,20 +177,48 @@ _Why: deleting the comment without doing the refactor is malicious compliance �
 
 ## Anti-patterns
 
-- ❌ Re-export laundering: `export * from '../repositories/automergeRepository'` → ✅ a typed use case per function that hides the repo (rule 6; `references/use-cases-and-type-surfaces.md` §2).
-- ❌ Non-contract export from a contract barrel: `export { Track } from '../models/Track'` in `useCases/index.ts` → ✅ keep `models/` private; barrels re-export only from their own folder (rule 5; `references/module-boundaries.md`).
-- ❌ Cross-module use-case type import: `import type { TrackSummary } from '#/modules/Arrangement/useCases'` → ✅ a local shape or `ReturnType<typeof getTrackSummary>` in the consumer (rule 6; `references/use-cases-and-type-surfaces.md` §5.2).
-- ❌ `Record<string, ActionHandler<any>>` for a handler registry → ✅ a mapped type derived from `AppAction` so each entry narrows on its payload (`references/use-cases-and-type-surfaces.md` §6).
-- ❌ Multi-export wrapper file `crdtRepositoryAccess.ts` → ✅ N single-function files, each a real typed boundary (rule 7).
-- ❌ Same-module file importing its own contract barrel: `import { addClip } from '#/modules/Arrangement/useCases'` → ✅ relative path `./useCases/clip/addClip` (rule 5; `references/module-boundaries.md`).
+### CRITICAL — Re-export laundering
+
+❌ `export * from '../repositories/automergeRepository'` in a use-case file  
+✅ A typed use case per function that hides the repo (rule 6; `references/use-cases-and-type-surfaces.md` §2).
+
+### CRITICAL — Non-contract export on a barrel
+
+❌ `export { Track } from '../models/Track'` in `useCases/index.ts`  
+✅ Keep `models/` private; barrels re-export only from their own folder (rule 5).
+
+### CRITICAL — Gaming a new pure-layer rule
+
+❌ Move logic into a “use case” that only re-exports a presentation renderer to silence `business-no-presentations`  
+✅ Put UI factories under `presentations/` and call them from views/hooks; do not invent pass-through business files.
+
+### HIGH — Cross-module use-case type import
+
+❌ `import type { TrackSummary } from '#/modules/Arrangement/useCases'`  
+✅ Local shape or `ReturnType<typeof getTrackSummary>` (rule 6).
+
+### HIGH — Untyped handler registry
+
+❌ `Record<string, ActionHandler<any>>`  
+✅ Mapped type derived from `AppAction` so each entry narrows on its payload.
+
+### HIGH — Multi-export wrapper file
+
+❌ `crdtRepositoryAccess.ts` with eight re-exports  
+✅ N single-function files (rule 7).
+
+### MEDIUM — Same-module barrel import
+
+❌ `import { addClip } from '#/modules/Arrangement/useCases'` inside Arrangement  
+✅ Relative path `./useCases/clip/addClip` (rule 5).
 
 ## Self-review gate
 
 Run this before declaring an architecture-violation fix done. Any step that
 should produce visible output is required to produce it.
 
-1. **Validator is green from a real run.** Run cmdValidate yourself and paste the output verbatim into the task file's `## Self-review` (or wherever the consuming repo records verification). A passing claim without pasted output reads Unverified, not Pass.
-2. **Compiler confirms the blast radius is closed.** Run cmdTypecheck and paste its output; zero errors confirms no consumer was left broken (rule 4).
+1. **Validator is green from a real run.** Run `pnpm deps:validate` yourself and paste the output verbatim into the task file's `## Self-review` (or wherever the consuming repo records verification). A passing claim without pasted output reads Unverified, not Pass. (Baselines absorb *known* debt; new hits still fail.)
+2. **Compiler confirms the blast radius is closed.** Run `pnpm typecheck` and paste its output; zero errors confirms no consumer was left broken (rule 4).
 3. **Responsibility changed across every new/moved boundary.** For each boundary you touched, write one sentence naming what responsibility now lives on each side (rule 2). If you cannot, the boundary is fake — go back.
 4. **No new laundering surface.** Confirm in writing that no use-case file re-exports a repository/model/service symbol and no non-contract export was added to a contract barrel (rules 5–7). Paste the grep you used, e.g. for `export .* from '\.\./repositories` and `export .* from '\.\./models` across the files you changed.
 5. **No shim deletions without the refactor.** Confirm that every `TEMPORARY MIGRATION SHIM` you removed was discharged by a real typed boundary, not just deleted (rule 12).
@@ -203,3 +232,6 @@ beneath them. Checkboxes alone do not count.
 
 - `references/module-boundaries.md` — the four contract surfaces, correct/forbidden cross-module and same-module import examples, and contract-folder barrel authoring rules (deep mechanics for rule 5).
 - `references/use-cases-and-type-surfaces.md` — legitimate vs forbidden use cases, internal DTOs, the cross-module type-surface table, the `get<Module>Handlers` registry typing pattern, and the summary test (deep mechanics for rules 6–7).
+- `.dependency-cruiser.cjs` — includes pure-layer rules (`business-no-presentations`, `repositories-no-business`, `models-are-pure`, `events-are-pure`, `components-no-view-access`) and barrel rules.
+- `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively` (value imports only).
+- Sibling skill: `architecture` — authoring against these boundaries.

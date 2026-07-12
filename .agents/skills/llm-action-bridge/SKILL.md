@@ -146,14 +146,30 @@ a trace; observability is what makes debugging, safety, and trust possible._
 
 ## Anti-patterns
 
-| # | Temptation (wrong) | Do instead (right) |
-| --- | --- | --- |
-| 1 | Model directly edits stores, UI state, engine internals, or plugin handles | Model emits structured actions |
-| 2 | Execution logic depends on vague natural-language prose | Structured, validated actions |
-| 3 | Action execution is hard to audit or depends on stringly magical runtime behavior | Explicit action registry |
-| 4 | Raw model output executes directly | Validate first, then execute |
-| 5 | AI gets special permission to mutate truth or runtime directly | AI uses the same action/command boundary as everything else |
-| 6 | Model output is treated as directly executable truth | Planning can be flexible; execution remains rigid and validated |
+### CRITICAL — Model writes truth/runtime directly
+
+❌ Model edits stores, React state, engine objects, or plugin handles  
+✅ Structured actions → validate → `executeAppAction` / command registry
+
+### CRITICAL — Unvalidated execution
+
+❌ Raw model JSON drives handlers with no schema/bounds/ID checks  
+✅ Validate type, payload, bounds, IDs, capabilities before execute
+
+### HIGH — Privileged AI write path
+
+❌ Special AI-only mutators that bypass undo/command describe  
+✅ Same boundary as UI and shortcuts (`state-and-write-paths`)
+
+### HIGH — Stringly dispatch
+
+❌ Dynamic `eval`-like action names with no registry  
+✅ Explicit typed action registry
+
+### MEDIUM — Planning conflated with execution
+
+❌ Flexible multi-step plan executed as one unvalidated blob  
+✅ Plan freely; execute step-by-step through the rigid gate
 
 ---
 
@@ -161,7 +177,7 @@ a trace; observability is what makes debugging, safety, and trust possible._
 
 Before accepting any AI-control change, answer each question below in writing and
 paste the supporting output. **Not complete until every answer is written and the
-`cmdValidate` and `cmdTypecheck` output appears verbatim below the answers.**
+`pnpm deps:validate` and `pnpm typecheck` output appears verbatim below the answers.**
 
 1. Does the model emit structured actions rather than arbitrary mutations?
 2. Is there an explicit action registry the new action is registered in?
@@ -175,8 +191,8 @@ paste the supporting output. **Not complete until every answer is written and th
 
 Then paste, verbatim and fenced:
 
-- `cmdValidate` output (dependency-boundary validation — proves the AI layer did not import across a boundary).
-- `cmdTypecheck` output (proves the action payloads are typed end to end).
+- `pnpm deps:validate` output (dependency-boundary validation — proves the AI layer did not import across a boundary).
+- `pnpm typecheck` output (proves the action payloads are typed end to end).
 
 A question answered without its pasted evidence reads Unverified, not Pass. The
 review is not done until both command outputs are present.
