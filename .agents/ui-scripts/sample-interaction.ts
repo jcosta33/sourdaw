@@ -1,13 +1,16 @@
-import { setupAgentBrowser } from './utils';
+import { setupAgentBrowser } from './utils.ts';
 
 /**
  * Sample agent script to verify the basic DOM layout and extract information.
  * Run this via: node --experimental-strip-types .agents/ui-scripts/sample-interaction.ts
  */
 async function main() {
-    const { browser, page } = await setupAgentBrowser();
-
+    let browser: Awaited<ReturnType<typeof setupAgentBrowser>>['browser'] | undefined;
     try {
+        const setup = await setupAgentBrowser();
+        browser = setup.browser;
+        const page = setup.page;
+
         // Example: Wait for the main app shell to load
         await page.waitForLoadState('domcontentloaded');
 
@@ -40,7 +43,9 @@ async function main() {
         );
         process.exit(1);
     } finally {
-        await browser.close();
+        if (browser) {
+            await browser.close();
+        }
     }
 }
 
