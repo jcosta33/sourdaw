@@ -1,4 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('#/infra/di/inject', () => ({
+    inject: <T extends Record<string, unknown>>(deps: T) =>
+        (factory: (d: T) => unknown) => factory(
+            Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }])) as T
+        ),
+}));
+import { showProofPanel } from '../showProofPanel';
 describe('showProofPanel', () => {
-    it('module is testable', () => { expect(true).toBe(true); });
+    it('is a function', () => { expect(typeof showProofPanel).toBe('function'); });
+    it('runs without crash', () => { expect(() => (showProofPanel as (id: string | null) => void)('test-id')).not.toThrow(); });
 });
