@@ -64,7 +64,7 @@ Payloads crossing the bridge must be serializable, typed, minimal, and stable. D
 
 ### 7. Empirically verify the FFI bridge
 
-When modifying Tauri commands, events, or state models: regenerate Specta/TS bindings (`cargo test` / `cargo build`), then run `pnpm typecheck` on the frontend to prove IPC payloads align.
+When modifying Tauri commands, events, or state models: align hand-maintained invoke call sites and DTOs (there is **no** Specta→TypeScript export pipeline today — `cargo test` / `cargo build` do not regenerate frontend bindings). Prove alignment with `cargo check -p sourdaw` and `pnpm typecheck`.
 
 **Why:** serialization mismatches are invisible to a mental model and only surface at the compiler.
 
@@ -107,7 +107,7 @@ Design for Linux as the realism floor (WebGPU, media APIs, hardware access). Ali
 
 ❌ Wrong: trust that the Rust→TS payload “looks right”.
 
-✅ Correct: regenerate bindings and paste a green `pnpm typecheck`.
+✅ Correct: update hand-written IPC DTOs/call sites; paste green `cargo check -p sourdaw` and `pnpm typecheck`.
 
 ### MEDIUM — Platform checks littered through feature code
 

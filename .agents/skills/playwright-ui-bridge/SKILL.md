@@ -25,7 +25,7 @@ Never place ad-hoc agent scripts in `tests/e2e/`, which is reserved for `@playwr
 
 ### 2. Run scripts directly, not via the test runner
 
-Write standard Node scripts using the `playwright` core library and execute them with `npx tsx .agents/ui-scripts/<script-name>.ts`. Do not use `playwright test`.
+Write standard Node scripts using the `playwright` core library and execute them with `node --experimental-strip-types .agents/ui-scripts/<script-name>.ts`. Do not use the Playwright test runner for probes.
 
 **Why:** the test runner adds assertion/reporter machinery you do not want for a one-off probe; plain `tsx` keeps stdout clean for the JSON contract.
 
@@ -90,13 +90,14 @@ try {
 
 ❌ Wrong: new file in `tests/e2e/` that clicks around and screenshots.
 
-✅ Correct: `.agents/ui-scripts/` + `npx tsx …`.
+✅ Correct: `.agents/ui-scripts/` + `node --experimental-strip-types …`.
 
 ### CRITICAL — Using the Playwright test runner for a probe
 
-❌ Wrong: `npx playwright test my-probe.spec.ts`
+❌ Wrong: `npx playwright test my-probe.spec.ts` (probe) or bare `npx playwright` for CI suite
 
-✅ Correct: `npx tsx .agents/ui-scripts/my-probe.ts`
+✅ Correct (probe): `node --experimental-strip-types .agents/ui-scripts/my-probe.ts`  
+✅ Correct (CI E2E suite, when used): `pnpm test:e2e`
 
 ### HIGH — Hand-rolled browser launch
 

@@ -2,7 +2,7 @@ import { setupAgentBrowser } from './utils';
 
 /**
  * Sample agent script to verify the basic DOM layout and extract information.
- * Run this via: npx tsx .agents/ui-scripts/sample-interaction.ts
+ * Run this via: node --experimental-strip-types .agents/ui-scripts/sample-interaction.ts
  */
 async function main() {
     const { browser, page } = await setupAgentBrowser();
