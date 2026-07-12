@@ -52,7 +52,7 @@ Verify with: `cargo test -p daw-io peak_payload_binary`
 Zooming a 32-track project from waveform to arrangement level must not block the main
 thread more than ~16 ms per frame, served from the cached mipmap.
 
-Verify with: `pnpm test:run` (targeted path) until a dedicated perf script lands
+Verify with: `pnpm test:perf -- waveformZoom`
 
 ## Open questions
 

@@ -1304,4 +1304,4 @@ Testable gates for each feature. A feature is not done until its criteria pass.
 ### Global
 
 - [ ] **AC-G.1:** `pnpm deps:validate` passes with zero new violations after each feature lands.
-- [ ] **AC-G.2:** All existing tests continue to pass (`pnpm test:run`).
+- [ ] **AC-G.2:** All existing tests continue to pass (`npx vitest run`).
