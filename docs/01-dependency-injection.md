@@ -2,7 +2,7 @@
 
 Business-layer code wires collaborators through **`inject()`** from `#/infra/di/inject`. Use cases and repositories that perform I/O or call other application services declare dependencies in the dependency map; they are resolved at **call time**, not by ad hoc static imports of repos and use cases.
 
-**Canonical reference:** `docs/architecture/03-typescript-module.md` §4.10 — _Dependency injection with `inject()`_.
+**Canonical reference:** `docs/architecture/03-typescript-module.md` §4.11 — _Dependency injection with `inject()`_.
 
 **Testing:** `docs/06-testing.md` §5 — use **`injectDependencies()`** for injectables; do not rely on module-level `vi.mock()` for collaborators that belong in the `inject()` map.
 
@@ -24,7 +24,7 @@ export const addTrack = inject({ eventBus, getTrackState, setTrackState })(
 );
 ```
 
-Rules, dependency map shapes (classes, nested injectables, plain functions), and exceptions (pure helpers, models, React, audio hot paths) live in §4.10 — do not duplicate them here.
+Rules, dependency map shapes (classes, nested injectables, plain functions), and exceptions (pure helpers, models, React, audio hot paths) live in §4.11 — do not duplicate them here.
 
 ---
 
@@ -32,11 +32,11 @@ Rules, dependency map shapes (classes, nested injectables, plain functions), and
 
 `src/infra/di/Container.ts` is a sync registry for **singleton** values keyed by **class** or other `DependencyKey`s. Call **`Container.register(token, value)`** once at app startup — never inside a use case, store, or component. There is no `getInstance()`; import `Container` and use `register`, `get`, `set`, `clear` as defined in that module.
 
-App wiring starts from **`src/app/registerDependencies.ts`** (imported first from **`src/app/bootstrap.ts`**). `inject()` resolves class tokens from the container when they appear in a dependency map; plain functions and module exports (repos, `eventBus`, nested injectables) are wired per §4.10.
+App wiring starts from **`src/app/registerDependencies.ts`** (imported first from **`src/app/bootstrap.ts`**). `inject()` resolves class tokens from the container when they appear in a dependency map; plain functions and module exports (repos, `eventBus`, nested injectables) are wired per §4.11.
 
 ### Tokens
 
-Class constructors and symbols can be used as keys; see `Container.ts` and §4.10.
+Class constructors and symbols can be used as keys; see `Container.ts` and §4.11.
 
 ### Lazy proxy
 
@@ -46,7 +46,7 @@ If resolution runs before bootstrap finishes, the container may return a lazy pr
 
 ## Presentation layer (React)
 
-Hooks and **views** **do not** use `inject()`. They subscribe to stores via contract barrels, call **public** use cases from contract paths, or receive `eventBus` / similar from app wiring. Leaf **components** should not subscribe to business stores or call use cases — keep that in views/hooks and pass props. If a hook must read the container, resolve **inside** `useEffect`, not at module scope (avoids ordering issues after minification). Prefer passing dependencies in from parents or using existing app singletons documented in §4.10.
+Hooks and **views** **do not** use `inject()`. They subscribe to stores via contract barrels, call **public** use cases from contract paths, or receive `eventBus` / similar from app wiring. Leaf **components** should not subscribe to business stores or call use cases — keep that in views/hooks and pass props. If a hook must read the container, resolve **inside** `useEffect`, not at module scope (avoids ordering issues after minification). Prefer passing dependencies in from parents or using existing app singletons documented in §4.11.
 
 ---
 

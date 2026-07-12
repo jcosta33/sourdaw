@@ -664,7 +664,7 @@ Do not wire application collaborators by **bare static imports** of repos or oth
 
 ```typescript
 import { inject } from '#/infra/di/inject';
-import { Logger } from '#/helpers/Logger/Logger';
+import { Logger } from '#/infra/logger/createLogger';
 import { TrackRepo } from '../repositories/TrackRepo';
 import { createTrack } from '../models/Track';
 import { eventBus } from '#/app/bootstrap';

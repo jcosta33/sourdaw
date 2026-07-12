@@ -99,7 +99,7 @@ Every `it` block starts with `should` or `should not`, followed by a concise des
 
 ## 5. Dependency injection in tests
 
-The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.10`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
+The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.11`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
 
 - **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
 - **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
@@ -122,7 +122,7 @@ Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick
 import { describe, it, expect } from 'vitest';
 import { spy } from '#/infra/di/testing/spy';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/helpers/Logger/Logger';
+import { Logger } from '#/infra/logger/createLogger';
 import { TrackRepo } from '../../repositories/TrackRepo';
 import { addTrack } from '../addTrack';
 
@@ -186,7 +186,7 @@ Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mo
 import { describe, it, expect } from 'vitest';
 import { spy } from '#/infra/di/testing/spy';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/helpers/Logger/Logger';
+import { Logger } from '#/infra/logger/createLogger';
 import { TrackRepo } from '../../repositories/TrackRepo';
 import { addTrack } from '../addTrack';
 import { TrackDummy } from '../../__tests__/TrackDummy';
@@ -232,7 +232,7 @@ Notes:
 
 - Event payloads are plain objects — assert on the string key and payload shape directly.
 - `injectDependencies` clears DI state and validates the mock map — no `beforeEach` container cleanup is needed for injectables.
-- If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.10`.
+- If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.11`.
 
 ### 6.2 Repositories — Tauri IPC
 
