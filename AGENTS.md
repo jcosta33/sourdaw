@@ -7,9 +7,10 @@ Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, 
 See `package.json` for all scripts.
 
 - **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
-- **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass.
-- **Type check:** `pnpm typecheck`
-- **Module boundaries:** `pnpm deps:validate` (main cruise + reachability edge gate + type-edge cruise + test-inclusive cruise)
+- **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
+- **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
+- **Type check (tests):** `pnpm typecheck:test` — currently scoped to Yeast processors (`tsconfig.test.json`); do not claim “all specs typecheck” from `pnpm typecheck` alone.
+- **Module boundaries:** `pnpm deps:validate` (main cruise + reachability causal gate + type-edge cruise + test-inclusive cruise). New **error** edges fail; known debt is baselined.
 
 After cross-module moves or bulk import changes, re-run `pnpm deps:validate` before claiming done (at least every ~10 files during large refactors).
 
@@ -33,19 +34,21 @@ Prefer `#/` for cross-module and cross-folder imports. Inside a module, use **re
 
 ## Layer boundaries
 
-Enforced by [`.dependency-cruiser.cjs`](.dependency-cruiser.cjs) (`pnpm deps:validate`):
+Hard gate via `pnpm deps:validate` (main **error** rules + reachability + types + tests cruises). New **error** edges fail; baselined debt is ignored until retired. **Warn** rules do not fail the gate.
 
-- Cross-module imports target **only** contract-folder barrels: `useCases/`, `stores/`, `events/`, `presentations/views/` (each folder’s `index.ts`). No module-root `index.ts`. No deep imports into private folders (`models/`, `repositories/`, `handlers/`, `engine/`, …).
-- Same module: relative imports only — not `#/modules/<Self>/…`.
-- Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import use cases/handlers/presentations. Models and events stay pure.
-- Leaf `presentations/components/` must not import business stores or use cases (including transitively). Tauri IPC only from `repositories/`. Worklets stay isolated from app/helpers/Tauri.
-- Tests are in the graph (`pnpm deps:validate` tests cruise): specs follow the same barrel rules as production.
+- Cross-module imports target **only** contract-folder barrels: `useCases/`, `stores/`, `events/`, `presentations/views/` (each folder’s `index.ts`). No module-root `index.ts`. No deep imports into private folders (`models/`, `repositories/`, `handlers/`, `engine/`, …). (**error**)
+- Same module: relative imports only — not `#/modules/<Self>/…`. (**error**)
+- Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import use cases/handlers/presentations. Models and events stay pure. (**error**)
+- Leaf `presentations/components/` and shared `src/components/` must not **directly** import business stores or use cases. (**error**, direct edges; reachability gate tracks causal component→useCases roots separately)
+- Worklets stay isolated from app/helpers/Tauri. (**error**)
+- **Tauri IPC only from `repositories/`** — policy; depcruise **`warn`** (`tauri-ipc-only-in-repositories`), not an error gate.
+- Tests cruise: cross-module **barrel** + **no relative cross-module** only (not the full production layer suite).
 
 Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
 
 ## Tech stack
 
-React 19 (Compiler), TypeScript, Vite, TanStack Query, vanilla `Store<T>` + `useStore`, React Hook Form + Zod, Vitest, Playwright (CI E2E), Tauri 2, Rust audio crates (CPAL / RT paths).
+React 19 (Compiler), TypeScript, Vite, TanStack Query, vanilla `Store<T>` + `useStore`, React Hook Form + Zod, Vitest, Playwright (`pnpm test:e2e` local — **not** in CI health gates), Tauri 2, Rust audio crates (CPAL / RT paths).
 
 ## When a check blocks you
 
@@ -55,18 +58,18 @@ Do not use codemods, bulk `sed`/AST rewrites, or global formatters/`eslint --fix
 
 ## Always-on rules
 
-The must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) and architecture practice. Rules the tooling already enforces strongly are abbreviated here; these are the ones agents still get wrong without a reminder:
+Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) and architecture practice. **Hardness is not uniform** — hard gates, warn-only lint, and policy-only rules are labeled inline.
 
-- **Contract barrels only cross-module.** Up to four surfaces per module (`useCases`, `stores`, `events`, `presentations/views`) — create only those needed. Run `pnpm deps:validate` after boundary work.
-- **Stores are a public read contract.** Foreign modules may subscribe; they must not `store.set`. Writes go through the owning module’s use cases or `executeAppAction`.
-- **Use-case types stay private.** No `export type` from `useCases/index.ts`. Consumers use `ReturnType` / `Parameters` or `events/` payloads. Models are never re-exported across modules — local shapes or intentional duplication.
-- **One function per use-case and repository file.** Handlers live under `handlers/` with `createHandler`; cross-module access only via `get<Module>Handlers` from `useCases/`. Presentation never imports raw handler maps.
-- **Repositories touch metal; engine does not import repositories.** I/O (Tauri, storage, audio setup) in `repositories/`; use cases orchestrate.
-- **Async/server state:** TanStack Query — never `useEffect` for fetching. **Local form state:** RHF + Zod. **Local UI:** `useState` + Compiler. **Context:** only deeply local view state; consume with `use()`, not `useContext`.
-- **React 19:** no `useMemo` / `useCallback` / `React.memo`; no `forwardRef` (`ref` is a prop); never render with `&&` — use `cond ? <X /> : null` or early return.
-- **Audio RT:** anything on the audio thread must not allocate, lock, or block. Prefer `AudioWorklet` + `AudioParam`; one live `AudioContext`.
+- **Contract barrels only cross-module.** (**error** via `deps:validate`) Up to four surfaces per module (`useCases`, `stores`, `events`, `presentations/views`) — create only those needed.
+- **Stores are a public read contract.** Foreign modules may subscribe; they must not `store.set` (agent policy; ESLint `sourdaw/no-foreign-store-write` is **warn** only — CI `lint --quiet` ignores warns). Writes go through the owning module’s use cases or `executeAppAction`.
+- **Use-case types stay private.** No `export type` from `useCases/index.ts` (**error** on type cruise). Consumers use `ReturnType` / `Parameters` or `events/` payloads. Models are never re-exported across modules — local shapes or intentional duplication.
+- **One function per use-case and repository file** (house rule; ESLint `sourdaw/no-multiple-function-exports` is **warn** only). Handlers live under `handlers/` with `createHandler`; cross-module access only via `get<Module>Handlers` from `useCases/`. Presentation never imports raw handler maps.
+- **Repositories touch metal; engine does not import repositories.** (**error**) I/O (Tauri, storage, audio setup) in `repositories/`; use cases orchestrate.
+- **Async/server state:** TanStack Query — never `useEffect` for data fetching (**error** lint where configured). **Local form state:** RHF + Zod. **Local UI:** `useState` + Compiler. **Context:** only deeply local view state; prefer `use()` over `useContext` (convention; not eslint-hard).
+- **React 19:** no `useMemo` / `useCallback` / `React.memo`; no `forwardRef` (`ref` is a prop); never render with `&&` — use `cond ? <X /> : null` or early return. (**error** lint)
+- **Audio RT:** anything on the audio thread must not allocate, lock, or block. Prefer `AudioWorklet` + `AudioParam`; one live `AudioContext`. (**policy / review** — not CI-machine-gated)
 - **TypeScript soundness:** types describe real data. No `any` except at a boundary with immediate narrowing; no `as` / `as any` / `as unknown as` to silence errors; no bare `@ts-expect-error` without a one-line reason and removal path. Prefer `unknown` + narrowing, `satisfies`, discriminated unions, `import type`, Zod at I/O edges. Tests assert values/shape/errors — not just “defined”.
-- **Style (house):** prefer `type` over `interface`; `as const` over `enum`; named exports (no namespace imports); multi-arg module functions take one object param with `FunctionNameInput` / `FunctionNameOutput` adjacent to the function; modules Capitalized; source files kebab-case; guard clauses + braced `if`; no chained ternaries.
+- **Style (house):** prefer `type` over `interface`; `as const` over `enum`; named exports (no namespace imports); multi-arg module functions take one object param with `FunctionNameInput` / `FunctionNameOutput` adjacent to the function (convention); modules Capitalized; **filenames per `docs/07-conventions.md`** (PascalCase components/views/models; camelCase use cases/helpers — **not** repo-wide kebab-case); guard clauses + braced `if`; no chained ternaries.
 - **Empirical proof:** failing reproduction before behaviour fixes; paste real command output for tests/typecheck/deps claims. Three failed fix attempts on the same approach → stop, reread contracts, change strategy.
 
 ## Safety (destructive actions)

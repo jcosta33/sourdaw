@@ -7,7 +7,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 ## 1. Philosophy
 
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
-- **No integration tests. No E2E.** Not yet. Adding cross-module or Playwright-style tests before the unit layer is populated is premature — wire up the skeleton first, then grow outward when we have a real reason to.
+- **Unit-first.** Playwright E2E exists under `tests/e2e/` (`pnpm test:e2e`) but is **not** in CI health gates. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
