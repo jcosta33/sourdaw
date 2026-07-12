@@ -18,7 +18,7 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 - **`src/modules/`** — DDD domain modules (Arrangement, Transport, AudioEngine, …). Default place for new product code.
 - **`src/infra/`**, **`src/helpers/`**, **`src/utils/`**, **`src/shared/`** — cross-cutting infrastructure and utilities (not domain modules). Must not import from `src/modules/`.
 - **`src-tauri/`** + workspace crates **`daw-core`**, **`daw-engine`**, **`daw-dsp`**, **`daw-io`** — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
-- **`.agents/skills/`** — domain agent skills (architecture, web-audio, …). Load when the description matches the work.
+- **`.agents/skills/`** — domain agent skills (architecture, web-audio, …).
 - **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
 
 Checked-in product specs (when present) live under `specs/`. Transient task/review scratch stays outside the repo or under gitignored `.agents/tasks/` unless the task names a checked-in path.

@@ -97,7 +97,7 @@ useCases
                       models
 
 Cross-module access is narrow:
-- other modules import only from one of the four contract-folder barrels (see §3.3)
+- other modules import only from the contract-folder barrels the target module exposes (up to four — see §3.3)
 - private internals stay private
 ```
 
