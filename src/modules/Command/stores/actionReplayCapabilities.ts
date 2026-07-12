@@ -113,7 +113,10 @@ type ClaimActionReplayCapabilityInput = {
     metadata: ActionReplayMetadata;
 };
 
-export function claimActionReplayCapability({ entryId, metadata }: ClaimActionReplayCapabilityInput): ActionReplayClaim | null {
+export function claimActionReplayCapability({
+    entryId,
+    metadata,
+}: ClaimActionReplayCapabilityInput): ActionReplayClaim | null {
     const record = action_replay_capabilities.get(entryId);
     if (
         record?.state !== 'available' ||
@@ -147,10 +150,7 @@ export function syncActionReplayCapabilityMetadata(entries: readonly ActionRepla
     const entries_by_id = new Map(entries.map((entry) => [entry.id, entry]));
     for (const [entry_id, record] of action_replay_capabilities) {
         const current = entries_by_id.get(entry_id);
-        if (
-            current === undefined ||
-            record.claim.metadataFingerprint !== getActionReplayMetadataFingerprint(current)
-        ) {
+        if (current === undefined || record.claim.metadataFingerprint !== getActionReplayMetadataFingerprint(current)) {
             revokeActionReplayCapability(entry_id);
         }
     }

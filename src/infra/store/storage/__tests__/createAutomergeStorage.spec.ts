@@ -186,4 +186,19 @@ describe('createAutomergeStorage', () => {
         expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
         expect(doc.state).toEqual({ count: 9 });
     });
+
+    it('should project an explicit missing value without copying cached source data', () => {
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+        storage.set({ count: 9 });
+
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(mutations).toEqual([]);
+        expect(doc.state).toBeUndefined();
+    });
 });

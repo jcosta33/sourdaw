@@ -54,10 +54,7 @@ function retryActionReplayMark({ entryId, claim }: RetryActionReplayMarkInput): 
 }
 
 type RevertActionOutput = Promise<
-    | { status: 'executed' }
-    | { status: 'executed-unmarked' }
-    | { status: 'reconciled' }
-    | { status: 'unavailable' }
+    { status: 'executed' } | { status: 'executed-unmarked' } | { status: 'reconciled' } | { status: 'unavailable' }
 >;
 
 export async function revertAction(entryId: string): RevertActionOutput {

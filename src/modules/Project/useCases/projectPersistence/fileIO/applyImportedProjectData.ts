@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ProjectData } from '../../../models/ProjectData';
@@ -33,6 +33,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     if (!transition.isCurrent()) {
         return false;
     }
+    projectActionHistoryToStore();
 
     // Reset per-device-instance stores (§13.1) so stale device state from the
     // previously open project does not leak into the imported project;

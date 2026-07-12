@@ -1,10 +1,10 @@
 import { change, load, loadIncremental, save } from '@automerge/automerge';
 
-import { DOC_PREFIX_ROOT, type DocumentBundle } from '../models/CrdtDocumentTypes';
+import { type DocumentBundle } from '../models/CrdtDocumentTypes';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
-type PersistedRootDocument = {
+type PersistedDocument = {
     actionHistory?: unknown;
 };
 
@@ -15,34 +15,38 @@ type SanitizePersistedActionHistoryBundleInput = {
 export function sanitizePersistedActionHistoryBundle({
     bundle,
 }: SanitizePersistedActionHistoryBundleInput): DocumentBundle {
-    const root_bytes = bundle.get(DOC_PREFIX_ROOT);
-    if (!root_bytes) {
-        return bundle;
-    }
+    const sanitized_bundle = new Map(bundle);
+    const document_ids = [...bundle.keys()].filter((key) => !key.includes(':incremental:'));
 
-    let root_document = load<PersistedRootDocument>(root_bytes);
-    const root_incremental_keys = [...bundle.keys()]
-        .filter((key) => key.startsWith(`${DOC_PREFIX_ROOT}:incremental:`))
-        .sort(compareIncrementalKeys);
+    for (const document_id of document_ids) {
+        const document_bytes = bundle.get(document_id);
+        if (!document_bytes) {
+            continue;
+        }
 
-    for (const key of root_incremental_keys) {
-        const incremental_bytes = bundle.get(key);
-        if (incremental_bytes) {
-            root_document = loadIncremental(root_document, incremental_bytes);
+        let document = load<PersistedDocument>(document_bytes);
+        const incremental_keys = [...bundle.keys()]
+            .filter((key) => key.startsWith(`${document_id}:incremental:`))
+            .sort(compareIncrementalKeys);
+
+        for (const key of incremental_keys) {
+            const incremental_bytes = bundle.get(key);
+            if (incremental_bytes) {
+                document = loadIncremental(document, incremental_bytes);
+            }
+        }
+
+        if (document.actionHistory !== undefined) {
+            document = change(document, (draft) => {
+                delete draft.actionHistory;
+            });
+        }
+
+        sanitized_bundle.set(document_id, save(document));
+        for (const key of incremental_keys) {
+            sanitized_bundle.delete(key);
         }
     }
 
-    if (root_document.actionHistory === undefined) {
-        return bundle;
-    }
-
-    const sanitized_root = change(root_document, (document) => {
-        delete document.actionHistory;
-    });
-    const sanitized_bundle = new Map(bundle);
-    sanitized_bundle.set(DOC_PREFIX_ROOT, save(sanitized_root));
-    for (const key of root_incremental_keys) {
-        sanitized_bundle.delete(key);
-    }
     return sanitized_bundle;
 }

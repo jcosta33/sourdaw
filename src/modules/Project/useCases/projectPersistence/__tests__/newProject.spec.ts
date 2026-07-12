@@ -4,7 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
@@ -24,6 +24,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     createCrdtProject: vi.fn().mockResolvedValue(true),
+    projectActionHistoryToStore: vi.fn(),
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -67,6 +68,7 @@ describe('newProject injectable', () => {
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(createCrdtProject).toHaveBeenCalledWith({ name: 'Test', canActivate: expect.any(Function) });
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
@@ -106,7 +108,17 @@ describe('newProject injectable', () => {
         await Promise.resolve();
 
         expect(projectStore.value?.name).toBe('Second');
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('should preserve source action-history projection when target creation fails', async () => {
+        vi.mocked(createCrdtProject).mockResolvedValueOnce(false);
+
+        newProject('Failed');
+
+        await vi.waitFor(() => expect(createCrdtProject).toHaveBeenCalledTimes(1));
+        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
     });
 
     it('should shut down the old peer transport before repository replacement can notify', async () => {
@@ -135,5 +147,6 @@ describe('newProject injectable', () => {
         await vi.waitFor(() => expect(createCrdtProject).toHaveBeenCalledTimes(1));
 
         expect(documents_seen_by_old_peer).toEqual([]);
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
     });
 });

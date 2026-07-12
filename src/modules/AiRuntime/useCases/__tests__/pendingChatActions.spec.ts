@@ -345,7 +345,9 @@ describe('pending chat action confirmation', () => {
             'assistant-1',
             expect.objectContaining({
                 error: later_failure.message,
-                content: expect.stringMatching(/partially.*later action failed.*history.*do not retry the whole command/is),
+                content: expect.stringMatching(
+                    /partially.*later action failed.*history.*do not retry the whole command/is
+                ),
             })
         );
     });

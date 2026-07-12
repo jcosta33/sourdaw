@@ -6,9 +6,9 @@ import { AppActionCommittedError, AppActionNotDispatchedError } from '../../erro
 import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
+import { createAppActionCommittedError } from '../createAppActionCommittedError';
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
-import { createAppActionCommittedError } from '../createAppActionCommittedError';
 
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
@@ -57,9 +57,8 @@ const mocks = vi.hoisted(() => ({
     setSemanticContext: vi.fn<(ctx: SetSemanticContextInput) => void>(),
     clearSemanticContext: vi.fn<() => void>(),
     recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(),
-    markActionHistoryMetadataReverted: vi.fn<
-        (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
-    >(),
+    markActionHistoryMetadataReverted:
+        vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
     clearActionHistoryMetadata: vi.fn<() => void>(),
     commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
     recordAction: vi.fn<(action: AppAction) => void>(),

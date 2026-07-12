@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore } from '#/modules/CrdtDocument/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -23,7 +23,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(true) }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    createCrdtProject: vi.fn().mockResolvedValue(true),
+    projectActionHistoryToStore: vi.fn(),
+}));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
@@ -64,6 +67,7 @@ describe('loadRecentProject', () => {
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
         vi.mocked(resetActionReplayAuthority).mockClear();
+        vi.mocked(projectActionHistoryToStore).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
@@ -78,6 +82,7 @@ describe('loadRecentProject', () => {
         expect(ok).toBe(true);
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
@@ -133,6 +138,17 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
+    });
+
+    it('should preserve source action-history projection when target creation fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(createCrdtProject).mockResolvedValueOnce(false);
+
+        await expect(loadRecentProject('failed')).resolves.toBe(false);
+
+        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
     });
 
     it('should ignore an older recent-project read that resolves after a newer selection', async () => {
@@ -160,6 +176,7 @@ describe('loadRecentProject', () => {
 
         expect(projectStore.value?.name).toBe('Second');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(writeProjectJson).toHaveBeenCalledTimes(1);
     });
 });

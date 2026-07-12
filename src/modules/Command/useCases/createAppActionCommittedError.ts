@@ -5,9 +5,6 @@ type CreateAppActionCommittedErrorInput = {
     cause: unknown;
 };
 
-export function createAppActionCommittedError({
-    actionType,
-    cause,
-}: CreateAppActionCommittedErrorInput): Error {
+export function createAppActionCommittedError({ actionType, cause }: CreateAppActionCommittedErrorInput): Error {
     return new AppActionCommittedError(actionType, cause);
 }

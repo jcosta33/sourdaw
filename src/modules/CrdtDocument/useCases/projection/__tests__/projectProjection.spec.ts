@@ -14,8 +14,13 @@ const mocks = vi.hoisted(() => ({
     arrangementStore: { hydrate: vi.fn() },
     projectStore: { hydrate: vi.fn() },
     cvGateStore: { hydrate: vi.fn() },
+    actionHistoryStore: { hydrate: vi.fn() },
     hydrateSidechainRoutes: vi.fn(),
 }));
+
+vi.mock('../../../stores/actionHistoryStore', () => {
+    return { actionHistoryStore: mocks.actionHistoryStore };
+});
 
 // Mock Arrangement stores
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
@@ -102,6 +107,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.arrangementStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });

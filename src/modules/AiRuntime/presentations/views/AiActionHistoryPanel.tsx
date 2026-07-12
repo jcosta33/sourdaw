@@ -9,8 +9,8 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
-import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
 import { actionReplayRevisionStore } from '#/modules/Command/stores';
+import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -121,7 +121,10 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                 }
             />
             {clear_error ? (
-                <div role="alert" className="border-b border-border/50 px-3 py-1.5 text-[10px] text-[var(--color-state-danger)]">
+                <div
+                    role="alert"
+                    className="border-b border-border/50 px-3 py-1.5 text-[10px] text-[var(--color-state-danger)]"
+                >
                     {clear_error}
                 </div>
             ) : null}

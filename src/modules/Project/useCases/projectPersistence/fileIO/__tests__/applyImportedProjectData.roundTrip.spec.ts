@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -15,13 +15,17 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
-const { audioContext, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
-    audioContext: {},
-    createCrdtProjectMock: vi.fn().mockResolvedValue(true),
-    resetActionReplayAuthority: vi.fn(),
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
+const { audioContext, createCrdtProjectMock, resetActionReplayAuthority, restoreCachedAudioBuffersFromIdb } =
+    vi.hoisted(() => ({
+        audioContext: {},
+        createCrdtProjectMock: vi.fn().mockResolvedValue(true),
+        resetActionReplayAuthority: vi.fn(),
+        restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
+    }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    createCrdtProject: createCrdtProjectMock,
+    projectActionHistoryToStore: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: createCrdtProjectMock }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioContext,
@@ -160,6 +164,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         restoreCachedAudioBuffersFromIdb.mockClear();
         createCrdtProjectMock.mockClear();
+        vi.mocked(projectActionHistoryToStore).mockClear();
         resetActionReplayAuthority.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
@@ -181,6 +186,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await applyImportedProjectData(makeProject());
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
             audioContext,
             bufferIds: expect.arrayContaining(['buf-1', 'buf-2']),
@@ -248,6 +254,15 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
     });
 
+    it('should preserve source action-history projection when target creation fails', async () => {
+        createCrdtProjectMock.mockResolvedValueOnce(false);
+
+        await expect(applyImportedProjectData(makeProject())).resolves.toBe(false);
+
+        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
     it('should ignore an older import whose target creation resolves after a newer import', async () => {
         let resolve_first: (() => void) | undefined;
         let resolve_second: (() => void) | undefined;
@@ -276,6 +291,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await expect(first).resolves.toBe(false);
 
         expect(projectStore.value?.name).toBe('Second');
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
     });

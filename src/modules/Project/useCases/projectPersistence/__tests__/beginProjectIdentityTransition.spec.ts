@@ -28,7 +28,6 @@ describe('beginProjectIdentityTransition', () => {
         await expect(transition.prepare()).resolves.toBe(true);
         expect(transition.complete()).toBe(true);
         expect(transition.complete()).toBe(false);
-
     });
 
     it('should make an older transition stale as soon as a newer transition begins', async () => {

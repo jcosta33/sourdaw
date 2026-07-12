@@ -3,9 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { markActionHistoryEntryReverted } from '../markActionHistoryEntryReverted';
 
 const mocks = vi.hoisted(() => ({
-    mark_entry_reverted: vi.fn<
-        (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
-    >(),
+    mark_entry_reverted:
+        vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
 }));
 
 vi.mock('../../stores/actionHistoryStore', () => ({

@@ -27,9 +27,8 @@ const mocks = vi.hoisted(() => {
     return {
         action_history_store,
         execute_app_action: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
-        mark_reverted: vi.fn<
-            (input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }
-        >(),
+        mark_reverted:
+            vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
     };
 });
 

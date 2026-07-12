@@ -37,12 +37,8 @@ const module_mocks = vi.hoisted(() => ({
         () => ({ status: 'ready' })
     ),
     revert_action: vi.fn<
-        (
-            entry_id: string
-        ) => Promise<{ status: 'executed' | 'executed-unmarked' | 'reconciled' | 'unavailable' }>
-    >(
-        async () => ({ status: 'executed' })
-    ),
+        (entry_id: string) => Promise<{ status: 'executed' | 'executed-unmarked' | 'reconciled' | 'unavailable' }>
+    >(async () => ({ status: 'executed' })),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -277,9 +273,7 @@ describe('AiActionHistoryPanel', () => {
 
         fireEvent.click(screen.getByLabelText('Revert this change'));
 
-        await waitFor(() =>
-            expect(screen.getByText('Change applied, but history row changed')).toBeInTheDocument()
-        );
+        await waitFor(() => expect(screen.getByText('Change applied, but history row changed')).toBeInTheDocument());
         expect(screen.queryByText('Reverted')).not.toBeInTheDocument();
     });
 

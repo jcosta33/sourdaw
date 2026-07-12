@@ -265,7 +265,9 @@ describe('sendChatMessage injectables', () => {
             assistant_message?.id,
             expect.objectContaining({
                 error: later_failure.message,
-                content: expect.stringMatching(/partially.*later action failed.*history.*do not retry the whole command/is),
+                content: expect.stringMatching(
+                    /partially.*later action failed.*history.*do not retry the whole command/is
+                ),
             })
         );
     });

@@ -204,7 +204,9 @@ export function sanitize_action_history_state(value: unknown): ActionHistoryStat
 }
 
 export const actionHistoryStore = createStore<ActionHistoryState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory', {
+        hydrateMissing: () => ({ entries: [] }),
+    }),
     initialData: defaultActionHistoryState,
     sanitize: sanitize_action_history_state,
 });

@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/storageOperations';
@@ -42,6 +42,7 @@ export function newProject(name = 'Untitled Project'): void {
             if (!transition.isCurrent()) {
                 return;
             }
+            projectActionHistoryToStore();
             resetModuleStoresToDefault();
             arrangementStore.set(structuredClone(defaultArrangementStoreState));
             addTrack({ name: 'Master', kind: 'master', select: false });
@@ -74,5 +75,4 @@ export function newProject(name = 'Untitled Project'): void {
         .catch((error) => {
             logger.warn('[newProject] Failed to activate project:', error);
         });
-
 }

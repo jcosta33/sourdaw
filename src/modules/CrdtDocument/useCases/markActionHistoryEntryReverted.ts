@@ -5,6 +5,8 @@ type MarkActionHistoryEntryRevertedInput = {
     expectedFingerprint: string;
 };
 
-export function markActionHistoryEntryReverted(input: MarkActionHistoryEntryRevertedInput): ReturnType<typeof markEntryReverted> {
+export function markActionHistoryEntryReverted(
+    input: MarkActionHistoryEntryRevertedInput
+): ReturnType<typeof markEntryReverted> {
     return markEntryReverted(input);
 }

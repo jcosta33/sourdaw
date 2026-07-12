@@ -1,10 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import {
-    createAppActionCommittedError,
-    executeAppAction,
-    isAppActionCommittedError,
-} from '#/modules/Command/useCases';
+import { createAppActionCommittedError, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';

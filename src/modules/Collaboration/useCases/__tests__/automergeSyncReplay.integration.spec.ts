@@ -1,16 +1,7 @@
 import { change, generateSyncMessage, init, initSyncState } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import {
-    clearActionHistory as clearCrdtActionHistory,
-    createCrdtDoc,
-    markActionHistoryEntryReverted,
-    recordActionHistoryEntry,
-    registerCrdtStorageRuntime,
-    removeCrdtDoc,
-} from '#/modules/CrdtDocument/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -19,6 +10,16 @@ import {
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+import {
+    clearActionHistory as clearCrdtActionHistory,
+    createCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntry,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    setupProjectionBridge,
+} from '#/modules/CrdtDocument/useCases';
 import { bytesToBase64 } from '#/utils/base64';
 
 import { AutomergeSync } from '../automergeSync';
@@ -45,6 +46,8 @@ async function flush_pending_frame(): Promise<void> {
 }
 
 describe('AutomergeSync replay authority integration', () => {
+    let unsubscribe_projection: (() => void) | null = null;
+
     beforeEach(() => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
@@ -73,6 +76,8 @@ describe('AutomergeSync replay authority integration', () => {
     });
 
     afterEach(async () => {
+        unsubscribe_projection?.();
+        unsubscribe_projection = null;
         clearHandlerRegistry();
         resetActionReplayAuthority();
         clearUndoHistory();
@@ -90,6 +95,8 @@ describe('AutomergeSync replay authority integration', () => {
             throw new Error('Expected local replay metadata');
         }
         expect(getActionReplayStatus(entry_id)).toEqual({ status: 'ready' });
+        const hydrate_action_history = vi.spyOn(actionHistoryStore, 'hydrate');
+        unsubscribe_projection = setupProjectionBridge();
 
         const sync = new AutomergeSync({
             getConnectedPeerIds: () => [],
@@ -102,5 +109,6 @@ describe('AutomergeSync replay authority integration', () => {
         });
 
         expect(getActionReplayStatus(entry_id)).toEqual({ status: 'unavailable' });
+        expect(hydrate_action_history).toHaveBeenCalled();
     });
 });

@@ -18,6 +18,7 @@ export { mutateCrdtDoc } from './mutateCrdtDoc';
 export type { MutateCrdtDocInput } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
+export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
