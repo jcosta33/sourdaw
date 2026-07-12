@@ -46,7 +46,7 @@ If resolution runs before bootstrap finishes, the container may return a lazy pr
 
 ## Presentation layer (React)
 
-Hooks and components **do not** use `inject()`. They subscribe to stores, call **public** use cases from contract paths, or receive `eventBus` / similar from app wiring. If a hook must read the container, resolve **inside** `useEffect`, not at module scope (avoids ordering issues after minification). Prefer passing dependencies in from parents or using existing app singletons documented in §4.10.
+Hooks and **views** **do not** use `inject()`. They subscribe to stores via contract barrels, call **public** use cases from contract paths, or receive `eventBus` / similar from app wiring. Leaf **components** should not subscribe to business stores or call use cases — keep that in views/hooks and pass props. If a hook must read the container, resolve **inside** `useEffect`, not at module scope (avoids ordering issues after minification). Prefer passing dependencies in from parents or using existing app singletons documented in §4.10.
 
 ---
 

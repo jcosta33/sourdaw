@@ -86,7 +86,6 @@ export { addTrack } from '../useCases/addTrack'; // wrong folder — use useCase
 
 ## No module-root `index.ts`
 
-Do not add `<module>/index.ts` or `<module>/contract.ts` aggregation shims. If a
-module you're working in still has a root `index.ts`, that is a legacy module
-awaiting migration — do not add new exports to it. Create or extend the
-contract-folder barrels instead.
+Do not add `<module>/index.ts` or `<module>/contract.ts` aggregation shims.
+Module-root barrels are retired (none remain). Create or extend the four
+contract-folder barrels only.

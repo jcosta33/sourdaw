@@ -160,6 +160,7 @@ module.exports = {
             comment:
                 'Module root index.ts (legacy, during migration) may only re-export from useCases/, events/, stores/, ' +
                 'and presentations/views/ within the same module. ' +
+                'Root module index.ts is retired (0 remain); this rule stays as a guard if one reappears. ' +
                 'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, or worklets/ is forbidden.',
@@ -224,11 +225,9 @@ module.exports = {
             severity: 'error',
             comment:
                 'Internal module files must not import from their own module barrels (index.ts). ' +
-                'Import implementation files directly using relative paths.',
+                'Import implementation files directly using relative paths. Root barrels are retired; ' +
+                'this also blocks same-module imports of contract-folder index.ts files.',
             from: {
-                // Legacy module-root barrels remain allowed during migration.
-                // This rule targets non-root files (including contract-folder barrels)
-                // importing another index.ts inside the same module.
                 path: '^' + MODULE_ROOT.slice(1),
             },
             to: {

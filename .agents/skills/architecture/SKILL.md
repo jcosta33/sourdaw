@@ -105,16 +105,23 @@ Workspace, Command panels, and device UIs are **composition roots**. Views and h
 import foreign **barrels** (`useCases`, `stores`, `events`, `presentations/views`). They
 must not import foreign private folders.
 
-Leaf **components** must not import:
+Leaf **components** stay dumb — prefer views/hooks for business access. Machine rules:
 
-- useCases (direct: `components-no-usecase-access`; transitive: reachability cruise)
-- business `stores/` (`components-no-business-store-access`)
-- views (`components-no-view-access`)
+| Rule | What it actually bans |
+|------|------------------------|
+| `components-no-usecase-access` | **Same-module** `useCases/` only |
+| `components-no-business-store-access` | **Same-module** business `stores/` only |
+| `components-no-view-access` | **Any** module’s `presentations/views/` |
+| `components-no-usecase-transitively` (reachability) | Component that can **reach any** module’s `useCases/` (value graph) |
 
-Promote to a view/hook or pass props/callbacks.
+Foreign `#/modules/<Other>/useCases` or `stores` barrels from a leaf component are **not**
+caught by the same-module direct rules; reachability covers useCases (with a per-`from`
+baseline). Skill discipline: still do not put shell work in `presentations/components/` —
+promote LaunchScreen-class UIs to `views/` or keep calls in hooks/views.
 
-**Why:** forbidding *all* foreign useCases would force a wrapper per action in a DAW
-shell; forbidding components from owning business calls keeps leaves dumb.
+**Why:** forbidding *all* foreign useCases from **views** would force a wrapper per action
+in a DAW shell; forbidding **leaf components** from owning business calls keeps leaves dumb.
+Do not claim a machine ban the regex does not implement.
 
 ### 6. Models and events stay pure; types do not leak through useCases barrels
 

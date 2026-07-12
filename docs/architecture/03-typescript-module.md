@@ -463,7 +463,7 @@ This layer is **not** part of the general cross-module contract. Other feature m
 
 ### Construction
 
-- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed). Import **`createHandler`** from **`#/helpers/createHandler`**.
+- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed). Import **`createHandler`** from **`#/utils/createHandler`**.
 - **`get<Module>Handlers`** assembles the registry by **direct imports** of each `handle…` and a typed object literal `{ … }` — no intermediate wrapper around the map. **Do not** add a second “handlers map” file that only re-exports the same object; the merge lives in **`get<Module>Handlers`** (or, until migration, a legacy `*Handlers.ts` that is still typed as the domain map).
 
 ### Cross-module access
@@ -724,7 +724,7 @@ Classes resolve to their registered instance in the container. Injectables resol
 | Pure transformers                      | No      | Pure functions need nothing from the container                           |
 | Validators / services (no I/O)         | No      | Pure functions                                                           |
 | Models                                 | No      | Data                                                                     |
-| React hooks / components               | No      | Stay in the presentation layer; read stores directly                     |
+| React hooks / views                    | No      | Stay in presentation; hooks/views may read store barrels; leaf components get props |
 | Engine classes (`TrackNode`, etc.)     | No      | Constructor-injected (pass `AudioContext` as an arg)                     |
 | Audio-thread / hot-path code           | **No**  | The resolution + cached invocation has a cost; hot paths must not pay it |
 

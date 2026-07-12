@@ -16,17 +16,20 @@ Our custom `Store` class (located at `src/helpers/Store/Store.ts`) provides a si
 
 ## Cross-module store contracts
 
-Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module contracts**. Any module may import and subscribe to them — both from use cases (for reading/writing) and from presentation hooks (for reactive UI binding via `useStore`).
+Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module read contracts**. Import only via the **`#/modules/<M>/stores` barrel** (never a deep file path). Other modules may **subscribe/read**; they must **not** call `store.set` on a foreign store — write through the owning module’s use cases or `executeAppAction`. Owning-module use cases may read/write their own store. Presentation **hooks/views** bind with `useStore`; leaf **components** should receive data via props (same-module store imports from components are machine-banned; prefer views/hooks).
 
 Presentation-layer stores (located at `ModuleName/presentations/stores/`) are **module-private**. They hold UI preferences (zoom, sidebar state, panel layout) and are never imported by another module.
 
 ```typescript
-// ✅ Cross-module: import a business-layer store from another module
+// ✅ Cross-module: import a business-layer store from the contract barrel
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
-const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
-const tracks = trackState.tracks;
+const trackState = useStore(trackStore);
+const tracks = trackState?.tracks ?? [];
+
+// ❌ Forbidden: deep import into the stores folder
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 // ❌ Forbidden: import a presentation-layer store from another module
 import { zoomStore } from '#/modules/Arrangement/presentations/stores/zoomStore';
