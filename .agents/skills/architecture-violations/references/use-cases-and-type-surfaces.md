@@ -2,7 +2,7 @@
 
 Deep mechanics behind Core rule 6 (no laundering) and Core rule 7 (one function
 per file). A use case is the **callable** cross-module contract. Other modules
-import **functions** from `#/modules/<Module>` — not types defined in that
+import **functions** from `#/modules/<Module>/useCases` — not types defined in that
 module's `useCases/`. Each consumer module keeps its own types (or uses
 `ReturnType<typeof fn>` / `Parameters<typeof fn>`). **Event payload types** in
 `events/` are the shared type surface when a named cross-module type is required.
@@ -18,7 +18,7 @@ Every use case file must export its own typed function:
 - The input and output types may use this module's `models/`, repositories' pure-model types (§4, intra-module only), or inline types in the file — see `AGENTS.md` model isolation for cross-module data shapes.
 - The function body may be thin. `return someRepo.method(input)` is acceptable — a use case is allowed to delegate to a private repository.
 - **Within the same module**, callers use **relative** paths to the file that defines the symbol (`./useCases/<file>`, `../stores/…`, etc.). They must **not** import from `#/modules/<ThisModule>`. Same-module `import type` from a co-located use case file is fine.
-- **From another module**, callers import **values** from `#/modules/<Module>` only (`export { fn }` on `index.ts`). No `export type { … } from './useCases/…'` on `index.ts`.
+- **From another module**, callers import **values** from `#/modules/<Module>/useCases` only (`export { fn }` on that folder’s `index.ts`). No `export type { … }` on `useCases/index.ts` (`no-usecase-type-exports-on-index`).
 - Across a module boundary, callers never import `repositories/`; the use case hides the repository.
 
 ```ts
@@ -80,7 +80,7 @@ export type { TrackSummary } from './getTrackSummary'; // use-case types do not 
 export { trackStore } from '../stores/trackStore'; // wrong folder
 ```
 
-These patterns are non-compliant even if cmdValidate passes — a fake public
+These patterns are non-compliant even if `pnpm deps:validate` passes — a fake public
 surface does not become a real one just because the path resolves.
 
 If there is nothing to add to a use-case body, define a proper typed function
@@ -152,7 +152,7 @@ it does not happen. The legal type surfaces are:
 | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `events/` payloads                                                                                                       | **Allowed.** `export type { FooEvent } from './FooEvent'` in `events/index.ts` — the canonical shared type surface.                                                                                                                                      |
 | `stores/` value types                                                                                                    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance from `stores/index.ts`.                                                                                                             |
-| `useCases/` local types                                                                                                  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './...'` line on `useCases/index.ts` — never a deep import. |
+| `useCases/` local types                                                                                                  | **Forbidden on the barrel.** Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`). Consumers use `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape. Shared payloads belong on `events/`. |
 | Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from any barrel, not laundered through a use case file, not anywhere.                                                                                                                                                                |
 
 If you find yourself wanting to re-export a model type so another module can name

@@ -94,7 +94,7 @@ their internals, so B can never change its slice shape without silently breaking
 
 When you modify the structure of a state slice or its write path, map its blast radius: who reads
 this, who writes this, which upstream commands mutate it, and which downstream selectors/components
-project it. Lean on the TypeScript compiler (`cmdTypecheck`) to verify that all consumers are
+project it. Lean on the TypeScript compiler (`pnpm typecheck`) to verify that all consumers are
 updated to the new shape — do not assume the local change is safe until the compiler proves it.
 _Why: state shape is a contract with every selector and component that touches it; the compiler is
 the only honest census of consumers._
@@ -216,7 +216,7 @@ Telemetry is not project truth unless explicitly committed through an applicatio
 
 Before accepting state code, walk every item below and write the answer down. Not complete until
 each of the ten questions has an explicit written answer in the review notes, the blast-radius
-consumer list (rule 7) is enumerated, and the `cmdTypecheck` output appears verbatim showing all
+consumer list (rule 7) is enumerated, and the `pnpm typecheck` output appears verbatim showing all
 consumers compile against the new state shape.
 
 1. What category of state is this? (one of the eight in `references/state-categories.md`)
@@ -230,9 +230,9 @@ consumers compile against the new state shape.
 9. Does the change preserve undo/coalescing semantics?
 10. Are commands/actions, events, and stores playing distinct roles?
 
-If any slice shape or write path changed, the `cmdTypecheck` run is mandatory — a green compile is
+If any slice shape or write path changed, the `pnpm typecheck` run is mandatory — a green compile is
 the proof that every projecting selector and component was updated. Paste the last lines of that
-output verbatim. A claim that "consumers are fine" without pasted `cmdTypecheck` output reads as
+output verbatim. A claim that "consumers are fine" without pasted `pnpm typecheck` output reads as
 unverified, not pass.
 
 ---

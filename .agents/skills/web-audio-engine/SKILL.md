@@ -147,17 +147,37 @@ playback phase, playhead progression, loop execution, or scheduling boundaries.
 Full ownership catalogue (engine-owned vs project-truth, latency, transport) in
 `references/ownership-map.md`.
 
-## Refuses — temptation vs. do-instead
+## Anti-patterns
 
-| Temptation (wrong) | Do instead (right) |
-| --- | --- |
-| Store `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores | Keep runtime objects engine-owned; expose only controlled APIs and summaries |
-| Let a hook be the real owner of playback state | Hook sends commands and subscribes to engine summaries |
-| Moving a fader rebuilds routing or recreates nodes | Keep the parameter path separate from the topology path (rule 4) |
-| Mix/analyze/manipulate audio buffers in React hooks or render logic | Use worklets or engine-owned runtime code |
-| Create a fresh `AudioContext` for preview, one-shots, quick meters | Route previews through the engine unless a distinct offline context is clearly justified |
-| Engine decides project semantics or becomes persistence truth | Engine executes truth projections only |
-| Export reuses live engine state and assumes current UI/runtime state is canonical | Offline render reconstructs the graph intentionally and deterministically |
+### CRITICAL — Runtime handles in React/stores
+
+❌ Store `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores  
+✅ Engine-owned runtime objects; expose controlled APIs and summaries only
+
+### CRITICAL — RT-unsafe work on the audio path
+
+❌ Allocate, lock, DOM/React, FS/network, Tauri, JSON parse on RT-adjacent paths  
+✅ Worklets + prepared schedules; slow path for topology
+
+### CRITICAL — Parameter gesture rebuilds graph
+
+❌ Moving a fader rebuilds routing or recreates nodes  
+✅ Parameter path vs topology path (rule 4)
+
+### HIGH — Hook owns playback phase
+
+❌ Hook is the real owner of playhead/transport execution  
+✅ Hook sends commands and subscribes to engine summaries
+
+### HIGH — Export reuses live engine state
+
+❌ Offline render assumes current UI/runtime state is canonical  
+✅ Offline path reconstructs the graph intentionally
+
+### MEDIUM — Extra live AudioContext for preview
+
+❌ Fresh context for one-shots/meters  
+✅ Route previews through the single live engine (or explicit offline context)
 
 ## Self-review gate
 

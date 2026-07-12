@@ -1,4 +1,5 @@
 .dependency-cruiser-known-violations.json
+.dependency-cruiser-known-violations-reachability.json
 node_modules
 target
 dist

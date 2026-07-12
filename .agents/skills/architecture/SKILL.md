@@ -198,6 +198,7 @@ that pulls the command bus.
 - `AGENTS.md` — Frontend Domain-Driven Architecture
 - `docs/architecture/03-typescript-module.md` — module anatomy
 - `.dependency-cruiser.cjs` / `.dependency-cruiser.reachability.cjs` — machine rules
-- `pnpm deps:validate` — both cruises + known-violations baseline
+- `pnpm deps:validate` — both cruises + known-violations baselines  
+  (main: edge-level ignore; reachability: **per dirty component `from`**, not per target — see reachability config header)
 - `architecture-violations` — fix discipline when a check fails
 - `state-and-write-paths` — who may write which state

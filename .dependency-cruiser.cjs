@@ -9,7 +9,11 @@
 //
 // Transitive component → useCase isolation lives in
 // `.dependency-cruiser.reachability.cjs` (value imports only). Run both via
-// `pnpm deps:validate`.
+// `pnpm deps:validate` (each cruise has its own --ignore-known baseline).
+//
+// Reachability known-violations ratchets on **dirty component `from` paths**, not
+// each transitive target — see header in `.dependency-cruiser.reachability.cjs`.
+// Main-cruise known-violations still match full from→to dependency edges.
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //

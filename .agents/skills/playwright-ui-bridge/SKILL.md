@@ -118,4 +118,4 @@ A probe or change made under this skill is not complete until each box below has
 - [ ] **Setup + cleanup.** Confirm in writing the script calls `setupAgentBrowser()` and closes the browser in a `finally` block.
 - [ ] **Structured output.** Confirm the run emitted exactly one JSON object on stdout (rule 4) and that `success` and, if a screenshot was taken, `screenshotPath` are present in the pasted JSON.
 - [ ] **Locators.** Confirm interaction used `getByRole`/`getByTestId`/`getByLabel`, not raw CSS-path selectors.
-- [ ] **Repo gate (only if you touched committed code, e.g. `utils.ts`).** Paste verbatim output of `cmdValidate`, `cmdTypecheck`, and `cmdTest` resolved from `AGENTS.md`. Not complete until each command's last two lines appear verbatim.
+- [ ] **Repo gate (only if you touched committed code, e.g. `utils.ts`).** Paste verbatim output of `pnpm deps:validate`, `pnpm typecheck`, and focused `pnpm exec vitest run <path>`. Not complete until each command's last two lines appear verbatim.

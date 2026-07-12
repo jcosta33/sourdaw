@@ -136,10 +136,20 @@ command path no reviewer or undo system can see._
 ❌ Leaf component calls foreign or local useCases  
 ✅ View/hook owns the call; props/callbacks into the component
 
-### MEDIUM — Manual memoization by default
+### CRITICAL — Manual memoization (AGENTS reject)
 
-❌ `useMemo`/`useCallback`/`React.memo` sprinkled everywhere  
-✅ Plain components; React Compiler owns memoization
+❌ `useMemo` / `useCallback` / `React.memo` — hand-written memoization  
+✅ Plain components; React Compiler owns memoization for the entire app (code-review reject if hand-memoized)
+
+### CRITICAL — `forwardRef` or `&&` render traps
+
+❌ `forwardRef(...)` or `{count && <Row />}` (can render `0`/`''`)  
+✅ `ref` as a normal prop (React 19); ternary or early `return null`
+
+### HIGH — Context via `useContext`
+
+❌ `useContext(FooContext)`  
+✅ `use(FooContext)` per AGENTS
 
 ## Self-review gate
 

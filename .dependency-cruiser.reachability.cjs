@@ -9,6 +9,24 @@
  *
  * Cache does NOT hash this config. Own cache folder so it never shares stale
  * results with the main cruise.
+ *
+ * ## Known-violations baseline semantics (depcruiser limitation)
+ *
+ * `--ignore-known` softens reachability by **module `from` + rule name only**, not
+ * by each `to` / `via` edge. The baseline file therefore stores **one compact entry
+ * per dirty component** (unique `from`), not thousands of path dumps.
+ *
+ * Gate meaning for this cruise:
+ *   - NEW component `from` that can reach a use case → fails (not in baseline).
+ *   - NEW use-case target reachable from an already-baselined component → still
+ *     ignored until that component is removed from the baseline.
+ *
+ * Main cruise dependency rules still match full from+to edges. Do not claim
+ * edge-level ratcheting for reachability.
+ *
+ * Refresh baseline after intentional component cleanups:
+ *   depcruise src -c .dependency-cruiser.reachability.cjs -T baseline -f /tmp/r.json
+ *   then slim to unique from (or re-run the project’s slim script / keep one row per from).
  */
 
 const MODULE = 'src/modules/(?:Common/|Supporting/)?';

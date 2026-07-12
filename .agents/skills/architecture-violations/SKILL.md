@@ -23,7 +23,7 @@ gaming, and code that "passes the rules" without preserving their meaning. It
 prevents the failure mode where a violation is silenced — re-exported through a
 laundering barrel, hidden behind a fake use case, renamed past the validator —
 so the check goes green while the real logic still lives in the wrong place. A
-boundary that exists only to satisfy `cmdValidate` is worse than no boundary: it
+boundary that exists only to satisfy `pnpm deps:validate` is worse than no boundary: it
 hides the coupling it was supposed to expose. Applies to AI agents and human
 maintainers alike.
 
@@ -70,7 +70,7 @@ _Why: repeated local patches on a wrong abstraction compound into shadow archite
 
 ### 4. Trace the blast radius before and after every move
 Do not suffer from tunnel vision. Trace the upstream callers and downstream
-dependencies of the files you move, and use the TypeScript compiler (cmdTypecheck)
+dependencies of the files you move, and use the TypeScript compiler (`pnpm typecheck`)
 to exhaustively navigate the blast radius of your changes.
 
 _Why: moving a symbol across a boundary breaks consumers you did not look at; the compiler is the only exhaustive way to find them all._
@@ -88,7 +88,8 @@ _Why: the barrel is the only place ownership and the public surface are curated;
 
 ### 6. A use case is a typed function, not a re-export — types stay local
 A use case is the **callable** cross-module contract: other modules import
-**functions** from `#/modules/<Module>`, not types from its `useCases/`. Every
+**functions** from `#/modules/<Module>/useCases` (the contract-folder barrel — never
+the bare `#/modules/<Module>` root), not types from its use-case surface. Every
 use-case file exports its own named, typed function (a thin `return repo.method(input)`
 body is fine). Re-exporting a repository/model symbol through a use-case file —
 `export { getNextClipId } from '../repositories/...'` — is **laundering**: it
@@ -150,7 +151,7 @@ public surface. The refactor that discharges a shim annotation is creating a rea
 typed boundary (rule 6). If you cannot complete the refactor this session, leave
 the annotation in place and document the reason in the task file.
 
-_Why: deleting the comment without doing the refactor is malicious compliance — it erases the only signal that the boundary is still fake, regardless of whether cmdValidate passes._
+_Why: deleting the comment without doing the refactor is malicious compliance — it erases the only signal that the boundary is still fake, regardless of whether `pnpm deps:validate` passes._
 
 ## What does not belong
 
@@ -217,14 +218,16 @@ _Why: deleting the comment without doing the refactor is malicious compliance �
 Run this before declaring an architecture-violation fix done. Any step that
 should produce visible output is required to produce it.
 
-1. **Validator is green from a real run.** Run `pnpm deps:validate` yourself and paste the output verbatim into the task file's `## Self-review` (or wherever the consuming repo records verification). A passing claim without pasted output reads Unverified, not Pass. (Baselines absorb *known* debt; new hits still fail.)
+1. **Validator is green from a real run.** Run `pnpm deps:validate` yourself and paste the output verbatim into the task file's `## Self-review` (or wherever the consuming repo records verification). A passing claim without pasted output reads Unverified, not Pass.
+   - **Main cruise** known-violations: full **from→to** edges — new dependency edges still fail.
+   - **Reachability cruise** known-violations: softens by **component `from` + rule name** only — a baselined dirty component will not fail again when it reaches *additional* use cases; only a **new** dirty component fails. See `.dependency-cruiser.reachability.cjs` header.
 2. **Compiler confirms the blast radius is closed.** Run `pnpm typecheck` and paste its output; zero errors confirms no consumer was left broken (rule 4).
 3. **Responsibility changed across every new/moved boundary.** For each boundary you touched, write one sentence naming what responsibility now lives on each side (rule 2). If you cannot, the boundary is fake — go back.
 4. **No new laundering surface.** Confirm in writing that no use-case file re-exports a repository/model/service symbol and no non-contract export was added to a contract barrel (rules 5–7). Paste the grep you used, e.g. for `export .* from '\.\./repositories` and `export .* from '\.\./models` across the files you changed.
 5. **No shim deletions without the refactor.** Confirm that every `TEMPORARY MIGRATION SHIM` you removed was discharged by a real typed boundary, not just deleted (rule 12).
 6. **No escape-hatch dumping.** Confirm no logic was moved into `src/helpers/`, `src/shared/`, or `utils/` to dodge a rule (rule 1).
 
-Not complete until the verbatim cmdValidate output and the verbatim cmdTypecheck
+Not complete until the verbatim `pnpm deps:validate` output and the verbatim `pnpm typecheck`
 output both appear in the self-review, and steps 3–6 each have a written answer
 beneath them. Checkboxes alone do not count.
 
