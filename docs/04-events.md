@@ -54,7 +54,7 @@ export type TrackRemovedPayload = { trackId: string };
 // app/registerDependencies.ts
 import { createEventBus } from '#/infra/events/createEventBus';
 import { type TrackAddedPayload } from '#/modules/Arrangement/events';
-import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
+import { type TrackRemovedPayload } from '#/modules/Arrangement/events';
 
 export type AppEvents = {
     'track.added': TrackAddedPayload;
@@ -166,16 +166,13 @@ export const useFlagSubscription = (callback: () => void) => {
     }, [callback]);
 };
 
-// ✅ Good: useEffectEvent + resolve inside useEffect
+// ✅ Good: useEffectEvent; bus from props / module wiring (not Container.getInstance())
 import { useEffect, useEffectEvent } from 'react';
-import { Container } from '#/infra/di/Container';
-import { EventBus } from '#/infra/events/types';
 
-export const useFlagSubscription = (callback: () => void) => {
+export const useFlagSubscription = (eventBus: { on: (type: string, cb: () => void) => () => void }, callback: () => void) => {
     const onFlagsFetched = useEffectEvent(callback);
 
     useEffect(() => {
-        const eventBus = Container.getInstance().get(EventBus);
         const unsubscribe = eventBus.on('flags.fetched', () => {
             onFlagsFetched();
         });
@@ -183,7 +180,7 @@ export const useFlagSubscription = (callback: () => void) => {
         return () => {
             unsubscribe();
         };
-    }, []);
+    }, [eventBus]);
 };
 ```
 

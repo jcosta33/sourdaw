@@ -43,96 +43,54 @@ This section provides a practical guide to creating, persisting, and subscribing
 
 ### 1. Define and create the store
 
-A store is a singleton instance of the `Store<T>` class. It holds the state and provides methods to update and subscribe to it.
+A store is a module-level singleton from `createStore` (`#/infra/store/createStore`).
 
 ```typescript
 // Workspace/stores/workspacePreferencesStore.ts
+import { createStore } from '#/infra/store/createStore';
 
-export type WorkspacePreferencesStore = {
+export type WorkspacePreferences = {
     theme: 'light' | 'dark';
     defaultSampleRate: 44100 | 48000 | 96000;
     showMetrics: boolean;
 };
 
-let instance: Store<WorkspacePreferencesStore>;
-
-export function getWorkspacePreferencesStore(): Store<WorkspacePreferencesStore> {
-    if (!instance) {
-        const logger = Container.getInstance().get(Logger);
-        instance = new Store<WorkspacePreferencesStore>(logger, {
-            initialData: {
-                theme: 'dark',
-                defaultSampleRate: 48000,
-                showMetrics: false,
-            },
-        });
-    }
-    return instance;
-}
+export const workspacePreferencesStore = createStore<WorkspacePreferences>({
+    initialData: {
+        theme: 'dark',
+        defaultSampleRate: 48000,
+        showMetrics: false,
+    },
+});
 ```
 
 ### 2. Connect the store to React with a hook
 
-Create a custom hook that uses `useStore` to subscribe to your store instance. This hook will provide the component with the current state and trigger re-renders when the state changes.
+Views/hooks use `useStore`. Leaf components should receive props from a view/hook.
 
 ```tsx
 // Workspace/presentations/hooks/useWorkspacePreferences.ts
-
 import { useStore } from '#/infra/store/useStore';
-import { getWorkspacePreferencesStore, type WorkspacePreferencesStore } from '../stores/workspacePreferencesStore';
+import { workspacePreferencesStore, type WorkspacePreferences } from '../../stores/workspacePreferencesStore';
 
-const defaultPreferences: WorkspacePreferencesStore = {
+const defaultPreferences: WorkspacePreferences = {
     theme: 'dark',
     defaultSampleRate: 48000,
     showMetrics: false,
 };
 
-export const useWorkspacePreferences = (): WorkspacePreferencesStore => {
-    const store = getWorkspacePreferencesStore();
-    return useStore<WorkspacePreferencesStore>(store, defaultPreferences);
+export const useWorkspacePreferences = (): WorkspacePreferences => {
+    return useStore(workspacePreferencesStore, defaultPreferences);
 };
 ```
 
 ### 3. Persist store state (optional)
 
-To persist state to `localStorage`, inject a `LocalStorageStorage` instance when creating your store. This is the only permitted way to interact with `localStorage`.
+Pass a storage adapter into `createStore` when persistence is required (see `#/infra/store/storage/*`). Prefer project patterns already used by Workspace/Arrangement stores over ad-hoc `localStorage` access.
 
-```typescript
-// Workspace/stores/dawLayoutStore.ts
+### 4. Update the store through the owning write path
 
-const LAYOUT_STORAGE_KEY = 'daw-layout-state';
-
-export type LayoutState = 'arrange' | 'mixer' | 'piano-roll';
-
-let layoutStoreInstance: Store<LayoutState>;
-
-export function getDawLayoutStore(initialState: LayoutState): Store<LayoutState> {
-    if (!layoutStoreInstance) {
-        const logger = Container.getInstance().get(Logger);
-        const storage = new LocalStorageStorage<LayoutState>(LAYOUT_STORAGE_KEY);
-        const storedValue = storage.get();
-        layoutStoreInstance = new Store<LayoutState>(logger, {
-            initialData: storedValue ?? initialState,
-            storage,
-        });
-    }
-    return layoutStoreInstance;
-}
-```
-
-### 4. Update the store in response to events
-
-Stores are often updated in response to domain events. Subscribe to an event and call the store's `update` method, which passes the current value to your updater and writes the result back atomically. Prefer `update` over `set({ ...store.value, ... })` — it removes the read-then-write gap and makes intent explicit.
-
-```typescript
-// Workspace/useCases/handleMetricsToggled.ts
-
-getEventBus().on(MetricsToggledEvent, (event) => {
-    const store = getWorkspacePreferencesStore();
-
-    store.update((current) => (current ? { ...current, showMetrics: event.payload.isEnabled } : current));
-});
-```
+Prefer owner use cases / `executeAppAction` for meaningful writes. Same-module code may update the store directly when that is the established pattern; foreign modules must not `store.set`.
 
 Use `set` directly when you are replacing the value wholesale (e.g., loading from persistence), and `clear()` to remove it entirely.
 

@@ -650,9 +650,9 @@ Extend this as new node types are needed. Keep it flat and direct — this is a 
 
 ### 7.5 Storage mocks
 
-The `Store<T>` class accepts a `storage` option. Tests that need a store should build one with `new MemoryStorage()` rather than reaching for a mock. `MemoryStorage` is already in the codebase and is the correct tool for this.
+`createStore` accepts a `storage` option. Tests that need an isolated store should pass `createMemoryStorage()` (or the project’s memory storage helper) rather than inventing a mock class.
 
-If a module's store is defined as a module-level singleton (e.g. `export const trackStore = new Store(...)`), tests must either:
+If a module’s store is a module-level singleton (e.g. `export const trackStore = createStore(...)`), tests must either:
 
 1. Mock the whole store module (as in §6.9), or
 2. Call a reset helper exposed alongside the store that swaps its backing storage.

@@ -687,19 +687,9 @@ export const getSortedTracks = (tracks: Track[], strategy: 'name' | 'date'): Tra
     return sortByDate(tracks);
 };
 
-// Singleton via DI container (already used for Store, Logger, EventBus)
-let instance: Store<AppState>;
-export const getAppStore = (): Store<AppState> => {
-    if (!instance) {
-        const logger = Container.getInstance().get(Logger);
-        instance = new Store<AppState>(logger, {
-            initialData: {
-                /* ... */
-            },
-        });
-    }
-    return instance;
-};
+// Module store singleton (preferred)
+import { createStore } from '#/infra/store/createStore';
+export const appStore = createStore<AppState>({ initialData: { /* ... */ } });
 
 // Adapter pattern (transformer layer maps DTO → domain)
 type ApiUser = { user_id: number; full_name: string };
