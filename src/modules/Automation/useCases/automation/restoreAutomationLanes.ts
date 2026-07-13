@@ -25,15 +25,8 @@ export function restoreAutomationLanes(laneSnapshots: readonly unknown[]): void 
         validLaneSnapshots.push(laneSnapshot);
     }
 
-    const laneIds = new Set(state.lanes.map((lane) => lane.id));
-    const lanesToRestore = validLaneSnapshots.filter((lane) => {
-        if (laneIds.has(lane.id)) {
-            return false;
-        }
-
-        laneIds.add(lane.id);
-        return true;
-    });
+    const existingLaneIds = new Set(state.lanes.map((lane) => lane.id));
+    const lanesToRestore = validLaneSnapshots.filter((lane) => !existingLaneIds.has(lane.id));
     if (lanesToRestore.length === 0) {
         return;
     }

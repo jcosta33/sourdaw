@@ -93,21 +93,26 @@ describe('restoreAutomationLanes', () => {
         mocks.state.value = { lanes: [] };
     });
 
-    it('should append only missing lane ids in one owner write while preserving newer current lanes', () => {
+    it('should preserve restore-batch duplicate ids while skipping every id already current', () => {
         const current = createLane('lane-current', 'Current');
         const newerCurrent = createLane('lane-replaced', 'Newer current');
         const restored = createLane('lane-restored', 'Restored');
         const staleSnapshot = createLane('lane-replaced', 'Stale snapshot');
         const duplicateSnapshot = createLane('lane-restored', 'Duplicate snapshot');
+        const duplicateStaleSnapshot = createLane('lane-replaced', 'Duplicate stale snapshot');
         mocks.state.value = { lanes: [current, newerCurrent] };
 
-        restoreAutomationLanes([restored, staleSnapshot, duplicateSnapshot]);
+        restoreAutomationLanes([restored, staleSnapshot, duplicateSnapshot, duplicateStaleSnapshot]);
 
         expect(mocks.getValue).toHaveBeenCalledTimes(1);
         expect(mocks.set).toHaveBeenCalledTimes(1);
-        expect(mocks.state.value).toEqual({ lanes: [current, newerCurrent, restored] });
+        expect(mocks.state.value).toEqual({
+            lanes: [current, newerCurrent, restored, duplicateSnapshot],
+        });
         expect(mocks.state.value.lanes[0]).toBe(current);
         expect(mocks.state.value.lanes[1]).toBe(newerCurrent);
+        expect(mocks.state.value.lanes[2]).toBe(restored);
+        expect(mocks.state.value.lanes[3]).toBe(duplicateSnapshot);
     });
 
     it('should reject a malformed batch atomically without restoring valid neighboring lanes', () => {
