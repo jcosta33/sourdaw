@@ -77,14 +77,18 @@ describe('duplicateClipAutomationBatch', () => {
         expect(mocks.set).not.toHaveBeenCalled();
 
         mocks.state.value = null;
-        const rollbackMissing = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const rollbackMissing = duplicate([
+            { sourceClipId: 'source', targetClipId: 'target', targetTrackId: 'track-target' },
+        ]);
 
         expect(() => rollbackMissing()).not.toThrow();
         expect(mocks.set).not.toHaveBeenCalled();
 
         const previousState: AutomationStoreState = { lanes: [createLane('lane-keep', 'clip-keep')] };
         mocks.state.value = previousState;
-        const rollbackUnmatched = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const rollbackUnmatched = duplicate([
+            { sourceClipId: 'source', targetClipId: 'target', targetTrackId: 'track-target' },
+        ]);
 
         expect(() => rollbackUnmatched()).not.toThrow();
         expect(mocks.set).not.toHaveBeenCalled();
@@ -103,8 +107,8 @@ describe('duplicateClipAutomationBatch', () => {
             .mockReturnValueOnce('22222222-0000-4000-8000-000000000000');
 
         const rollback = duplicate([
-            { sourceClipId: 'clip-two', targetClipId: 'target-two' },
-            { sourceClipId: 'clip-one', targetClipId: 'target-one' },
+            { sourceClipId: 'clip-two', targetClipId: 'target-two', targetTrackId: 'track-target' },
+            { sourceClipId: 'clip-one', targetClipId: 'target-one', targetTrackId: 'track-target' },
         ]);
 
         const committedState = mocks.state.value;
@@ -119,11 +123,13 @@ describe('duplicateClipAutomationBatch', () => {
         expect(committedState.lanes.slice(0, 3)).toEqual(previousState.lanes);
         expect(firstCopy).toMatchObject({
             id: 'auto-11111111-0000-4000-8000-000000000000',
+            trackId: 'track-target',
             clipId: 'target-two',
             parameterId: sourceTwo.parameterId,
         });
         expect(secondCopy).toMatchObject({
             id: 'auto-22222222-0000-4000-8000-000000000000',
+            trackId: 'track-target',
             clipId: 'target-one',
             parameterId: sourceOne.parameterId,
         });
@@ -153,8 +159,8 @@ describe('duplicateClipAutomationBatch', () => {
 
         expect(() =>
             duplicate([
-                { sourceClipId: 'clip-one', targetClipId: 'target-one' },
-                { sourceClipId: 'clip-two', targetClipId: 'target-two' },
+                { sourceClipId: 'clip-one', targetClipId: 'target-one', targetTrackId: 'track-target' },
+                { sourceClipId: 'clip-two', targetClipId: 'target-two', targetTrackId: 'track-target' },
             ])
         ).toThrow(preparationFailure);
 
@@ -176,9 +182,9 @@ describe('duplicateClipAutomationBatch', () => {
                 mocks.state.value = nextState;
             });
 
-        expect(() => duplicate([{ sourceClipId: 'clip-source', targetClipId: 'clip-target' }])).toThrow(
-            mutationFailure
-        );
+        expect(() =>
+            duplicate([{ sourceClipId: 'clip-source', targetClipId: 'clip-target', targetTrackId: 'track-target' }])
+        ).toThrow(mutationFailure);
 
         expect(mocks.set).toHaveBeenCalledTimes(2);
         expect(mocks.state.value).toBe(previousState);

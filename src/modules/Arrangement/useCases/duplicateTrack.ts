@@ -12,6 +12,7 @@ import { addTrack } from './addTrack';
 import { ArrangementEventBus } from './arrangementEventBus';
 
 type ClipCopy = { sourceClipId: string; targetClipId: string };
+type AutomationClipCopy = ClipCopy & { targetTrackId: string };
 type Rollback = () => void;
 
 export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
@@ -28,7 +29,7 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
 
             const newTrackId = `track-dup-${crypto.randomUUID().slice(0, 8)}`;
             const midiClipCopies: ClipCopy[] = [];
-            const automationClipCopies: ClipCopy[] = [];
+            const automationClipCopies: AutomationClipCopy[] = [];
 
             // 1. Deep copy alternatives and collect satellite-state work.
             const newAlternatives = source.alternatives.map((alt) => {
@@ -37,7 +38,7 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                     const newClipId = `clip-dup-${crypto.randomUUID().slice(0, 8)}`;
                     const copy = { sourceClipId: clip.id, targetClipId: newClipId };
 
-                    automationClipCopies.push(copy);
+                    automationClipCopies.push({ ...copy, targetTrackId: newTrackId });
                     if (clip.type === 'midi') {
                         midiClipCopies.push(copy);
                     }

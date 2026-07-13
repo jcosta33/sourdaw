@@ -10,6 +10,7 @@ import type { TrackAddedPayload } from '../../events';
 import type { TrackState } from '../../repositories/track/getTrackState';
 
 type ClipCopy = { sourceClipId: string; targetClipId: string };
+type AutomationClipCopy = ClipCopy & { targetTrackId: string };
 type Rollback = () => void;
 type AddTrackInput = {
     id?: string;
@@ -21,7 +22,7 @@ type AddTrackInput = {
 type AddTrack = (input: AddTrackInput) => Track | null;
 type UpdateTrack = (trackId: string, updater: (track: Track) => Track) => void;
 type DuplicateMidiClipData = (input: { copies: readonly ClipCopy[] }) => Rollback;
-type DuplicateClipAutomationBatch = (input: { copies: readonly ClipCopy[] }) => Rollback;
+type DuplicateClipAutomationBatch = (input: { copies: readonly AutomationClipCopy[] }) => Rollback;
 type EmitTrackAdded = (event: 'track.added', payload: TrackAddedPayload) => Promise<void>;
 type DuplicateTrackEvents = { 'track.added': TrackAddedPayload };
 
@@ -319,9 +320,9 @@ describe('duplicateTrack', () => {
         expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledTimes(1);
         expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledWith({
             copies: [
-                { sourceClipId: sourceMidiOne.id, targetClipId: copiedMidiOne.id },
-                { sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id },
-                { sourceClipId: sourceMidiTwo.id, targetClipId: copiedMidiTwo.id },
+                { sourceClipId: sourceMidiOne.id, targetClipId: copiedMidiOne.id, targetTrackId: updatedTrack.id },
+                { sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id, targetTrackId: updatedTrack.id },
+                { sourceClipId: sourceMidiTwo.id, targetClipId: copiedMidiTwo.id, targetTrackId: updatedTrack.id },
             ],
         });
         expect(mocks.callOrder).toEqual(['updateTrack', 'duplicateMidiClipData', 'duplicateClipAutomationBatch']);
@@ -579,7 +580,7 @@ describe('duplicateTrack', () => {
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
         expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledTimes(1);
         expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledWith({
-            copies: [{ sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id }],
+            copies: [{ sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id, targetTrackId: updatedTrack.id }],
         });
     });
 });

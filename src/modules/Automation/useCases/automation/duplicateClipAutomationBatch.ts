@@ -2,7 +2,7 @@ import { createAutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 type DuplicateClipAutomationBatchInput = {
-    copies: readonly { sourceClipId: string; targetClipId: string }[];
+    copies: readonly { sourceClipId: string; targetClipId: string; targetTrackId: string }[];
 };
 
 export function duplicateClipAutomationBatch({ copies }: DuplicateClipAutomationBatchInput): () => void {
@@ -15,12 +15,12 @@ export function duplicateClipAutomationBatch({ copies }: DuplicateClipAutomation
         return () => undefined;
     }
 
-    const newLanes = copies.flatMap(({ sourceClipId, targetClipId }) =>
+    const newLanes = copies.flatMap(({ sourceClipId, targetClipId, targetTrackId }) =>
         state.lanes
             .filter((lane) => lane.clipId === sourceClipId)
             .map((lane) => ({
                 ...createAutomationLane(
-                    lane.trackId,
+                    targetTrackId,
                     lane.parameterId,
                     lane.parameterName,
                     lane.minValue,
