@@ -194,6 +194,7 @@ describe('duplicateTrack', () => {
         duplicateTrack(source.id);
 
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
         expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
