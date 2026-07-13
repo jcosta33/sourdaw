@@ -22,7 +22,13 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 - **`.agents/skills/`** — domain agent skills (architecture, web-audio, …).
 - **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
 
-Checked-in product specs live under `specs/`; unnormalized source material lives under `specs/intake/`. Accepted decisions live under `docs/adrs/`.
+## Project specifications
+
+Project specifications live under `.agents/specs/<feature>/`; preserve their
+status and content unless assigned work says otherwise. Captured source material
+that has not yet been normalized into a feature specification lives under
+`.agents/specs/intake/`. Accepted project decisions live under
+`.agents/decisions/` and follow that directory's ADR ledger.
 
 ## Path aliases
 
