@@ -207,6 +207,8 @@ describe('appendMidiNotes', () => {
     it.each([
         ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
         ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
+        ['a numeric-string required field', { ...createAppendNote(), pitch: '64' }],
+        ['a null optional field', { ...createAppendNote(), pressure: null }],
     ])('rejects a batch with %s before UUID or state mutation', (_case, invalidNote) => {
         const stateBefore = midiStore.value;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');

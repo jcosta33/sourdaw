@@ -94,6 +94,61 @@ describe('pasteNotes', () => {
         expect(randomUuid).not.toHaveBeenCalled();
     });
 
+    it('preserves zero optional values while omitting explicit undefined values', () => {
+        const requiredFields = {
+            pitch: 60,
+            startBeat: 4,
+            duration: 1,
+            velocity: 90,
+        };
+        const zeroOptionals = {
+            probability: 0,
+            pressure: 0,
+            slide: 0,
+            pitchBend: 0,
+            channel: 0,
+        };
+        const undefinedOptionals = {
+            probability: undefined,
+            pressure: undefined,
+            slide: undefined,
+            pitchBend: undefined,
+            channel: undefined,
+        };
+        setNoteClipboard({
+            notes: [
+                {
+                    id: 'zero-optionals',
+                    ...requiredFields,
+                    ...zeroOptionals,
+                },
+                {
+                    id: 'undefined-optionals',
+                    ...requiredFields,
+                    ...undefinedOptionals,
+                },
+            ],
+        });
+
+        pasteNotes('destination-clip', 2);
+
+        expect(mocks.appendMidiNotes).toHaveBeenCalledTimes(1);
+        expect(mocks.appendMidiNotes.mock.calls[0]?.[0]).toStrictEqual({
+            clipId: 'destination-clip',
+            notes: [
+                {
+                    ...requiredFields,
+                    startBeat: 2,
+                    ...zeroOptionals,
+                },
+                {
+                    ...requiredFields,
+                    startBeat: 2,
+                },
+            ],
+        });
+    });
+
     it('pastes a real split note copied through the Arrangement clipboard', async () => {
         const actualMidiUseCases =
             await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
