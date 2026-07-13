@@ -1,5 +1,5 @@
-import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { restoreAutomationLanes } from '#/modules/Automation/useCases';
+import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
@@ -29,21 +29,20 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
         }
 
         if (automationLaneSnapshots.length > 0) {
-            const auto = automationStore.value;
-            if (auto) {
-                automationStore.set({ lanes: [...auto.lanes, ...(automationLaneSnapshots as never[])] });
-            }
+            restoreAutomationLanes(automationLaneSnapshots);
         }
 
-        const midi = midiStore.value;
-        if (midi) {
-            midiStore.set({
-                notesByClipId: { ...midi.notesByClipId, ...(midiNotesByClipId as Record<string, never>) },
-                ccByClipId: { ...midi.ccByClipId, ...(midiCcByClipId as Record<string, never>) },
-                pitchBendByClipId: {
-                    ...midi.pitchBendByClipId,
-                    ...(midiPitchBendByClipId as Record<string, never>),
-                },
+        const midiClipIds = new Set([
+            ...Object.keys(midiNotesByClipId),
+            ...Object.keys(midiCcByClipId),
+            ...Object.keys(midiPitchBendByClipId),
+        ]);
+        for (const clipId of midiClipIds) {
+            restoreMidiClipData({
+                clipId,
+                notesSnapshot: midiNotesByClipId[clipId] ?? null,
+                controlChangeSnapshot: midiCcByClipId[clipId] ?? null,
+                pitchBendSnapshot: midiPitchBendByClipId[clipId] ?? null,
             });
         }
 

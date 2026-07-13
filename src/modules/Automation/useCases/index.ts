@@ -13,6 +13,7 @@ export type { ModulationDependencies } from './modulation/modulationDependencies
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
+export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
 export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';

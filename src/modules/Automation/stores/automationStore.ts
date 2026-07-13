@@ -68,6 +68,19 @@ function is_unknown_array(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
 
+function is_dense_array<TValue>(
+    array: unknown[],
+    is_valid_element: (value: unknown) => value is TValue
+): array is TValue[] {
+    for (let index = 0; index < array.length; index += 1) {
+        if (!Object.hasOwn(array, index) || !is_valid_element(array[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function is_finite_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -237,7 +250,7 @@ function is_exact_automation_object(value: unknown): value is AutomationObject {
             required_keys: AUTOMATION_OBJECT_REQUIRED_KEYS,
             optional_keys: AUTOMATION_OBJECT_OPTIONAL_KEYS,
         }) &&
-        value.points.every(is_exact_automation_point)
+        is_dense_array(value.points, is_exact_automation_point)
     );
 }
 
@@ -314,7 +327,7 @@ function has_valid_automation_lane_optionals(value: AutomationLane): boolean {
     );
 }
 
-function is_exact_automation_lane(value: unknown): value is AutomationLane {
+export function is_exact_automation_lane(value: unknown): value is AutomationLane {
     return (
         is_valid_automation_lane(value) &&
         has_valid_automation_lane_optionals(value) &&
@@ -323,12 +336,12 @@ function is_exact_automation_lane(value: unknown): value is AutomationLane {
             required_keys: AUTOMATION_LANE_REQUIRED_KEYS,
             optional_keys: AUTOMATION_LANE_OPTIONAL_KEYS,
         }) &&
-        value.points.every(is_exact_automation_point) &&
-        value.objects.every(is_exact_automation_object) &&
+        is_dense_array(value.points, is_exact_automation_point) &&
+        is_dense_array(value.objects, is_exact_automation_object) &&
         (!('trimPoints' in value) ||
-            (is_unknown_array(value.trimPoints) && value.trimPoints.every(is_exact_automation_point))) &&
+            (is_unknown_array(value.trimPoints) && is_dense_array(value.trimPoints, is_exact_automation_point))) &&
         (!('ghostPoints' in value) ||
-            (is_unknown_array(value.ghostPoints) && value.ghostPoints.every(is_exact_automation_point)))
+            (is_unknown_array(value.ghostPoints) && is_dense_array(value.ghostPoints, is_exact_automation_point)))
     );
 }
 
@@ -387,7 +400,7 @@ function is_exact_automation_store_state(value: unknown): value is AutomationSto
         typeof value === 'object' &&
         has_exact_keys({ value, required_keys: AUTOMATION_STORE_STATE_KEYS }) &&
         lanes !== null &&
-        lanes.every(is_exact_automation_lane)
+        is_dense_array(lanes, is_exact_automation_lane)
     );
 }
 
