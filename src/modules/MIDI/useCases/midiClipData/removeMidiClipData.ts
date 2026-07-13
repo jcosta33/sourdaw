@@ -6,39 +6,32 @@ export function removeMidiClipData(clipIds: readonly string[]): void {
         return;
     }
 
-    let notesByClipId = state.notesByClipId;
-    let ccByClipId = state.ccByClipId;
-    let pitchBendByClipId = state.pitchBendByClipId;
+    const clipIdsToRemove = new Set(clipIds);
+    let hasMatch = false;
 
-    for (const clipId of new Set(clipIds)) {
-        if (Object.hasOwn(notesByClipId, clipId)) {
-            if (notesByClipId === state.notesByClipId) {
-                notesByClipId = { ...notesByClipId };
-            }
-            delete notesByClipId[clipId];
-        }
-
-        if (Object.hasOwn(ccByClipId, clipId)) {
-            if (ccByClipId === state.ccByClipId) {
-                ccByClipId = { ...ccByClipId };
-            }
-            delete ccByClipId[clipId];
-        }
-
-        if (Object.hasOwn(pitchBendByClipId, clipId)) {
-            if (pitchBendByClipId === state.pitchBendByClipId) {
-                pitchBendByClipId = { ...pitchBendByClipId };
-            }
-            delete pitchBendByClipId[clipId];
+    for (const clipId of clipIdsToRemove) {
+        if (
+            Object.hasOwn(state.notesByClipId, clipId) ||
+            Object.hasOwn(state.ccByClipId, clipId) ||
+            Object.hasOwn(state.pitchBendByClipId, clipId)
+        ) {
+            hasMatch = true;
+            break;
         }
     }
 
-    if (
-        notesByClipId === state.notesByClipId &&
-        ccByClipId === state.ccByClipId &&
-        pitchBendByClipId === state.pitchBendByClipId
-    ) {
+    if (!hasMatch) {
         return;
+    }
+
+    const notesByClipId = { ...state.notesByClipId };
+    const ccByClipId = { ...state.ccByClipId };
+    const pitchBendByClipId = { ...state.pitchBendByClipId };
+
+    for (const clipId of clipIdsToRemove) {
+        delete notesByClipId[clipId];
+        delete ccByClipId[clipId];
+        delete pitchBendByClipId[clipId];
     }
 
     midiStore.set({ ...state, notesByClipId, ccByClipId, pitchBendByClipId });

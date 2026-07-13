@@ -20,18 +20,15 @@ const { midiStore } = await import('../../../stores/midiStore');
 function createMidiState(): MidiStoreState {
     return {
         notesByClipId: {
-            'clip-remove': [{ id: 'note-remove', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-            'clip-remove-second': [{ id: 'note-remove-second', pitch: 62, startBeat: 0.5, duration: 1, velocity: 95 }],
+            'clip-note-only': [{ id: 'note-remove', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
             'clip-keep': [{ id: 'note-keep', pitch: 64, startBeat: 1, duration: 0.5, velocity: 90 }],
         },
         ccByClipId: {
-            'clip-remove': [{ id: 'cc-remove', controller: 1, value: 80, beat: 0, channel: 1 }],
-            'clip-remove-second': [{ id: 'cc-remove-second', controller: 7, value: 72, beat: 0.5, channel: 1 }],
+            'clip-cc-only': [{ id: 'cc-remove', controller: 1, value: 80, beat: 0, channel: 1 }],
             'clip-keep': [{ id: 'cc-keep', controller: 11, value: 96, beat: 1, channel: 1 }],
         },
         pitchBendByClipId: {
-            'clip-remove': [{ id: 'pitch-remove', value: 512, beat: 0, channel: 1 }],
-            'clip-remove-second': [{ id: 'pitch-remove-second', value: 256, beat: 0.5, channel: 1 }],
+            'clip-pitch-only': [{ id: 'pitch-remove', value: 512, beat: 0, channel: 1 }],
             'clip-keep': [{ id: 'pitch-keep', value: -256, beat: 1, channel: 1 }],
         },
     };
@@ -44,7 +41,7 @@ describe('removeMidiClipData', () => {
     });
 
     it('removes matching data from all MIDI maps in one write and preserves unrelated entries', () => {
-        removeMidiClipData(['clip-remove', 'clip-remove-second']);
+        removeMidiClipData(['clip-note-only', 'clip-cc-only', 'clip-pitch-only']);
 
         expect(midiStore.set).toHaveBeenCalledTimes(1);
         expect(midiStore.value).toEqual({
@@ -60,10 +57,28 @@ describe('removeMidiClipData', () => {
         });
     });
 
+    it('clones all three maps when only one map contains a matching clip id', () => {
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected initialized MIDI state');
+        }
+
+        removeMidiClipData(['clip-note-only']);
+
+        const nextState = midiStore.value;
+
+        expect(midiStore.set).toHaveBeenCalledTimes(1);
+        expect(nextState.notesByClipId).not.toBe(state.notesByClipId);
+        expect(nextState.ccByClipId).not.toBe(state.ccByClipId);
+        expect(nextState.pitchBendByClipId).not.toBe(state.pitchBendByClipId);
+        expect(nextState.ccByClipId).toEqual(state.ccByClipId);
+        expect(nextState.pitchBendByClipId).toEqual(state.pitchBendByClipId);
+    });
+
     it('does not write when the MIDI store is unavailable', () => {
         midiStore.value = null;
 
-        removeMidiClipData(['clip-remove']);
+        removeMidiClipData(['clip-note-only']);
 
         expect(midiStore.set).not.toHaveBeenCalled();
     });
@@ -87,12 +102,10 @@ describe('removeMidiClipData', () => {
     });
 
     it('deduplicates clip ids while removing the matching data once', () => {
-        removeMidiClipData(['clip-remove', 'clip-remove']);
+        removeMidiClipData(['clip-note-only', 'clip-note-only']);
 
         expect(midiStore.set).toHaveBeenCalledTimes(1);
-        expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-remove');
-        expect(midiStore.value?.ccByClipId).not.toHaveProperty('clip-remove');
-        expect(midiStore.value?.pitchBendByClipId).not.toHaveProperty('clip-remove');
+        expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-note-only');
         expect(midiStore.value?.notesByClipId).toHaveProperty('clip-keep');
     });
 });

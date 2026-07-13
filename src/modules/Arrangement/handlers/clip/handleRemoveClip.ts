@@ -28,7 +28,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return;
         }
         const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
-        if (!rippleResult) {
+        if (rippleResult === null) {
             removeClip(alpha.payload.clipId);
             return;
         }
