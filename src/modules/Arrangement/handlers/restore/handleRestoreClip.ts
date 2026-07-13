@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores';
+import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
@@ -25,20 +25,12 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
             updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot as never] }));
         }
 
-        const midi = midiStore.value;
-        if (midi && (midiNotesSnapshot || midiCcSnapshot || midiPitchBendSnapshot)) {
-            midiStore.set({
-                notesByClipId: midiNotesSnapshot
-                    ? { ...midi.notesByClipId, [clipId]: midiNotesSnapshot as never }
-                    : midi.notesByClipId,
-                ccByClipId: midiCcSnapshot
-                    ? { ...midi.ccByClipId, [clipId]: midiCcSnapshot as never }
-                    : midi.ccByClipId,
-                pitchBendByClipId: midiPitchBendSnapshot
-                    ? { ...midi.pitchBendByClipId, [clipId]: midiPitchBendSnapshot as never }
-                    : midi.pitchBendByClipId,
-            });
-        }
+        restoreMidiClipData({
+            clipId,
+            notesSnapshot: midiNotesSnapshot,
+            controlChangeSnapshot: midiCcSnapshot,
+            pitchBendSnapshot: midiPitchBendSnapshot,
+        });
     },
     describe: () => ({ label: 'Restore clip' }),
     undoable: false,
