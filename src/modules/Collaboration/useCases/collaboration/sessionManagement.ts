@@ -70,6 +70,8 @@ const sessionState: {
      * branchStore triggers branchStore.subscribe, which must not write back.
      */
     isProjectingBranches: boolean;
+    /** Canonical JSON for the latest successfully projected branch list. */
+    lastProjectedBranchesJson: string | null;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -83,6 +85,7 @@ const sessionState: {
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
     isProjectingBranches: false,
+    lastProjectedBranchesJson: null,
 };
 
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
@@ -195,9 +198,14 @@ function startBranchSync(isHost: boolean): void {
         }
         const current = branchStore.value;
         const activeBranchId = current?.activeBranchId ?? MAIN_BRANCH_ID;
+        const incomingJson = JSON.stringify(doc.branches);
+        if (incomingJson === sessionState.lastProjectedBranchesJson) {
+            return;
+        }
         sessionState.isProjectingBranches = true;
         try {
             replaceBranchState({ branches: doc.branches, activeBranchId });
+            sessionState.lastProjectedBranchesJson = incomingJson;
         } finally {
             sessionState.isProjectingBranches = false;
         }
@@ -229,6 +237,7 @@ function stopBranchSync(): void {
             sessionState.isProjectingBranches = false;
         }
     }
+    sessionState.lastProjectedBranchesJson = null;
 
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {

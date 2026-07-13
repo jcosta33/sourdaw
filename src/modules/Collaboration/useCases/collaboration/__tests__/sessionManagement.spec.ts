@@ -401,6 +401,23 @@ describe('collaboration sessionManagement', () => {
             });
         });
 
+        it('should skip an unchanged incoming branch projection', () => {
+            const mainBranch = createTestBranch('main');
+            const featureBranch = createTestBranch('feature');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'feature',
+            };
+            mocks.getCrdtDoc.mockReturnValue({ branches: [mainBranch, featureBranch] });
+
+            createSession('Alice');
+            const projectBranches = getBranchProjectionListener();
+            projectBranches('__branches__');
+            projectBranches('__branches__');
+
+            expect(mocks.replaceBranchState).toHaveBeenCalledTimes(1);
+        });
+
         it('should restore durable branch state when leaving', async () => {
             const mainBranch = createTestBranch('main');
             const localBranch = createTestBranch('local');
