@@ -33,8 +33,8 @@ After the items below are closed, Sourdaw matches or exceeds the feature surface
 
 **Out of scope:**
 
-- Product-level / UX decisions already captured in `../global/full-spec.md`.
-- Audits of current code state — those live in `inventory/` (especially `overview.md` and per-module inventories).
+- Product-level / UX decisions already captured in `.agents/specs/intake/full-spec.md`.
+- Fresh audits of current code state; this intake preserves implementation gaps rather than present-state evidence.
 
 ## Acceptance criteria (tracker-level)
 

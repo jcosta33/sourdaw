@@ -23,7 +23,7 @@ The historical cross-module inventory overview was partially addressed in the 20
 
 This spec is the contract a future agent will execute against. It is grouped by theme so that work in one group does not stall on unrelated questions in another. Each item carries its own scope, requirements, design decisions, and acceptance criteria. Agents may pick up groups in parallel; intra-group items have ordering noted where it matters.
 
-This spec does **not** revisit fixed items — it begins from the audit's `Session status` block. The audit remains the source of truth for the current state; this spec is the source of truth for what "done" looks like for the remaining work.
+This spec does **not** revisit fixed items. It preserves the remaining work from the historical audit and is the source of truth for what "done" looks like for that work.
 
 Reference docs and skills (load before working in any group):
 
@@ -470,7 +470,7 @@ These are the gates a reviewer (or an agent's self-review) checks. Every box mus
 - [ ] `pnpm vitest run` for each new use case spec passes (Group A8, plus B unit tests).
 - [ ] `cargo test -p daw-dsp` passes including the new B1, B2, B3 tests.
 - [ ] Every durable bug or feature artifact addressed by this intake is updated with its current status; explicitly deferred items retain their rationale.
-- [ ] `## Session status` block in the audit is regenerated to reflect the new fixed-count.
+- [ ] This intake's completed and deferred items reflect the final state of the work.
 
 ### Group A (Timeline / MIDI)
 
