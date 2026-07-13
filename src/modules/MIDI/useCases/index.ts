@@ -36,6 +36,7 @@ export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
 export { setMidiStoreState } from './setMidiStoreState';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
+export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
 
 export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
 export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';
