@@ -4,7 +4,7 @@ import { type ProjectData } from '../../../../models/ProjectData';
 import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
 
 const mocks = vi.hoisted(() => ({
-    trackStoreSet: vi.fn(),
+    hydrateTracksForProject: vi.fn(),
     markerStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
 }));
@@ -13,10 +13,13 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         ...actual,
-        trackStore: { set: mocks.trackStoreSet },
         markerStore: { set: mocks.markerStoreSet },
     };
 });
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    hydrateTracksForProject: mocks.hydrateTracksForProject,
+}));
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
@@ -40,7 +43,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.trackStoreSet).toHaveBeenCalled();
+        expect(mocks.hydrateTracksForProject).toHaveBeenCalledWith({ tracks: [] });
     });
 
     it('hydrates automation lanes when present', () => {
