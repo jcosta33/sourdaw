@@ -35,6 +35,7 @@ export { formatChordName } from './formatChordName';
 export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
 export { setMidiStoreState } from './setMidiStoreState';
+export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
 export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
 
