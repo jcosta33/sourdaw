@@ -1,6 +1,5 @@
-import { midiStore } from '#/modules/MIDI/stores';
+import { appendMidiNotes } from '#/modules/MIDI/useCases';
 
-import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { clipboardStore } from '../../stores/clipboardStore';
 
 export function pasteNotes(clipId: string, beatOffset: number): void {
@@ -9,13 +8,6 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
         return;
     }
 
-    const midiState = midiStore.value;
-    if (!midiState) {
-        return;
-    }
-
-    const existing = midiState.notesByClipId[clipId] ?? [];
-
     let minStart = Infinity;
     for (const node of noteClipboard.notes) {
         if (node.startBeat < minStart) {
@@ -23,17 +15,20 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
         }
     }
 
-    const pastedNotes: MidiNote[] = noteClipboard.notes.map((node) => ({
-        ...node,
-        id: `note-${crypto.randomUUID().slice(0, 8)}`,
-        startBeat: node.startBeat - minStart + beatOffset,
-    }));
+    const pastedNotes = noteClipboard.notes.map(
+        ({ id: _sourceId, probability, pressure, slide, pitchBend, channel, ...node }) => ({
+            ...node,
+            startBeat: node.startBeat - minStart + beatOffset,
+            ...(probability === undefined ? {} : { probability }),
+            ...(pressure === undefined ? {} : { pressure }),
+            ...(slide === undefined ? {} : { slide }),
+            ...(pitchBend === undefined ? {} : { pitchBend }),
+            ...(channel === undefined ? {} : { channel }),
+        })
+    );
 
-    midiStore.set({
-        ...midiState,
-        notesByClipId: {
-            ...midiState.notesByClipId,
-            [clipId]: [...existing, ...pastedNotes],
-        },
+    appendMidiNotes({
+        clipId,
+        notes: pastedNotes,
     });
 }
