@@ -1,11 +1,13 @@
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../models/Track';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
 
 import { addTrack } from './addTrack';
+
+type ClipCopy = { sourceClipId: string; targetClipId: string };
 
 export function duplicateTrack(trackId: string): void {
     const source = getTrackById(trackId);
@@ -14,57 +16,20 @@ export function duplicateTrack(trackId: string): void {
     }
 
     const newTrackId = `track-dup-${crypto.randomUUID().slice(0, 8)}`;
+    const midiClipCopies: ClipCopy[] = [];
+    const automationClipCopies: ClipCopy[] = [];
 
-    // 1. Deep copy alternatives and their clips
+    // 1. Deep copy alternatives and collect satellite-state work.
     const newAlternatives = source.alternatives.map((alt) => {
         const newAltId = `alt-dup-${crypto.randomUUID().slice(0, 8)}`;
         const newClips: Clip[] = alt.clips.map((clip) => {
             const newClipId = `clip-dup-${crypto.randomUUID().slice(0, 8)}`;
+            const copy = { sourceClipId: clip.id, targetClipId: newClipId };
 
-            // Handle MIDI data duplication (notes, CC, pitch bend)
+            automationClipCopies.push(copy);
             if (clip.type === 'midi') {
-                const midiState = midiStore.value;
-                if (midiState) {
-                    const sourceNotes = midiState.notesByClipId[clip.id];
-                    const sourceCc = midiState.ccByClipId[clip.id];
-                    const sourcePb = midiState.pitchBendByClipId[clip.id];
-
-                    const updates: Partial<typeof midiState> = {};
-                    if (sourceNotes && sourceNotes.length > 0) {
-                        updates.notesByClipId = {
-                            ...midiState.notesByClipId,
-                            [newClipId]: sourceNotes.map((node) => ({
-                                ...node,
-                                id: `note-dup-${crypto.randomUUID().slice(0, 8)}`,
-                            })),
-                        };
-                    }
-                    if (sourceCc && sourceCc.length > 0) {
-                        updates.ccByClipId = {
-                            ...midiState.ccByClipId,
-                            [newClipId]: sourceCc.map((cc) => ({
-                                ...cc,
-                                id: `cc-dup-${crypto.randomUUID().slice(0, 8)}`,
-                            })),
-                        };
-                    }
-                    if (sourcePb && sourcePb.length > 0) {
-                        updates.pitchBendByClipId = {
-                            ...midiState.pitchBendByClipId,
-                            [newClipId]: sourcePb.map((pb) => ({
-                                ...pb,
-                                id: `pb-dup-${crypto.randomUUID().slice(0, 8)}`,
-                            })),
-                        };
-                    }
-                    if (Object.keys(updates).length > 0) {
-                        midiStore.set({ ...midiState, ...updates });
-                    }
-                }
+                midiClipCopies.push(copy);
             }
-
-            // Duplicate automation lanes for this clip
-            duplicateClipAutomation(clip.id, newClipId);
 
             return {
                 ...clip,
@@ -114,4 +79,12 @@ export function duplicateTrack(trackId: string): void {
         followChordTrack: source.followChordTrack,
         notes: source.notes,
     }));
+
+    if (midiClipCopies.length > 0) {
+        duplicateMidiClipData({ copies: midiClipCopies });
+    }
+
+    for (const { sourceClipId, targetClipId } of automationClipCopies) {
+        duplicateClipAutomation(sourceClipId, targetClipId);
+    }
 }
