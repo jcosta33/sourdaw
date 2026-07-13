@@ -53,4 +53,4 @@ The remaining state/editor half is tracked by `BUG-engine-owned-plugin-runtime-c
 
 Current state: partial. The parameter/unload slice is integrated in
 `artifact-remediation-integration`; state/editor support remains blocked on
-`decisions/0003-engine-owned-plugin-runtime-owner.md`.
+`.agents/decisions/0003-engine-owned-plugin-runtime-owner.md`.

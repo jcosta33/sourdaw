@@ -64,5 +64,5 @@ The missing abstraction is a plugin-host runtime owner or control thread that le
 `TASK-artifact-native-command-lifecycle` fixes the immediately mergeable command lifecycle slice: Tauri command registration, LAN browsing lifecycle, and engine-owned parameter/unload addressability. This bug owns the remaining state/editor control path.
 
 Current state: blocked. Proposed decision
-`decisions/0003-engine-owned-plugin-runtime-owner.md` names the runtime-owner
+`.agents/decisions/0003-engine-owned-plugin-runtime-owner.md` names the runtime-owner
 architecture that must be accepted before implementation.
