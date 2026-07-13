@@ -415,24 +415,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts",
-    "to": "../repositories/track/getTrackById",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts",
-    "to": "../repositories/track/updateTrack",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts",
     "to": "src/modules/Automation/stores/automationStore.ts",
     "rule": {
