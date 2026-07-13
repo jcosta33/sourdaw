@@ -146,7 +146,6 @@ describe('duplicateMidiClipData', () => {
         };
         const copies = [{ sourceClipId: 'source', targetClipId: 'target' }];
         const copiesBefore = copies.map((copy) => ({ ...copy }));
-        const previousStateValue = structuredClone(previousState);
         mocks.state.value = previousState;
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('abcdef01-0000-4000-8000-000000000000')
@@ -183,12 +182,27 @@ describe('duplicateMidiClipData', () => {
         expect(sourcePitchBend).toEqual(sourcePitchBendBefore);
         expect(copies).toEqual(copiesBefore);
 
+        const replacementNotes = [createNote('note-newer-target')];
+        const interveningNotes = [createNote('note-intervening')];
+        const interveningControlChanges = [createControlChange('cc-intervening')];
+        const interveningPitchBends = [createPitchBend('pb-intervening')];
+        mocks.state.value = {
+            notesByClipId: { ...nextState.notesByClipId, target: replacementNotes, intervening: interveningNotes },
+            ccByClipId: { ...nextState.ccByClipId, intervening: interveningControlChanges },
+            pitchBendByClipId: { ...nextState.pitchBendByClipId, intervening: interveningPitchBends },
+        };
+
         expect(() => rollback()).not.toThrow();
-        expect(mocks.state.value).toBe(previousState);
-        expect(mocks.state.value).toEqual(previousStateValue);
-        expect(mocks.set).toHaveBeenNthCalledWith(2, previousState);
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.notesByClipId.target).toBe(replacementNotes);
+        expect(rolledBackState.ccByClipId.target).toBe(previousState.ccByClipId.target);
+        expect(rolledBackState.pitchBendByClipId.target).toBe(previousState.pitchBendByClipId.target);
+        expect(rolledBackState.notesByClipId.intervening).toBe(interveningNotes);
+        expect(rolledBackState.ccByClipId.intervening).toBe(interveningControlChanges);
+        expect(rolledBackState.pitchBendByClipId.intervening).toBe(interveningPitchBends);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
         expect(() => rollback()).not.toThrow();
-        expect(mocks.state.value).toBe(previousState);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
     });
 
     it('processes batch pairs in order and gives repeated-source rows independent IDs', () => {
@@ -270,17 +284,23 @@ describe('duplicateMidiClipData', () => {
         expect(sourceRows).toEqual([createNote('note-one'), createNote('note-two')]);
     });
 
-    it('restores the exact snapshot when the owner mutation throws after writing', () => {
+    it('scopes write-then-throw compensation without erasing newer owner state', () => {
         const previousState: MidiStoreState = {
             notesByClipId: { source: [createNote('note-source')] },
-            ccByClipId: {},
-            pitchBendByClipId: {},
+            ccByClipId: { source: [createControlChange('cc-source')] },
+            pitchBendByClipId: { source: [createPitchBend('pb-source')] },
         };
         const mutationFailure = new Error('MIDI owner mutation failed');
+        const replacementNotes = [createNote('note-newer-target')];
+        const injectedNotes = [createNote('note-injected')];
         mocks.state.value = previousState;
         mocks.set
             .mockImplementationOnce((nextState) => {
-                mocks.state.value = nextState;
+                mocks.state.value = {
+                    notesByClipId: { ...nextState.notesByClipId, target: replacementNotes, injected: injectedNotes },
+                    ccByClipId: { ...nextState.ccByClipId },
+                    pitchBendByClipId: { ...nextState.pitchBendByClipId },
+                };
                 throw mutationFailure;
             })
             .mockImplementationOnce((nextState) => {
@@ -290,6 +310,10 @@ describe('duplicateMidiClipData', () => {
         expect(() => duplicate([{ sourceClipId: 'source', targetClipId: 'target' }])).toThrow(mutationFailure);
 
         expect(mocks.set).toHaveBeenCalledTimes(2);
-        expect(mocks.state.value).toBe(previousState);
+        const compensatedState = requireMidiState();
+        expect(compensatedState.notesByClipId.target).toBe(replacementNotes);
+        expect(compensatedState.notesByClipId.injected).toBe(injectedNotes);
+        expect(compensatedState.ccByClipId.target).toBeUndefined();
+        expect(compensatedState.pitchBendByClipId.target).toBeUndefined();
     });
 });

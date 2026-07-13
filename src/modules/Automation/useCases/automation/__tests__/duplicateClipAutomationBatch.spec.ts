@@ -100,7 +100,6 @@ describe('duplicateClipAutomationBatch', () => {
         const unrelated = createLane('lane-keep', 'clip-keep');
         const sourceTwo = createLane('lane-two', 'clip-two');
         const previousState: AutomationStoreState = { lanes: [sourceOne, unrelated, sourceTwo] };
-        const previousStateValue = structuredClone(previousState);
         mocks.state.value = previousState;
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('11111111-0000-4000-8000-000000000000')
@@ -136,12 +135,19 @@ describe('duplicateClipAutomationBatch', () => {
         expect(firstCopy.points).not.toBe(sourceTwo.points);
         expect(firstCopy.points[0]?.cp1).not.toBe(sourceTwo.points[0]?.cp1);
 
+        const replacement = { ...firstCopy };
+        const intervening = createLane('lane-intervening', 'clip-intervening');
+        mocks.state.value = {
+            lanes: [...committedState.lanes.slice(0, 3), replacement, secondCopy, intervening],
+        };
+
         expect(() => rollback()).not.toThrow();
-        expect(mocks.state.value).toBe(previousState);
-        expect(mocks.state.value).toEqual(previousStateValue);
-        expect(mocks.set).toHaveBeenNthCalledWith(2, previousState);
+        expect(mocks.state.value.lanes).toEqual([...previousState.lanes, replacement, intervening]);
+        expect(mocks.state.value.lanes[3]).toBe(replacement);
+        expect(mocks.state.value.lanes[4]).toBe(intervening);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
         expect(() => rollback()).not.toThrow();
-        expect(mocks.state.value).toBe(previousState);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
     });
 
     it('does not write a partial batch when preparation fails after an earlier pair', () => {
@@ -169,13 +175,20 @@ describe('duplicateClipAutomationBatch', () => {
         expect(mocks.state.value).toEqual(previousStateValue);
     });
 
-    it('restores the exact snapshot when the owner mutation throws after writing', () => {
+    it('scopes write-then-throw compensation without erasing newer owner state', () => {
         const previousState: AutomationStoreState = { lanes: [createLane('lane-source', 'clip-source')] };
         const mutationFailure = new Error('automation owner mutation failed');
+        const intervening = createLane('lane-intervening', 'clip-intervening');
+        let replacement: AutomationLane | undefined;
         mocks.state.value = previousState;
         mocks.set
             .mockImplementationOnce((nextState) => {
-                mocks.state.value = nextState;
+                const generated = nextState.lanes.at(-1);
+                if (!generated) {
+                    throw new Error('Expected generated automation lane');
+                }
+                replacement = { ...generated };
+                mocks.state.value = { lanes: [...nextState.lanes, replacement, intervening] };
                 throw mutationFailure;
             })
             .mockImplementationOnce((nextState) => {
@@ -187,6 +200,9 @@ describe('duplicateClipAutomationBatch', () => {
         ).toThrow(mutationFailure);
 
         expect(mocks.set).toHaveBeenCalledTimes(2);
-        expect(mocks.state.value).toBe(previousState);
+        expect(replacement).toBeDefined();
+        expect(mocks.state.value.lanes).toEqual([...previousState.lanes, replacement, intervening]);
+        expect(mocks.state.value.lanes[1]).toBe(replacement);
+        expect(mocks.state.value.lanes[2]).toBe(intervening);
     });
 });

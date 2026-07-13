@@ -64,6 +64,9 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             const rollbacks: Rollback[] = [];
             try {
                 // 3. Add the track without notifying consumers before its duplicate state is complete.
+                rollbacks.push(() => {
+                    setTrackState(arrangementSnapshot);
+                });
                 const newTrack = addTrack({
                     id: newTrackId,
                     name: `${source.name} (copy)`,
@@ -74,9 +77,6 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                 if (!newTrack) {
                     return;
                 }
-                rollbacks.push(() => {
-                    setTrackState(arrangementSnapshot);
-                });
 
                 // 4. Update track with copied devices, sends, and alternatives
                 updateTrack(newTrack.id, (time) => ({

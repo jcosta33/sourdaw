@@ -1,4 +1,4 @@
-import { createAutomationLane } from '../../models/Automation';
+import { createAutomationLane, type AutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 type DuplicateClipAutomationBatchInput = {
@@ -40,17 +40,33 @@ export function duplicateClipAutomationBatch({ copies }: DuplicateClipAutomation
         return () => undefined;
     }
 
+    const committedLanes = new Set<AutomationLane>(newLanes);
+    let rollbackConsumed = false;
+    function rollback(): void {
+        if (rollbackConsumed) {
+            return;
+        }
+        const current = automationStore.value;
+        if (!current) {
+            rollbackConsumed = true;
+            return;
+        }
+        const lanes = current.lanes.filter((lane) => !committedLanes.has(lane));
+        if (lanes.length !== current.lanes.length) {
+            automationStore.set({ ...current, lanes });
+        }
+        rollbackConsumed = true;
+    }
+
     try {
         automationStore.set({ lanes: [...state.lanes, ...newLanes] });
     } catch (error) {
         try {
-            automationStore.set(state);
+            rollback();
         } catch {
             // Preserve the original mutation failure if restoration also fails.
         }
         throw error;
     }
-    return () => {
-        automationStore.set(state);
-    };
+    return rollback;
 }

@@ -405,6 +405,45 @@ describe('duplicateTrack', () => {
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
+    it('restores the exact Arrangement snapshot when addTrack writes and then throws', () => {
+        const source = createTrack({ id: 'track-source' });
+        const arrangementSnapshot: TrackState = {
+            tracks: [source],
+            selectedTrackId: source.id,
+            ghostClips: [],
+        };
+        const arrangementSnapshotValue = structuredClone(arrangementSnapshot);
+        const originalFailure = new Error('addTrack failed after writing');
+        let arrangementState = arrangementSnapshot;
+        mocks.getTrackById.mockReturnValue(source);
+        mocks.getTrackState.mockImplementation(() => arrangementState);
+        mocks.setTrackState.mockImplementation((state) => {
+            arrangementState = state;
+        });
+        mocks.addTrack.mockImplementation((input) => {
+            arrangementState = {
+                ...arrangementState,
+                tracks: [...arrangementState.tracks, createTrack({ id: input.id })],
+            };
+            throw originalFailure;
+        });
+
+        let thrown: unknown;
+        try {
+            duplicateTrack(source.id);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBe(originalFailure);
+        expect(arrangementState).toBe(arrangementSnapshot);
+        expect(arrangementState).toEqual(arrangementSnapshotValue);
+        expect(mocks.setTrackState).toHaveBeenCalledOnce();
+        expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+    });
+
     it.each(['update', 'midi', 'automation'] as const)(
         'restores exact owner snapshots and preserves the original %s failure',
         (failurePoint) => {

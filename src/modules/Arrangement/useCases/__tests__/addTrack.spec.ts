@@ -19,6 +19,10 @@ const mockEventBus = {
     emit: vi.fn(),
 };
 
+function createTrackState(overrides: Partial<TrackState> = {}): TrackState {
+    return { tracks: [], selectedTrackId: null, ghostClips: [], ...overrides };
+}
+
 describe('addTrack', () => {
     beforeEach(() => {
         injectDependencies(addTrack, { eventBus: mockEventBus });
@@ -36,7 +40,7 @@ describe('addTrack', () => {
     });
 
     it('should append track, select it by default, and emit track.added', () => {
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as TrackState);
+        vi.mocked(getTrackState).mockReturnValue(createTrackState());
 
         const result = addTrack({ name: 'Lead', kind: 'midi' });
 
@@ -44,6 +48,7 @@ describe('addTrack', () => {
         expect(setTrackState).toHaveBeenCalledWith({
             tracks: [result],
             selectedTrackId: result!.id,
+            ghostClips: [],
         });
         expect(mockEventBus.emit).toHaveBeenCalledWith(
             'track.added',
@@ -52,7 +57,7 @@ describe('addTrack', () => {
     });
 
     it('should append track without emitting when the added event is suppressed', () => {
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as TrackState);
+        vi.mocked(getTrackState).mockReturnValue(createTrackState());
 
         const result = addTrack({ name: 'Lead copy', kind: 'midi', suppressAddedEvent: true });
 
@@ -60,15 +65,13 @@ describe('addTrack', () => {
         expect(setTrackState).toHaveBeenCalledWith({
             tracks: [result],
             selectedTrackId: result!.id,
+            ghostClips: [],
         });
         expect(mockEventBus.emit).not.toHaveBeenCalled();
     });
 
     it('should append track without changing selection when selection is disabled', () => {
-        vi.mocked(getTrackState).mockReturnValue({
-            tracks: [],
-            selectedTrackId: 'track-existing',
-        } as unknown as TrackState);
+        vi.mocked(getTrackState).mockReturnValue(createTrackState({ selectedTrackId: 'track-existing' }));
 
         const result = addTrack({ name: 'Master', kind: 'master', select: false });
 
@@ -76,6 +79,7 @@ describe('addTrack', () => {
         expect(setTrackState).toHaveBeenCalledWith({
             tracks: [result],
             selectedTrackId: 'track-existing',
+            ghostClips: [],
         });
         expect(mockEventBus.emit).toHaveBeenCalledWith(
             'track.added',
