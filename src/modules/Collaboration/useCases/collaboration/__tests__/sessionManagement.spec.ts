@@ -16,15 +16,46 @@ type TestTrackStoreState = {
     tracks: TestTrack[];
 };
 
+type TestBranchRecord = {
+    branchId: string;
+    name: string;
+    rootDocId: string;
+    sourceBranchId: string | null;
+    createdAt: number;
+    createdFromHeads: string[];
+    note: string;
+};
+
+type TestBranchStoreState = {
+    branches: TestBranchRecord[];
+    activeBranchId: string;
+};
+
 type AssetTransferCallbacks = {
     onAssetAvailable?: (hash: string) => void;
 };
+
+function createTestBranch(branchId: string): TestBranchRecord {
+    return {
+        branchId,
+        name: branchId === 'main' ? 'Main' : branchId,
+        rootDocId: branchId === 'main' ? 'root' : `root-${branchId}`,
+        sourceBranchId: branchId === 'main' ? null : 'main',
+        createdAt: 1,
+        createdFromHeads: [],
+        note: '',
+    };
+}
 
 const mocks = vi.hoisted(() => {
     const automergeStart = vi.fn();
     const collaborationStoreValue = { value: {} as Record<string, unknown> };
     const trackStoreValue: { value: TestTrackStoreState | null } = { value: { tracks: [] } };
+    const branchStoreValue: { value: TestBranchStoreState | null } = {
+        value: { branches: [], activeBranchId: 'main' },
+    };
     const assetTransferCallbacks: AssetTransferCallbacks = {};
+    const crdtChangeListener: { value: ((docId?: string) => void) | undefined } = { value: undefined };
     const assetTransferGetAsset = vi.fn<(hash: string) => Blob | null | undefined>();
     const audioContextDecodeAudioData = vi.fn<(audioData: ArrayBuffer) => Promise<AudioBuffer>>();
     const getAudioContext = vi.fn(() => ({
@@ -32,6 +63,14 @@ const mocks = vi.hoisted(() => {
     }));
     const getCachedAudioBuffer = vi.fn<(input: { bufferId: string }) => AudioBuffer | null>();
     const cacheAudioBuffer = vi.fn<(input: { buffer: AudioBuffer; bufferId?: string }) => string>();
+    const getCrdtDoc = vi.fn();
+    const hasCrdtDoc = vi.fn(() => true);
+    const persistCrdtProject = vi.fn(() => Promise.resolve());
+    const replaceBranchState = vi.fn();
+    const subscribeToCrdtChanges = vi.fn((listener: (docId?: string) => void) => {
+        crdtChangeListener.value = listener;
+        return vi.fn();
+    });
     // Write-through set so multi-step handler flows (which read-then-write the
     // store) compose; records every call for assertions.
     const collaborationStoreSet = vi.fn((next: Record<string, unknown>) => {
@@ -91,9 +130,14 @@ const mocks = vi.hoisted(() => {
         mutateCrdtDoc: vi.fn(),
         removeCrdtDoc: vi.fn(),
         createCrdtDoc: vi.fn(),
-        branchStoreValue: { value: { branches: [] } },
+        branchStoreValue,
         branchStoreSubscribe: vi.fn(() => vi.fn()),
-        branchStoreSet: vi.fn(),
+        crdtChangeListener,
+        getCrdtDoc,
+        hasCrdtDoc,
+        persistCrdtProject,
+        replaceBranchState,
+        subscribeToCrdtChanges,
         trackStoreValue,
         assetTransferCallbacks,
         assetTransferGetAsset,
@@ -154,6 +198,11 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     mutateCrdtDoc: mocks.mutateCrdtDoc,
     removeCrdtDoc: mocks.removeCrdtDoc,
     createCrdtDoc: mocks.createCrdtDoc,
+    getCrdtDoc: mocks.getCrdtDoc,
+    hasCrdtDoc: mocks.hasCrdtDoc,
+    persistCrdtProject: mocks.persistCrdtProject,
+    replaceBranchState: mocks.replaceBranchState,
+    subscribeToCrdtChanges: mocks.subscribeToCrdtChanges,
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
@@ -162,8 +211,8 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
             return mocks.branchStoreValue.value;
         },
         subscribe: mocks.branchStoreSubscribe,
-        set: mocks.branchStoreSet,
     },
+    MAIN_BRANCH_ID: 'main',
 }));
 
 function createTestAudioBuffer(): AudioBuffer {
@@ -197,12 +246,27 @@ function getAssetAvailableCallback(): (hash: string) => void {
     return callback;
 }
 
+function getBranchProjectionListener(): (docId?: string) => void {
+    const listener = mocks.crdtChangeListener.value;
+    if (!listener) {
+        throw new Error('Expected branch projection listener to be captured');
+    }
+    return listener;
+}
+
 describe('collaboration sessionManagement', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.collaborationStoreValue.value = {};
         mocks.trackStoreValue.value = { tracks: [] };
-        mocks.branchStoreValue.value = { branches: [] };
+        mocks.branchStoreValue.value = { branches: [], activeBranchId: 'main' };
+        mocks.crdtChangeListener.value = undefined;
+        mocks.getCrdtDoc.mockReset();
+        mocks.hasCrdtDoc.mockReset();
+        mocks.hasCrdtDoc.mockReturnValue(true);
+        mocks.persistCrdtProject.mockReset();
+        mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.replaceBranchState.mockReset();
         mocks.assetTransferCallbacks.onAssetAvailable = undefined;
         mocks.assetTransferGetAsset.mockReset();
         mocks.audioContextDecodeAudioData.mockReset();
@@ -252,6 +316,66 @@ describe('collaboration sessionManagement', () => {
                 peers: [],
             })
         );
+    });
+
+    describe('branch synchronization', () => {
+        it('should preserve the current active branch when the incoming projection contains it', () => {
+            const mainBranch = createTestBranch('main');
+            const featureBranch = createTestBranch('feature');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'feature',
+            };
+            mocks.getCrdtDoc.mockReturnValue({ branches: [mainBranch, featureBranch] });
+
+            createSession('Alice');
+            getBranchProjectionListener()('__branches__');
+
+            expect(mocks.replaceBranchState).toHaveBeenLastCalledWith({
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'feature',
+            });
+        });
+
+        it('should fall back to main when the incoming projection lacks the current active branch', () => {
+            const mainBranch = createTestBranch('main');
+            const localBranch = createTestBranch('local');
+            const featureBranch = createTestBranch('feature');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, localBranch],
+                activeBranchId: 'local',
+            };
+            mocks.getCrdtDoc.mockReturnValue({ branches: [mainBranch, featureBranch] });
+
+            createSession('Alice');
+            getBranchProjectionListener()('__branches__');
+
+            expect(mocks.replaceBranchState).toHaveBeenLastCalledWith({
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'main',
+            });
+        });
+
+        it('should restore the pre-session branch snapshot when leaving', async () => {
+            const mainBranch = createTestBranch('main');
+            const localBranch = createTestBranch('local');
+            const featureBranch = createTestBranch('feature');
+            const snapshot = {
+                branches: [mainBranch, localBranch],
+                activeBranchId: 'local',
+            };
+            mocks.branchStoreValue.value = snapshot;
+
+            createSession('Alice');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'feature',
+            };
+
+            await leaveSession();
+
+            expect(mocks.replaceBranchState).toHaveBeenLastCalledWith(snapshot);
+        });
     });
 
     describe('asset resolution', () => {

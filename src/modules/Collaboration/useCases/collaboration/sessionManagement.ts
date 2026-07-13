@@ -12,6 +12,7 @@ import {
     persistCrdtProject,
     hasCrdtDoc,
     DOC_BRANCHES,
+    replaceBranchState,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
@@ -232,7 +233,7 @@ function startBranchSync(isHost: boolean): void {
             const validActiveBranchId = incomingBranches.some((branch) => branch.branchId === activeBranchId)
                 ? activeBranchId
                 : MAIN_BRANCH_ID;
-            branchStore.set({ branches: incomingBranches, activeBranchId: validActiveBranchId });
+            replaceBranchState({ branches: incomingBranches, activeBranchId: validActiveBranchId });
             sessionState.lastProjectedBranchesJson = incomingJson;
         } finally {
             sessionState.isProjectingBranches = false;
@@ -259,7 +260,7 @@ function stopBranchSync(): void {
     if (sessionState.branchStoreSnapshot) {
         sessionState.isProjectingBranches = true;
         try {
-            branchStore.set(sessionState.branchStoreSnapshot);
+            replaceBranchState(sessionState.branchStoreSnapshot);
         } finally {
             sessionState.isProjectingBranches = false;
         }

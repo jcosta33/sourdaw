@@ -103,7 +103,7 @@ function validateStoredBranchRecords(values: unknown[]): BranchRecord[] {
     return branches;
 }
 
-function validateStoredBranchStoreState(value: unknown): BranchStoreState {
+export function validateStoredBranchStoreState(value: unknown): BranchStoreState {
     if (!isRecord(value)) {
         return createDefaultBranchStoreState();
     }
