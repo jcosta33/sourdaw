@@ -19,19 +19,14 @@ async function performImportedProjectDataApplication({
     data,
     transaction,
 }: PerformImportedProjectDataApplicationInput): Promise<boolean> {
-    if (!transaction.isCurrent()) {
+    if (!transaction.activate()) {
         return false;
     }
 
-    // Validated — stop any in-flight playback and tear down the previous
-    // project's audio graph before we hydrate stores for the imported project.
-    stopPlayback();
-    resetAudioGraph();
-
-    // Reset per-device-instance stores (§13.1) so stale device state from the
-    // previously open project does not remain interactive while buffers load;
-    // hydrateModuleStoresFromProjectData does not touch the device stores.
-    resetModuleStoresToDefault();
+    const currentProject = projectStore.value;
+    if (currentProject) {
+        projectStore.set({ ...currentProject, loading: true });
+    }
 
     // Restore referenced runtime buffers before publishing the imported track
     // graph. Track subscribers can render waveforms from their first update,
@@ -51,11 +46,18 @@ async function performImportedProjectDataApplication({
     await restoreCachedAudioBuffersFromIdb({
         audioContext: getAudioContext(),
         bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
+        shouldContinue: transaction.isCurrent,
     });
 
     if (!transaction.isCurrent()) {
         return false;
     }
+
+    // Preparation is complete and this transition still owns commit authority.
+    // Replace the live project synchronously so no partial reset is observable.
+    stopPlayback();
+    resetAudioGraph();
+    resetModuleStoresToDefault();
 
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);

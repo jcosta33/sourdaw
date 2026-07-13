@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadCrdtProject } from '../loadCrdtProject';
 
 const mocks = vi.hoisted(() => ({
-    loadAll: vi.fn(),
+    loadAll: vi.fn<(input: { bundle: Map<string, Uint8Array>; shouldCommit?: () => boolean }) => Promise<boolean>>(),
     getDoc: vi.fn(),
     replaceDoc: vi.fn(),
     loadAllFromIdb: vi.fn(),
@@ -30,6 +30,7 @@ vi.mock('../../repositories/crdtPersistence/loadAllFromIdb', () => ({ loadAllFro
 describe('loadCrdtProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.loadAll.mockResolvedValue(true);
         mocks.branchStoreValue = {
             branches: [{ branchId: 'main', rootDocId: 'root' }],
             activeBranchId: 'main',
@@ -43,7 +44,7 @@ describe('loadCrdtProject', () => {
         const result = await loadCrdtProject();
 
         expect(result).toBe(true);
-        expect(mocks.loadAll).toHaveBeenCalledWith(mockBundle);
+        expect(mocks.loadAll).toHaveBeenCalledWith({ bundle: mockBundle, shouldCommit: undefined });
     });
 
     it('should restore the last-active branch into the root slot', async () => {
@@ -91,6 +92,20 @@ describe('loadCrdtProject', () => {
         const result = await loadCrdtProject();
 
         expect(result).toBe(true);
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
+    });
+
+    it('does not restore branch state when repository commit is canceled', async () => {
+        const should_commit = vi.fn(() => false);
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.loadAll.mockResolvedValue(false);
+
+        const result = await loadCrdtProject({ shouldCommit: should_commit });
+
+        expect(result).toBe(false);
+        const loadInput = mocks.loadAll.mock.calls[0]?.[0];
+        expect(loadInput?.bundle).toBeInstanceOf(Map);
+        expect(loadInput?.shouldCommit).toBe(should_commit);
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
 });

@@ -31,7 +31,11 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({
 }));
 
 vi.mock('../helpers/runProjectLoadTransaction', () => ({
-    runProjectLoadTransaction: vi.fn(() => ({ isCurrent: () => true })),
+    runProjectLoadTransaction: vi.fn(() => ({
+        activate: vi.fn(() => true),
+        canActivate: () => true,
+        isCurrent: () => true,
+    })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({

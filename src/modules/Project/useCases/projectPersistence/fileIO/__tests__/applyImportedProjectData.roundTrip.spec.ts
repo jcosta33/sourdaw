@@ -14,6 +14,7 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 type RestoreCachedAudioBuffersInput = {
     audioContext: object;
     bufferIds?: string[];
+    shouldContinue?: () => boolean;
 };
 
 const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
@@ -185,10 +186,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
         const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
-        expect(call).toEqual({
-            audioContext,
-            bufferIds: ['buf-frozen', 'buf-1', 'buf-2', 'buf-alt'],
-        });
+        expect(call?.audioContext).toBe(audioContext);
+        expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
+        expect(call?.shouldContinue?.()).toBe(true);
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,
@@ -242,10 +242,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await applyImportedProjectData({ data: project });
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext,
-            bufferIds: undefined,
-        });
+        const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
+        expect(call?.audioContext).toBe(audioContext);
+        expect(call?.bufferIds).toBeUndefined();
+        expect(call?.shouldContinue?.()).toBe(true);
     });
 
     it('hydrates the transport store from the imported transport block', async () => {

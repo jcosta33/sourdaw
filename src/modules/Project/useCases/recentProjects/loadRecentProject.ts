@@ -36,27 +36,29 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             return false;
         }
 
-        if (!transaction.isCurrent()) {
+        if (!transaction.activate()) {
             return false;
         }
 
-        // Validated — stop any in-flight playback and tear down the previous
-        // project's audio graph before we hydrate stores for the new project.
-        stopPlayback();
-        resetAudioGraph();
-
-        // Reset per-device-instance stores (§13.1) so stale device state from the
-        // previous project does not remain interactive while buffers load;
-        // hydrateModuleStoresFromProjectData does not touch the device stores.
-        resetModuleStoresToDefault();
+        const currentProject = projectStore.value;
+        if (currentProject) {
+            projectStore.set({ ...currentProject, loading: true });
+        }
 
         // Restore runtime buffers before publishing the loaded track graph so
         // waveform consumers are ready on the first real track update.
-        await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
+        await restoreCachedAudioBuffersFromIdb({
+            audioContext: getAudioContext(),
+            shouldContinue: transaction.isCurrent,
+        });
 
         if (!transaction.isCurrent()) {
             return false;
         }
+
+        stopPlayback();
+        resetAudioGraph();
+        resetModuleStoresToDefault();
 
         hydrateModuleStoresFromProjectData(data);
         hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
@@ -80,6 +82,12 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
 
         return true;
     } catch (error) {
+        if (transaction.isCurrent()) {
+            const currentProject = projectStore.value;
+            if (currentProject?.loading) {
+                projectStore.set({ ...currentProject, loading: false });
+            }
+        }
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }

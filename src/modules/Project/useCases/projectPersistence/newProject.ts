@@ -15,7 +15,7 @@ import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export function newProject(name = 'Untitled Project'): void {
-    runProjectLoadTransaction();
+    runProjectLoadTransaction().activate();
     // Stop any in-flight playback and tear down the previous project's audio
     // graph before we start mutating stores for the new project.
     stopPlayback();

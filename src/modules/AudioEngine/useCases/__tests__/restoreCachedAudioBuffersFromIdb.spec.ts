@@ -27,7 +27,11 @@ describe('restoreCachedAudioBuffersFromIdb', () => {
         const restored_count = await restoreCachedAudioBuffersFromIdb({ audioContext: audio_context });
 
         expect(restored_count).toBe(3);
-        expect(mocks.restoreFromIdb).toHaveBeenCalledWith(audio_context, undefined);
+        expect(mocks.restoreFromIdb).toHaveBeenCalledWith({
+            context: audio_context,
+            ids: undefined,
+            shouldContinue: undefined,
+        });
     });
 
     it('should restore only the requested cached buffer ids from IndexedDB', async () => {
@@ -41,6 +45,26 @@ describe('restoreCachedAudioBuffersFromIdb', () => {
         });
 
         expect(restored_count).toBe(2);
-        expect(mocks.restoreFromIdb).toHaveBeenCalledWith(audio_context, buffer_ids);
+        expect(mocks.restoreFromIdb).toHaveBeenCalledWith({
+            context: audio_context,
+            ids: buffer_ids,
+            shouldContinue: undefined,
+        });
+    });
+
+    it('forwards the transition guard to the cache owner', async () => {
+        const audio_context = asBaseAudioContext(createMockAudioContext());
+        const should_continue = vi.fn(() => true);
+
+        await restoreCachedAudioBuffersFromIdb({
+            audioContext: audio_context,
+            shouldContinue: should_continue,
+        });
+
+        expect(mocks.restoreFromIdb).toHaveBeenCalledWith({
+            context: audio_context,
+            ids: undefined,
+            shouldContinue: should_continue,
+        });
     });
 });

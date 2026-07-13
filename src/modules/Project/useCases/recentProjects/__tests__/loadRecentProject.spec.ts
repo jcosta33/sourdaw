@@ -81,9 +81,9 @@ describe('loadRecentProject', () => {
         expect(arrangementHydration?.preserveSavedArrangements).toBe(true);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext,
-        });
+        const restoreInput = vi.mocked(restoreCachedAudioBuffersFromIdb).mock.calls[0]?.[0];
+        expect(restoreInput?.audioContext).toBe(audioContext);
+        expect(restoreInput?.shouldContinue?.()).toBe(true);
     });
 
     it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {
@@ -113,7 +113,7 @@ describe('loadRecentProject', () => {
         const loading = loadRecentProject('sourdaw:project:Large Project');
         await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
-        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         const finishRestore = completeRestore;
         if (!finishRestore) {
@@ -121,6 +121,7 @@ describe('loadRecentProject', () => {
         }
         finishRestore();
         await expect(loading).resolves.toBe(true);
+        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
 
@@ -175,7 +176,7 @@ describe('loadRecentProject', () => {
 
         const loading = loadRecentProject('old-project');
         await vi.waitFor(() => expect(completeRestore).toBeDefined());
-        runProjectLoadTransaction();
+        runProjectLoadTransaction().activate();
 
         const finishRestore = completeRestore;
         if (!finishRestore) {
@@ -186,5 +187,31 @@ describe('loadRecentProject', () => {
         await expect(loading).resolves.toBe(false);
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(hydrateArrangementStoreFromProjectData).not.toHaveBeenCalled();
+    });
+
+    it('does not let a missing newer request cancel a valid prepared load', async () => {
+        vi.mocked(readNamedProjectJson).mockImplementation((key) =>
+            Promise.resolve(key === 'missing-project' ? null : validProject)
+        );
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<number>((resolve) => {
+                    completeRestore = () => resolve(0);
+                })
+        );
+
+        const validLoad = loadRecentProject('valid-project');
+        await vi.waitFor(() => expect(completeRestore).toBeDefined());
+        await expect(loadRecentProject('missing-project')).resolves.toBe(false);
+
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
+
+        await expect(validLoad).resolves.toBe(true);
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
 });

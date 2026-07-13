@@ -27,7 +27,13 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         return false;
     }
 
-    const { bufferIdsByPath, failedPaths } = await decodeDawProjectAssets(parsed.audioAssets);
+    const { bufferIdsByPath, failedPaths } = await decodeDawProjectAssets({
+        audioAssets: parsed.audioAssets,
+        shouldContinue: transaction.canActivate,
+    });
+    if (!transaction.canActivate()) {
+        return false;
+    }
     if (failedPaths.length > 0) {
         logger.warn(`[importDawProject] Failed to decode ${String(failedPaths.length)} audio asset(s)`, failedPaths);
     }

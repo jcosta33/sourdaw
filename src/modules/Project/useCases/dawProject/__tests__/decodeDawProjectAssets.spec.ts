@@ -44,7 +44,9 @@ describe('decodeDawProjectAssets', () => {
         mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
         mocks.decode_audio_data.mockResolvedValue(buffer);
 
-        const result = await decodeDawProjectAssets(new Map([['audio/drum-loop.wav', new Uint8Array([1, 2, 3])]]));
+        const result = await decodeDawProjectAssets({
+            audioAssets: new Map([['audio/drum-loop.wav', new Uint8Array([1, 2, 3])]]),
+        });
 
         expect(result.failedPaths).toEqual([]);
         expect(result.bufferIdsByPath).toEqual(
@@ -60,7 +62,7 @@ describe('decodeDawProjectAssets', () => {
         const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
         mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
 
-        const result = await decodeDawProjectAssets(new Map());
+        const result = await decodeDawProjectAssets({ audioAssets: new Map() });
 
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(result.failedPaths).toEqual([]);
@@ -72,12 +74,12 @@ describe('decodeDawProjectAssets', () => {
         const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
         mocks.get_audio_context.mockReturnValue(null);
 
-        const result = await decodeDawProjectAssets(
-            new Map([
+        const result = await decodeDawProjectAssets({
+            audioAssets: new Map([
                 ['audio/drums.wav', new Uint8Array([1])],
                 ['audio/bass.wav', new Uint8Array([2])],
-            ])
-        );
+            ]),
+        });
 
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(result.failedPaths).toEqual(['audio/drums.wav', 'audio/bass.wav']);
@@ -90,10 +92,43 @@ describe('decodeDawProjectAssets', () => {
         mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
         mocks.decode_audio_data.mockRejectedValue(new Error('decode failed'));
 
-        const result = await decodeDawProjectAssets(new Map([['audio/broken.wav', new Uint8Array([9])]]));
+        const result = await decodeDawProjectAssets({
+            audioAssets: new Map([['audio/broken.wav', new Uint8Array([9])]]),
+        });
 
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(result.failedPaths).toEqual(['audio/broken.wav']);
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
+    });
+
+    it('does not cache a decoded buffer after transition authority is revoked', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        const buffer = create_audio_buffer();
+        let finish_decode: ((value: AudioBuffer) => void) | undefined;
+        let should_continue = true;
+        mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
+        mocks.decode_audio_data.mockImplementation(
+            () =>
+                new Promise<AudioBuffer>((resolve) => {
+                    finish_decode = resolve;
+                })
+        );
+
+        const decoding = decodeDawProjectAssets({
+            audioAssets: new Map([['audio/stale.wav', new Uint8Array([1])]]),
+            shouldContinue: () => should_continue,
+        });
+        await vi.waitFor(() => expect(finish_decode).toBeDefined());
+        should_continue = false;
+
+        const finish = finish_decode;
+        if (!finish) {
+            throw new Error('Expected pending audio decode');
+        }
+        finish(buffer);
+        const result = await decoding;
+
+        expect(result.bufferIdsByPath).toEqual(new Map());
         expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
     });
 });

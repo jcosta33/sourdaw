@@ -306,9 +306,23 @@ export const audioBufferCache = {
         return peaks;
     },
 
-    async restoreFromIdb(context: BaseAudioContext, ids?: string[]): Promise<number> {
+    async restoreFromIdb({
+        context,
+        ids,
+        shouldContinue,
+    }: {
+        context: BaseAudioContext;
+        ids?: string[];
+        shouldContinue?: () => boolean;
+    }): Promise<number> {
         try {
+            if (shouldContinue?.() === false) {
+                return 0;
+            }
             const db = await openDb();
+            if (shouldContinue?.() === false) {
+                return 0;
+            }
             const tx = db.transaction(STORE_NAME, 'readonly');
             const store = tx.objectStore(STORE_NAME);
 
@@ -329,6 +343,9 @@ export const audioBufferCache = {
 
             let restored = 0;
             for (const key of keys) {
+                if (shouldContinue?.() === false) {
+                    return restored;
+                }
                 if (cache.has(key as string)) {
                     continue;
                 }
@@ -337,6 +354,9 @@ export const audioBufferCache = {
                     req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
                     req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
                 });
+                if (shouldContinue?.() === false) {
+                    return restored;
+                }
                 if (!data) {
                     continue;
                 }
@@ -348,6 +368,9 @@ export const audioBufferCache = {
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     const src = data.channelData[ch]!;
                     buffer.getChannelData(ch).set(src);
+                }
+                if (shouldContinue?.() === false) {
+                    return restored;
                 }
                 audioCacheSet(key as string, buffer);
                 restored++;

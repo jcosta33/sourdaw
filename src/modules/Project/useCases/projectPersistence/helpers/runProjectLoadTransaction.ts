@@ -1,14 +1,31 @@
-let currentProjectTransitionId = 0;
+let nextProjectTransitionId = 0;
+let activeProjectTransitionId = 0;
 
 export type ProjectLoadTransaction = {
+    activate: () => boolean;
+    canActivate: () => boolean;
     isCurrent: () => boolean;
 };
 
 type RunProjectLoadTransactionOutput = ProjectLoadTransaction;
 
 export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {
-    const transitionId = ++currentProjectTransitionId;
+    const transitionId = ++nextProjectTransitionId;
+    let activated = false;
+
     return {
-        isCurrent: () => transitionId === currentProjectTransitionId,
+        activate: () => {
+            if (activated) {
+                return transitionId === activeProjectTransitionId;
+            }
+            if (transitionId < activeProjectTransitionId) {
+                return false;
+            }
+            activeProjectTransitionId = transitionId;
+            activated = true;
+            return true;
+        },
+        canActivate: () => transitionId >= activeProjectTransitionId,
+        isCurrent: () => activated && transitionId === activeProjectTransitionId,
     };
 }

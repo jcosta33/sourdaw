@@ -5,7 +5,15 @@ export type DecodedDawProjectAssets = {
     failedPaths: string[];
 };
 
-export async function decodeDawProjectAssets(audioAssets: Map<string, Uint8Array>): Promise<DecodedDawProjectAssets> {
+export type DecodeDawProjectAssetsInput = {
+    audioAssets: Map<string, Uint8Array>;
+    shouldContinue?: () => boolean;
+};
+
+export async function decodeDawProjectAssets({
+    audioAssets,
+    shouldContinue,
+}: DecodeDawProjectAssetsInput): Promise<DecodedDawProjectAssets> {
     const bufferIdsByPath = new Map<string, string>();
     const failedPaths: string[] = [];
 
@@ -20,10 +28,16 @@ export async function decodeDawProjectAssets(audioAssets: Map<string, Uint8Array
     }
 
     for (const [path, bytes] of audioAssets) {
+        if (shouldContinue?.() === false) {
+            break;
+        }
         const copy = new Uint8Array(bytes.byteLength);
         copy.set(bytes);
         try {
             const buffer = await context.decodeAudioData(copy.buffer);
+            if (shouldContinue?.() === false) {
+                break;
+            }
             const id = `audio-${crypto.randomUUID()}`;
             cacheAudioBuffer({ buffer, bufferId: id });
             bufferIdsByPath.set(path, id);

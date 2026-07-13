@@ -17,18 +17,25 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
+    transaction.activate();
     const current = projectStore.value;
     if (current) {
         projectStore.set({ ...current, loading: true });
     }
 
     try {
-        const loaded = await loadCrdtProject();
+        const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+        if (!transaction.isCurrent()) {
+            return false;
+        }
         if (!loaded) {
             await createCrdtProject('Untitled Project');
         }
     } catch (error) {
         logger.warn('[loadProject] CRDT load failed, creating new project:', error);
+        if (!transaction.isCurrent()) {
+            return false;
+        }
         await createCrdtProject('Untitled Project');
     }
 
