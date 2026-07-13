@@ -15,10 +15,17 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
         }
     }
 
-    const pastedNotes = noteClipboard.notes.map(({ id: _sourceId, ...node }) => ({
-        ...node,
-        startBeat: node.startBeat - minStart + beatOffset,
-    }));
+    const pastedNotes = noteClipboard.notes.map(
+        ({ id: _sourceId, probability, pressure, slide, pitchBend, channel, ...node }) => ({
+            ...node,
+            startBeat: node.startBeat - minStart + beatOffset,
+            ...(probability === undefined ? {} : { probability }),
+            ...(pressure === undefined ? {} : { pressure }),
+            ...(slide === undefined ? {} : { slide }),
+            ...(pitchBend === undefined ? {} : { pitchBend }),
+            ...(channel === undefined ? {} : { channel }),
+        })
+    );
 
     appendMidiNotes({
         clipId,
