@@ -29,19 +29,19 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): StorageAdapter<
         },
 
         set(value: TData | null): void {
-            cachedValue = value;
-
             if (value === null) {
                 window.localStorage.removeItem(key);
+                cachedValue = null;
                 return;
             }
 
             window.localStorage.setItem(key, stringify(value));
+            cachedValue = value;
         },
 
         clear(): void {
-            cachedValue = null;
             window.localStorage.removeItem(key);
+            cachedValue = null;
         },
 
         isSupported(): boolean {

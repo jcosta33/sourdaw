@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { hitTestClip } from '../hitTestClip';
+
 import type { timelineViewStore as originalTimelineViewStore } from '../../../stores/timelineViewStore';
 import type { buildTimelineRenderModel as originalBuild } from '../../buildTimelineRenderModel';
 import type { getTrackAtY as originalGetTrackAtY } from '../getTrackAtY';
@@ -27,8 +29,6 @@ vi.mock('../../buildTimelineRenderModel', () => ({
 vi.mock('../getTrackAtY', () => ({
     getTrackAtY: mocks.getTrackAtY,
 }));
-
-import { hitTestClip } from '../hitTestClip';
 
 describe('hitTestClip', () => {
     beforeEach(() => {

@@ -1,9 +1,10 @@
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
 
 const BRANCH_STORAGE_KEY = 'sourdaw-branches';
+const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
 
 const validMainBranch = {
     branchId: MAIN_BRANCH_ID,
@@ -197,6 +198,32 @@ describe('branchStore', () => {
             const state = await loadBranchStateFromRawStoredValue('{not-json');
 
             expectCanonicalSingleMainBranchState(state);
+        });
+
+        it('should recover the durable pre-session branch state during module initialization', async () => {
+            const remoteState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+            const localState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            vi.resetModules();
+            window.localStorage.clear();
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+
+            const module = await import('../branchStore');
+
+            expect(module.branchStore.value).toEqual(localState);
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+            const persistedState = window.localStorage.getItem(BRANCH_STORAGE_KEY);
+            if (persistedState === null) {
+                throw new Error('Expected recovered branch state to persist');
+            }
+            expect(parse(persistedState)).toEqual(localState);
         });
     });
 });
