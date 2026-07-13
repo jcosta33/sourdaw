@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -32,6 +31,10 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         stopPlayback();
         resetAudioGraph();
 
+        // Restore runtime buffers before publishing the loaded track graph so
+        // waveform consumers are ready on the first real track update.
+        await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
+
         // Reset per-device-instance stores (§13.1) so stale device state from the
         // previously open project does not leak into the project being loaded;
         // hydrateModuleStoresFromProjectData does not touch the device stores.
@@ -53,10 +56,6 @@ export async function loadRecentProject(key: string): Promise<boolean> {
 
         writeProjectJson(raw);
 
-        await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
-        if (trackStore.value) {
-            trackStore.set({ ...trackStore.value });
-        }
         verifyAudioBufferReferences();
         clearUndoHistory();
 

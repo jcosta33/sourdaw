@@ -88,6 +88,20 @@ describe('loadRecentProject', () => {
         expect(resetOrder).toBeLessThan(hydrateOrder);
     });
 
+    it('restores cached audio buffers before publishing hydrated tracks', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        const ok = await loadRecentProject('sourdaw:project:Large Project');
+
+        expect(ok).toBe(true);
+        const restoreOrder = vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0];
+        const hydrateOrder = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
+        if (restoreOrder === undefined || hydrateOrder === undefined) {
+            throw new Error('Expected cache restoration and track hydration');
+        }
+        expect(restoreOrder).toBeLessThan(hydrateOrder);
+    });
+
     it('returns false when neither localStorage nor IndexedDB has the project', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(null);
 

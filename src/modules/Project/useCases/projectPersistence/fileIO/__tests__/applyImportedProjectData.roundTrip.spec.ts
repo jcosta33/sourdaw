@@ -174,6 +174,36 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.bufferIds).toHaveLength(2);
     });
 
+    it('publishes imported tracks only after their cached audio buffers finish restoring', async () => {
+        let completeRestore: (() => void) | undefined;
+        let buffersRestored = false;
+        restoreCachedAudioBuffersFromIdb.mockImplementationOnce(
+            () =>
+                new Promise<number>((resolve) => {
+                    completeRestore = () => {
+                        buffersRestored = true;
+                        resolve(2);
+                    };
+                })
+        );
+        const publicationStates: boolean[] = [];
+        const unsubscribe = trackStore.subscribe((state) => {
+            if (state.tracks.some((track) => track.id === 'track-audio')) {
+                publicationStates.push(buffersRestored);
+            }
+        });
+
+        const applying = applyImportedProjectData(makeProject());
+        await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+
+        expect(publicationStates).toEqual([]);
+        completeRestore?.();
+        await applying;
+        unsubscribe();
+
+        expect(publicationStates).toEqual([true]);
+    });
+
     it('passes undefined bufferIds to restoreCachedAudioBuffersFromIdb when no clips reference buffers', async () => {
         const project = makeProject();
         project.arrangement.tracks = [baseTrack('track-audio', [])];

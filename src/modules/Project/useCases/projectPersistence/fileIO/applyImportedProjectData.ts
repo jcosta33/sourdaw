@@ -1,4 +1,3 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -17,6 +16,17 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
     resetAudioGraph();
+
+    // Restore referenced runtime buffers before publishing the imported track
+    // graph. Track subscribers can render waveforms from their first update,
+    // without a synthetic track-store write after hydration.
+    const referencedIds = data.arrangement.tracks
+        .flatMap((track) => track.clips.map((clip) => clip.bufferId))
+        .filter((id): id is string => Boolean(id));
+    await restoreCachedAudioBuffersFromIdb({
+        audioContext: getAudioContext(),
+        bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
+    });
 
     // Reset per-device-instance stores (§13.1) so stale device state from the
     // previously open project does not leak into the imported project;
@@ -73,21 +83,6 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         activeArrangementId: defaultArrangementId,
     });
 
-    const ctx = getAudioContext();
-    // Reconstruct audio buffers if they exist in the metadata (future proofing)
-    // or fall back to IDB cache for referenced buffer IDs.
-    const referencedIds = data.arrangement.tracks
-        .flatMap((time) => time.clips.map((context) => context.bufferId))
-        .filter((id): id is string => Boolean(id));
-
-    await restoreCachedAudioBuffersFromIdb({
-        audioContext: ctx,
-        bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
-    });
-
-    if (trackStore.value) {
-        trackStore.set({ ...trackStore.value });
-    }
     verifyAudioBufferReferences();
     clearUndoHistory();
     return true;
