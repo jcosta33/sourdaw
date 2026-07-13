@@ -314,7 +314,7 @@ function has_valid_automation_lane_optionals(value: AutomationLane): boolean {
     );
 }
 
-function is_exact_automation_lane(value: unknown): value is AutomationLane {
+export function is_exact_automation_lane(value: unknown): value is AutomationLane {
     return (
         is_valid_automation_lane(value) &&
         has_valid_automation_lane_optionals(value) &&
