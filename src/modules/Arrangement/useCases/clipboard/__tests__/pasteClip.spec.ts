@@ -53,8 +53,10 @@ vi.mock('../../clip/addClip', () => ({
 
 function createClipboardEntry(
     input: {
+        clipId?: string;
         endBeat?: number;
         midiNotes?: MidiNote[];
+        name?: string;
         sourceTrackId?: string;
         startBeat?: number;
     } = {}
@@ -64,9 +66,9 @@ function createClipboardEntry(
     return {
         sourceTrackId,
         clip: {
-            id: 'source-clip',
+            id: input.clipId ?? 'source-clip',
             trackId: sourceTrackId,
-            name: 'Source clip',
+            name: input.name ?? 'Source clip',
             startBeat: input.startBeat ?? 4,
             endBeat: input.endBeat ?? 8,
             type: 'midi',
@@ -112,12 +114,28 @@ describe('pasteClip', () => {
 
         pasteClip();
 
+        expect(mocks.readTransportState).toHaveBeenCalledTimes(1);
+        expect(mocks.getTrackState).toHaveBeenCalledTimes(1);
+        expect(mocks.readTransportState.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.getTrackState.mock.invocationCallOrder[0]
+        );
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
     it('pastes copied MIDI notes through the owner with regenerated ids and preserved properties', () => {
-        const sourceNotes: MidiNote[] = [
+        const laterClipNotes: MidiNote[] = [
+            {
+                id: 'source-note-later',
+                pitch: 67,
+                startBeat: 0.5,
+                duration: 2,
+                velocity: 95,
+                probability: 80,
+                channel: 2,
+            },
+        ];
+        const earlierClipNotes: MidiNote[] = [
             {
                 id: 'source-note-one',
                 pitch: 72,
@@ -146,54 +164,94 @@ describe('pasteClip', () => {
         const randomUuid = vi
             .spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
-            .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+            .mockReturnValueOnce('22222222-2222-4222-8222-222222222222')
+            .mockReturnValueOnce('33333333-3333-4333-8333-333333333333');
+        const uuidCallCountsAtOwner: number[] = [];
         mocks.transportState.value = {};
         mocks.playheadPositionRef.current = 12;
         mocks.getTrackState.mockReturnValue({
-            selectedTrackId: null,
-            tracks: [{ id: 'source-track' }],
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
         });
-        mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
+        mocks.addClip
+            .mockReturnValueOnce({ id: 'pasted-later-clip' })
+            .mockReturnValueOnce({ id: 'pasted-earlier-clip' });
         mocks.setNotesForClip.mockImplementation(() => {
-            expect(randomUuid).toHaveBeenCalledTimes(2);
+            uuidCallCountsAtOwner.push(randomUuid.mock.calls.length);
         });
         setClipClipboard([
             createClipboardEntry({
+                clipId: 'source-later-clip',
+                startBeat: 9,
+                endBeat: 11,
+                name: 'Later clip',
+                sourceTrackId: 'source-track-later',
+                midiNotes: laterClipNotes,
+            }),
+            createClipboardEntry({
+                clipId: 'source-earlier-clip',
+                startBeat: 4,
                 endBeat: 7,
-                midiNotes: sourceNotes,
+                name: 'Earlier clip',
+                sourceTrackId: 'source-track-earlier',
+                midiNotes: earlierClipNotes,
             }),
         ]);
 
         pasteClip();
 
-        expect(mocks.addClip).toHaveBeenCalledWith({
-            trackId: 'source-track',
-            startBeat: 12,
-            endBeat: 15,
-            name: 'Source clip (paste)',
+        expect(mocks.addClip).toHaveBeenCalledTimes(2);
+        expect(mocks.addClip).toHaveBeenNthCalledWith(1, {
+            trackId: 'selected-track',
+            startBeat: 17,
+            endBeat: 19,
+            name: 'Later clip (paste)',
             type: 'midi',
             audioBufferId: undefined,
         });
-        expect(mocks.setNotesForClip).toHaveBeenCalledTimes(1);
-        const call = mocks.setNotesForClip.mock.calls[0];
-        if (!call) {
-            throw new Error('Expected MIDI owner call');
-        }
-        const [clipId, copiedNotes] = call;
-
-        expect(clipId).toBe('pasted-clip');
-        expect(copiedNotes).toStrictEqual([
-            {
-                ...sourceNotes[0],
-                id: 'note-11111111',
-            },
-            {
-                ...sourceNotes[1],
-                id: 'note-22222222',
-            },
+        expect(mocks.addClip).toHaveBeenNthCalledWith(2, {
+            trackId: 'selected-track',
+            startBeat: 12,
+            endBeat: 15,
+            name: 'Earlier clip (paste)',
+            type: 'midi',
+            audioBufferId: undefined,
+        });
+        expect(mocks.setNotesForClip).toHaveBeenCalledTimes(2);
+        expect(mocks.setNotesForClip.mock.calls).toStrictEqual([
+            [
+                'pasted-later-clip',
+                [
+                    {
+                        ...laterClipNotes[0],
+                        id: 'note-11111111',
+                    },
+                ],
+            ],
+            [
+                'pasted-earlier-clip',
+                [
+                    {
+                        ...earlierClipNotes[0],
+                        id: 'note-22222222',
+                    },
+                    {
+                        ...earlierClipNotes[1],
+                        id: 'note-33333333',
+                    },
+                ],
+            ],
         ]);
-        expect(Object.keys(copiedNotes[0])).toEqual(Object.keys(sourceNotes[0]));
-        expect(Object.keys(copiedNotes[1])).toEqual(Object.keys(sourceNotes[1]));
+        expect(uuidCallCountsAtOwner).toEqual([1, 3]);
+        expect(mocks.addClip.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.setNotesForClip.mock.invocationCallOrder[0]
+        );
+        expect(mocks.setNotesForClip.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.addClip.mock.invocationCallOrder[1]
+        );
+        expect(mocks.addClip.mock.invocationCallOrder[1]).toBeLessThan(
+            mocks.setNotesForClip.mock.invocationCallOrder[1]
+        );
     });
 
     it('skips a clip when its target track is missing', () => {
