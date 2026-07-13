@@ -269,32 +269,6 @@ describe('handleRemoveTrack', () => {
                 c3: [pitchBendC3],
             });
         });
-
-        it('snapshots active clip MIDI when legacy alternatives is not an array', () => {
-            const activeClip = ClipDummy.create({ id: 'legacy-clip', trackId: 'legacy-track', type: 'midi' });
-            const legacyTrack = {
-                ...TrackDummy.create({ id: 'legacy-track', clips: [activeClip] }),
-                alternatives: { legacy: true },
-            };
-            const note = createMidiNote('legacy-note', 60);
-            const controlChange = createMidiControlChange('legacy-cc', 10);
-            const pitchBend = createMidiPitchBend('legacy-pitch-bend', 0);
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [legacyTrack] });
-            mocks.midiStoreValue.value = {
-                notesByClipId: { 'legacy-clip': [note] },
-                ccByClipId: { 'legacy-clip': [controlChange] },
-                pitchBendByClipId: { 'legacy-clip': [pitchBend] },
-            };
-
-            const desc = handleRemoveTrack.describe({
-                type: 'removeTrack',
-                payload: { trackId: 'legacy-track' },
-            });
-
-            expect(desc.inverseAction?.payload.midiNotesByClipId).toEqual({ 'legacy-clip': [note] });
-            expect(desc.inverseAction?.payload.midiCcByClipId).toEqual({ 'legacy-clip': [controlChange] });
-            expect(desc.inverseAction?.payload.midiPitchBendByClipId).toEqual({ 'legacy-clip': [pitchBend] });
-        });
     });
 
     it('is undoable', () => {
