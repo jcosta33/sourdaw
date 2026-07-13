@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { midiStore } from '#/modules/MIDI/stores';
+import { glueMidiClipData } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -58,40 +58,5 @@ export function glueClips(clipIds: string[]): void {
         ...time,
         clips: [...time.clips.filter((context) => !clipIds.includes(context.id)), glued],
     }));
-
-    // Merge MIDI data from source clips into the glued clip
-    const midiState = midiStore.value;
-    if (midiState) {
-        const mergedNotes = clipIds.flatMap((id) => midiState.notesByClipId[id] ?? []);
-        const mergedCc = clipIds.flatMap((id) => midiState.ccByClipId[id] ?? []);
-        const mergedPb = clipIds.flatMap((id) => midiState.pitchBendByClipId[id] ?? []);
-
-        const newNotesByClipId = { ...midiState.notesByClipId };
-        const newCcByClipId = { ...midiState.ccByClipId };
-        const newPbByClipId = { ...midiState.pitchBendByClipId };
-
-        // Remove source clip entries
-        for (const id of clipIds) {
-            delete newNotesByClipId[id];
-            delete newCcByClipId[id];
-            delete newPbByClipId[id];
-        }
-
-        // Add merged data for the glued clip (only if there is data)
-        if (mergedNotes.length > 0) {
-            newNotesByClipId[gluedId] = mergedNotes;
-        }
-        if (mergedCc.length > 0) {
-            newCcByClipId[gluedId] = mergedCc;
-        }
-        if (mergedPb.length > 0) {
-            newPbByClipId[gluedId] = mergedPb;
-        }
-
-        midiStore.set({
-            notesByClipId: newNotesByClipId,
-            ccByClipId: newCcByClipId,
-            pitchBendByClipId: newPbByClipId,
-        });
-    }
+    glueMidiClipData({ sourceClipIds: clipIds, targetClipId: gluedId });
 }
