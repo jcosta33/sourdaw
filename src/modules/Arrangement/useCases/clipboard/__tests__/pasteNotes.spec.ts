@@ -30,7 +30,7 @@ describe('pasteNotes', () => {
         expect(appendMidiNotes).not.toHaveBeenCalled();
     });
 
-    it('delegates one clipboard-relative note batch to MIDI without creating IDs in Arrangement', () => {
+    it('delegates one id-free clipboard-relative note batch with channel preserved', () => {
         const laterNote = {
             id: 'clipboard-later',
             pitch: 72,
@@ -41,6 +41,7 @@ describe('pasteNotes', () => {
             pressure: 0.25,
             slide: -0.5,
             pitchBend: 1024,
+            channel: 9,
         };
         const earlierNote = {
             id: 'clipboard-earlier',
@@ -58,8 +59,23 @@ describe('pasteNotes', () => {
         expect(appendMidiNotes).toHaveBeenCalledWith({
             clipId: 'destination-clip',
             notes: [
-                { ...laterNote, startBeat: 9 },
-                { ...earlierNote, startBeat: 3 },
+                {
+                    pitch: 72,
+                    startBeat: 9,
+                    duration: 0.5,
+                    velocity: 110,
+                    probability: 75,
+                    pressure: 0.25,
+                    slide: -0.5,
+                    pitchBend: 1024,
+                    channel: 9,
+                },
+                {
+                    pitch: 60,
+                    startBeat: 3,
+                    duration: 1,
+                    velocity: 90,
+                },
             ],
         });
         expect(randomUuid).not.toHaveBeenCalled();

@@ -15,7 +15,7 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
         }
     }
 
-    const pastedNotes = noteClipboard.notes.map((node) => ({
+    const pastedNotes = noteClipboard.notes.map(({ id: _sourceId, ...node }) => ({
         ...node,
         startBeat: node.startBeat - minStart + beatOffset,
     }));

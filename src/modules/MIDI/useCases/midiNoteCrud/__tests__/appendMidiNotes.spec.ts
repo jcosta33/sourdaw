@@ -23,8 +23,7 @@ vi.mock('../../../stores/midiStore', () => {
 const { appendMidiNotes } = await import('../appendMidiNotes');
 const { midiStore } = await import('../../../stores/midiStore');
 
-type TestMidiNote = {
-    id: string;
+type TestAppendNote = {
     pitch: number;
     startBeat: number;
     duration: number;
@@ -34,6 +33,10 @@ type TestMidiNote = {
     slide?: number;
     pitchBend?: number;
     channel?: number;
+};
+
+type TestStoredMidiNote = TestAppendNote & {
+    id: string;
 };
 
 const NON_FINITE_NUMERIC_FIELDS = [
@@ -48,14 +51,20 @@ const NON_FINITE_NUMERIC_FIELDS = [
     ['channel', Number.NaN],
 ] as const;
 
-function createNote(overrides: Partial<TestMidiNote> = {}): TestMidiNote {
+function createAppendNote(overrides: Partial<TestAppendNote> = {}): TestAppendNote {
     return {
-        id: 'clipboard-note',
         pitch: 64,
         startBeat: 1,
         duration: 0.5,
         velocity: 100,
         ...overrides,
+    };
+}
+
+function createStoredNote(id: string, overrides: Partial<TestAppendNote> = {}): TestStoredMidiNote {
+    return {
+        id,
+        ...createAppendNote(overrides),
     };
 }
 
@@ -74,16 +83,20 @@ describe('appendMidiNotes', () => {
         midiStore.value = createState();
     });
 
-    it('appends in existing order with short generated IDs and all expression values in one write', () => {
-        const existing = createNote({
-            id: 'note-existing',
+    it('retains deliberately non-sorted existing order and appends generated IDs in one write', () => {
+        const existingLater = createStoredNote('note-existing-later', {
             pitch: 48,
-            startBeat: 4,
+            startBeat: 12,
             duration: 2,
             velocity: 80,
         });
-        const firstPasted = createNote({
-            id: 'clipboard-first',
+        const existingEarlier = createStoredNote('note-existing-earlier', {
+            pitch: 36,
+            startBeat: 2,
+            duration: 1,
+            velocity: 70,
+        });
+        const firstPasted = createAppendNote({
             pitch: 140.25,
             startBeat: -1.5,
             duration: 0,
@@ -94,14 +107,13 @@ describe('appendMidiNotes', () => {
             pitchBend: 1024,
             channel: 13,
         });
-        const secondPasted = createNote({
-            id: 'clipboard-second',
+        const secondPasted = createAppendNote({
             pitch: 55,
             startBeat: 3,
             duration: 0.25,
             velocity: 64,
         });
-        midiStore.value = createState({ 'clip-1': [existing] });
+        midiStore.value = createState({ 'clip-1': [existingLater, existingEarlier] });
         const randomUuid = vi
             .spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('12345678-aaaa-bbbb-cccc-dddddddddddd')
@@ -113,36 +125,41 @@ describe('appendMidiNotes', () => {
         expect(midiStore.set).toHaveBeenCalledTimes(1);
         expect(midiStore.value).toEqual(
             createState({
-                'clip-1': [existing, { ...firstPasted, id: 'note-12345678' }, { ...secondPasted, id: 'note-fedcba98' }],
+                'clip-1': [
+                    existingLater,
+                    existingEarlier,
+                    { ...firstPasted, id: 'note-12345678' },
+                    { ...secondPasted, id: 'note-fedcba98' },
+                ],
             })
         );
     });
 
     it('reads the latest state synchronously when invoked', () => {
-        const latestExisting = createNote({ id: 'note-latest', pitch: 45 });
-        midiStore.value = createState({ 'clip-1': [createNote({ id: 'note-stale' })] });
+        const latestExisting = createStoredNote('note-latest', { pitch: 45 });
+        midiStore.value = createState({ 'clip-1': [createStoredNote('note-stale')] });
         midiStore.value = createState({ 'clip-1': [latestExisting] });
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('abcdef01-aaaa-bbbb-cccc-dddddddddddd');
 
-        appendMidiNotes({ clipId: 'clip-1', notes: [createNote({ id: 'clipboard-new' })] });
+        appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
 
         expect(midiStore.set).toHaveBeenCalledWith(
             createState({
-                'clip-1': [latestExisting, { ...createNote({ id: 'clipboard-new' }), id: 'note-abcdef01' }],
+                'clip-1': [latestExisting, { ...createAppendNote(), id: 'note-abcdef01' }],
             })
         );
     });
 
     it('treats a missing destination clip list as an empty list', () => {
-        const pasted = createNote({ id: 'clipboard-only' });
-        midiStore.value = createState({ 'other-clip': [createNote({ id: 'note-other' })] });
+        const pasted = createAppendNote();
+        midiStore.value = createState({ 'other-clip': [createStoredNote('note-other')] });
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-aaaa-bbbb-cccc-dddddddddddd');
 
         appendMidiNotes({ clipId: 'new-clip', notes: [pasted] });
 
         expect(midiStore.value).toEqual(
             createState({
-                'other-clip': [createNote({ id: 'note-other' })],
+                'other-clip': [createStoredNote('note-other')],
                 'new-clip': [{ ...pasted, id: 'note-cafebabe' }],
             })
         );
@@ -163,7 +180,7 @@ describe('appendMidiNotes', () => {
         midiStore.value = null;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
 
-        appendMidiNotes({ clipId: 'clip-1', notes: [createNote()] });
+        appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
 
         expect(randomUuid).not.toHaveBeenCalled();
         expect(midiStore.set).not.toHaveBeenCalled();
@@ -175,10 +192,10 @@ describe('appendMidiNotes', () => {
         (field, value) => {
             const stateBefore = midiStore.value;
             const randomUuid = vi.spyOn(crypto, 'randomUUID');
-            const invalidNote = { ...createNote(), [field]: value };
+            const invalidNote = { ...createAppendNote(), [field]: value };
 
             expect(() =>
-                appendMidiNotes({ clipId: 'clip-1', notes: [createNote({ id: 'valid-first' }), invalidNote] })
+                appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
             ).toThrow('Invalid MIDI note batch');
 
             expect(randomUuid).not.toHaveBeenCalled();
@@ -187,13 +204,15 @@ describe('appendMidiNotes', () => {
         }
     );
 
-    it('rejects a batch with an unknown note key before UUID or state mutation', () => {
+    it.each([
+        ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
+        ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
+    ])('rejects a batch with %s before UUID or state mutation', (_case, invalidNote) => {
         const stateBefore = midiStore.value;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
-        const invalidNote = { ...createNote(), unsupported: 1 };
 
         expect(() =>
-            appendMidiNotes({ clipId: 'clip-1', notes: [createNote({ id: 'valid-first' }), invalidNote] })
+            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
         ).toThrow('Invalid MIDI note batch');
 
         expect(randomUuid).not.toHaveBeenCalled();
@@ -205,14 +224,13 @@ describe('appendMidiNotes', () => {
         const stateBefore = midiStore.value;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
         const invalidNote = {
-            id: 'missing-velocity',
             pitch: 64,
             startBeat: 1,
             duration: 0.5,
         };
 
         expect(() =>
-            appendMidiNotes({ clipId: 'clip-1', notes: [createNote({ id: 'valid-first' }), invalidNote] })
+            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
         ).toThrow('Invalid MIDI note batch');
 
         expect(randomUuid).not.toHaveBeenCalled();
@@ -232,7 +250,7 @@ describe('appendMidiNotes', () => {
         expect(() =>
             appendMidiNotes({
                 clipId: 'clip-1',
-                notes: [createNote({ id: 'first' }), createNote({ id: 'second' })],
+                notes: [createAppendNote({ pitch: 65 }), createAppendNote({ pitch: 66 })],
             })
         ).toThrow('UUID unavailable');
 

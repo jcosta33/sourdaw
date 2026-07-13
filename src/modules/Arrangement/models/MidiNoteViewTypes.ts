@@ -14,4 +14,5 @@ export type MidiNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    channel?: number;
 };
