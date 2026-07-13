@@ -1,13 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { createEventBus } from '#/infra/events/createEventBus';
+
 import { type Clip, type Track, type TrackKind } from '../../models/Track';
 import { duplicateTrack } from '../duplicateTrack';
 
+import type { TrackAddedPayload } from '../../events';
+
 type ClipCopy = { sourceClipId: string; targetClipId: string };
-type AddTrack = (input: { id?: string; name: string; kind: TrackKind; select?: boolean }) => Track | null;
+type AddTrackInput = {
+    id?: string;
+    name: string;
+    kind: TrackKind;
+    select?: boolean;
+    suppressAddedEvent?: boolean;
+};
+type AddTrack = (input: AddTrackInput) => Track | null;
 type UpdateTrack = (trackId: string, updater: (track: Track) => Track) => void;
 type DuplicateMidiClipData = (input: { copies: readonly ClipCopy[] }) => void;
 type DuplicateClipAutomation = (sourceClipId: string, targetClipId: string) => void;
+type EmitTrackAdded = (event: 'track.added', payload: TrackAddedPayload) => Promise<void>;
+type DuplicateTrackEvents = { 'track.added': TrackAddedPayload };
 
 const mocks = vi.hoisted(() => {
     const callOrder: string[] = [];
@@ -19,6 +33,9 @@ const mocks = vi.hoisted(() => {
         addTrack: vi.fn<AddTrack>(),
         duplicateMidiClipData: vi.fn<DuplicateMidiClipData>(),
         duplicateClipAutomation: vi.fn<DuplicateClipAutomation>(),
+        eventBus: {
+            emit: vi.fn<EmitTrackAdded>(),
+        },
     };
 });
 
@@ -30,6 +47,7 @@ vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mocks
 
 function createClip(input: Partial<Clip> & Pick<Clip, 'id' | 'type'>): Clip {
     return {
+        ...input,
         id: input.id,
         trackId: input.trackId ?? 'source-track',
         name: input.name ?? `Clip ${input.id}`,
@@ -42,7 +60,6 @@ function createClip(input: Partial<Clip> & Pick<Clip, 'id' | 'type'>): Clip {
         color: input.color ?? '#22c55e',
         locked: input.locked ?? false,
         muted: input.muted ?? false,
-        ...input,
     };
 }
 
@@ -116,6 +133,7 @@ function returnCreatedTrack(): void {
 describe('duplicateTrack', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        injectDependencies(duplicateTrack, { eventBus: mocks.eventBus });
         mocks.callOrder.length = 0;
         mocks.getTrackById.mockReturnValue(undefined);
         mocks.addTrack.mockReturnValue(null);
@@ -137,6 +155,7 @@ describe('duplicateTrack', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
         expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
     it('does not create satellite state when adding the duplicate track fails', () => {
@@ -163,6 +182,8 @@ describe('duplicateTrack', () => {
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
         expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
         expect(mocks.callOrder).toEqual([]);
+        expect(mocks.addTrack).toHaveBeenCalledWith(expect.objectContaining({ suppressAddedEvent: true }));
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
     it('forwards ordered MIDI and automation pairs after updating a mixed multi-alternative duplicate', () => {
@@ -245,6 +266,13 @@ describe('duplicateTrack', () => {
         const copiedDevice = requireFirst(updatedTrack.devices, 'copied device');
 
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.addTrack).toHaveBeenCalledWith(
+            expect.objectContaining({
+                name: `${source.name} (copy)`,
+                kind: source.kind,
+                suppressAddedEvent: true,
+            })
+        );
         expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
         expect(updatedTrack.gain).toBe(source.gain);
         expect(updatedTrack.pan).toBe(source.pan);
@@ -284,6 +312,118 @@ describe('duplicateTrack', () => {
             `duplicateClipAutomation:${sourceAudio.id}`,
             `duplicateClipAutomation:${sourceMidiTwo.id}`,
         ]);
+    });
+
+    it('emits track.added after the duplicate is fully visible to event handlers', () => {
+        const sourceMidi = createClip({ id: 'clip-midi', type: 'midi' });
+        const sourceAudio = createClip({ id: 'clip-audio', type: 'audio' });
+        const source = createTrack({
+            id: 'track-source',
+            name: 'Source track',
+            kind: 'midi',
+            alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [sourceMidi, sourceAudio] }],
+            activeAlternativeId: 'alt-source',
+        });
+        mocks.getTrackById.mockReturnValue(source);
+
+        let duplicatedTrack: Track | undefined;
+        mocks.addTrack.mockImplementation((input) => {
+            const track = createTrack({ id: input.id, name: input.name, kind: input.kind });
+            duplicatedTrack = track;
+            return track;
+        });
+        mocks.updateTrack.mockImplementation((trackId, updater) => {
+            if (!duplicatedTrack || duplicatedTrack.id !== trackId) {
+                throw new Error('Expected duplicate track before update');
+            }
+
+            mocks.callOrder.push('updateTrack');
+            duplicatedTrack = updater(duplicatedTrack);
+        });
+
+        const eventBus = createEventBus<DuplicateTrackEvents>();
+        const observer = vi.fn((payload: TrackAddedPayload) => {
+            const observableTrack = duplicatedTrack;
+            if (!observableTrack) {
+                throw new Error('Expected duplicate track during track.added');
+            }
+
+            const activeAlternative = observableTrack.alternatives.find(
+                (alternative) => alternative.id === observableTrack.activeAlternativeId
+            );
+            if (!activeAlternative) {
+                throw new Error('Expected active alternative during track.added');
+            }
+
+            expect(payload).toEqual({
+                trackId: observableTrack.id,
+                name: `${source.name} (copy)`,
+                kind: source.kind,
+            });
+            expect(observableTrack.alternatives).toHaveLength(1);
+            expect(observableTrack.clips).toEqual(activeAlternative.clips);
+            expect(mocks.duplicateMidiClipData).toHaveBeenCalledTimes(1);
+            expect(mocks.duplicateClipAutomation).toHaveBeenCalledTimes(2);
+            expect(mocks.callOrder).toEqual([
+                'updateTrack',
+                'duplicateMidiClipData',
+                `duplicateClipAutomation:${sourceMidi.id}`,
+                `duplicateClipAutomation:${sourceAudio.id}`,
+            ]);
+        });
+        eventBus.on('track.added', observer);
+        injectDependencies(duplicateTrack, { eventBus });
+
+        duplicateTrack(source.id);
+
+        expect(observer).toHaveBeenCalledTimes(1);
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'updating the duplicate',
+            () => {
+                mocks.updateTrack.mockImplementation(() => {
+                    throw new Error('update failed');
+                });
+            },
+        ],
+        [
+            'duplicating MIDI clip data',
+            () => {
+                mocks.duplicateMidiClipData.mockImplementation(() => {
+                    throw new Error('MIDI duplication failed');
+                });
+            },
+        ],
+        [
+            'duplicating clip automation',
+            () => {
+                mocks.duplicateClipAutomation.mockImplementation(() => {
+                    throw new Error('automation duplication failed');
+                });
+            },
+        ],
+    ])('does not emit track.added when %s throws', (_step, configureThrow) => {
+        const source = createTrack({
+            id: 'track-source',
+            alternatives: [
+                {
+                    id: 'alt-source',
+                    name: 'Source alternative',
+                    clips: [createClip({ id: 'clip-midi', type: 'midi' })],
+                },
+            ],
+            activeAlternativeId: 'alt-source',
+        });
+        mocks.getTrackById.mockReturnValue(source);
+        returnCreatedTrack();
+        configureThrow();
+
+        expect(() => duplicateTrack(source.id)).toThrow();
+
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
     it('does not invoke MIDI duplication when the duplicate has no MIDI clips', () => {

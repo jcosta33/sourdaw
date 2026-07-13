@@ -51,6 +51,19 @@ describe('addTrack', () => {
         );
     });
 
+    it('should append track without emitting when the added event is suppressed', () => {
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as TrackState);
+
+        const result = addTrack({ name: 'Lead copy', kind: 'midi', suppressAddedEvent: true });
+
+        expect(result).not.toBeNull();
+        expect(setTrackState).toHaveBeenCalledWith({
+            tracks: [result],
+            selectedTrackId: result!.id,
+        });
+        expect(mockEventBus.emit).not.toHaveBeenCalled();
+    });
+
     it('should append track without changing selection when selection is disabled', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [],
