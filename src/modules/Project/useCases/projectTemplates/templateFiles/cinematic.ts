@@ -1,4 +1,10 @@
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import {
+    addTempoChange,
+    addTimeSignatureChange,
+    removeTempoChange,
+    removeTimeSignatureChange,
+} from '#/modules/Transport/useCases';
 
 import {
     addDeviceChain,
@@ -26,19 +32,18 @@ export async function createCinematicTemplate(): Promise<void> {
         loopEnd: totalBeats,
     });
 
-    timeSignatureMapStore.set({
-        changes: [
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 0, numerator: 4, denominator: 4 },
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 48, numerator: 6, denominator: 8 },
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 72, numerator: 4, denominator: 4 },
-        ],
-    });
-    tempoMapStore.set({
-        changes: [
-            { id: `tempo-${crypto.randomUUID().slice(0, 8)}`, beat: 0, tempo: 90, curve: 'instant' },
-            { id: `tempo-${crypto.randomUUID().slice(0, 8)}`, beat: 88, tempo: 72, curve: 'linear' },
-        ],
-    });
+    for (const change of timeSignatureMapStore.value?.changes ?? []) {
+        removeTimeSignatureChange(change.beat);
+    }
+    addTimeSignatureChange(0, 4, 4);
+    addTimeSignatureChange(48, 6, 8);
+    addTimeSignatureChange(72, 4, 4);
+
+    for (const change of tempoMapStore.value?.changes ?? []) {
+        removeTempoChange(change.id);
+    }
+    addTempoChange(0, 90);
+    addTempoChange(88, 72, 'linear');
 
     const hallReverb = createBus({
         name: 'Hall Reverb',
