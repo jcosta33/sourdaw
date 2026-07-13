@@ -57,7 +57,7 @@ function requireMidiState(): MidiStoreState {
 
 describe('restoreMidiClipData', () => {
     beforeEach(() => {
-        midiStore.set.mockClear();
+        vi.clearAllMocks();
         midiStore.value = createMidiState();
     });
 
@@ -146,7 +146,7 @@ describe('restoreMidiClipData', () => {
 
         const previousState = createMidiState();
         midiStore.value = previousState;
-        midiStore.set.mockClear();
+        vi.clearAllMocks();
 
         restoreMidiClipData({
             clipId: 'clip-restore',
@@ -166,10 +166,26 @@ describe('restoreMidiClipData', () => {
             restoreMidiClipData({
                 clipId: 'clip-restore',
                 notesSnapshot: [createNote('note-restored')],
-                controlChangeSnapshot: [
-                    { id: 'cc-invalid', controller: 1, value: Number.NaN, beat: 0, channel: 1 },
-                ],
+                controlChangeSnapshot: [{ id: 'cc-invalid', controller: 1, value: Number.NaN, beat: 0, channel: 1 }],
                 pitchBendSnapshot: [createPitchBend('pitch-restored')],
+            });
+        }).toThrow('Invalid MIDI clip data snapshot');
+
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBe(previousState);
+    });
+
+    it('rejects sparse supplied snapshots without writing', () => {
+        const previousState = requireMidiState();
+        const sparseNotesSnapshot: unknown[] = [];
+        sparseNotesSnapshot.length = 1;
+
+        expect(() => {
+            restoreMidiClipData({
+                clipId: 'clip-restore',
+                notesSnapshot: sparseNotesSnapshot,
+                controlChangeSnapshot: null,
+                pitchBendSnapshot: null,
             });
         }).toThrow('Invalid MIDI clip data snapshot');
 

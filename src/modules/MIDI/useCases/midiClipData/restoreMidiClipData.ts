@@ -37,7 +37,7 @@ function isPlainObject(value: unknown): value is PlainObject {
         return false;
     }
 
-    const prototype = Object.getPrototypeOf(value);
+    const prototype = Reflect.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
 }
 
@@ -103,11 +103,25 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
 }
 
 function validateSnapshot<TRow>({ snapshot, isValidRow }: ValidateSnapshotInput<TRow>): readonly TRow[] {
-    if (!Array.isArray(snapshot) || !snapshot.every(isValidRow)) {
-        throw new Error(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
+    if (!Array.isArray(snapshot)) {
+        throw new TypeError(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
     }
 
-    return snapshot;
+    const validatedRows: TRow[] = [];
+    for (let index = 0; index < snapshot.length; index += 1) {
+        if (!Object.hasOwn(snapshot, index)) {
+            throw new TypeError(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
+        }
+
+        const value: unknown = snapshot[index];
+        if (!isValidRow(value)) {
+            throw new TypeError(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
+        }
+
+        validatedRows.push(value);
+    }
+
+    return validatedRows;
 }
 
 export function restoreMidiClipData({
@@ -139,9 +153,7 @@ export function restoreMidiClipData({
     midiStore.set({
         ...state,
         notesByClipId:
-            validatedNotes === null
-                ? state.notesByClipId
-                : { ...state.notesByClipId, [clipId]: [...validatedNotes] },
+            validatedNotes === null ? state.notesByClipId : { ...state.notesByClipId, [clipId]: [...validatedNotes] },
         ccByClipId:
             validatedControlChanges === null
                 ? state.ccByClipId
