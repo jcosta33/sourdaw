@@ -406,15 +406,19 @@ describe('duplicateTrack', () => {
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
-    it('restores the exact Arrangement snapshot when addTrack writes and then throws', () => {
+    it.each([
+        { label: 'restores selection still owned by the duplicate', interveningSelection: false },
+        { label: 'preserves an intervening selection', interveningSelection: true },
+    ])('$label when addTrack writes and then throws', ({ interveningSelection }) => {
         const source = createTrack({ id: 'track-source' });
         const arrangementSnapshot: TrackState = {
             tracks: [source],
             selectedTrackId: source.id,
             ghostClips: [],
         };
-        const arrangementSnapshotValue = structuredClone(arrangementSnapshot);
         const originalFailure = new Error('addTrack failed after writing');
+        const mutatedSource = { ...source, notes: 'intervening source edit' };
+        const interveningGhost = createClip({ id: 'clip-intervening', type: 'audio' });
         let arrangementState = arrangementSnapshot;
         mocks.getTrackById.mockReturnValue(source);
         mocks.getTrackState.mockImplementation(() => arrangementState);
@@ -422,9 +426,12 @@ describe('duplicateTrack', () => {
             arrangementState = state;
         });
         mocks.addTrack.mockImplementation((input) => {
+            const generatedTrack = createTrack({ id: input.id ?? 'missing-generated-id' });
             arrangementState = {
                 ...arrangementState,
-                tracks: [...arrangementState.tracks, createTrack({ id: input.id })],
+                tracks: [mutatedSource, generatedTrack],
+                selectedTrackId: interveningSelection ? 'track-intervening' : generatedTrack.id,
+                ghostClips: [interveningGhost],
             };
             throw originalFailure;
         });
@@ -437,8 +444,10 @@ describe('duplicateTrack', () => {
         }
 
         expect(thrown).toBe(originalFailure);
-        expect(arrangementState).toBe(arrangementSnapshot);
-        expect(arrangementState).toEqual(arrangementSnapshotValue);
+        expect(arrangementState.tracks).toEqual([mutatedSource]);
+        expect(arrangementState.tracks[0]).toBe(mutatedSource);
+        expect(arrangementState.selectedTrackId).toBe(interveningSelection ? 'track-intervening' : source.id);
+        expect(arrangementState.ghostClips).toEqual([interveningGhost]);
         expect(mocks.setTrackState).toHaveBeenCalledOnce();
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
         expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
@@ -461,7 +470,6 @@ describe('duplicateTrack', () => {
             };
             const midiSnapshot = { values: ['midi-before'] };
             const automationSnapshot = { values: ['automation-before'] };
-            const arrangementSnapshotValue = structuredClone(arrangementSnapshot);
             const midiSnapshotValue = structuredClone(midiSnapshot);
             const automationSnapshotValue = structuredClone(automationSnapshot);
             const originalFailure = new Error(`${failurePoint} failed`);
@@ -488,6 +496,13 @@ describe('duplicateTrack', () => {
             mocks.updateTrack.mockImplementation((trackId, updater) => {
                 mocks.callOrder.push('updateTrack');
                 if (failurePoint === 'update') {
+                    arrangementState = {
+                        ...arrangementState,
+                        tracks: arrangementState.tracks.map((track) =>
+                            track.id === source.id ? { ...track, notes: 'intervening source edit' } : track
+                        ),
+                        ghostClips: [],
+                    };
                     throw originalFailure;
                 }
                 arrangementState = {
@@ -539,8 +554,13 @@ describe('duplicateTrack', () => {
             }[failurePoint];
 
             expect(thrown).toBe(originalFailure);
-            expect(arrangementState).toBe(arrangementSnapshot);
-            expect(arrangementState).toEqual(arrangementSnapshotValue);
+            expect(arrangementState.tracks).toHaveLength(1);
+            expect(arrangementState.tracks[0]?.id).toBe(source.id);
+            expect(arrangementState.tracks[0]?.notes).toBe(
+                failurePoint === 'update' ? 'intervening source edit' : source.notes
+            );
+            expect(arrangementState.selectedTrackId).toBe(source.id);
+            expect(arrangementState.ghostClips).toEqual(failurePoint === 'update' ? [] : [sourceClip]);
             expect(midiState).toBe(midiSnapshot);
             expect(midiState).toEqual(midiSnapshotValue);
             expect(automationState).toBe(automationSnapshot);
@@ -564,12 +584,22 @@ describe('duplicateTrack', () => {
         });
         const arrangementSnapshot: TrackState = { tracks: [source], selectedTrackId: source.id };
         const originalFailure = new Error('automation failed');
+        let arrangementState = arrangementSnapshot;
         mocks.getTrackById.mockReturnValue(source);
-        mocks.getTrackState.mockReturnValue(arrangementSnapshot);
+        mocks.getTrackState.mockImplementation(() => arrangementState);
         mocks.setTrackState.mockImplementation(() => {
             mocks.callOrder.push('rollbackArrangement');
+            throw new Error('arrangement rollback failed');
         });
-        returnCreatedTrack();
+        mocks.addTrack.mockImplementation((input) => {
+            const track = createTrack({ id: input.id ?? 'missing-generated-id', name: input.name, kind: input.kind });
+            arrangementState = {
+                ...arrangementState,
+                tracks: [...arrangementState.tracks, track],
+                selectedTrackId: track.id,
+            };
+            return track;
+        });
         mocks.duplicateMidiClipData.mockImplementation(() => {
             mocks.callOrder.push('duplicateMidiClipData');
             return () => {

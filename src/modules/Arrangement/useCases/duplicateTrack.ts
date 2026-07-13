@@ -65,7 +65,22 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             try {
                 // 3. Add the track without notifying consumers before its duplicate state is complete.
                 rollbacks.push(() => {
-                    setTrackState(arrangementSnapshot);
+                    const current = getTrackState();
+                    if (!current) {
+                        return;
+                    }
+                    const tracks = current.tracks.filter((track) => track.id !== newTrackId);
+                    const restoreSelection = current.selectedTrackId === newTrackId;
+                    if (tracks.length === current.tracks.length && !restoreSelection) {
+                        return;
+                    }
+                    setTrackState({
+                        ...current,
+                        tracks,
+                        selectedTrackId: restoreSelection
+                            ? arrangementSnapshot.selectedTrackId
+                            : current.selectedTrackId,
+                    });
                 });
                 const newTrack = addTrack({
                     id: newTrackId,
