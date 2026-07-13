@@ -11,9 +11,16 @@ import { applyImportedProjectData } from '../applyImportedProjectData';
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
 // Declared via vi.hoisted so the hoisted vi.mock factory below can close over it.
+type RestoreCachedAudioBuffersInput = {
+    audioContext: object;
+    bufferIds?: string[];
+};
+
 const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
+    restoreCachedAudioBuffersFromIdb: vi
+        .fn<(input: RestoreCachedAudioBuffersInput) => Promise<number>>()
+        .mockResolvedValue(0),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -87,6 +94,14 @@ function baseTrack(id: string, clips: ProjectTrack['clips']): ProjectTrack {
 }
 
 function makeProject(): ProjectData {
+    const track = baseTrack('track-audio', [audioClip('clip-a', 'buf-1'), audioClip('clip-b', 'buf-2')]);
+    track.alternatives = [
+        {
+            id: 'track-audio-alt',
+            name: 'Alternative',
+            clips: [audioClip('clip-alt', 'buf-alt')],
+        },
+    ];
     return {
         version: CURRENT_PROJECT_VERSION,
         meta: {
@@ -116,7 +131,7 @@ function makeProject(): ProjectData {
             masterGain: 64,
         },
         arrangement: {
-            tracks: [baseTrack('track-audio', [audioClip('clip-a', 'buf-1'), audioClip('clip-b', 'buf-2')])],
+            tracks: [track],
         },
         automation: { lanes: [] },
         midi: {
@@ -166,12 +181,21 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await applyImportedProjectData(makeProject());
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext,
-            bufferIds: expect.arrayContaining(['buf-1', 'buf-2']),
-        });
         const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
-        expect(call?.bufferIds).toHaveLength(2);
+        expect(call).toEqual({
+            audioContext,
+            bufferIds: ['buf-1', 'buf-2', 'buf-alt'],
+        });
+        expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
+            audioBufferId: 'buf-1',
+            audioOffsetBeats: 1,
+        });
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('bufferId');
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('sampleStartBeat');
+        expect(trackStore.value?.tracks[0]?.alternatives[0]?.clips[0]).toMatchObject({
+            audioBufferId: 'buf-alt',
+            audioOffsetBeats: 1,
+        });
     });
 
     it('publishes imported tracks only after their cached audio buffers finish restoring', async () => {

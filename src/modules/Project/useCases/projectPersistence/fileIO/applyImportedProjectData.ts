@@ -3,15 +3,14 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ProjectData } from '../../../models/ProjectData';
-import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
+import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
-import { hydrateProjectMidi } from './hydrateProjectMidi';
-
-export async function applyImportedProjectData(data: ProjectData): Promise<boolean> {
+async function performImportedProjectDataApplication(data: ProjectData): Promise<boolean> {
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
@@ -26,7 +25,8 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     // graph. Track subscribers can render waveforms from their first update,
     // without a synthetic track-store write after hydration.
     const referencedIds = data.arrangement.tracks
-        .flatMap((track) => track.clips.map((clip) => clip.bufferId))
+        .flatMap((track) => [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)])
+        .map((clip) => clip.bufferId)
         .filter((id): id is string => Boolean(id));
     await restoreCachedAudioBuffersFromIdb({
         audioContext: getAudioContext(),
@@ -49,41 +49,17 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         initialized: true,
     });
 
-    // 3. Hydrate Arrangement Store
-    // Note: The current ProjectData schema collapses to a single arrangement on
-    // import (multi-arrangement reconstruction is deferred — see the inventory
-    // decisions backlog). We wrap the imported arrangement in one snapshot.
-    const arrangementMidi = data.midi
-        ? hydrateProjectMidi(data.midi)
-        : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
-
-    // Older exports (and the inline copy alongside the top-level map) fold each
-    // clip's notes onto the clip itself; fill any clip the top-level map missed.
-    for (const track of data.arrangement.tracks) {
-        for (const clip of track.clips) {
-            if (!arrangementMidi.notesByClipId[clip.id] && clip.notes && clip.notes.length > 0) {
-                arrangementMidi.notesByClipId[clip.id] = clip.notes;
-            }
-        }
-    }
-
-    arrangementStore.set({
-        arrangements: [
-            {
-                id: defaultArrangementId,
-                name: 'Arrangement 1',
-                tracks: {
-                    tracks: data.arrangement.tracks || [],
-                    selectedTrackId: null,
-                },
-                automation: data.automation || { lanes: [] },
-                midi: arrangementMidi,
-            },
-        ],
-        activeArrangementId: defaultArrangementId,
-    });
+    // The current schema still collapses imported projects to one arrangement;
+    // the Project owner publishes that snapshot from the same hydrated tracks.
+    hydrateArrangementStoreFromProjectData(data);
 
     verifyAudioBufferReferences();
     clearUndoHistory();
     return true;
+}
+
+export function applyImportedProjectData(data: ProjectData): Promise<boolean> {
+    return runProjectLoadTransaction({
+        load: () => performImportedProjectDataApplication(data),
+    });
 }

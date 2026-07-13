@@ -6,11 +6,13 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
+import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
-export async function loadRecentProject(key: string): Promise<boolean> {
+async function performRecentProjectLoad(key: string): Promise<boolean> {
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
@@ -41,6 +43,7 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
 
         hydrateModuleStoresFromProjectData(data);
+        hydrateArrangementStoreFromProjectData(data);
 
         projectStore.set({
             name: data.meta.name,
@@ -64,4 +67,10 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }
+}
+
+export function loadRecentProject(key: string): Promise<boolean> {
+    return runProjectLoadTransaction({
+        load: () => performRecentProjectLoad(key),
+    });
 }

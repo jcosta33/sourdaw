@@ -10,11 +10,12 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
+import { hydrateArrangementTracks } from '../fileIO/hydrateArrangementTracks';
 import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
-        hydrateTracksForProject({ tracks: data.arrangement.tracks });
+        hydrateTracksForProject({ tracks: hydrateArrangementTracks(data.arrangement.tracks) });
     }
 
     // 1b. Transport — the exported transport block is a strict subset of the

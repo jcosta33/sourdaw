@@ -13,6 +13,22 @@ export type ProjectStretchMode = 'off' | 'repitch' | 'timestretch';
 
 export type ProjectFollowAction = 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
 
+export type ProjectClipKneadBlob = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
+};
+
+export type ProjectClipKneadState = {
+    blobs: ProjectClipKneadBlob[];
+    retuneSpeedMs: number;
+    humanizePercent: number;
+    formantPreserve: boolean;
+};
+
 export type ProjectClip = {
     id: string;
     trackId: string;
@@ -38,6 +54,7 @@ export type ProjectClip = {
     isGhost?: boolean;
     parentClipId?: string;
     overrides?: Record<string, boolean>;
+    kneadState?: ProjectClipKneadState;
 };
 
 export type ProjectDevice = {

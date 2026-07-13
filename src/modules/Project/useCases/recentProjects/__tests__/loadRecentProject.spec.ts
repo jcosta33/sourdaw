@@ -4,9 +4,14 @@ import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/Aud
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
+import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { loadRecentProject } from '../loadRecentProject';
+
+const { audioContext } = vi.hoisted(() => ({
+    audioContext: { id: 'audio-context' },
+}));
 
 vi.mock('../../../repositories/project/storageOperations', () => ({
     readNamedProjectJson: vi.fn(),
@@ -16,12 +21,15 @@ vi.mock('../../../repositories/project/storageOperations', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
+    getAudioContext: vi.fn(() => audioContext),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
+}));
+vi.mock('../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData', () => ({
+    hydrateArrangementStoreFromProjectData: vi.fn(),
 }));
 vi.mock('../../projectPersistence/helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
@@ -51,6 +59,7 @@ describe('loadRecentProject', () => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
+        vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
@@ -66,10 +75,13 @@ describe('loadRecentProject', () => {
         expect(ok).toBe(true);
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
+        expect(hydrateArrangementStoreFromProjectData).toHaveBeenCalledWith(
+            expect.objectContaining({ version: CURRENT_PROJECT_VERSION })
+        );
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: vi.mocked(getAudioContext).mock.results[0]?.value,
+            audioContext,
         });
     });
 
@@ -120,5 +132,34 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
+    it('serializes overlapping loads so the later request publishes last', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeFirstRestore: (() => void) | undefined;
+        vi.mocked(restoreCachedAudioBuffersFromIdb)
+            .mockImplementationOnce(
+                () =>
+                    new Promise<number>((resolve) => {
+                        completeFirstRestore = () => resolve(0);
+                    })
+            )
+            .mockResolvedValueOnce(0);
+
+        const firstLoad = loadRecentProject('first-project');
+        const secondLoad = loadRecentProject('second-project');
+        await vi.waitFor(() => expect(completeFirstRestore).toBeDefined());
+        const readsBeforeFirstRestoreCompleted = vi.mocked(readNamedProjectJson).mock.calls.length;
+
+        const finishFirstRestore = completeFirstRestore;
+        if (!finishFirstRestore) {
+            throw new Error('Expected first project restoration to be pending');
+        }
+        finishFirstRestore();
+        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual([true, true]);
+
+        expect(readsBeforeFirstRestoreCompleted).toBe(1);
+        expect(readNamedProjectJson).toHaveBeenNthCalledWith(1, 'first-project');
+        expect(readNamedProjectJson).toHaveBeenNthCalledWith(2, 'second-project');
     });
 });
