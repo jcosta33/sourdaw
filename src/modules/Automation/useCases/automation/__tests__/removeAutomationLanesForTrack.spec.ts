@@ -71,4 +71,16 @@ describe('removeAutomationLanesForTrack', () => {
         expect(mocks.getValue).toHaveBeenCalledTimes(1);
         expect(mocks.set).not.toHaveBeenCalled();
     });
+
+    it('does not write when no lane matches the track', () => {
+        const unrelatedLane = createLane('lane-2', 'track-2');
+        const previousState: AutomationStoreState = { lanes: [unrelatedLane] };
+        mocks.state.value = previousState;
+
+        removeAutomationLanesForTrack('track-1');
+
+        expect(mocks.getValue).toHaveBeenCalledTimes(1);
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(previousState);
+    });
 });

@@ -95,4 +95,23 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['c1', 'c2', 'c3']);
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 't1' });
     });
+
+    it('should clean active clip MIDI for a legacy track without alternatives', () => {
+        const track = {
+            id: 'legacy-track',
+            name: 'Legacy',
+            kind: 'midi' as const,
+            clips: [{ id: 'legacy-clip' }],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [track as never],
+            selectedTrackId: null,
+        } as unknown as ReturnType<typeof getTrackState>);
+        vi.mocked(getTrackById).mockReturnValue(track as never);
+
+        removeTrack('legacy-track');
+
+        expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['legacy-clip']);
+        expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'legacy-track' });
+    });
 });

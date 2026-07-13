@@ -6,7 +6,12 @@ export function removeAutomationLanesForTrack(trackId: string): void {
         return;
     }
 
+    const lanes = state.lanes.filter((lane) => lane.trackId !== trackId);
+    if (lanes.length === state.lanes.length) {
+        return;
+    }
+
     automationStore.set({
-        lanes: state.lanes.filter((lane) => lane.trackId !== trackId),
+        lanes,
     });
 }
