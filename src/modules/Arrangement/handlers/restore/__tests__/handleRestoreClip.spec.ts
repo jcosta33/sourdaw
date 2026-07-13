@@ -8,15 +8,16 @@ import { type updateTrack } from '../../../useCases/updateTrack';
 import { handleRestoreClip } from '../handleRestoreClip';
 
 type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
+type RestoreClipPayload = RestoreClipAction['payload'];
 
 type RestoreMidiClipDataInput = {
-    clipId: string;
-    notesSnapshot: readonly unknown[] | null;
-    controlChangeSnapshot: readonly unknown[] | null;
-    pitchBendSnapshot: readonly unknown[] | null;
+    clipId: RestoreClipPayload['clipId'];
+    notesSnapshot: RestoreClipPayload['midiNotesSnapshot'];
+    controlChangeSnapshot: RestoreClipPayload['midiCcSnapshot'];
+    pitchBendSnapshot: RestoreClipPayload['midiPitchBendSnapshot'];
 };
 
-type MidiSnapshotInput = Omit<RestoreMidiClipDataInput, 'clipId'>;
+type MidiSnapshotInput = Pick<RestoreClipPayload, 'midiNotesSnapshot' | 'midiCcSnapshot' | 'midiPitchBendSnapshot'>;
 
 type SnapshotPresence = {
     label: string;
@@ -72,9 +73,9 @@ function createRestoreClipAction(overrides: Partial<RestoreClipAction['payload']
 
 function createMidiSnapshots({ notes, controlChanges, pitchBends }: SnapshotPresence): MidiSnapshotInput {
     return {
-        notesSnapshot: notes ? [{ id: 'note-1', pitch: 60 }] : null,
-        controlChangeSnapshot: controlChanges ? [{ id: 'cc-1', value: 64 }] : null,
-        pitchBendSnapshot: pitchBends ? [{ id: 'pitch-1', value: 256 }] : null,
+        midiNotesSnapshot: notes ? [{ id: 'note-1' }] : null,
+        midiCcSnapshot: controlChanges ? [{ id: 'cc-1' }] : null,
+        midiPitchBendSnapshot: pitchBends ? [{ id: 'pitch-1' }] : null,
     };
 }
 
@@ -162,9 +163,7 @@ describe('handleRestoreClip', () => {
                                   shiftedClips: [{ clipId: 'c2', origStartBeat: 1, origEndBeat: 2 }],
                               }
                             : null,
-                    midiNotesSnapshot: snapshots.notesSnapshot,
-                    midiCcSnapshot: snapshots.controlChangeSnapshot,
-                    midiPitchBendSnapshot: snapshots.pitchBendSnapshot,
+                    ...snapshots,
                 });
 
                 void handleRestoreClip.execute(action);
