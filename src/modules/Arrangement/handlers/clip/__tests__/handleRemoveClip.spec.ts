@@ -1,13 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type MidiStoreState } from '#/modules/MIDI/stores';
+
+import { type rippleDeleteClips } from '../../../useCases/rippleDelete/rippleDeleteClips';
 import { handleRemoveClip } from '../handleRemoveClip';
 
+type RippleDeleteInput = Parameters<typeof rippleDeleteClips>[0];
+type RippleDeleteResult = NonNullable<ReturnType<typeof rippleDeleteClips>>;
+type TestClip = RippleDeleteResult['removedClips'][number];
+
+type TestTrackState = {
+    tracks: { id: string; clips: TestClip[] }[];
+};
+
+type CreateTestClipInput = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+};
+
+function createTestClip({ id, startBeat, endBeat }: CreateTestClipInput): TestClip {
+    return {
+        id,
+        trackId: 't1',
+        name: `Clip ${id}`,
+        startBeat,
+        endBeat,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ffffff',
+        locked: false,
+        muted: false,
+    };
+}
+
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    removeClip: vi.fn(),
-    planRippleDelete: vi.fn(),
-    rippleDeleteClips: vi.fn(),
-    midiStoreValue: { value: null } as any,
+    getTrackStoreState: vi.fn<() => TestTrackState | null>(),
+    removeClip: vi.fn<(clipId: string) => void>(),
+    planRippleDelete: vi.fn<(input: RippleDeleteInput) => RippleDeleteResult | null>(),
+    rippleDeleteClips: vi.fn<typeof rippleDeleteClips>(),
+    getMidiStoreState: vi.fn<() => MidiStoreState | null>(),
+    removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -26,90 +61,161 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
     rippleDeleteClips: mocks.rippleDeleteClips,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        get value() {
-            return mocks.midiStoreValue.value;
-        },
-    },
+vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiStoreState: mocks.getMidiStoreState,
+    removeMidiClipData: mocks.removeMidiClipData,
 }));
 
 describe('handleRemoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.midiStoreValue.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.planRippleDelete.mockReturnValue(null);
-        mocks.rippleDeleteClips.mockReturnValue(false);
+        mocks.rippleDeleteClips.mockReturnValue(null);
+        mocks.getMidiStoreState.mockReturnValue(null);
     });
 
     describe('execute', () => {
         it('removes clip directly if track state is missing', () => {
-            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            expect(result).toBeUndefined();
+            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
             expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
+            expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
         it('removes clip directly if clip is not found in tracks', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
-            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            expect(result).toBeUndefined();
+            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
-        it('attempts ripple delete and falls back to regular remove if ripple returns false', () => {
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [{ id: 'c1' }] }] });
+        it('attempts ripple delete and falls back to regular remove if ripple returns null', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [clip] }],
+            });
+
+            const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            expect(result).toBeUndefined();
+            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
+            expect(mocks.removeClip).toHaveBeenCalledTimes(1);
+            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
+        });
+
+        it('surfaces a stale false ripple result instead of silently taking the fallback', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+            // @ts-expect-error -- Regression injects the retired boolean result outside the object|null contract.
             mocks.rippleDeleteClips.mockReturnValue(false);
 
-            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
-
-            expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
-            expect(mocks.removeClip).toHaveBeenCalledWith('c1');
+            expect(() => handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } })).toThrow();
+            expect(mocks.removeClip).not.toHaveBeenCalled();
+            expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
         });
 
-        it('attempts ripple delete and succeeds without falling back', () => {
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [{ id: 'c1' }] }] });
-            mocks.rippleDeleteClips.mockReturnValue(true);
+        it('cleans every ripple-removed clip in one MIDI owner call after the ripple mutation', () => {
+            const removedClips: TestClip[] = [
+                createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 }),
+                createTestClip({ id: 'c2', startBeat: 1, endBeat: 2 }),
+            ];
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [removedClips[0]] }] });
+            mocks.rippleDeleteClips.mockReturnValue({ removedClips, shiftedClips: [] });
 
-            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
+            expect(result).toBeUndefined();
             expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
             expect(mocks.removeClip).not.toHaveBeenCalled();
+            expect(mocks.removeMidiClipData).toHaveBeenCalledTimes(1);
+            expect(mocks.removeMidiClipData).toHaveBeenCalledWith(['c1', 'c2']);
+
+            const rippleMutationOrder = mocks.rippleDeleteClips.mock.invocationCallOrder[0] ?? 0;
+            const midiCleanupOrder = mocks.removeMidiClipData.mock.invocationCallOrder[0] ?? 0;
+            expect(rippleMutationOrder).toBeLessThan(midiCleanupOrder);
         });
     });
 
     describe('describe', () => {
         it('returns simple label if state or clip is missing', () => {
             const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
-            expect(desc.label).toBe('Remove clip');
-            expect((desc as any).inverseAction).toBeUndefined();
+            expect(desc).toEqual({ label: 'Remove clip' });
         });
 
         it('returns inverse action with full clip and MIDI snapshots', () => {
-            const mockClip = { id: 'c1', name: 'Clip 1' };
+            const mockClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            const rippleRemovedClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            const rippleShift = { clipId: 'c2', origStartBeat: 1, origEndBeat: 2 };
+            const ripplePlanSource = { removedClips: [rippleRemovedClip], shiftedClips: [rippleShift] };
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [mockClip] }] });
-            mocks.planRippleDelete.mockReturnValue({ removedClips: [], shiftedClips: [] });
+            mocks.planRippleDelete.mockReturnValue(ripplePlanSource);
 
-            const mockMidiNotes = [{ id: 'n1', pitch: 60 }];
-            mocks.midiStoreValue.value = {
+            const mockMidiNote = { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+            const mockMidiCc = { id: 'cc1', controller: 1, value: 64, beat: 0.5, channel: 1 };
+            const mockMidiPitchBend = { id: 'pb1', value: 256, beat: 0.75, channel: 1 };
+            const mockMidiNotes = [mockMidiNote];
+            const mockMidiCcs = [mockMidiCc];
+            const mockMidiPitchBends = [mockMidiPitchBend];
+            mocks.getMidiStoreState.mockReturnValue({
                 notesByClipId: { c1: mockMidiNotes },
-                ccByClipId: {},
-                pitchBendByClipId: {},
-            };
+                ccByClipId: { c1: mockMidiCcs },
+                pitchBendByClipId: { c1: mockMidiPitchBends },
+            });
 
             const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
 
             expect(desc.label).toBe('Remove clip');
-            expect(desc.inverseAction).toBeDefined();
-            expect(desc.inverseAction?.type).toBe('restoreClip');
-            expect(desc.inverseAction?.payload).toMatchObject({
+            expect(mocks.getMidiStoreState).toHaveBeenCalledTimes(1);
+
+            if (!desc.inverseAction || desc.inverseAction.type !== 'restoreClip') {
+                throw new Error('Expected a restoreClip inverse action');
+            }
+
+            expect(desc.inverseAction.payload).toMatchObject({
                 clipId: 'c1',
                 trackId: 't1',
                 clipSnapshot: mockClip,
-                ripplePlan: { removedClips: [], shiftedClips: [] },
+                ripplePlan: ripplePlanSource,
                 midiNotesSnapshot: mockMidiNotes,
-                midiCcSnapshot: null,
-                midiPitchBendSnapshot: null,
+                midiCcSnapshot: mockMidiCcs,
+                midiPitchBendSnapshot: mockMidiPitchBends,
             });
+            expect(desc.inverseAction.payload.clipSnapshot).not.toBe(mockClip);
+            expect(desc.inverseAction.payload.ripplePlan).not.toBe(ripplePlanSource);
+            expect(desc.inverseAction.payload.ripplePlan?.removedClips).not.toBe(ripplePlanSource.removedClips);
+            expect(desc.inverseAction.payload.ripplePlan?.shiftedClips).not.toBe(ripplePlanSource.shiftedClips);
+            expect(desc.inverseAction.payload.midiNotesSnapshot).not.toBe(mockMidiNotes);
+            expect(desc.inverseAction.payload.midiCcSnapshot).not.toBe(mockMidiCcs);
+            expect(desc.inverseAction.payload.midiPitchBendSnapshot).not.toBe(mockMidiPitchBends);
+
+            mockClip.startBeat = 99;
+            rippleRemovedClip.startBeat = 99;
+            rippleShift.origStartBeat = 99;
+            mockMidiNote.pitch = 72;
+            mockMidiCc.value = 127;
+            mockMidiPitchBend.value = 1024;
+
+            expect(desc.inverseAction.payload.clipSnapshot.startBeat).toBe(0);
+            expect(desc.inverseAction.payload.ripplePlan?.removedClips[0]?.startBeat).toBe(0);
+            expect(desc.inverseAction.payload.ripplePlan?.shiftedClips[0]?.origStartBeat).toBe(1);
+            expect(desc.inverseAction.payload.midiNotesSnapshot).toEqual([
+                { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+            ]);
+            expect(desc.inverseAction.payload.midiCcSnapshot).toEqual([
+                { id: 'cc1', controller: 1, value: 64, beat: 0.5, channel: 1 },
+            ]);
+            expect(desc.inverseAction.payload.midiPitchBendSnapshot).toEqual([
+                { id: 'pb1', value: 256, beat: 0.75, channel: 1 },
+            ]);
         });
     });
 
