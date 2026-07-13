@@ -35,6 +35,7 @@ export { formatChordName } from './formatChordName';
 export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
 export { setMidiStoreState } from './setMidiStoreState';
+export { removeMidiClipData } from './midiClipData/removeMidiClipData';
 
 export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
 export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';

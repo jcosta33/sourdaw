@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores';
+import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { removeClip } from '../../useCases/clip/removeClip';
@@ -10,19 +10,6 @@ import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
 type MinimalClipShape = { id: string; trackId: string; startBeat: number; endBeat: number };
 type MidiEntry = { readonly id: string };
-
-function cleanupMidiData(clipId: string): void {
-    const ms = midiStore.value;
-    if (!ms) {
-        return;
-    }
-    const { [clipId]: _notes, ...restNotes } = ms.notesByClipId;
-    const { [clipId]: _cc, ...restCc } = ms.ccByClipId;
-    const { [clipId]: _pb, ...restPb } = ms.pitchBendByClipId;
-    if (_notes || _cc || _pb) {
-        midiStore.set({ ...ms, notesByClipId: restNotes, ccByClipId: restCc, pitchBendByClipId: restPb });
-    }
-}
 
 export const handleRemoveClip = createHandler<'removeClip'>({
     execute: (alpha) => {
@@ -38,34 +25,14 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         }
         if (!trackId) {
             removeClip(alpha.payload.clipId);
-            cleanupMidiData(alpha.payload.clipId);
             return;
         }
         const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
         if (!rippleResult) {
             removeClip(alpha.payload.clipId);
-            cleanupMidiData(alpha.payload.clipId);
             return;
         }
-        // Batch MIDI cleanup for all removed clips in a single store write
-        const ms = midiStore.value;
-        if (ms) {
-            const notesCopy = { ...ms.notesByClipId };
-            const ccCopy = { ...ms.ccByClipId };
-            const pbCopy = { ...ms.pitchBendByClipId };
-            let changed = false;
-            for (const removed of rippleResult.removedClips) {
-                if (notesCopy[removed.id] || ccCopy[removed.id] || pbCopy[removed.id]) {
-                    delete notesCopy[removed.id];
-                    delete ccCopy[removed.id];
-                    delete pbCopy[removed.id];
-                    changed = true;
-                }
-            }
-            if (changed) {
-                midiStore.set({ ...ms, notesByClipId: notesCopy, ccByClipId: ccCopy, pitchBendByClipId: pbCopy });
-            }
-        }
+        removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
     },
     describe: (alpha) => {
         const state = getTrackStoreState();
@@ -93,7 +60,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
               }
             : null;
 
-        const midiState = midiStore.value;
+        const midiState = getMidiStoreState();
         const notes = midiState?.notesByClipId[alpha.payload.clipId];
         const cc = midiState?.ccByClipId[alpha.payload.clipId];
         const pb = midiState?.pitchBendByClipId[alpha.payload.clipId];
