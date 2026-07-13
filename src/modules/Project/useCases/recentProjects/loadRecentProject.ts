@@ -9,10 +9,18 @@ import { projectStore } from '../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import {
+    type ProjectLoadTransaction,
+    runProjectLoadTransaction,
+} from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
-async function performRecentProjectLoad(key: string): Promise<boolean> {
+type PerformRecentProjectLoadInput = {
+    key: string;
+    transaction: ProjectLoadTransaction;
+};
+
+async function performRecentProjectLoad({ key, transaction }: PerformRecentProjectLoadInput): Promise<boolean> {
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
@@ -25,6 +33,10 @@ async function performRecentProjectLoad(key: string): Promise<boolean> {
         const data = JSON.parse(raw) as ProjectData;
         if (!isSupportedProjectVersion(data.version)) {
             logger.warn(`Unsupported project version for key: ${key}`);
+            return false;
+        }
+
+        if (!transaction.isCurrent()) {
             return false;
         }
 
@@ -42,8 +54,12 @@ async function performRecentProjectLoad(key: string): Promise<boolean> {
         // waveform consumers are ready on the first real track update.
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
 
+        if (!transaction.isCurrent()) {
+            return false;
+        }
+
         hydrateModuleStoresFromProjectData(data);
-        hydrateArrangementStoreFromProjectData(data);
+        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
 
         projectStore.set({
             name: data.meta.name,
@@ -70,7 +86,8 @@ async function performRecentProjectLoad(key: string): Promise<boolean> {
 }
 
 export function loadRecentProject(key: string): Promise<boolean> {
-    return runProjectLoadTransaction({
-        load: () => performRecentProjectLoad(key),
+    return performRecentProjectLoad({
+        key,
+        transaction: runProjectLoadTransaction(),
     });
 }

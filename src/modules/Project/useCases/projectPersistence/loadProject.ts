@@ -12,9 +12,11 @@ import { projectStore } from '../../stores/projectStore';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
+    const transaction = runProjectLoadTransaction();
     const current = projectStore.value;
     if (current) {
         projectStore.set({ ...current, loading: true });
@@ -28,6 +30,10 @@ export async function loadProject(): Promise<boolean> {
     } catch (error) {
         logger.warn('[loadProject] CRDT load failed, creating new project:', error);
         await createCrdtProject('Untitled Project');
+    }
+
+    if (!transaction.isCurrent()) {
+        return false;
     }
 
     // Reset per-device-instance stores (§13.1) before hydration so stale device

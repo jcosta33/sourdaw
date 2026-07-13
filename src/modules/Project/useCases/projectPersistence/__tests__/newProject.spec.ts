@@ -9,6 +9,7 @@ import { stopPlayback } from '#/modules/Transport/useCases/transportControls/sto
 
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
 
 vi.mock('#/modules/Transport/useCases/transportControls/stopPlayback', () => ({
@@ -27,6 +28,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
+}));
+
+vi.mock('../helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: vi.fn(() => ({ isCurrent: () => true })),
 }));
 
 vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
@@ -50,6 +55,7 @@ describe('newProject injectable', () => {
     it('should forward to injected collaborators in fresh-project order', () => {
         newProject('Test');
 
+        expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);

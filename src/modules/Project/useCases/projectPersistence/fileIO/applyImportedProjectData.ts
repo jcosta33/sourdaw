@@ -7,10 +7,22 @@ import { projectStore } from '../../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
-async function performImportedProjectDataApplication(data: ProjectData): Promise<boolean> {
+type PerformImportedProjectDataApplicationInput = {
+    data: ProjectData;
+    transaction: ProjectLoadTransaction;
+};
+
+async function performImportedProjectDataApplication({
+    data,
+    transaction,
+}: PerformImportedProjectDataApplicationInput): Promise<boolean> {
+    if (!transaction.isCurrent()) {
+        return false;
+    }
+
     // Validated — stop any in-flight playback and tear down the previous
     // project's audio graph before we hydrate stores for the imported project.
     stopPlayback();
@@ -24,14 +36,26 @@ async function performImportedProjectDataApplication(data: ProjectData): Promise
     // Restore referenced runtime buffers before publishing the imported track
     // graph. Track subscribers can render waveforms from their first update,
     // without a synthetic track-store write after hydration.
-    const referencedIds = data.arrangement.tracks
-        .flatMap((track) => [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)])
-        .map((clip) => clip.bufferId)
-        .filter((id): id is string => Boolean(id));
+    const referencedIds = [
+        ...new Set(
+            data.arrangement.tracks.flatMap((track) => [
+                track.freezeState.frozenBufferId,
+                track.frozenBufferId,
+                ...track.clips.map((clip) => clip.bufferId ?? clip.audioBufferId),
+                ...track.alternatives.flatMap((alternative) =>
+                    alternative.clips.map((clip) => clip.bufferId ?? clip.audioBufferId)
+                ),
+            ])
+        ),
+    ].filter((id): id is string => Boolean(id));
     await restoreCachedAudioBuffersFromIdb({
         audioContext: getAudioContext(),
         bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
     });
+
+    if (!transaction.isCurrent()) {
+        return false;
+    }
 
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);
@@ -51,15 +75,21 @@ async function performImportedProjectDataApplication(data: ProjectData): Promise
 
     // The current schema still collapses imported projects to one arrangement;
     // the Project owner publishes that snapshot from the same hydrated tracks.
-    hydrateArrangementStoreFromProjectData(data);
+    hydrateArrangementStoreFromProjectData({ data });
 
     verifyAudioBufferReferences();
     clearUndoHistory();
     return true;
 }
 
-export function applyImportedProjectData(data: ProjectData): Promise<boolean> {
-    return runProjectLoadTransaction({
-        load: () => performImportedProjectDataApplication(data),
+type ApplyImportedProjectDataInput = {
+    data: ProjectData;
+    transaction?: ProjectLoadTransaction;
+};
+
+export function applyImportedProjectData({ data, transaction }: ApplyImportedProjectDataInput): Promise<boolean> {
+    return performImportedProjectDataApplication({
+        data,
+        transaction: transaction ?? runProjectLoadTransaction(),
     });
 }

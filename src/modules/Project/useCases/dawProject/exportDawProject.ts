@@ -8,6 +8,8 @@ import { type ProjectData } from '../../models/ProjectData';
 import { arrangementStore } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../arrangement/syncCurrentArrangementToStore';
+import { serializeArrangementTracks } from '../projectPersistence/fileIO/serializeArrangementTracks';
+import { serializeProjectMidi } from '../projectPersistence/fileIO/serializeProjectMidi';
 
 import { buildDawProjectZip } from './buildDawProjectZip';
 import { serializeMetadataXml } from './serializeMetadataXml';
@@ -119,12 +121,19 @@ export async function exportDawProject(): ExportDawProjectOutput {
         markers: (markerStore.value?.markers ?? []).map((m) => ({
             id: m.id,
             beat: m.beat,
-            name: m.name ?? 'Untitled',
+            name: m.name,
             color: m.color,
         })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: undefined,
-        arrangements: arrState.arrangements,
+        arrangements: arrState.arrangements.map((snapshot) => ({
+            ...snapshot,
+            tracks: {
+                ...snapshot.tracks,
+                tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
+            },
+            midi: serializeProjectMidi(snapshot.midi),
+        })),
         activeArrangementId: arrState.activeArrangementId,
         history: { checkpoints: [] },
     };

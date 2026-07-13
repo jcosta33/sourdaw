@@ -237,7 +237,15 @@ function reset_store_values(): void {
     };
     mocks.arrangement_store.value = {
         activeArrangementId: 'arrangement-1',
-        arrangements: [{ id: 'arrangement-1', name: 'Arrangement', trackIds: ['track-1'] }],
+        arrangements: [
+            {
+                id: 'arrangement-1',
+                name: 'Arrangement',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
     };
 }
 

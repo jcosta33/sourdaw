@@ -231,6 +231,9 @@ describe('exportProjectFile round-trip shape', () => {
             'buf-current-clip': cached_buffer,
             'buf-arrangement-alt': cached_buffer,
         });
+        const saved_arrangement_clip = written().arrangements?.[0]?.tracks?.tracks[0]?.clips[0];
+        expect(saved_arrangement_clip).toMatchObject({ bufferId: 'buf-arrangement-clip' });
+        expect(saved_arrangement_clip).not.toHaveProperty('audioBufferId');
         expect(notifyUser).toHaveBeenCalledWith(
             '4 audio files could not be bundled with the export — the project may not play back correctly on another machine.',
             'warning'

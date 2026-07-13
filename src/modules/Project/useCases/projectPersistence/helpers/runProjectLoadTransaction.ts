@@ -1,18 +1,14 @@
-let projectLoadQueue: Promise<void> = Promise.resolve();
+let currentProjectTransitionId = 0;
 
-type RunProjectLoadTransactionInput<ResultValue> = {
-    load: () => Promise<ResultValue>;
+export type ProjectLoadTransaction = {
+    isCurrent: () => boolean;
 };
 
-type RunProjectLoadTransactionOutput<ResultValue> = Promise<ResultValue>;
+type RunProjectLoadTransactionOutput = ProjectLoadTransaction;
 
-export function runProjectLoadTransaction<ResultValue>({
-    load,
-}: RunProjectLoadTransactionInput<ResultValue>): RunProjectLoadTransactionOutput<ResultValue> {
-    const result = projectLoadQueue.then(load, load);
-    projectLoadQueue = result.then(
-        () => undefined,
-        () => undefined
-    );
-    return result;
+export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {
+    const transitionId = ++currentProjectTransitionId;
+    return {
+        isCurrent: () => transitionId === currentProjectTransitionId,
+    };
 }

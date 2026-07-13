@@ -3,6 +3,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { isSupportedProjectVersion, type ProjectData } from '../../../models/ProjectData';
 import { pickFiles } from '../../fileDialog';
+import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
 
@@ -15,6 +16,8 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     if (!paths || paths.length === 0) {
         return false;
     }
+
+    const transaction = runProjectLoadTransaction();
 
     try {
         const file = paths[0];
@@ -29,7 +32,7 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
 
-        return await applyImportedProjectData(data);
+        return await applyImportedProjectData({ data, transaction });
     } catch (error) {
         notifyUser('Failed to read project file', 'error');
         logger.error(new Error('Import error', { cause: error }));

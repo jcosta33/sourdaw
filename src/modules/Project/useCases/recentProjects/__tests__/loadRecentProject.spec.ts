@@ -7,6 +7,7 @@ import { readNamedProjectJson, writeProjectJson } from '../../../repositories/pr
 import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadRecentProject } from '../loadRecentProject';
 
 const { audioContext } = vi.hoisted(() => ({
@@ -62,7 +63,7 @@ describe('loadRecentProject', () => {
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
+        vi.mocked(restoreCachedAudioBuffersFromIdb).mockReset().mockResolvedValue(0);
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -75,9 +76,9 @@ describe('loadRecentProject', () => {
         expect(ok).toBe(true);
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
-        expect(hydrateArrangementStoreFromProjectData).toHaveBeenCalledWith(
-            expect.objectContaining({ version: CURRENT_PROJECT_VERSION })
-        );
+        const arrangementHydration = vi.mocked(hydrateArrangementStoreFromProjectData).mock.calls[0]?.[0];
+        expect(arrangementHydration?.data.version).toBe(CURRENT_PROJECT_VERSION);
+        expect(arrangementHydration?.preserveSavedArrangements).toBe(true);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
@@ -134,7 +135,7 @@ describe('loadRecentProject', () => {
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
     });
 
-    it('serializes overlapping loads so the later request publishes last', async () => {
+    it('supersedes an older overlapping load with the latest request', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         let completeFirstRestore: (() => void) | undefined;
         vi.mocked(restoreCachedAudioBuffersFromIdb)
@@ -149,17 +150,41 @@ describe('loadRecentProject', () => {
         const firstLoad = loadRecentProject('first-project');
         const secondLoad = loadRecentProject('second-project');
         await vi.waitFor(() => expect(completeFirstRestore).toBeDefined());
-        const readsBeforeFirstRestoreCompleted = vi.mocked(readNamedProjectJson).mock.calls.length;
 
         const finishFirstRestore = completeFirstRestore;
         if (!finishFirstRestore) {
             throw new Error('Expected first project restoration to be pending');
         }
         finishFirstRestore();
-        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual([true, true]);
+        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual([false, true]);
 
-        expect(readsBeforeFirstRestoreCompleted).toBe(1);
+        expect(readNamedProjectJson).toHaveBeenCalledTimes(2);
         expect(readNamedProjectJson).toHaveBeenNthCalledWith(1, 'first-project');
         expect(readNamedProjectJson).toHaveBeenNthCalledWith(2, 'second-project');
+    });
+
+    it('does not publish after a newer project transition starts', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<number>((resolve) => {
+                    completeRestore = () => resolve(0);
+                })
+        );
+
+        const loading = loadRecentProject('old-project');
+        await vi.waitFor(() => expect(completeRestore).toBeDefined());
+        runProjectLoadTransaction();
+
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
+
+        await expect(loading).resolves.toBe(false);
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        expect(hydrateArrangementStoreFromProjectData).not.toHaveBeenCalled();
     });
 });

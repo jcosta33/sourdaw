@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { applyImportedProjectData } from '../projectPersistence/fileIO/applyImportedProjectData';
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { decodeDawProjectAssets } from './decodeDawProjectAssets';
 import { mapToProjectData } from './mapToProjectData';
@@ -15,6 +16,7 @@ export type ImportDawProjectInput = {
 export type ImportDawProjectOutput = Promise<boolean>;
 
 export async function importDawProject(input: ImportDawProjectInput): ImportDawProjectOutput {
+    const transaction = runProjectLoadTransaction();
     let parsed;
     try {
         parsed = parseDawProject(input.buffer);
@@ -37,7 +39,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
     });
 
     try {
-        const ok = await applyImportedProjectData(projectData);
+        const ok = await applyImportedProjectData({ data: projectData, transaction });
         if (ok) {
             const trackCount = projectData.arrangement.tracks.length;
             notifyUser(`Imported ${parsed.meta.title || input.fileName} (${String(trackCount)} tracks)`, 'success');

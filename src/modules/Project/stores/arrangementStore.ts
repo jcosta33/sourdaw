@@ -39,6 +39,7 @@ export type ProjectClip = {
     audioBufferId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;
@@ -52,7 +53,11 @@ export type ProjectClip = {
     followAction?: ProjectFollowAction;
     generating?: boolean;
     isGhost?: boolean;
+    isInlineEditing?: boolean;
     parentClipId?: string;
+    isLinkedInstance?: boolean;
+    sourceKeyRoot?: number;
+    sourceScaleName?: string;
     overrides?: Record<string, boolean>;
     kneadState?: ProjectClipKneadState;
 };

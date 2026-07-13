@@ -95,6 +95,9 @@ function baseTrack(id: string, clips: ProjectTrack['clips']): ProjectTrack {
 
 function makeProject(): ProjectData {
     const track = baseTrack('track-audio', [audioClip('clip-a', 'buf-1'), audioClip('clip-b', 'buf-2')]);
+    track.frozen = true;
+    track.frozenBufferId = 'buf-frozen';
+    track.freezeState = { status: 'frozen', frozenBufferId: 'buf-frozen' };
     track.alternatives = [
         {
             id: 'track-audio-alt',
@@ -178,13 +181,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('resolves clip bufferIds and passes them to restoreCachedAudioBuffersFromIdb (keystone)', async () => {
-        await applyImportedProjectData(makeProject());
+        await applyImportedProjectData({ data: makeProject() });
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
         const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
         expect(call).toEqual({
             audioContext,
-            bufferIds: ['buf-1', 'buf-2', 'buf-alt'],
+            bufferIds: ['buf-frozen', 'buf-1', 'buf-2', 'buf-alt'],
         });
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
@@ -217,7 +220,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
             }
         });
 
-        const applying = applyImportedProjectData(makeProject());
+        const applying = applyImportedProjectData({ data: makeProject() });
         await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
         expect(publicationStates).toEqual([]);
@@ -236,7 +239,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const project = makeProject();
         project.arrangement.tracks = [baseTrack('track-audio', [])];
 
-        await applyImportedProjectData(project);
+        await applyImportedProjectData({ data: project });
 
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
@@ -246,7 +249,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('hydrates the transport store from the imported transport block', async () => {
-        await applyImportedProjectData(makeProject());
+        await applyImportedProjectData({ data: makeProject() });
 
         const transport = transportStore.value!;
         expect(transport.tempo).toBe(137);
@@ -257,7 +260,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('hydrates the MIDI store (notes + CC) from the imported midi maps', async () => {
-        await applyImportedProjectData(makeProject());
+        await applyImportedProjectData({ data: makeProject() });
 
         const midi = midiStore.value!;
         expect(midi.notesByClipId['clip-midi']?.[0]?.pitch).toBe(72);
@@ -269,7 +272,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('exposes the imported tracks on the active arrangement snapshot', async () => {
-        await applyImportedProjectData(makeProject());
+        await applyImportedProjectData({ data: makeProject() });
 
         const state = arrangementStore.value!;
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
