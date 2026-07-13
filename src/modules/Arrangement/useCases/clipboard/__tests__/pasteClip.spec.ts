@@ -53,7 +53,6 @@ vi.mock('../../clip/addClip', () => ({
 
 function createClipboardEntry(
     input: {
-        clipId?: string;
         endBeat?: number;
         midiNotes?: MidiNote[];
         name?: string;
@@ -66,7 +65,7 @@ function createClipboardEntry(
     return {
         sourceTrackId,
         clip: {
-            id: input.clipId ?? 'source-clip',
+            id: 'source-clip',
             trackId: sourceTrackId,
             name: input.name ?? 'Source clip',
             startBeat: input.startBeat ?? 4,
@@ -167,7 +166,6 @@ describe('pasteClip', () => {
             .mockReturnValueOnce('22222222-2222-4222-8222-222222222222')
             .mockReturnValueOnce('33333333-3333-4333-8333-333333333333');
         const uuidCallCountsAtOwner: number[] = [];
-        mocks.transportState.value = {};
         mocks.playheadPositionRef.current = 12;
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
@@ -181,7 +179,6 @@ describe('pasteClip', () => {
         });
         setClipClipboard([
             createClipboardEntry({
-                clipId: 'source-later-clip',
                 startBeat: 9,
                 endBeat: 11,
                 name: 'Later clip',
@@ -189,7 +186,6 @@ describe('pasteClip', () => {
                 midiNotes: laterClipNotes,
             }),
             createClipboardEntry({
-                clipId: 'source-earlier-clip',
                 startBeat: 4,
                 endBeat: 7,
                 name: 'Earlier clip',
@@ -217,7 +213,6 @@ describe('pasteClip', () => {
             type: 'midi',
             audioBufferId: undefined,
         });
-        expect(mocks.setNotesForClip).toHaveBeenCalledTimes(2);
         expect(mocks.setNotesForClip.mock.calls).toStrictEqual([
             [
                 'pasted-later-clip',
@@ -274,7 +269,7 @@ describe('pasteClip', () => {
     it('skips MIDI ownership work when addClip fails or copied notes are absent or empty', () => {
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: null,
-            tracks: [{ id: 'source-track' }],
+            tracks: [{ id: 'unrelated-track' }, { id: 'source-track' }],
         });
         mocks.addClip.mockReturnValue(null);
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
@@ -287,6 +282,7 @@ describe('pasteClip', () => {
         pasteClip();
 
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'source-track' }));
         expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
 
@@ -295,6 +291,7 @@ describe('pasteClip', () => {
 
         pasteClip();
 
+        expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 });
