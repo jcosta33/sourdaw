@@ -1,150 +1,80 @@
-# Sourdaw Web App - AI Agent Guidelines
+# Sourdaw Web App — Agent Guidelines
 
-This document provides the canonical instructions and architectural rules that YOU, the AI agent, MUST follow at all times. By existing in this file, these rules are permanently injected into your system prompt.
+Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, Copilot Coding Agent, Claude Code). `CLAUDE.md` is a symlink to this file.
 
----
+## Checks
 
-## Project methodology
+See `package.json` for all scripts.
 
-Use proportional intent, review, and findings records around implementation
-work. Implementation is the work itself, not a separate record. Checked-in specs
-under `specs/<feature>/` are an explicit project exception: preserve their status
-and content unless the assigned work says otherwise. `specs/intake/` holds
-captured source material that has not yet been normalized into a feature spec.
+- **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
+- **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
+- **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
+- **Type check (tests):** `pnpm typecheck:test` — currently scoped to Yeast processors (`tsconfig.test.json`); do not claim “all specs typecheck” from `pnpm typecheck` alone.
+- **Module boundaries:** `pnpm deps:validate` (main + causal reachability + type-edge + test-inclusive cruises). New **error** edges and stale baseline rows fail; known debt is exact and reviewable.
 
-Transient task and review artifacts, when a workflow requires them, live outside
-this repository beside the agent's Codex-native plans, notes, or state. The agent
-chooses the location, then carries its exact full path throughout the work. Do
-not create transient task, review, or scratch artifacts here unless the work
-explicitly assigns a checked-in path.
+After cross-module moves or bulk import changes, re-run `pnpm deps:validate` before claiming done (at least every ~10 files during large refactors).
 
-Load global skills when their descriptions match the domain being changed. Review
-independently against the governing spec and record empirical evidence for every
-command-verifiable claim. Save durable personal findings through the native
-memory mechanism; route team-facing residue through ADRs, issues, or tests.
+## Codebase layout
 
-This repository does not require a Suspec CLI, MCP service, config, checker, or
-artifact-conversion step. Follow the repository rules below and the relevant
-global skills directly.
+- **`src/modules/`** — DDD domain modules (Arrangement, Transport, AudioEngine, …). Default place for new product code.
+- **`src/infra/`**, **`src/helpers/`**, **`src/utils/`**, **`src/shared/`** — cross-cutting infrastructure and utilities (not domain modules). Must not import from `src/modules/`.
+- **`src-tauri/`** + workspace crates **`daw-core`**, **`daw-engine`**, **`daw-dsp`**, **`daw-io`** — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
+- **`.agents/skills/`** — domain agent skills (architecture, web-audio, …).
+- **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
 
-## 🧠 Agent Autonomy & Engineering Mindset
+Checked-in product specs live under `specs/`; unnormalized source material lives under `specs/intake/`. Accepted decisions live under `docs/adrs/`.
 
-You are a proactive, cognizant software engineer. Formulate your own paths to success within the established architecture. To scale autonomous work, you must transition from simple task execution to exhaustive self-validation.
+## Path aliases
 
-- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script _before_ touching application code. Paste actual console output (tests, linters, builds) to prove success.
-- **Blast Radius Awareness:** Trace upstream callers and downstream dependencies before modifying code. Rely on the TypeScript compiler (`pnpm typecheck`) to exhaustively navigate the blast radius.
-- **Behavioral Invariants (Holistic Evaluation):** Evaluate the entire application state. Implement error boundaries, fallback UIs, and graceful degradation. Assume everything that can fail will fail. No "happy path only" coding.
-- **Institutionalize Strategic Backtracking (The Three Strikes Rule):** If you attempt to fix a compilation or test error 3 times and fail, **stop**. Discard your current approach, reread the overarching spec, and formulate a fundamentally different strategy to break hallucination loops.
-- **Proactive Research:** Do not guess. Aggressively use search tools (`grep_search`, `glob`) and internet research to confirm hypotheses.
-- **Incremental Commits:** Commit every major change or logical checkpoint as you work. This creates a clear history that a reviewing Lead Engineer (or human) can easily follow. Do not wait until the very end of the session to make one giant commit.
-- **Ceaseless Examination:** Verify your path delivers on specifications. Pursue intuitions only when backed by extensive research.
-- **Systems Thinking & Architecture First:** Respect Domain-Driven Design (DDD), established boundaries, and module contracts.
-- **User-Centric Perspective:** Evaluate features top-to-bottom. Build coherent, complete, and genuinely useful UX.
+| Alias | Source | Notes |
+| ----- | ------ | ----- |
+| `#/...` | `src/*` | Modules, infra, helpers, utils — e.g. `#/modules/Arrangement/useCases` |
 
----
+Prefer `#/` for cross-module and cross-folder imports. Inside a module, use **relative** paths to the defining file (never that module’s own contract barrels).
 
-## 🚨 MANDATORY REFLEX RULE (THE "SHOCK COLLAR")
+## Layer boundaries
 
-When asked to perform cross-module refactoring, move files, or update imports across multiple files:
+Hard gate via `pnpm deps:validate` (main **error** rules + causal reachability + types + tests cruises). New **error** edges fail; stale baseline rows fail when debt is retired. **Warn** rules stay visible without failing the gate.
 
-1. **You MUST run `pnpm deps:validate` constantly.** Run it after touching every 10 files.
-2. You are **STRICTLY FORBIDDEN** from proceeding or declaring a task "done" until this validation passes with 0 zero architectural violations.
-3. **NEVER use code mods** or AST-altering scripts to run refactors unless explicitly instructed by the user. Do the work manually, but validate it constantly.
+- Cross-module imports target **only** contract-folder barrels: `useCases/`, `stores/`, `events/`, `presentations/views/` (each folder’s `index.ts`). No module-root `index.ts`. No deep imports into private folders (`models/`, `repositories/`, `handlers/`, `engine/`, …). (**error**)
+- Same module: relative imports only — not `#/modules/<Self>/…`. (**error**)
+- Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import business/event contracts or foreign stores; same-module stores remain an existing adapter pattern. Models, events, services, validators, and transformers stay pure. (**error**)
+- Leaf `presentations/components/` and shared `src/components/`: no **direct** business-store or use-case imports (**error**, main cruise). No **transitive** reach of use cases (**error**, reachability cruise). Transitive store reach is **not** reachability-gated — still avoid via props/hooks (**policy**).
+- Worklets stay isolated from app/helpers/Tauri. (**error**)
+- **Tauri IPC only from `repositories/`** — policy; depcruise **`warn`** (`tauri-ipc-only-in-repositories`), not an error gate.
+- Tests cruise: cross-module **barrel** + **no relative cross-module** for module tests, external tests, and global test setup (not the full production layer suite).
 
-## 🔒 SAFETY RULES — READ BEFORE TOUCHING ANYTHING
+Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
 
-> **Why these exist:** You are running in bypass-permissions mode. There are no confirmation prompts. Every action you take is immediate and irreversible. These rules exist to prevent you from causing damage that cannot be undone by a simple undo.
+## Tech stack
 
-### File system — what you may NOT do without explicit instruction
+React 19 (Compiler), TypeScript, Vite, TanStack Query, vanilla `Store<T>` + `useStore`, React Hook Form + Zod, Vitest, Playwright (`pnpm test:e2e` local — **not** in CI health gates), Tauri 2, Rust audio crates (CPAL / RT paths).
 
-- **Do not delete any file.** Not source files, not config files, not generated files, not "obviously unused" files. If you believe a file should be deleted, note it in your task file and surface it as a finding. Deletion requires an explicit human instruction naming the file.
-- **Do not rename or move files** unless the spec or task you are executing explicitly calls for it by name.
-- **Do not overwrite a file with a full rewrite** when a targeted edit will do. Prefer Edit over Write for existing files.
-- **Do not create new files outside your assigned scope.** If something new needs to exist outside the modules you own, surface it as a handoff item.
+## When a check blocks you
 
-### Git — what you may NOT do
+Checks are proxies for intent — never make one pass while its intent stays violated. Test: would the change be justified if the check didn't exist? Disable comments, `any` / unsafe casts, deleting or loosening tests, and editing checker configs or baselines are **evasion**, not fixes. Fix the cause or stop and report the blocking rule; blocked is acceptable, laundered green is not.
 
-- **Do not run destructive git commands:** `git reset --hard`, `git clean`, `git push --force`, `git branch -D`, `git checkout -- .`, `git restore .`, or any command that discards uncommitted work.
-- **Do not switch branches, merge, or rebase** unless the current task or user explicitly instructs it; an orchestrator-authorized PR merge flow counts as explicit instruction.
-- **Do not commit unrelated files.** Stage only the files you intentionally changed.
-- **Do not amend published commits** or rebase commits that have already been pushed.
-- **Do not push to any remote** unless the task explicitly says to.
-- **Do not operate outside your worktree.** You are in an isolated git worktree on your own branch. Do not `cd` to the main repo or another worktree and make changes there.
+Do not use codemods, bulk `sed`/AST rewrites, or global formatters/`eslint --fix` across the tree unless the user explicitly asks. Edit files deliberately.
 
-### Commands — what you may NOT run
+## Always-on rules
 
-- **Do not run commands that alter source code automatically** — no codemods, no code formatters applied globally, no linters in `--fix` mode across the whole codebase.
-- **Do not install or remove packages** (`npm install <pkg>`, `pnpm add`, `cargo add`, etc.) unless explicitly asked. Dependency changes affect every developer and require intentional review.
-- **Do not modify `package.json` scripts, CI/CD files (`.github/`), or build configuration** unless it is the explicit subject of your task.
-- **Do not start long-running background processes** (dev servers, watchers, daemons) that will outlive your session.
-- **Do not run commands that require network access** to external services unless you are explicitly fetching a documented dependency.
+Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) and architecture practice. **Hardness is not uniform** — hard gates, warn-only lint, and policy-only rules are labeled inline.
 
-### When in doubt
+- **Contract barrels only cross-module.** (**error** via `deps:validate`) Up to four surfaces per module (`useCases`, `stores`, `events`, `presentations/views`) — create only those needed.
+- **Stores are a public read contract.** Foreign modules may subscribe; they must not `store.set` (agent policy; ESLint `sourdaw/no-foreign-store-write` is **warn** only — CI `lint --quiet` ignores warns). Writes go through the owning module’s use cases or `executeAppAction`.
+- **Use-case types stay private.** No `export type` from `useCases/index.ts` (**error** on type cruise). Consumers use `ReturnType` / `Parameters` or `events/` payloads. Models are never re-exported across modules — local shapes or intentional duplication.
+- **One function per use-case and repository file** (house rule; ESLint `sourdaw/no-multiple-function-exports` is **warn** only). Handlers live under `handlers/` with `createHandler`; cross-module access only via `get<Module>Handlers` from `useCases/`. Presentation never imports raw handler maps.
+- **Repositories touch metal; engine does not import repositories.** (**error**) I/O (Tauri, storage, audio setup) in `repositories/`; use cases orchestrate.
+- **Async/server state:** TanStack Query — never `useEffect` for data fetching (**error** lint where configured). **Local form state:** RHF + Zod. **Local UI:** `useState` + Compiler. **Context:** only deeply local view state; prefer `use()` over `useContext` (convention; not eslint-hard).
+- **React 19:** no `useMemo` / `useCallback` / `React.memo` (**error**); no `forwardRef` — `ref` is a prop (**error**). Prefer `cond ? <X /> : null` over render `&&` (**house**); leaky `&&` (e.g. `0 && …`) is **error** lint — boolean `&&` is not that rule.
+- **Audio RT:** anything on the audio thread must not allocate, lock, or block. Prefer `AudioWorklet` + `AudioParam`; one live `AudioContext`. (**policy / review** — not CI-machine-gated)
+- **TypeScript soundness:** types describe real data. No `any` except boundary + immediate narrowing (**error** in app; specs often **warn**). No `as any` / `as unknown as T` (**error** in app). Prefer not using bare `as T` to silence the checker (**policy**). No bare `@ts-expect-error` without a one-line reason (**error**). Prefer `unknown` + narrowing, `satisfies`, unions, `import type`, Zod at I/O (**policy**). Tests assert values/shape/errors — not just “defined” (**policy**).
+- **Style (house):** prefer `type` over `interface`; `as const` over `enum`; named exports (no namespace imports); multi-arg module functions take one object param with `FunctionNameInput` / `FunctionNameOutput` adjacent to the function (convention); modules Capitalized; **filenames per `docs/07-conventions.md`** (PascalCase components/views/models; camelCase use cases/helpers — **not** repo-wide kebab-case); guard clauses + braced `if`; no chained ternaries.
+- **Empirical proof:** failing reproduction before behaviour fixes; paste real command output for tests/typecheck/deps claims. Three failed fix attempts on the same approach → stop, reread contracts, change strategy.
 
-If you are unsure whether an action is safe: **do not take it.** Log it as an open question in your task file. The cost of pausing is zero. The cost of irreversible damage is high.
+## Safety (destructive actions)
 
----
-
-## 🚫 NO AUTOMATED CODE MUTATIONS — ABSOLUTE RULE
-
-**You are STRICTLY FORBIDDEN from using any automated process to modify, rename, or move source files.** This applies unconditionally — no exceptions, no "just this once", regardless of how many files are involved.
-
-Prohibited tools and techniques include, but are not limited to:
-
-- Codemods (jscodeshift, ts-morph, ast-grep, or any AST-based script)
-- Shell loops or scripts that batch-edit files (e.g. `for f in ...; do sed ... done`)
-- `sed`, `awk`, `perl -pi`, or any command-line find-and-replace run across multiple files
-- Automated file renaming or moving via scripts (`mv`, `rename`, `find -exec mv`)
-- Any custom script written in this session for the purpose of bulk-editing files
-
-**Every file change must be made individually, deliberately, using the Edit or Write tools.** If the scope of manual edits feels impractical, surface that as a blocker and discuss with the user — do not reach for automation as a shortcut.
-
-## 🏛️ Frontend Domain-Driven Architecture
-
-- **Contract Boundaries:** Cross-module imports MUST target one of the destination module’s **contract-folder barrels** — `#/modules/<M>/useCases`, `#/modules/<M>/stores`, `#/modules/<M>/events`, or `#/modules/<M>/presentations/views` (each resolves to that folder’s `index.ts`). Example: `import { addTrack } from '#/modules/Arrangement/useCases';`. There is **no module-root `index.ts`** — it is retired; importing the bare root `#/modules/<M>` is unresolvable and fails `cross-module-index-only` + tsgo. Deep imports into a contract folder’s files (e.g. `#/modules/<M>/useCases/addTrack`) or any private path are forbidden.
-- **Same module — relative imports:** Files under `src/modules/<Name>/` MUST NOT import from their own contract barrels (`#/modules/<Name>/useCases`, `#/modules/<Name>/stores`, etc.). Use **relative** paths to the defining file (`../stores/…`, `./useCases/…`, `../../models/…`, etc.). Contract barrels are for **other** modules; they are not an indirection layer for intra-module code.
-- **Index exports — external consumers only:** Re-export from a contract-folder `index.ts` only what **another module** may import, and only from that folder’s own files. Do not add re-exports so that files inside the same module can reach an API via a barrel — those call sites use relative imports instead.
-- **Private Internals:** `handlers/`, `models/`, `repositories/`, `engine/`, `transformers/`, `services/`, `validators/`, `presentations/hooks/`, and `presentations/components/` are STRICTLY PRIVATE to their module — never importable cross-module (`cross-module-index-only`; models, repositories, and transformers are additionally barred from any barrel by `no-models-repos-transformers-in-index`).
-- **Services layer (`services/`):** Pure, stateless helpers that operate on domain types within one module. They do NOT touch I/O (that's `repositories/`), do NOT mutate stores (that's `useCases/` or `handlers/`), and do NOT hold orchestration logic (that's `useCases/`). Typical residents: fuzzy-match / subsequence search, lookup tables, encoder/decoder helpers, pure algorithm implementations, registries that depend only on domain types. Services can be imported by `useCases/`, `handlers/`, `repositories/`, `engine/`, and other services in the **same** module. They are STRICTLY PRIVATE to their module (no cross-module import) — if another module needs the same helper, it defines its own copy or the helper moves to `#/utils/`.
-- **Command handlers (non-contract):** `AppAction` → `ActionHandler` maps live under **`handlers/`** (or legacy `useCases/*Handlers.ts` until migrated). They are **not** re-exported from any contract barrel. Each entry is built in that handler file with **`createHandler`** from **`#/helpers/createHandler`**. Aggregate handler maps (e.g. `clipHandlers.ts`) spread those exports — **`get<Module>Handlers`** only merges pre-built maps and does not call `createHandler`. Cross-module access is **only** via **`get<Module>Handlers`** in `useCases/` (one function per file), re-exported from the `useCases/index.ts` barrel for Command. Presentation uses **`executeAppAction`** or granular use cases — never raw handler maps.
-- **Barrel files:** The only `index.ts` barrels are the four **contract-folder** barrels — `useCases/index.ts`, `events/index.ts`, `stores/index.ts`, and `presentations/views/index.ts`. There is no module-root `index.ts`. Do not add other bulk re-export files (`contracts.ts`, an aggregating `<module>/index.ts`, etc.). Each contract barrel is the **cross-module** public surface for its folder and may **only** re-export from files **within its own folder** (`useCases/index.ts` re-exports from `useCases/`, never from `stores/` or `models/`) — a curated list for **external** consumers, not a dump of internals (`contract-barrel-scope`). From `useCases/`, re-export **runtime values** (functions, constants) only — not `export type` (see **Use-case types stay private** below).
-- **Model isolation:** Models (`models/`) are strictly private to their owning module and must never be exported or re-exported across module boundaries — not even through `useCases/` (`cross-module-index-only` + `no-models-repos-transformers-in-index`). If module B needs data shaped like module A's model, module B defines its own local type containing only the fields it uses. Duplication is intentional: changes to module A's model must never cascade to module B. When a use-case contract changes, callers break at compile time — that is the correct signal. A shared model import would hide it.
-- **Use-case types stay private:** Do not `export type` from `useCases/` for other modules — the `useCases/index.ts` barrel re-exports functions and constants only (`no-usecase-type-exports-on-index`). Other modules must not `import type { … }` from another module’s use-case surface. Use cases may use internal `type` / `interface` for implementation, but each consumer module keeps its own exported/local types and may use `ReturnType<typeof fn>` or `Parameters<typeof fn>` when calling an imported function. **Exception:** typed payloads in `events/` are the canonical cross-module type surface, exported via `events/index.ts` (event contract).
-- **One Function Per File:** Every `useCase` and `repository` file must export exactly ONE function.
-- **Repositories Touch Metal:** All I/O (Tauri IPC, Storage, Web Audio) goes in `repositories/`. Use cases orchestrate repositories.
-- **Engine Rules:** The audio engine (`engine/`) CANNOT import repositories directly — within a module only `useCases/` may orchestrate `repositories/` (`usecases-only-write-boundary-to-repositories`). Inject dependencies or resolve them via the use case layer.
-
-## 🦀 Backend Rust Tauri Architecture
-
-- **5 Crate Workspace:** Features 5 crates: `daw-core` (zero-dependency types/newtypes), `daw-engine` (RT Audio, CPAL), `daw-dsp` (Pure Math), `daw-io` (Tauri-free I/O), and `src-tauri` (Thin bridge).
-- **Audio RT Safety:** The audio thread must NEVER allocate, lock mutexes, or block. Use Lock-free ring buffers (`rtrb`) and atomic types.
-- **Compiled Schedule:** Non-RT graph builds a flat `Vec<ProcessTask>`, passes it to the RT thread via Ring Buffer for contiguous cache-local iteration.
-- **Typesync:** Ensure all Tauri state and models use `serde(transparent)` for single-value newtypes and generate TypeScript via `tauri-specta`.
-- **Commands:** ALL `#[tauri::command]` functions live exclusively in `src-tauri`.
-
-## 🧪 State Management
-
-- **Async/Server State:** Use **TanStack Query** (`useSuspenseQuery`, `useQuery`). Never use `useEffect` for data fetching.
-- **Cross-Domain UI State:** Use Vanilla `Store<T>` instances (in `stores/`). Business logic interacts directly with the Store instance. React connects via `useStore` from `#/infra/store/useStore`.
-- **Local Form/Settings:** Use React Hook Form + Zod.
-- **Local Primitive State:** Use `useState` + React Compiler.
-- **Context:** Used ONLY for deeply local view state (e.g. collapsing a panel). Consume Context using `use()` instead of `useContext`.
-
-## ⚛️ React 19 & UI Conventions
-
-- **No manual memoization.** Do NOT use `useMemo`, `useCallback`, or `React.memo` — the React Compiler handles memoization for the entire app. Hand-written memoization fights the compiler and is treated as a code-review reject.
-- **No `forwardRef`.** In React 19, `ref` is a regular prop. Accept it directly in the component's props type.
-- **Never render with `&&`.** Use a ternary (`cond ? <X /> : null`) or an early `return null` / guard clause. `&&` silently renders `0`, `''`, or `NaN` and breaks lists.
-- **Audio-thread code is real-time.** Anything that runs on the audio thread MUST NOT allocate, lock mutexes, take locks, or block. See `🦀 Backend Rust Tauri Architecture` above and the `web-audio-engine` skill for the full rules.
-
-## 📝 Backend CLI & Coding Conventions
-
-- **Module Naming:** Modules MUST be Capitalized (e.g., `Workspace`, `Terminal`, `TaskManagement`).
-- **File Naming:** Filenames MUST use kebab-case (e.g., `download-levain-samples.ts`, `generate-view-tests.ts`).
-- **Variable/Function Naming:** Variables and functions MUST use snake_case (worm case) (e.g., `my_variable`, `run_command()`). Do NOT use camelCase.
-- **Control Flow:** All `if` statements must use block syntax `{}`. Guard clauses / early returns ONLY. No chained ternaries.
-- **TypeScript Forms:** Prefer `type` over `interface`. Prefer `as const` objects over `enum`. Use explicit type-only imports (`import { type MyType }`).
-- **TypeScript — soundness:** Types must describe real data. **Forbidden:** `any` except at a boundary (e.g. external payload) with **immediate** narrowing — never as a permanent “whatever” type; `as`, `as any`, or `as unknown as …` to silence compiler errors instead of fixing the value or the type; `@ts-expect-error` / `@ts-ignore` without a one-line justification and a path to remove it; `{}`, unconstrained `object`, or `Record<string, …>` as a stand-in for a domain model when a concrete shape or discriminated union exists; optional fields used to encode mutually exclusive states. **Tests:** Do not stop at “defined” / “truthy” / generic `toBeTypeOf('object')` — assert the actual contract (values, shape, or error text). **Prefer:** `unknown` + narrowing, `satisfies`, discriminated unions, `import type`, and runtime validation at I/O boundaries (e.g. Zod).
-- **Imports:** Never use namespace imports (`import * as X from '...'`). Always import named exports individually.
-- **Naming Constraints:** No prefixes or suffixes that are entity-type names (e.g. `thing_repository`, `thing_use_case`, `repositories_thing`). No single-letter variable names or single-letter generic type parameters — use descriptive names.
-- **Function Signatures:** Functions with more than one parameter take a single object param. For module-level functions, the input type is named `FunctionNameInput` and the output type (if non-scalar) is named `FunctionNameOutput`; both are defined immediately above the function they belong to — not grouped at the top of the file. For class methods, use an inline object type directly in the parameter instead of a named type. If the output is a `Promise`, declare `type FunctionNameOutput = Promise<...>` — do NOT write `Promise<FunctionNameOutput>` at the function signature level.
+- Do not delete, rename, or move files unless the task or user names them. Prefer targeted edits over full-file rewrites.
+- Do not run destructive git (`reset --hard`, `clean`, force-push, discard, branch -D) or push/amend published history unless explicitly asked.
+- Do not install/remove packages, edit CI/build config, or start long-lived background servers unless the task requires it.
+- Stage only files you intentionally changed. When unsure whether an action is safe: stop and ask.

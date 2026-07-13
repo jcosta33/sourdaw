@@ -97,7 +97,7 @@ useCases
                       models
 
 Cross-module access is narrow:
-- other modules import only from one of the four contract-folder barrels (see §3.3)
+- other modules import only from the contract-folder barrels the target module exposes (up to four — see §3.3)
 - private internals stay private
 ```
 
@@ -109,7 +109,7 @@ A TypeScript module is composed of a **public contract surface** and **private i
 
 ## 3.1 Public contract surface
 
-Each module exposes **four independently-importable contract surfaces**. Other modules target exactly one of these per import:
+Each module may expose **up to four** independently-importable contract surfaces — create only those it actually needs. Other modules target exactly one of these per import:
 
 ```text
 <module>/useCases/index.ts
@@ -319,8 +319,8 @@ ProjectLoadError
 
 ### Rules
 
-- errors in `errors/` are part of the public contract
-- internal helper errors should stay internal
+- `errors/` is **module-private** (not a contract barrel — do not import cross-module)
+- domain errors stay in the owning module; surface failures via use-case results/events as designed
 - errors should be meaningful at the boundary where they surface
 
 ---
@@ -463,8 +463,8 @@ This layer is **not** part of the general cross-module contract. Other feature m
 
 ### Construction
 
-- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed). Import **`createHandler`** from **`#/helpers/createHandler`**.
-- **`get<Module>Handlers`** assembles the registry by **direct imports** of each `handle…` and a typed object literal `{ … }` — no intermediate wrapper around the map. **Do not** add a second “handlers map” file that only re-exports the same object; the merge lives in **`get<Module>Handlers`** (or, until migration, a legacy `*Handlers.ts` that is still typed as the domain map).
+- Each **`ActionHandler`** is created **in the handler module**, not in `get<Module>Handlers`. Typical shape: **`export const handleMuteTrack = createHandler<'muteTrack'>({ … })`** (or **`export const handleMuteTrack = () => createHandler<'muteTrack'>({ … })`** when a factory is needed). Import **`createHandler`** from **`#/utils/createHandler`**.
+- **`get<Module>Handlers`** merges pre-built handler maps (and may `spread` domain maps such as `clipHandlers.ts` that only re-export already-built `createHandler` entries). It does **not** call `createHandler` itself. Intermediate aggregate maps under `handlers/` are allowed when they only compose handler modules — they are still private (not on a contract barrel).
 
 ### Cross-module access
 
@@ -644,7 +644,7 @@ Transformers should be:
 - pure
 - side-effect-free
 - **module-private. Always.** Transformers never cross module boundaries — not via direct import, not via re-export through `useCases/`, `index.ts`, or any other folder. If module B finds itself reaching for a transformer in module A, the answer is one of: (1) module B owns its own transformer with its own shape, (2) the work belongs in a use case in module A that module B calls, or (3) the symbol was misclassified — it is not a transformer at all and belongs in `services/` or as a use case. "Sharing" a transformer is the signal that the design is wrong.
-- consumed only by use cases (and other intra-module transformers/services). **Hooks, components, and any other presentation-layer code must consume use cases, never transformers, services, validators, or repositories directly.** The presentation layer has exactly one downstream neighbour: `useCases/`.
+- consumed only by use cases (and other intra-module transformers/services). **Presentation must never import transformers, services, validators, or repositories.** Hooks/views may consume **useCases** and **store barrels**; leaf components prefer props from views/hooks.
 
 Transformers are not mini-services with hidden behavior, and they are not a public API. The same rule applies to `services/` and `validators/`: pure, intra-module, called only by use cases (or by other services in the same module).
 
@@ -658,40 +658,41 @@ Use cases and other injectable functions declare their dependencies explicitly u
 
 Use cases and service repositories get collaborators only through **`inject(deps)(factory)`**: declare dependencies as a map in the first call; the factory receives them and returns the public function. Resolution happens **at call time** (not import time). Tests substitute deps with **`injectDependencies()`** from `#/infra/di/testing/injectDependencies`.
 
-Do not wire application collaborators by **bare static imports** of repos or other use cases, or by **`Container.get()`** at module scope — that hides dependencies and breaks the test harness. See `docs/01-dependency-injection.md`.
+Do not wire **varying** collaborators by **`Container.get()`** at module scope. Prefer **`inject()`** for event buses, loggers, and other mockable services. Thin same-module repository functions that only read/write the owned store may stay as static imports (common in Arrangement) — see the `addTrack` sample below and `docs/01-dependency-injection.md`.
 
 ### Shape
 
 ```typescript
+// Real shape (Arrangement/useCases/addTrack.ts): inject collaborators that vary in tests;
+// pure repos may stay static imports when they are thin store accessors.
 import { inject } from '#/infra/di/inject';
-import { Logger } from '#/helpers/Logger/Logger';
-import { TrackRepo } from '../repositories/TrackRepo';
-import { createTrack } from '../models/Track';
-import { eventBus } from '#/app/bootstrap';
+import { createTrack as createTrackModel } from '../models/Track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
+import { ArrangementEventBus } from './arrangementEventBus';
 
-type AddTrackInput = { name: string; kind: TrackKind };
+type AddTrackInput = { name: string; kind: TrackKind; select?: boolean };
 
-export const addTrack = inject({ logger: Logger, trackRepo: TrackRepo })(
-    ({ logger, trackRepo }) =>
-        (input: AddTrackInput): Track | null => {
-            const state = trackRepo.getState();
-            if (state === null) {
-                logger.log('addTrack called before store was ready');
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
+        function addTrack(input: AddTrackInput): Track | null {
+            const state = getTrackState();
+            if (!state) {
                 return null;
             }
-            const track = createTrack(input);
-            trackRepo.setState({
+            const track = createTrackModel(input);
+            setTrackState({
                 ...state,
                 tracks: [...state.tracks, track],
-                selectedTrackId: track.id,
+                selectedTrackId: input.select === false ? state.selectedTrackId : track.id,
             });
-            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
             return track;
         }
 );
 ```
 
-At call time, `addTrack(input)` resolves each dependency from the `Container` and invokes the factory with the resolved map. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
+At call time, `addTrack(input)` resolves each dependency in the map and invokes the factory. The caller writes `addTrack(input)` — they do not see or touch the dependency map.
 
 **The factory must return a function** (the invoker). The curried API is `inject(deps)(factory)` — the first call takes the dependency map, the second takes the factory. Objects/services flow into the injectable via the dependency map, not as the factory's return.
 
@@ -710,9 +711,9 @@ Classes resolve to their registered instance in the container. Injectables resol
 ### Resolution semantics
 
 - **Memoized.** The first call to an injectable resolves its dependencies and calls the factory exactly once. The invoker is cached on the `Container` keyed by the injectable's token. Subsequent calls are a direct function invocation — no re-walk.
-- **Cache reset on `Container.reset()`.** Test setup (`injectDependencies`) relies on this: it calls `reset()` before registering mocks, so the next invocation re-resolves against the fresh mocks.
+- **Cache reset on `Container.clear()`.** Test setup (`injectDependencies`) relies on this: it clears the container before registering mocks, so the next invocation re-resolves against the fresh mocks.
 - **Circular dependencies throw with a chain.** `A → B → A` fails at first invocation with the full chain in the message. Break the cycle by introducing an event or restructuring.
-- **Async dependencies are forbidden.** If any value in the dependency map is a Promise, `inject()` throws at construction time. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
+- **Async dependencies are forbidden.** If any value in the dependency map is a Promise, the injectable throws during dependency resolution on its first invocation. Resolve async modules before passing them in (typically in bootstrap). This is a deliberate constraint — keeps resolution sync and fast.
 
 ### What to wrap with `inject()`
 
@@ -724,7 +725,7 @@ Classes resolve to their registered instance in the container. Injectables resol
 | Pure transformers                      | No      | Pure functions need nothing from the container                           |
 | Validators / services (no I/O)         | No      | Pure functions                                                           |
 | Models                                 | No      | Data                                                                     |
-| React hooks / components               | No      | Stay in the presentation layer; read stores directly                     |
+| React hooks / views                    | No      | Stay in presentation; hooks/views may read store barrels; leaf components get props |
 | Engine classes (`TrackNode`, etc.)     | No      | Constructor-injected (pass `AudioContext` as an arg)                     |
 | Audio-thread / hot-path code           | **No**  | The resolution + cached invocation has a cost; hot paths must not pay it |
 
@@ -732,11 +733,11 @@ If a function has no outbound side-effect dependencies, it does not need `inject
 
 ### Bootstrap discipline
 
-Container registrations live in `src/app/bootstrap.ts`. The rules:
+App singletons are wired from **`src/app/registerDependencies.ts`** (imported early from **`src/app/bootstrap.ts`**). Module event buses often register themselves (e.g. `ArrangementEventBus` + `Container.set`). The rules:
 
-- **All class-token registrations happen in `bootstrap.ts` before any use case runs.** Use `registerOnce(Token, instance)` for this — it throws on duplicate registration, catching accidental double-wires.
+- **Register app-level tokens before use cases run** (logger, root event bus, etc.) via the real `register` / `Container.set` paths used in this repo.
 - **Injectables self-register.** Don't hand-register an injectable's token in bootstrap; the resolver does it lazily on first call.
-- **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead. Module-top-level `get()` calls race with bootstrap and trip the strict-mode guard in dev/test.
+- **Never call `Container.get()` at module top-level.** If you need a value from the container outside a function body, wrap the surrounding function with `inject()` instead.
 
 ### Strict mode
 
@@ -900,7 +901,7 @@ runtime/
 worklets/
 ```
 
-If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
+If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Keep value and type exports in separate declarations: mixed `export { fn, type Input }` syntax hides the type edge from dependency-cruiser and is rejected by the architecture checker. Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
 
 ---
 
@@ -934,8 +935,10 @@ useCases
   -> events
 
 repositories
-  -> external APIs only
+  -> external APIs / metal (Tauri, FS, decode, …)
+  -> same-module models, transformers, services, stores (read/write of owned store state is common)
   -> shared helpers/types if truly generic
+  -> NOT useCases, handlers, presentations, events, or foreign module stores/contracts
 
 validators
   -> models
@@ -1357,7 +1360,7 @@ They are the public UI surface for the module.
 | Anti-pattern                                                | Why it is bad                             | Preferred fix                                   |
 | ----------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
 | class-based domain models owning logic and runtime concerns | mixes truth and behavior awkwardly        | use plain types + functions                     |
-| repository emits business events and mutates stores         | I/O layer becomes business layer          | move orchestration to use case                  |
+| repository emits domain events or multi-step orchestration  | I/O layer becomes business layer          | move orchestration to use case; thin store get/set for owned state may stay in-repo |
 | use case directly calls browser/Tauri APIs everywhere       | write boundary leaks I/O details          | isolate I/O in repositories                     |
 | presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                    |
 | presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared |

@@ -6,7 +6,7 @@ vi.mock('#/infra/di/inject', () => ({
             Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))
         ),
 }));
-vi.mock('#/helpers/createHandler', () => ({ createHandler: (config: unknown) => config }));
+vi.mock('#/utils/createHandler', () => ({ createHandler: (config: unknown) => config }));
 import { RULER_HEIGHT } from '../helpers';
 
 describe('RULER_HEIGHT', () => {

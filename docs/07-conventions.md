@@ -6,7 +6,7 @@ This guide defines coding conventions and patterns for clarity, consistency, and
 
 ## TypeScript soundness
 
-Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under _React 19 & Coding Conventions_ → **TypeScript — soundness**. Follow that section for implementation; this document does not repeat it.
+Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under **Always-on rules** → TypeScript soundness. Follow that section for implementation; this document does not repeat it.
 
 ## Prefer explicit control flow
 
@@ -386,7 +386,9 @@ export default TrackCard;
 ### Import paths
 
 - Use absolute imports with the `#/` alias for cross-module paths.
-- Avoid deep relative imports like `../../../..`; prefer `#/modules/Domain/...` or `#/helpers/...`.
+- Cross-module module imports must target a **contract barrel** only:
+  `#/modules/<M>/useCases|stores|events|presentations/views` — never a deep file under that folder, and never a module-root `#/modules/<M>`.
+- Prefer `#/utils/...` or `#/infra/...` for shared non-module code (not emptied `#/helpers/...` unless a real helper lives there).
 
 ---
 
@@ -685,19 +687,9 @@ export const getSortedTracks = (tracks: Track[], strategy: 'name' | 'date'): Tra
     return sortByDate(tracks);
 };
 
-// Singleton via DI container (already used for Store, Logger, EventBus)
-let instance: Store<AppState>;
-export const getAppStore = (): Store<AppState> => {
-    if (!instance) {
-        const logger = Container.getInstance().get(Logger);
-        instance = new Store<AppState>(logger, {
-            initialData: {
-                /* ... */
-            },
-        });
-    }
-    return instance;
-};
+// Module store singleton (preferred)
+import { createStore } from '#/infra/store/createStore';
+export const appStore = createStore<AppState>({ initialData: { /* ... */ } });
 
 // Adapter pattern (transformer layer maps DTO → domain)
 type ApiUser = { user_id: number; full_name: string };

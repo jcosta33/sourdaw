@@ -7,7 +7,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 ## 1. Philosophy
 
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
-- **No integration tests. No E2E.** Not yet. Adding cross-module or Playwright-style tests before the unit layer is populated is premature — wire up the skeleton first, then grow outward when we have a real reason to.
+- **Unit-first.** Playwright E2E exists under `tests/e2e/` (`pnpm test:e2e`) but is **not** in CI health gates. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
@@ -99,11 +99,11 @@ Every `it` block starts with `should` or `should not`, followed by a concise des
 
 ## 5. Dependency injection in tests
 
-The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.10`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
+The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typescript-module.md §4.11`). Tests for injectable functions **must** use the companion test helpers rather than `vi.mock()`:
 
-- **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries `.dependencies`, `.factory`, and `.token` as metadata for tests.
-- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers a **complete** set of mocks against the subject's dependencies. Throws if a dependency is missing from `mocks` or if `mocks` contains a key the subject doesn't have. Returns the subject for chaining.
-- **`spy<T>(overrides?)`** — `#/infra/di/testing/spy` — creates a typed spy. Every accessed method is a `vi.fn()` typed to the original signature — no casts needed. Optional `overrides` pre-seed specific methods or properties (function overrides stay assertable as `vi.fn()`).
+- **`inject(deps)(factory)`** — `#/infra/di/inject` — curried DI wrapper. The first call takes a dependency map, the second takes a factory that receives resolved deps. The wrapped function carries internal DI metadata used by the test seam.
+- **`injectDependencies(subject, mocks)`** — `#/infra/di/testing/injectDependencies` — calls `Container.clear()` and registers mocks against the subject's dependencies. Throws if a declared dependency is missing from `mocks`. Returns the subject for chaining.
+- **`spy<T>()`** — `#/infra/di/testing/spy` — creates a typed lazy spy. Every accessed method is a cached `vi.fn()` typed to the original signature; configure those mocks after access. The helper takes no overrides argument.
 
 ### When to use which
 
@@ -111,63 +111,51 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                                             |
 | An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                                      |
-| An internal module that is NOT wrapped with `inject()`          | Refactor the subject to use `inject()` — do not add new `vi.mock()` shims for app collaborators |
+| Thin static same-module repos used by an injectable             | `vi.mock` on those repo modules is OK when they are not in the inject map                        |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
 
 ### Canonical test shape for an injectable
 
 ```typescript
-// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
-import { describe, it, expect } from 'vitest';
-import { spy } from '#/infra/di/testing/spy';
+// Real pattern for Arrangement/useCases/addTrack.ts:
+// inject only ArrangementEventBus; thin repos are static imports (often vi.mock'd).
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/helpers/Logger/Logger';
-import { TrackRepo } from '../../repositories/TrackRepo';
 import { addTrack } from '../addTrack';
 
-describe('addTrack', () => {
-    it('should append the track to the repo and emit track.added', () => {
-        const trackRepo = spy<TrackRepo>({
-            getState: () => ({ tracks: [], selectedTrackId: null }),
-        });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
+vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: vi.fn() }));
+vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: vi.fn() }));
 
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
+describe('addTrack', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should append the track and emit track.added', async () => {
+        const { getTrackState } = await import('../../repositories/track/getTrackState');
+        const { setTrackState } = await import('../../repositories/track/setTrackState');
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null });
+
+        const eventBus = { emit: vi.fn().mockResolvedValue(undefined) };
+        injectDependencies(addTrack, { eventBus });
 
         const result = addTrack({ name: 'Drums', kind: 'audio' });
 
         expect(result).not.toBeNull();
-        expect(trackRepo.setState).toHaveBeenCalledWith(
-            expect.objectContaining({
-                tracks: [result],
-                selectedTrackId: result!.id,
-            })
+        expect(setTrackState).toHaveBeenCalled();
+        expect(eventBus.emit).toHaveBeenCalledWith(
+            'track.added',
+            expect.objectContaining({ name: 'Drums' })
         );
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Drums' }));
-    });
-
-    it('should return null when the repo state is uninitialized', () => {
-        const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        expect(addTrack({ name: 'Drums', kind: 'audio' })).toBeNull();
-        expect(trackRepo.setState).not.toHaveBeenCalled();
-        expect(eventBus.emit).not.toHaveBeenCalled();
     });
 });
 ```
 
 Notes on this shape:
 
-- `injectDependencies` calls `Container.clear()` before registering mocks and throws if any dependency is missing a mock — tests cannot accidentally leak state or forget a dep.
-- `spy<T>()` returns a typed object where every accessed method is a `vi.fn()` typed to the original signature. `trackRepo.setState.toHaveBeenCalledWith(...)` works with no cast.
-- Inline overrides (`{ getState: () => (...) }`) are wrapped in `vi.fn(impl)` automatically — they still record calls, they just have a default implementation.
-- Every test builds fresh spies. No `beforeEach` is needed for container or spy cleanup.
+- `injectDependencies` mocks **only** the inject map keys (here `eventBus`). Static repo imports are mocked with `vi.mock` when needed.
+- Prefer the real `addTrack.spec.ts` under Arrangement as the source of truth when examples drift.
 
 ---
 
@@ -179,75 +167,24 @@ Every example below uses a real file from the codebase as its subject.
 
 Subject: `src/modules/Arrangement/useCases/addTrack.ts` — wrapped with `inject()`, reads a repo, writes the repo, emits an event.
 
-Use the canonical shape from §5: `spy<T>()` + `injectDependencies()`. No `vi.mock()`, no casts.
+Use the canonical shape from §5: `spy<T>()` + `injectDependencies()` for dependencies in the inject map. Do not `vi.mock()` an injected dependency; static repository imports may use the module mock shown above.
 
-```typescript
-// src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
-import { describe, it, expect } from 'vitest';
-import { spy } from '#/infra/di/testing/spy';
-import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { Logger } from '#/helpers/Logger/Logger';
-import { TrackRepo } from '../../repositories/TrackRepo';
-import { addTrack } from '../addTrack';
-import { TrackDummy } from '../../__tests__/TrackDummy';
-
-describe('addTrack', () => {
-    it('should append the track to the repo and emit track.added', () => {
-        const existing = TrackDummy.create({ id: 'track-1' });
-        const trackRepo = spy<TrackRepo>({
-            getState: () => ({ tracks: [existing], selectedTrackId: 'track-1' }),
-        });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        const result = addTrack({ name: 'Lead Vocals', kind: 'audio' });
-
-        expect(result).not.toBeNull();
-        expect(trackRepo.setState).toHaveBeenCalledWith({
-            tracks: [existing, result],
-            selectedTrackId: result!.id,
-        });
-        expect(eventBus.emit).toHaveBeenCalledWith('track.added', expect.objectContaining({ name: 'Lead Vocals' }));
-    });
-
-    it('should return null and not emit when the repo is uninitialized', () => {
-        const trackRepo = spy<TrackRepo>({ getState: () => null });
-        const eventBus = spy<{ emit: (event: string, payload: unknown) => Promise<void> }>();
-        const logger = spy<Logger>();
-
-        injectDependencies(addTrack, { trackRepo, eventBus, logger });
-
-        const result = addTrack({ name: 'Lead Vocals', kind: 'audio' });
-
-        expect(result).toBeNull();
-        expect(trackRepo.setState).not.toHaveBeenCalled();
-        expect(eventBus.emit).not.toHaveBeenCalled();
-    });
-});
-```
-
-Notes:
-
-- Event payloads are plain objects — assert on the string key and payload shape directly.
-- `injectDependencies` clears DI state and validates the mock map — no `beforeEach` container cleanup is needed for injectables.
-- If `addTrack` is not yet wrapped with `inject()`, that refactor comes _with_ the test. See `docs/architecture/03-typescript-module.md §4.10`.
+Use the canonical shape from §5 (and the real `useCases/__tests__/addTrack.spec.ts` in Arrangement). Do not invent `TrackRepo` / `Logger` inject deps that the subject does not declare.
 
 ### 6.2 Repositories — Tauri IPC
 
-Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence.ts` — wraps Tauri `invoke`.
+Subject: `src/modules/CrdtDocument/repositories/nativeCrdtPersistence/nativeCreateProject.ts` — wraps the module's `invokeCommand` adapter.
 
-Mock `@tauri-apps/api/core` at the module boundary.
+Mock `invokeCommand` at the repository-folder boundary. Its own repository test covers the Tauri `invoke` call.
 
 ```typescript
-// src/modules/CrdtDocument/repositories/__tests__/nativeCrdtPersistence.spec.ts
+// src/modules/CrdtDocument/repositories/nativeCrdtPersistence/__tests__/nativeCrdtPersistence.spec.ts
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { invoke } from '@tauri-apps/api/core';
-import { nativeCreateProject } from '../nativeCrdtPersistence';
+import { invokeCommand } from '../invokeCommand';
+import { nativeCreateProject } from '../nativeCreateProject';
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('../invokeCommand', () => ({
+    invokeCommand: vi.fn(),
 }));
 
 describe('nativeCreateProject', () => {
@@ -256,11 +193,11 @@ describe('nativeCreateProject', () => {
     });
 
     it('should invoke collab_create_project with the given name and sample rate', async () => {
-        vi.mocked(invoke).mockResolvedValue(true);
+        vi.mocked(invokeCommand).mockResolvedValue(true);
 
         const result = await nativeCreateProject('My Project', 48000);
 
-        expect(vi.mocked(invoke)).toHaveBeenCalledWith('collab_create_project', {
+        expect(invokeCommand).toHaveBeenCalledWith('collab_create_project', {
             name: 'My Project',
             sampleRate: 48000,
         });
@@ -268,7 +205,7 @@ describe('nativeCreateProject', () => {
     });
 
     it('should return false when the native layer returns null', async () => {
-        vi.mocked(invoke).mockResolvedValue(null);
+        vi.mocked(invokeCommand).mockResolvedValue(null);
 
         const result = await nativeCreateProject('My Project', 48000);
 
@@ -371,60 +308,15 @@ No mocks. No `beforeEach`. Input in, output out.
 
 Treat exactly like transformers — pure functions, no mocks, input/output assertions. One file per validator, one `describe` per exported function.
 
-### 6.7 Stores (the custom `Store<T>` class)
+### 6.7 Stores (`#/infra/store`)
 
-Subject: `src/helpers/Store/Store.ts`.
+Subject: `createStore` / `useStore` under `src/infra/store/`.
 
-Instantiate the real `Store<T>` with `MemoryStorage`. Test the observable contract: `value`, `set`, `subscribe`, `notify`.
-
-```typescript
-// src/helpers/Store/__tests__/Store.spec.ts
-import { describe, it, expect, vi } from 'vitest';
-import { Store } from '../Store';
-import { MemoryStorage } from '../Storage/MemoryStorage';
-import { loggerMock } from './logger.mock';
-
-describe('Store', () => {
-    it('should return initialData from value when storage is empty', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        expect(store.value).toEqual({ count: 0 });
-    });
-
-    it('should notify subscribers on set', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        const subscriber = vi.fn();
-        store.subscribe(subscriber);
-
-        store.set({ count: 1 });
-
-        expect(subscriber).toHaveBeenCalledWith({ count: 1 });
-    });
-
-    it('should return an unsubscribe function from subscribe', () => {
-        const store = new Store<{ count: number }>(loggerMock, {
-            storage: new MemoryStorage(),
-            initialData: { count: 0 },
-        });
-        const subscriber = vi.fn();
-        const unsubscribe = store.subscribe(subscriber);
-
-        unsubscribe();
-        store.set({ count: 1 });
-
-        expect(subscriber).not.toHaveBeenCalled();
-    });
-});
-```
+Test the observable contract against the real factory: initial snapshot, `set`, subscribe/unsubscribe (and storage adapters if used). Prefer existing tests under `src/infra/store/` as the pattern source over inventing a parallel `Store` class path.
 
 ### 6.8 Event subscribers
 
-Files that wire a domain handler via `eventBus.on(...)`. For integration-style subscriber tests, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire the subscriber, then emit events and assert on side effects.
+Files that wire a domain handler via `eventBus.on(...)`. For a focused subscriber test, use `createEventBus()` from `#/infra/events/createEventBus` to create a real bus, wire one subscriber, then emit events and assert on its side effects. Do not cross product-module boundaries.
 
 ```typescript
 // src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts
@@ -501,32 +393,26 @@ describe('useTracks', () => {
 });
 ```
 
-### 6.10 Presentation components
+### 6.10 Presentation components and views
 
-Use `@testing-library/react` from the user's perspective. Mock the use cases the component calls.
+Use `@testing-library/react` from the user's perspective.
+
+- **Leaf components** should not import useCases or business stores — pass props/callbacks from a **view/hook**, and test that surface (or pass mocked callbacks into the component).
+- **Views/hooks** may call use cases; mock those use cases (or the command bus) when testing the view.
 
 ```typescript
+// Prefer testing a view that owns the use-case call, or a component that receives onAddTrack:
 // src/modules/Arrangement/presentations/components/__tests__/AddTrackButton.spec.tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AddTrackButton } from '../AddTrackButton';
-import { addTrack } from '../../../useCases/addTrack';
-
-vi.mock('../../../useCases/addTrack', () => ({ addTrack: vi.fn() }));
 
 describe('AddTrackButton', () => {
-    it('should render the button label', () => {
-        render(<AddTrackButton kind="audio" />);
-        expect(screen.getByRole('button', { name: /add audio track/i })).toBeInTheDocument();
-    });
-
-    it('should call addTrack when clicked', () => {
-        render(<AddTrackButton kind="audio" />);
-        fireEvent.click(screen.getByRole('button'));
-        expect(vi.mocked(addTrack)).toHaveBeenCalledWith({
-            name: expect.any(String),
-            kind: 'audio',
-        });
+    it('should call the provided callback when clicked', () => {
+        const onAddTrack = vi.fn();
+        render(<AddTrackButton kind="audio" onAddTrack={onAddTrack} />);
+        fireEvent.click(screen.getByRole('button', { name: /add audio track/i }));
+        expect(onAddTrack).toHaveBeenCalled();
     });
 });
 ```
@@ -614,7 +500,7 @@ injectDependencies(subjectUnderTest, { eventBus /* other deps */ });
 
 The spy gives you typed `eventBus.emit` and `eventBus.on` as `Mock`s directly. Retrieve registered handlers via `eventBus.on.mock.calls[n][1]` and invoke them to test subscriber behaviour (see §6.8).
 
-Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a real bus in integration-style tests, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
+Alternatively, use `createEventBus()` from `#/infra/events/createEventBus` for a focused EventBus contract or subscriber test, paired with `recordEvents()` from `#/infra/events/testing/recordEvents` to capture emitted events.
 
 Subjects that need collaborators must be wrapped with `inject()` so tests can supply mocks via `injectDependencies()` (§5).
 
@@ -695,9 +581,9 @@ Extend this as new node types are needed. Keep it flat and direct — this is a 
 
 ### 7.5 Storage mocks
 
-The `Store<T>` class accepts a `storage` option. Tests that need a store should build one with `new MemoryStorage()` rather than reaching for a mock. `MemoryStorage` is already in the codebase and is the correct tool for this.
+`createStore` accepts a `storage` option. Tests that need an isolated store should pass `createMemoryStorage()` (or the project’s memory storage helper) rather than inventing a mock class.
 
-If a module's store is defined as a module-level singleton (e.g. `export const trackStore = new Store(...)`), tests must either:
+If a module’s store is a module-level singleton (e.g. `export const trackStore = createStore(...)`), tests must either:
 
 1. Mock the whole store module (as in §6.9), or
 2. Call a reset helper exposed alongside the store that swaps its backing storage.
@@ -757,7 +643,7 @@ mod tests {
 
 ### Tauri backend tests
 
-Commands in `src-tauri/src/commands/` are not currently tested. When we add tests, they will live in-crate as `#[cfg(test)]` modules and exercise the command functions directly — not the IPC layer.
+Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in files including `filesystem.rs`, `native_llm.rs`, `plugin_gui.rs`, and `plugins.rs`. Add command tests beside the Rust module they exercise; test command behavior directly rather than routing through Tauri IPC.
 
 ---
 
@@ -779,7 +665,7 @@ Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global
 
 Do not:
 
-- **Write integration tests yet.** If a test can only be written by wiring up two modules' real code, delete it and write the unit tests for each module separately.
+- **Build cross-module integration flows in Vitest.** Keep real collaborator use focused within one owner, such as one subscriber with an in-memory EventBus; use Playwright only when a user flow genuinely needs end-to-end coverage.
 - **Test real Web Audio rendering.** AudioContext-in-jsdom does not exist. Use the mock from §7.4.
 - **Mock event payloads or `AppError` values.** They are cheap plain objects. Construct them for real.
 - **Write React Query tests.** This codebase does not use TanStack Query for core state — state flows through `Store<T>`.

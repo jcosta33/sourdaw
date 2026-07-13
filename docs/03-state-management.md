@@ -10,23 +10,26 @@ Our state management philosophy is to keep domain state in plain, framework-agno
 
 ### The vanilla store
 
-Our custom `Store` class (located at `src/helpers/Store/Store.ts`) provides a simple but powerful foundation for creating observable state containers. It is framework-agnostic and can be used anywhere in the application.
+Our custom `Store` (factory at `#/infra/store/createStore`, React bind at `#/infra/store/useStore`) provides a simple but powerful foundation for creating observable state containers. It is framework-agnostic and can be used anywhere in the application.
 
 ---
 
 ## Cross-module store contracts
 
-Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module contracts**. Any module may import and subscribe to them — both from use cases (for reading/writing) and from presentation hooks (for reactive UI binding via `useStore`).
+Business-layer stores (located at `ModuleName/stores/`, outside `presentations/`) are **cross-module read contracts**. Import only via the **`#/modules/<M>/stores` barrel** (never a deep file path). Other modules may **subscribe/read**; they must **not** call `store.set` on a foreign store — write through the owning module’s use cases or `executeAppAction`. Owning-module use cases may read/write their own store. Presentation **hooks/views** bind with `useStore`; leaf **components** should receive data via props (same-module store imports from components are machine-banned; prefer views/hooks).
 
 Presentation-layer stores (located at `ModuleName/presentations/stores/`) are **module-private**. They hold UI preferences (zoom, sidebar state, panel layout) and are never imported by another module.
 
 ```typescript
-// ✅ Cross-module: import a business-layer store from another module
+// ✅ Cross-module: import a business-layer store from the contract barrel
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 
-const trackState = useStore<TrackStoreState>(trackStore, { tracks: [], selectedTrackId: null });
-const tracks = trackState.tracks;
+const trackState = useStore(trackStore);
+const tracks = trackState?.tracks ?? [];
+
+// ❌ Forbidden: deep import into the stores folder
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 
 // ❌ Forbidden: import a presentation-layer store from another module
 import { zoomStore } from '#/modules/Arrangement/presentations/stores/zoomStore';
@@ -40,96 +43,54 @@ This section provides a practical guide to creating, persisting, and subscribing
 
 ### 1. Define and create the store
 
-A store is a singleton instance of the `Store<T>` class. It holds the state and provides methods to update and subscribe to it.
+A store is a module-level singleton from `createStore` (`#/infra/store/createStore`).
 
 ```typescript
 // Workspace/stores/workspacePreferencesStore.ts
+import { createStore } from '#/infra/store/createStore';
 
-export type WorkspacePreferencesStore = {
+export type WorkspacePreferences = {
     theme: 'light' | 'dark';
     defaultSampleRate: 44100 | 48000 | 96000;
     showMetrics: boolean;
 };
 
-let instance: Store<WorkspacePreferencesStore>;
-
-export function getWorkspacePreferencesStore(): Store<WorkspacePreferencesStore> {
-    if (!instance) {
-        const logger = Container.getInstance().get(Logger);
-        instance = new Store<WorkspacePreferencesStore>(logger, {
-            initialData: {
-                theme: 'dark',
-                defaultSampleRate: 48000,
-                showMetrics: false,
-            },
-        });
-    }
-    return instance;
-}
+export const workspacePreferencesStore = createStore<WorkspacePreferences>({
+    initialData: {
+        theme: 'dark',
+        defaultSampleRate: 48000,
+        showMetrics: false,
+    },
+});
 ```
 
 ### 2. Connect the store to React with a hook
 
-Create a custom hook that uses `useStore` to subscribe to your store instance. This hook will provide the component with the current state and trigger re-renders when the state changes.
+Views/hooks use `useStore`. Leaf components should receive props from a view/hook.
 
 ```tsx
 // Workspace/presentations/hooks/useWorkspacePreferences.ts
-
 import { useStore } from '#/infra/store/useStore';
-import { getWorkspacePreferencesStore, type WorkspacePreferencesStore } from '../stores/workspacePreferencesStore';
+import { workspacePreferencesStore, type WorkspacePreferences } from '../../stores/workspacePreferencesStore';
 
-const defaultPreferences: WorkspacePreferencesStore = {
+const defaultPreferences: WorkspacePreferences = {
     theme: 'dark',
     defaultSampleRate: 48000,
     showMetrics: false,
 };
 
-export const useWorkspacePreferences = (): WorkspacePreferencesStore => {
-    const store = getWorkspacePreferencesStore();
-    return useStore<WorkspacePreferencesStore>(store, defaultPreferences);
+export const useWorkspacePreferences = (): WorkspacePreferences => {
+    return useStore(workspacePreferencesStore, defaultPreferences);
 };
 ```
 
 ### 3. Persist store state (optional)
 
-To persist state to `localStorage`, inject a `LocalStorageStorage` instance when creating your store. This is the only permitted way to interact with `localStorage`.
+Pass a storage adapter into `createStore` when persistence is required (see `#/infra/store/storage/*`). Prefer project patterns already used by Workspace/Arrangement stores over ad-hoc `localStorage` access.
 
-```typescript
-// Workspace/stores/dawLayoutStore.ts
+### 4. Update the store through the owning write path
 
-const LAYOUT_STORAGE_KEY = 'daw-layout-state';
-
-export type LayoutState = 'arrange' | 'mixer' | 'piano-roll';
-
-let layoutStoreInstance: Store<LayoutState>;
-
-export function getDawLayoutStore(initialState: LayoutState): Store<LayoutState> {
-    if (!layoutStoreInstance) {
-        const logger = Container.getInstance().get(Logger);
-        const storage = new LocalStorageStorage<LayoutState>(LAYOUT_STORAGE_KEY);
-        const storedValue = storage.get();
-        layoutStoreInstance = new Store<LayoutState>(logger, {
-            initialData: storedValue ?? initialState,
-            storage,
-        });
-    }
-    return layoutStoreInstance;
-}
-```
-
-### 4. Update the store in response to events
-
-Stores are often updated in response to domain events. Subscribe to an event and call the store's `update` method, which passes the current value to your updater and writes the result back atomically. Prefer `update` over `set({ ...store.value, ... })` — it removes the read-then-write gap and makes intent explicit.
-
-```typescript
-// Workspace/useCases/handleMetricsToggled.ts
-
-getEventBus().on(MetricsToggledEvent, (event) => {
-    const store = getWorkspacePreferencesStore();
-
-    store.update((current) => (current ? { ...current, showMetrics: event.payload.isEnabled } : current));
-});
-```
+Prefer owner use cases / `executeAppAction` for meaningful writes. Same-module code may update the store directly when that is the established pattern; foreign modules must not `store.set`.
 
 Use `set` directly when you are replacing the value wholesale (e.g., loading from persistence), and `clear()` to remove it entirely.
 
@@ -175,12 +136,6 @@ export const PanelHeader = ({ title }: { title: string }): ReactElement => {
 
 ---
 
-## Read-only stores
+## Async and server state
 
-For state that is fetched from an external source and is not mutated on the client (e.g., user permissions, session data), a `ReadonlyStore` is available. It follows the same principles as the standard `Store` but with a few key differences:
-
-- It is created via an asynchronous `ReadonlyStore.create()` method.
-- It requires a `getDataFn` for fetching and refreshing its data.
-- It does not have a `set()` method, enforcing a strict read-only pattern.
-
-The setup is analogous to the standard `Store`, using a singleton getter and a React hook for component subscriptions.
+Use TanStack Query for fetched data with loading, caching, invalidation, or refetch semantics. Sourdaw does not have a `ReadonlyStore` API; do not invent one or put server data in a vanilla store.

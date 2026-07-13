@@ -53,8 +53,8 @@ export type TrackRemovedPayload = { trackId: string };
 
 // app/registerDependencies.ts
 import { createEventBus } from '#/infra/events/createEventBus';
-import { type TrackAddedPayload } from '#/modules/Arrangement/events/TrackAddedEvent';
-import { type TrackRemovedPayload } from '#/modules/Arrangement/events/TrackRemovedEvent';
+import { type TrackAddedPayload } from '#/modules/Arrangement/events';
+import { type TrackRemovedPayload } from '#/modules/Arrangement/events';
 
 export type AppEvents = {
     'track.added': TrackAddedPayload;
@@ -87,20 +87,23 @@ Publish events from business operations, typically at the end of a use case afte
 #### Publishing from use cases
 
 ```typescript
-// Arrangement/useCases/addTrack.ts
+// Arrangement/useCases/addTrack.ts — inject the module event bus token
+import { inject } from '#/infra/di/inject';
+import { ArrangementEventBus } from './arrangementEventBus';
 
-import { eventBus } from '#/app/bootstrap';
-
-export function addTrack(input: AddTrackInput): Track | null {
-    const state = getTrackState();
-    if (!state) return null;
-
-    const track = createTrack(input);
-    setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
-
-    eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-    return track;
-}
+export const addTrack = inject({ eventBus: ArrangementEventBus })(
+    ({ eventBus }) =>
+        function addTrack(input: AddTrackInput): Track | null {
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
+            const track = createTrack(input);
+            setTrackState({ ...state, tracks: [...state.tracks, track], selectedTrackId: track.id });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            return track;
+        }
+);
 ```
 
 > [!IMPORTANT]
@@ -166,16 +169,13 @@ export const useFlagSubscription = (callback: () => void) => {
     }, [callback]);
 };
 
-// ✅ Good: useEffectEvent + resolve inside useEffect
+// ✅ Good: useEffectEvent; bus from props / module wiring (not Container.getInstance())
 import { useEffect, useEffectEvent } from 'react';
-import { Container } from '#/infra/di/Container';
-import { EventBus } from '#/infra/events/types';
 
-export const useFlagSubscription = (callback: () => void) => {
+export const useFlagSubscription = (eventBus: { on: (type: string, cb: () => void) => () => void }, callback: () => void) => {
     const onFlagsFetched = useEffectEvent(callback);
 
     useEffect(() => {
-        const eventBus = Container.getInstance().get(EventBus);
         const unsubscribe = eventBus.on('flags.fetched', () => {
             onFlagsFetched();
         });
@@ -183,7 +183,7 @@ export const useFlagSubscription = (callback: () => void) => {
         return () => {
             unsubscribe();
         };
-    }, []);
+    }, [eventBus]);
 };
 ```
 
