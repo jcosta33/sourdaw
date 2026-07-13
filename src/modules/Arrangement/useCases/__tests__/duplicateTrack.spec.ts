@@ -7,8 +7,10 @@ import { type Clip, type Track, type TrackKind } from '../../models/Track';
 import { duplicateTrack } from '../duplicateTrack';
 
 import type { TrackAddedPayload } from '../../events';
+import type { TrackState } from '../../repositories/track/getTrackState';
 
 type ClipCopy = { sourceClipId: string; targetClipId: string };
+type Rollback = () => void;
 type AddTrackInput = {
     id?: string;
     name: string;
@@ -18,8 +20,8 @@ type AddTrackInput = {
 };
 type AddTrack = (input: AddTrackInput) => Track | null;
 type UpdateTrack = (trackId: string, updater: (track: Track) => Track) => void;
-type DuplicateMidiClipData = (input: { copies: readonly ClipCopy[] }) => void;
-type DuplicateClipAutomation = (sourceClipId: string, targetClipId: string) => void;
+type DuplicateMidiClipData = (input: { copies: readonly ClipCopy[] }) => Rollback;
+type DuplicateClipAutomationBatch = (input: { copies: readonly ClipCopy[] }) => Rollback;
 type EmitTrackAdded = (event: 'track.added', payload: TrackAddedPayload) => Promise<void>;
 type DuplicateTrackEvents = { 'track.added': TrackAddedPayload };
 
@@ -29,10 +31,12 @@ const mocks = vi.hoisted(() => {
     return {
         callOrder,
         getTrackById: vi.fn<(trackId: string) => Track | undefined>(),
+        getTrackState: vi.fn<() => TrackState | null>(),
+        setTrackState: vi.fn<(state: TrackState) => void>(),
         updateTrack: vi.fn<UpdateTrack>(),
         addTrack: vi.fn<AddTrack>(),
         duplicateMidiClipData: vi.fn<DuplicateMidiClipData>(),
-        duplicateClipAutomation: vi.fn<DuplicateClipAutomation>(),
+        duplicateClipAutomationBatch: vi.fn<DuplicateClipAutomationBatch>(),
         eventBus: {
             emit: vi.fn<EmitTrackAdded>(),
         },
@@ -40,10 +44,14 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../../repositories/track/getTrackById', () => ({ getTrackById: mocks.getTrackById }));
+vi.mock('../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
+vi.mock('../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../repositories/track/updateTrack', () => ({ updateTrack: mocks.updateTrack }));
 vi.mock('../addTrack', () => ({ addTrack: mocks.addTrack }));
 vi.mock('#/modules/MIDI/useCases', () => ({ duplicateMidiClipData: mocks.duplicateMidiClipData }));
-vi.mock('#/modules/Automation/useCases', () => ({ duplicateClipAutomation: mocks.duplicateClipAutomation }));
+vi.mock('#/modules/Automation/useCases', () => ({
+    duplicateClipAutomationBatch: mocks.duplicateClipAutomationBatch,
+}));
 
 function createClip(input: Partial<Clip> & Pick<Clip, 'id' | 'type'>): Clip {
     return {
@@ -136,15 +144,22 @@ describe('duplicateTrack', () => {
         injectDependencies(duplicateTrack, { eventBus: mocks.eventBus });
         mocks.callOrder.length = 0;
         mocks.getTrackById.mockReturnValue(undefined);
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
         mocks.addTrack.mockReturnValue(null);
         mocks.updateTrack.mockImplementation(() => {
             mocks.callOrder.push('updateTrack');
         });
         mocks.duplicateMidiClipData.mockImplementation(() => {
             mocks.callOrder.push('duplicateMidiClipData');
+            return () => {
+                mocks.callOrder.push('rollbackMidi');
+            };
         });
-        mocks.duplicateClipAutomation.mockImplementation((sourceClipId) => {
-            mocks.callOrder.push(`duplicateClipAutomation:${sourceClipId}`);
+        mocks.duplicateClipAutomationBatch.mockImplementation(() => {
+            mocks.callOrder.push('duplicateClipAutomationBatch');
+            return () => {
+                mocks.callOrder.push('rollbackAutomation');
+            };
         });
     });
 
@@ -154,7 +169,7 @@ describe('duplicateTrack', () => {
         expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
-        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
@@ -180,7 +195,7 @@ describe('duplicateTrack', () => {
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
-        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
         expect(mocks.callOrder).toEqual([]);
         expect(mocks.addTrack).toHaveBeenCalledWith(expect.objectContaining({ suppressAddedEvent: true }));
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
@@ -301,20 +316,18 @@ describe('duplicateTrack', () => {
                 { sourceClipId: sourceMidiTwo.id, targetClipId: copiedMidiTwo.id },
             ],
         });
-        expect(mocks.duplicateClipAutomation).toHaveBeenCalledTimes(3);
-        expect(mocks.duplicateClipAutomation).toHaveBeenNthCalledWith(1, sourceMidiOne.id, copiedMidiOne.id);
-        expect(mocks.duplicateClipAutomation).toHaveBeenNthCalledWith(2, sourceAudio.id, copiedAudio.id);
-        expect(mocks.duplicateClipAutomation).toHaveBeenNthCalledWith(3, sourceMidiTwo.id, copiedMidiTwo.id);
-        expect(mocks.callOrder).toEqual([
-            'updateTrack',
-            'duplicateMidiClipData',
-            `duplicateClipAutomation:${sourceMidiOne.id}`,
-            `duplicateClipAutomation:${sourceAudio.id}`,
-            `duplicateClipAutomation:${sourceMidiTwo.id}`,
-        ]);
+        expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledTimes(1);
+        expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledWith({
+            copies: [
+                { sourceClipId: sourceMidiOne.id, targetClipId: copiedMidiOne.id },
+                { sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id },
+                { sourceClipId: sourceMidiTwo.id, targetClipId: copiedMidiTwo.id },
+            ],
+        });
+        expect(mocks.callOrder).toEqual(['updateTrack', 'duplicateMidiClipData', 'duplicateClipAutomationBatch']);
     });
 
-    it('emits track.added after the duplicate is fully visible to event handlers', () => {
+    it('emits track.added after the duplicate is fully visible to event handlers', async () => {
         const sourceMidi = createClip({ id: 'clip-midi', type: 'midi' });
         const sourceAudio = createClip({ id: 'clip-audio', type: 'audio' });
         const source = createTrack({
@@ -342,70 +355,161 @@ describe('duplicateTrack', () => {
         });
 
         const eventBus = createEventBus<DuplicateTrackEvents>();
+        let observation:
+            | {
+                  payload: TrackAddedPayload;
+                  trackId: string | undefined;
+                  alternativeIds: string[];
+                  activeAlternativeId: string | undefined;
+                  activeClipIds: string[];
+                  midiCallCount: number;
+                  automationCallCount: number;
+                  callOrder: string[];
+              }
+            | undefined;
         const observer = vi.fn((payload: TrackAddedPayload) => {
             const observableTrack = duplicatedTrack;
-            if (!observableTrack) {
-                throw new Error('Expected duplicate track during track.added');
-            }
-
-            const activeAlternative = observableTrack.alternatives.find(
-                (alternative) => alternative.id === observableTrack.activeAlternativeId
-            );
-            if (!activeAlternative) {
-                throw new Error('Expected active alternative during track.added');
-            }
-
-            expect(payload).toEqual({
-                trackId: observableTrack.id,
-                name: `${source.name} (copy)`,
-                kind: source.kind,
-            });
-            expect(observableTrack.alternatives).toHaveLength(1);
-            expect(observableTrack.clips).toEqual(activeAlternative.clips);
-            expect(mocks.duplicateMidiClipData).toHaveBeenCalledTimes(1);
-            expect(mocks.duplicateClipAutomation).toHaveBeenCalledTimes(2);
-            expect(mocks.callOrder).toEqual([
-                'updateTrack',
-                'duplicateMidiClipData',
-                `duplicateClipAutomation:${sourceMidi.id}`,
-                `duplicateClipAutomation:${sourceAudio.id}`,
-            ]);
+            observation = {
+                payload: { ...payload },
+                trackId: observableTrack?.id,
+                alternativeIds: observableTrack?.alternatives.map((alternative) => alternative.id) ?? [],
+                activeAlternativeId: observableTrack?.activeAlternativeId,
+                activeClipIds: observableTrack?.clips.map((clip) => clip.id) ?? [],
+                midiCallCount: mocks.duplicateMidiClipData.mock.calls.length,
+                automationCallCount: mocks.duplicateClipAutomationBatch.mock.calls.length,
+                callOrder: [...mocks.callOrder],
+            };
         });
         eventBus.on('track.added', observer);
         injectDependencies(duplicateTrack, { eventBus });
 
         duplicateTrack(source.id);
+        await eventBus.waitForIdle();
 
         expect(observer).toHaveBeenCalledTimes(1);
+        if (!observation) {
+            throw new Error('Expected immutable event observation');
+        }
+        expect(observation.payload).toEqual({
+            trackId: observation.trackId,
+            name: `${source.name} (copy)`,
+            kind: source.kind,
+        });
+        expect(observation.alternativeIds).toHaveLength(1);
+        expect(observation.alternativeIds).toContain(observation.activeAlternativeId);
+        expect(observation.activeClipIds).toHaveLength(2);
+        expect(observation.midiCallCount).toBe(1);
+        expect(observation.automationCallCount).toBe(1);
+        expect(observation.callOrder).toEqual(['updateTrack', 'duplicateMidiClipData', 'duplicateClipAutomationBatch']);
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
-    it.each([
-        [
-            'updating the duplicate',
-            () => {
-                mocks.updateTrack.mockImplementation(() => {
-                    throw new Error('update failed');
-                });
-            },
-        ],
-        [
-            'duplicating MIDI clip data',
-            () => {
-                mocks.duplicateMidiClipData.mockImplementation(() => {
-                    throw new Error('MIDI duplication failed');
-                });
-            },
-        ],
-        [
-            'duplicating clip automation',
-            () => {
-                mocks.duplicateClipAutomation.mockImplementation(() => {
-                    throw new Error('automation duplication failed');
-                });
-            },
-        ],
-    ])('does not emit track.added when %s throws', (_step, configureThrow) => {
+    it.each(['update', 'midi', 'automation'] as const)(
+        'restores exact owner snapshots and preserves the original %s failure',
+        (failurePoint) => {
+            const sourceClip = createClip({ id: 'clip-midi', type: 'midi' });
+            const source = createTrack({
+                id: 'track-source',
+                alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [sourceClip] }],
+                activeAlternativeId: 'alt-source',
+            });
+            const arrangementSnapshot: TrackState = {
+                tracks: [source],
+                selectedTrackId: source.id,
+                ghostClips: [sourceClip],
+            };
+            const midiSnapshot = { values: ['midi-before'] };
+            const automationSnapshot = { values: ['automation-before'] };
+            const arrangementSnapshotValue = structuredClone(arrangementSnapshot);
+            const midiSnapshotValue = structuredClone(midiSnapshot);
+            const automationSnapshotValue = structuredClone(automationSnapshot);
+            const originalFailure = new Error(`${failurePoint} failed`);
+            let arrangementState = arrangementSnapshot;
+            let midiState = midiSnapshot;
+            let automationState = automationSnapshot;
+
+            mocks.getTrackById.mockReturnValue(source);
+            mocks.getTrackState.mockImplementation(() => arrangementState);
+            mocks.setTrackState.mockImplementation((state) => {
+                mocks.callOrder.push('rollbackArrangement');
+                arrangementState = state;
+            });
+            mocks.addTrack.mockImplementation((input) => {
+                const track = createTrack({ id: input.id, name: input.name, kind: input.kind });
+                mocks.callOrder.push('addTrack');
+                arrangementState = {
+                    ...arrangementState,
+                    tracks: [...arrangementState.tracks, track],
+                    selectedTrackId: track.id,
+                };
+                return track;
+            });
+            mocks.updateTrack.mockImplementation((trackId, updater) => {
+                mocks.callOrder.push('updateTrack');
+                if (failurePoint === 'update') {
+                    throw originalFailure;
+                }
+                arrangementState = {
+                    ...arrangementState,
+                    tracks: arrangementState.tracks.map((track) => (track.id === trackId ? updater(track) : track)),
+                };
+            });
+            mocks.duplicateMidiClipData.mockImplementation(() => {
+                mocks.callOrder.push('duplicateMidiClipData');
+                if (failurePoint === 'midi') {
+                    throw originalFailure;
+                }
+                midiState = { values: ['midi-committed'] };
+                return () => {
+                    mocks.callOrder.push('rollbackMidi');
+                    midiState = midiSnapshot;
+                };
+            });
+            mocks.duplicateClipAutomationBatch.mockImplementation(() => {
+                mocks.callOrder.push('duplicateClipAutomationBatch');
+                if (failurePoint === 'automation') {
+                    throw originalFailure;
+                }
+                automationState = { values: ['automation-committed'] };
+                return () => {
+                    mocks.callOrder.push('rollbackAutomation');
+                    automationState = automationSnapshot;
+                };
+            });
+
+            let thrown: unknown;
+            try {
+                duplicateTrack(source.id);
+            } catch (error) {
+                thrown = error;
+            }
+
+            const expectedOrder = {
+                update: ['addTrack', 'updateTrack', 'rollbackArrangement'],
+                midi: ['addTrack', 'updateTrack', 'duplicateMidiClipData', 'rollbackArrangement'],
+                automation: [
+                    'addTrack',
+                    'updateTrack',
+                    'duplicateMidiClipData',
+                    'duplicateClipAutomationBatch',
+                    'rollbackMidi',
+                    'rollbackArrangement',
+                ],
+            }[failurePoint];
+
+            expect(thrown).toBe(originalFailure);
+            expect(arrangementState).toBe(arrangementSnapshot);
+            expect(arrangementState).toEqual(arrangementSnapshotValue);
+            expect(midiState).toBe(midiSnapshot);
+            expect(midiState).toEqual(midiSnapshotValue);
+            expect(automationState).toBe(automationSnapshot);
+            expect(automationState).toEqual(automationSnapshotValue);
+            expect(mocks.callOrder).toEqual(expectedOrder);
+            expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+        }
+    );
+
+    it('continues reverse rollback after a rollback error without masking the original failure', () => {
         const source = createTrack({
             id: 'track-source',
             alternatives: [
@@ -417,12 +521,41 @@ describe('duplicateTrack', () => {
             ],
             activeAlternativeId: 'alt-source',
         });
+        const arrangementSnapshot: TrackState = { tracks: [source], selectedTrackId: source.id };
+        const originalFailure = new Error('automation failed');
         mocks.getTrackById.mockReturnValue(source);
+        mocks.getTrackState.mockReturnValue(arrangementSnapshot);
+        mocks.setTrackState.mockImplementation(() => {
+            mocks.callOrder.push('rollbackArrangement');
+        });
         returnCreatedTrack();
-        configureThrow();
+        mocks.duplicateMidiClipData.mockImplementation(() => {
+            mocks.callOrder.push('duplicateMidiClipData');
+            return () => {
+                mocks.callOrder.push('rollbackMidi');
+                throw new Error('rollback failed');
+            };
+        });
+        mocks.duplicateClipAutomationBatch.mockImplementation(() => {
+            mocks.callOrder.push('duplicateClipAutomationBatch');
+            throw originalFailure;
+        });
 
-        expect(() => duplicateTrack(source.id)).toThrow();
+        let thrown: unknown;
+        try {
+            duplicateTrack(source.id);
+        } catch (error) {
+            thrown = error;
+        }
 
+        expect(thrown).toBe(originalFailure);
+        expect(mocks.callOrder).toEqual([
+            'updateTrack',
+            'duplicateMidiClipData',
+            'duplicateClipAutomationBatch',
+            'rollbackMidi',
+            'rollbackArrangement',
+        ]);
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
@@ -444,7 +577,9 @@ describe('duplicateTrack', () => {
         const copiedAudio = requireFirst(copiedAlternative.clips, 'copied audio clip');
 
         expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
-        expect(mocks.duplicateClipAutomation).toHaveBeenCalledTimes(1);
-        expect(mocks.duplicateClipAutomation).toHaveBeenCalledWith(sourceAudio.id, copiedAudio.id);
+        expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledTimes(1);
+        expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledWith({
+            copies: [{ sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id }],
+        });
     });
 });

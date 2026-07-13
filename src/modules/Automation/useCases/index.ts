@@ -4,6 +4,7 @@ export { addAutomationPoint } from './automation/addAutomationPoint';
 export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 export { createAutomationLane } from './automation/createAutomationLane';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
+export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomationBatch';
 export { recordAutomationValue } from './automationRecording/recordAutomationValue';
 export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
 export type { AutomationRecordingDependencies } from './automationRecording/recordingDependencies';

@@ -66,8 +66,8 @@ function requireFirst<TRow>(rows: readonly TRow[], label: string): TRow {
     return row;
 }
 
-function duplicate(copies: DuplicateMidiClipDataInput['copies']): void {
-    duplicateMidiClipData({ copies });
+function duplicate(copies: DuplicateMidiClipDataInput['copies']): ReturnType<typeof duplicateMidiClipData> {
+    return duplicateMidiClipData({ copies });
 }
 
 describe('duplicateMidiClipData', () => {
@@ -85,7 +85,9 @@ describe('duplicateMidiClipData', () => {
     });
 
     it('does not read empty work and reads a nonempty unavailable store once', () => {
-        duplicate([]);
+        const rollbackEmptyWork = duplicate([]);
+
+        expect(() => rollbackEmptyWork()).not.toThrow();
 
         expect(mocks.getValue).not.toHaveBeenCalled();
         expect(mocks.set).not.toHaveBeenCalled();
@@ -93,7 +95,9 @@ describe('duplicateMidiClipData', () => {
         mocks.state.value = null;
         vi.clearAllMocks();
 
-        duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const rollbackUnavailableStore = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+
+        expect(() => rollbackUnavailableStore()).not.toThrow();
 
         expect(mocks.getValue).toHaveBeenCalledTimes(1);
         expect(mocks.set).not.toHaveBeenCalled();
@@ -108,7 +112,9 @@ describe('duplicateMidiClipData', () => {
         };
         mocks.state.value = previousState;
 
-        duplicate([{ sourceClipId: 'empty', targetClipId: 'target' }]);
+        const rollback = duplicate([{ sourceClipId: 'empty', targetClipId: 'target' }]);
+
+        expect(() => rollback()).not.toThrow();
 
         expect(mocks.getValue).toHaveBeenCalledTimes(1);
         expect(mocks.set).not.toHaveBeenCalled();
@@ -140,13 +146,14 @@ describe('duplicateMidiClipData', () => {
         };
         const copies = [{ sourceClipId: 'source', targetClipId: 'target' }];
         const copiesBefore = copies.map((copy) => ({ ...copy }));
+        const previousStateValue = structuredClone(previousState);
         mocks.state.value = previousState;
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('abcdef01-0000-4000-8000-000000000000')
             .mockReturnValueOnce('10203040-0000-4000-8000-000000000000')
             .mockReturnValueOnce('55667788-0000-4000-8000-000000000000');
 
-        duplicate(copies);
+        const rollback = duplicate(copies);
 
         const nextState = requireMidiState();
         const copiedNote = requireFirst(requireRows(nextState.notesByClipId, 'target'), 'note');
@@ -175,6 +182,13 @@ describe('duplicateMidiClipData', () => {
         expect(sourceControlChange).toEqual(sourceControlChangeBefore);
         expect(sourcePitchBend).toEqual(sourcePitchBendBefore);
         expect(copies).toEqual(copiesBefore);
+
+        expect(() => rollback()).not.toThrow();
+        expect(mocks.state.value).toBe(previousState);
+        expect(mocks.state.value).toEqual(previousStateValue);
+        expect(mocks.set).toHaveBeenNthCalledWith(2, previousState);
+        expect(() => rollback()).not.toThrow();
+        expect(mocks.state.value).toBe(previousState);
     });
 
     it('processes batch pairs in order and gives repeated-source rows independent IDs', () => {
@@ -254,5 +268,28 @@ describe('duplicateMidiClipData', () => {
         expect(mocks.set).not.toHaveBeenCalled();
         expect(mocks.state.value).toBe(previousState);
         expect(sourceRows).toEqual([createNote('note-one'), createNote('note-two')]);
+    });
+
+    it('restores the exact snapshot when the owner mutation throws after writing', () => {
+        const previousState: MidiStoreState = {
+            notesByClipId: { source: [createNote('note-source')] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const mutationFailure = new Error('MIDI owner mutation failed');
+        mocks.state.value = previousState;
+        mocks.set
+            .mockImplementationOnce((nextState) => {
+                mocks.state.value = nextState;
+                throw mutationFailure;
+            })
+            .mockImplementationOnce((nextState) => {
+                mocks.state.value = nextState;
+            });
+
+        expect(() => duplicate([{ sourceClipId: 'source', targetClipId: 'target' }])).toThrow(mutationFailure);
+
+        expect(mocks.set).toHaveBeenCalledTimes(2);
+        expect(mocks.state.value).toBe(previousState);
     });
 });

@@ -4,14 +4,14 @@ type DuplicateMidiClipDataInput = {
     copies: readonly { sourceClipId: string; targetClipId: string }[];
 };
 
-export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): void {
+export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): () => void {
     if (copies.length === 0) {
-        return;
+        return () => undefined;
     }
 
     const state = midiStore.value;
     if (state === null) {
-        return;
+        return () => undefined;
     }
 
     const notesByClipId = { ...state.notesByClipId };
@@ -49,8 +49,20 @@ export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): v
     }
 
     if (!hasDuplicatedData) {
-        return;
+        return () => undefined;
     }
 
-    midiStore.set({ ...state, notesByClipId, ccByClipId, pitchBendByClipId });
+    try {
+        midiStore.set({ ...state, notesByClipId, ccByClipId, pitchBendByClipId });
+    } catch (error) {
+        try {
+            midiStore.set(state);
+        } catch {
+            // Preserve the original mutation failure if restoration also fails.
+        }
+        throw error;
+    }
+    return () => {
+        midiStore.set(state);
+    };
 }
