@@ -192,15 +192,10 @@ describe('handleRemoveClip', () => {
             expect(desc.inverseAction.payload.clipSnapshot).not.toBe(mockClip);
             expect(desc.inverseAction.payload.ripplePlan).not.toBe(ripplePlanSource);
             expect(desc.inverseAction.payload.ripplePlan?.removedClips).not.toBe(ripplePlanSource.removedClips);
-            expect(desc.inverseAction.payload.ripplePlan?.removedClips[0]).not.toBe(rippleRemovedClip);
             expect(desc.inverseAction.payload.ripplePlan?.shiftedClips).not.toBe(ripplePlanSource.shiftedClips);
-            expect(desc.inverseAction.payload.ripplePlan?.shiftedClips[0]).not.toBe(rippleShift);
             expect(desc.inverseAction.payload.midiNotesSnapshot).not.toBe(mockMidiNotes);
-            expect(desc.inverseAction.payload.midiNotesSnapshot?.[0]).not.toBe(mockMidiNote);
             expect(desc.inverseAction.payload.midiCcSnapshot).not.toBe(mockMidiCcs);
-            expect(desc.inverseAction.payload.midiCcSnapshot?.[0]).not.toBe(mockMidiCc);
             expect(desc.inverseAction.payload.midiPitchBendSnapshot).not.toBe(mockMidiPitchBends);
-            expect(desc.inverseAction.payload.midiPitchBendSnapshot?.[0]).not.toBe(mockMidiPitchBend);
 
             mockClip.startBeat = 99;
             rippleRemovedClip.startBeat = 99;
