@@ -143,7 +143,17 @@ describe('handleRemoveTrack', () => {
 
         it('returns inverse action with full snapshot state', () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] }],
+                tracks: [
+                    {
+                        id: 't1',
+                        name: 'Vocals',
+                        clips: [{ id: 'c1' }],
+                        alternatives: [
+                            { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c2' }] },
+                            { id: 'alt-inactive', name: 'Inactive', clips: [{ id: 'c3' }, { id: 'c1' }] },
+                        ],
+                    },
+                ],
             });
 
             mocks.automationStoreValue.value = {
@@ -154,10 +164,24 @@ describe('handleRemoveTrack', () => {
             };
 
             mocks.midiStoreValue.value = {
-                notesByClipId: { c1: [{ pitch: 60 }] },
-                ccByClipId: { c1: [{ value: 10 }] },
-                pitchBendByClipId: { c1: [{ value: 0 }] },
-                c2: [{ pitch: 64 }],
+                notesByClipId: {
+                    c1: [{ pitch: 60 }],
+                    c2: [{ pitch: 61 }],
+                    c3: [{ pitch: 62 }],
+                    unrelated: [{ pitch: 64 }],
+                },
+                ccByClipId: {
+                    c1: [{ value: 10 }],
+                    c2: [{ value: 11 }],
+                    c3: [{ value: 12 }],
+                    unrelated: [{ value: 14 }],
+                },
+                pitchBendByClipId: {
+                    c1: [{ value: 0 }],
+                    c2: [{ value: 1 }],
+                    c3: [{ value: 2 }],
+                    unrelated: [{ value: 4 }],
+                },
             };
 
             mocks.takeLaneStoreValue.value = {
@@ -178,13 +202,33 @@ describe('handleRemoveTrack', () => {
 
             const payload = desc.inverseAction?.payload;
             expect(payload?.trackId).toBe('t1');
-            expect(payload?.trackSnapshot).toEqual({ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] });
+            expect(payload?.trackSnapshot).toEqual({
+                id: 't1',
+                name: 'Vocals',
+                clips: [{ id: 'c1' }],
+                alternatives: [
+                    { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c2' }] },
+                    { id: 'alt-inactive', name: 'Inactive', clips: [{ id: 'c3' }, { id: 'c1' }] },
+                ],
+            });
             expect(payload?.automationLaneSnapshots).toEqual([{ trackId: 't1', id: 'l1' }]);
             expect(payload?.takeLaneSnapshots).toEqual([{ trackId: 't1', id: 'take1' }]);
 
-            expect(payload?.midiNotesByClipId).toEqual({ c1: [{ pitch: 60 }] });
-            expect(payload?.midiCcByClipId).toEqual({ c1: [{ value: 10 }] });
-            expect(payload?.midiPitchBendByClipId).toEqual({ c1: [{ value: 0 }] });
+            expect(payload?.midiNotesByClipId).toEqual({
+                c1: [{ pitch: 60 }],
+                c2: [{ pitch: 61 }],
+                c3: [{ pitch: 62 }],
+            });
+            expect(payload?.midiCcByClipId).toEqual({
+                c1: [{ value: 10 }],
+                c2: [{ value: 11 }],
+                c3: [{ value: 12 }],
+            });
+            expect(payload?.midiPitchBendByClipId).toEqual({
+                c1: [{ value: 0 }],
+                c2: [{ value: 1 }],
+                c3: [{ value: 2 }],
+            });
         });
     });
 

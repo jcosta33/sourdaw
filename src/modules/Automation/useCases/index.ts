@@ -11,6 +11,7 @@ export type { AutomationRecordingDependencies } from './automationRecording/reco
 export { setModulationDependencies } from './modulation/modulationDependencies';
 export type { ModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';
+export { removeAutomationLanesForTrack } from './automation/removeAutomationLanesForTrack';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
