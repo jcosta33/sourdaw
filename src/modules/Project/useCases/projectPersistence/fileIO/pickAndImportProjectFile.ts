@@ -1,8 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { isSupportedProjectVersion, type ProjectData } from '../../../models/ProjectData';
 import { pickFiles } from '../../fileDialog';
+import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
@@ -25,9 +25,9 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
         const content = await file.text();
-        const data = JSON.parse(content) as ProjectData;
+        const data: unknown = JSON.parse(content);
 
-        if (!isSupportedProjectVersion(data.version) || !data.arrangement?.tracks || !data.meta) {
+        if (!isHydratableProjectData(data)) {
             notifyUser('Invalid project file format', 'error');
             return false;
         }

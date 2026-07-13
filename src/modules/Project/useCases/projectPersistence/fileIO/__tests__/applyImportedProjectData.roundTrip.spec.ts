@@ -6,6 +6,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
@@ -17,8 +18,15 @@ type RestoreCachedAudioBuffersInput = {
     shouldContinue?: () => boolean;
 };
 
-const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
+type ImportCachedAudioBuffersInput = {
+    audioContext: object;
+    buffers: Record<string, { sampleRate: number; numberOfChannels: number; channelData: string[] }>;
+    shouldContinue?: () => boolean;
+};
+
+const { audioContext, importCachedAudioBuffers, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
     audioContext: {},
+    importCachedAudioBuffers: vi.fn<(input: ImportCachedAudioBuffersInput) => Promise<number>>().mockResolvedValue(0),
     restoreCachedAudioBuffersFromIdb: vi
         .fn<(input: RestoreCachedAudioBuffersInput) => Promise<number>>()
         .mockResolvedValue(0),
@@ -27,6 +35,7 @@ const { audioContext, restoreCachedAudioBuffersFromIdb } = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioContext,
     getCachedAudioBuffer: () => null,
+    importCachedAudioBuffers,
     resetAudioGraph: vi.fn(),
     restoreCachedAudioBuffersFromIdb,
 }));
@@ -167,7 +176,9 @@ function makeProject(): ProjectData {
 
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
+        importCachedAudioBuffers.mockClear();
         restoreCachedAudioBuffersFromIdb.mockClear();
+        vi.mocked(resetModuleStoresToDefault).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -235,7 +246,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(publicationStates).toEqual([true]);
     });
 
-    it('passes undefined bufferIds to restoreCachedAudioBuffersFromIdb when no clips reference buffers', async () => {
+    it('passes an empty buffer list when no clips reference buffers', async () => {
         const project = makeProject();
         project.arrangement.tracks = [baseTrack('track-audio', [])];
 
@@ -244,7 +255,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
         const call = restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0];
         expect(call?.audioContext).toBe(audioContext);
-        expect(call?.bufferIds).toBeUndefined();
+        expect(call?.bufferIds).toEqual([]);
         expect(call?.shouldContinue?.()).toBe(true);
     });
 
@@ -277,5 +288,56 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const state = arrangementStore.value!;
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
+    });
+
+    it('rejects malformed hydration data without resetting the live project', async () => {
+        const malformed = makeProject();
+        Reflect.set(malformed.midi.notesByClipId, 'clip-midi', null);
+        trackStore.set({ tracks: [], selectedTrackId: null });
+
+        await expect(applyImportedProjectData({ data: malformed })).resolves.toBe(false);
+
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(trackStore.value).toEqual({ tracks: [], selectedTrackId: null });
+    });
+
+    it('imports embedded audio before restoring referenced buffers from IDB', async () => {
+        const project = makeProject();
+        project.audioBuffers = {
+            'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+        };
+
+        await applyImportedProjectData({ data: project });
+
+        const importInput = importCachedAudioBuffers.mock.calls[0]?.[0];
+        expect(importInput).toMatchObject({
+            audioContext,
+            buffers: project.audioBuffers,
+        });
+        expect(importInput?.shouldContinue?.()).toBe(true);
+        expect(importCachedAudioBuffers.mock.invocationCallOrder[0]).toBeLessThan(
+            restoreCachedAudioBuffersFromIdb.mock.invocationCallOrder[0]!
+        );
+    });
+
+    it('preserves saved arrangements from native project files', async () => {
+        const project = makeProject();
+        const first = structuredClone(defaultArrangementStoreState.arrangements[0]!);
+        const second = structuredClone(first);
+        first.id = 'verse';
+        first.name = 'Verse';
+        second.id = 'chorus';
+        second.name = 'Chorus';
+        project.arrangements = [first, second];
+        project.activeArrangementId = second.id;
+
+        await applyImportedProjectData({ data: project });
+
+        expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
+            { id: 'verse', name: 'Verse' },
+            { id: 'chorus', name: 'Chorus' },
+        ]);
+        expect(arrangementStore.value?.activeArrangementId).toBe('chorus');
     });
 });

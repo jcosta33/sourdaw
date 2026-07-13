@@ -1,13 +1,20 @@
 import { logger } from '#/infra/logger/appLogger';
-import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import {
+    getAudioContext,
+    importCachedAudioBuffers,
+    resetAudioGraph,
+    restoreCachedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
+import { type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
+import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
+import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
 import {
     type ProjectLoadTransaction,
@@ -30,11 +37,12 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             return false;
         }
 
-        const data = JSON.parse(raw) as ProjectData;
-        if (!isSupportedProjectVersion(data.version)) {
+        const parsed: unknown = JSON.parse(raw);
+        if (!isHydratableProjectData(parsed)) {
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }
+        const data: ProjectData = parsed;
 
         if (!transaction.activate()) {
             return false;
@@ -45,10 +53,24 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             projectStore.set({ ...currentProject, loading: true });
         }
 
+        const audioContext = getAudioContext();
+        const referencedIds = collectProjectAudioBufferIds({ data });
+        if (data.audioBuffers) {
+            await importCachedAudioBuffers({
+                audioContext,
+                buffers: data.audioBuffers,
+                shouldContinue: transaction.isCurrent,
+            });
+        }
+        if (!transaction.isCurrent()) {
+            return false;
+        }
+
         // Restore runtime buffers before publishing the loaded track graph so
         // waveform consumers are ready on the first real track update.
         await restoreCachedAudioBuffersFromIdb({
-            audioContext: getAudioContext(),
+            audioContext,
+            bufferIds: referencedIds,
             shouldContinue: transaction.isCurrent,
         });
 

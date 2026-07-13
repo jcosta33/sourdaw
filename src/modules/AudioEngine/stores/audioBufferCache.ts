@@ -331,7 +331,7 @@ export const audioBufferCache = {
             // takes and imported samples that are not needed for this session.
             // Without IDs, fall back to loading all keys (legacy / startup path).
             let keys: IDBValidKey[];
-            if (ids && ids.length > 0) {
+            if (ids !== undefined) {
                 keys = ids.filter((id) => !cache.has(id));
             } else {
                 keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
@@ -458,8 +458,20 @@ export const audioBufferCache = {
      * .sourdaw project file, loading them into both the in-memory cache and IDB.
      * Buffers whose ID already exists in the cache are skipped. */
     // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; persistToIdb is fire-and-forget; callers await this method
-    async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
+    async importBuffers({
+        buffers,
+        context,
+        shouldContinue,
+    }: {
+        buffers: Record<string, ExportedAudioBuffer>;
+        context: BaseAudioContext;
+        shouldContinue?: () => boolean;
+    }): Promise<number> {
+        let imported = 0;
         for (const [id, data] of Object.entries(buffers)) {
+            if (shouldContinue?.() === false) {
+                return imported;
+            }
             if (cache.has(id)) {
                 continue;
             }
@@ -476,10 +488,12 @@ export const audioBufferCache = {
                 clearWaveformCachesForId(id);
                 audioCacheSet(id, buffer);
                 void persistToIdb(id, buffer);
+                imported++;
             } catch {
                 // Skip any malformed entry
             }
         }
+        return imported;
     },
 
     async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {

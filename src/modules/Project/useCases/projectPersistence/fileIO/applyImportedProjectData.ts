@@ -1,11 +1,18 @@
-import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import {
+    getAudioContext,
+    importCachedAudioBuffers,
+    resetAudioGraph,
+    restoreCachedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ProjectData } from '../../../models/ProjectData';
 import { projectStore } from '../../../stores/projectStore';
+import { collectProjectAudioBufferIds } from '../helpers/collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
+import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
@@ -31,21 +38,21 @@ async function performImportedProjectDataApplication({
     // Restore referenced runtime buffers before publishing the imported track
     // graph. Track subscribers can render waveforms from their first update,
     // without a synthetic track-store write after hydration.
-    const referencedIds = [
-        ...new Set(
-            data.arrangement.tracks.flatMap((track) => [
-                track.freezeState.frozenBufferId,
-                track.frozenBufferId,
-                ...track.clips.map((clip) => clip.bufferId ?? clip.audioBufferId),
-                ...track.alternatives.flatMap((alternative) =>
-                    alternative.clips.map((clip) => clip.bufferId ?? clip.audioBufferId)
-                ),
-            ])
-        ),
-    ].filter((id): id is string => Boolean(id));
+    const audioContext = getAudioContext();
+    const referencedIds = collectProjectAudioBufferIds({ data });
+    if (data.audioBuffers) {
+        await importCachedAudioBuffers({
+            audioContext,
+            buffers: data.audioBuffers,
+            shouldContinue: transaction.isCurrent,
+        });
+    }
+    if (!transaction.isCurrent()) {
+        return false;
+    }
     await restoreCachedAudioBuffersFromIdb({
-        audioContext: getAudioContext(),
-        bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
+        audioContext,
+        bufferIds: referencedIds,
         shouldContinue: transaction.isCurrent,
     });
 
@@ -77,7 +84,7 @@ async function performImportedProjectDataApplication({
 
     // The current schema still collapses imported projects to one arrangement;
     // the Project owner publishes that snapshot from the same hydrated tracks.
-    hydrateArrangementStoreFromProjectData({ data });
+    hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
 
     verifyAudioBufferReferences();
     clearUndoHistory();
@@ -85,11 +92,14 @@ async function performImportedProjectDataApplication({
 }
 
 type ApplyImportedProjectDataInput = {
-    data: ProjectData;
+    data: unknown;
     transaction?: ProjectLoadTransaction;
 };
 
 export function applyImportedProjectData({ data, transaction }: ApplyImportedProjectDataInput): Promise<boolean> {
+    if (!isHydratableProjectData(data)) {
+        return Promise.resolve(false);
+    }
     return performImportedProjectDataApplication({
         data,
         transaction: transaction ?? runProjectLoadTransaction(),

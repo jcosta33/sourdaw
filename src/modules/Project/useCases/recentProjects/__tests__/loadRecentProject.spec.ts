@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import {
+    getAudioContext,
+    importCachedAudioBuffers,
+    restoreCachedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -23,6 +27,7 @@ vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue(0),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
@@ -42,7 +47,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-const validProject = JSON.stringify({
+const validProjectData = {
     version: CURRENT_PROJECT_VERSION,
     meta: {
         name: 'Large Project',
@@ -53,7 +58,11 @@ const validProject = JSON.stringify({
         tuning: { name: '12-TET', frequencies: [] },
     },
     arrangement: { tracks: [] },
-});
+    audioBuffers: {
+        'embedded-buffer': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+    },
+};
+const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
@@ -63,6 +72,7 @@ describe('loadRecentProject', () => {
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
+        vi.mocked(importCachedAudioBuffers).mockReset().mockResolvedValue(0);
         vi.mocked(restoreCachedAudioBuffersFromIdb).mockReset().mockResolvedValue(0);
     });
 
@@ -84,6 +94,45 @@ describe('loadRecentProject', () => {
         const restoreInput = vi.mocked(restoreCachedAudioBuffersFromIdb).mock.calls[0]?.[0];
         expect(restoreInput?.audioContext).toBe(audioContext);
         expect(restoreInput?.shouldContinue?.()).toBe(true);
+        const importInput = vi.mocked(importCachedAudioBuffers).mock.calls[0]?.[0];
+        expect(importInput).toMatchObject({
+            audioContext,
+            buffers: validProjectData.audioBuffers,
+        });
+        expect(importInput?.shouldContinue?.()).toBe(true);
+    });
+
+    it('restores only buffers referenced by the candidate project', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(
+            JSON.stringify({
+                ...validProjectData,
+                arrangement: {
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            name: 'Track 1',
+                            kind: 'audio',
+                            clips: [
+                                {
+                                    id: 'clip-1',
+                                    trackId: 'track-1',
+                                    name: 'Clip 1',
+                                    type: 'audio',
+                                    bufferId: 'candidate-buffer',
+                                },
+                            ],
+                            alternatives: [],
+                            freezeState: { status: 'unfrozen' },
+                            midiFx: [],
+                        },
+                    ],
+                },
+            })
+        );
+
+        await expect(loadRecentProject('candidate')).resolves.toBe(true);
+
+        expect(vi.mocked(restoreCachedAudioBuffersFromIdb).mock.calls[0]?.[0]?.bufferIds).toEqual(['candidate-buffer']);
     });
 
     it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {
