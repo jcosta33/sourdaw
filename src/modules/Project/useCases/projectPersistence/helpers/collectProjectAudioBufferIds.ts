@@ -1,8 +1,8 @@
-import { type ProjectData, type ProjectTrack } from '../../../models/ProjectData';
+import { type HydratableProjectData, type HydratableProjectTrack } from './isHydratableProjectData';
 
-function collectTrackBufferIds({ ids, tracks }: { ids: Set<string>; tracks: readonly ProjectTrack[] }): void {
+function collectTrackBufferIds({ ids, tracks }: { ids: Set<string>; tracks: readonly HydratableProjectTrack[] }): void {
     for (const track of tracks) {
-        const frozenBufferId = track.freezeState.frozenBufferId ?? track.frozenBufferId;
+        const frozenBufferId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
         if (frozenBufferId) {
             ids.add(frozenBufferId);
         }
@@ -12,7 +12,7 @@ function collectTrackBufferIds({ ids, tracks }: { ids: Set<string>; tracks: read
                 ids.add(bufferId);
             }
         }
-        for (const alternative of track.alternatives) {
+        for (const alternative of track.alternatives ?? []) {
             for (const clip of alternative.clips) {
                 const bufferId = clip.bufferId ?? clip.audioBufferId;
                 if (bufferId) {
@@ -24,16 +24,11 @@ function collectTrackBufferIds({ ids, tracks }: { ids: Set<string>; tracks: read
 }
 
 type CollectProjectAudioBufferIdsInput = {
-    data: ProjectData;
+    data: HydratableProjectData;
 };
 
 export function collectProjectAudioBufferIds({ data }: CollectProjectAudioBufferIdsInput): string[] {
     const ids = new Set<string>();
     collectTrackBufferIds({ ids, tracks: data.arrangement.tracks });
-    for (const arrangement of data.arrangements ?? []) {
-        if (arrangement.tracks) {
-            collectTrackBufferIds({ ids, tracks: arrangement.tracks.tracks });
-        }
-    }
     return [...ids];
 }

@@ -1,11 +1,17 @@
-import { type ProjectData, type ProjectMidi, type ProjectTrack } from '../../../models/ProjectData';
+import { type ProjectMidi } from '../../../models/ProjectData';
 import { type ArrangementSnapshot, arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { hydrateArrangementTracks } from '../fileIO/hydrateArrangementTracks';
 import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
+import {
+    type HydratableArrangementSnapshot,
+    type HydratableProjectData,
+    type HydratableProjectTrack,
+} from './isHydratableProjectData';
+
 type HydrateMidiWithInlineNotesInput = {
     midi: ProjectMidi | undefined;
-    tracks: readonly ProjectTrack[];
+    tracks: readonly HydratableProjectTrack[];
 };
 
 type HydrateMidiWithInlineNotesOutput = ArrangementSnapshot['midi'];
@@ -19,7 +25,7 @@ function hydrateMidiWithInlineNotes({
         : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
 
     for (const track of tracks) {
-        const clips = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)];
+        const clips = [...track.clips, ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips)];
         for (const clip of clips) {
             if (!arrangementMidi.notesByClipId[clip.id] && clip.notes && clip.notes.length > 0) {
                 arrangementMidi.notesByClipId[clip.id] = clip.notes;
@@ -30,26 +36,27 @@ function hydrateMidiWithInlineNotes({
     return arrangementMidi;
 }
 
-type HydrateSavedArrangementOutput = ArrangementSnapshot | null;
+type HydrateSavedArrangementInput = {
+    data: HydratableProjectData;
+    snapshot: HydratableArrangementSnapshot;
+};
 
-function hydrateSavedArrangement(
-    snapshot: NonNullable<ProjectData['arrangements']>[number]
-): HydrateSavedArrangementOutput {
-    if (!snapshot.tracks) {
-        return null;
-    }
+function hydrateSavedArrangement({ data, snapshot }: HydrateSavedArrangementInput): ArrangementSnapshot {
+    const useActiveFallback = snapshot.id === data.activeArrangementId;
+    const serializedTracks = snapshot.tracks?.tracks ?? (useActiveFallback ? data.arrangement.tracks : []);
+    const midi = snapshot.midi ?? (useActiveFallback ? data.midi : undefined);
 
     return {
         id: snapshot.id,
         name: snapshot.name,
         tracks: {
-            tracks: hydrateArrangementTracks(snapshot.tracks.tracks),
-            selectedTrackId: snapshot.tracks.selectedTrackId,
+            tracks: hydrateArrangementTracks(serializedTracks),
+            selectedTrackId: snapshot.tracks?.selectedTrackId ?? null,
         },
-        automation: snapshot.automation ?? { lanes: [] },
+        automation: snapshot.automation ?? (useActiveFallback ? data.automation : undefined) ?? { lanes: [] },
         midi: hydrateMidiWithInlineNotes({
-            midi: snapshot.midi,
-            tracks: snapshot.tracks.tracks,
+            midi,
+            tracks: serializedTracks,
         }),
         tempoMap: snapshot.tempoMap,
         timeSignatureMap: snapshot.timeSignatureMap,
@@ -57,11 +64,6 @@ function hydrateSavedArrangement(
         takeLanes: snapshot.takeLanes,
     };
 }
-
-type HydratableProjectData = Omit<ProjectData, 'automation' | 'midi'> & {
-    automation?: ProjectData['automation'];
-    midi?: ProjectData['midi'];
-};
 
 type HydrateArrangementStoreFromProjectDataInput = {
     data: HydratableProjectData;
@@ -73,9 +75,7 @@ export function hydrateArrangementStoreFromProjectData({
     preserveSavedArrangements = false,
 }: HydrateArrangementStoreFromProjectDataInput): void {
     if (preserveSavedArrangements && data.arrangements && data.arrangements.length > 0) {
-        const arrangements = data.arrangements
-            .map(hydrateSavedArrangement)
-            .filter((snapshot): snapshot is ArrangementSnapshot => snapshot !== null);
+        const arrangements = data.arrangements.map((snapshot) => hydrateSavedArrangement({ data, snapshot }));
 
         if (arrangements.length > 0) {
             const requestedActiveArrangementId = data.activeArrangementId;

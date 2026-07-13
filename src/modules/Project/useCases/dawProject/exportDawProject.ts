@@ -93,7 +93,7 @@ export async function exportDawProject(): ExportDawProjectOutput {
             preRollBars: transport.preRollBars,
             masterGain: transport.masterGain,
         },
-        arrangement: { tracks: tracksState.tracks },
+        arrangement: { tracks: serializeArrangementTracks(tracksState.tracks, midi.notesByClipId) },
         automation: automationStore.value ?? { lanes: [] },
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
         midi: {

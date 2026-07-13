@@ -1,4 +1,51 @@
-import { isSupportedProjectVersion, type ProjectData } from '../../../models/ProjectData';
+import {
+    isSupportedProjectVersion,
+    type ProjectAdjustmentLayers,
+    type ProjectArrangementSnapshot,
+    type ProjectAutomation,
+    type ProjectClip,
+    type ProjectExportedAudioBuffer,
+    type ProjectMeta,
+    type ProjectMarker,
+    type ProjectMidi,
+    type ProjectTrack,
+    type ProjectTrackAlternative,
+    type ProjectTransport,
+} from '../../../models/ProjectData';
+
+export type HydratableProjectTrack = Pick<ProjectTrack, 'id' | 'name' | 'kind' | 'clips'> &
+    Partial<Omit<ProjectTrack, 'id' | 'name' | 'kind' | 'clips' | 'alternatives'>> & {
+        alternatives?: ProjectTrackAlternative[];
+    };
+
+export type HydratableArrangementSnapshot = Pick<ProjectArrangementSnapshot, 'id' | 'name'> & {
+    tracks?: {
+        tracks: HydratableProjectTrack[];
+        selectedTrackId: string | null;
+    };
+    automation?: ProjectAutomation;
+    midi?: ProjectMidi;
+    tempoMap?: ProjectArrangementSnapshot['tempoMap'];
+    timeSignatureMap?: ProjectArrangementSnapshot['timeSignatureMap'];
+    markers?: ProjectArrangementSnapshot['markers'];
+    takeLanes?: ProjectArrangementSnapshot['takeLanes'];
+};
+
+export type HydratableProjectData = {
+    version: number;
+    meta: ProjectMeta;
+    arrangement: { tracks: HydratableProjectTrack[] };
+    transport?: ProjectTransport;
+    automation?: ProjectAutomation;
+    midi?: ProjectMidi;
+    markers?: ProjectMarker[];
+    arrangements?: HydratableArrangementSnapshot[];
+    activeArrangementId?: string;
+    audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
+    adjustmentLayers?: ProjectAdjustmentLayers;
+    mixer?: unknown;
+    history?: unknown;
+};
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -6,11 +53,193 @@ function isRecord(value: unknown): value is UnknownRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isArrayRecord(value: unknown): value is UnknownRecord {
-    return isRecord(value) && Object.values(value).every(Array.isArray);
+function hasOnlyNumbers(values: unknown): boolean {
+    return Array.isArray(values) && values.every((value) => typeof value === 'number' && Number.isFinite(value));
 }
 
-function isClip(value: unknown): boolean {
+function hasOptionalType({
+    record,
+    keys,
+    type,
+}: {
+    record: UnknownRecord;
+    keys: readonly string[];
+    type: 'boolean' | 'number' | 'string';
+}): boolean {
+    return keys.every(
+        (key) =>
+            record[key] === undefined ||
+            (typeof record[key] === type && (type !== 'number' || Number.isFinite(record[key])))
+    );
+}
+
+function hasType({
+    record,
+    keys,
+    type,
+}: {
+    record: UnknownRecord;
+    keys: readonly string[];
+    type: 'boolean' | 'number' | 'string';
+}): boolean {
+    return keys.every((key) => typeof record[key] === type && (type !== 'number' || Number.isFinite(record[key])));
+}
+
+function hasOptionalNullableStrings(record: UnknownRecord, keys: readonly string[]): boolean {
+    return keys.every((key) => record[key] === undefined || record[key] === null || typeof record[key] === 'string');
+}
+
+function hasOptionalEnum(record: UnknownRecord, key: string, values: readonly string[]): boolean {
+    return record[key] === undefined || (typeof record[key] === 'string' && values.includes(record[key]));
+}
+
+function isNumberRecord(value: unknown): boolean {
+    return isRecord(value) && Object.values(value).every((item) => typeof item === 'number' && Number.isFinite(item));
+}
+
+function isMeta(value: unknown): value is ProjectMeta {
+    return (
+        isRecord(value) &&
+        typeof value.name === 'string' &&
+        typeof value.createdAt === 'number' &&
+        Number.isFinite(value.createdAt) &&
+        typeof value.updatedAt === 'number' &&
+        Number.isFinite(value.updatedAt) &&
+        typeof value.keyRoot === 'number' &&
+        Number.isFinite(value.keyRoot) &&
+        typeof value.scaleName === 'string' &&
+        isRecord(value.tuning) &&
+        typeof value.tuning.name === 'string' &&
+        hasOnlyNumbers(value.tuning.frequencies)
+    );
+}
+
+function isTransport(value: unknown): value is ProjectTransport {
+    if (!isRecord(value)) {
+        return false;
+    }
+    return (
+        hasType({
+            record: value,
+            keys: [
+                'tempo',
+                'timeSignatureNumerator',
+                'timeSignatureDenominator',
+                'loopStart',
+                'loopEnd',
+                'metronomeVolume',
+                'punchInBeat',
+                'punchOutBeat',
+                'countInBars',
+                'preRollBars',
+                'masterGain',
+            ],
+            type: 'number',
+        }) &&
+        hasType({
+            record: value,
+            keys: ['isLooping', 'metronomeEnabled', 'punchInEnabled', 'countInEnabled', 'preRollEnabled'],
+            type: 'boolean',
+        })
+    );
+}
+
+function isMidiNote(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        hasType({
+            record: value,
+            keys: ['pitch', 'startBeat', 'duration', 'velocity', 'probability', 'pressure', 'slide', 'pitchBend'],
+            type: 'number',
+        })
+    );
+}
+
+function isKneadState(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.blobs) &&
+        value.blobs.every(
+            (blob) =>
+                isRecord(blob) &&
+                typeof blob.id === 'string' &&
+                hasType({
+                    record: blob,
+                    keys: ['startTime', 'endTime', 'pitchCenterCents', 'voicedConfidence'],
+                    type: 'number',
+                }) &&
+                hasOnlyNumbers(blob.pitchCurveCents)
+        ) &&
+        hasType({ record: value, keys: ['retuneSpeedMs', 'humanizePercent'], type: 'number' }) &&
+        typeof value.formantPreserve === 'boolean'
+    );
+}
+
+function isDevice(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'name', 'type'], type: 'string' }) &&
+        typeof value.bypassed === 'boolean' &&
+        isNumberRecord(value.parameterValues) &&
+        hasOptionalType({ record: value, keys: ['externalPluginId', 'externalInstanceId'], type: 'string' })
+    );
+}
+
+function isSend(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.busId === 'string' &&
+        typeof value.level === 'number' &&
+        Number.isFinite(value.level) &&
+        typeof value.preFader === 'boolean'
+    );
+}
+
+function isMidiFx(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'name'], type: 'string' }) &&
+        ['arp', 'velocity', 'probability'].includes(String(value.type)) &&
+        typeof value.bypassed === 'boolean' &&
+        isNumberRecord(value.parameterValues)
+    );
+}
+
+function isFreezeState(value: unknown): boolean {
+    if (
+        !isRecord(value) ||
+        !['unfrozen', 'freezing', 'frozen', 'stale', 'error'].includes(String(value.status)) ||
+        !hasOptionalType({
+            record: value,
+            keys: [
+                'freezeId',
+                'frozenBufferId',
+                'frozenAudioHash',
+                'sourceContentHash',
+                'deviceChainHash',
+                'errorMessage',
+            ],
+            type: 'string',
+        }) ||
+        !hasOptionalType({ record: value, keys: ['renderProgress', 'renderedAt'], type: 'number' })
+    ) {
+        return false;
+    }
+    if (value.renderSettings === undefined) {
+        return true;
+    }
+    return (
+        isRecord(value.renderSettings) &&
+        hasType({
+            record: value.renderSettings,
+            keys: ['sampleRate', 'bitDepth', 'channelCount', 'tailLengthSeconds'],
+            type: 'number',
+        })
+    );
+}
+
+function isClip(value: unknown): value is ProjectClip {
     if (!isRecord(value)) {
         return false;
     }
@@ -18,56 +247,181 @@ function isClip(value: unknown): boolean {
         typeof value.id === 'string' &&
         typeof value.trackId === 'string' &&
         typeof value.name === 'string' &&
-        (value.type === 'audio' || value.type === 'midi')
+        (value.type === 'audio' || value.type === 'midi') &&
+        hasType({
+            record: value,
+            keys: ['startBeat', 'endBeat', 'fadeInBeats', 'fadeOutBeats', 'gain'],
+            type: 'number',
+        }) &&
+        hasType({ record: value, keys: ['locked', 'muted'], type: 'boolean' }) &&
+        typeof value.color === 'string' &&
+        hasOptionalType({
+            record: value,
+            keys: [
+                'sampleStartBeat',
+                'audioOffsetBeats',
+                'midiOffsetBeats',
+                'stretchRatio',
+                'loopLength',
+                'sourceKeyRoot',
+            ],
+            type: 'number',
+        }) &&
+        hasOptionalType({
+            record: value,
+            keys: ['loopEnabled', 'generating', 'isGhost', 'isInlineEditing', 'isLinkedInstance'],
+            type: 'boolean',
+        }) &&
+        hasOptionalType({
+            record: value,
+            keys: ['bufferId', 'audioBufferId', 'assetHash', 'parentClipId', 'sourceScaleName'],
+            type: 'string',
+        }) &&
+        hasOptionalEnum(value, 'stretchMode', ['off', 'repitch', 'timestretch']) &&
+        hasOptionalEnum(value, 'followAction', [
+            'stop',
+            'play_next',
+            'play_previous',
+            'play_random',
+            'play_first',
+            'play_last',
+        ]) &&
+        (value.notes === undefined || (Array.isArray(value.notes) && value.notes.every(isMidiNote))) &&
+        (value.overrides === undefined ||
+            (isRecord(value.overrides) && Object.values(value.overrides).every((item) => typeof item === 'boolean'))) &&
+        (value.kneadState === undefined || isKneadState(value.kneadState))
     );
 }
 
-function isTrack(value: unknown): boolean {
-    if (!isRecord(value) || !Array.isArray(value.clips) || !Array.isArray(value.alternatives)) {
+function isTrack(value: unknown): value is HydratableProjectTrack {
+    if (!isRecord(value) || !Array.isArray(value.clips)) {
         return false;
     }
-    if (typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.kind !== 'string') {
-        return false;
-    }
-    if (!isRecord(value.freezeState)) {
+    if (
+        typeof value.id !== 'string' ||
+        typeof value.name !== 'string' ||
+        !['audio', 'midi', 'bus', 'master', 'folder'].includes(String(value.kind))
+    ) {
         return false;
     }
     if (!value.clips.every(isClip)) {
         return false;
     }
     if (
-        !value.alternatives.every(
-            (alternative) =>
-                isRecord(alternative) &&
-                typeof alternative.id === 'string' &&
-                typeof alternative.name === 'string' &&
-                Array.isArray(alternative.clips) &&
-                alternative.clips.every(isClip)
-        )
+        value.alternatives !== undefined &&
+        (!Array.isArray(value.alternatives) ||
+            !value.alternatives.every(
+                (alternative) =>
+                    isRecord(alternative) &&
+                    typeof alternative.id === 'string' &&
+                    typeof alternative.name === 'string' &&
+                    Array.isArray(alternative.clips) &&
+                    alternative.clips.every(isClip)
+            ))
+    ) {
+        return false;
+    }
+    if (value.freezeState !== undefined && !isFreezeState(value.freezeState)) {
+        return false;
+    }
+    if (value.midiFx !== undefined && (!Array.isArray(value.midiFx) || !value.midiFx.every(isMidiFx))) {
+        return false;
+    }
+    if (
+        (value.devices !== undefined && (!Array.isArray(value.devices) || !value.devices.every(isDevice))) ||
+        (value.sends !== undefined && (!Array.isArray(value.sends) || !value.sends.every(isSend)))
     ) {
         return false;
     }
     return (
-        value.midiFx === undefined ||
-        (Array.isArray(value.midiFx) &&
-            value.midiFx.every((effect) => isRecord(effect) && typeof effect.type === 'string'))
+        hasOptionalType({
+            record: value,
+            keys: ['gain', 'pan', 'height'],
+            type: 'number',
+        }) &&
+        hasOptionalType({
+            record: value,
+            keys: [
+                'muted',
+                'soloed',
+                'armed',
+                'frozen',
+                'collapsed',
+                'hidden',
+                'disabled',
+                'soloSafe',
+                'followChordTrack',
+            ],
+            type: 'boolean',
+        }) &&
+        hasOptionalType({
+            record: value,
+            keys: ['color', 'frozenBufferId', 'outputId', 'notes', 'activeAlternativeId'],
+            type: 'string',
+        }) &&
+        hasOptionalEnum(value, 'inputMonitoring', ['auto', 'on', 'off']) &&
+        hasOptionalEnum(value, 'automationMode', ['read', 'write', 'latch', 'touch', 'off']) &&
+        hasOptionalNullableStrings(value, ['parentId', 'groupId', 'inputId', 'vcaGroupId', 'midiOutputTrackId'])
     );
 }
 
-function isTracks(value: unknown): boolean {
+function isTracks(value: unknown): value is HydratableProjectTrack[] {
     return Array.isArray(value) && value.every(isTrack);
 }
 
-function isMidi(value: unknown): boolean {
+function isMidiCc(value: unknown): boolean {
     return (
-        isRecord(value) &&
-        isArrayRecord(value.notesByClipId) &&
-        isArrayRecord(value.ccByClipId) &&
-        isArrayRecord(value.pitchBendByClipId)
+        isRecord(value) && hasType({ record: value, keys: ['beat', 'controller', 'value', 'channel'], type: 'number' })
     );
 }
 
-function isAutomation(value: unknown): boolean {
+function isMidiPitchBend(value: unknown): boolean {
+    return isRecord(value) && hasType({ record: value, keys: ['beat', 'value', 'channel'], type: 'number' });
+}
+
+function isArrayRecordOf(value: unknown, predicate: (item: unknown) => boolean): boolean {
+    return isRecord(value) && Object.values(value).every((items) => Array.isArray(items) && items.every(predicate));
+}
+
+function isMidi(value: unknown): value is ProjectMidi {
+    return (
+        isRecord(value) &&
+        isArrayRecordOf(value.notesByClipId, isMidiNote) &&
+        isArrayRecordOf(value.ccByClipId, isMidiCc) &&
+        isArrayRecordOf(value.pitchBendByClipId, isMidiPitchBend)
+    );
+}
+
+function isMarker(value: unknown): value is ProjectMarker {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        typeof value.beat === 'number' &&
+        Number.isFinite(value.beat) &&
+        typeof value.name === 'string' &&
+        typeof value.color === 'string'
+    );
+}
+
+function isAutomationPoint(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['beat', 'value', 'tension'], type: 'number' }) &&
+        ['linear', 'exponential', 'step', 's-curve', 'stairs', 'smooth', 'bezier'].includes(String(value.curve))
+    );
+}
+
+function isAutomationObject(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'laneId', 'name'], type: 'string' }) &&
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
+        Array.isArray(value.points) &&
+        value.points.every(isAutomationPoint)
+    );
+}
+
+function isAutomation(value: unknown): value is ProjectAutomation {
     return (
         isRecord(value) &&
         Array.isArray(value.lanes) &&
@@ -75,25 +429,132 @@ function isAutomation(value: unknown): boolean {
             (lane) =>
                 isRecord(lane) &&
                 Array.isArray(lane.points) &&
-                (lane.objects === undefined || Array.isArray(lane.objects))
+                lane.points.every(isAutomationPoint) &&
+                Array.isArray(lane.objects) &&
+                lane.objects.every(isAutomationObject) &&
+                hasType({ record: lane, keys: ['id', 'trackId', 'parameterId', 'parameterName'], type: 'string' }) &&
+                hasType({
+                    record: lane,
+                    keys: ['visible', 'enabled', 'collapsed', 'virginTerritory'],
+                    type: 'boolean',
+                }) &&
+                hasType({ record: lane, keys: ['minValue', 'maxValue'], type: 'number' }) &&
+                hasOptionalType({ record: lane, keys: ['color'], type: 'string' })
         )
     );
 }
 
-function isArrangementSnapshot(value: unknown): boolean {
+function isTempoChange(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        hasType({ record: value, keys: ['beat', 'tempo'], type: 'number' }) &&
+        ['instant', 'linear'].includes(String(value.curve))
+    );
+}
+
+function isTimeSignatureChange(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        hasType({ record: value, keys: ['beat', 'numerator', 'denominator'], type: 'number' })
+    );
+}
+
+function isSection(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'name', 'color'], type: 'string' }) &&
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' })
+    );
+}
+
+function isTake(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
+        typeof value.selected === 'boolean'
+    );
+}
+
+function isCompRegion(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.takeId === 'string' &&
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' })
+    );
+}
+
+function isTakeLane(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['id', 'trackId'], type: 'string' }) &&
+        hasOptionalType({ record: value, keys: ['automationLaneId'], type: 'string' }) &&
+        Array.isArray(value.takes) &&
+        value.takes.every(isTake) &&
+        Array.isArray(value.activeCompRegions) &&
+        value.activeCompRegions.every(isCompRegion)
+    );
+}
+
+function isArrangementSnapshot(value: unknown): value is HydratableArrangementSnapshot {
     if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string') {
         return false;
     }
-    if (value.tracks !== undefined && (!isRecord(value.tracks) || !isTracks(value.tracks.tracks))) {
+    if (
+        value.tracks !== undefined &&
+        (!isRecord(value.tracks) ||
+            !isTracks(value.tracks.tracks) ||
+            (value.tracks.selectedTrackId !== null && typeof value.tracks.selectedTrackId !== 'string'))
+    ) {
         return false;
     }
     return (
         (value.midi === undefined || isMidi(value.midi)) &&
-        (value.automation === undefined || isAutomation(value.automation))
+        (value.automation === undefined || isAutomation(value.automation)) &&
+        (value.tempoMap === undefined ||
+            (isRecord(value.tempoMap) &&
+                Array.isArray(value.tempoMap.changes) &&
+                value.tempoMap.changes.every(isTempoChange))) &&
+        (value.timeSignatureMap === undefined ||
+            (isRecord(value.timeSignatureMap) &&
+                Array.isArray(value.timeSignatureMap.changes) &&
+                value.timeSignatureMap.changes.every(isTimeSignatureChange))) &&
+        (value.markers === undefined ||
+            (isRecord(value.markers) &&
+                Array.isArray(value.markers.markers) &&
+                value.markers.markers.every(isMarker) &&
+                Array.isArray(value.markers.sections) &&
+                value.markers.sections.every(isSection))) &&
+        (value.takeLanes === undefined ||
+            (isRecord(value.takeLanes) &&
+                Array.isArray(value.takeLanes.lanes) &&
+                value.takeLanes.lanes.every(isTakeLane)))
     );
 }
 
-function isAdjustmentLayers(value: unknown): boolean {
+function isAdjustmentParameter(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        hasType({ record: value, keys: ['name', 'unit'], type: 'string' }) &&
+        hasType({ record: value, keys: ['value', 'min', 'max'], type: 'number' })
+    );
+}
+
+function isAdjustmentRegion(value: unknown): boolean {
+    return (
+        isRecord(value) &&
+        typeof value.id === 'string' &&
+        hasType({
+            record: value,
+            keys: ['startBeat', 'endBeat', 'blend', 'fadeInBeats', 'fadeOutBeats'],
+            type: 'number',
+        })
+    );
+}
+
+function isAdjustmentLayers(value: unknown): value is ProjectAdjustmentLayers {
     return (
         isRecord(value) &&
         Array.isArray(value.layers) &&
@@ -101,21 +562,41 @@ function isAdjustmentLayers(value: unknown): boolean {
             (layer) =>
                 isRecord(layer) &&
                 Array.isArray(layer.parameters) &&
+                layer.parameters.every(isAdjustmentParameter) &&
                 Array.isArray(layer.affectedTrackIds) &&
-                Array.isArray(layer.regions)
+                layer.affectedTrackIds.every((trackId) => typeof trackId === 'string') &&
+                Array.isArray(layer.regions) &&
+                layer.regions.every(isAdjustmentRegion) &&
+                hasType({ record: layer, keys: ['id', 'name', 'color'], type: 'string' }) &&
+                [
+                    'eq',
+                    'compressor',
+                    'reverb',
+                    'delay',
+                    'saturation',
+                    'filter',
+                    'stereo-width',
+                    'volume',
+                    'pan',
+                ].includes(String(layer.effectType)) &&
+                hasType({ record: layer, keys: ['insertionIndex', 'mix'], type: 'number' }) &&
+                typeof layer.enabled === 'boolean'
         )
     );
 }
 
-function isAudioBuffers(value: unknown): boolean {
+function isAudioBuffers(value: unknown): value is Record<string, ProjectExportedAudioBuffer> {
     return (
         isRecord(value) &&
         Object.values(value).every(
             (buffer) =>
                 isRecord(buffer) &&
                 typeof buffer.sampleRate === 'number' &&
+                Number.isFinite(buffer.sampleRate) &&
+                buffer.sampleRate > 0 &&
                 typeof buffer.numberOfChannels === 'number' &&
                 Number.isInteger(buffer.numberOfChannels) &&
+                buffer.numberOfChannels > 0 &&
                 Array.isArray(buffer.channelData) &&
                 buffer.channelData.length === buffer.numberOfChannels &&
                 buffer.channelData.every((channel) => typeof channel === 'string')
@@ -123,11 +604,14 @@ function isAudioBuffers(value: unknown): boolean {
     );
 }
 
-export function isHydratableProjectData(value: unknown): value is ProjectData {
-    if (!isRecord(value) || typeof value.version !== 'number' || !isSupportedProjectVersion(value.version)) {
+export function isHydratableProjectData(value: unknown): value is HydratableProjectData {
+    if (!isRecord(value) || !Number.isInteger(value.version) || !isSupportedProjectVersion(value.version)) {
         return false;
     }
-    if (!isRecord(value.meta) || !isRecord(value.arrangement) || !isTracks(value.arrangement.tracks)) {
+    if (!isMeta(value.meta) || !isRecord(value.arrangement) || !isTracks(value.arrangement.tracks)) {
+        return false;
+    }
+    if (value.transport !== undefined && !isTransport(value.transport)) {
         return false;
     }
     if (value.midi !== undefined && !isMidi(value.midi)) {
@@ -136,7 +620,7 @@ export function isHydratableProjectData(value: unknown): value is ProjectData {
     if (value.automation !== undefined && !isAutomation(value.automation)) {
         return false;
     }
-    if (value.markers !== undefined && !Array.isArray(value.markers)) {
+    if (value.markers !== undefined && (!Array.isArray(value.markers) || !value.markers.every(isMarker))) {
         return false;
     }
     if (value.adjustmentLayers !== undefined && !isAdjustmentLayers(value.adjustmentLayers)) {
@@ -146,6 +630,9 @@ export function isHydratableProjectData(value: unknown): value is ProjectData {
         value.arrangements !== undefined &&
         (!Array.isArray(value.arrangements) || !value.arrangements.every(isArrangementSnapshot))
     ) {
+        return false;
+    }
+    if (value.activeArrangementId !== undefined && typeof value.activeArrangementId !== 'string') {
         return false;
     }
     return value.audioBuffers === undefined || isAudioBuffers(value.audioBuffers);

@@ -9,11 +9,13 @@ import { automationStore, type AutomationCurveType, type AutomationLane } from '
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
-import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
+import { type ProjectAdjustmentLayer } from '../../../models/ProjectData';
 import { hydrateArrangementTracks } from '../fileIO/hydrateArrangementTracks';
 import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
-export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
+import { type HydratableProjectData } from './isHydratableProjectData';
+
+export function hydrateModuleStoresFromProjectData(data: HydratableProjectData): void {
     if (data.arrangement?.tracks) {
         hydrateTracksForProject({ tracks: hydrateArrangementTracks(data.arrangement.tracks) });
     }

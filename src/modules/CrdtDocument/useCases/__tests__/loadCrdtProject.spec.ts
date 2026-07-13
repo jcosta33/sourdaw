@@ -108,4 +108,25 @@ describe('loadCrdtProject', () => {
         expect(loadInput?.shouldCommit).toBe(should_commit);
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
     });
+
+    it('does not restore branch state when authority is revoked after repository commit', async () => {
+        let shouldCommit = true;
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.branchStoreValue = {
+            branches: [
+                { branchId: 'main', rootDocId: 'root' },
+                { branchId: 'feat', rootDocId: 'branch_feat' },
+            ],
+            activeBranchId: 'feat',
+        };
+        mocks.loadAll.mockImplementationOnce(() => {
+            shouldCommit = false;
+            return Promise.resolve(true);
+        });
+
+        const result = await loadCrdtProject({ shouldCommit: () => shouldCommit });
+
+        expect(result).toBe(false);
+        expect(mocks.replaceDoc).not.toHaveBeenCalled();
+    });
 });

@@ -1,9 +1,9 @@
 import {
     type ProjectClip as SerializedProjectClip,
-    type ProjectTrack as SerializedProjectTrack,
     type ProjectTrackAlternative as SerializedProjectTrackAlternative,
 } from '../../../models/ProjectData';
 import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } from '../../../stores/arrangementStore';
+import { type HydratableProjectTrack } from '../helpers/isHydratableProjectData';
 
 function hydrateClip(clip: SerializedProjectClip): ProjectClip {
     return {
@@ -48,14 +48,48 @@ function hydrateAlternative(alternative: SerializedProjectTrackAlternative): Pro
     };
 }
 
-function hydrateTrack(track: SerializedProjectTrack): ProjectTrack {
+function hydrateTrack(track: HydratableProjectTrack): ProjectTrack {
+    const defaultAlternativeId = `${track.id}-alt-default`;
+    const alternatives = track.alternatives?.map(hydrateAlternative) ?? [
+        { id: defaultAlternativeId, name: 'Alternative 1', clips: [] },
+    ];
     return {
-        ...track,
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        muted: track.muted ?? false,
+        soloed: track.soloed ?? false,
+        armed: track.armed ?? false,
+        gain: track.gain ?? 0.8,
+        pan: track.pan ?? 0,
+        color: track.color ?? '',
         clips: track.clips.map(hydrateClip),
-        alternatives: track.alternatives.map(hydrateAlternative),
+        devices: track.devices ?? [],
+        sends: track.sends ?? [],
+        midiFx: track.midiFx ?? [],
+        frozen: track.frozen ?? false,
+        frozenBufferId: track.frozenBufferId,
+        freezeState: track.freezeState ?? { status: 'unfrozen' },
+        parentId: track.parentId ?? null,
+        collapsed: track.collapsed ?? false,
+        inputMonitoring: track.inputMonitoring ?? 'auto',
+        hidden: track.hidden ?? false,
+        disabled: track.disabled ?? false,
+        height: track.height || 80,
+        outputId: track.outputId ?? (track.kind === 'master' ? 'hw_out' : 'master'),
+        automationMode: track.automationMode ?? 'read',
+        groupId: track.groupId ?? null,
+        soloSafe: track.soloSafe ?? track.kind === 'bus',
+        notes: track.notes ?? '',
+        inputId: track.inputId ?? null,
+        activeAlternativeId: track.activeAlternativeId ?? alternatives[0]?.id ?? defaultAlternativeId,
+        alternatives,
+        vcaGroupId: track.vcaGroupId ?? null,
+        midiOutputTrackId: track.midiOutputTrackId ?? null,
+        followChordTrack: track.followChordTrack ?? false,
     };
 }
 
-export function hydrateArrangementTracks(tracks: readonly SerializedProjectTrack[]): ProjectTrack[] {
+export function hydrateArrangementTracks(tracks: readonly HydratableProjectTrack[]): ProjectTrack[] {
     return tracks.map(hydrateTrack);
 }

@@ -8,7 +8,6 @@ import {
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
 import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/collectProjectAudioBufferIds';
@@ -42,7 +41,7 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }
-        const data: ProjectData = parsed;
+        const data = parsed;
 
         if (!transaction.activate()) {
             return false;

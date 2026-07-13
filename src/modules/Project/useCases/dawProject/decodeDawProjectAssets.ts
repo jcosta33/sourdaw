@@ -16,6 +16,7 @@ export async function decodeDawProjectAssets({
 }: DecodeDawProjectAssetsInput): Promise<DecodedDawProjectAssets> {
     const bufferIdsByPath = new Map<string, string>();
     const failedPaths: string[] = [];
+    const decodedAssets: Array<{ path: string; bufferId: string; buffer: AudioBuffer }> = [];
 
     const context = getAudioContext();
     if (!context || audioAssets.size === 0) {
@@ -39,11 +40,19 @@ export async function decodeDawProjectAssets({
                 break;
             }
             const id = `audio-${crypto.randomUUID()}`;
-            cacheAudioBuffer({ buffer, bufferId: id });
-            bufferIdsByPath.set(path, id);
+            decodedAssets.push({ path, bufferId: id, buffer });
         } catch {
             failedPaths.push(path);
         }
+    }
+
+    if (shouldContinue?.() === false) {
+        return { bufferIdsByPath, failedPaths };
+    }
+
+    for (const { path, bufferId, buffer } of decodedAssets) {
+        cacheAudioBuffer({ buffer, bufferId });
+        bufferIdsByPath.set(path, bufferId);
     }
 
     return { bufferIdsByPath, failedPaths };

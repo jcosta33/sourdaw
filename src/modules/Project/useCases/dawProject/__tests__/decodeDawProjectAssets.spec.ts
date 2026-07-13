@@ -131,4 +131,33 @@ describe('decodeDawProjectAssets', () => {
         expect(result.bufferIdsByPath).toEqual(new Map());
         expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
     });
+
+    it('does not partially cache assets when authority is revoked during a later decode', async () => {
+        const { decodeDawProjectAssets } = await import('../decodeDawProjectAssets');
+        const firstBuffer = create_audio_buffer();
+        const secondBuffer = create_audio_buffer();
+        let finishSecondDecode: ((value: AudioBuffer) => void) | undefined;
+        let shouldContinue = true;
+        mocks.get_audio_context.mockReturnValue({ decodeAudioData: mocks.decode_audio_data });
+        mocks.decode_audio_data.mockResolvedValueOnce(firstBuffer).mockImplementationOnce(
+            () =>
+                new Promise<AudioBuffer>((resolve) => {
+                    finishSecondDecode = resolve;
+                })
+        );
+
+        const decoding = decodeDawProjectAssets({
+            audioAssets: new Map([
+                ['audio/first.wav', new Uint8Array([1])],
+                ['audio/second.wav', new Uint8Array([2])],
+            ]),
+            shouldContinue: () => shouldContinue,
+        });
+        await vi.waitFor(() => expect(finishSecondDecode).toBeDefined());
+        shouldContinue = false;
+        finishSecondDecode?.(secondBuffer);
+
+        await expect(decoding).resolves.toEqual({ bufferIdsByPath: new Map(), failedPaths: [] });
+        expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
+    });
 });

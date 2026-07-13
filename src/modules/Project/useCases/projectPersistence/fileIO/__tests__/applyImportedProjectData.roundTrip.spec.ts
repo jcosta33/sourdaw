@@ -291,15 +291,26 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('rejects malformed hydration data without resetting the live project', async () => {
-        const malformed = makeProject();
-        Reflect.set(malformed.midi.notesByClipId, 'clip-midi', null);
-        trackStore.set({ tracks: [], selectedTrackId: null });
+        const malformedMidi = makeProject();
+        Reflect.set(malformedMidi.midi.notesByClipId, 'clip-midi', null);
+        const malformedMeta = makeProject();
+        Reflect.deleteProperty(malformedMeta.meta, 'name');
+        const malformedDevice = makeProject();
+        Reflect.set(malformedDevice.arrangement.tracks[0]!.devices, 0, { id: 'device-without-runtime-contract' });
+        const malformedAutomation = makeProject();
+        Reflect.set(malformedAutomation.automation.lanes, 0, { points: [] });
 
-        await expect(applyImportedProjectData({ data: malformed })).resolves.toBe(false);
+        for (const malformed of [malformedMidi, malformedMeta, malformedDevice, malformedAutomation]) {
+            trackStore.set({ tracks: [], selectedTrackId: null });
+            vi.mocked(resetModuleStoresToDefault).mockClear();
+            restoreCachedAudioBuffersFromIdb.mockClear();
 
-        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
-        expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-        expect(trackStore.value).toEqual({ tracks: [], selectedTrackId: null });
+            await expect(applyImportedProjectData({ data: malformed })).resolves.toBe(false);
+
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(trackStore.value).toEqual({ tracks: [], selectedTrackId: null });
+        }
     });
 
     it('imports embedded audio before restoring referenced buffers from IDB', async () => {
@@ -329,6 +340,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         first.name = 'Verse';
         second.id = 'chorus';
         second.name = 'Chorus';
+        second.tracks.tracks = [baseTrack('inactive-track', [audioClip('inactive-clip', 'inactive-buffer')])];
         project.arrangements = [first, second];
         project.activeArrangementId = second.id;
 
@@ -339,5 +351,30 @@ describe('applyImportedProjectData round-trip hydration', () => {
             { id: 'chorus', name: 'Chorus' },
         ]);
         expect(arrangementStore.value?.activeArrangementId).toBe('chorus');
+        expect(restoreCachedAudioBuffersFromIdb.mock.calls[0]?.[0]?.bufferIds).not.toContain('inactive-buffer');
+    });
+
+    it('normalizes sparse version-1 tracks and preserves sparse arrangement records', async () => {
+        const project = makeProject();
+        const sparseTrack = {
+            id: 'sparse-track',
+            name: 'Sparse Track',
+            kind: 'audio',
+            clips: [],
+        };
+        Reflect.set(project.arrangement, 'tracks', [sparseTrack]);
+        project.arrangements = [{ id: 'ideas', name: 'Ideas' }];
+        project.activeArrangementId = 'ideas';
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+
+        expect(trackStore.value?.tracks[0]).toMatchObject({
+            id: 'sparse-track',
+            alternatives: [{ id: 'sparse-track-alt-default', name: 'Alternative 1', clips: [] }],
+            freezeState: { status: 'unfrozen' },
+        });
+        expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
+            { id: 'ideas', name: 'Ideas' },
+        ]);
     });
 });

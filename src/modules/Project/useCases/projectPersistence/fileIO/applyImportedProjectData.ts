@@ -7,18 +7,17 @@ import {
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { type ProjectData } from '../../../models/ProjectData';
 import { projectStore } from '../../../stores/projectStore';
 import { collectProjectAudioBufferIds } from '../helpers/collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
-import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
+import { type HydratableProjectData, isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
 type PerformImportedProjectDataApplicationInput = {
-    data: ProjectData;
+    data: HydratableProjectData;
     transaction: ProjectLoadTransaction;
 };
 

@@ -311,7 +311,7 @@ export const audioBufferCache = {
         ids,
         shouldContinue,
     }: {
-        context: BaseAudioContext;
+        context: Pick<BaseAudioContext, 'createBuffer'>;
         ids?: string[];
         shouldContinue?: () => boolean;
     }): Promise<number> {
@@ -454,10 +454,8 @@ export const audioBufferCache = {
         return result;
     },
 
-    /** Reconstruct AudioBuffer objects from base64-encoded data embedded in a
-     * .sourdaw project file, loading them into both the in-memory cache and IDB.
-     * Buffers whose ID already exists in the cache are skipped. */
-    // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; persistToIdb is fire-and-forget; callers await this method
+    /** Reconstruct authoritative embedded buffers and publish them only after
+     * the complete candidate has decoded and still owns transition authority. */
     async importBuffers({
         buffers,
         context,
@@ -467,13 +465,10 @@ export const audioBufferCache = {
         context: BaseAudioContext;
         shouldContinue?: () => boolean;
     }): Promise<number> {
-        let imported = 0;
+        const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
         for (const [id, data] of Object.entries(buffers)) {
             if (shouldContinue?.() === false) {
-                return imported;
-            }
-            if (cache.has(id)) {
-                continue;
+                return 0;
             }
             try {
                 const channels = data.channelData.map(base64ToFloat32);
@@ -485,15 +480,34 @@ export const audioBufferCache = {
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     buffer.getChannelData(ch).set(channels[ch]!);
                 }
-                clearWaveformCachesForId(id);
-                audioCacheSet(id, buffer);
-                void persistToIdb(id, buffer);
-                imported++;
+                staged.push({ id, buffer });
             } catch {
                 // Skip any malformed entry
             }
         }
-        return imported;
+
+        if (shouldContinue?.() === false) {
+            return 0;
+        }
+
+        for (const { id, buffer } of staged) {
+            clearWaveformCachesForId(id);
+            audioCacheSet(id, buffer);
+        }
+
+        for (const { id, buffer } of staged) {
+            await persistToIdb(id, buffer);
+            if (shouldContinue?.() === false) {
+                for (const stagedBuffer of staged) {
+                    if (cache.get(stagedBuffer.id) === stagedBuffer.buffer) {
+                        cache.delete(stagedBuffer.id);
+                        clearWaveformCachesForId(stagedBuffer.id);
+                    }
+                }
+                return 0;
+            }
+        }
+        return staged.length;
     },
 
     async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {

@@ -21,6 +21,9 @@ export async function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {
         if (!committed) {
             return false;
         }
+        if (shouldCommit?.() === false) {
+            return false;
+        }
         restoreActiveBranchSlot();
         return true;
     }
