@@ -2,15 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleRestoreTrack } from '../handleRestoreTrack';
 
-import type { AutomationStoreState } from '#/modules/Automation/stores';
-import type { AppAction } from '#/modules/Command/useCases';
-import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import type { TrackStoreState } from '../../../stores/trackStore';
 import type { getTrackStoreState } from '../../../useCases/getTrackStoreState';
 import type { setTrackState } from '../../../useCases/setTrackState';
 
-type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
+type RestoreTrackAction = Parameters<typeof handleRestoreTrack.execute>[0];
 type RestoreTrackPayload = RestoreTrackAction['payload'];
 type RestoreMidiClipDataInput = {
     clipId: string;
@@ -20,26 +17,14 @@ type RestoreMidiClipDataInput = {
 };
 
 const mocks = vi.hoisted(() => {
-    const automationStoreState: { value: AutomationStoreState | null } = { value: null };
-    const midiStoreState: { value: MidiStoreState | null } = { value: null };
     const takeLaneStoreState: { value: TakeLaneStoreState | null } = { value: null };
 
     return {
-        automationStoreState,
-        midiStoreState,
         takeLaneStoreState,
         getTrackStoreState: vi.fn<typeof getTrackStoreState>(),
         setTrackState: vi.fn<typeof setTrackState>(),
         restoreAutomationLanes: vi.fn<(laneSnapshots: readonly unknown[]) => void>(),
         restoreMidiClipData: vi.fn<(input: RestoreMidiClipDataInput) => void>(),
-        getAutomationStoreValue: vi.fn((): AutomationStoreState | null => automationStoreState.value),
-        setAutomationStore: vi.fn((nextState: AutomationStoreState): void => {
-            automationStoreState.value = nextState;
-        }),
-        getMidiStoreValue: vi.fn((): MidiStoreState | null => midiStoreState.value),
-        setMidiStore: vi.fn((nextState: MidiStoreState): void => {
-            midiStoreState.value = nextState;
-        }),
         getTakeLaneStoreValue: vi.fn((): TakeLaneStoreState | null => takeLaneStoreState.value),
         setTakeLaneStore: vi.fn((nextState: TakeLaneStoreState): void => {
             takeLaneStoreState.value = nextState;
@@ -61,24 +46,6 @@ vi.mock('#/modules/Automation/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     restoreMidiClipData: mocks.restoreMidiClipData,
-}));
-
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: {
-        get value(): AutomationStoreState | null {
-            return mocks.getAutomationStoreValue();
-        },
-        set: mocks.setAutomationStore,
-    },
-}));
-
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        get value(): MidiStoreState | null {
-            return mocks.getMidiStoreValue();
-        },
-        set: mocks.setMidiStore,
-    },
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
@@ -119,8 +86,6 @@ describe('handleRestoreTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getTrackStoreState.mockReturnValue(null);
-        mocks.automationStoreState.value = { lanes: [] };
-        mocks.midiStoreState.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
         mocks.takeLaneStoreState.value = { lanes: [] };
     });
 
@@ -170,10 +135,6 @@ describe('handleRestoreTrack', () => {
             pitchBendSnapshot: action.payload.midiPitchBendByClipId['clip-d'],
         });
         expect(mocks.setTakeLaneStore).toHaveBeenCalledWith({ lanes: action.payload.takeLaneSnapshots });
-        expect(mocks.getAutomationStoreValue).not.toHaveBeenCalled();
-        expect(mocks.setAutomationStore).not.toHaveBeenCalled();
-        expect(mocks.getMidiStoreValue).not.toHaveBeenCalled();
-        expect(mocks.setMidiStore).not.toHaveBeenCalled();
 
         const trackOrder = requireCallOrder(mocks.setTrackState.mock.invocationCallOrder, 'track restore');
         const automationOrder = requireCallOrder(
@@ -200,10 +161,6 @@ describe('handleRestoreTrack', () => {
         expect(mocks.restoreAutomationLanes).not.toHaveBeenCalled();
         expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
         expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
-        expect(mocks.getAutomationStoreValue).not.toHaveBeenCalled();
-        expect(mocks.setAutomationStore).not.toHaveBeenCalled();
-        expect(mocks.getMidiStoreValue).not.toHaveBeenCalled();
-        expect(mocks.setMidiStore).not.toHaveBeenCalled();
     });
 
     it('should provide a description and remain non-undoable', () => {

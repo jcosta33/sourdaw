@@ -44,6 +44,49 @@ function createLane(id: string, parameterName = `Parameter ${id}`): AutomationLa
     };
 }
 
+function createSparseArray(): unknown[] {
+    const values: unknown[] = [];
+    values.length = 1;
+    return values;
+}
+
+function createAutomationObject(laneId: string, points: unknown[]) {
+    return {
+        id: `object-${laneId}`,
+        laneId,
+        startBeat: 0,
+        endBeat: 1,
+        points,
+        name: 'Object',
+    };
+}
+
+const SPARSE_SNAPSHOT_CASES = [
+    {
+        label: 'lane points',
+        snapshot: { ...createLane('lane-sparse-points'), points: createSparseArray() },
+    },
+    {
+        label: 'lane objects',
+        snapshot: { ...createLane('lane-sparse-objects'), objects: createSparseArray() },
+    },
+    {
+        label: 'trim points',
+        snapshot: { ...createLane('lane-sparse-trim'), trimPoints: createSparseArray() },
+    },
+    {
+        label: 'ghost points',
+        snapshot: { ...createLane('lane-sparse-ghost'), ghostPoints: createSparseArray() },
+    },
+    {
+        label: 'nested automation-object points',
+        snapshot: {
+            ...createLane('lane-sparse-object-points'),
+            objects: [createAutomationObject('lane-sparse-object-points', createSparseArray())],
+        },
+    },
+] satisfies readonly { label: string; snapshot: unknown }[];
+
 describe('restoreAutomationLanes', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -78,6 +121,19 @@ describe('restoreAutomationLanes', () => {
         mocks.state.value = previousState;
 
         restoreAutomationLanes([validSnapshot, malformedSnapshot]);
+
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(previousState);
+        expect(mocks.state.value).toEqual({ lanes: [current] });
+    });
+
+    it.each(SPARSE_SNAPSHOT_CASES)('should reject sparse $label atomically', ({ snapshot }) => {
+        const current = createLane('lane-current', 'Current');
+        const validSnapshot = createLane('lane-valid', 'Valid');
+        const previousState: AutomationStoreState = { lanes: [current] };
+        mocks.state.value = previousState;
+
+        restoreAutomationLanes([validSnapshot, snapshot]);
 
         expect(mocks.set).not.toHaveBeenCalled();
         expect(mocks.state.value).toBe(previousState);
