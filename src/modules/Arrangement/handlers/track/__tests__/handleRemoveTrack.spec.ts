@@ -1,6 +1,41 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { handleRemoveTrack } from '../handleRemoveTrack';
+
+function createAutomationLane(id: string, trackId: string) {
+    return {
+        id,
+        trackId,
+        parameterId: `parameter-${id}`,
+        parameterName: `Parameter ${id}`,
+        points: [],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        virginTerritory: true,
+        minValue: 0,
+        maxValue: 1,
+    };
+}
+
+function createMidiNote(id: string, pitch: number) {
+    return { id, pitch, startBeat: 0, duration: 1, velocity: 100 };
+}
+
+function createMidiControlChange(id: string, value: number) {
+    return { id, controller: 1, value, beat: 0, channel: 0 };
+}
+
+function createMidiPitchBend(id: string, value: number) {
+    return { id, value, beat: 0, channel: 0 };
+}
+
+function createTakeLane(id: string, trackId: string) {
+    return { id, trackId, takes: [], activeCompRegions: [] };
+}
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
@@ -138,33 +173,69 @@ describe('handleRemoveTrack', () => {
             });
 
             expect(desc.label).toBe('Remove track');
-            expect((desc as any).inverseAction).toBeUndefined();
+            expect('inverseAction' in desc).toBe(false);
         });
 
         it('returns inverse action with full snapshot state', () => {
-            mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] }],
+            const activeClip = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+            const activeAlternativeClip = ClipDummy.create({ id: 'c2', trackId: 't1', type: 'midi' });
+            const inactiveAlternativeClip = ClipDummy.create({ id: 'c3', trackId: 't1', type: 'midi' });
+            const track = TrackDummy.create({
+                id: 't1',
+                name: 'Vocals',
+                kind: 'midi',
+                clips: [activeClip],
+                activeAlternativeId: 'alt-active',
+                alternatives: [
+                    { id: 'alt-active', name: 'Active', clips: [activeClip, activeAlternativeClip] },
+                    { id: 'alt-inactive', name: 'Inactive', clips: [inactiveAlternativeClip, activeClip] },
+                ],
             });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
 
+            const removedAutomationLane = createAutomationLane('l1', 't1');
+            const unrelatedAutomationLane = createAutomationLane('l2', 't2');
             mocks.automationStoreValue.value = {
-                lanes: [
-                    { trackId: 't1', id: 'l1' },
-                    { trackId: 't2', id: 'l2' },
-                ],
+                lanes: [removedAutomationLane, unrelatedAutomationLane],
             };
 
+            const noteC1 = createMidiNote('note-c1', 60);
+            const noteC2 = createMidiNote('note-c2', 61);
+            const noteC3 = createMidiNote('note-c3', 62);
+            const unrelatedNote = createMidiNote('note-unrelated', 64);
+            const ccC1 = createMidiControlChange('cc-c1', 10);
+            const ccC2 = createMidiControlChange('cc-c2', 11);
+            const ccC3 = createMidiControlChange('cc-c3', 12);
+            const unrelatedCc = createMidiControlChange('cc-unrelated', 14);
+            const pitchBendC1 = createMidiPitchBend('pitch-bend-c1', 0);
+            const pitchBendC2 = createMidiPitchBend('pitch-bend-c2', 1);
+            const pitchBendC3 = createMidiPitchBend('pitch-bend-c3', 2);
+            const unrelatedPitchBend = createMidiPitchBend('pitch-bend-unrelated', 4);
             mocks.midiStoreValue.value = {
-                notesByClipId: { c1: [{ pitch: 60 }] },
-                ccByClipId: { c1: [{ value: 10 }] },
-                pitchBendByClipId: { c1: [{ value: 0 }] },
-                c2: [{ pitch: 64 }],
+                notesByClipId: {
+                    c1: [noteC1],
+                    c2: [noteC2],
+                    c3: [noteC3],
+                    unrelated: [unrelatedNote],
+                },
+                ccByClipId: {
+                    c1: [ccC1],
+                    c2: [ccC2],
+                    c3: [ccC3],
+                    unrelated: [unrelatedCc],
+                },
+                pitchBendByClipId: {
+                    c1: [pitchBendC1],
+                    c2: [pitchBendC2],
+                    c3: [pitchBendC3],
+                    unrelated: [unrelatedPitchBend],
+                },
             };
 
+            const removedTakeLane = createTakeLane('take1', 't1');
+            const unrelatedTakeLane = createTakeLane('take2', 't2');
             mocks.takeLaneStoreValue.value = {
-                lanes: [
-                    { trackId: 't1', id: 'take1' },
-                    { trackId: 't2', id: 'take2' },
-                ],
+                lanes: [removedTakeLane, unrelatedTakeLane],
             };
 
             const desc = handleRemoveTrack.describe({
@@ -178,13 +249,25 @@ describe('handleRemoveTrack', () => {
 
             const payload = desc.inverseAction?.payload;
             expect(payload?.trackId).toBe('t1');
-            expect(payload?.trackSnapshot).toEqual({ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] });
-            expect(payload?.automationLaneSnapshots).toEqual([{ trackId: 't1', id: 'l1' }]);
-            expect(payload?.takeLaneSnapshots).toEqual([{ trackId: 't1', id: 'take1' }]);
+            expect(payload?.trackSnapshot).toEqual(track);
+            expect(payload?.automationLaneSnapshots).toEqual([removedAutomationLane]);
+            expect(payload?.takeLaneSnapshots).toEqual([removedTakeLane]);
 
-            expect(payload?.midiNotesByClipId).toEqual({ c1: [{ pitch: 60 }] });
-            expect(payload?.midiCcByClipId).toEqual({ c1: [{ value: 10 }] });
-            expect(payload?.midiPitchBendByClipId).toEqual({ c1: [{ value: 0 }] });
+            expect(payload?.midiNotesByClipId).toEqual({
+                c1: [noteC1],
+                c2: [noteC2],
+                c3: [noteC3],
+            });
+            expect(payload?.midiCcByClipId).toEqual({
+                c1: [ccC1],
+                c2: [ccC2],
+                c3: [ccC3],
+            });
+            expect(payload?.midiPitchBendByClipId).toEqual({
+                c1: [pitchBendC1],
+                c2: [pitchBendC2],
+                c3: [pitchBendC3],
+            });
         });
     });
 

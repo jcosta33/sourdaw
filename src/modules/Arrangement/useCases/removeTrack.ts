@@ -1,11 +1,12 @@
 import { inject } from '#/infra/di/inject';
-import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
+import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
 
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
+import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
 import { ArrangementEventBus } from './arrangementEventBus';
@@ -23,8 +24,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 return;
             }
 
-            // Collect clip IDs from this track for MIDI/automation cleanup
-            const clipIds = new Set(track.clips.map((context) => context.id));
+            const clipIds = collectTrackClipIds(track);
 
             setTrackState({
                 ...state,
@@ -32,27 +32,11 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
             });
 
-            // Clean up automation lanes for this track
-            const autoState = automationStore.value;
-            if (autoState) {
-                automationStore.set({
-                    lanes: autoState.lanes.filter((length) => length.trackId !== trackId),
-                });
-            }
+            // Clean up automation lanes for this track.
+            removeAutomationLanesForTrack(trackId);
 
-            // Clean up MIDI data for clips on this track
-            const midiState = midiStore.value;
-            if (midiState && clipIds.size > 0) {
-                const newNotes = { ...midiState.notesByClipId };
-                const newCC = { ...midiState.ccByClipId };
-                const newPB = { ...midiState.pitchBendByClipId };
-                for (const clipId of clipIds) {
-                    delete newNotes[clipId];
-                    delete newCC[clipId];
-                    delete newPB[clipId];
-                }
-                midiStore.set({ notesByClipId: newNotes, ccByClipId: newCC, pitchBendByClipId: newPB });
-            }
+            // Clean up MIDI data for the active and inactive alternative clips.
+            removeMidiClipData(clipIds);
 
             // Clean up take lanes for this track
             const takeLane = takeLaneStore.value;
