@@ -66,7 +66,9 @@ const mocks = vi.hoisted(() => {
     const getCrdtDoc = vi.fn();
     const hasCrdtDoc = vi.fn(() => true);
     const persistCrdtProject = vi.fn(() => Promise.resolve());
+    const preserveBranchStateForSession = vi.fn();
     const replaceBranchState = vi.fn();
+    const restoreBranchStateAfterSession = vi.fn();
     const subscribeToCrdtChanges = vi.fn((listener: (docId?: string) => void) => {
         crdtChangeListener.value = listener;
         return vi.fn();
@@ -136,7 +138,9 @@ const mocks = vi.hoisted(() => {
         getCrdtDoc,
         hasCrdtDoc,
         persistCrdtProject,
+        preserveBranchStateForSession,
         replaceBranchState,
+        restoreBranchStateAfterSession,
         subscribeToCrdtChanges,
         trackStoreValue,
         assetTransferCallbacks,
@@ -201,7 +205,9 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     getCrdtDoc: mocks.getCrdtDoc,
     hasCrdtDoc: mocks.hasCrdtDoc,
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: mocks.preserveBranchStateForSession,
     replaceBranchState: mocks.replaceBranchState,
+    restoreBranchStateAfterSession: mocks.restoreBranchStateAfterSession,
     subscribeToCrdtChanges: mocks.subscribeToCrdtChanges,
 }));
 
@@ -266,7 +272,9 @@ describe('collaboration sessionManagement', () => {
         mocks.hasCrdtDoc.mockReturnValue(true);
         mocks.persistCrdtProject.mockReset();
         mocks.persistCrdtProject.mockResolvedValue(undefined);
+        mocks.preserveBranchStateForSession.mockReset();
         mocks.replaceBranchState.mockReset();
+        mocks.restoreBranchStateAfterSession.mockReset();
         mocks.assetTransferCallbacks.onAssetAvailable = undefined;
         mocks.assetTransferGetAsset.mockReset();
         mocks.audioContextDecodeAudioData.mockReset();
@@ -337,7 +345,7 @@ describe('collaboration sessionManagement', () => {
             });
         });
 
-        it('should fall back to main when the incoming projection lacks the current active branch', () => {
+        it('should delegate active-id fallback to CrdtDocument after passing the current local id', () => {
             const mainBranch = createTestBranch('main');
             const localBranch = createTestBranch('local');
             const featureBranch = createTestBranch('feature');
@@ -352,21 +360,58 @@ describe('collaboration sessionManagement', () => {
 
             expect(mocks.replaceBranchState).toHaveBeenLastCalledWith({
                 branches: [mainBranch, featureBranch],
-                activeBranchId: 'main',
+                activeBranchId: 'local',
             });
         });
 
-        it('should restore the pre-session branch snapshot when leaving', async () => {
+        it('should preserve branch state before the first incoming projection', () => {
+            const mainBranch = createTestBranch('main');
+            const featureBranch = createTestBranch('feature');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, featureBranch],
+                activeBranchId: 'feature',
+            };
+            mocks.getCrdtDoc.mockReturnValue({ branches: [mainBranch, featureBranch] });
+
+            createSession('Alice');
+            getBranchProjectionListener()('__branches__');
+
+            expect(mocks.preserveBranchStateForSession).toHaveBeenCalledTimes(1);
+            expect(mocks.preserveBranchStateForSession.mock.invocationCallOrder[0]).toBeLessThan(
+                mocks.replaceBranchState.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY
+            );
+        });
+
+        it('should pass malformed remote branches to CrdtDocument without dereferencing them', () => {
             const mainBranch = createTestBranch('main');
             const localBranch = createTestBranch('local');
-            const featureBranch = createTestBranch('feature');
-            const snapshot = {
+            const malformedBranches = [null, { branchId: 'incomplete' }];
+            mocks.branchStoreValue.value = {
                 branches: [mainBranch, localBranch],
                 activeBranchId: 'local',
             };
-            mocks.branchStoreValue.value = snapshot;
+            mocks.getCrdtDoc.mockReturnValue({ branches: malformedBranches });
 
             createSession('Alice');
+
+            expect(() => getBranchProjectionListener()('__branches__')).not.toThrow();
+            expect(mocks.replaceBranchState).toHaveBeenLastCalledWith({
+                branches: malformedBranches,
+                activeBranchId: 'local',
+            });
+        });
+
+        it('should restore durable branch state when leaving', async () => {
+            const mainBranch = createTestBranch('main');
+            const localBranch = createTestBranch('local');
+            const featureBranch = createTestBranch('feature');
+            mocks.branchStoreValue.value = {
+                branches: [mainBranch, localBranch],
+                activeBranchId: 'local',
+            };
+
+            createSession('Alice');
+            mocks.restoreBranchStateAfterSession.mockClear();
             mocks.branchStoreValue.value = {
                 branches: [mainBranch, featureBranch],
                 activeBranchId: 'feature',
@@ -374,7 +419,7 @@ describe('collaboration sessionManagement', () => {
 
             await leaveSession();
 
-            expect(mocks.replaceBranchState).toHaveBeenLastCalledWith(snapshot);
+            expect(mocks.restoreBranchStateAfterSession).toHaveBeenCalledTimes(1);
         });
     });
 

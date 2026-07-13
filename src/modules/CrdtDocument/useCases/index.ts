@@ -21,7 +21,9 @@ export { setupProjectionBridge } from './projection/setupProjectionBridge';
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
 export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
+export { preserveBranchStateForSession } from './preserveBranchStateForSession';
 export { replaceBranchState } from './replaceBranchState';
+export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';
 
 export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';

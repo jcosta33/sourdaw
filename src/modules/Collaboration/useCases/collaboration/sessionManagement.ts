@@ -12,7 +12,9 @@ import {
     persistCrdtProject,
     hasCrdtDoc,
     DOC_BRANCHES,
+    preserveBranchStateForSession,
     replaceBranchState,
+    restoreBranchStateAfterSession,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
@@ -33,21 +35,6 @@ import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
 import { PermissionManager } from '../permissions';
-
-type LocalBranchRecord = {
-    branchId: string;
-    name: string;
-    rootDocId: string;
-    sourceBranchId: string | null;
-    createdAt: number;
-    createdFromHeads: string[];
-    note: string;
-};
-
-type LocalBranchState = {
-    branches: LocalBranchRecord[];
-    activeBranchId: string;
-};
 
 /**
  * §14.1 — Coalesce all collaboration-session mutables into one holder so the
@@ -72,8 +59,8 @@ const sessionState: {
     playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
     /** Host-assigned peer slot ID for the in-flight invite, if any. */
     pendingInviteId: PeerId | null;
-    /** Snapshot of branchStore taken at session start; restored on session end. */
-    branchStoreSnapshot: LocalBranchState | null;
+    /** Whether this session has durably preserved its local branch state. */
+    hasBranchStateBackup: boolean;
     /** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
     unsubscribeBranchStore: (() => void) | null;
     /** Unsubscribe from automergeRepository changes (__branches__ doc → branchStore). */
@@ -83,13 +70,6 @@ const sessionState: {
      * branchStore triggers branchStore.subscribe, which must not write back.
      */
     isProjectingBranches: boolean;
-    /**
-     * §114.3 — Cached canonical JSON of the last branches array projected
-     * into branchStore. Lets the projection short-circuit when the
-     * incoming Automerge doc hasn't actually changed, avoiding a full
-     * re-stringify of the current branchStore state on every CRDT tick.
-     */
-    lastProjectedBranchesJson: string | null;
 } = {
     peerManager: null,
     automergeSync: null,
@@ -99,11 +79,10 @@ const sessionState: {
     presenceListeners: new Set(),
     playheadBroadcastInterval: null,
     pendingInviteId: null,
-    branchStoreSnapshot: null,
+    hasBranchStateBackup: false,
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
     isProjectingBranches: false,
-    lastProjectedBranchesJson: null,
 };
 
 /** Cleanup timers for peers that disconnected without sending peer-leave. */
@@ -164,15 +143,13 @@ function sanitizePresence(data: PresenceDelta): PresenceDelta {
  *  - Local branch mutations (fork/delete/etc.) are mirrored into the Automerge doc
  *    so peers receive them via the normal sync protocol.
  *  - Incoming `__branches__` doc changes from peers are projected back into branchStore
- *    (in-memory only — we restore the pre-session snapshot on leave).
+ *    while a durable pre-session snapshot protects local branch metadata.
  *
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
 function startBranchSync(isHost: boolean): void {
-    // Snapshot current state so we can restore it on session end. Deep-clone
-    // the branch records (not just the array) so live edits during the
-    // session can't mutate the snapshot we restore from on leave.
-    sessionState.branchStoreSnapshot = branchStore.value ? structuredClone(branchStore.value) : null;
+    preserveBranchStateForSession();
+    sessionState.hasBranchStateBackup = true;
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
@@ -212,29 +189,15 @@ function startBranchSync(isHost: boolean): void {
         if (docId !== undefined && docId !== DOC_BRANCHES) {
             return;
         }
-        const doc = getCrdtDoc<{ branches: LocalBranchState['branches'] }>(DOC_BRANCHES);
-        if (!doc?.branches) {
+        const doc = getCrdtDoc<{ branches: unknown }>(DOC_BRANCHES);
+        if (!Array.isArray(doc?.branches)) {
             return;
         }
         const current = branchStore.value;
-        const incomingBranches = Array.from(doc.branches);
         const activeBranchId = current?.activeBranchId ?? MAIN_BRANCH_ID;
-        // §114.3 — Compare the incoming JSON against the canonical JSON we
-        // cached on the last successful projection. If they match, skip the
-        // diff entirely. This avoids re-stringifying `current?.branches` on
-        // every CRDT tick that fires without an actual branches change.
-        const incomingJson = JSON.stringify(incomingBranches);
-        if (incomingJson === sessionState.lastProjectedBranchesJson) {
-            return;
-        }
         sessionState.isProjectingBranches = true;
         try {
-            // Keep the peer's own activeBranchId — don't force them onto the host's branch.
-            const validActiveBranchId = incomingBranches.some((branch) => branch.branchId === activeBranchId)
-                ? activeBranchId
-                : MAIN_BRANCH_ID;
-            replaceBranchState({ branches: incomingBranches, activeBranchId: validActiveBranchId });
-            sessionState.lastProjectedBranchesJson = incomingJson;
+            replaceBranchState({ branches: doc.branches, activeBranchId });
         } finally {
             sessionState.isProjectingBranches = false;
         }
@@ -257,16 +220,15 @@ function stopBranchSync(): void {
 
     removeCrdtDoc(DOC_BRANCHES);
 
-    if (sessionState.branchStoreSnapshot) {
+    if (sessionState.hasBranchStateBackup) {
         sessionState.isProjectingBranches = true;
         try {
-            replaceBranchState(sessionState.branchStoreSnapshot);
+            restoreBranchStateAfterSession();
+            sessionState.hasBranchStateBackup = false;
         } finally {
             sessionState.isProjectingBranches = false;
         }
-        sessionState.branchStoreSnapshot = null;
     }
-    sessionState.lastProjectedBranchesJson = null;
 
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {

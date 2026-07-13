@@ -3,6 +3,8 @@ import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
+import { branchSessionBackupStorage } from './branchSessionBackupStorage';
+
 export type BranchRecord = {
     branchId: string;
     name: string;
@@ -125,8 +127,20 @@ export function validateStoredBranchStoreState(value: unknown): BranchStoreState
     return { branches, activeBranchId };
 }
 
+export function restoreBranchStateFromSessionBackup(): void {
+    const backup = branchSessionBackupStorage.get();
+    if (backup === null) {
+        return;
+    }
+
+    branchStore.set(validateStoredBranchStoreState(backup));
+    branchSessionBackupStorage.clear();
+}
+
 export const branchStore = createStore<BranchStoreState>({
     storage: createLocalStorage<BranchStoreState>('sourdaw-branches'),
     initialData: createDefaultBranchStoreState(),
     sanitize: validateStoredBranchStoreState,
 });
+
+restoreBranchStateFromSessionBackup();
