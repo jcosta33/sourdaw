@@ -7,7 +7,13 @@ import { type Track, type TrackKind } from '../stores/trackStore';
 
 import { ArrangementEventBus } from './arrangementEventBus';
 
-type AddTrackInput = { id?: string; name: string; kind: TrackKind; select?: boolean };
+type AddTrackInput = {
+    id?: string;
+    name: string;
+    kind: TrackKind;
+    select?: boolean;
+    suppressAddedEvent?: boolean;
+};
 
 export const addTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
@@ -24,7 +30,9 @@ export const addTrack = inject({ eventBus: ArrangementEventBus })(
                 selectedTrackId: input.select === false ? state.selectedTrackId : track.id,
             });
 
-            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            if (!input.suppressAddedEvent) {
+                void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            }
             return track;
         }
 );
