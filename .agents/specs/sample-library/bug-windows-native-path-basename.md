@@ -5,7 +5,7 @@ title: Native Windows paths are displayed as full paths instead of basenames
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/deep-codebase-risk-audit-2026-06-27.md
+  - "Transient finding: deep-codebase-risk-audit-2026-06-27"
   - SPEC-sample-library
   - SPEC-chrome-first-capability
 ---

@@ -5,7 +5,7 @@ title: Plugin audio Tauri command contains raw prose in Rust code
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/project-health-audit-2026-06-27.md
+  - "Transient finding: project-health-audit-2026-06-27"
   - SPEC-plugin-hosting-clap
 ---
 

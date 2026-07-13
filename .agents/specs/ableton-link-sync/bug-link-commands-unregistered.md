@@ -5,7 +5,7 @@ title: Ableton Link commands are defined but not registered in Tauri
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/project-health-audit-2026-06-27.md
+  - "Transient finding: project-health-audit-2026-06-27"
   - SPEC-ableton-link-sync
 ---
 

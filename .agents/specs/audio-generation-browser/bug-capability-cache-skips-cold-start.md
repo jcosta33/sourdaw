@@ -5,7 +5,7 @@ title: Browser AI startup can reuse cached capabilities instead of re-probing co
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/deep-codebase-risk-audit-2026-06-27.md
+  - "Transient finding: deep-codebase-risk-audit-2026-06-27"
   - SPEC-audio-generation-browser
 ---
 

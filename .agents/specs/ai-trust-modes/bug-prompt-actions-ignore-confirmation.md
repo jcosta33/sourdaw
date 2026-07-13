@@ -5,7 +5,7 @@ title: Prompt fast-path actions ignore the confirmation flag before execution
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/frontend-runtime-writepath-audit-2026-06-27.md
+  - "Transient finding: frontend-runtime-writepath-audit-2026-06-27"
   - SPEC-ai-trust-modes
 ---
 

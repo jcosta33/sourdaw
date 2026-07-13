@@ -469,7 +469,7 @@ These are the gates a reviewer (or an agent's self-review) checks. Every box mus
 - [ ] `pnpm vitest run` (full suite) passes; no test in scope is `.skip`'d.
 - [ ] `pnpm vitest run` for each new use case spec passes (Group A8, plus B unit tests).
 - [ ] `cargo test -p daw-dsp` passes including the new B1, B2, B3 tests.
-- [ ] The cross-module inventory `inventory/overview.md` is updated: every item this spec addresses is bumped from `Deferred` to `FIXED (date)` with a one-sentence note. Items explicitly out of scope (I-25, I-28, I-30, pre-existing breaks) remain annotated as such.
+- [ ] Every durable bug or feature artifact addressed by this intake is updated with its current status; explicitly deferred items retain their rationale.
 - [ ] `## Session status` block in the audit is regenerated to reflect the new fixed-count.
 
 ### Group A (Timeline / MIDI)

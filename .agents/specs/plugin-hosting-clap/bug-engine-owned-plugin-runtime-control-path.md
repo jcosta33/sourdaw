@@ -22,13 +22,13 @@ When a CLAP plugin is loaded while the native engine is running, the live `ClapW
 Inspect the engine-running CLAP load path and follow-up command lookups:
 
 ```text
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:159:            let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:171:                    let slot = ClapPluginSlot::new(wrapper);
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:172:                    let id = engine.add_plugin(Box::new(slot))?;
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:186:                    engine_plugins.insert(
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:426:        return Err(format!(
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugins.rs:459:        return Err(format!(
-/Users/josecosta/dev/sourdaw/src-tauri/src/commands/plugin_gui.rs:78:                    return Err(format!(
+src-tauri/src/commands/plugins.rs:159:            let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
+src-tauri/src/commands/plugins.rs:171:                    let slot = ClapPluginSlot::new(wrapper);
+src-tauri/src/commands/plugins.rs:172:                    let id = engine.add_plugin(Box::new(slot))?;
+src-tauri/src/commands/plugins.rs:186:                    engine_plugins.insert(
+src-tauri/src/commands/plugins.rs:426:        return Err(format!(
+src-tauri/src/commands/plugins.rs:459:        return Err(format!(
+src-tauri/src/commands/plugin_gui.rs:78:                    return Err(format!(
 ```
 
 `engine_plugins` stores only the engine id, name, and a parameter snapshot. The live plugin is boxed inside the scheduler, and `EngineHandle` exposes only graph commands intended for RT-safe control.

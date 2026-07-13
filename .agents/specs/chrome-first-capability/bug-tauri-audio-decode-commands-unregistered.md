@@ -5,7 +5,7 @@ title: Tauri audio decode commands are unregistered and mismatched with frontend
 status: fixed
 owner: The Sourdaw team
 sources:
-  - .agents/findings/project-health-audit-2026-06-27.md
+  - "Transient finding: project-health-audit-2026-06-27"
   - SPEC-chrome-first-capability
 ---
 

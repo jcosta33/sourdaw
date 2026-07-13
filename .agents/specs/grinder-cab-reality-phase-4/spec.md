@@ -101,7 +101,7 @@ Verify with: `pnpm typecheck`
 The Grinder audit/task trail must be updated to record that `mic1Distance`,
 `mic2Distance`, and `roomAmount` are no longer decorative.
 
-Verify with: `grep -ri "mic.*distance\|roomAmount" .agents/specs/grinder-cab-reality-phase-4/ .agents/findings/ .agents/reviews/`
+Verify with: `grep -ri "mic.*distance\|roomAmount" .agents/specs/grinder-cab-reality-phase-4/`
 
 ## Open questions
 
