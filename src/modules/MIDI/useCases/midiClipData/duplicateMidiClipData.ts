@@ -24,7 +24,7 @@ export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): (
         if (sourceNotes !== undefined && sourceNotes.length > 0) {
             notesByClipId[targetClipId] = sourceNotes.map((note) => ({
                 ...note,
-                id: `note-dup-${crypto.randomUUID().slice(0, 8)}`,
+                id: `note-dup-${crypto.randomUUID()}`,
             }));
             hasDuplicatedData = true;
         }
@@ -33,7 +33,7 @@ export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): (
         if (sourceControlChanges !== undefined && sourceControlChanges.length > 0) {
             ccByClipId[targetClipId] = sourceControlChanges.map((controlChange) => ({
                 ...controlChange,
-                id: `cc-dup-${crypto.randomUUID().slice(0, 8)}`,
+                id: `cc-dup-${crypto.randomUUID()}`,
             }));
             hasDuplicatedData = true;
         }
@@ -42,7 +42,7 @@ export function duplicateMidiClipData({ copies }: DuplicateMidiClipDataInput): (
         if (sourcePitchBends !== undefined && sourcePitchBends.length > 0) {
             pitchBendByClipId[targetClipId] = sourcePitchBends.map((pitchBend) => ({
                 ...pitchBend,
-                id: `pb-dup-${crypto.randomUUID().slice(0, 8)}`,
+                id: `pb-dup-${crypto.randomUUID()}`,
             }));
             hasDuplicatedData = true;
         }

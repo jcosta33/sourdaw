@@ -26,16 +26,18 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             if (!arrangementSnapshot) {
                 return;
             }
+            const previousArrangement = arrangementSnapshot;
 
-            const newTrackId = `track-dup-${crypto.randomUUID().slice(0, 8)}`;
+            const newTrackId = `track-dup-${crypto.randomUUID()}`;
+            const snapshotTrackRefs = new Set(previousArrangement.tracks);
             const midiClipCopies: ClipCopy[] = [];
             const automationClipCopies: AutomationClipCopy[] = [];
 
             // 1. Deep copy alternatives and collect satellite-state work.
             const newAlternatives = source.alternatives.map((alt) => {
-                const newAltId = `alt-dup-${crypto.randomUUID().slice(0, 8)}`;
+                const newAltId = `alt-dup-${crypto.randomUUID()}`;
                 const newClips: Clip[] = alt.clips.map((clip) => {
-                    const newClipId = `clip-dup-${crypto.randomUUID().slice(0, 8)}`;
+                    const newClipId = `clip-dup-${crypto.randomUUID()}`;
                     const copy = { sourceClipId: clip.id, targetClipId: newClipId };
 
                     automationClipCopies.push({ ...copy, targetTrackId: newTrackId });
@@ -62,26 +64,27 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             const newActiveAlternativeId = newAlternatives[sourceActiveIndex]?.id ?? newAlternatives[0]?.id ?? '';
 
             const rollbacks: Rollback[] = [];
+            function rollbackArrangement(): void {
+                const current = getTrackState();
+                if (!current) {
+                    return;
+                }
+                const tracks = current.tracks.filter(
+                    (track) => track.id !== newTrackId || snapshotTrackRefs.has(track)
+                );
+                const restoreSelection = current.selectedTrackId === newTrackId;
+                if (tracks.length === current.tracks.length && !restoreSelection) {
+                    return;
+                }
+                setTrackState({
+                    ...current,
+                    tracks,
+                    selectedTrackId: restoreSelection ? previousArrangement.selectedTrackId : current.selectedTrackId,
+                });
+            }
             try {
                 // 3. Add the track without notifying consumers before its duplicate state is complete.
-                rollbacks.push(() => {
-                    const current = getTrackState();
-                    if (!current) {
-                        return;
-                    }
-                    const tracks = current.tracks.filter((track) => track.id !== newTrackId);
-                    const restoreSelection = current.selectedTrackId === newTrackId;
-                    if (tracks.length === current.tracks.length && !restoreSelection) {
-                        return;
-                    }
-                    setTrackState({
-                        ...current,
-                        tracks,
-                        selectedTrackId: restoreSelection
-                            ? arrangementSnapshot.selectedTrackId
-                            : current.selectedTrackId,
-                    });
-                });
+                rollbacks.push(rollbackArrangement);
                 const newTrack = addTrack({
                     id: newTrackId,
                     name: `${source.name} (copy)`,
@@ -90,6 +93,8 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                 });
 
                 if (!newTrack) {
+                    rollbacks.pop();
+                    rollbackArrangement();
                     return;
                 }
 
@@ -101,7 +106,7 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                     color: source.color,
                     devices: source.devices.map((data) => ({
                         ...data,
-                        id: `dev-dup-${crypto.randomUUID().slice(0, 8)}`,
+                        id: `dev-dup-${crypto.randomUUID()}`,
                     })),
                     sends: [...source.sends],
                     alternatives: newAlternatives,

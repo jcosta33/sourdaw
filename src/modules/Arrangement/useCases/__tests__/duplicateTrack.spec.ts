@@ -203,6 +203,49 @@ describe('duplicateTrack', () => {
         expect(mocks.eventBus.emit).not.toHaveBeenCalled();
     });
 
+    it('scopes rollback when addTrack writes and then returns null', () => {
+        const collisionUuid = 'aaaaaaaa-0000-4000-8000-000000000000';
+        const generatedTrackId = `track-dup-${collisionUuid}`;
+        const source = createTrack({ id: 'track-source' });
+        const collidingSnapshotTrack = createTrack({ id: generatedTrackId, name: 'Preexisting collision' });
+        const arrangementSnapshot: TrackState = {
+            tracks: [source, collidingSnapshotTrack],
+            selectedTrackId: source.id,
+            ghostClips: [],
+        };
+        const mutatedSource = { ...source, notes: 'intervening source edit' };
+        const unrelatedTrack = createTrack({ id: 'track-unrelated' });
+        const interveningGhost = createClip({ id: 'clip-intervening', type: 'audio' });
+        let arrangementState = arrangementSnapshot;
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(collisionUuid);
+        mocks.getTrackById.mockReturnValue(source);
+        mocks.getTrackState.mockImplementation(() => arrangementState);
+        mocks.setTrackState.mockImplementation((state) => {
+            arrangementState = state;
+        });
+        mocks.addTrack.mockImplementation((input) => {
+            const generatedTrack = createTrack({ id: input.id ?? 'missing-generated-id' });
+            arrangementState = {
+                tracks: [mutatedSource, collidingSnapshotTrack, generatedTrack, unrelatedTrack],
+                selectedTrackId: generatedTrack.id,
+                ghostClips: [interveningGhost],
+            };
+            return null;
+        });
+
+        duplicateTrack(source.id);
+
+        expect(arrangementState.tracks).toEqual([mutatedSource, collidingSnapshotTrack, unrelatedTrack]);
+        expect(arrangementState.tracks[1]).toBe(collidingSnapshotTrack);
+        expect(arrangementState.selectedTrackId).toBe(source.id);
+        expect(arrangementState.ghostClips).toEqual([interveningGhost]);
+        expect(mocks.setTrackState).toHaveBeenCalledOnce();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.duplicateMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomationBatch).not.toHaveBeenCalled();
+        expect(mocks.eventBus.emit).not.toHaveBeenCalled();
+    });
+
     it('forwards ordered MIDI and automation pairs after updating a mixed multi-alternative duplicate', () => {
         const sourceMidiOne = createClip({
             id: 'clip-midi-one',
@@ -299,17 +342,19 @@ describe('duplicateTrack', () => {
         expect(updatedTrack.outputId).toBe(source.outputId);
         expect(updatedTrack.followChordTrack).toBe(source.followChordTrack);
         expect(updatedTrack.notes).toBe(source.notes);
-        expect(firstAlternative.id).toMatch(/^alt-dup-/);
-        expect(secondAlternative.id).toMatch(/^alt-dup-/);
+        expect(updatedTrack.id).toMatch(/^track-dup-[0-9a-f-]{36}$/);
+        expect(firstAlternative.id).toMatch(/^alt-dup-[0-9a-f-]{36}$/);
+        expect(secondAlternative.id).toMatch(/^alt-dup-[0-9a-f-]{36}$/);
         expect(updatedTrack.activeAlternativeId).toBe(secondAlternative.id);
         expect(updatedTrack.clips).toBe(secondAlternative.clips);
         expect(copiedMidiOne).toEqual({ ...sourceMidiOne, id: copiedMidiOne.id, trackId: updatedTrack.id });
         expect(copiedAudio).toEqual({ ...sourceAudio, id: copiedAudio.id, trackId: updatedTrack.id });
         expect(copiedMidiTwo).toEqual({ ...sourceMidiTwo, id: copiedMidiTwo.id, trackId: updatedTrack.id });
-        expect(copiedMidiOne.id).toMatch(/^clip-dup-/);
-        expect(copiedAudio.id).toMatch(/^clip-dup-/);
-        expect(copiedMidiTwo.id).toMatch(/^clip-dup-/);
+        expect(copiedMidiOne.id).toMatch(/^clip-dup-[0-9a-f-]{36}$/);
+        expect(copiedAudio.id).toMatch(/^clip-dup-[0-9a-f-]{36}$/);
+        expect(copiedMidiTwo.id).toMatch(/^clip-dup-[0-9a-f-]{36}$/);
         expect(copiedDevice).toEqual({ ...source.devices[0], id: copiedDevice.id });
+        expect(copiedDevice.id).toMatch(/^dev-dup-[0-9a-f-]{36}$/);
         expect(copiedDevice).not.toBe(source.devices[0]);
         expect(mocks.duplicateMidiClipData).toHaveBeenCalledTimes(1);
         expect(mocks.duplicateMidiClipData).toHaveBeenCalledWith({

@@ -165,9 +165,15 @@ describe('duplicateMidiClipData', () => {
         expect(nextState.notesByClipId).not.toBe(previousState.notesByClipId);
         expect(nextState.ccByClipId).not.toBe(previousState.ccByClipId);
         expect(nextState.pitchBendByClipId).not.toBe(previousState.pitchBendByClipId);
-        expect(copiedNote).toEqual({ ...sourceNote, id: 'note-dup-abcdef01' });
-        expect(copiedControlChange).toEqual({ ...sourceControlChange, id: 'cc-dup-10203040' });
-        expect(copiedPitchBend).toEqual({ ...sourcePitchBend, id: 'pb-dup-55667788' });
+        expect(copiedNote).toEqual({ ...sourceNote, id: 'note-dup-abcdef01-0000-4000-8000-000000000000' });
+        expect(copiedControlChange).toEqual({
+            ...sourceControlChange,
+            id: 'cc-dup-10203040-0000-4000-8000-000000000000',
+        });
+        expect(copiedPitchBend).toEqual({
+            ...sourcePitchBend,
+            id: 'pb-dup-55667788-0000-4000-8000-000000000000',
+        });
         expect(copiedNote).not.toBe(sourceNote);
         expect(copiedControlChange).not.toBe(sourceControlChange);
         expect(copiedPitchBend).not.toBe(sourcePitchBend);
@@ -248,11 +254,11 @@ describe('duplicateMidiClipData', () => {
 
         expect(mocks.getValue).toHaveBeenCalledTimes(1);
         expect(mocks.set).toHaveBeenCalledTimes(1);
-        expect(firstNoteCopy.id).toBe('note-dup-11111111');
-        expect(firstControlChangeCopy.id).toBe('cc-dup-22222222');
-        expect(secondPitchBendCopy.id).toBe('pb-dup-33333333');
-        expect(repeatedNoteCopy.id).toBe('note-dup-44444444');
-        expect(repeatedControlChangeCopy.id).toBe('cc-dup-55555555');
+        expect(firstNoteCopy.id).toBe('note-dup-11111111-0000-4000-8000-000000000000');
+        expect(firstControlChangeCopy.id).toBe('cc-dup-22222222-0000-4000-8000-000000000000');
+        expect(secondPitchBendCopy.id).toBe('pb-dup-33333333-0000-4000-8000-000000000000');
+        expect(repeatedNoteCopy.id).toBe('note-dup-44444444-0000-4000-8000-000000000000');
+        expect(repeatedControlChangeCopy.id).toBe('cc-dup-55555555-0000-4000-8000-000000000000');
         expect(repeatedNoteCopy).not.toBe(firstNoteCopy);
         expect(repeatedControlChangeCopy).not.toBe(firstControlChangeCopy);
         expect(repeatedNoteCopy).not.toBe(firstNote);
