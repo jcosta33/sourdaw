@@ -15,6 +15,7 @@ export { getAllTracks } from './getAllTracks';
 export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
+export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';

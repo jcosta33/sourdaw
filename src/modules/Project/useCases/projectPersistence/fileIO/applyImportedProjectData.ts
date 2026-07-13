@@ -17,6 +17,11 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     stopPlayback();
     resetAudioGraph();
 
+    // Reset per-device-instance stores (§13.1) so stale device state from the
+    // previously open project does not remain interactive while buffers load;
+    // hydrateModuleStoresFromProjectData does not touch the device stores.
+    resetModuleStoresToDefault();
+
     // Restore referenced runtime buffers before publishing the imported track
     // graph. Track subscribers can render waveforms from their first update,
     // without a synthetic track-store write after hydration.
@@ -27,11 +32,6 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
         audioContext: getAudioContext(),
         bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
     });
-
-    // Reset per-device-instance stores (§13.1) so stale device state from the
-    // previously open project does not leak into the imported project;
-    // hydrateModuleStoresFromProjectData does not touch the device stores.
-    resetModuleStoresToDefault();
 
     // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);

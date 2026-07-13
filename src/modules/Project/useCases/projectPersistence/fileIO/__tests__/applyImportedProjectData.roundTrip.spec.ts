@@ -197,7 +197,11 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
         expect(publicationStates).toEqual([]);
-        completeRestore?.();
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
         await applying;
         unsubscribe();
 

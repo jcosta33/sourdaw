@@ -31,14 +31,14 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         stopPlayback();
         resetAudioGraph();
 
+        // Reset per-device-instance stores (§13.1) so stale device state from the
+        // previous project does not remain interactive while buffers load;
+        // hydrateModuleStoresFromProjectData does not touch the device stores.
+        resetModuleStoresToDefault();
+
         // Restore runtime buffers before publishing the loaded track graph so
         // waveform consumers are ready on the first real track update.
         await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
-
-        // Reset per-device-instance stores (§13.1) so stale device state from the
-        // previously open project does not leak into the project being loaded;
-        // hydrateModuleStoresFromProjectData does not touch the device stores.
-        resetModuleStoresToDefault();
 
         hydrateModuleStoresFromProjectData(data);
 

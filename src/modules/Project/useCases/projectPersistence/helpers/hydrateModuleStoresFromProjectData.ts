@@ -1,11 +1,10 @@
 import {
     adjustmentLayerStore,
     markerStore,
-    trackStore,
     type AdjustmentEffectType,
     type AdjustmentLayer,
 } from '#/modules/Arrangement/stores';
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
+import { hydrateTracksForProject } from '#/modules/Arrangement/useCases';
 import { automationStore, type AutomationCurveType, type AutomationLane } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
@@ -15,10 +14,7 @@ import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
-        trackStore.set({
-            tracks: data.arrangement.tracks.map(normalizeTrack),
-            selectedTrackId: null,
-        });
+        hydrateTracksForProject({ tracks: data.arrangement.tracks });
     }
 
     // 1b. Transport — the exported transport block is a strict subset of the

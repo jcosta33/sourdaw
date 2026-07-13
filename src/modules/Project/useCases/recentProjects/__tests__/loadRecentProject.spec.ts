@@ -20,7 +20,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));
@@ -90,16 +89,26 @@ describe('loadRecentProject', () => {
 
     it('restores cached audio buffers before publishing hydrated tracks', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<number>((resolve) => {
+                    completeRestore = () => resolve(0);
+                })
+        );
 
-        const ok = await loadRecentProject('sourdaw:project:Large Project');
+        const loading = loadRecentProject('sourdaw:project:Large Project');
+        await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
-        expect(ok).toBe(true);
-        const restoreOrder = vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0];
-        const hydrateOrder = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
-        if (restoreOrder === undefined || hydrateOrder === undefined) {
-            throw new Error('Expected cache restoration and track hydration');
+        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
         }
-        expect(restoreOrder).toBeLessThan(hydrateOrder);
+        finishRestore();
+        await expect(loading).resolves.toBe(true);
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
 
     it('returns false when neither localStorage nor IndexedDB has the project', async () => {
