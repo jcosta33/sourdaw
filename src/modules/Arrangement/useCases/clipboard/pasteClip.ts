@@ -1,4 +1,4 @@
-import { midiStore } from '#/modules/MIDI/stores';
+import { setNotesForClip } from '#/modules/MIDI/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -53,16 +53,7 @@ export function pasteClip(): void {
                 id: `note-${crypto.randomUUID().slice(0, 8)}`,
             }));
 
-            const midiState = midiStore.value;
-            if (midiState) {
-                midiStore.set({
-                    ...midiState,
-                    notesByClipId: {
-                        ...midiState.notesByClipId,
-                        [newClip.id]: copiedNotes,
-                    },
-                });
-            }
+            setNotesForClip(newClip.id, copiedNotes);
         }
     }
 }
