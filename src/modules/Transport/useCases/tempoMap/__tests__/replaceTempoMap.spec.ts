@@ -61,6 +61,36 @@ describe('replaceTempoMap', () => {
         expect(storeState.value).toEqual(expected);
     });
 
+    it('accepts an empty replacement batch without generating IDs', () => {
+        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
+
+        replaceTempoMap({ changes: [] });
+
+        const expected = { changes: [] };
+        expect(randomUUIDMock).not.toHaveBeenCalled();
+        expect(setMock).toHaveBeenCalledExactlyOnceWith(expected);
+        expect(notificationMock).toHaveBeenCalledExactlyOnceWith(expected);
+        expect(storeState.value).toEqual(expected);
+    });
+
+    it('rejects the complete batch before UUID generation when a tempo is invalid', () => {
+        const prior = storeState.value;
+        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
+
+        expect(() =>
+            replaceTempoMap({
+                changes: [
+                    { beat: 0, tempo: 90, curve: 'instant' },
+                    { beat: 88, tempo: Number.POSITIVE_INFINITY, curve: 'linear' },
+                ],
+            })
+        ).toThrow(new RangeError('Tempo must be finite and between 20 and 999'));
+        expect(randomUUIDMock).not.toHaveBeenCalled();
+        expect(setMock).not.toHaveBeenCalled();
+        expect(notificationMock).not.toHaveBeenCalled();
+        expect(storeState.value).toBe(prior);
+    });
+
     it('initializes the map when the store state is null', () => {
         storeState.value = null;
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('feedface-feed-4ace-8eed-feedfacefeed');

@@ -55,5 +55,8 @@ describe('createCinematicTemplate', () => {
                 { beat: 88, tempo: 72, curve: 'linear' },
             ],
         });
+        const timeSignatureCallOrder = transportMocks.replaceTimeSignatureMap.mock.invocationCallOrder[0]!;
+        const tempoCallOrder = transportMocks.replaceTempoMap.mock.invocationCallOrder[0]!;
+        expect(timeSignatureCallOrder).toBeLessThan(tempoCallOrder);
     });
 });

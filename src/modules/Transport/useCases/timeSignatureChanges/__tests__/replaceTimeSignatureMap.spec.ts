@@ -61,6 +61,36 @@ describe('replaceTimeSignatureMap', () => {
         expect(storeState.value).toEqual(expected);
     });
 
+    it('accepts an empty replacement batch without generating IDs', () => {
+        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
+
+        replaceTimeSignatureMap({ changes: [] });
+
+        const expected = { changes: [] };
+        expect(randomUUIDMock).not.toHaveBeenCalled();
+        expect(setMock).toHaveBeenCalledExactlyOnceWith(expected);
+        expect(notificationMock).toHaveBeenCalledExactlyOnceWith(expected);
+        expect(storeState.value).toEqual(expected);
+    });
+
+    it('rejects the complete batch before UUID generation when a denominator is invalid', () => {
+        const prior = storeState.value;
+        const randomUUIDMock = vi.spyOn(crypto, 'randomUUID');
+
+        expect(() =>
+            replaceTimeSignatureMap({
+                changes: [
+                    { beat: 0, numerator: 4, denominator: 4 },
+                    { beat: 48, numerator: 6, denominator: 3.5 },
+                ],
+            })
+        ).toThrow(new RangeError('Time-signature denominator must be an integer between 1 and 32'));
+        expect(randomUUIDMock).not.toHaveBeenCalled();
+        expect(setMock).not.toHaveBeenCalled();
+        expect(notificationMock).not.toHaveBeenCalled();
+        expect(storeState.value).toBe(prior);
+    });
+
     it('initializes the map when the store state is null', () => {
         storeState.value = null;
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('33333333-3333-4333-8333-333333333333');
