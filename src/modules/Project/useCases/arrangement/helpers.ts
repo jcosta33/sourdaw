@@ -14,12 +14,3 @@ export const emptySnapshotMidi = {
     ccByClipId: {},
     pitchBendByClipId: {},
 } satisfies ArrangementSnapshot['midi'];
-
-export const emptySnapshotMarkers = {
-    markers: [],
-    sections: [],
-} satisfies NonNullable<ArrangementSnapshot['markers']>;
-
-export const emptySnapshotTakeLanes = {
-    lanes: [],
-} satisfies NonNullable<ArrangementSnapshot['takeLanes']>;
