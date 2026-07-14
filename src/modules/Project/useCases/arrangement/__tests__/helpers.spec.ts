@@ -5,8 +5,6 @@ import {
     emptySnapshotMarkers,
     emptySnapshotMidi,
     emptySnapshotTakeLanes,
-    emptySnapshotTempoMap,
-    emptySnapshotTimeSignatureMap,
     emptySnapshotTracks,
 } from '../helpers';
 
@@ -15,8 +13,6 @@ describe('arrangement snapshot helper defaults', () => {
         expect(emptySnapshotTracks).toEqual({ tracks: [], selectedTrackId: null });
         expect(emptySnapshotAutomation).toEqual({ lanes: [] });
         expect(emptySnapshotMidi).toEqual({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        expect(emptySnapshotTempoMap).toEqual({ changes: [] });
-        expect(emptySnapshotTimeSignatureMap).toEqual({ changes: [] });
         expect(emptySnapshotMarkers).toEqual({ markers: [], sections: [] });
         expect(emptySnapshotTakeLanes).toEqual({ lanes: [] });
     });

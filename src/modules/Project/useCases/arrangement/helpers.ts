@@ -15,14 +15,6 @@ export const emptySnapshotMidi = {
     pitchBendByClipId: {},
 } satisfies ArrangementSnapshot['midi'];
 
-export const emptySnapshotTempoMap = {
-    changes: [],
-} satisfies NonNullable<ArrangementSnapshot['tempoMap']>;
-
-export const emptySnapshotTimeSignatureMap = {
-    changes: [],
-} satisfies NonNullable<ArrangementSnapshot['timeSignatureMap']>;
-
 export const emptySnapshotMarkers = {
     markers: [],
     sections: [],

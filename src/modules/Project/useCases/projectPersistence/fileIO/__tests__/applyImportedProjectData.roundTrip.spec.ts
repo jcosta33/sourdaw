@@ -64,7 +64,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     startCrdtAutoSave,
 }));
 vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    restoreTimelineMapSnapshot: vi.fn(),
+    stopPlayback: vi.fn(),
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are
 // not what this round-trip asserts (it checks the hydrated track/transport/midi/
