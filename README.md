@@ -13,15 +13,14 @@ under `.agents/specs/intake/`, and accepted architecture decisions under
 
 ## Setup
 
-Install both dependency sets before the first push from a checkout:
+Install both dependency sets for local development:
 
 ```sh
 pnpm install
 npm --prefix server ci --include=dev
 ```
 
-`pnpm install` also configures the checked-in Git hooks. Server dependencies are
-separate setup; the pre-push gate does not run `npm ci`.
+Server dependencies are installed separately from the frontend workspace.
 
 ## Common commands
 
@@ -30,9 +29,3 @@ separate setup; the pre-push gate does not run `npm ci`.
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build
-
-## Git hooks
-
-The checked-in pre-push hook runs the same web and collaboration-server health
-gates as CI. Use standard Git `--no-verify` only when you intentionally need to
-bypass it.
