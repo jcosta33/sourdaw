@@ -1,5 +1,5 @@
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
+import { markerStore, takeLaneStore } from '#/modules/Arrangement/stores';
+import { restoreTrackSnapshot } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
@@ -14,10 +14,7 @@ import {
 } from './helpers';
 
 export function loadSnapshot(data: ArrangementSnapshot): void {
-    trackStore.set({
-        ...data.tracks,
-        tracks: data.tracks.tracks.map(normalizeTrack),
-    });
+    restoreTrackSnapshot(data.tracks);
     automationStore.set(data.automation);
     midiStore.set(data.midi);
     // These four fields are optional on a snapshot but always live in shared
