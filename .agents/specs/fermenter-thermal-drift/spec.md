@@ -36,8 +36,8 @@ Verify with: `cargo test -p daw-dsp fermenter::drift_generator_count`
 
 ### AC-002 — Drift frequencies are pairwise incommensurate
 
-When the baseline drift frequency set is used, no pair of frequencies may form a
-small-integer ratio within ±0.5%.
+The default baseline drift frequency set must be `{0.05 Hz, 0.13 Hz, 0.31 Hz}`,
+and no pair of frequencies may form a small-integer ratio within ±0.5%.
 
 Verify with: `cargo test -p daw-dsp fermenter::drift_incommensurate_ratios`
 
