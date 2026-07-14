@@ -7,6 +7,12 @@ export type ProjectLoadTransaction = {
     isCurrent: () => boolean;
 };
 
+export const projectLoadEpoch = {
+    get current(): number {
+        return activeProjectTransitionId;
+    },
+};
+
 type RunProjectLoadTransactionOutput = ProjectLoadTransaction;
 
 export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {

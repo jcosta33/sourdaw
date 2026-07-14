@@ -119,7 +119,7 @@ describe('audioBufferCache conversions', () => {
         expect(decoded[0]).toBeCloseTo(1.0, 5);
     });
 
-    it('stages valid PCM until publish and rejects malformed or canceled candidates', () => {
+    it('stages valid PCM until publish and rejects malformed or canceled candidates', async () => {
         const context = {
             createBuffer: vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
                 expect(numberOfChannels).toBe(1);
@@ -129,11 +129,11 @@ describe('audioBufferCache conversions', () => {
         const first = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const second = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] };
 
-        const firstCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: first } });
+        const firstCandidate = await audioBufferCache.importBuffers({ context, buffers: { shared: first } });
         expect(audioBufferCache.get('shared')).toBeUndefined();
         firstCandidate?.publish();
 
-        const canceledCandidate = audioBufferCache.importBuffers({
+        const canceledCandidate = await audioBufferCache.importBuffers({
             context,
             buffers: { shared: second },
             shouldContinue: () => false,
@@ -141,7 +141,7 @@ describe('audioBufferCache conversions', () => {
         expect(canceledCandidate).toBeNull();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
-        const malformedCandidate = audioBufferCache.importBuffers({
+        const malformedCandidate = await audioBufferCache.importBuffers({
             context,
             buffers: {
                 shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
@@ -150,11 +150,14 @@ describe('audioBufferCache conversions', () => {
         expect(malformedCandidate).toBeNull();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
-        const secondCandidate = audioBufferCache.importBuffers({
+        const unavailableNonresidentCandidate = await audioBufferCache.importBuffers({
             context,
             buffers: { shared: second, archived: first },
             cacheIds: ['shared'],
         });
+        expect(unavailableNonresidentCandidate).toBeNull();
+
+        const secondCandidate = await audioBufferCache.importBuffers({ context, buffers: { shared: second } });
         secondCandidate?.publish();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(audioBufferCache.get('archived')).toBeUndefined();

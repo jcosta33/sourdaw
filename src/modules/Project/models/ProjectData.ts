@@ -369,13 +369,16 @@ export type ProjectCheckpoint = {
 
 export type ProjectTempoMap = {
     changes: Array<{
+        id?: string;
         beat: number;
         tempo: number;
+        curve?: 'instant' | 'linear';
     }>;
 };
 
 export type ProjectTimeSignatureMap = {
     changes: Array<{
+        id?: string;
         beat: number;
         numerator: number;
         denominator: number;

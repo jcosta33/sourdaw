@@ -14,6 +14,7 @@ import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/coll
 import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
 import {
     type ProjectLoadTransaction,
@@ -37,26 +38,22 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
         }
 
         const parsed: unknown = JSON.parse(raw);
-        if (!isHydratableProjectData(parsed)) {
+        const normalizedData = normalizeLegacyProjectData(parsed);
+        if (!isHydratableProjectData(normalizedData)) {
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }
-        const data = parsed;
+        const data = normalizedData;
 
         if (!transaction.activate()) {
             return false;
-        }
-
-        const currentProject = projectStore.value;
-        if (currentProject) {
-            projectStore.set({ ...currentProject, loading: true });
         }
 
         const audioContext = getAudioContext();
         const referencedIds = collectProjectAudioBufferIds({ data });
         const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
         const preparedEmbeddedBuffers = data.audioBuffers
-            ? importCachedAudioBuffers({
+            ? await importCachedAudioBuffers({
                   audioContext,
                   buffers: data.audioBuffers,
                   cacheIds: referencedIds,
@@ -85,8 +82,8 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
         resetAudioGraph();
         resetModuleStoresToDefault();
 
-        hydrateModuleStoresFromProjectData(data);
         hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+        hydrateModuleStoresFromProjectData(data);
 
         projectStore.set({
             name: data.meta.name,
@@ -100,19 +97,13 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             initialized: true,
         });
 
-        writeProjectJson(raw);
+        writeProjectJson(JSON.stringify(data));
 
         verifyAudioBufferReferences();
         clearUndoHistory();
 
         return true;
     } catch (error) {
-        if (transaction.isCurrent()) {
-            const currentProject = projectStore.value;
-            if (currentProject?.loading) {
-                projectStore.set({ ...currentProject, loading: false });
-            }
-        }
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }

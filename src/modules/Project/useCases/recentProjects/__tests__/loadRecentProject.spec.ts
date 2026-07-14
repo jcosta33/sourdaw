@@ -27,8 +27,8 @@ vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
-    importCachedAudioBuffers: vi.fn(() => ({ publish: () => 0 })),
-    prepareCachedAudioBuffersFromIdb: vi.fn(async () => ({ publish: () => 0 })),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
@@ -74,10 +74,10 @@ describe('loadRecentProject', () => {
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(importCachedAudioBuffers)
             .mockReset()
-            .mockImplementation(() => ({ publish: () => 0 }));
+            .mockResolvedValue({ publish: () => 0 });
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockReset()
-            .mockImplementation(async () => ({ publish: () => 0 }));
+            .mockResolvedValue({ publish: () => 0 });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {

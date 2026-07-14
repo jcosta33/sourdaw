@@ -1,5 +1,6 @@
-import { type ProjectMidi } from '../../../models/ProjectData';
+import { type ProjectMidi, type ProjectTempoMap, type ProjectTimeSignatureMap } from '../../../models/ProjectData';
 import { type ArrangementSnapshot, arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
+import { loadSnapshot } from '../../arrangement/loadSnapshot';
 import { hydrateArrangementTracks } from '../fileIO/hydrateArrangementTracks';
 import { hydrateProjectMidi } from '../fileIO/hydrateProjectMidi';
 
@@ -24,6 +25,36 @@ function hydrateInlineMidiNotes(notes: ProjectMidi['notesByClipId'][string]): Pr
         slide: note.slide ?? 0,
         pitchBend: note.pitchBend ?? 0,
     }));
+}
+
+function hydrateTempoMap(tempoMap: ProjectTempoMap | undefined): ArrangementSnapshot['tempoMap'] {
+    if (!tempoMap) {
+        return undefined;
+    }
+    return {
+        changes: tempoMap.changes.map((change, index) => ({
+            id: change.id ?? `tempo-${index}-${change.beat}`,
+            beat: change.beat,
+            tempo: change.tempo,
+            curve: change.curve ?? 'instant',
+        })),
+    };
+}
+
+function hydrateTimeSignatureMap(
+    timeSignatureMap: ProjectTimeSignatureMap | undefined
+): ArrangementSnapshot['timeSignatureMap'] {
+    if (!timeSignatureMap) {
+        return undefined;
+    }
+    return {
+        changes: timeSignatureMap.changes.map((change, index) => ({
+            id: change.id ?? `time-signature-${index}-${change.beat}`,
+            beat: change.beat,
+            numerator: change.numerator,
+            denominator: change.denominator,
+        })),
+    };
 }
 
 function hydrateMidiWithInlineNotes({
@@ -68,10 +99,12 @@ function hydrateSavedArrangement({ data, snapshot }: HydrateSavedArrangementInpu
             midi,
             tracks: serializedTracks,
         }),
-        tempoMap: snapshot.tempoMap,
-        timeSignatureMap: snapshot.timeSignatureMap,
-        markers: snapshot.markers,
-        takeLanes: snapshot.takeLanes,
+        tempoMap: snapshot.tempoMap ?? (useActiveFallback ? hydrateTempoMap(data.tempoMap) : undefined),
+        timeSignatureMap:
+            snapshot.timeSignatureMap ??
+            (useActiveFallback ? hydrateTimeSignatureMap(data.timeSignatureMap) : undefined),
+        markers: snapshot.markers ?? (useActiveFallback ? { markers: data.markers ?? [], sections: [] } : undefined),
+        takeLanes: snapshot.takeLanes ?? (useActiveFallback ? data.takeLanes : undefined),
     };
 }
 
@@ -87,14 +120,13 @@ export function hydrateArrangementStoreFromProjectData({
     if (preserveSavedArrangements && data.arrangements && data.arrangements.length > 0) {
         const arrangements = data.arrangements.map((snapshot) => hydrateSavedArrangement({ data, snapshot }));
 
-        if (arrangements.length > 0) {
+        const fallbackArrangement = arrangements[0];
+        if (fallbackArrangement) {
             const requestedActiveArrangementId = data.activeArrangementId;
-            const activeArrangementId =
-                requestedActiveArrangementId &&
-                arrangements.some((snapshot) => snapshot.id === requestedActiveArrangementId)
-                    ? requestedActiveArrangementId
-                    : arrangements[0]!.id;
-            arrangementStore.set({ arrangements, activeArrangementId });
+            const activeArrangement =
+                arrangements.find((snapshot) => snapshot.id === requestedActiveArrangementId) ?? fallbackArrangement;
+            arrangementStore.set({ arrangements, activeArrangementId: activeArrangement.id });
+            loadSnapshot(activeArrangement);
             return;
         }
     }
@@ -104,19 +136,23 @@ export function hydrateArrangementStoreFromProjectData({
         tracks: data.arrangement.tracks,
     });
 
+    const arrangement: ArrangementSnapshot = {
+        id: defaultArrangementId,
+        name: 'Arrangement 1',
+        tracks: {
+            tracks: hydrateArrangementTracks(data.arrangement.tracks),
+            selectedTrackId: null,
+        },
+        automation: data.automation ?? { lanes: [] },
+        midi: arrangementMidi,
+        tempoMap: hydrateTempoMap(data.tempoMap),
+        timeSignatureMap: hydrateTimeSignatureMap(data.timeSignatureMap),
+        markers: { markers: data.markers ?? [], sections: [] },
+        takeLanes: data.takeLanes,
+    };
     arrangementStore.set({
-        arrangements: [
-            {
-                id: defaultArrangementId,
-                name: 'Arrangement 1',
-                tracks: {
-                    tracks: hydrateArrangementTracks(data.arrangement.tracks),
-                    selectedTrackId: null,
-                },
-                automation: data.automation ?? { lanes: [] },
-                midi: arrangementMidi,
-            },
-        ],
+        arrangements: [arrangement],
         activeArrangementId: defaultArrangementId,
     });
+    loadSnapshot(arrangement);
 }

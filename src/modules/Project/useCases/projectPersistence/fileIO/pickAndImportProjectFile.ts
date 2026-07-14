@@ -2,7 +2,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles } from '../../fileDialog';
-import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
@@ -27,12 +26,12 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         const content = await file.text();
         const data: unknown = JSON.parse(content);
 
-        if (!isHydratableProjectData(data)) {
+        const imported = await applyImportedProjectData({ data, transaction });
+        if (!imported) {
             notifyUser('Invalid project file format', 'error');
             return false;
         }
-
-        return await applyImportedProjectData({ data, transaction });
+        return true;
     } catch (error) {
         notifyUser('Failed to read project file', 'error');
         logger.error(new Error('Import error', { cause: error }));

@@ -3,6 +3,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
+import { projectLoadEpoch } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 import { loadSnapshot } from './loadSnapshot';
@@ -39,6 +40,7 @@ export async function switchArrangement(id: string): Promise<void> {
     }
 
     const request = ++latestSwitchRequest;
+    const sourceProjectLoadEpoch = projectLoadEpoch.current;
     const sourceArrangementId = state.activeArrangementId;
     const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
         audioContext: getAudioContext(),
@@ -50,6 +52,7 @@ export async function switchArrangement(id: string): Promise<void> {
     if (
         !preparedBuffers ||
         request !== latestSwitchRequest ||
+        sourceProjectLoadEpoch !== projectLoadEpoch.current ||
         currentState?.activeArrangementId !== sourceArrangementId ||
         !currentTarget
     ) {

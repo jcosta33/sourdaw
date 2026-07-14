@@ -12,6 +12,7 @@ import { collectProjectAudioBufferIds } from '../helpers/collectProjectAudioBuff
 import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { type HydratableProjectData, isHydratableProjectData } from '../helpers/isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
@@ -29,11 +30,6 @@ async function performImportedProjectDataApplication({
         return false;
     }
 
-    const currentProject = projectStore.value;
-    if (currentProject) {
-        projectStore.set({ ...currentProject, loading: true });
-    }
-
     // Restore referenced runtime buffers before publishing the imported track
     // graph. Track subscribers can render waveforms from their first update,
     // without a synthetic track-store write after hydration.
@@ -41,7 +37,7 @@ async function performImportedProjectDataApplication({
     const referencedIds = collectProjectAudioBufferIds({ data });
     const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
     const preparedEmbeddedBuffers = data.audioBuffers
-        ? importCachedAudioBuffers({
+        ? await importCachedAudioBuffers({
               audioContext,
               buffers: data.audioBuffers,
               cacheIds: referencedIds,
@@ -69,7 +65,8 @@ async function performImportedProjectDataApplication({
     resetAudioGraph();
     resetModuleStoresToDefault();
 
-    // 1. Hydrate core module stores
+    // Publish the saved arrangement catalog and its active live snapshot.
+    hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
     hydrateModuleStoresFromProjectData(data);
 
     // 2. Hydrate Project Store (Meta & Tuning)
@@ -85,10 +82,6 @@ async function performImportedProjectDataApplication({
         initialized: true,
     });
 
-    // The current schema still collapses imported projects to one arrangement;
-    // the Project owner publishes that snapshot from the same hydrated tracks.
-    hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-
     verifyAudioBufferReferences();
     clearUndoHistory();
     return true;
@@ -100,11 +93,12 @@ type ApplyImportedProjectDataInput = {
 };
 
 export function applyImportedProjectData({ data, transaction }: ApplyImportedProjectDataInput): Promise<boolean> {
-    if (!isHydratableProjectData(data)) {
+    const normalizedData = normalizeLegacyProjectData(data);
+    if (!isHydratableProjectData(normalizedData)) {
         return Promise.resolve(false);
     }
     return performImportedProjectDataApplication({
-        data,
+        data: normalizedData,
         transaction: transaction ?? runProjectLoadTransaction(),
     });
 }

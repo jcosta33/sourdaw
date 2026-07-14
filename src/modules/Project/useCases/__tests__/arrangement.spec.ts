@@ -5,6 +5,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { switchArrangement } from '../arrangement/switchArrangement';
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 const { prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
@@ -102,5 +103,29 @@ describe('switchArrangement', () => {
             vi.mocked(stopPlayback).mock.invocationCallOrder[0]!
         );
         expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
+    });
+
+    it('cancels a pending switch when another project load activates', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'same-id-in-both-projects';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+        let completePreparation: (() => void) | undefined;
+        prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    completePreparation = () => resolve({ publish: publishPreparedBuffers });
+                })
+        );
+
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(completePreparation).toBeDefined());
+        runProjectLoadTransaction().activate();
+        completePreparation?.();
+        await switching;
+
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
     });
 });

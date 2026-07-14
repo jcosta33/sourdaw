@@ -149,26 +149,31 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
     }
 }
 
-async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
+async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promise<boolean> {
     const generation = claimPersistenceGeneration(id);
     try {
         const db = await openDb();
         if (persistenceGenerationById.get(id) !== generation) {
-            return;
+            return false;
         }
         const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(serializeBuffer(buffer), id);
+        tx.objectStore(STORE_NAME).put(data, id);
         await new Promise<void>((resolve, reject) => {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
         });
+        return true;
     } catch {
-        // IndexedDB unavailable
+        return false;
     } finally {
         if (persistenceGenerationById.get(id) === generation) {
             persistenceGenerationById.delete(id);
         }
     }
+}
+
+async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
+    await persistSerializedToIdb(id, serializeBuffer(buffer));
 }
 
 async function removeFromIdb(id: string): Promise<void> {
@@ -233,6 +238,9 @@ async function prepareBuffersFromIdb({
                   });
 
         for (const key of keys) {
+            if (staged.length >= MAX_AUDIO_BUFFER_ENTRIES) {
+                break;
+            }
             if (shouldContinue?.() === false) {
                 return null;
             }
@@ -515,7 +523,7 @@ export const audioBufferCache = {
 
     /** Decode authoritative embedded buffers without publishing them. The
      * caller owns the final synchronous project-transition commit. */
-    importBuffers({
+    async importBuffers({
         buffers,
         cacheIds,
         context,
@@ -525,7 +533,7 @@ export const audioBufferCache = {
         cacheIds?: string[];
         context: BaseAudioContext;
         shouldContinue?: () => boolean;
-    }): PreparedAudioBuffers | null {
+    }): Promise<PreparedAudioBuffers | null> {
         const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
         const cacheIdSet = cacheIds ? new Set(cacheIds) : undefined;
         for (const [id, data] of Object.entries(buffers)) {
@@ -535,14 +543,31 @@ export const audioBufferCache = {
             try {
                 const channels = data.channelData.map(base64ToFloat32);
                 const length = channels[0]?.length ?? 0;
-                if (length === 0 || channels.some((channel) => channel.length !== length)) {
+                if (
+                    length === 0 ||
+                    channels.length !== data.numberOfChannels ||
+                    channels.some((channel) => channel.length !== length)
+                ) {
                     return null;
                 }
-                const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
-                for (let channel = 0; channel < data.numberOfChannels; channel++) {
-                    buffer.getChannelData(channel).set(channels[channel]!);
+                const shouldCache = (!cacheIdSet || cacheIdSet.has(id)) && staged.length < MAX_AUDIO_BUFFER_ENTRIES;
+                const persisted = await persistSerializedToIdb(id, {
+                    sampleRate: data.sampleRate,
+                    numberOfChannels: data.numberOfChannels,
+                    channelData: channels,
+                    lastAccessed: Date.now(),
+                    sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
+                });
+                if ((!persisted && !shouldCache) || shouldContinue?.() === false) {
+                    return null;
                 }
-                staged.push({ id, buffer });
+                if (shouldCache) {
+                    const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
+                    for (let channel = 0; channel < data.numberOfChannels; channel++) {
+                        buffer.getChannelData(channel).set(channels[channel]!);
+                    }
+                    staged.push({ id, buffer });
+                }
             } catch {
                 return null;
             }
@@ -560,11 +585,8 @@ export const audioBufferCache = {
                 }
                 published = true;
                 for (const { id, buffer } of staged) {
-                    if (!cacheIdSet || cacheIdSet.has(id)) {
-                        clearWaveformCachesForId(id);
-                        audioCacheSet(id, buffer);
-                    }
-                    void persistToIdb(id, buffer);
+                    clearWaveformCachesForId(id);
+                    audioCacheSet(id, buffer);
                 }
                 return staged.length;
             },

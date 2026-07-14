@@ -8,6 +8,10 @@ import {
     type ProjectMeta,
     type ProjectMarker,
     type ProjectMidi,
+    type ProjectSidechainRoute,
+    type ProjectTakeLaneStoreState,
+    type ProjectTempoMap,
+    type ProjectTimeSignatureMap,
     type ProjectTrack,
     type ProjectTrackAlternative,
     type ProjectTransport,
@@ -39,6 +43,10 @@ export type HydratableProjectData = {
     automation?: ProjectAutomation;
     midi?: ProjectMidi;
     markers?: ProjectMarker[];
+    tempoMap?: ProjectTempoMap;
+    timeSignatureMap?: ProjectTimeSignatureMap;
+    takeLanes?: ProjectTakeLaneStoreState;
+    sidechainRoutes?: ProjectSidechainRoute[];
     arrangements?: HydratableArrangementSnapshot[];
     activeArrangementId?: string;
     audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
@@ -459,11 +467,38 @@ function isTempoChange(value: unknown): boolean {
     );
 }
 
+function isProjectTempoMap(value: unknown): value is ProjectTempoMap {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.changes) &&
+        value.changes.every(
+            (change) =>
+                isRecord(change) &&
+                hasType({ record: change, keys: ['beat', 'tempo'], type: 'number' }) &&
+                hasOptionalType({ record: change, keys: ['id'], type: 'string' }) &&
+                hasOptionalEnum(change, 'curve', ['instant', 'linear'])
+        )
+    );
+}
+
 function isTimeSignatureChange(value: unknown): boolean {
     return (
         isRecord(value) &&
         typeof value.id === 'string' &&
         hasType({ record: value, keys: ['beat', 'numerator', 'denominator'], type: 'number' })
+    );
+}
+
+function isProjectTimeSignatureMap(value: unknown): value is ProjectTimeSignatureMap {
+    return (
+        isRecord(value) &&
+        Array.isArray(value.changes) &&
+        value.changes.every(
+            (change) =>
+                isRecord(change) &&
+                hasType({ record: change, keys: ['beat', 'numerator', 'denominator'], type: 'number' }) &&
+                hasOptionalType({ record: change, keys: ['id'], type: 'string' })
+        )
     );
 }
 
@@ -501,6 +536,23 @@ function isTakeLane(value: unknown): boolean {
         value.takes.every(isTake) &&
         Array.isArray(value.activeCompRegions) &&
         value.activeCompRegions.every(isCompRegion)
+    );
+}
+
+function isTakeLaneStore(value: unknown): value is ProjectTakeLaneStoreState {
+    return isRecord(value) && Array.isArray(value.lanes) && value.lanes.every(isTakeLane);
+}
+
+function isSidechainRoute(value: unknown): value is ProjectSidechainRoute {
+    return (
+        isRecord(value) &&
+        hasType({
+            record: value,
+            keys: ['id', 'sourceTrackId', 'targetTrackId', 'targetDeviceId', 'targetParameterId'],
+            type: 'string',
+        }) &&
+        typeof value.gain === 'number' &&
+        Number.isFinite(value.gain)
     );
 }
 
@@ -627,6 +679,21 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (value.markers !== undefined && (!Array.isArray(value.markers) || !value.markers.every(isMarker))) {
+        return false;
+    }
+    if (value.tempoMap !== undefined && !isProjectTempoMap(value.tempoMap)) {
+        return false;
+    }
+    if (value.timeSignatureMap !== undefined && !isProjectTimeSignatureMap(value.timeSignatureMap)) {
+        return false;
+    }
+    if (value.takeLanes !== undefined && !isTakeLaneStore(value.takeLanes)) {
+        return false;
+    }
+    if (
+        value.sidechainRoutes !== undefined &&
+        (!Array.isArray(value.sidechainRoutes) || !value.sidechainRoutes.every(isSidechainRoute))
+    ) {
         return false;
     }
     if (value.adjustmentLayers !== undefined && !isAdjustmentLayers(value.adjustmentLayers)) {

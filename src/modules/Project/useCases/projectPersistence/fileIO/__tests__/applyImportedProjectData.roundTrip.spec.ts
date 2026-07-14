@@ -28,17 +28,20 @@ type ImportCachedAudioBuffersInput = {
 type PreparedAudioBuffers = { publish: () => number };
 
 const { audioContext, importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb } = vi.hoisted(() => {
-    const prepared = (): PreparedAudioBuffers => ({ publish: () => 0 });
+    function prepared(): PreparedAudioBuffers {
+        return { publish: () => 0 };
+    }
     return {
         audioContext: {},
         importCachedAudioBuffers: vi
-            .fn<(input: ImportCachedAudioBuffersInput) => PreparedAudioBuffers | null>()
-            .mockImplementation(prepared),
+            .fn<(input: ImportCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
+            .mockResolvedValue(prepared()),
         prepareCachedAudioBuffersFromIdb: vi
             .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
-            .mockImplementation(async () => prepared()),
+            .mockResolvedValue(prepared()),
     };
 });
+const { setSidechainRoutes } = vi.hoisted(() => ({ setSidechainRoutes: vi.fn() }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: () => audioContext,
@@ -48,6 +51,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are
@@ -186,6 +190,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         importCachedAudioBuffers.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();
+        setSidechainRoutes.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -330,7 +335,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         project.audioBuffers = {
             'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['malformed'] },
         };
-        importCachedAudioBuffers.mockReturnValueOnce(null);
+        importCachedAudioBuffers.mockResolvedValueOnce(null);
 
         await expect(applyImportedProjectData({ data: project })).resolves.toBe(false);
 
@@ -433,5 +438,45 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
             { id: 'ideas', name: 'Ideas' },
         ]);
+    });
+
+    it('migrates the original version-1 root shape without losing owned state', async () => {
+        const canonical = makeProject();
+        const legacy = {
+            version: 1,
+            name: 'Legacy Song',
+            createdAt: 10,
+            updatedAt: 20,
+            tracks: { tracks: canonical.arrangement.tracks, selectedTrackId: 'track-audio' },
+            transport: canonical.transport,
+            automation: canonical.automation,
+            midi: canonical.midi,
+            tempoMap: { changes: [{ id: 'tempo-1', beat: 0, tempo: 137, curve: 'linear' }] },
+            timeSignatureMap: {
+                changes: [{ id: 'meter-1', beat: 0, numerator: 3, denominator: 4 }],
+            },
+            markers: { markers: [{ id: 'marker-1', beat: 2, name: 'Verse', color: '#fff' }], sections: [] },
+            takeLanes: { lanes: [] },
+            sidechainRoutes: [
+                {
+                    id: 'route-1',
+                    sourceTrackId: 'track-audio',
+                    targetTrackId: 'track-bus',
+                    targetDeviceId: 'compressor-1',
+                    targetParameterId: 'threshold',
+                    gain: 1,
+                },
+            ],
+        };
+
+        await expect(applyImportedProjectData({ data: legacy })).resolves.toBe(true);
+
+        expect(arrangementStore.value?.activeArrangementId).toBe('legacy-arrangement');
+        expect(trackStore.value?.selectedTrackId).toBe('track-audio');
+        expect(arrangementStore.value?.arrangements[0]?.tempoMap?.changes).toEqual(legacy.tempoMap.changes);
+        expect(arrangementStore.value?.arrangements[0]?.timeSignatureMap?.changes).toEqual(
+            legacy.timeSignatureMap.changes
+        );
+        expect(setSidechainRoutes).toHaveBeenCalledWith(legacy.sidechainRoutes);
     });
 });

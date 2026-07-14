@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { hydrateArrangementStoreFromProjectData } from '../hydrateArrangementStoreFromProjectData';
@@ -99,6 +104,13 @@ function projectData(): ProjectData {
 describe('hydrateArrangementStoreFromProjectData', () => {
     afterEach(() => {
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        automationStore.set({ lanes: [] });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        tempoMapStore.set({ changes: [] });
+        timeSignatureMapStore.set({ changes: [] });
+        markerStore.set({ markers: [], sections: [] });
+        takeLaneStore.set({ lanes: [] });
     });
 
     it('preserves saved arrangement identities and hydrates canonical and legacy clip fields', () => {
@@ -117,6 +129,15 @@ describe('hydrateArrangementStoreFromProjectData', () => {
                 tracks: { tracks: [projectTrack('track-b', 'buffer-b', true)], selectedTrackId: 'track-b' },
                 automation: { lanes: [] },
                 midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+                tempoMap: { changes: [{ id: 'tempo-b', beat: 0, tempo: 128, curve: 'linear' }] },
+                timeSignatureMap: {
+                    changes: [{ id: 'meter-b', beat: 0, numerator: 3, denominator: 4 }],
+                },
+                markers: {
+                    markers: [{ id: 'marker-b', beat: 4, name: 'Chorus', color: '#fff' }],
+                    sections: [],
+                },
+                takeLanes: { lanes: [] },
             },
         ];
         data.activeArrangementId = 'arrangement-b';
@@ -131,6 +152,12 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         expect(state?.activeArrangementId).toBe('arrangement-b');
         expect(state?.arrangements[0]?.tracks.tracks[0]?.clips[0]?.audioBufferId).toBe('buffer-a');
         expect(state?.arrangements[1]?.tracks.tracks[0]?.clips[0]?.audioBufferId).toBe('buffer-b');
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-b']);
+        expect(tempoMapStore.value?.changes).toEqual([{ id: 'tempo-b', beat: 0, tempo: 128, curve: 'linear' }]);
+        expect(timeSignatureMapStore.value?.changes).toEqual([
+            { id: 'meter-b', beat: 0, numerator: 3, denominator: 4 },
+        ]);
+        expect(markerStore.value?.markers.map((marker) => marker.id)).toEqual(['marker-b']);
     });
 
     it('uses empty MIDI and automation state for accepted sparse snapshots', () => {
