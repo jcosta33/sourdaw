@@ -5,13 +5,12 @@ import { hasCrdtDocsInIdb } from '../hasCrdtDocsInIdb';
 import { openDatabase } from '../helpers';
 
 type MockRequest = {
-    result: IDBValidKey | number | undefined;
+    result: IDBValidKey | undefined;
     onsuccess: (() => void) | null;
     onerror: (() => void) | null;
 };
 
 type MockStore = {
-    count: ReturnType<typeof vi.fn>;
     getKey: ReturnType<typeof vi.fn>;
 };
 
@@ -33,7 +32,6 @@ describe('hasCrdtDocsInIdb', () => {
         vi.clearAllMocks();
 
         mockStore = {
-            count: vi.fn(),
             getKey: vi.fn(),
         };
         mockTransaction = {
@@ -50,19 +48,15 @@ describe('hasCrdtDocsInIdb', () => {
     }
 
     it('returns false when IndexedDB contains only incremental chunks', async () => {
-        const countRequest: MockRequest = { result: 1, onsuccess: null, onerror: null };
         const keyRequest: MockRequest = { result: undefined, onsuccess: null, onerror: null };
-        mockStore.count.mockReturnValue(countRequest);
         mockStore.getKey.mockReturnValue(keyRequest);
 
         const resultPromise = hasCrdtDocsInIdb();
-        await Promise.resolve();
-        settle(countRequest);
+        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
         settle(keyRequest);
 
         await expect(resultPromise).resolves.toBe(false);
         expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
-        expect(mockStore.count).not.toHaveBeenCalled();
     });
 
     it('returns true when the root base and child documents are persisted', async () => {
@@ -70,12 +64,11 @@ describe('hasCrdtDocsInIdb', () => {
         mockStore.getKey.mockReturnValue(keyRequest);
 
         const resultPromise = hasCrdtDocsInIdb();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
         settle(keyRequest);
 
         await expect(resultPromise).resolves.toBe(true);
         expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
-        expect(mockStore.count).not.toHaveBeenCalled();
     });
 
     it('does not treat a child base document as a persisted project', async () => {
@@ -83,12 +76,11 @@ describe('hasCrdtDocsInIdb', () => {
         mockStore.getKey.mockReturnValue(keyRequest);
 
         const resultPromise = hasCrdtDocsInIdb();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
         settle(keyRequest);
 
         await expect(resultPromise).resolves.toBe(false);
         expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
-        expect(mockStore.count).not.toHaveBeenCalled();
     });
 
     it('returns false when IndexedDB is unavailable', async () => {
