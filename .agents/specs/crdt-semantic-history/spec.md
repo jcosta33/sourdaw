@@ -72,9 +72,13 @@ Verify with: `pnpm test:run -- CrdtHistory`
 Every top-level app action that mutates CRDT-backed state must establish its semantic context
 before execution, and the Automerge storage write cycle must consume that context when it records
 the resulting change. Attribution must flow through the normal action and storage boundaries rather
-than through a parallel wrapper around each `store.set()` call.
+than through a parallel wrapper around each `store.set()` call. The context must remain bound to its
+own action until that action's coalesced CRDT writes settle: a nested action must restore its parent's
+context when it completes, and overlapping asynchronous top-level actions must be serialized or use
+isolated scoped contexts so one action cannot clear or relabel another action's writes. Storage
+batching must not coalesce writes carrying different action contexts into one semantic change.
 
-Verify with: `pnpm test:run src/modules/Command/useCases/__tests__/executeAppAction.spec.ts src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts`
+Verify with: `pnpm test:run src/modules/Command/useCases/__tests__/executeAppAction.spec.ts src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts` using nested and overlapping action cases that reach the real storage mutation boundary.
 
 ## Open questions
 

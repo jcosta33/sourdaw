@@ -14,8 +14,8 @@ sources:
 ## Intent
 
 Give Fermenter's oscillators the pitch instability of real analog hardware: each
-voice drifts ±2–5 cents from the sum of several independent, pairwise-
-incommensurate drift generators, each voice independently seeded, so two voices
+voice drifts ±2–5 cents from the sum of several independent drift generators
+without low-order ratio locking, each voice independently seeded, so two voices
 at the same pitch beat rather than cancel. This replaces the single shared LFO
 sketch, which sounds like "digital with vibrato."
 
@@ -34,10 +34,14 @@ periodic generators, never a single LFO.
 
 Verify with: `cargo test -p daw-dsp fermenter::drift_generator_count`
 
-### AC-002 — Drift frequencies are pairwise incommensurate
+### AC-002 — Drift frequencies avoid low-order rational locking
 
 The default baseline drift frequency set must be `{0.05 Hz, 0.13 Hz, 0.31 Hz}`,
-and no pair of frequencies may form a small-integer ratio within ±0.5%.
+and each pair must satisfy `abs((f_high / f_low) / (p / q) - 1) > 0.005` for
+every reduced ratio `p/q` whose positive integers `p` and `q` are no greater
+than 8. This bounded low-order-ratio test is the operational meaning of
+"incommensurate" here; finite decimal frequencies are not mathematically
+irrational.
 
 Verify with: `cargo test -p daw-dsp fermenter::drift_incommensurate_ratios`
 
