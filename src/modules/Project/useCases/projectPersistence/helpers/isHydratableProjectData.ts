@@ -150,7 +150,12 @@ function isMidiNote(value: unknown): boolean {
         typeof value.id === 'string' &&
         hasType({
             record: value,
-            keys: ['pitch', 'startBeat', 'duration', 'velocity', 'probability', 'pressure', 'slide', 'pitchBend'],
+            keys: ['pitch', 'startBeat', 'duration', 'velocity'],
+            type: 'number',
+        }) &&
+        hasOptionalType({
+            record: value,
+            keys: ['probability', 'pressure', 'slide', 'pitchBend'],
             type: 'number',
         })
     );
@@ -351,6 +356,7 @@ function isTrack(value: unknown): value is HydratableProjectTrack {
                 'disabled',
                 'soloSafe',
                 'followChordTrack',
+                'showVariationLanes',
             ],
             type: 'boolean',
         }) &&

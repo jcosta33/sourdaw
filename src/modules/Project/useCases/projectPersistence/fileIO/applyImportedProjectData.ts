@@ -1,8 +1,8 @@
 import {
     getAudioContext,
     importCachedAudioBuffers,
+    prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
-    restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -39,28 +39,32 @@ async function performImportedProjectDataApplication({
     // without a synthetic track-store write after hydration.
     const audioContext = getAudioContext();
     const referencedIds = collectProjectAudioBufferIds({ data });
-    if (data.audioBuffers) {
-        await importCachedAudioBuffers({
-            audioContext,
-            buffers: data.audioBuffers,
-            shouldContinue: transaction.isCurrent,
-        });
-    }
-    if (!transaction.isCurrent()) {
+    const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
+    const preparedEmbeddedBuffers = data.audioBuffers
+        ? importCachedAudioBuffers({
+              audioContext,
+              buffers: data.audioBuffers,
+              cacheIds: referencedIds,
+              shouldContinue: transaction.isCurrent,
+          })
+        : undefined;
+    if (data.audioBuffers && !preparedEmbeddedBuffers) {
         return false;
     }
-    await restoreCachedAudioBuffersFromIdb({
+    const preparedStoredBuffers = await prepareCachedAudioBuffersFromIdb({
         audioContext,
-        bufferIds: referencedIds,
+        bufferIds: referencedIds.filter((id) => !embeddedBufferIds.has(id)),
         shouldContinue: transaction.isCurrent,
     });
 
-    if (!transaction.isCurrent()) {
+    if (!preparedStoredBuffers || !transaction.isCurrent()) {
         return false;
     }
 
     // Preparation is complete and this transition still owns commit authority.
     // Replace the live project synchronously so no partial reset is observable.
+    preparedStoredBuffers.publish();
+    preparedEmbeddedBuffers?.publish();
     stopPlayback();
     resetAudioGraph();
     resetModuleStoresToDefault();

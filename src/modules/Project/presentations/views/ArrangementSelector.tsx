@@ -137,7 +137,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                                     )}
                                     onClick={() => {
                                         if (!isEditing && !isActive) {
-                                            switchArrangement(arr.id);
+                                            void switchArrangement(arr.id);
                                         }
                                     }}
                                 >

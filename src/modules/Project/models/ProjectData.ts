@@ -205,10 +205,10 @@ export type ProjectMidiNote = {
     startBeat: number;
     duration: number;
     velocity: number;
-    probability: number;
-    pressure: number;
-    slide: number;
-    pitchBend: number;
+    probability?: number;
+    pressure?: number;
+    slide?: number;
+    pitchBend?: number;
 };
 
 export type ProjectDevice = {
@@ -287,6 +287,7 @@ export type ProjectTrack = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    showVariationLanes?: boolean;
 };
 
 export type ProjectTrackAlternative = {

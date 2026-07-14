@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     getAudioContext,
     importCachedAudioBuffers,
-    restoreCachedAudioBuffersFromIdb,
+    prepareCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -27,8 +27,8 @@ vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
-    importCachedAudioBuffers: vi.fn().mockResolvedValue(0),
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
+    importCachedAudioBuffers: vi.fn(() => ({ publish: () => 0 })),
+    prepareCachedAudioBuffersFromIdb: vi.fn(async () => ({ publish: () => 0 })),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
@@ -72,8 +72,12 @@ describe('loadRecentProject', () => {
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         vi.mocked(getAudioContext).mockClear();
-        vi.mocked(importCachedAudioBuffers).mockReset().mockResolvedValue(0);
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockReset().mockResolvedValue(0);
+        vi.mocked(importCachedAudioBuffers)
+            .mockReset()
+            .mockImplementation(() => ({ publish: () => 0 }));
+        vi.mocked(prepareCachedAudioBuffersFromIdb)
+            .mockReset()
+            .mockImplementation(async () => ({ publish: () => 0 }));
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -91,7 +95,7 @@ describe('loadRecentProject', () => {
         expect(arrangementHydration?.preserveSavedArrangements).toBe(true);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
-        const restoreInput = vi.mocked(restoreCachedAudioBuffersFromIdb).mock.calls[0]?.[0];
+        const restoreInput = vi.mocked(prepareCachedAudioBuffersFromIdb).mock.calls[0]?.[0];
         expect(restoreInput?.audioContext).toBe(audioContext);
         expect(restoreInput?.shouldContinue?.()).toBe(true);
         const importInput = vi.mocked(importCachedAudioBuffers).mock.calls[0]?.[0];
@@ -140,7 +144,7 @@ describe('loadRecentProject', () => {
 
         await expect(loadRecentProject('candidate')).resolves.toBe(true);
 
-        expect(vi.mocked(restoreCachedAudioBuffersFromIdb).mock.calls[0]?.[0]?.bufferIds).toEqual(['candidate-buffer']);
+        expect(vi.mocked(prepareCachedAudioBuffersFromIdb).mock.calls[0]?.[0]?.bufferIds).toEqual(['candidate-buffer']);
     });
 
     it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {
@@ -160,15 +164,15 @@ describe('loadRecentProject', () => {
     it('restores cached audio buffers before publishing hydrated tracks', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         let completeRestore: (() => void) | undefined;
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<number>((resolve) => {
-                    completeRestore = () => resolve(0);
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
                 })
         );
 
         const loading = loadRecentProject('sourdaw:project:Large Project');
-        await vi.waitFor(() => expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
@@ -196,14 +200,14 @@ describe('loadRecentProject', () => {
     it('supersedes an older overlapping load with the latest request', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         let completeFirstRestore: (() => void) | undefined;
-        vi.mocked(restoreCachedAudioBuffersFromIdb)
+        vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockImplementationOnce(
                 () =>
-                    new Promise<number>((resolve) => {
-                        completeFirstRestore = () => resolve(0);
+                    new Promise<{ publish: () => number }>((resolve) => {
+                        completeFirstRestore = () => resolve({ publish: () => 0 });
                     })
             )
-            .mockResolvedValueOnce(0);
+            .mockResolvedValueOnce({ publish: () => 0 });
 
         const firstLoad = loadRecentProject('first-project');
         const secondLoad = loadRecentProject('second-project');
@@ -224,10 +228,10 @@ describe('loadRecentProject', () => {
     it('does not publish after a newer project transition starts', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         let completeRestore: (() => void) | undefined;
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<number>((resolve) => {
-                    completeRestore = () => resolve(0);
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
                 })
         );
 
@@ -251,10 +255,10 @@ describe('loadRecentProject', () => {
             Promise.resolve(key === 'missing-project' ? null : validProject)
         );
         let completeRestore: (() => void) | undefined;
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockImplementationOnce(
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
             () =>
-                new Promise<number>((resolve) => {
-                    completeRestore = () => resolve(0);
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
                 })
         );
 

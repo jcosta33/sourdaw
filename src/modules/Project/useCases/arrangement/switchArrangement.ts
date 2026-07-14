@@ -1,13 +1,33 @@
+import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { arrangementStore } from '../../stores/arrangementStore';
+import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 import { loadSnapshot } from './loadSnapshot';
 import { syncCurrentArrangementToStore } from './syncCurrentArrangementToStore';
 
-export function switchArrangement(id: string): void {
+let latestSwitchRequest = 0;
+
+function collectArrangementBufferIds(snapshot: ArrangementSnapshot): string[] {
+    const ids = new Set<string>();
+    for (const track of snapshot.tracks.tracks) {
+        const frozenBufferId = track.freezeState.frozenBufferId ?? track.frozenBufferId;
+        if (frozenBufferId) {
+            ids.add(frozenBufferId);
+        }
+        const clips = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)];
+        for (const clip of clips) {
+            if (clip.audioBufferId) {
+                ids.add(clip.audioBufferId);
+            }
+        }
+    }
+    return [...ids];
+}
+
+export async function switchArrangement(id: string): Promise<void> {
     const state = arrangementStore.value;
     if (!state || state.activeArrangementId === id) {
         return;
@@ -18,13 +38,32 @@ export function switchArrangement(id: string): void {
         return;
     }
 
+    const request = ++latestSwitchRequest;
+    const sourceArrangementId = state.activeArrangementId;
+    const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
+        audioContext: getAudioContext(),
+        bufferIds: collectArrangementBufferIds(target),
+        shouldContinue: () => request === latestSwitchRequest,
+    });
+    const currentState = arrangementStore.value;
+    const currentTarget = currentState?.arrangements.find((arrangement) => arrangement.id === id);
+    if (
+        !preparedBuffers ||
+        request !== latestSwitchRequest ||
+        currentState?.activeArrangementId !== sourceArrangementId ||
+        !currentTarget
+    ) {
+        return;
+    }
+
+    preparedBuffers.publish();
     stopPlayback(); // Stop playback to avoid glitches
 
     // Save current
     syncCurrentArrangementToStore();
 
     // Load target
-    loadSnapshot(target);
+    loadSnapshot(currentTarget);
 
     // Clear undo history because IDs might have been reused or destroyed
     clearUndoHistory();

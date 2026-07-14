@@ -87,6 +87,7 @@ function hydrateTrack(track: HydratableProjectTrack): ProjectTrack {
         vcaGroupId: track.vcaGroupId ?? null,
         midiOutputTrackId: track.midiOutputTrackId ?? null,
         followChordTrack: track.followChordTrack ?? false,
+        showVariationLanes: track.showVariationLanes,
     };
 }
 

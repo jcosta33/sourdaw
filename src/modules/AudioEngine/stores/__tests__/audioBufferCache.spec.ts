@@ -119,7 +119,7 @@ describe('audioBufferCache conversions', () => {
         expect(decoded[0]).toBeCloseTo(1.0, 5);
     });
 
-    it('stages cancellation and treats newer embedded PCM as authoritative', async () => {
+    it('stages valid PCM until publish and rejects malformed or canceled candidates', () => {
         const context = {
             createBuffer: vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
                 expect(numberOfChannels).toBe(1);
@@ -129,11 +129,34 @@ describe('audioBufferCache conversions', () => {
         const first = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const second = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] };
 
-        await audioBufferCache.importBuffers({ context, buffers: { shared: first } });
-        await audioBufferCache.importBuffers({ context, buffers: { shared: second }, shouldContinue: () => false });
+        const firstCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: first } });
+        expect(audioBufferCache.get('shared')).toBeUndefined();
+        firstCandidate?.publish();
+
+        const canceledCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: { shared: second },
+            shouldContinue: () => false,
+        });
+        expect(canceledCandidate).toBeNull();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
-        await audioBufferCache.importBuffers({ context, buffers: { shared: second } });
+        const malformedCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
+            },
+        });
+        expect(malformedCandidate).toBeNull();
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+        const secondCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: { shared: second, archived: first },
+            cacheIds: ['shared'],
+        });
+        secondCandidate?.publish();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
+        expect(audioBufferCache.get('archived')).toBeUndefined();
     });
 });

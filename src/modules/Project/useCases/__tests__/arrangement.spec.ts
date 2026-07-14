@@ -3,9 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { arrangementStore } from '../../stores/arrangementStore';
+import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { switchArrangement } from '../arrangement/switchArrangement';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
+
+const { prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
+    prepareCachedAudioBuffersFromIdb: vi.fn(),
+    publishPreparedBuffers: vi.fn(() => 1),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioContext: vi.fn(() => ({})),
+    prepareCachedAudioBuffersFromIdb,
+}));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
@@ -27,13 +37,70 @@ describe('switchArrangement', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
     });
 
-    it('does not call transport or persistence collaborators when switching to the active arrangement', () => {
+    it('does not call transport or persistence collaborators when switching to the active arrangement', async () => {
         const arrangementId = arrangementStore.value!.activeArrangementId;
-        switchArrangement(arrangementId);
+        await switchArrangement(arrangementId);
 
         expect(stopPlayback).not.toHaveBeenCalled();
         expect(markDirty).not.toHaveBeenCalled();
+    });
+
+    it('publishes target audio before switching to a saved arrangement', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        target.tracks.tracks = [
+            {
+                id: 'track-1',
+                name: 'Audio',
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                color: '#fff',
+                clips: [{ id: 'clip-1', startBeat: 0, endBeat: 1, audioBufferId: 'target-buffer' }],
+                devices: [],
+                sends: [],
+                midiFx: [],
+                frozen: false,
+                freezeState: { status: 'unfrozen' },
+                parentId: null,
+                collapsed: false,
+                inputMonitoring: 'auto',
+                hidden: false,
+                disabled: false,
+                height: 80,
+                outputId: 'master',
+                automationMode: 'read',
+                groupId: null,
+                soloSafe: false,
+                notes: '',
+                inputId: null,
+                activeAlternativeId: 'alt-1',
+                alternatives: [],
+                vcaGroupId: null,
+                midiOutputTrackId: null,
+                followChordTrack: false,
+            },
+        ];
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        await switchArrangement(target.id);
+
+        expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledWith(
+            expect.objectContaining({ bufferIds: ['target-buffer'] })
+        );
+        expect(publishPreparedBuffers).toHaveBeenCalledTimes(1);
+        expect(publishPreparedBuffers.mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(stopPlayback).mock.invocationCallOrder[0]!
+        );
+        expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
     });
 });

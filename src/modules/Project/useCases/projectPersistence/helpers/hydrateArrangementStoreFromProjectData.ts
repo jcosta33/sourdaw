@@ -16,6 +16,16 @@ type HydrateMidiWithInlineNotesInput = {
 
 type HydrateMidiWithInlineNotesOutput = ArrangementSnapshot['midi'];
 
+function hydrateInlineMidiNotes(notes: ProjectMidi['notesByClipId'][string]): ProjectMidi['notesByClipId'][string] {
+    return notes.map((note) => ({
+        ...note,
+        probability: note.probability ?? 100,
+        pressure: note.pressure ?? 0,
+        slide: note.slide ?? 0,
+        pitchBend: note.pitchBend ?? 0,
+    }));
+}
+
 function hydrateMidiWithInlineNotes({
     midi,
     tracks,
@@ -28,7 +38,7 @@ function hydrateMidiWithInlineNotes({
         const clips = [...track.clips, ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips)];
         for (const clip of clips) {
             if (!arrangementMidi.notesByClipId[clip.id] && clip.notes && clip.notes.length > 0) {
-                arrangementMidi.notesByClipId[clip.id] = clip.notes;
+                arrangementMidi.notesByClipId[clip.id] = hydrateInlineMidiNotes(clip.notes);
             }
         }
     }

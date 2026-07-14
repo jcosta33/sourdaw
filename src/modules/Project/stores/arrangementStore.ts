@@ -144,6 +144,7 @@ export type ProjectTrack = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    showVariationLanes?: boolean;
 };
 
 export type ProjectTrackStoreState = {

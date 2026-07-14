@@ -3,15 +3,17 @@ import { type ExportedAudioBuffer, audioBufferCache } from '../stores/audioBuffe
 type ImportCachedAudioBuffersInput = {
     audioContext: BaseAudioContext;
     buffers: Record<string, ExportedAudioBuffer>;
+    cacheIds?: string[];
     shouldContinue?: () => boolean;
 };
 
-type ImportCachedAudioBuffersOutput = Promise<number>;
+type ImportCachedAudioBuffersOutput = ReturnType<typeof audioBufferCache.importBuffers>;
 
 export function importCachedAudioBuffers({
     audioContext,
     buffers,
+    cacheIds,
     shouldContinue,
 }: ImportCachedAudioBuffersInput): ImportCachedAudioBuffersOutput {
-    return audioBufferCache.importBuffers({ context: audioContext, buffers, shouldContinue });
+    return audioBufferCache.importBuffers({ context: audioContext, buffers, cacheIds, shouldContinue });
 }

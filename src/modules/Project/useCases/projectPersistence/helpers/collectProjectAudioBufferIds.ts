@@ -29,6 +29,10 @@ type CollectProjectAudioBufferIdsInput = {
 
 export function collectProjectAudioBufferIds({ data }: CollectProjectAudioBufferIdsInput): string[] {
     const ids = new Set<string>();
-    collectTrackBufferIds({ ids, tracks: data.arrangement.tracks });
+    const activeArrangement = data.arrangements?.find((arrangement) => arrangement.id === data.activeArrangementId);
+    collectTrackBufferIds({
+        ids,
+        tracks: activeArrangement?.tracks?.tracks ?? data.arrangement.tracks,
+    });
     return [...ids];
 }
