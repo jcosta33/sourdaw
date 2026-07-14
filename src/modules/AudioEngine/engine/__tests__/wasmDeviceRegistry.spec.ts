@@ -68,9 +68,9 @@ describe('findWasmDescriptor', () => {
         expect(findWasmDescriptor('')).toBeUndefined();
     });
 
-    it('should replay queued restored flat params after Proof patch sync', async () => {
+    it('should apply the validated Proof patch after queued restored flat params', async () => {
         const syncProofPatch = vi.fn(() => {
-            proofNodeMocks.setParam('lim_ceiling', -0.1);
+            proofNodeMocks.setParam('lim_ceiling', -1);
         });
         const registerProofDevice = vi.fn();
         proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
@@ -92,7 +92,7 @@ describe('findWasmDescriptor', () => {
             throw new Error('Expected proof placeholder to expose loading controller');
         }
         expect(placeholder.nativeDspControls).toBe(placeholder.controller);
-        placeholder.controller.setParam('lim_ceiling', -1.5);
+        placeholder.controller.setParam('lim_ceiling', 0.1);
 
         await loadPromise;
 
@@ -100,11 +100,11 @@ describe('findWasmDescriptor', () => {
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
         expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
         expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(2);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', -0.1);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -1.5);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', 0.1);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -1);
     });
 
-    it('should preserve real Proof patch sync when direct flat params are queued', async () => {
+    it('should apply the complete Proof patch after direct flat params are queued', async () => {
         const syncProofPatch = vi.fn(() => {
             proofNodeMocks.setParam('input_gain', 3);
             proofNodeMocks.setParam('lim_ceiling', -0.1);
@@ -133,9 +133,9 @@ describe('findWasmDescriptor', () => {
 
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
         expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(3);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'input_gain', 3);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -0.1);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(3, 'lim_ceiling', -1.5);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', -1.5);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'input_gain', 3);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(3, 'lim_ceiling', -0.1);
     });
 
     it('should install the ready Proof node even when patch sync throws', async () => {
@@ -175,7 +175,7 @@ describe('findWasmDescriptor', () => {
         if (syncCallOrder === undefined || replayCallOrder === undefined) {
             throw new Error('Expected sync and replay call order to be recorded');
         }
-        expect(replayCallOrder).toBeGreaterThan(syncCallOrder);
+        expect(replayCallOrder).toBeLessThan(syncCallOrder);
     });
 
     it('should still sync a real in-memory Proof patch when no flat params are queued', async () => {

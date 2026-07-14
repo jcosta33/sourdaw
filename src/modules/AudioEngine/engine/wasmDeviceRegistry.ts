@@ -565,12 +565,13 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 try {
-                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
-                } finally {
-                    // Queued params are flat project truth or direct param writes; replay them last so they win.
                     for (const [name, value] of pendingParams) {
                         result.setParam(name, value);
                     }
+                } finally {
+                    // Proof owns restoration and validation. Its complete patch
+                    // sync must be the final writer over raw pre-ready values.
+                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
                 }
                 return;
             })
