@@ -53,9 +53,10 @@ Tests live in **`__tests__/`** subfolders **inside** the folder that owns the co
 
 **Cross-module** test utilities (mock `AudioContext`, shared helpers) live in **`src/helpers/__tests__/`**. DI and event **runtime test helpers** (not specs) live in **`src/infra/di/testing/`** and **`src/infra/events/testing/`**.
 
-**Knip** includes test files in the default project graph. The Vitest plugin adds
-`*.spec.*` and `*.test.*` files as entry points automatically; keep them in
-`project` and use `knip --production` for a production-only graph.
+**Knip** includes test files in the default project graph. Its Vitest plugin
+registers `*.spec.*` and `*.test.*` files as entry points automatically, so do
+not exclude them from `project`. Run `pnpm exec knip` for the full graph and
+`pnpm exec knip --production` for a production-only graph.
 
 ```text
 src/modules/Arrangement/
