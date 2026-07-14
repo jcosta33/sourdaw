@@ -46,6 +46,17 @@ describe('setProofParamWithPatch', () => {
         expect(persisted_patch_values).toEqual([-2]);
     });
 
+    it('rejects an out-of-range scalar before any write', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: 1 });
+
+        expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
+
     it('persists a boolean bypass field with the same 0/1 engine convention', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);
@@ -117,6 +128,23 @@ describe('setProofParamWithPatch', () => {
             img_width3: 0.4,
         });
         expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 0.3);
+    });
+
+    it('rejects an out-of-range changed band member before any write', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const eqBands = DEFAULT_PATCH.eqBands.map((band, index) => (index === 2 ? { ...band, freq: 1 } : band));
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'eqBands',
+            value: eqBands,
+            changedParams: [{ bandIndex: 2, field: 'freq' }],
+        });
+
+        expect(getProofState('dev-1').patch.eqBands).toEqual(DEFAULT_PATCH.eqBands);
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
     });
 
     it('previews only changed aggregate params and persists once when the gesture commits', () => {

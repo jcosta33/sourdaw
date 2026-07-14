@@ -3,7 +3,7 @@ import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
-import { isValidProofChainOrder } from '../../services/isValidProofChainOrder';
+import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
@@ -328,7 +328,8 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
     const currentPatch = getProofState(deviceId).patch;
     const normalizedAggregate = normalizeChangedAggregateEdit(input, currentPatch);
     if (normalizedAggregate) {
-        if (!normalizedAggregate.valid) {
+        const nextPatch: ProofPatch = { ...currentPatch, ...normalizedAggregate.patch };
+        if (!normalizedAggregate.valid || !isValidProofPatch(nextPatch)) {
             return;
         }
 
@@ -353,14 +354,11 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         return;
     }
 
-    if (input.key === 'dynCrossoverFreqs' && !isValidDynCrossoverFreqs(input.value)) {
-        return;
-    }
-    if (input.key === 'chainOrder' && !isValidProofChainOrder(input.value)) {
-        return;
-    }
-
     const { key, value } = input;
+    const nextPatch: ProofPatch = { ...currentPatch, [key]: value };
+    if (!isValidProofPatch(nextPatch)) {
+        return;
+    }
     const valueChanged = !Object.is(currentPatch[key], value);
     updateProofPatch({
         deviceId,
