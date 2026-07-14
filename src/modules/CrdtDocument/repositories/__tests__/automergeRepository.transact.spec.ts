@@ -236,8 +236,39 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
             ['rootBackup', backupBytes],
         ]);
         // Worker stub throws → _loadAllSync runs the inference under test.
-        await automergeRepository.loadAll(bundle);
+        await automergeRepository.loadAll({ bundle });
 
         expect(automergeRepository.getRootId()).toBe('root');
+    });
+
+    it('keeps the current repository intact when commit authority is revoked', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const bundle = automergeRepository.saveAll();
+
+        const committed = await automergeRepository.loadAll({
+            bundle,
+            shouldCommit: () => false,
+        });
+
+        expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('rejects a bundle without the authoritative root document', async () => {
+        automergeRepository.createProject('source');
+        automergeRepository.createChildDoc('branch-only');
+        const branchBytes = automergeRepository.saveDoc('branch-only')!;
+
+        automergeRepository.reset();
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        const committed = await automergeRepository.loadAll({
+            bundle: new Map([['branch-only', branchBytes]]),
+        });
+
+        expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 });

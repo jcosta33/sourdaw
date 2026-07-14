@@ -1,11 +1,10 @@
-import { automergeRepository } from '../repositories/automergeRepository';
-
 import { compactProject } from './compactProject';
+import { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 
 /**
  * Create a new CRDT-backed project.
  */
 export async function createCrdtProject(name: string): Promise<void> {
-    automergeRepository.createProject(name);
+    resetCrdtProjectAuthority(name);
     await compactProject();
 }

@@ -4,19 +4,23 @@ import { type ProjectData } from '../../../../models/ProjectData';
 import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
 
 const mocks = vi.hoisted(() => ({
-    trackStoreSet: vi.fn(),
+    hydrateTracksForProject: vi.fn(),
     markerStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
+    setSidechainRoutes: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         ...actual,
-        trackStore: { set: mocks.trackStoreSet },
         markerStore: { set: mocks.markerStoreSet },
     };
 });
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    hydrateTracksForProject: mocks.hydrateTracksForProject,
+}));
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
@@ -26,12 +30,16 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Routing/useCases', () => ({
+    setSidechainRoutes: mocks.setSidechainRoutes,
+}));
+
 describe('hydrateModuleStoresFromProjectData', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('hydrates arrangement tracks when present', () => {
+    it('leaves arrangement tracks to the active-snapshot hydrator', () => {
         const data = {
             version: 1,
             arrangement: { tracks: [] },
@@ -40,10 +48,10 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.trackStoreSet).toHaveBeenCalled();
+        expect(mocks.hydrateTracksForProject).not.toHaveBeenCalled();
     });
 
-    it('hydrates automation lanes when present', () => {
+    it('leaves automation lanes to the active-snapshot hydrator', () => {
         const data = {
             version: 1,
             arrangement: { tracks: [] },
@@ -52,10 +60,10 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
+        expect(mocks.automationStoreSet).not.toHaveBeenCalled();
     });
 
-    it('hydrates markers when present', () => {
+    it('leaves markers to the active-snapshot hydrator', () => {
         const data = {
             version: 1,
             arrangement: { tracks: [] },
@@ -65,7 +73,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.markerStoreSet).toHaveBeenCalled();
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 
     it('does not call marker set when markers are absent', () => {
@@ -78,5 +86,28 @@ describe('hydrateModuleStoresFromProjectData', () => {
         hydrateModuleStoresFromProjectData(data);
 
         expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('hydrates sidechain routes through the Routing owner', () => {
+        const routes = [
+            {
+                id: 'route-1',
+                sourceTrackId: 'source',
+                targetTrackId: 'target',
+                targetDeviceId: 'device',
+                targetParameterId: 'threshold',
+                gain: 1,
+            },
+        ];
+        const data = {
+            version: 1,
+            arrangement: { tracks: [] },
+            automation: { lanes: [] },
+            sidechainRoutes: routes,
+        } as unknown as ProjectData;
+
+        hydrateModuleStoresFromProjectData(data);
+
+        expect(mocks.setSidechainRoutes).toHaveBeenCalledWith(routes);
     });
 });

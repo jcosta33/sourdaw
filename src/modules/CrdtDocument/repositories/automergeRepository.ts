@@ -373,11 +373,16 @@ class AutomergeRepository {
      * crdtWorker.ts. The worker returns compacted binaries; main thread calls
      * load() once per doc (fast — no incremental chain to replay).
      */
-    async loadAll(bundle: DocumentBundle): Promise<void> {
-        this.docs.clear();
-
+    async loadAll({
+        bundle,
+        shouldCommit,
+    }: {
+        bundle: DocumentBundle;
+        shouldCommit?: () => boolean;
+    }): Promise<boolean> {
         let compacted: [string, Uint8Array][];
         let rootId: string;
+        let documents: Map<DocId, Doc<AnyDoc>>;
 
         try {
             const response = await invokeWorker({
@@ -389,25 +394,41 @@ class AutomergeRepository {
             }
             compacted = response.compacted;
             rootId = response.rootId;
+            documents = new Map<DocId, Doc<AnyDoc>>();
+            for (const [id, bytes] of compacted) {
+                documents.set(id, load<AnyDoc>(bytes));
+            }
         } catch (error) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', error);
-            this._loadAllSync(bundle);
-            return;
+            const parsed = this._parseAllSync(bundle);
+            documents = parsed.documents;
+            rootId = parsed.rootId;
         }
 
-        for (const [id, bytes] of compacted) {
-            this.docs.set(id, load<AnyDoc>(bytes));
+        if (!documents.has(DOC_PREFIX_ROOT)) {
+            return false;
         }
+
+        if (shouldCommit?.() === false) {
+            return false;
+        }
+
+        this.docs = documents;
         this.rootId = rootId;
-
         this.notifyListeners();
+        return true;
     }
 
-    /** Synchronous fallback for loadAll (used when worker is unavailable). */
-    private _loadAllSync(bundle: DocumentBundle): void {
+    /** Parse fallback for loadAll when the worker is unavailable. */
+    private _parseAllSync(bundle: DocumentBundle): {
+        documents: Map<DocId, Doc<AnyDoc>>;
+        rootId: DocId;
+    } {
         const baseDocs = new Map<DocId, Uint8Array>();
         const incrementals: Array<{ id: DocId; bytes: Uint8Array }> = [];
+        const documents = new Map<DocId, Doc<AnyDoc>>();
+        let rootId: DocId = DOC_PREFIX_ROOT;
 
         for (const [key, bytes] of bundle) {
             if (key.includes(':incremental:')) {
@@ -418,13 +439,13 @@ class AutomergeRepository {
         }
 
         for (const [id, bytes] of baseDocs) {
-            this.docs.set(id, load<AnyDoc>(bytes));
+            documents.set(id, load<AnyDoc>(bytes));
             // Match the root id exactly. `startsWith` also matched sibling ids
             // like `root-2`/`rootBackup`, so with several matches the
             // last-iterated one won and root assignment depended on Map
             // iteration order.
             if (id === DOC_PREFIX_ROOT) {
-                this.rootId = id;
+                rootId = id;
             }
         }
 
@@ -432,19 +453,19 @@ class AutomergeRepository {
 
         for (const { id: key, bytes } of incrementals) {
             const docId = key.substring(0, key.indexOf(':incremental:'));
-            const doc = this.docs.get(docId);
+            const doc = documents.get(docId);
             if (doc) {
-                this.docs.set(docId, loadIncremental(doc, bytes));
+                documents.set(docId, loadIncremental(doc, bytes));
             } else {
                 logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
-        for (const [id, doc] of this.docs) {
-            this.docs.set(id, load(save(doc)));
+        for (const [id, doc] of documents) {
+            documents.set(id, load(save(doc)));
         }
 
-        this.notifyListeners();
+        return { documents, rootId };
     }
 
     /**

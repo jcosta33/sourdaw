@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
 import {
     initializeAudioEngine,
     getAudioContext,
@@ -9,17 +8,11 @@ import {
     setMasterGainValue,
     resumeEngine,
     requestMicPermission,
-    restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases';
-import {
-    finishProjectLoading,
-    loadProject,
-    saveProject,
-    verifyAudioBufferReferences,
-} from '#/modules/Project/useCases';
+import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
@@ -52,14 +45,6 @@ export const useAppInitialization = (): void => {
                 if (transport) {
                     setMasterGainValue(transport.masterGain / 100);
                 }
-                const referencedIds = (trackStore.value?.tracks ?? [])
-                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
-                    .filter((id): id is string => Boolean(id));
-                await restoreCachedAudioBuffersFromIdb({
-                    audioContext: getAudioContext(),
-                    bufferIds: referencedIds.length > 0 ? referencedIds : undefined,
-                });
-                void verifyAudioBufferReferences();
                 void initWebMidi();
                 registerProModulationEffects();
                 registerProSynthInstruments();

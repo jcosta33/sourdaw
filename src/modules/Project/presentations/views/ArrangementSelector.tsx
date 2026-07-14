@@ -136,8 +136,8 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             : 'hover:bg-accent/50 text-foreground transition-colors'
                                     )}
                                     onClick={() => {
-                                        if (!isEditing && !isActive) {
-                                            switchArrangement(arr.id);
+                                        if (!isEditing) {
+                                            void switchArrangement(arr.id);
                                         }
                                     }}
                                 >

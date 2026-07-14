@@ -156,6 +156,25 @@ export type ProjectClip = {
     // Audio specific
     bufferId?: string;
     sampleStartBeat?: number;
+    // Runtime aliases retained only for loading snapshots written before the
+    // arrangement collection gained an explicit serialized shape.
+    audioBufferId?: string;
+    audioOffsetBeats?: number;
+    assetHash?: string;
+    midiOffsetBeats?: number;
+    stretchMode?: 'off' | 'repitch' | 'timestretch';
+    stretchRatio?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
+    generating?: boolean;
+    isGhost?: boolean;
+    isInlineEditing?: boolean;
+    parentClipId?: string;
+    isLinkedInstance?: boolean;
+    sourceKeyRoot?: number;
+    sourceScaleName?: string;
+    overrides?: Record<string, boolean>;
     // MIDI specific
     notes?: ProjectMidiNote[];
     kneadState?: ProjectClipKneadState;
@@ -186,10 +205,10 @@ export type ProjectMidiNote = {
     startBeat: number;
     duration: number;
     velocity: number;
-    probability: number;
-    pressure: number;
-    slide: number;
-    pitchBend: number;
+    probability?: number;
+    pressure?: number;
+    slide?: number;
+    pitchBend?: number;
 };
 
 export type ProjectDevice = {
@@ -268,6 +287,7 @@ export type ProjectTrack = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    showVariationLanes?: boolean;
 };
 
 export type ProjectTrackAlternative = {
@@ -349,13 +369,16 @@ export type ProjectCheckpoint = {
 
 export type ProjectTempoMap = {
     changes: Array<{
+        id?: string;
         beat: number;
         tempo: number;
+        curve?: 'instant' | 'linear';
     }>;
 };
 
 export type ProjectTimeSignatureMap = {
     changes: Array<{
+        id?: string;
         beat: number;
         numerator: number;
         denominator: number;
@@ -417,13 +440,39 @@ export type ProjectSidechainRoute = {
 export type ProjectArrangementSnapshot = {
     id: string;
     name: string;
-    tracks: unknown;
-    automation: unknown;
-    midi: unknown;
-    tempoMap?: unknown;
-    timeSignatureMap?: unknown;
-    markers?: unknown;
-    takeLanes?: unknown;
+    tracks?: {
+        tracks: ProjectTrack[];
+        selectedTrackId: string | null;
+    };
+    automation?: ProjectAutomation;
+    midi?: ProjectMidi;
+    tempoMap?: {
+        changes: Array<{
+            id: string;
+            beat: number;
+            tempo: number;
+            curve: 'instant' | 'linear';
+        }>;
+    };
+    timeSignatureMap?: {
+        changes: Array<{
+            id: string;
+            beat: number;
+            numerator: number;
+            denominator: number;
+        }>;
+    };
+    markers?: {
+        markers: ProjectMarker[];
+        sections: Array<{
+            id: string;
+            startBeat: number;
+            endBeat: number;
+            name: string;
+            color: string;
+        }>;
+    };
+    takeLanes?: ProjectTakeLaneStoreState;
 };
 
 export const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';

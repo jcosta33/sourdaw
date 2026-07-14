@@ -13,6 +13,22 @@ export type ProjectStretchMode = 'off' | 'repitch' | 'timestretch';
 
 export type ProjectFollowAction = 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
 
+export type ProjectClipKneadBlob = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
+};
+
+export type ProjectClipKneadState = {
+    blobs: ProjectClipKneadBlob[];
+    retuneSpeedMs: number;
+    humanizePercent: number;
+    formantPreserve: boolean;
+};
+
 export type ProjectClip = {
     id: string;
     trackId: string;
@@ -23,6 +39,7 @@ export type ProjectClip = {
     audioBufferId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;
@@ -36,8 +53,13 @@ export type ProjectClip = {
     followAction?: ProjectFollowAction;
     generating?: boolean;
     isGhost?: boolean;
+    isInlineEditing?: boolean;
     parentClipId?: string;
+    isLinkedInstance?: boolean;
+    sourceKeyRoot?: number;
+    sourceScaleName?: string;
     overrides?: Record<string, boolean>;
+    kneadState?: ProjectClipKneadState;
 };
 
 export type ProjectDevice = {
@@ -122,6 +144,7 @@ export type ProjectTrack = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    showVariationLanes?: boolean;
 };
 
 export type ProjectTrackStoreState = {

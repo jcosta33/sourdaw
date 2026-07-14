@@ -1,17 +1,37 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { getAudioContext, resetAudioGraph, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import { batchStoreUpdates } from '#/infra/store/createStore';
+import {
+    getAudioContext,
+    importCachedAudioBuffers,
+    prepareCachedAudioBuffersFromIdb,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { isSupportedProjectVersion, type ProjectData } from '../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
+import { setAutoSaveHandle } from '../projectPersistence/helpers/autoSaveHandle';
+import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/collectProjectAudioBufferIds';
+import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
+import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
+import {
+    type ProjectLoadTransaction,
+    runProjectLoadTransaction,
+} from '../projectPersistence/helpers/runProjectLoadTransaction';
+import { stopActiveAutoSave } from '../projectPersistence/helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
-export async function loadRecentProject(key: string): Promise<boolean> {
+type PerformRecentProjectLoadInput = {
+    key: string;
+    transaction: ProjectLoadTransaction;
+};
+
+async function performRecentProjectLoad({ key, transaction }: PerformRecentProjectLoadInput): Promise<boolean> {
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
@@ -21,48 +41,100 @@ export async function loadRecentProject(key: string): Promise<boolean> {
             return false;
         }
 
-        const data = JSON.parse(raw) as ProjectData;
-        if (!isSupportedProjectVersion(data.version)) {
+        const parsed: unknown = JSON.parse(raw);
+        const normalizedData = normalizeLegacyProjectData(parsed);
+        if (!isHydratableProjectData(normalizedData)) {
             logger.warn(`Unsupported project version for key: ${key}`);
             return false;
         }
+        const data = normalizedData;
 
-        // Validated — stop any in-flight playback and tear down the previous
-        // project's audio graph before we hydrate stores for the new project.
-        stopPlayback();
-        resetAudioGraph();
+        if (!transaction.activate()) {
+            return false;
+        }
 
-        // Reset per-device-instance stores (§13.1) so stale device state from the
-        // previously open project does not leak into the project being loaded;
-        // hydrateModuleStoresFromProjectData does not touch the device stores.
-        resetModuleStoresToDefault();
+        const audioContext = getAudioContext();
+        const referencedIds = collectProjectAudioBufferIds({ data });
+        const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
+        const preparedEmbeddedBuffers = data.audioBuffers
+            ? await importCachedAudioBuffers({
+                  audioContext,
+                  buffers: data.audioBuffers,
+                  cacheIds: referencedIds,
+                  shouldContinue: transaction.isCurrent,
+              })
+            : undefined;
+        if (data.audioBuffers && !preparedEmbeddedBuffers) {
+            return false;
+        }
 
-        hydrateModuleStoresFromProjectData(data);
-
-        projectStore.set({
-            name: data.meta.name,
-            createdAt: data.meta.createdAt,
-            updatedAt: data.meta.updatedAt,
-            keyRoot: data.meta.keyRoot,
-            scaleName: data.meta.scaleName,
-            tuning: data.meta.tuning,
-            dirty: false,
-            loading: false,
-            initialized: true,
+        // Restore runtime buffers before publishing the loaded track graph so
+        // waveform consumers are ready on the first real track update.
+        const preparedStoredBuffers = await prepareCachedAudioBuffersFromIdb({
+            audioContext,
+            bufferIds: referencedIds.filter((id) => !embeddedBufferIds.has(id)),
+            shouldContinue: transaction.isCurrent,
         });
 
-        writeProjectJson(raw);
-
-        await restoreCachedAudioBuffersFromIdb({ audioContext: getAudioContext() });
-        if (trackStore.value) {
-            trackStore.set({ ...trackStore.value });
+        if (!preparedStoredBuffers) {
+            return false;
         }
-        verifyAudioBufferReferences();
-        clearUndoHistory();
+        try {
+            stopPlayback();
+            resetAudioGraph();
+        } catch (error) {
+            logger.warn('[loadRecentProject] Failed to prepare the audio runtime for project commit:', error);
+            return false;
+        }
+        if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
+            return false;
+        }
+        if (!transaction.isCurrent()) {
+            return false;
+        }
+
+        batchStoreUpdates(() => {
+            resetCrdtProjectAuthority(data.meta.name);
+            preparedStoredBuffers.publish();
+            preparedEmbeddedBuffers?.publish();
+            resetModuleStoresToDefault();
+
+            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+            hydrateModuleStoresFromProjectData(data);
+
+            projectStore.set({
+                name: data.meta.name,
+                createdAt: data.meta.createdAt,
+                updatedAt: data.meta.updatedAt,
+                keyRoot: data.meta.keyRoot,
+                scaleName: data.meta.scaleName,
+                tuning: data.meta.tuning,
+                dirty: false,
+                loading: false,
+                initialized: true,
+            });
+
+            writeProjectJson(JSON.stringify(data));
+            verifyAudioBufferReferences();
+            clearUndoHistory();
+        });
+        await compactProject();
+        if (!transaction.isCurrent()) {
+            return false;
+        }
+        stopActiveAutoSave();
+        setAutoSaveHandle(startCrdtAutoSave());
 
         return true;
     } catch (error) {
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }
+}
+
+export function loadRecentProject(key: string): Promise<boolean> {
+    return performRecentProjectLoad({
+        key,
+        transaction: runProjectLoadTransaction(),
+    });
 }

@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { applyImportedProjectData } from '../projectPersistence/fileIO/applyImportedProjectData';
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { decodeDawProjectAssets } from './decodeDawProjectAssets';
 import { mapToProjectData } from './mapToProjectData';
@@ -15,6 +16,7 @@ export type ImportDawProjectInput = {
 export type ImportDawProjectOutput = Promise<boolean>;
 
 export async function importDawProject(input: ImportDawProjectInput): ImportDawProjectOutput {
+    const transaction = runProjectLoadTransaction();
     let parsed;
     try {
         parsed = parseDawProject(input.buffer);
@@ -25,7 +27,13 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         return false;
     }
 
-    const { bufferIdsByPath, failedPaths } = await decodeDawProjectAssets(parsed.audioAssets);
+    const { audioBuffers, bufferIdsByPath, failedPaths } = await decodeDawProjectAssets({
+        audioAssets: parsed.audioAssets,
+        shouldContinue: transaction.canActivate,
+    });
+    if (!transaction.canActivate()) {
+        return false;
+    }
     if (failedPaths.length > 0) {
         logger.warn(`[importDawProject] Failed to decode ${String(failedPaths.length)} audio asset(s)`, failedPaths);
     }
@@ -35,9 +43,10 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         bufferIdsByPath,
         fileName: input.fileName,
     });
+    projectData.audioBuffers = audioBuffers;
 
     try {
-        const ok = await applyImportedProjectData(projectData);
+        const ok = await applyImportedProjectData({ data: projectData, transaction });
         if (ok) {
             const trackCount = projectData.arrangement.tracks.length;
             notifyUser(`Imported ${parsed.meta.title || input.fileName} (${String(trackCount)} tracks)`, 'success');

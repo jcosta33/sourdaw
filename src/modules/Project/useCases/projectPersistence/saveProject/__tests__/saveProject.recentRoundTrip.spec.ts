@@ -38,8 +38,13 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
+    resetCrdtProjectAuthority: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
+vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
+vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
@@ -48,15 +53,20 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 // loadRecentProject side effects — none touch the round-trip storage path.
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
+vi.mock('../../helpers/hydrateArrangementStoreFromProjectData', () => ({
+    hydrateArrangementStoreFromProjectData: vi.fn(),
+}));
 vi.mock('../../helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));
@@ -95,7 +105,24 @@ function makeProjectData(): ProjectData {
             scaleName: 'major',
             tuning: { name: '12-TET', frequencies: [] },
         },
-        transport: {} as ProjectData['transport'],
+        transport: {
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            loopStart: 0,
+            loopEnd: 4,
+            isLooping: false,
+            metronomeEnabled: false,
+            metronomeVolume: 0.8,
+            punchInEnabled: false,
+            punchInBeat: 0,
+            punchOutBeat: 4,
+            countInEnabled: false,
+            countInBars: 1,
+            preRollEnabled: false,
+            preRollBars: 0,
+            masterGain: 1,
+        },
         arrangement: { tracks: [] },
         automation: { lanes: [] },
         midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },

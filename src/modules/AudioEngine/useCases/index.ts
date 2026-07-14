@@ -31,6 +31,7 @@ export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
+export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
 export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
 export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
@@ -38,10 +39,13 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { importCachedAudioBuffers } from './importCachedAudioBuffers';
+export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
+export { serializeAudioBuffersForProject } from './serializeAudioBuffersForProject';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';

@@ -1,7 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { createStore } from '../../createStore';
-import { configureAutomergeStoragePort, createAutomergeStorage } from '../createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    createAutomergeStorage,
+    flushAutomergeStorageWrites,
+} from '../createAutomergeStorage';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -60,6 +64,7 @@ describe('createAutomergeStorage', () => {
     });
 
     afterEach(() => {
+        flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         vi.unstubAllGlobals();
     });
@@ -121,6 +126,19 @@ describe('createAutomergeStorage', () => {
 
         expect(mutations).toEqual([{ docId: 'root', message: 'first change' }]);
         expect(doc.state).toEqual({ count: 2 });
+    });
+
+    it('should synchronously flush a pending frame before CRDT compaction', () => {
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        storage.set({ count: 7 });
+
+        flushAutomergeStorageWrites();
+
+        expect(cancelAnimationFrameMock).toHaveBeenCalledWith(42);
+        expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
+        expect(doc.state).toEqual({ count: 7 });
     });
 
     it('should cancel a pending frame and immediately delete the CRDT key on clear', () => {

@@ -124,7 +124,7 @@ export async function buildProjectData(): Promise<BuiltProjectData | null> {
             // the serialized clip shape (bufferId/sampleStartBeat) and fold each
             // clip's MIDI notes inline from the MIDI store, so the import side's
             // bufferId lookup resolves and notes survive the round-trip.
-            tracks: serializeArrangementTracks(tracks?.tracks ?? [], midi.notesByClipId),
+            tracks: serializeArrangementTracks(tracks.tracks, midi.notesByClipId),
         },
         automation,
         mixer: {
@@ -142,7 +142,14 @@ export async function buildProjectData(): Promise<BuiltProjectData | null> {
         })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
-        arrangements: arrState.arrangements,
+        arrangements: arrState.arrangements.map((snapshot) => ({
+            ...snapshot,
+            tracks: {
+                ...snapshot.tracks,
+                tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
+            },
+            midi: serializeProjectMidi(snapshot.midi),
+        })),
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
         adjustmentLayers: { layers: adjustmentLayerStore.value?.layers ?? [] },
