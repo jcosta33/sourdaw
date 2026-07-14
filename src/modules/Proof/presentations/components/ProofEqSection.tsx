@@ -9,7 +9,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 import { ProofEqCurve } from './ProofEqCurve';
 
@@ -19,13 +19,23 @@ const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#95
 
 type Props = {
     patch: ProofPatch;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement => {
-    const updatePatch = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ eqBands: bands });
+    const updatePatch = <Key extends keyof ProofPatch['eqBands'][number]>(
+        idx: number,
+        key: Key,
+        value: ProofPatch['eqBands'][number][Key],
+        isTransient = false
+    ) => {
+        const bands = patch.eqBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'eqBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
     return (
@@ -40,7 +50,12 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                         tone="cyan"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ eqBypassed: !patch.eqBypassed });
+                            const value = !patch.eqBypassed;
+                            onPatchChange({
+                                key: 'eqBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.eqBypassed ? 'OFF' : 'ON'}
@@ -73,7 +88,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                         {/* Frequency */}
                         <RotaryKnob
                             value={band.freq}
-                            onChange={(v) => updatePatch(i, 'freq', v)}
+                            onChange={(value, isTransient) => updatePatch(i, 'freq', value, isTransient)}
                             min={20}
                             max={20000}
                             step={1}
@@ -88,7 +103,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                         {/* Gain */}
                         <RotaryKnob
                             value={band.gain}
-                            onChange={(v) => updatePatch(i, 'gain', v)}
+                            onChange={(value, isTransient) => updatePatch(i, 'gain', value, isTransient)}
                             min={-18}
                             max={18}
                             step={0.5}
@@ -104,7 +119,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                         {/* Q */}
                         <RotaryKnob
                             value={band.q}
-                            onChange={(v) => updatePatch(i, 'q', v)}
+                            onChange={(value, isTransient) => updatePatch(i, 'q', value, isTransient)}
                             min={0.1}
                             max={10}
                             step={0.1}
@@ -120,7 +135,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.type}
-                            onChange={(e) => updatePatch(i, 'type', parseInt(e.target.value))}
+                            onChange={(event) => updatePatch(i, 'type', Number.parseInt(event.target.value, 10))}
                         >
                             {BAND_TYPES.map((label, ti) => (
                                 <option key={ti} value={ti}>
@@ -135,7 +150,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.channel}
-                            onChange={(e) => updatePatch(i, 'channel', parseInt(e.target.value))}
+                            onChange={(event) => updatePatch(i, 'channel', Number.parseInt(event.target.value, 10))}
                         >
                             {CHANNEL_MODES.map((label, ci) => (
                                 <option key={ci} value={ci}>

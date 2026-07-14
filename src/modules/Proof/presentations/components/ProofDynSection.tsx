@@ -8,7 +8,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const BAND_COLORS = [
@@ -21,19 +21,34 @@ const BAND_COLORS = [
 type Props = {
     patch: ProofPatch;
     dynGr: [number, number, number, number];
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactElement => {
-    const updateBand = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.dynBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ dynBands: bands });
+    const updateBand = (
+        idx: number,
+        key: 'threshold' | 'ratio' | 'attack' | 'release',
+        value: number,
+        isTransient = false
+    ) => {
+        const bands = patch.dynBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'dynBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
-    const updateXover = (idx: number, value: number) => {
+    const updateXover = (idx: number, value: number, isTransient = false) => {
         const freqs: [number, number, number] = [...patch.dynCrossoverFreqs];
         freqs[idx] = value;
-        onPatchChange({ dynCrossoverFreqs: freqs });
+        onPatchChange({
+            key: 'dynCrossoverFreqs',
+            value: freqs,
+            changedParams: [{ crossoverIndex: idx }],
+            isTransient,
+        });
     };
 
     return (
@@ -48,7 +63,12 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                         tone="peach"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ dynBypassed: !patch.dynBypassed });
+                            const value = !patch.dynBypassed;
+                            onPatchChange({
+                                key: 'dynBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.dynBypassed ? 'OFF' : 'ON'}
@@ -63,7 +83,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                     <div key={i} className="flex items-center gap-0.5">
                         <RotaryKnob
                             value={freq}
-                            onChange={(v) => updateXover(i, v)}
+                            onChange={(value, isTransient) => updateXover(i, value, isTransient)}
                             min={20}
                             max={20000}
                             step={1}
@@ -106,7 +126,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
 
                             <RotaryKnob
                                 value={band.threshold}
-                                onChange={(v) => updateBand(i, 'threshold', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'threshold', value, isTransient)}
                                 min={-60}
                                 max={0}
                                 step={0.5}
@@ -118,7 +138,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
 
                             <RotaryKnob
                                 value={band.ratio}
-                                onChange={(v) => updateBand(i, 'ratio', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'ratio', value, isTransient)}
                                 min={1}
                                 max={20}
                                 step={0.5}
@@ -130,7 +150,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
 
                             <RotaryKnob
                                 value={band.attack}
-                                onChange={(v) => updateBand(i, 'attack', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'attack', value, isTransient)}
                                 min={1}
                                 max={200}
                                 step={1}
@@ -142,7 +162,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
 
                             <RotaryKnob
                                 value={band.release}
-                                onChange={(v) => updateBand(i, 'release', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'release', value, isTransient)}
                                 min={10}
                                 max={2000}
                                 step={1}

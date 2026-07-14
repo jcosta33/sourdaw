@@ -10,8 +10,12 @@ import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
 import { syncImager } from './syncImager';
 
-function isFiniteRestoredParam(value: number | undefined): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
+function numberFromRestoredParam(value: number | undefined, min: number, max: number): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+        return null;
+    }
+
+    return value;
 }
 
 function booleanFromRestoredParam(value: number | undefined): boolean | null {
@@ -69,12 +73,14 @@ function getRestoredProofParameterValues(deviceId: string): Record<string, numbe
 function getRestoredScalarPatch(parameterValues: Record<string, number>): Partial<ProofPatch> {
     const restoredPatch: Partial<ProofPatch> = {};
 
-    if (isFiniteRestoredParam(parameterValues.input_gain)) {
-        restoredPatch.inputGain = parameterValues.input_gain;
+    const inputGain = numberFromRestoredParam(parameterValues.input_gain, -24, 24);
+    if (inputGain !== null) {
+        restoredPatch.inputGain = inputGain;
     }
 
-    if (isFiniteRestoredParam(parameterValues.output_gain)) {
-        restoredPatch.outputGain = parameterValues.output_gain;
+    const outputGain = numberFromRestoredParam(parameterValues.output_gain, -24, 24);
+    if (outputGain !== null) {
+        restoredPatch.outputGain = outputGain;
     }
 
     const eqBypassed = booleanFromRestoredParam(parameterValues.eq_bypass);
@@ -102,16 +108,19 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
         restoredPatch.limBypassed = limBypassed;
     }
 
-    if (isFiniteRestoredParam(parameterValues.lim_ceiling)) {
-        restoredPatch.limCeiling = parameterValues.lim_ceiling;
+    const limCeiling = numberFromRestoredParam(parameterValues.lim_ceiling, -12, 0);
+    if (limCeiling !== null) {
+        restoredPatch.limCeiling = limCeiling;
     }
 
-    if (isFiniteRestoredParam(parameterValues.lim_release)) {
-        restoredPatch.limRelease = parameterValues.lim_release;
+    const limRelease = numberFromRestoredParam(parameterValues.lim_release, 10, 500);
+    if (limRelease !== null) {
+        restoredPatch.limRelease = limRelease;
     }
 
-    if (isFiniteRestoredParam(parameterValues.lim_lookahead)) {
-        restoredPatch.limLookahead = parameterValues.lim_lookahead;
+    const limLookahead = numberFromRestoredParam(parameterValues.lim_lookahead, 0.5, 10);
+    if (limLookahead !== null) {
+        restoredPatch.limLookahead = limLookahead;
     }
 
     const imgAutoMonoBass = booleanFromRestoredParam(parameterValues.img_auto_mono_bass);
@@ -119,8 +128,9 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
         restoredPatch.imgAutoMonoBass = imgAutoMonoBass;
     }
 
-    if (isFiniteRestoredParam(parameterValues.img_mono_bass_freq)) {
-        restoredPatch.imgMonoBassFreq = parameterValues.img_mono_bass_freq;
+    const imgMonoBassFreq = numberFromRestoredParam(parameterValues.img_mono_bass_freq, 40, 200);
+    if (imgMonoBassFreq !== null) {
+        restoredPatch.imgMonoBassFreq = imgMonoBassFreq;
     }
 
     const ditherMode = ditherModeFromInt(parameterValues.dither_mode);
@@ -128,8 +138,9 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
         restoredPatch.ditherMode = ditherMode;
     }
 
-    if (isFiniteRestoredParam(parameterValues.dither_bits)) {
-        restoredPatch.ditherBits = parameterValues.dither_bits;
+    const ditherBits = integerFromRestoredParam(parameterValues.dither_bits, 16, 24);
+    if (ditherBits === 16 || ditherBits === 24) {
+        restoredPatch.ditherBits = ditherBits;
     }
 
     return restoredPatch;
@@ -142,18 +153,18 @@ function getRestoredEqBands(
     const bands = baseBands.map((band, index) => {
         let restoredBand = false;
         const nextBand = { ...band };
-        const freq = parameterValues[`eq_band${index}_freq`];
-        if (isFiniteRestoredParam(freq)) {
+        const freq = numberFromRestoredParam(parameterValues[`eq_band${index}_freq`], 20, 20_000);
+        if (freq !== null) {
             nextBand.freq = freq;
             restoredBand = true;
         }
-        const gain = parameterValues[`eq_band${index}_gain`];
-        if (isFiniteRestoredParam(gain)) {
+        const gain = numberFromRestoredParam(parameterValues[`eq_band${index}_gain`], -18, 18);
+        if (gain !== null) {
             nextBand.gain = gain;
             restoredBand = true;
         }
-        const q = parameterValues[`eq_band${index}_q`];
-        if (isFiniteRestoredParam(q)) {
+        const q = numberFromRestoredParam(parameterValues[`eq_band${index}_q`], 0.1, 10);
+        if (q !== null) {
             nextBand.q = q;
             restoredBand = true;
         }
@@ -185,8 +196,8 @@ function getRestoredDynCrossoverFreqs(
     const freqs: ProofPatch['dynCrossoverFreqs'] = [baseFreqs[0], baseFreqs[1], baseFreqs[2]];
     let restored = false;
     for (let index = 0; index < freqs.length; index++) {
-        const value = parameterValues[`dyn_xover${index}`];
-        if (isFiniteRestoredParam(value)) {
+        const value = numberFromRestoredParam(parameterValues[`dyn_xover${index}`], 20, 20_000);
+        if (value !== null) {
             freqs[index] = value;
             restored = true;
         }
@@ -202,33 +213,33 @@ function getRestoredDynBands(
     const bands = baseBands.map((band, index) => {
         let restoredBand = false;
         const nextBand = { ...band };
-        const threshold = parameterValues[`dyn_band${index}_threshold`];
-        if (isFiniteRestoredParam(threshold)) {
+        const threshold = numberFromRestoredParam(parameterValues[`dyn_band${index}_threshold`], -60, 0);
+        if (threshold !== null) {
             nextBand.threshold = threshold;
             restoredBand = true;
         }
-        const ratio = parameterValues[`dyn_band${index}_ratio`];
-        if (isFiniteRestoredParam(ratio)) {
+        const ratio = numberFromRestoredParam(parameterValues[`dyn_band${index}_ratio`], 1, 20);
+        if (ratio !== null) {
             nextBand.ratio = ratio;
             restoredBand = true;
         }
-        const attack = parameterValues[`dyn_band${index}_attack`];
-        if (isFiniteRestoredParam(attack)) {
+        const attack = numberFromRestoredParam(parameterValues[`dyn_band${index}_attack`], 1, 200);
+        if (attack !== null) {
             nextBand.attack = attack;
             restoredBand = true;
         }
-        const release = parameterValues[`dyn_band${index}_release`];
-        if (isFiniteRestoredParam(release)) {
+        const release = numberFromRestoredParam(parameterValues[`dyn_band${index}_release`], 10, 2_000);
+        if (release !== null) {
             nextBand.release = release;
             restoredBand = true;
         }
-        const knee = parameterValues[`dyn_band${index}_knee`];
-        if (isFiniteRestoredParam(knee)) {
+        const knee = numberFromRestoredParam(parameterValues[`dyn_band${index}_knee`], 0, 12);
+        if (knee !== null) {
             nextBand.knee = knee;
             restoredBand = true;
         }
-        const makeup = parameterValues[`dyn_band${index}_makeup`];
-        if (isFiniteRestoredParam(makeup)) {
+        const makeup = numberFromRestoredParam(parameterValues[`dyn_band${index}_makeup`], -12, 24);
+        if (makeup !== null) {
             nextBand.makeup = makeup;
             restoredBand = true;
         }
@@ -255,8 +266,8 @@ function getRestoredImgBandWidth(
     const widths: ProofPatch['imgBandWidth'] = [baseWidths[0], baseWidths[1], baseWidths[2], baseWidths[3]];
     let restored = false;
     for (let index = 0; index < widths.length; index++) {
-        const value = parameterValues[`img_width${index}`];
-        if (isFiniteRestoredParam(value)) {
+        const value = numberFromRestoredParam(parameterValues[`img_width${index}`], 0, 2);
+        if (value !== null) {
             widths[index] = value;
             restored = true;
         }
@@ -277,13 +288,13 @@ function getRestoredExcBands(
             nextBand.type = type;
             restoredBand = true;
         }
-        const drive = parameterValues[`exc_band${index}_drive`];
-        if (isFiniteRestoredParam(drive)) {
+        const drive = numberFromRestoredParam(parameterValues[`exc_band${index}_drive`], 0, 1);
+        if (drive !== null) {
             nextBand.drive = drive;
             restoredBand = true;
         }
-        const blend = parameterValues[`exc_band${index}_blend`];
-        if (isFiniteRestoredParam(blend)) {
+        const blend = numberFromRestoredParam(parameterValues[`exc_band${index}_blend`], 0, 1);
+        if (blend !== null) {
             nextBand.blend = blend;
             restoredBand = true;
         }

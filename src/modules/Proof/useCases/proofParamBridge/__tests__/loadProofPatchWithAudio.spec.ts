@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
@@ -10,6 +10,7 @@ import { syncFullPatch } from '../syncFullPatch';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(() => null),
+    persistDevicePatch: vi.fn(),
 }));
 
 function makeBridge(): ProofAudioBridge & {
@@ -113,6 +114,21 @@ describe('loadProofPatchWithAudio', () => {
         expect(calls.get('lim_ceiling')).toBe(-1.5);
         expect(calls.get('input_gain')).toBe(DEFAULT_PATCH.inputGain);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
+        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatch).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                input_gain: DEFAULT_PATCH.inputGain,
+                lim_ceiling: -1.5,
+                eq_band1_freq: DEFAULT_PATCH.eqBands[1]!.freq,
+                dyn_band2_ratio: DEFAULT_PATCH.dynBands[2]!.ratio,
+                img_width3: DEFAULT_PATCH.imgBandWidth[3],
+                exc_band3_blend: DEFAULT_PATCH.excBands[3]!.blend,
+                dither_bits: DEFAULT_PATCH.ditherBits,
+                chain_order_4: DEFAULT_PATCH.chainOrder[4],
+            })
+        );
+        expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(122);
     });
 
     it('should rehydrate restored scalar device params before syncing a default Proof patch', () => {
@@ -221,6 +237,51 @@ describe('loadProofPatchWithAudio', () => {
         expect(calls.get('img_width2')).toBe(1.4);
         expect(calls.get('exc_band3_drive')).toBe(0.7);
         expect(bridge.reorderModules).toHaveBeenCalledWith([4, 1, 2, 3, 0]);
+    });
+
+    it('rejects persisted numeric values outside the Proof parameter contract', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                input_gain: 24.5,
+                output_gain: -24,
+                eq_band1_freq: 19,
+                eq_band1_gain: 18.5,
+                eq_band1_q: 0.09,
+                dyn_xover0: 20_001,
+                dyn_band2_threshold: -60.5,
+                dyn_band2_ratio: 20.5,
+                dyn_band2_attack: 0.5,
+                dyn_band2_release: 2_001,
+                dyn_band2_knee: 12.5,
+                dyn_band2_makeup: 24.5,
+                img_width2: 2.01,
+                img_mono_bass_freq: 201,
+                exc_band3_drive: -0.01,
+                exc_band3_blend: 1.01,
+                lim_ceiling: 0.1,
+                lim_release: 9,
+                lim_lookahead: 0.4,
+                dither_bits: 8,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(DEFAULT_PATCH.inputGain);
+        expect(patch.outputGain).toBe(-24);
+        expect(patch.eqBands[1]).toMatchObject(DEFAULT_PATCH.eqBands[1]!);
+        expect(patch.dynCrossoverFreqs[0]).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
+        expect(patch.dynBands[2]).toMatchObject(DEFAULT_PATCH.dynBands[2]!);
+        expect(patch.imgBandWidth[2]).toBe(DEFAULT_PATCH.imgBandWidth[2]);
+        expect(patch.imgMonoBassFreq).toBe(DEFAULT_PATCH.imgMonoBassFreq);
+        expect(patch.excBands[3]).toMatchObject(DEFAULT_PATCH.excBands[3]!);
+        expect(patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
+        expect(patch.limRelease).toBe(DEFAULT_PATCH.limRelease);
+        expect(patch.limLookahead).toBe(DEFAULT_PATCH.limLookahead);
+        expect(patch.ditherBits).toBe(DEFAULT_PATCH.ditherBits);
     });
 
     it.each([

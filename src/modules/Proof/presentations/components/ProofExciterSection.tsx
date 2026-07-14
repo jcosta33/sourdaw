@@ -8,19 +8,29 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
 type Props = {
     patch: ProofPatch;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactElement => {
-    const updateBand = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.excBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ excBands: bands });
+    const updateBand = <Key extends keyof ProofPatch['excBands'][number]>(
+        idx: number,
+        key: Key,
+        value: ProofPatch['excBands'][number][Key],
+        isTransient = false
+    ) => {
+        const bands = patch.excBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'excBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
     return (
@@ -35,7 +45,12 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                         tone="lavender"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ excBypassed: !patch.excBypassed });
+                            const value = !patch.excBypassed;
+                            onPatchChange({
+                                key: 'excBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.excBypassed ? 'OFF' : 'ON'}
@@ -70,7 +85,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                                 tone="inset"
                                 className="w-full text-[6px]"
                                 value={band.type}
-                                onChange={(e) => updateBand(i, 'type', parseInt(e.target.value))}
+                                onChange={(event) => updateBand(i, 'type', Number.parseInt(event.target.value, 10))}
                             >
                                 {SAT_TYPES.map((t, ti) => (
                                     <option key={ti} value={ti}>
@@ -82,7 +97,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                             {/* Drive */}
                             <RotaryKnob
                                 value={band.drive}
-                                onChange={(v) => updateBand(i, 'drive', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'drive', value, isTransient)}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -95,7 +110,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                             {/* Blend */}
                             <RotaryKnob
                                 value={band.blend}
-                                onChange={(v) => updateBand(i, 'blend', v)}
+                                onChange={(value, isTransient) => updateBand(i, 'blend', value, isTransient)}
                                 min={0}
                                 max={1}
                                 step={0.01}

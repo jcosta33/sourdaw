@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
+import { DEFAULT_PATCH, type ProofPatch, type ProofPatchEdit } from '../../../models/ProofPatch';
 import {
     ProofEqCurve,
     eqBandMag,
@@ -113,9 +113,11 @@ describe('ProofEqCurve', () => {
             expect(onPatchChange).toHaveBeenCalled();
 
             // The gain axis is suppressed for HP: gain stays 0 through the drag.
-            const patchUpdates = onPatchChange.mock.calls as Array<[Partial<ProofPatch>]>;
-            for (const [partial] of patchUpdates) {
-                expect(partial.eqBands?.[0]?.gain).toBe(0);
+            const patchUpdates = onPatchChange.mock.calls as Array<[ProofPatchEdit]>;
+            for (const [edit] of patchUpdates) {
+                if (edit.key === 'eqBands') {
+                    expect(edit.value[0]?.gain).toBe(0);
+                }
             }
         });
 
@@ -134,8 +136,40 @@ describe('ProofEqCurve', () => {
             fireEvent.pointerMove(canvas, { clientX: PEAK_X, clientY: 20, pointerId: 2 });
 
             // Dragging up from centre yields a positive gain.
-            const patchUpdates = onPatchChange.mock.calls as Array<[Partial<ProofPatch>]>;
-            expect(patchUpdates.at(-1)?.[0].eqBands?.[2]?.gain).toBeGreaterThan(0);
+            const patchUpdates = onPatchChange.mock.calls as Array<[ProofPatchEdit]>;
+            const lastEdit = patchUpdates.at(-1)?.[0];
+            expect(lastEdit?.key).toBe('eqBands');
+            if (lastEdit?.key === 'eqBands') {
+                expect(lastEdit.value[2]?.gain).toBeGreaterThan(0);
+            }
+        });
+
+        it('emits exact transient domain params during drag and one persistence-only commit', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 3 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 3 });
+            fireEvent.pointerUp(canvas, { pointerId: 3 });
+
+            expect(onPatchChange).toHaveBeenCalledTimes(2);
+            expect(onPatchChange.mock.calls[0]?.[0]).toMatchObject({
+                key: 'eqBands',
+                isTransient: true,
+                changedParams: [
+                    { bandIndex: 2, field: 'freq' },
+                    { bandIndex: 2, field: 'gain' },
+                ],
+            });
+            expect(onPatchChange.mock.calls[1]?.[0]).toMatchObject({
+                key: 'eqBands',
+                isTransient: false,
+                changedParams: [],
+            });
         });
     });
 });

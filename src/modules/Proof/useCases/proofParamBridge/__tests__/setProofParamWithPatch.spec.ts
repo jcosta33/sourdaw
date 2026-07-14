@@ -106,6 +106,40 @@ describe('setProofParamWithPatch', () => {
         expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 0.3);
     });
 
+    it('previews only changed aggregate params and persists once when the gesture commits', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const bands = getProofState('dev-1').patch.eqBands.map((band, index) =>
+            index === 1 ? { ...band, freq: 1_200 } : band
+        );
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'eqBands',
+            value: bands,
+            changedParams: [{ bandIndex: 1, field: 'freq' }],
+            isTransient: true,
+        });
+
+        expect(getProofState('dev-1').patch.eqBands[1]?.freq).toBe(1_200);
+        expect(bridge.setParam).toHaveBeenCalledTimes(1);
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_band1_freq', 1_200);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+
+        bridge.setParam.mockClear();
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'eqBands',
+            value: bands,
+            changedParams: [],
+            isTransient: false,
+        });
+
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ eq_band1_freq: 1_200 }));
+    });
+
     it('does not persist target fields in the scalar persistence slice', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);

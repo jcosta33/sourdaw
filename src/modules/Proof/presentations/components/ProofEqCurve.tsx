@@ -9,7 +9,7 @@
  */
 import { type ReactElement, useRef, useEffect } from 'react';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -144,12 +144,14 @@ type Props = {
     patch: ProofPatch;
     width: number;
     height: number;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragBandRef = useRef<number | null>(null);
+    const dragBandsRef = useRef<ProofPatch['eqBands'] | null>(null);
+    const pendingEditRef = useRef<ProofPatchEdit | null>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -356,6 +358,8 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
 
         if (closestIdx >= 0) {
             dragBandRef.current = closestIdx;
+            dragBandsRef.current = patch.eqBands;
+            pendingEditRef.current = null;
             canvas.setPointerCapture(e.pointerId);
         }
     };
@@ -377,21 +381,54 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
 
         // HP/LP cutoff bands have no gain axis: the engine ignores `gain` for them,
         // so vertical drag must not write it. Only frequency changes for those bands.
-        const dragBand = patch.eqBands[idx]!;
+        const currentBands = dragBandsRef.current ?? patch.eqBands;
+        const dragBand = currentBands[idx]!;
         if (!bandUsesGain(dragBand.type)) {
-            const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq } : b));
-            onPatchChange({ eqBands: bands });
+            const bands = currentBands.map((band, index) => (index === idx ? { ...band, freq: newFreq } : band));
+            const edit: ProofPatchEdit = {
+                key: 'eqBands',
+                value: bands,
+                changedParams: [{ bandIndex: idx, field: 'freq' }],
+                isTransient: true,
+            };
+            dragBandsRef.current = bands;
+            pendingEditRef.current = edit;
+            onPatchChange(edit);
             return;
         }
 
         const newGain = Math.round(Math.max(-DB_RANGE, Math.min(DB_RANGE, yToGain(my, height))) * 2) / 2;
 
-        const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq, gain: newGain } : b));
-        onPatchChange({ eqBands: bands });
+        const bands = currentBands.map((band, index) =>
+            index === idx ? { ...band, freq: newFreq, gain: newGain } : band
+        );
+        const edit: ProofPatchEdit = {
+            key: 'eqBands',
+            value: bands,
+            changedParams: [
+                { bandIndex: idx, field: 'freq' },
+                { bandIndex: idx, field: 'gain' },
+            ],
+            isTransient: true,
+        };
+        dragBandsRef.current = bands;
+        pendingEditRef.current = edit;
+        onPatchChange(edit);
     };
 
     const handlePointerUp = () => {
+        const pendingEdit = pendingEditRef.current;
+        if (pendingEdit?.key === 'eqBands') {
+            onPatchChange({
+                key: 'eqBands',
+                value: pendingEdit.value,
+                changedParams: [],
+                isTransient: false,
+            });
+        }
         dragBandRef.current = null;
+        dragBandsRef.current = null;
+        pendingEditRef.current = null;
     };
 
     return (
@@ -402,6 +439,8 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
             aria-label="8-band parametric EQ frequency response"
         />
     );

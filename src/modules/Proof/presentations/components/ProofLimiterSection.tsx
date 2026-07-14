@@ -8,7 +8,7 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const DITHER_MODES = ['Off', 'TPDF', 'Noise Shaped'] as const;
 const DITHER_VALUES = ['off', 'tpdf', 'noise_shaped'] as const;
@@ -17,7 +17,7 @@ type Props = {
     patch: ProofPatch;
     limiterGrDb: number;
     truePeakDb: number;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchChange }: Props): ReactElement => {
@@ -33,7 +33,12 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                         tone="danger"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ limBypassed: !patch.limBypassed });
+                            const value = !patch.limBypassed;
+                            onPatchChange({
+                                key: 'limBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.limBypassed ? 'OFF' : 'ON'}
@@ -47,8 +52,12 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limCeiling}
-                            onChange={(v) => {
-                                onPatchChange({ limCeiling: v });
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limCeiling',
+                                    value,
+                                    isTransient,
+                                });
                             }}
                             min={-12}
                             max={0}
@@ -66,8 +75,12 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limRelease}
-                            onChange={(v) => {
-                                onPatchChange({ limRelease: v });
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limRelease',
+                                    value,
+                                    isTransient,
+                                });
                             }}
                             min={10}
                             max={500}
@@ -85,8 +98,12 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limLookahead}
-                            onChange={(v) => {
-                                onPatchChange({ limLookahead: v });
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limLookahead',
+                                    value,
+                                    isTransient,
+                                });
                             }}
                             min={0.5}
                             max={10}
@@ -133,9 +150,14 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                         tone="inset"
                         className="text-[7px]"
                         value={DITHER_VALUES.indexOf(patch.ditherMode as (typeof DITHER_VALUES)[number])}
-                        onChange={(e) => {
-                            const mode = DITHER_VALUES[parseInt(e.target.value)]!;
-                            onPatchChange({ ditherMode: mode });
+                        onChange={(event) => {
+                            const modeIndex = Number.parseInt(event.target.value, 10);
+                            const mode = DITHER_VALUES[modeIndex]!;
+                            onPatchChange({
+                                key: 'ditherMode',
+                                value: mode,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {DITHER_MODES.map((label, i) => (
@@ -151,9 +173,13 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                             tone="inset"
                             className="text-[6px]"
                             value={patch.ditherBits}
-                            onChange={(e) => {
-                                const bits = parseInt(e.target.value);
-                                onPatchChange({ ditherBits: bits });
+                            onChange={(event) => {
+                                const bits = Number.parseInt(event.target.value, 10);
+                                onPatchChange({
+                                    key: 'ditherBits',
+                                    value: bits,
+                                    isTransient: false,
+                                });
                             }}
                         >
                             <option value={16}>16</option>

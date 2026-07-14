@@ -13,7 +13,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { TARGET_LUFS, type ProofPatch, type ProofTarget } from '../../models/ProofPatch';
+import { TARGET_LUFS, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
 import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
@@ -379,7 +379,14 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
-                                    onChange={(value) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value })}
+                                    onChange={(value, isTransient) =>
+                                        setProofParamWithPatch({
+                                            deviceId,
+                                            key: 'limCeiling',
+                                            value,
+                                            isTransient,
+                                        })
+                                    }
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -477,7 +484,9 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
+                    onChange={(value, isTransient) =>
+                        setProofParamWithPatch({ deviceId, key: 'limCeiling', value, isTransient })
+                    }
                     min={-12}
                     max={0}
                     step={0.1}
@@ -549,9 +558,18 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Threshold"
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
-                    onChange={(v) => {
-                        const bands = patch.dynBands.map((b) => ({ ...b, threshold: v }));
-                        setProofParamWithPatch({ deviceId, key: 'dynBands', value: bands });
+                    onChange={(value, isTransient) => {
+                        const bands = patch.dynBands.map((band) => ({ ...band, threshold: value }));
+                        setProofParamWithPatch({
+                            deviceId,
+                            key: 'dynBands',
+                            value: bands,
+                            changedParams: bands.map((_, bandIndex) => ({
+                                bandIndex,
+                                field: 'threshold' as const,
+                            })),
+                            isTransient,
+                        });
                     }}
                     min={-60}
                     max={0}
@@ -564,11 +582,17 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Width"
                     bypassed={patch.imgBypassed}
                     value={patch.imgBandWidth[2] ?? 1}
-                    onChange={(v) => {
+                    onChange={(value, isTransient) => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
-                        widths[2] = v;
-                        widths[3] = v;
-                        setProofParamWithPatch({ deviceId, key: 'imgBandWidth', value: widths });
+                        widths[2] = value;
+                        widths[3] = value;
+                        setProofParamWithPatch({
+                            deviceId,
+                            key: 'imgBandWidth',
+                            value: widths,
+                            changedParams: [{ bandIndex: 2 }, { bandIndex: 3 }],
+                            isTransient,
+                        });
                     }}
                     min={0}
                     max={2}
@@ -581,13 +605,22 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Drive"
                     bypassed={patch.excBypassed}
                     value={patch.excBands[1]?.drive ?? 0.2}
-                    onChange={(v) => {
+                    onChange={(value, isTransient) => {
                         const bands = patch.excBands.map((b) => ({
                             ...b,
-                            drive: v,
-                            enabled: v > 0.01,
+                            drive: value,
+                            enabled: value > 0.01,
                         }));
-                        setProofParamWithPatch({ deviceId, key: 'excBands', value: bands });
+                        setProofParamWithPatch({
+                            deviceId,
+                            key: 'excBands',
+                            value: bands,
+                            changedParams: bands.flatMap((_, bandIndex) => [
+                                { bandIndex, field: 'drive' as const },
+                                { bandIndex, field: 'enabled' as const },
+                            ]),
+                            isTransient,
+                        });
                     }}
                     min={0}
                     max={1}
@@ -600,7 +633,9 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Ceiling"
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
+                    onChange={(value, isTransient) =>
+                        setProofParamWithPatch({ deviceId, key: 'limCeiling', value, isTransient })
+                    }
                     min={-12}
                     max={0}
                     unit="dBTP"
@@ -614,58 +649,8 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
-function applyLevel3Patch(deviceId: string, patch: Partial<ProofPatch>): void {
-    if (patch.eqBands !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'eqBands', value: patch.eqBands });
-    }
-    if (patch.eqBypassed !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'eqBypassed', value: patch.eqBypassed });
-    }
-    if (patch.dynBands !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'dynBands', value: patch.dynBands });
-    }
-    if (patch.dynCrossoverFreqs !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'dynCrossoverFreqs', value: patch.dynCrossoverFreqs });
-    }
-    if (patch.dynBypassed !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'dynBypassed', value: patch.dynBypassed });
-    }
-    if (patch.imgBandWidth !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'imgBandWidth', value: patch.imgBandWidth });
-    }
-    if (patch.imgBypassed !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'imgBypassed', value: patch.imgBypassed });
-    }
-    if (patch.imgAutoMonoBass !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'imgAutoMonoBass', value: patch.imgAutoMonoBass });
-    }
-    if (patch.imgMonoBassFreq !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'imgMonoBassFreq', value: patch.imgMonoBassFreq });
-    }
-    if (patch.excBands !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'excBands', value: patch.excBands });
-    }
-    if (patch.excBypassed !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'excBypassed', value: patch.excBypassed });
-    }
-    if (patch.limBypassed !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'limBypassed', value: patch.limBypassed });
-    }
-    if (patch.limCeiling !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'limCeiling', value: patch.limCeiling });
-    }
-    if (patch.limRelease !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'limRelease', value: patch.limRelease });
-    }
-    if (patch.limLookahead !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'limLookahead', value: patch.limLookahead });
-    }
-    if (patch.ditherMode !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'ditherMode', value: patch.ditherMode });
-    }
-    if (patch.ditherBits !== undefined) {
-        setProofParamWithPatch({ deviceId, key: 'ditherBits', value: patch.ditherBits });
-    }
+function applyLevel3Patch(deviceId: string, edit: ProofPatchEdit): void {
+    setProofParamWithPatch({ deviceId, ...edit });
 }
 
 const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
@@ -836,7 +821,9 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
-                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'inputGain', value: v })}
+                        onChange={(value, isTransient) =>
+                            setProofParamWithPatch({ deviceId, key: 'inputGain', value, isTransient })
+                        }
                         min={-24}
                         max={24}
                         step={0.5}
@@ -853,7 +840,9 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
-                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'outputGain', value: v })}
+                        onChange={(value, isTransient) =>
+                            setProofParamWithPatch({ deviceId, key: 'outputGain', value, isTransient })
+                        }
                         min={-24}
                         max={24}
                         step={0.5}
@@ -1086,7 +1075,7 @@ const KnobColumn = ({
     sublabel: string;
     bypassed: boolean;
     value: number;
-    onChange: (v: number) => void;
+    onChange: (value: number, isTransient?: boolean) => void;
     min: number;
     max: number;
     unit: string;

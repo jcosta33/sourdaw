@@ -50,6 +50,19 @@ describe('RotaryKnob', () => {
         expect(onChange).toHaveBeenCalled();
     });
 
+    it('commits the latest transient value when a drag is cancelled', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = container.firstChild as HTMLElement;
+        fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 4, clientY: 80 });
+        const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
+
+        fireEvent.pointerCancel(root, { pointerId: 4 });
+
+        expect(onChange.mock.calls.at(-1)).toEqual([transientValue, false]);
+    });
+
     it('should apply shift fine mode during drag', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} step={1} />);

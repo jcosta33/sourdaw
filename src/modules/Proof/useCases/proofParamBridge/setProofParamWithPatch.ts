@@ -1,6 +1,6 @@
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatchEdit } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { updateProofPatch } from '../../stores/proofStore';
 
@@ -10,25 +10,16 @@ import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
 import { syncImager } from './syncImager';
 
-type SetProofParamWithPatchInput = {
-    [Key in keyof ProofPatch]-?: {
-        deviceId: string;
-        key: Key;
-        value: ProofPatch[Key];
-    };
-}[keyof ProofPatch];
+type SetProofParamWithPatchInput = ProofPatchEdit & { deviceId: string };
 
 type GetMappedScalarParamOutput = {
     name: string;
     value: number;
 } | null;
 
-type PersistedProofParam = {
-    name: string;
-    value: number;
-};
+type ProofEngineParam = NonNullable<GetMappedScalarParamOutput>;
 
-function getPersistedPatchParams(input: SetProofParamWithPatchInput): PersistedProofParam[] {
+function getPersistedPatchParams(input: SetProofParamWithPatchInput): ProofEngineParam[] {
     switch (input.key) {
         case 'eqBands':
             return input.value.flatMap((band, index) => [
@@ -87,6 +78,84 @@ function getPersistedPatchParams(input: SetProofParamWithPatchInput): PersistedP
     return [];
 }
 
+function toEngineValue(value: number | boolean): number {
+    if (typeof value === 'boolean') {
+        return value ? 1 : 0;
+    }
+
+    return value;
+}
+
+function getDynBandFieldName(
+    field: 'threshold' | 'ratio' | 'attack' | 'release' | 'knee' | 'makeup' | 'autoMakeup' | 'bypassed'
+): string {
+    if (field === 'autoMakeup') {
+        return 'auto_makeup';
+    }
+    if (field === 'bypassed') {
+        return 'bypass';
+    }
+    return field;
+}
+
+function getChangedPatchParams(input: SetProofParamWithPatchInput): ProofEngineParam[] | null {
+    if (!('changedParams' in input) || input.changedParams === undefined) {
+        return null;
+    }
+
+    switch (input.key) {
+        case 'eqBands':
+            return input.changedParams.flatMap(({ bandIndex, field }) => {
+                const band = input.value[bandIndex];
+                if (!band) {
+                    return [];
+                }
+                const value = band[field];
+                return [{ name: `eq_band${bandIndex}_${field}`, value: toEngineValue(value) }];
+            });
+        case 'dynCrossoverFreqs':
+            return input.changedParams.flatMap(({ crossoverIndex }) => {
+                const value = input.value[crossoverIndex];
+                return value === undefined ? [] : [{ name: `dyn_xover${crossoverIndex}`, value }];
+            });
+        case 'dynBands':
+            return input.changedParams.flatMap(({ bandIndex, field }) => {
+                const band = input.value[bandIndex];
+                if (!band) {
+                    return [];
+                }
+                const value = band[field];
+                return [
+                    {
+                        name: `dyn_band${bandIndex}_${getDynBandFieldName(field)}`,
+                        value: toEngineValue(value),
+                    },
+                ];
+            });
+        case 'imgBandWidth':
+            return input.changedParams.flatMap(({ bandIndex }) => {
+                const value = input.value[bandIndex];
+                return value === undefined ? [] : [{ name: `img_width${bandIndex}`, value }];
+            });
+        case 'excBands':
+            return input.changedParams.flatMap(({ bandIndex, field }) => {
+                const band = input.value[bandIndex];
+                if (!band) {
+                    return [];
+                }
+                const value = band[field];
+                return [
+                    {
+                        name: `exc_band${bandIndex}_${field}`,
+                        value: toEngineValue(value),
+                    },
+                ];
+            });
+    }
+
+    return null;
+}
+
 function getMappedScalarParam(input: SetProofParamWithPatchInput): GetMappedScalarParamOutput {
     switch (input.key) {
         case 'inputGain':
@@ -142,17 +211,25 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
 
     const mapped_param = getMappedScalarParam(input);
     const persisted_params = mapped_param ? [mapped_param] : getPersistedPatchParams(input);
-    if (persisted_params.length > 0) {
+    if (!input.isTransient && persisted_params.length > 0) {
         persistDevicePatch(deviceId, Object.fromEntries(persisted_params.map((param) => [param.name, param.value])));
-    }
-
-    if (mapped_param) {
-        bridges.get(deviceId)?.setParam(mapped_param.name, mapped_param.value);
-        return;
     }
 
     const bridge = bridges.get(deviceId);
     if (!bridge) {
+        return;
+    }
+
+    const changedParams = getChangedPatchParams(input);
+    if (changedParams !== null) {
+        for (const param of changedParams) {
+            bridge.setParam(param.name, param.value);
+        }
+        return;
+    }
+
+    if (mapped_param) {
+        bridge.setParam(mapped_param.name, mapped_param.value);
         return;
     }
 

@@ -184,13 +184,24 @@ export const RotaryKnob = ({
         onChange(clamped, true);
     };
 
-    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const commitDrag = (): boolean => {
+        if (!draggingRef.current) {
+            return false;
+        }
+
         draggingRef.current = false;
+        rootRef.current?.removeAttribute('data-dragging');
+        onChange(currentValue.current, false);
+        return true;
+    };
+
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        if (!commitDrag()) {
+            return;
+        }
         if (typeof event.currentTarget.releasePointerCapture === 'function') {
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
-        rootRef.current?.removeAttribute('data-dragging');
-        onChange(currentValue.current, false);
     };
 
     const handleDoubleClick = () => {
@@ -229,6 +240,8 @@ export const RotaryKnob = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={commitDrag}
+            onLostPointerCapture={commitDrag}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
         >

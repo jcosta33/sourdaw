@@ -87,6 +87,56 @@ export type ProofPatch = {
     targetLufs: number;
 };
 
+type ScalarProofPatchEdit = {
+    [Key in Exclude<keyof ProofPatch, 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands'>]-?: {
+        key: Key;
+        value: ProofPatch[Key];
+        isTransient?: boolean;
+    };
+}[Exclude<keyof ProofPatch, 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands'>];
+
+export type ProofPatchEdit =
+    | ScalarProofPatchEdit
+    | {
+          key: 'eqBands';
+          value: ProofPatch['eqBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['eqBands'][number];
+          }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'dynCrossoverFreqs';
+          value: ProofPatch['dynCrossoverFreqs'];
+          changedParams?: readonly { crossoverIndex: number }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'dynBands';
+          value: ProofPatch['dynBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['dynBands'][number];
+          }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'imgBandWidth';
+          value: ProofPatch['imgBandWidth'];
+          changedParams?: readonly { bandIndex: number }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'excBands';
+          value: ProofPatch['excBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['excBands'][number];
+          }[];
+          isTransient?: boolean;
+      };
+
 export const DEFAULT_PATCH: ProofPatch = {
     name: 'Init',
     chainOrder: [0, 1, 2, 3, 4],
