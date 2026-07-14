@@ -103,6 +103,7 @@ export { createCompGroup } from './groupComping/compGroupOperations/createCompGr
 // ── Adjustment Layer ──────────────────────────────────────────────────────────
 
 export { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
+export { restoreAdjustmentLayerSnapshot } from './adjustmentLayer/restoreAdjustmentLayerSnapshot';
 export { removeAdjustmentLayer } from './adjustmentLayer/removeAdjustmentLayer';
 export { toggleAdjustmentLayer } from './adjustmentLayer/toggleAdjustmentLayer';
 export { setLayerParameter } from './adjustmentLayer/setLayerParameter';

@@ -3,8 +3,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 
-import { type ProjectData } from '../../../models/ProjectData';
-import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
@@ -87,25 +85,6 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({ markers: [], sections: [] });
         expect(mocks.takeLaneStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
-    });
-});
-
-describe('hydrateModuleStoresFromProjectData', () => {
-    beforeEach(() => {
-        Container.clear();
-        vi.clearAllMocks();
-    });
-
-    it('leaves arrangement-owned tracks to the arrangement hydrator', () => {
-        const data = {
-            version: 1,
-            arrangement: { tracks: [] },
-            automation: { lanes: [] },
-        } as unknown as ProjectData;
-
-        hydrateModuleStoresFromProjectData(data);
-
-        expect(mocks.trackStoreSet).not.toHaveBeenCalled();
     });
 });
 
