@@ -42,6 +42,14 @@ function ditherModeFromInt(value: number | undefined): DitherMode | null {
     return null;
 }
 
+function integerFromRestoredParam(value: number | undefined, min: number, max: number): number | null {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+        return null;
+    }
+
+    return value;
+}
+
 function getRestoredProofParameterValues(deviceId: string): Record<string, number> | null {
     const trackState = getTrackStoreState();
     if (!trackState) {
@@ -127,6 +135,230 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
     return restoredPatch;
 }
 
+function getRestoredEqBands(
+    parameterValues: Record<string, number>,
+    baseBands: ProofPatch['eqBands']
+): ProofPatch['eqBands'] | null {
+    const bands = baseBands.map((band, index) => {
+        let restoredBand = false;
+        const nextBand = { ...band };
+        const freq = parameterValues[`eq_band${index}_freq`];
+        if (isFiniteRestoredParam(freq)) {
+            nextBand.freq = freq;
+            restoredBand = true;
+        }
+        const gain = parameterValues[`eq_band${index}_gain`];
+        if (isFiniteRestoredParam(gain)) {
+            nextBand.gain = gain;
+            restoredBand = true;
+        }
+        const q = parameterValues[`eq_band${index}_q`];
+        if (isFiniteRestoredParam(q)) {
+            nextBand.q = q;
+            restoredBand = true;
+        }
+        const type = integerFromRestoredParam(parameterValues[`eq_band${index}_type`], 0, 4);
+        if (type !== null) {
+            nextBand.type = type;
+            restoredBand = true;
+        }
+        const channel = integerFromRestoredParam(parameterValues[`eq_band${index}_channel`], 0, 2);
+        if (channel !== null) {
+            nextBand.channel = channel;
+            restoredBand = true;
+        }
+        const enabled = booleanFromRestoredParam(parameterValues[`eq_band${index}_enabled`]);
+        if (enabled !== null) {
+            nextBand.enabled = enabled;
+            restoredBand = true;
+        }
+        return { band: nextBand, restored: restoredBand };
+    });
+
+    return bands.some((entry) => entry.restored) ? bands.map((entry) => entry.band) : null;
+}
+
+function getRestoredDynCrossoverFreqs(
+    parameterValues: Record<string, number>,
+    baseFreqs: ProofPatch['dynCrossoverFreqs']
+): ProofPatch['dynCrossoverFreqs'] | null {
+    const freqs: ProofPatch['dynCrossoverFreqs'] = [baseFreqs[0], baseFreqs[1], baseFreqs[2]];
+    let restored = false;
+    for (let index = 0; index < freqs.length; index++) {
+        const value = parameterValues[`dyn_xover${index}`];
+        if (isFiniteRestoredParam(value)) {
+            freqs[index] = value;
+            restored = true;
+        }
+    }
+
+    return restored ? freqs : null;
+}
+
+function getRestoredDynBands(
+    parameterValues: Record<string, number>,
+    baseBands: ProofPatch['dynBands']
+): ProofPatch['dynBands'] | null {
+    const bands = baseBands.map((band, index) => {
+        let restoredBand = false;
+        const nextBand = { ...band };
+        const threshold = parameterValues[`dyn_band${index}_threshold`];
+        if (isFiniteRestoredParam(threshold)) {
+            nextBand.threshold = threshold;
+            restoredBand = true;
+        }
+        const ratio = parameterValues[`dyn_band${index}_ratio`];
+        if (isFiniteRestoredParam(ratio)) {
+            nextBand.ratio = ratio;
+            restoredBand = true;
+        }
+        const attack = parameterValues[`dyn_band${index}_attack`];
+        if (isFiniteRestoredParam(attack)) {
+            nextBand.attack = attack;
+            restoredBand = true;
+        }
+        const release = parameterValues[`dyn_band${index}_release`];
+        if (isFiniteRestoredParam(release)) {
+            nextBand.release = release;
+            restoredBand = true;
+        }
+        const knee = parameterValues[`dyn_band${index}_knee`];
+        if (isFiniteRestoredParam(knee)) {
+            nextBand.knee = knee;
+            restoredBand = true;
+        }
+        const makeup = parameterValues[`dyn_band${index}_makeup`];
+        if (isFiniteRestoredParam(makeup)) {
+            nextBand.makeup = makeup;
+            restoredBand = true;
+        }
+        const autoMakeup = booleanFromRestoredParam(parameterValues[`dyn_band${index}_auto_makeup`]);
+        if (autoMakeup !== null) {
+            nextBand.autoMakeup = autoMakeup;
+            restoredBand = true;
+        }
+        const bypassed = booleanFromRestoredParam(parameterValues[`dyn_band${index}_bypass`]);
+        if (bypassed !== null) {
+            nextBand.bypassed = bypassed;
+            restoredBand = true;
+        }
+        return { band: nextBand, restored: restoredBand };
+    });
+
+    return bands.some((entry) => entry.restored) ? bands.map((entry) => entry.band) : null;
+}
+
+function getRestoredImgBandWidth(
+    parameterValues: Record<string, number>,
+    baseWidths: ProofPatch['imgBandWidth']
+): ProofPatch['imgBandWidth'] | null {
+    const widths: ProofPatch['imgBandWidth'] = [baseWidths[0], baseWidths[1], baseWidths[2], baseWidths[3]];
+    let restored = false;
+    for (let index = 0; index < widths.length; index++) {
+        const value = parameterValues[`img_width${index}`];
+        if (isFiniteRestoredParam(value)) {
+            widths[index] = value;
+            restored = true;
+        }
+    }
+
+    return restored ? widths : null;
+}
+
+function getRestoredExcBands(
+    parameterValues: Record<string, number>,
+    baseBands: ProofPatch['excBands']
+): ProofPatch['excBands'] | null {
+    const bands = baseBands.map((band, index) => {
+        let restoredBand = false;
+        const nextBand = { ...band };
+        const type = integerFromRestoredParam(parameterValues[`exc_band${index}_type`], 0, 3);
+        if (type !== null) {
+            nextBand.type = type;
+            restoredBand = true;
+        }
+        const drive = parameterValues[`exc_band${index}_drive`];
+        if (isFiniteRestoredParam(drive)) {
+            nextBand.drive = drive;
+            restoredBand = true;
+        }
+        const blend = parameterValues[`exc_band${index}_blend`];
+        if (isFiniteRestoredParam(blend)) {
+            nextBand.blend = blend;
+            restoredBand = true;
+        }
+        const enabled = booleanFromRestoredParam(parameterValues[`exc_band${index}_enabled`]);
+        if (enabled !== null) {
+            nextBand.enabled = enabled;
+            restoredBand = true;
+        }
+        return { band: nextBand, restored: restoredBand };
+    });
+
+    return bands.some((entry) => entry.restored) ? bands.map((entry) => entry.band) : null;
+}
+
+function getRestoredChainOrder(
+    parameterValues: Record<string, number>,
+    baseOrder: ProofPatch['chainOrder']
+): ProofPatch['chainOrder'] | null {
+    const order: Array<number | null> = [];
+    for (let index = 0; index < baseOrder.length; index++) {
+        order.push(integerFromRestoredParam(parameterValues[`chain_order_${index}`], 0, 4));
+    }
+    if (order.includes(null)) {
+        return null;
+    }
+
+    const [first, second, third, fourth, fifth] = order;
+    if (
+        first === null ||
+        first === undefined ||
+        second === null ||
+        second === undefined ||
+        third === null ||
+        third === undefined ||
+        fourth === null ||
+        fourth === undefined ||
+        fifth === null ||
+        fifth === undefined
+    ) {
+        return null;
+    }
+
+    const restoredOrder: ProofPatch['chainOrder'] = [first, second, third, fourth, fifth];
+    return new Set(restoredOrder).size === restoredOrder.length ? restoredOrder : null;
+}
+
+function getRestoredProofPatch(parameterValues: Record<string, number>, basePatch: ProofPatch): Partial<ProofPatch> {
+    const restoredPatch = getRestoredScalarPatch(parameterValues);
+    const eqBands = getRestoredEqBands(parameterValues, basePatch.eqBands);
+    if (eqBands) {
+        restoredPatch.eqBands = eqBands;
+    }
+    const dynCrossoverFreqs = getRestoredDynCrossoverFreqs(parameterValues, basePatch.dynCrossoverFreqs);
+    if (dynCrossoverFreqs) {
+        restoredPatch.dynCrossoverFreqs = dynCrossoverFreqs;
+    }
+    const dynBands = getRestoredDynBands(parameterValues, basePatch.dynBands);
+    if (dynBands) {
+        restoredPatch.dynBands = dynBands;
+    }
+    const imgBandWidth = getRestoredImgBandWidth(parameterValues, basePatch.imgBandWidth);
+    if (imgBandWidth) {
+        restoredPatch.imgBandWidth = imgBandWidth;
+    }
+    const excBands = getRestoredExcBands(parameterValues, basePatch.excBands);
+    if (excBands) {
+        restoredPatch.excBands = excBands;
+    }
+    const chainOrder = getRestoredChainOrder(parameterValues, basePatch.chainOrder);
+    if (chainOrder) {
+        restoredPatch.chainOrder = chainOrder;
+    }
+    return restoredPatch;
+}
+
 function hasDefaultRestorableScalars(patch: ProofPatch): boolean {
     return (
         patch.name === DEFAULT_PATCH.name &&
@@ -167,7 +399,7 @@ function rehydrateRestoredScalars(deviceId: string): void {
         return;
     }
 
-    const restoredPatch = getRestoredScalarPatch(parameterValues);
+    const restoredPatch = getRestoredProofPatch(parameterValues, getProofState(deviceId).patch);
     if (Object.keys(restoredPatch).length === 0) {
         return;
     }

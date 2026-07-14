@@ -1,6 +1,4 @@
-import { updateProofPatch } from '../../stores/proofStore';
-
-import { bridges } from './helpers';
+import { setProofParamWithPatch } from './setProofParamWithPatch';
 
 type ReorderChainInput = {
     deviceId: string;
@@ -8,6 +6,5 @@ type ReorderChainInput = {
 };
 
 export function reorderChain({ deviceId, order }: ReorderChainInput): void {
-    updateProofPatch({ deviceId, patch: { chainOrder: order } });
-    bridges.get(deviceId)?.reorderModules(order);
+    setProofParamWithPatch({ deviceId, key: 'chainOrder', value: order });
 }

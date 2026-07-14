@@ -23,6 +23,70 @@ type GetMappedScalarParamOutput = {
     value: number;
 } | null;
 
+type PersistedProofParam = {
+    name: string;
+    value: number;
+};
+
+function getPersistedPatchParams(input: SetProofParamWithPatchInput): PersistedProofParam[] {
+    switch (input.key) {
+        case 'eqBands':
+            return input.value.flatMap((band, index) => [
+                { name: `eq_band${index}_freq`, value: band.freq },
+                { name: `eq_band${index}_gain`, value: band.gain },
+                { name: `eq_band${index}_q`, value: band.q },
+                { name: `eq_band${index}_type`, value: band.type },
+                { name: `eq_band${index}_channel`, value: band.channel },
+                { name: `eq_band${index}_enabled`, value: band.enabled ? 1 : 0 },
+            ]);
+        case 'dynCrossoverFreqs':
+            return input.value.map((value, index) => ({ name: `dyn_xover${index}`, value }));
+        case 'dynBands':
+            return input.value.flatMap((band, index) => [
+                { name: `dyn_band${index}_threshold`, value: band.threshold },
+                { name: `dyn_band${index}_ratio`, value: band.ratio },
+                { name: `dyn_band${index}_attack`, value: band.attack },
+                { name: `dyn_band${index}_release`, value: band.release },
+                { name: `dyn_band${index}_knee`, value: band.knee },
+                { name: `dyn_band${index}_makeup`, value: band.makeup },
+                { name: `dyn_band${index}_auto_makeup`, value: band.autoMakeup ? 1 : 0 },
+                { name: `dyn_band${index}_bypass`, value: band.bypassed ? 1 : 0 },
+            ]);
+        case 'imgBandWidth':
+            return input.value.map((value, index) => ({ name: `img_width${index}`, value }));
+        case 'excBands':
+            return input.value.flatMap((band, index) => [
+                { name: `exc_band${index}_type`, value: band.type },
+                { name: `exc_band${index}_drive`, value: band.drive },
+                { name: `exc_band${index}_blend`, value: band.blend },
+                { name: `exc_band${index}_enabled`, value: band.enabled ? 1 : 0 },
+            ]);
+        case 'chainOrder':
+            return input.value.map((value, index) => ({ name: `chain_order_${index}`, value }));
+        case 'name':
+        case 'presetId':
+        case 'inputGain':
+        case 'outputGain':
+        case 'eqBypassed':
+        case 'dynBypassed':
+        case 'imgBypassed':
+        case 'imgAutoMonoBass':
+        case 'imgMonoBassFreq':
+        case 'excBypassed':
+        case 'limBypassed':
+        case 'limCeiling':
+        case 'limRelease':
+        case 'limLookahead':
+        case 'ditherMode':
+        case 'ditherBits':
+        case 'target':
+        case 'targetLufs':
+            return [];
+    }
+
+    return [];
+}
+
 function getMappedScalarParam(input: SetProofParamWithPatchInput): GetMappedScalarParamOutput {
     switch (input.key) {
         case 'inputGain':
@@ -81,6 +145,10 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         bridges.get(deviceId)?.setParam(mapped_param.name, mapped_param.value);
         persistDeviceParam(deviceId, mapped_param.name, mapped_param.value);
         return;
+    }
+
+    for (const param of getPersistedPatchParams(input)) {
+        persistDeviceParam(deviceId, param.name, param.value);
     }
 
     const bridge = bridges.get(deviceId);

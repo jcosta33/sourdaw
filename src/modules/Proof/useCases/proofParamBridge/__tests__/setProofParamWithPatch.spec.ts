@@ -82,7 +82,21 @@ describe('setProofParamWithPatch', () => {
 
         expect(getProofState('dev-1').patch.chainOrder).toEqual([4, 3, 2, 1, 0]);
         expect(bridge.reorderModules).toHaveBeenCalledWith([4, 3, 2, 1, 0]);
-        expect(persistDeviceParam).not.toHaveBeenCalled();
+        expect(persistDeviceParam).toHaveBeenCalledTimes(5);
+        expect(persistDeviceParam).toHaveBeenNthCalledWith(1, 'dev-1', 'chain_order_0', 4);
+        expect(persistDeviceParam).toHaveBeenNthCalledWith(5, 'dev-1', 'chain_order_4', 0);
+    });
+
+    it('persists aggregate section edits with the same parameter names used by the bridge', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgBandWidth', value: [0.1, 0.2, 0.3, 0.4] });
+
+        expect(persistDeviceParam).toHaveBeenCalledTimes(4);
+        expect(persistDeviceParam).toHaveBeenNthCalledWith(1, 'dev-1', 'img_width0', 0.1);
+        expect(persistDeviceParam).toHaveBeenNthCalledWith(4, 'dev-1', 'img_width3', 0.4);
+        expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 0.3);
     });
 
     it('does not persist target fields in the scalar persistence slice', () => {

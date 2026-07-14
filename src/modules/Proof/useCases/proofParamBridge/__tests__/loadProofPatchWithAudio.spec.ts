@@ -151,6 +151,78 @@ describe('loadProofPatchWithAudio', () => {
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
     });
 
+    it('should rehydrate restored Proof sections before syncing a default patch', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                eq_band1_freq: 1200,
+                eq_band1_gain: 3.5,
+                eq_band1_q: 2.25,
+                eq_band1_type: 2,
+                eq_band1_channel: 1,
+                eq_band1_enabled: 0,
+                dyn_xover0: 180,
+                dyn_band2_threshold: -10,
+                dyn_band2_ratio: 4,
+                dyn_band2_attack: 12,
+                dyn_band2_release: 220,
+                dyn_band2_knee: 8,
+                dyn_band2_makeup: 1.5,
+                dyn_band2_auto_makeup: 0,
+                dyn_band2_bypass: 1,
+                img_width2: 1.4,
+                img_auto_mono_bass: 0,
+                img_mono_bass_freq: 110,
+                exc_band3_type: 2,
+                exc_band3_drive: 0.7,
+                exc_band3_blend: 0.6,
+                exc_band3_enabled: 1,
+                chain_order_0: 4,
+                chain_order_1: 1,
+                chain_order_2: 2,
+                chain_order_3: 3,
+                chain_order_4: 0,
+            })
+        );
+
+        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: DEFAULT_PATCH });
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.eqBands[1]).toMatchObject({
+            freq: 1200,
+            gain: 3.5,
+            q: 2.25,
+            type: 2,
+            channel: 1,
+            enabled: false,
+        });
+        expect(patch.dynCrossoverFreqs[0]).toBe(180);
+        expect(patch.dynBands[2]).toMatchObject({
+            threshold: -10,
+            ratio: 4,
+            attack: 12,
+            release: 220,
+            knee: 8,
+            makeup: 1.5,
+            autoMakeup: false,
+            bypassed: true,
+        });
+        expect(patch.imgBandWidth[2]).toBe(1.4);
+        expect(patch.imgAutoMonoBass).toBe(false);
+        expect(patch.imgMonoBassFreq).toBe(110);
+        expect(patch.excBands[3]).toMatchObject({ type: 2, drive: 0.7, blend: 0.6, enabled: true });
+        expect(patch.chainOrder[0]).toBe(4);
+
+        const calls = paramCalls(bridge);
+        expect(calls.get('eq_band1_freq')).toBe(1200);
+        expect(calls.get('dyn_xover0')).toBe(180);
+        expect(calls.get('dyn_band2_threshold')).toBe(-10);
+        expect(calls.get('img_width2')).toBe(1.4);
+        expect(calls.get('exc_band3_drive')).toBe(0.7);
+        expect(bridge.reorderModules).toHaveBeenCalledWith([4, 1, 2, 3, 0]);
+    });
+
     it.each([
         { restoredValue: 0, expectedMode: 'off' },
         { restoredValue: 1, expectedMode: 'tpdf' },
