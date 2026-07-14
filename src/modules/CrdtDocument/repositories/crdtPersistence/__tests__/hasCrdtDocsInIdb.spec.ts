@@ -14,6 +14,13 @@ type MockStore = {
     getKey: ReturnType<typeof vi.fn>;
 };
 
+type MockTransaction = {
+    objectStore: ReturnType<typeof vi.fn>;
+    oncomplete: (() => void) | null;
+    onerror: (() => void) | null;
+    onabort: (() => void) | null;
+};
+
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
 }));
@@ -25,7 +32,7 @@ vi.mock('../helpers', () => ({
 
 describe('hasCrdtDocsInIdb', () => {
     let mockStore: MockStore;
-    let mockTransaction: { objectStore: ReturnType<typeof vi.fn> };
+    let mockTransaction: MockTransaction;
     let mockDatabase: IDBDatabase;
 
     beforeEach(() => {
@@ -36,6 +43,9 @@ describe('hasCrdtDocsInIdb', () => {
         };
         mockTransaction = {
             objectStore: vi.fn().mockReturnValue(mockStore),
+            oncomplete: null,
+            onerror: null,
+            onabort: null,
         };
         mockDatabase = {
             transaction: vi.fn().mockReturnValue(mockTransaction),
@@ -45,6 +55,7 @@ describe('hasCrdtDocsInIdb', () => {
 
     function settle(request: MockRequest): void {
         request.onsuccess?.();
+        mockTransaction.oncomplete?.();
     }
 
     it('returns false when IndexedDB contains only incremental chunks', async () => {
@@ -59,7 +70,7 @@ describe('hasCrdtDocsInIdb', () => {
         expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
     });
 
-    it('returns true when the root base and child documents are persisted', async () => {
+    it('returns true when the root document is persisted', async () => {
         const keyRequest: MockRequest = { result: DOC_PREFIX_ROOT, onsuccess: null, onerror: null };
         mockStore.getKey.mockReturnValue(keyRequest);
 
@@ -88,5 +99,17 @@ describe('hasCrdtDocsInIdb', () => {
 
         await expect(hasCrdtDocsInIdb()).resolves.toBe(false);
         expect(mockDatabase.transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the read transaction aborts before completion', async () => {
+        const keyRequest: MockRequest = { result: DOC_PREFIX_ROOT, onsuccess: null, onerror: null };
+        mockStore.getKey.mockReturnValue(keyRequest);
+
+        const resultPromise = hasCrdtDocsInIdb();
+        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
+
+        mockTransaction.onabort?.();
+
+        await expect(resultPromise).rejects.toThrow('IDB transaction aborted');
     });
 });
