@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
+import { getProofPatchParameterValues } from '../../../services/getProofPatchParameterValues';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
+import { PROOF_PRESETS } from '../../proofPresets';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { loadProofPatchWithAudio } from '../loadProofPatchWithAudio';
 import { setProofParamWithPatch } from '../setProofParamWithPatch';
@@ -168,6 +170,19 @@ describe('loadProofPatchWithAudio', () => {
         expect(calls.get('dither_mode')).toBe(2);
         expect(calls.get('dither_bits')).toBe(24);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
+    });
+
+    it('rehydrates factory preset identity when all saved values still match', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const preset = PROOF_PRESETS.find((candidate) => candidate.id === 'streaming')!;
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState(getProofPatchParameterValues(preset.patch)));
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.presetId).toBe('streaming');
+        expect(patch.name).toBe('Streaming Master');
     });
 
     it('should rehydrate restored Proof sections before syncing a default patch', () => {

@@ -2,9 +2,11 @@ import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
 import { TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
+import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
 import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
+import { PROOF_PRESETS } from '../proofPresets';
 
 import { bridges } from './helpers';
 import { syncDynBands } from './syncDynBands';
@@ -379,6 +381,20 @@ function getRestoredProofPatch(parameterValues: Record<string, number>, basePatc
     return restoredPatch;
 }
 
+function getMatchingProofPreset(patch: ProofPatch) {
+    const values = getProofPatchParameterValues(patch);
+    const keys = Object.keys(values);
+
+    const matches = PROOF_PRESETS.filter((preset) => {
+        const presetValues = getProofPatchParameterValues(preset.patch);
+        return (
+            keys.length === Object.keys(presetValues).length && keys.every((key) => values[key] === presetValues[key])
+        );
+    });
+
+    return matches.length === 1 ? matches[0] : undefined;
+}
+
 function rehydrateRestoredPatch(deviceId: string): void {
     const state = getProofState(deviceId);
     if (state.projectPatchHydrated) {
@@ -391,7 +407,13 @@ function rehydrateRestoredPatch(deviceId: string): void {
     }
 
     const restoredPatch = getRestoredProofPatch(parameterValues, state.patch);
-    hydrateProofPatch({ deviceId, patch: restoredPatch });
+    const matchingPreset = getMatchingProofPreset({ ...state.patch, ...restoredPatch });
+    hydrateProofPatch({
+        deviceId,
+        patch: matchingPreset
+            ? { ...restoredPatch, name: matchingPreset.name, presetId: matchingPreset.id }
+            : { ...restoredPatch, presetId: undefined },
+    });
 }
 
 /** Send full patch to engine (e.g., after preset load). */

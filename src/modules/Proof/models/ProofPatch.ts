@@ -21,7 +21,9 @@ export type ProofPatch = {
      * Identity of the factory preset this patch was loaded from, or `undefined`
      * once the patch has diverged through any granular edit. Used solely for
      * "active preset" detection in the UI — `name` is a display label and is
-     * not a stable preset identity (multiple edits keep the same name).
+     * not a stable preset identity (multiple edits keep the same name). Project
+     * reload reconstructs this identity only when every saved value still
+     * exactly matches a factory preset.
      */
     presetId?: string;
 

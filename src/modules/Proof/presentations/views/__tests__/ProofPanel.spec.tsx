@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { proofStore, getProofState, type ProofState } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
+import { PROOF_PRESETS } from '../../../useCases/proofPresets';
 import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
@@ -63,7 +64,7 @@ describe('ProofPanel', () => {
         expect(screen.getByText('Mission')).toBeInTheDocument();
     });
 
-    it('forwards a target selection to the audio bridge and the store', () => {
+    it('persists a target selection atomically and updates the store', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         seedState();
@@ -80,6 +81,21 @@ describe('ProofPanel', () => {
             target_mode: 3,
             target_lufs: -23,
         });
+        expect(bridge.setParam).not.toHaveBeenCalled();
+    });
+
+    it('keeps preset identity and persistence quiet when selecting the active target', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const preset = PROOF_PRESETS.find((candidate) => candidate.id === 'streaming')!;
+        seedState({ patch: preset.patch });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+        fireEvent.click(screen.getByText('Streaming (-14 LUFS)'));
+
+        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
     });
 
     it('sends only fields that changed during repeated Level 2 Exciter moves', () => {
