@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
-import { getProofState, proofStore } from '../../../stores/proofStore';
+import { DEFAULT_PATCH } from '../../../models/ProofPatch';
+import { getProofState, loadProofPatch, proofStore } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { setProofParamWithPatch } from '../setProofParamWithPatch';
 
@@ -190,6 +191,30 @@ describe('setProofParamWithPatch', () => {
 
         expect(bridge.setParam).not.toHaveBeenCalled();
         expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves preset identity during preview and clears it on commit', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        loadProofPatch({ deviceId: 'dev-1', patch: { ...DEFAULT_PATCH, presetId: 'streaming' } });
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'limCeiling',
+            value: -2,
+            isTransient: true,
+        });
+
+        expect(getProofState('dev-1').patch.presetId).toBe('streaming');
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'limCeiling',
+            value: -2,
+            isTransient: false,
+        });
+
+        expect(getProofState('dev-1').patch.presetId).toBeUndefined();
     });
 
     it('rejects a non-ascending dynamics crossover edit before any write', () => {

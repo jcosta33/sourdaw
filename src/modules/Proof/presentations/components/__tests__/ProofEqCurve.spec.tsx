@@ -102,23 +102,14 @@ describe('ProofEqCurve', () => {
             return { canvas, onPatchChange };
         };
 
-        it('does not write gain when an HP band is dragged vertically', () => {
+        it('does not emit an edit when an HP band is dragged only vertically', () => {
             const { canvas, onPatchChange } = renderHp();
 
             // Grab the HP dot, then drag straight down (toward more negative gain).
             fireEvent.pointerDown(canvas, { clientX: DOT_X, clientY: DOT_Y, pointerId: 1 });
             fireEvent.pointerMove(canvas, { clientX: DOT_X, clientY: 95, pointerId: 1 });
 
-            // The drag must have been picked up and update frequency.
-            expect(onPatchChange).toHaveBeenCalled();
-
-            // The gain axis is suppressed for HP: gain stays 0 through the drag.
-            const patchUpdates = onPatchChange.mock.calls as Array<[ProofPatchEdit]>;
-            for (const [edit] of patchUpdates) {
-                if (edit.key === 'eqBands') {
-                    expect(edit.value[0]?.gain).toBe(0);
-                }
-            }
+            expect(onPatchChange).not.toHaveBeenCalled();
         });
 
         it('still writes gain when a peak/shelf band is dragged vertically', () => {
@@ -170,6 +161,24 @@ describe('ProofEqCurve', () => {
                 isTransient: false,
                 changedParams: [],
             });
+        });
+
+        it('does not commit when a dragged band returns to its starting position', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 4 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 4 });
+            fireEvent.pointerMove(canvas, { clientX: peakX, clientY: 50, pointerId: 4 });
+            fireEvent.pointerUp(canvas, { pointerId: 4 });
+
+            const edits = onPatchChange.mock.calls as Array<[ProofPatchEdit]>;
+            expect(edits).toHaveLength(2);
+            expect(edits.some(([edit]) => edit.isTransient === false)).toBe(false);
         });
     });
 });

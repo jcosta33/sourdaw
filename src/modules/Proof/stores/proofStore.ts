@@ -102,16 +102,24 @@ export function setProofUiLevel({ deviceId, level }: SetProofUiLevelInput): void
 type UpdateProofPatchInput = {
     deviceId: string;
     patch: Partial<ProofPatch>;
+    preservePresetId?: boolean;
 };
 
-export function updateProofPatch({ deviceId, patch }: UpdateProofPatchInput): void {
+export function updateProofPatch({ deviceId, patch, preservePresetId }: UpdateProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
-    // A granular edit diverges the patch from its source preset, so the preset
-    // identity is dropped unless the caller explicitly carries a new one.
+    // A committed granular edit diverges from its source preset. Transient
+    // previews retain the identity until their gesture actually commits.
     proofStore.set({
         ...instances,
-        [deviceId]: { ...state, patch: { ...state.patch, presetId: undefined, ...patch } },
+        [deviceId]: {
+            ...state,
+            patch: {
+                ...state.patch,
+                presetId: preservePresetId ? state.patch.presetId : undefined,
+                ...patch,
+            },
+        },
     });
 }
 

@@ -331,7 +331,11 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
             return;
         }
 
-        updateProofPatch({ deviceId, patch: normalizedAggregate.patch });
+        updateProofPatch({
+            deviceId,
+            patch: normalizedAggregate.patch,
+            preservePresetId: normalizedAggregate.isTransient,
+        });
         if (!normalizedAggregate.isTransient && normalizedAggregate.persistedParams.length > 0) {
             persistDevicePatch(
                 deviceId,
@@ -354,7 +358,11 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
 
     const { key, value } = input;
     const valueChanged = !Object.is(currentPatch[key], value);
-    updateProofPatch({ deviceId, patch: { [key]: value } });
+    updateProofPatch({
+        deviceId,
+        patch: { [key]: value },
+        preservePresetId: input.isTransient === true,
+    });
 
     const mapped_param = getMappedScalarParam(input);
     const persisted_params = mapped_param ? [mapped_param] : getPersistedPatchParams(input);
