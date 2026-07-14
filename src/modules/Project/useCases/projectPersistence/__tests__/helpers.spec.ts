@@ -96,7 +96,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
         vi.clearAllMocks();
     });
 
-    it('applies arrangement tracks', () => {
+    it('leaves arrangement-owned tracks to the arrangement hydrator', () => {
         const data = {
             version: 1,
             arrangement: { tracks: [] },
@@ -105,7 +105,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.trackStoreSet).toHaveBeenCalled();
+        expect(mocks.trackStoreSet).not.toHaveBeenCalled();
     });
 });
 
