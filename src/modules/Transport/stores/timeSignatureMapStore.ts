@@ -96,7 +96,7 @@ function is_exact_time_signature_map_state(value: unknown): value is TimeSignatu
     );
 }
 
-function sanitize_time_signature_map_state(value: unknown): TimeSignatureMapStoreState {
+export function sanitize_time_signature_map_state(value: unknown): TimeSignatureMapStoreState {
     if (is_exact_time_signature_map_state(value)) {
         return value;
     }
