@@ -16,6 +16,10 @@ function isIntegerInRange(value: number, range: NumberRange): boolean {
     return Number.isInteger(value) && isNumberInRange(value, range);
 }
 
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
 function isDenseWithSameLength(values: readonly unknown[], reference: readonly unknown[]): boolean {
     if (values.length !== reference.length) {
         return false;
@@ -29,7 +33,7 @@ function isDenseWithSameLength(values: readonly unknown[], reference: readonly u
 }
 
 export function isValidProofPatch(patch: ProofPatch): boolean {
-    if (!Object.hasOwn(TARGET_LUFS, patch.target)) {
+    if (!isRecord(patch) || !Object.hasOwn(TARGET_LUFS, patch.target)) {
         return false;
     }
 
@@ -55,6 +59,7 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
         isDenseWithSameLength(patch.eqBands, DEFAULT_PATCH.eqBands) &&
         patch.eqBands.every(
             (band) =>
+                isRecord(band) &&
                 typeof band.enabled === 'boolean' &&
                 isIntegerInRange(band.type, PROOF_PATCH_RANGES.eqBand.type) &&
                 isIntegerInRange(band.channel, PROOF_PATCH_RANGES.eqBand.channel) &&
@@ -69,6 +74,7 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
         isDenseWithSameLength(patch.dynBands, DEFAULT_PATCH.dynBands) &&
         patch.dynBands.every(
             (band) =>
+                isRecord(band) &&
                 isNumberInRange(band.threshold, PROOF_PATCH_RANGES.dynBand.threshold) &&
                 isNumberInRange(band.ratio, PROOF_PATCH_RANGES.dynBand.ratio) &&
                 isNumberInRange(band.attack, PROOF_PATCH_RANGES.dynBand.attack) &&
@@ -86,6 +92,7 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
         isDenseWithSameLength(patch.excBands, DEFAULT_PATCH.excBands) &&
         patch.excBands.every(
             (band) =>
+                isRecord(band) &&
                 isIntegerInRange(band.type, PROOF_PATCH_RANGES.excBand.type) &&
                 isNumberInRange(band.drive, PROOF_PATCH_RANGES.excBand.drive) &&
                 isNumberInRange(band.blend, PROOF_PATCH_RANGES.excBand.blend) &&

@@ -23,6 +23,9 @@ const invalidMutations: Array<[name: string, mutate: PatchMutation]> = [
     ['sparse dynamics bands', (patch) => Reflect.deleteProperty(patch.dynBands, 1)],
     ['sparse imager widths', (patch) => Reflect.deleteProperty(patch.imgBandWidth, 1)],
     ['sparse exciter bands', (patch) => Reflect.deleteProperty(patch.excBands, 1)],
+    ['null EQ band', (patch) => Reflect.set(patch.eqBands, 2, null)],
+    ['undefined dynamics band', (patch) => Reflect.set(patch.dynBands, 1, undefined)],
+    ['null exciter band', (patch) => Reflect.set(patch.excBands, 1, null)],
 ];
 
 describe('isValidProofPatch', () => {
