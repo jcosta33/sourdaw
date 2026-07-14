@@ -1,17 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { findClipById } from '../findClipById';
 
-vi.mock('../../useCases/getTrackStoreState', () => ({
-    getTrackStoreState: vi.fn(),
-}));
-
 describe('findClipById', () => {
-    it('should return null when track store state is not available', () => {
-        vi.mocked(getTrackStoreState).mockReturnValue(null as any);
-        expect(findClipById('clip-1')).toBeNull();
+    it('should return null when no tracks are available', () => {
+        expect(findClipById({ clipId: 'clip-1', tracks: [] })).toBeNull();
     });
 
     it('should return null when the clip is not found in any track', () => {
@@ -19,8 +13,7 @@ describe('findClipById', () => {
             TrackDummy.create({ id: 'track-1', clips: [] }),
             TrackDummy.create({ id: 'track-2', clips: [{ id: 'clip-2' } as any] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-        expect(findClipById('clip-1')).toBeNull();
+        expect(findClipById({ clipId: 'clip-1', tracks })).toBeNull();
     });
 
     it('should return the clip and trackId when the clip is found', () => {
@@ -29,9 +22,7 @@ describe('findClipById', () => {
             TrackDummy.create({ id: 'track-1', clips: [clip as any] }),
             TrackDummy.create({ id: 'track-2', clips: [] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-        const result = findClipById('clip-1');
+        const result = findClipById({ clipId: 'clip-1', tracks });
         expect(result).toEqual({
             clip,
             trackId: 'track-1',
@@ -44,9 +35,7 @@ describe('findClipById', () => {
             TrackDummy.create({ id: 'track-1', clips: [{ id: 'other' } as any] }),
             TrackDummy.create({ id: 'track-2', clips: [clip as any] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-        const result = findClipById('clip-search');
+        const result = findClipById({ clipId: 'clip-search', tracks });
         expect(result).toEqual({
             clip,
             trackId: 'track-2',
