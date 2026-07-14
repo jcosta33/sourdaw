@@ -136,6 +136,18 @@ describe('loadProofPatchWithAudio', () => {
         expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
     });
 
+    it('rejects an invalid full patch before any write', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+
+        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: { ...DEFAULT_PATCH, limCeiling: 1 } });
+
+        expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
+    });
+
     it('should rehydrate restored scalar device params before syncing a default Proof patch', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);

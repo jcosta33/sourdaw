@@ -1,6 +1,7 @@
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
+import { isValidProofPatch } from '../../services/isValidProofPatch';
 import { proofTargetToInt } from '../../services/proofTargetCodec';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
@@ -13,12 +14,18 @@ type SetProofTargetInput = {
 };
 
 export function setProofTarget({ deviceId, target }: SetProofTargetInput): void {
+    if (!Object.hasOwn(TARGET_LUFS, target)) {
+        return;
+    }
     if (!bridges.has(deviceId)) {
         syncFullPatch(deviceId);
     }
 
     const targetLufs = TARGET_LUFS[target];
     const currentPatch = getProofState(deviceId).patch;
+    if (!isValidProofPatch({ ...currentPatch, target, targetLufs })) {
+        return;
+    }
     if (currentPatch.target === target && currentPatch.targetLufs === targetLufs) {
         return;
     }
