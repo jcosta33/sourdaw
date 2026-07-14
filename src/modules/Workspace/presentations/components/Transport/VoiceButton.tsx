@@ -4,22 +4,29 @@ import { Mic } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { useStore } from '#/infra/store/useStore';
-import { voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-export const VoiceButton = (): ReactElement | null => {
-    const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
+type VoiceButtonProps = {
+    isAvailable: boolean;
+    isListening: boolean;
+    isTranscribing: boolean;
+    onToggle: () => void;
+};
 
-    if (!isVoiceInputAvailable()) {
+export const VoiceButton = ({
+    isAvailable,
+    isListening,
+    isTranscribing,
+    onToggle,
+}: VoiceButtonProps): ReactElement | null => {
+    if (!isAvailable) {
         return null;
     }
 
-    const active = voice.isListening || voice.transcribing;
+    const active = isListening || isTranscribing;
 
     const handleClick = () => {
-        toggleVoiceInput();
+        onToggle();
     };
 
     return (
