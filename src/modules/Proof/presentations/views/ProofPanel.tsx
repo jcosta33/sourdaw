@@ -13,7 +13,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { TARGET_LUFS, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
+import { type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
 import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
@@ -460,15 +460,14 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 </div>
 
                 {/* Streaming warning */}
-                {state.integratedLufs > -100 && state.integratedLufs > (TARGET_LUFS[patch.target] ?? -14) + 1 ? (
+                {state.integratedLufs > -100 && state.integratedLufs > patch.targetLufs + 1 ? (
                     <div
                         role="alert"
                         aria-live="polite"
                         className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
                     >
                         Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by{' '}
-                        {(state.integratedLufs - (TARGET_LUFS[patch.target] ?? -14)).toFixed(1)} dB on streaming
-                        platforms.
+                        {(state.integratedLufs - patch.targetLufs).toFixed(1)} dB on streaming platforms.
                     </div>
                 ) : null}
             </div>
@@ -701,7 +700,7 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
             <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
                 <LoudnessHistory
                     momentaryLufs={state.outputLufs}
-                    targetLufs={TARGET_LUFS[patch.target] ?? -14}
+                    targetLufs={patch.targetLufs}
                     integratedLufs={state.integratedLufs}
                     width={184}
                     height={120}
@@ -871,7 +870,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
-    const targetLufs = TARGET_LUFS[patch.target] ?? -14;
+    const targetLufs = patch.targetLufs;
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
     const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 

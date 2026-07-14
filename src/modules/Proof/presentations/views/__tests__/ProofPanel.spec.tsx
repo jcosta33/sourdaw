@@ -12,6 +12,7 @@ const sampleRateMock = vi.fn<[], number>(() => 48_000);
 const { persistDevicePatchMock } = vi.hoisted(() => ({ persistDevicePatchMock: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => sampleRateMock(),
+    getMasterAnalyser: () => null,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -195,6 +196,38 @@ describe('ProofPanel', () => {
 
         const alert = screen.getByRole('alert');
         expect(alert).toHaveTextContent(/turned down/);
+    });
+
+    it('uses the saved custom target for the loudness warning', () => {
+        seedState({
+            integratedLufs: -16,
+            patch: { ...getProofState(DEVICE_ID).patch, target: 'custom', targetLufs: -18 },
+        });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        expect(screen.getByRole('alert')).toHaveTextContent('turned down by 2.0 dB');
+    });
+
+    it.each([3, 5] as const)('draws the saved custom target in Level %s loudness history', (uiLevel) => {
+        const context = document.createElement('canvas').getContext('2d');
+        if (!context) {
+            throw new Error('Expected the test canvas context');
+        }
+        const fillText = vi.spyOn(context, 'fillText');
+
+        try {
+            seedState({
+                uiLevel,
+                patch: { ...getProofState(DEVICE_ID).patch, target: 'custom', targetLufs: -18 },
+            });
+
+            render(<ProofPanel deviceId={DEVICE_ID} />);
+
+            expect(fillText).toHaveBeenCalledWith('-18 LUFS', expect.any(Number), expect.any(Number));
+        } finally {
+            fillText.mockRestore();
+        }
     });
 
     // ── Fix 2: the dead EQ "Output Gain" stub knob is gone ──
