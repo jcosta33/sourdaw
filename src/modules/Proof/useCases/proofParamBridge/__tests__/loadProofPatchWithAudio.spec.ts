@@ -319,6 +319,57 @@ describe('loadProofPatchWithAudio', () => {
         expect(patch.targetLufs).toBe(-23);
     });
 
+    it('rejects a restored non-ascending dynamics crossover tuple', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                dyn_xover0: 10_000,
+                dyn_xover1: 1_000,
+                dyn_xover2: 8_000,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        expect(getProofState(DEVICE_ID).patch.dynCrossoverFreqs).toEqual(DEFAULT_PATCH.dynCrossoverFreqs);
+        expect(paramCalls(bridge).get('dyn_xover0')).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
+    });
+
+    it('rejects a restored target and loudness pair that contradicts the target contract', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 0,
+                target_lufs: -23,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe(DEFAULT_PATCH.target);
+        expect(patch.targetLufs).toBe(DEFAULT_PATCH.targetLufs);
+    });
+
+    it('accepts an in-range custom target loudness value', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 5,
+                target_lufs: -18,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe('custom');
+        expect(patch.targetLufs).toBe(-18);
+    });
+
     it('should rehydrate restored scalars when runtime-only state already created the Proof entry', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);

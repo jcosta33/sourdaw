@@ -2,6 +2,7 @@ import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { type ProofPatchEdit } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
+import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
 import { updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
@@ -199,6 +200,10 @@ type SetProofParamWithPatchOutput = void;
 /** Set a patch parameter and send to audio engine. */
 export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetProofParamWithPatchOutput {
     const { deviceId, key, value } = input;
+
+    if (input.key === 'dynCrossoverFreqs' && !isValidDynCrossoverFreqs(input.value)) {
+        return;
+    }
 
     // Before bridge registration, a full sync has no engine side effects and
     // ensures saved project values hydrate before this edit takes precedence.

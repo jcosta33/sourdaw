@@ -224,7 +224,6 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                     setProofTarget({
                                                         deviceId,
                                                         target: option.value,
-                                                        targetLufs: option.lufs,
                                                     });
                                                 }}
                                             >
@@ -426,7 +425,7 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofTarget({ deviceId, target: opt.value, targetLufs: opt.lufs });
+                                setProofTarget({ deviceId, target: opt.value });
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)

@@ -1,7 +1,8 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
-import { type DitherMode, type ProofPatch } from '../../models/ProofPatch';
+import { TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
+import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
 import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 
@@ -146,7 +147,7 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
 
     const target = proofTargetFromInt(parameterValues.target_mode);
     const targetLufs = numberFromRestoredParam(parameterValues.target_lufs, -60, 0);
-    if (target !== null && targetLufs !== null) {
+    if (target !== null && targetLufs !== null && (target === 'custom' || targetLufs === TARGET_LUFS[target])) {
         restoredPatch.target = target;
         restoredPatch.targetLufs = targetLufs;
     }
@@ -211,7 +212,7 @@ function getRestoredDynCrossoverFreqs(
         }
     }
 
-    return restored ? freqs : null;
+    return restored && isValidDynCrossoverFreqs(freqs) ? freqs : null;
 }
 
 function getRestoredDynBands(

@@ -141,6 +141,22 @@ describe('setProofParamWithPatch', () => {
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ eq_band1_freq: 1_200 }));
     });
 
+    it('rejects a non-ascending dynamics crossover edit before any write', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'dynCrossoverFreqs',
+            value: [10_000, 1_000, 8_000],
+            changedParams: [{ crossoverIndex: 0 }],
+        });
+
+        expect(getProofState('dev-1').patch.dynCrossoverFreqs).toEqual([120, 1_000, 8_000]);
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
+
     it('still updates the store and persists mapped params when no bridge is registered', () => {
         setProofParamWithPatch({ deviceId: 'no-bridge', key: 'outputGain', value: 5 });
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);
