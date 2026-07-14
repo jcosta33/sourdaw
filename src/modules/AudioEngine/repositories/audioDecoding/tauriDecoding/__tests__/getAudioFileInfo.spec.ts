@@ -36,7 +36,7 @@ describe('getAudioFileInfo repository', () => {
 
         const result = await getAudioFileInfo('/test.wav');
 
-        expect(tauriInvoke).toHaveBeenCalledWith('get_audio_file_info', { path: '/test.wav' });
+        expect(tauriInvoke).toHaveBeenCalledWith('get_audio_file_info', { filePath: '/test.wav' });
         expect(result).toEqual({
             path: '/test.wav',
             name: 'test.wav',

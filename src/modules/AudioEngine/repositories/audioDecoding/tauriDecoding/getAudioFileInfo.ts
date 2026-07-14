@@ -47,6 +47,6 @@ export async function getAudioFileInfo(path: string): Promise<AudioFileInfo | nu
     if (!isTauri()) {
         return null;
     }
-    const raw = (await tauriInvoke('get_audio_file_info', { path })) as RustAudioFileInfo;
+    const raw = (await tauriInvoke('get_audio_file_info', { filePath: path })) as RustAudioFileInfo;
     return mapFileInfo(raw);
 }

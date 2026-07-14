@@ -34,7 +34,7 @@ describe('decodeAudioFile', () => {
 
         const result = await decodeAudioFile('/path/to/audio.wav');
 
-        expect(tauriInvoke).toHaveBeenCalledWith('decode_audio_file', { path: '/path/to/audio.wav' });
+        expect(tauriInvoke).toHaveBeenCalledWith('decode_audio_file', { filePath: '/path/to/audio.wav' });
         expect(result).toEqual({
             samples: [0.1, 0.2],
             sampleRate: 44100,

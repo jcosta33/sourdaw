@@ -34,6 +34,6 @@ export async function decodeAudioFile(path: string): Promise<DecodedAudio | null
     if (!isTauri()) {
         return null;
     }
-    const raw = (await tauriInvoke('decode_audio_file', { path })) as RustDecodedAudio;
+    const raw = (await tauriInvoke('decode_audio_file', { filePath: path })) as RustDecodedAudio;
     return mapDecodedAudio(raw);
 }
