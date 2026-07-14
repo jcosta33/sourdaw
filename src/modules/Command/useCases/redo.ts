@@ -2,6 +2,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { type UndoEntry } from './commandQueries';
 import { executeAppAction } from './executeAppAction';
+import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
@@ -10,12 +11,12 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
 }
 
-async function executeRedo(entry: UndoEntry): Promise<void> {
+async function executeRedo(entry: UndoEntry): Promise<boolean> {
     if (entry.kind === 'callback') {
-        entry.redo();
-        return;
+        return entry.redo() !== REDO_NOT_APPLIED;
     }
     await executeAppAction(entry.action);
+    return true;
 }
 
 async function redoImpl(): Promise<void> {
@@ -27,7 +28,10 @@ async function redoImpl(): Promise<void> {
     const entry = state.future[0]!;
     const newFuture = state.future.slice(1);
 
-    await executeRedo(entry);
+    const applied = await executeRedo(entry);
+    if (!applied) {
+        return;
+    }
 
     const newPast = [...state.past, entry];
     undoStore.set({

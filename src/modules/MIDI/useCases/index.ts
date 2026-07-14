@@ -34,6 +34,7 @@ export { formatChordName } from './formatChordName';
 // ── State Accessors ───────────────────────────────────────────────────────────
 export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
+export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
 export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';

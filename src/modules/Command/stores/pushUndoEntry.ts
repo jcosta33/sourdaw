@@ -10,7 +10,7 @@ type PushUndoEntryOptions = {
 export function pushUndoEntry(
     label: string,
     undoFn: () => void,
-    redoFn: () => void,
+    redoFn: () => unknown,
     options?: PushUndoEntryOptions
 ): void {
     const entry = createCallbackUndoEntry({
