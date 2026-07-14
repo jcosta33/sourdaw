@@ -50,6 +50,17 @@ describe('RotaryKnob', () => {
         expect(onChange).toHaveBeenCalled();
     });
 
+    it('does not commit a press and release with no value change', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 8, clientY: 100 });
+        fireEvent.pointerUp(root, { pointerId: 8 });
+
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('commits the latest transient value when a drag is cancelled', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

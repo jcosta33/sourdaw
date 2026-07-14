@@ -1,9 +1,9 @@
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
-import { type ProofPatchEdit } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
-import { updateProofPatch } from '../../stores/proofStore';
+import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
 import { syncDynBands } from './syncDynBands';
@@ -21,7 +21,33 @@ type GetMappedScalarParamOutput = {
 
 type ProofEngineParam = NonNullable<GetMappedScalarParamOutput>;
 
-function getPersistedPatchParams(input: SetProofParamWithPatchInput): ProofEngineParam[] {
+function setObjectField<ObjectType extends object, Key extends keyof ObjectType>(
+    object: ObjectType,
+    key: Key,
+    value: ObjectType[Key]
+): void {
+    object[key] = value;
+}
+
+function mergeChangedBands<Item extends object, Change extends { bandIndex: number; field: keyof Item }>(
+    current: readonly Item[],
+    requested: readonly Item[],
+    changes: readonly Change[]
+): { value: Item[]; changedParams: Change[] } {
+    const value = current.map((item) => ({ ...item }));
+    const changedParams = changes.flatMap((change) => {
+        const currentBand = value[change.bandIndex];
+        const requestedBand = requested[change.bandIndex];
+        if (!currentBand || !requestedBand || Object.is(currentBand[change.field], requestedBand[change.field])) {
+            return [];
+        }
+        setObjectField(currentBand, change.field, requestedBand[change.field]);
+        return [change];
+    });
+    return { value, changedParams };
+}
+
+function getPersistedPatchParams(input: ProofPatchEdit): ProofEngineParam[] {
     switch (input.key) {
         case 'eqBands':
             return input.value.flatMap((band, index) => [
@@ -96,7 +122,7 @@ function getDynBandFieldName(
     return field;
 }
 
-function getChangedPatchParams(input: SetProofParamWithPatchInput): ProofEngineParam[] | null {
+function getChangedPatchParams(input: ProofPatchEdit): ProofEngineParam[] | null {
     if (!('changedParams' in input) || input.changedParams === undefined) {
         return null;
     }
@@ -154,7 +180,98 @@ function getChangedPatchParams(input: SetProofParamWithPatchInput): ProofEngineP
     return null;
 }
 
-function getMappedScalarParam(input: SetProofParamWithPatchInput): GetMappedScalarParamOutput {
+type NormalizedChangedAggregateEdit = {
+    patch: Partial<ProofPatch>;
+    persistedParams: ProofEngineParam[];
+    changedParams: ProofEngineParam[];
+    isTransient: boolean;
+    valid: boolean;
+};
+
+function createNormalizedChangedAggregateEdit(
+    input: ProofPatchEdit,
+    patch: Partial<ProofPatch>,
+    valid = true
+): NormalizedChangedAggregateEdit {
+    return {
+        patch,
+        persistedParams: getPersistedPatchParams(input),
+        changedParams: getChangedPatchParams(input) ?? [],
+        isTransient: input.isTransient === true,
+        valid,
+    };
+}
+
+function normalizeChangedAggregateEdit(
+    input: ProofPatchEdit,
+    patch: ProofPatch
+): NormalizedChangedAggregateEdit | null {
+    if (!('changedParams' in input) || input.changedParams === undefined) {
+        return null;
+    }
+
+    switch (input.key) {
+        case 'eqBands': {
+            const { value, changedParams } = mergeChangedBands(patch.eqBands, input.value, input.changedParams);
+            const normalizedInput = { ...input, value, changedParams };
+            return createNormalizedChangedAggregateEdit(normalizedInput, { eqBands: value });
+        }
+        case 'dynCrossoverFreqs': {
+            const value: ProofPatch['dynCrossoverFreqs'] = [...patch.dynCrossoverFreqs];
+            const changedParams = input.changedParams.flatMap((change) => {
+                const currentValue = value[change.crossoverIndex];
+                const requestedValue = input.value[change.crossoverIndex];
+                if (
+                    currentValue === undefined ||
+                    requestedValue === undefined ||
+                    Object.is(currentValue, requestedValue)
+                ) {
+                    return [];
+                }
+                value[change.crossoverIndex] = requestedValue;
+                return [change];
+            });
+            const normalizedInput = { ...input, value, changedParams };
+            return createNormalizedChangedAggregateEdit(
+                normalizedInput,
+                { dynCrossoverFreqs: value },
+                isValidDynCrossoverFreqs(value)
+            );
+        }
+        case 'dynBands': {
+            const { value, changedParams } = mergeChangedBands(patch.dynBands, input.value, input.changedParams);
+            const normalizedInput = { ...input, value, changedParams };
+            return createNormalizedChangedAggregateEdit(normalizedInput, { dynBands: value });
+        }
+        case 'imgBandWidth': {
+            const value: ProofPatch['imgBandWidth'] = [...patch.imgBandWidth];
+            const changedParams = input.changedParams.flatMap((change) => {
+                const currentValue = value[change.bandIndex];
+                const requestedValue = input.value[change.bandIndex];
+                if (
+                    currentValue === undefined ||
+                    requestedValue === undefined ||
+                    Object.is(currentValue, requestedValue)
+                ) {
+                    return [];
+                }
+                value[change.bandIndex] = requestedValue;
+                return [change];
+            });
+            const normalizedInput = { ...input, value, changedParams };
+            return createNormalizedChangedAggregateEdit(normalizedInput, { imgBandWidth: value });
+        }
+        case 'excBands': {
+            const { value, changedParams } = mergeChangedBands(patch.excBands, input.value, input.changedParams);
+            const normalizedInput = { ...input, value, changedParams };
+            return createNormalizedChangedAggregateEdit(normalizedInput, { excBands: value });
+        }
+    }
+
+    return null;
+}
+
+function getMappedScalarParam(input: ProofPatchEdit): GetMappedScalarParamOutput {
     switch (input.key) {
         case 'inputGain':
             return { name: 'input_gain', value: input.value };
@@ -199,11 +316,7 @@ type SetProofParamWithPatchOutput = void;
 
 /** Set a patch parameter and send to audio engine. */
 export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetProofParamWithPatchOutput {
-    const { deviceId, key, value } = input;
-
-    if (input.key === 'dynCrossoverFreqs' && !isValidDynCrossoverFreqs(input.value)) {
-        return;
-    }
+    const { deviceId } = input;
 
     // Before bridge registration, a full sync has no engine side effects and
     // ensures saved project values hydrate before this edit takes precedence.
@@ -211,6 +324,36 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         syncFullPatch(deviceId);
     }
 
+    const currentPatch = getProofState(deviceId).patch;
+    const normalizedAggregate = normalizeChangedAggregateEdit(input, currentPatch);
+    if (normalizedAggregate) {
+        if (!normalizedAggregate.valid) {
+            return;
+        }
+
+        updateProofPatch({ deviceId, patch: normalizedAggregate.patch });
+        if (!normalizedAggregate.isTransient && normalizedAggregate.persistedParams.length > 0) {
+            persistDevicePatch(
+                deviceId,
+                Object.fromEntries(normalizedAggregate.persistedParams.map((param) => [param.name, param.value]))
+            );
+        }
+
+        const bridge = bridges.get(deviceId);
+        if (bridge) {
+            for (const param of normalizedAggregate.changedParams) {
+                bridge.setParam(param.name, param.value);
+            }
+        }
+        return;
+    }
+
+    if (input.key === 'dynCrossoverFreqs' && !isValidDynCrossoverFreqs(input.value)) {
+        return;
+    }
+
+    const { key, value } = input;
+    const valueChanged = !Object.is(currentPatch[key], value);
     updateProofPatch({ deviceId, patch: { [key]: value } });
 
     const mapped_param = getMappedScalarParam(input);
@@ -224,16 +367,10 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
         return;
     }
 
-    const changedParams = getChangedPatchParams(input);
-    if (changedParams !== null) {
-        for (const param of changedParams) {
-            bridge.setParam(param.name, param.value);
-        }
-        return;
-    }
-
     if (mapped_param) {
-        bridge.setParam(mapped_param.name, mapped_param.value);
+        if (valueChanged) {
+            bridge.setParam(mapped_param.name, mapped_param.value);
+        }
         return;
     }
 

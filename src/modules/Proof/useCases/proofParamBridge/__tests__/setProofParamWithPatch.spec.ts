@@ -141,6 +141,57 @@ describe('setProofParamWithPatch', () => {
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ eq_band1_freq: 1_200 }));
     });
 
+    it('merges a declared aggregate delta into the latest patch', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const staleBands = getProofState('dev-1').patch.dynBands.map((band) => ({ ...band }));
+        const concurrentBands = staleBands.map((band, index) => (index === 1 ? { ...band, ratio: 4 } : band));
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'dynBands', value: concurrentBands });
+        vi.clearAllMocks();
+
+        const staleEdit = staleBands.map((band, index) => (index === 0 ? { ...band, threshold: -30 } : band));
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'dynBands',
+            value: staleEdit,
+            changedParams: [{ bandIndex: 0, field: 'threshold' }],
+        });
+
+        expect(getProofState('dev-1').patch.dynBands[1]?.ratio).toBe(4);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ dyn_band1_ratio: 4 }));
+        expect(bridge.setParam).toHaveBeenCalledTimes(1);
+        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band0_threshold', -30);
+    });
+
+    it('persists an aggregate gesture commit without repeating its final engine preview', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const bands = getProofState('dev-1').patch.eqBands.map((band, index) =>
+            index === 1 ? { ...band, freq: 1_200 } : band
+        );
+        const changedParams = [{ bandIndex: 1, field: 'freq' as const }];
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'eqBands',
+            value: bands,
+            changedParams,
+            isTransient: true,
+        });
+        bridge.setParam.mockClear();
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'eqBands',
+            value: bands,
+            changedParams,
+            isTransient: false,
+        });
+
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects a non-ascending dynamics crossover edit before any write', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);

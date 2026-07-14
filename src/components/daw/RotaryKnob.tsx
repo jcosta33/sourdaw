@@ -180,6 +180,9 @@ export const RotaryKnob = ({
         const currentStep = event.shiftKey ? fineStep : step;
         const quantized = Math.round(raw / currentStep) * currentStep;
         const clamped = clamp(quantized);
+        if (Object.is(clamped, currentValue.current)) {
+            return;
+        }
         currentValue.current = clamped;
         onChange(clamped, true);
     };
@@ -191,7 +194,9 @@ export const RotaryKnob = ({
 
         draggingRef.current = false;
         rootRef.current?.removeAttribute('data-dragging');
-        onChange(currentValue.current, false);
+        if (!Object.is(currentValue.current, startValue.current)) {
+            onChange(currentValue.current, false);
+        }
         return true;
     };
 
