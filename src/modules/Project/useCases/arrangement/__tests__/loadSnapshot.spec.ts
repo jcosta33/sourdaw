@@ -18,24 +18,20 @@ const mocks = vi.hoisted(() => {
         automation_store: create_set_store_mock<ArrangementSnapshot['automation']>(),
         marker_store: create_set_store_mock<NonNullable<ArrangementSnapshot['markers']>>(),
         midi_store: create_set_store_mock<ArrangementSnapshot['midi']>(),
-        normalize_track: vi.fn<(track: SnapshotTrack, index: number, tracks: SnapshotTrack[]) => SnapshotTrack>(
-            (track) => track
-        ),
+        restore_track_snapshot: vi.fn<(snapshot: unknown) => void>(),
         take_lane_store: create_set_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(),
         tempo_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(),
         time_signature_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(),
-        track_store: create_set_store_mock<ArrangementSnapshot['tracks']>(),
     };
 });
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     markerStore: mocks.marker_store,
     takeLaneStore: mocks.take_lane_store,
-    trackStore: mocks.track_store,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    normalizeTrack: mocks.normalize_track,
+    restoreTrackSnapshot: mocks.restore_track_snapshot,
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: mocks.automation_store }));
@@ -96,27 +92,20 @@ const baseSnapshot: ArrangementSnapshot = {
 describe('loadSnapshot', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.normalize_track.mockImplementation((track) => track);
     });
 
-    it('should normalize tracks and write Automation and MIDI stores', () => {
+    it('delegates track restoration to Arrangement and writes Automation and MIDI stores', () => {
         const raw_track = create_track({ id: 'raw-track', name: 'Raw Track' });
-        const normalized_track = create_track({ id: 'raw-track', name: 'Normalized Track' });
         const snapshot: ArrangementSnapshot = {
             ...baseSnapshot,
             tracks: { tracks: [raw_track], selectedTrackId: 'raw-track' },
             automation: { lanes: [] },
             midi: { notesByClipId: { 'clip-1': [] }, ccByClipId: {}, pitchBendByClipId: {} },
         };
-        mocks.normalize_track.mockReturnValue(normalized_track);
 
         loadSnapshot(snapshot);
 
-        expect(mocks.normalize_track).toHaveBeenCalledWith(raw_track, 0, [raw_track]);
-        expect(mocks.track_store.set).toHaveBeenCalledWith({
-            tracks: [normalized_track],
-            selectedTrackId: 'raw-track',
-        });
+        expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
     });
@@ -148,7 +137,7 @@ describe('loadSnapshot', () => {
         expect(mocks.time_signature_map_store.set).toHaveBeenCalledWith(snapshot.timeSignatureMap);
         expect(mocks.marker_store.set).toHaveBeenCalledWith(snapshot.markers);
         expect(mocks.take_lane_store.set).toHaveBeenCalledWith(snapshot.takeLanes);
-        expect(mocks.track_store.set).toHaveBeenCalledWith(snapshot.tracks);
+        expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
     });
