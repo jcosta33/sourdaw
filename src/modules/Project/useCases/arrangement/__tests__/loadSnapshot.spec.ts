@@ -16,9 +16,9 @@ const mocks = vi.hoisted(() => {
 
     return {
         marker_store: create_set_store_mock<NonNullable<ArrangementSnapshot['markers']>>(),
-        midi_store: create_set_store_mock<ArrangementSnapshot['midi']>(),
         restore_automation_snapshot: vi.fn<(snapshot: unknown) => void>(),
         restore_track_snapshot: vi.fn<(snapshot: unknown) => void>(),
+        set_midi_store_state: vi.fn<(state: unknown) => void>(),
         take_lane_store: create_set_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(),
         tempo_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(),
         time_signature_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(),
@@ -38,7 +38,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     restoreAutomationSnapshot: mocks.restore_automation_snapshot,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({ midiStore: mocks.midi_store }));
+vi.mock('#/modules/MIDI/useCases', () => ({ setMidiStoreState: mocks.set_midi_store_state }));
 
 vi.mock('#/modules/Transport/stores', () => ({
     tempoMapStore: mocks.tempo_map_store,
@@ -109,7 +109,7 @@ describe('loadSnapshot', () => {
 
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
-        expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
+        expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
     });
 
     it('should clear the shared tempo/timeSig/marker/takeLane stores when the snapshot omits those fields', () => {
@@ -141,6 +141,6 @@ describe('loadSnapshot', () => {
         expect(mocks.take_lane_store.set).toHaveBeenCalledWith(snapshot.takeLanes);
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
-        expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
+        expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
     });
 });
