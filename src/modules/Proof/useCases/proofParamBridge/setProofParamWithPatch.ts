@@ -3,6 +3,7 @@ import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
+import { isValidProofChainOrder } from '../../services/isValidProofChainOrder';
 import { getProofState, updateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
@@ -353,6 +354,9 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
     }
 
     if (input.key === 'dynCrossoverFreqs' && !isValidDynCrossoverFreqs(input.value)) {
+        return;
+    }
+    if (input.key === 'chainOrder' && !isValidProofChainOrder(input.value)) {
         return;
     }
 

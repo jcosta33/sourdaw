@@ -93,6 +93,17 @@ describe('setProofParamWithPatch', () => {
         });
     });
 
+    it('rejects a chain order that is not a permutation before any write', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'chainOrder', value: [0, 0, 1, 2, 3] });
+
+        expect(getProofState('dev-1').patch.chainOrder).toEqual(DEFAULT_PATCH.chainOrder);
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+    });
+
     it('persists aggregate section edits with the same parameter names used by the bridge', () => {
         const bridge = makeBridge();
         bridges.set('dev-1', bridge);

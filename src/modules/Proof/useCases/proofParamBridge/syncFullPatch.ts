@@ -4,6 +4,7 @@ import { TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/Proo
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
+import { isValidProofChainOrder } from '../../services/isValidProofChainOrder';
 import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 import { PROOF_PRESETS } from '../proofPresets';
@@ -349,7 +350,7 @@ function getRestoredChainOrder(
     }
 
     const restoredOrder: ProofPatch['chainOrder'] = [first, second, third, fourth, fifth];
-    return new Set(restoredOrder).size === restoredOrder.length ? restoredOrder : null;
+    return isValidProofChainOrder(restoredOrder) ? restoredOrder : null;
 }
 
 function getRestoredProofPatch(parameterValues: Record<string, number>, basePatch: ProofPatch): Partial<ProofPatch> {
