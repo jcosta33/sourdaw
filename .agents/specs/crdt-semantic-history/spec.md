@@ -67,6 +67,15 @@ records.
 
 Verify with: `pnpm test:run -- CrdtHistory`
 
+### AC-007 — Top-level actions propagate semantic context to CRDT writes
+
+Every top-level app action that mutates CRDT-backed state must establish its semantic context
+before execution, and the Automerge storage write cycle must consume that context when it records
+the resulting change. Attribution must flow through the normal action and storage boundaries rather
+than through a parallel wrapper around each `store.set()` call.
+
+Verify with: `pnpm test:run src/modules/Command/useCases/__tests__/executeAppAction.spec.ts src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts`
+
 ## Open questions
 
 - [ ] (non-blocking) Maximum journal size before pruning. Proposal: cap at 10,000 entries per document, archive oldest to a sidecar ledger.
