@@ -29,6 +29,7 @@ export type ProofMeterData = {
 
 export type ProofState = {
     patch: ProofPatch;
+    projectPatchHydrated: boolean;
     uiLevel: 1 | 2 | 3 | 4 | 5;
 
     // Real-time metering from WASM
@@ -48,6 +49,7 @@ export type ProofState = {
 
 export const DEFAULT_PROOF_STATE: ProofState = {
     patch: { ...DEFAULT_PATCH },
+    projectPatchHydrated: false,
     uiLevel: 1,
     inputLufs: -100,
     outputLufs: -100,
@@ -113,6 +115,24 @@ export function updateProofPatch({ deviceId, patch }: UpdateProofPatchInput): vo
     });
 }
 
+type HydrateProofPatchInput = {
+    deviceId: string;
+    patch: Partial<ProofPatch>;
+};
+
+export function hydrateProofPatch({ deviceId, patch }: HydrateProofPatchInput): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? createDefaultProofState();
+    proofStore.set({
+        ...instances,
+        [deviceId]: {
+            ...state,
+            projectPatchHydrated: true,
+            patch: { ...state.patch, ...patch },
+        },
+    });
+}
+
 type SetProofAbBypassInput = {
     deviceId: string;
     abBypass: boolean;
@@ -137,7 +157,7 @@ type LoadProofPatchInput = {
 export function loadProofPatch({ deviceId, patch }: LoadProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
-    proofStore.set({ ...instances, [deviceId]: { ...state, patch } });
+    proofStore.set({ ...instances, [deviceId]: { ...state, patch, projectPatchHydrated: true } });
 }
 
 /**

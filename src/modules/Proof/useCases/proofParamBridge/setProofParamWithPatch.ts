@@ -8,6 +8,7 @@ import { bridges } from './helpers';
 import { syncDynBands } from './syncDynBands';
 import { syncEqBands } from './syncEqBands';
 import { syncExciter } from './syncExciter';
+import { syncFullPatch } from './syncFullPatch';
 import { syncImager } from './syncImager';
 
 type SetProofParamWithPatchInput = ProofPatchEdit & { deviceId: string };
@@ -206,6 +207,12 @@ type SetProofParamWithPatchOutput = void;
 /** Set a patch parameter and send to audio engine. */
 export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetProofParamWithPatchOutput {
     const { deviceId, key, value } = input;
+
+    // Before bridge registration, a full sync has no engine side effects and
+    // ensures saved project values hydrate before this edit takes precedence.
+    if (!bridges.has(deviceId)) {
+        syncFullPatch(deviceId);
+    }
 
     updateProofPatch({ deviceId, patch: { [key]: value } });
 

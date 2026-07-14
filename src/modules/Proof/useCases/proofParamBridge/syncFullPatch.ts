@@ -1,8 +1,8 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
-import { DEFAULT_PATCH, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
+import { type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
-import { getProofState, proofStore, updateProofPatch } from '../../stores/proofStore';
+import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
 import { syncDynBands } from './syncDynBands';
@@ -370,38 +370,9 @@ function getRestoredProofPatch(parameterValues: Record<string, number>, basePatc
     return restoredPatch;
 }
 
-function hasDefaultRestorableScalars(patch: ProofPatch): boolean {
-    return (
-        patch.name === DEFAULT_PATCH.name &&
-        patch.presetId === undefined &&
-        patch.inputGain === DEFAULT_PATCH.inputGain &&
-        patch.outputGain === DEFAULT_PATCH.outputGain &&
-        patch.eqBypassed === DEFAULT_PATCH.eqBypassed &&
-        patch.dynBypassed === DEFAULT_PATCH.dynBypassed &&
-        patch.imgBypassed === DEFAULT_PATCH.imgBypassed &&
-        patch.excBypassed === DEFAULT_PATCH.excBypassed &&
-        patch.limBypassed === DEFAULT_PATCH.limBypassed &&
-        patch.limCeiling === DEFAULT_PATCH.limCeiling &&
-        patch.limRelease === DEFAULT_PATCH.limRelease &&
-        patch.limLookahead === DEFAULT_PATCH.limLookahead &&
-        patch.imgAutoMonoBass === DEFAULT_PATCH.imgAutoMonoBass &&
-        patch.imgMonoBassFreq === DEFAULT_PATCH.imgMonoBassFreq &&
-        patch.ditherMode === DEFAULT_PATCH.ditherMode &&
-        patch.ditherBits === DEFAULT_PATCH.ditherBits
-    );
-}
-
-function shouldRehydrateRestoredScalars(deviceId: string): boolean {
-    const state = proofStore.value?.[deviceId];
-    if (!state) {
-        return true;
-    }
-
-    return hasDefaultRestorableScalars(state.patch);
-}
-
-function rehydrateRestoredScalars(deviceId: string): void {
-    if (!shouldRehydrateRestoredScalars(deviceId)) {
+function rehydrateRestoredPatch(deviceId: string): void {
+    const state = getProofState(deviceId);
+    if (state.projectPatchHydrated) {
         return;
     }
 
@@ -410,17 +381,13 @@ function rehydrateRestoredScalars(deviceId: string): void {
         return;
     }
 
-    const restoredPatch = getRestoredProofPatch(parameterValues, getProofState(deviceId).patch);
-    if (Object.keys(restoredPatch).length === 0) {
-        return;
-    }
-
-    updateProofPatch({ deviceId, patch: restoredPatch });
+    const restoredPatch = getRestoredProofPatch(parameterValues, state.patch);
+    hydrateProofPatch({ deviceId, patch: restoredPatch });
 }
 
 /** Send full patch to engine (e.g., after preset load). */
 export function syncFullPatch(deviceId: string): void {
-    rehydrateRestoredScalars(deviceId);
+    rehydrateRestoredPatch(deviceId);
 
     const state = getProofState(deviceId);
     const patch = state.patch;

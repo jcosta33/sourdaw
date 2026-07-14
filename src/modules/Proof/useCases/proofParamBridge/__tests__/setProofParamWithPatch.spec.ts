@@ -7,6 +7,7 @@ import { bridges, type ProofAudioBridge } from '../helpers';
 import { setProofParamWithPatch } from '../setProofParamWithPatch';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getTrackStoreState: vi.fn(() => null),
     persistDevicePatch: vi.fn(),
 }));
 

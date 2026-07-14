@@ -6,6 +6,7 @@ import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { loadProofPatchWithAudio } from '../loadProofPatchWithAudio';
+import { setProofParamWithPatch } from '../setProofParamWithPatch';
 import { syncFullPatch } from '../syncFullPatch';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -202,7 +203,7 @@ describe('loadProofPatchWithAudio', () => {
             })
         );
 
-        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: DEFAULT_PATCH });
+        syncFullPatch(DEVICE_ID);
 
         const patch = getProofState(DEVICE_ID).patch;
         expect(patch.eqBands[1]).toMatchObject({
@@ -320,6 +321,30 @@ describe('loadProofPatchWithAudio', () => {
         const calls = paramCalls(bridge);
         expect(calls.get('ab_bypass')).toBe(1);
         expect(calls.get('input_gain')).toBe(2.25);
+        expect(calls.get('lim_ceiling')).toBe(-4.5);
+    });
+
+    it('hydrates saved fields before an edit made ahead of bridge registration', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                eq_band1_freq: 1_200,
+                lim_ceiling: -4.5,
+            })
+        );
+
+        setProofParamWithPatch({ deviceId: DEVICE_ID, key: 'inputGain', value: 3 });
+
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(3);
+        expect(patch.eqBands[1]?.freq).toBe(1_200);
+        expect(patch.limCeiling).toBe(-4.5);
+        const calls = paramCalls(bridge);
+        expect(calls.get('input_gain')).toBe(3);
+        expect(calls.get('eq_band1_freq')).toBe(1_200);
         expect(calls.get('lim_ceiling')).toBe(-4.5);
     });
 
