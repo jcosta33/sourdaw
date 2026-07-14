@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from '#/utils/tauriBridge';
 
 type AnalyzeNativePitchInput = {
+    analysisId: string;
     audioPath: string;
 };
 
@@ -57,12 +58,12 @@ function isNativePitchContour(value: unknown): value is NativePitchContour {
     );
 }
 
-export async function analyzeNativePitch({ audioPath }: AnalyzeNativePitchInput): AnalyzeNativePitchOutput {
+export async function analyzeNativePitch({ analysisId, audioPath }: AnalyzeNativePitchInput): AnalyzeNativePitchOutput {
     if (!isTauri()) {
         return null;
     }
 
-    const result = await invoke('analyze_pitch', { audioPath });
+    const result = await invoke('analyze_pitch', { analysisId, audioPath });
 
     if (!isNativePitchContour(result)) {
         throw new TypeError('analyze_pitch returned an invalid payload');

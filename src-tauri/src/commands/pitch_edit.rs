@@ -8,13 +8,16 @@ use tauri::{AppHandle, Emitter};
 use super::filesystem;
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnalysisProgress {
+    pub analysis_id: String,
     pub progress: f32,
 }
 
 #[tauri::command]
 pub async fn analyze_pitch(
     app: AppHandle,
+    analysis_id: String,
     audio_path: String,
 ) -> Result<PitchContour, String> {
     let audio_path = filesystem::resolve_existing_file_path(&audio_path)?;
@@ -85,11 +88,23 @@ pub async fn analyze_pitch(
             
             if i > 0 && i % (num_frames / 10).max(1) == 0 {
                 let progress = i as f32 / num_frames as f32;
-                let _ = app.emit("pitch-analysis-progress", AnalysisProgress { progress });
+                let _ = app.emit(
+                    "pitch-analysis-progress",
+                    AnalysisProgress {
+                        analysis_id: analysis_id.clone(),
+                        progress,
+                    },
+                );
             }
         }
         
-        let _ = app.emit("pitch-analysis-progress", AnalysisProgress { progress: 1.0 });
+        let _ = app.emit(
+            "pitch-analysis-progress",
+            AnalysisProgress {
+                analysis_id,
+                progress: 1.0,
+            },
+        );
         
         Ok(PitchContour {
             points,

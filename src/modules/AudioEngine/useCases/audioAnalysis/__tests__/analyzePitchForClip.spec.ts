@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
-import { kneadStore } from '#/modules/Knead/stores';
 
 import { analyzeNativePitch } from '../../../repositories/audioAnalysis/analyze-native-pitch';
 import { listenPitchAnalysisProgress } from '../../../repositories/audioAnalysis/listen-pitch-analysis-progress';
@@ -43,30 +42,21 @@ describe('analyzePitchForClip', () => {
                 },
             ],
         } as any);
-
-        // Seed the full KneadStoreState shape that production always carries
-        // (defaultKneadState). analyzePitchForClip writes `contours`, so a
-        // partial fixture would drop that write.
-        kneadStore.set({
-            activeClipId: null,
-            clips: {},
-            contours: {},
-            isAnalyzing: false,
-            analysisProgress: 0,
-        } as any);
     });
 
     it('should ignore if clip is not found or not audio', async () => {
-        const result = await analyzePitchForClip('invalid-clip');
+        const onStart = vi.fn();
+        const result = await analyzePitchForClip({ clipId: 'invalid-clip', onStart, onProgress: vi.fn() });
         expect(result).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
         expect(analyzeNativePitch).not.toHaveBeenCalled();
 
-        const result2 = await analyzePitchForClip('c2');
+        const result2 = await analyzePitchForClip({ clipId: 'c2', onStart, onProgress: vi.fn() });
         expect(result2).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
         expect(analyzeNativePitch).not.toHaveBeenCalled();
+        expect(onStart).not.toHaveBeenCalled();
     });
 
-    it('should set analyzing state, analyze natively, and listen for progress in Tauri mode', async () => {
+    it('analyzes natively and forwards progress in Tauri mode', async () => {
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 
         let resolveAnalyzeNativePitch: (contour: typeof mockContour) => void = () => {};
@@ -75,47 +65,43 @@ describe('analyzePitchForClip', () => {
         });
         vi.mocked(analyzeNativePitch).mockReturnValue(analyzeNativePitchPromise);
 
-        let progressCallback: ((progress: number) => void) | null = null;
+        const progressListener: { callback?: (progress: number) => void } = {};
         const unlistenMock = vi.fn();
         vi.mocked(listenPitchAnalysisProgress).mockImplementation(({ onProgress }) => {
-            progressCallback = onProgress;
+            progressListener.callback = onProgress;
             return Promise.resolve(unlistenMock);
         });
 
-        const promise = analyzePitchForClip('c1');
-
-        // Check state was set to analyzing
-        expect(kneadStore.value.isAnalyzing).toBe(true);
-        expect(kneadStore.value.analysisProgress).toBe(0);
+        const onStart = vi.fn();
+        const onProgress = vi.fn();
+        const promise = analyzePitchForClip({ clipId: 'c1', onStart, onProgress });
 
         // Wait for listen to be registered
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(listenPitchAnalysisProgress).toHaveBeenCalledWith({ onProgress: expect.any(Function) });
+        expect(onStart).toHaveBeenCalledTimes(1);
+        expect(listenPitchAnalysisProgress).toHaveBeenCalledWith({
+            analysisId: expect.any(String),
+            onProgress: expect.any(Function),
+        });
 
         // Trigger progress callback before invoke resolves
-        if (progressCallback) {
-            progressCallback(0.5);
-            expect(kneadStore.value.analysisProgress).toBe(0.5);
+        const progressCallback = progressListener.callback;
+        if (!progressCallback) {
+            throw new Error('Expected native progress listener to be registered');
         }
+
+        progressCallback(0.5);
+        expect(onProgress).toHaveBeenCalledWith(0.5);
 
         // Now resolve native analysis
         resolveAnalyzeNativePitch(mockContour);
 
         const result = await promise;
 
-        expect(analyzeNativePitch).toHaveBeenCalledWith({ audioPath: 'test.wav' });
+        const analysisId = vi.mocked(listenPitchAnalysisProgress).mock.calls[0]?.[0].analysisId;
+        expect(analyzeNativePitch).toHaveBeenCalledWith({ analysisId, audioPath: 'test.wav' });
         expect(result).toEqual({ status: 'analyzed', contour: mockContour });
-
-        // Wait another tick for finally block to finish store update if needed
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-
-        expect((kneadStore.value as any).contours?.c1).toEqual(mockContour);
-
-        // Check final state
-        expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(1);
         expect(unlistenMock).toHaveBeenCalled();
     });
 
@@ -140,13 +126,17 @@ describe('analyzePitchForClip', () => {
         vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(vi.fn());
         vi.mocked(analyzeNativePitch).mockResolvedValue(mockContour);
 
-        await analyzePitchForClip('c1');
+        await analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() });
 
-        expect(analyzeNativePitch).toHaveBeenCalledWith({ audioPath: 'buffer-c1' });
+        expect(analyzeNativePitch).toHaveBeenCalledWith({
+            analysisId: expect.any(String),
+            audioPath: 'buffer-c1',
+        });
     });
 
     it('should fallback to WASM when native progress listening is unavailable', async () => {
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
+        const onProgress = vi.fn();
 
         vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(null);
         vi.mocked(audioBufferCache.get).mockReturnValue({
@@ -156,14 +146,18 @@ describe('analyzePitchForClip', () => {
 
         vi.mocked(analyze_pitch_wasm).mockReturnValue(JSON.stringify(mockContour));
 
-        const result = await analyzePitchForClip('c1');
+        const result = await analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress });
 
-        expect(listenPitchAnalysisProgress).toHaveBeenCalledWith({ onProgress: expect.any(Function) });
+        expect(listenPitchAnalysisProgress).toHaveBeenCalledWith({
+            analysisId: expect.any(String),
+            onProgress: expect.any(Function),
+        });
         expect(analyzeNativePitch).not.toHaveBeenCalled();
         expect(analyze_pitch_wasm).toHaveBeenCalled();
         expect(result).toEqual({ status: 'analyzed', contour: mockContour });
-        expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(1);
+        expect(onProgress).toHaveBeenNthCalledWith(1, 0.2);
+        expect(onProgress).toHaveBeenNthCalledWith(2, 0.5);
+        expect(onProgress).toHaveBeenNthCalledWith(3, 0.8);
     });
 
     it('should throw error in WASM mode if buffer is missing', async () => {
@@ -171,10 +165,10 @@ describe('analyzePitchForClip', () => {
         vi.mocked(audioBufferCache.get).mockReturnValue(undefined);
 
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        await expect(analyzePitchForClip('c1')).rejects.toThrow('Could not get audio buffer for clip');
+        await expect(analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() })).rejects.toThrow(
+            'Could not get audio buffer for clip'
+        );
         expect(consoleSpy).toHaveBeenCalled();
-        expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(0);
         consoleSpy.mockRestore();
     });
 
@@ -189,14 +183,15 @@ describe('analyzePitchForClip', () => {
         } as any);
         vi.mocked(analyze_pitch_wasm).mockReturnValue(JSON.stringify(wasmContour));
 
-        const result = await analyzePitchForClip('c1');
+        const result = await analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() });
 
-        expect(analyzeNativePitch).toHaveBeenCalledWith({ audioPath: 'test.wav' });
+        expect(analyzeNativePitch).toHaveBeenCalledWith({
+            analysisId: expect.any(String),
+            audioPath: 'test.wav',
+        });
         expect(analyze_pitch_wasm).toHaveBeenCalled();
         expect(result).toEqual({ status: 'analyzed', contour: wasmContour });
         expect(unlistenMock).toHaveBeenCalledTimes(1);
-        expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(1);
     });
 
     it('should handle errors and restore state', async () => {
@@ -207,37 +202,23 @@ describe('analyzePitchForClip', () => {
         // Suppress console.error
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        await expect(analyzePitchForClip('c1')).rejects.toThrow('Test error');
+        await expect(analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() })).rejects.toThrow(
+            'Test error'
+        );
 
         expect(consoleSpy).toHaveBeenCalled();
         consoleSpy.mockRestore();
 
-        // Should restore analyzing state
-        expect(kneadStore.value.isAnalyzing).toBe(false);
-        expect(kneadStore.value.analysisProgress).toBe(0);
         expect(unlistenMock).toHaveBeenCalled();
     });
 
     it('should handle missing track store safely', async () => {
         trackStore.set({} as any);
-        const result = await analyzePitchForClip('c1');
+        const result = await analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() });
         expect(result).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
     });
 
-    it('writes the raw contour and returns it without ingesting blobs (ingestion is the Knead side)', async () => {
-        // Blob ingestion moved to the Knead-side orchestrator `analyzeClipPitch`
-        // so AudioEngine never imports the Knead use-case barrel (cycle). This
-        // unit's job is the raw contour: it writes `contours[clipId]` for the
-        // editor's faint background trace and returns the contour for the
-        // orchestrator to ingest — it must NOT touch `clips`/`blobs` itself.
-        kneadStore.set({
-            activeClipId: null,
-            clips: {},
-            contours: {},
-            isAnalyzing: false,
-            analysisProgress: 0,
-        });
-
+    it('returns raw contour data for the caller to hand off to Knead', async () => {
         const voicedPoints = Array.from({ length: 8 }, (_, index) => ({
             time_ms: index * 10,
             frequency_hz: 440,
@@ -253,12 +234,7 @@ describe('analyzePitchForClip', () => {
         vi.mocked(analyzeNativePitch).mockResolvedValue(mockContour);
         vi.mocked(listenPitchAnalysisProgress).mockResolvedValue(vi.fn());
 
-        const result = await analyzePitchForClip('c1');
+        const result = await analyzePitchForClip({ clipId: 'c1', onStart: vi.fn(), onProgress: vi.fn() });
         expect(result).toEqual({ status: 'analyzed', contour: mockContour });
-
-        // The raw contour landed for the background trace.
-        expect((kneadStore.value as any).contours?.c1).toEqual(mockContour);
-        // But this unit did not ingest blobs — `clips` is untouched.
-        expect(kneadStore.value.clips.c1).toBeUndefined();
     });
 });
