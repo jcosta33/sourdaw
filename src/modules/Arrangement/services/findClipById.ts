@@ -1,16 +1,15 @@
-import { type Clip } from '../models/Track';
-import { getTrackStoreState } from '../useCases/getTrackStoreState';
+import { type Clip, type Track } from '../models/Track';
+
+type FindClipByIdInput = {
+    clipId: string;
+    tracks: readonly Pick<Track, 'id' | 'clips'>[];
+};
 
 /**
  * Finds a clip by ID across all tracks.
  */
-export function findClipById(clipId: string): { clip: Clip; trackId: string } | null {
-    const state = getTrackStoreState();
-    if (!state) {
-        return null;
-    }
-
-    for (const track of state.tracks) {
+export function findClipById({ clipId, tracks }: FindClipByIdInput): { clip: Clip; trackId: string } | null {
+    for (const track of tracks) {
         const clip = track.clips.find((context) => context.id === clipId);
         if (clip) {
             return { clip, trackId: track.id };
