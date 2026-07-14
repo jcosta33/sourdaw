@@ -42,10 +42,11 @@ const { audioContext, importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb
             .mockResolvedValue(prepared()),
     };
 });
-const { compactProject, resetCrdtProjectAuthority, setSidechainRoutes } = vi.hoisted(() => ({
+const { compactProject, resetCrdtProjectAuthority, setSidechainRoutes, startCrdtAutoSave } = vi.hoisted(() => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProjectAuthority: vi.fn(),
     setSidechainRoutes: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -57,7 +58,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ compactProject, resetCrdtProjectAuthority }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+}));
 vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -65,6 +70,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 // not what this round-trip asserts (it checks the hydrated track/transport/midi/
 // arrangement values), so stub it out to avoid pulling in every device store.
 vi.mock('../../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: vi.fn() }));
+vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
+vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
 function audioClip(id: string, bufferId: string): ProjectTrack['clips'][number] {
     return {
@@ -468,6 +475,34 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(arrangementStore.value?.arrangements.map(({ id, name }) => ({ id, name }))).toEqual([
             { id: 'ideas', name: 'Ideas' },
         ]);
+    });
+
+    it('normalizes missing version-1 automation fields before strict validation', async () => {
+        const project = makeProject();
+        Reflect.set(project, 'automation', {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-audio',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ beat: 0, value: 0.5, curve: 'linear' }],
+                },
+            ],
+        });
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+
+        expect(arrangementStore.value?.arrangements[0]?.automation?.lanes[0]).toMatchObject({
+            points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
+            objects: [],
+            visible: true,
+            enabled: true,
+            collapsed: false,
+            virginTerritory: true,
+            minValue: 0,
+            maxValue: 1,
+        });
     });
 
     it('migrates the original version-1 root shape without losing owned state', async () => {

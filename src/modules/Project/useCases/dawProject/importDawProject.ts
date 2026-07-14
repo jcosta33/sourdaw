@@ -27,7 +27,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         return false;
     }
 
-    const { bufferIdsByPath, failedPaths } = await decodeDawProjectAssets({
+    const { audioBuffers, bufferIdsByPath, failedPaths } = await decodeDawProjectAssets({
         audioAssets: parsed.audioAssets,
         shouldContinue: transaction.canActivate,
     });
@@ -43,6 +43,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         bufferIdsByPath,
         fileName: input.fileName,
     });
+    projectData.audioBuffers = audioBuffers;
 
     try {
         const ok = await applyImportedProjectData({ data: projectData, transaction });

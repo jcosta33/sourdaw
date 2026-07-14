@@ -406,6 +406,10 @@ class AutomergeRepository {
             rootId = parsed.rootId;
         }
 
+        if (!documents.has(DOC_PREFIX_ROOT)) {
+            return false;
+        }
+
         if (shouldCommit?.() === false) {
             return false;
         }

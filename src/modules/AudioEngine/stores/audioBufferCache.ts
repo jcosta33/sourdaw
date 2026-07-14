@@ -556,6 +556,24 @@ export const audioBufferCache = {
         cancelPendingImportTransaction();
     },
 
+    async serializeBuffers(
+        buffers: Array<{ id: string; buffer: AudioBuffer }>
+    ): Promise<Record<string, ExportedAudioBuffer>> {
+        const result: Record<string, ExportedAudioBuffer> = {};
+        for (const { id, buffer } of buffers) {
+            result[id] = {
+                sampleRate: buffer.sampleRate,
+                numberOfChannels: buffer.numberOfChannels,
+                channelData: await Promise.all(
+                    Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
+                        float32ToBase64(new Float32Array(buffer.getChannelData(channel)))
+                    )
+                ),
+            };
+        }
+        return result;
+    },
+
     /** Serialize the given buffer IDs to base64-encoded PCM for embedding in a
      * .sourdaw project file. IDs not found in the in-memory cache are fetched
      * from IDB before serialization. IDs that cannot be resolved are silently
@@ -780,6 +798,9 @@ export const audioBufferCache = {
             for (let index = 0; index < data.length; index++) {
                 const item = data[index]!;
                 const key = keys[index]! as string;
+                if (pinnedBufferIds.has(key)) {
+                    continue;
+                }
                 if ((item.lastAccessed ?? 0) < threshold) {
                     store.delete(key);
                     cache.delete(key);
@@ -821,6 +842,9 @@ export const audioBufferCache = {
             for (const entry of entries) {
                 if (currentTotal <= maxSizeBytes) {
                     break;
+                }
+                if (pinnedBufferIds.has(entry.id)) {
+                    continue;
                 }
                 store.delete(entry.id);
                 cache.delete(entry.id);

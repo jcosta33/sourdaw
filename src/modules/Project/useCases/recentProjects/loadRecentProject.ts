@@ -7,11 +7,12 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
+import { setAutoSaveHandle } from '../projectPersistence/helpers/autoSaveHandle';
 import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
@@ -22,6 +23,7 @@ import {
     type ProjectLoadTransaction,
     runProjectLoadTransaction,
 } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import { stopActiveAutoSave } from '../projectPersistence/helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
 type PerformRecentProjectLoadInput = {
@@ -77,6 +79,13 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
         if (!preparedStoredBuffers) {
             return false;
         }
+        try {
+            stopPlayback();
+            resetAudioGraph();
+        } catch (error) {
+            logger.warn('[loadRecentProject] Failed to prepare the audio runtime for project commit:', error);
+            return false;
+        }
         if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
             return false;
         }
@@ -88,8 +97,6 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             resetCrdtProjectAuthority(data.meta.name);
             preparedStoredBuffers.publish();
             preparedEmbeddedBuffers?.publish();
-            stopPlayback();
-            resetAudioGraph();
             resetModuleStoresToDefault();
 
             hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
@@ -111,9 +118,12 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             verifyAudioBufferReferences();
             clearUndoHistory();
         });
-        void compactProject().catch((error: unknown) => {
-            logger.warn('[loadRecentProject] Failed to persist loaded CRDT authority:', error);
-        });
+        await compactProject();
+        if (!transaction.isCurrent()) {
+            return false;
+        }
+        stopActiveAutoSave();
+        setAutoSaveHandle(startCrdtAutoSave());
 
         return true;
     } catch (error) {

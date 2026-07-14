@@ -1,3 +1,5 @@
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { automergeRepository } from '../repositories/automergeRepository';
 import { clearIncrementalsFromIdb } from '../repositories/crdtPersistence/clearIncrementalsFromIdb';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
@@ -10,6 +12,7 @@ import { crdtProjectCompactionState } from './crdtProjectCompactionState';
  * Called periodically and on explicit save.
  */
 export async function compactProject(): Promise<void> {
+    flushAutomergeStorageWrites();
     const bundle = automergeRepository.saveAll();
     await saveAllToIdb(bundle);
     await clearIncrementalsFromIdb(DOC_PREFIX_ROOT);

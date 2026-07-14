@@ -254,4 +254,21 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
         expect(committed).toBe(false);
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
+
+    it('rejects a bundle without the authoritative root document', async () => {
+        automergeRepository.createProject('source');
+        automergeRepository.createChildDoc('branch-only');
+        const branchBytes = automergeRepository.saveDoc('branch-only')!;
+
+        automergeRepository.reset();
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        const committed = await automergeRepository.loadAll({
+            bundle: new Map([['branch-only', branchBytes]]),
+        });
+
+        expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
 });

@@ -7,10 +7,11 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
+import { setAutoSaveHandle } from '../helpers/autoSaveHandle';
 import { collectProjectAudioBufferIds } from '../helpers/collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
@@ -18,6 +19,7 @@ import { type HydratableProjectData, isHydratableProjectData } from '../helpers/
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { stopActiveAutoSave } from '../helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
 
 type PerformImportedProjectDataApplicationInput = {
@@ -59,6 +61,13 @@ async function performImportedProjectDataApplication({
     if (!preparedStoredBuffers) {
         return false;
     }
+    try {
+        stopPlayback();
+        resetAudioGraph();
+    } catch (error) {
+        logger.warn('[applyImportedProjectData] Failed to prepare the audio runtime for project commit:', error);
+        return false;
+    }
     if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
         return false;
     }
@@ -73,8 +82,6 @@ async function performImportedProjectDataApplication({
             resetCrdtProjectAuthority(data.meta.name);
             preparedStoredBuffers.publish();
             preparedEmbeddedBuffers?.publish();
-            stopPlayback();
-            resetAudioGraph();
             resetModuleStoresToDefault();
 
             // Publish the saved arrangement catalog and its active live snapshot.
@@ -100,9 +107,17 @@ async function performImportedProjectDataApplication({
         logger.warn('[applyImportedProjectData] Failed to reset imported CRDT authority:', error);
         return false;
     }
-    void compactProject().catch((error: unknown) => {
+    try {
+        await compactProject();
+    } catch (error) {
         logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority:', error);
-    });
+        return false;
+    }
+    if (!transaction.isCurrent()) {
+        return false;
+    }
+    stopActiveAutoSave();
+    setAutoSaveHandle(startCrdtAutoSave());
     return true;
 }
 

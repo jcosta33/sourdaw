@@ -35,7 +35,10 @@ vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProjectAuthority: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
+vi.mock('../../projectPersistence/helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
+vi.mock('../../projectPersistence/helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));

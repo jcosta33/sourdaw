@@ -202,6 +202,10 @@ describe('audioBufferCache conversions', () => {
 
         expect(audioBufferCache.get(ids[0]!)).toBeDefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
+        await expect(audioBufferCache.garbageCollectByAge(-1)).resolves.toBe(0);
+        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(0);
+        expect(audioBufferCache.get(ids[0]!)).toBeDefined();
+        expect(audioBufferCache.get(ids[64]!)).toBeDefined();
 
         const emptyProject = audioBufferCache.importBuffers({ context, buffers: {}, cacheIds: [] });
         await expect(emptyProject?.persist()).resolves.toBe(true);

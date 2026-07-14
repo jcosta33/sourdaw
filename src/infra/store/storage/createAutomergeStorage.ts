@@ -33,6 +33,23 @@ type AutomergeStorageOptions<TData> = {
 };
 
 let automergeStoragePort: AutomergeStoragePort | null = null;
+const pendingAutomergeStorageWrites = new Set<() => void>();
+
+export function flushAutomergeStorageWrites(): void {
+    let firstError: unknown;
+    for (const flush of [...pendingAutomergeStorageWrites]) {
+        try {
+            flush();
+        } catch (error) {
+            firstError ??= error;
+        }
+    }
+    if (firstError !== undefined) {
+        throw firstError instanceof Error
+            ? firstError
+            : new Error('Failed to flush an Automerge storage write', { cause: firstError });
+    }
+}
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
     automergeStoragePort = port;
@@ -74,6 +91,7 @@ export const createAutomergeStorage = <TData>(
     const fromCrdt = options?.fromCrdt;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
+    let pendingMessage: string | undefined;
     /**
      * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
      * skip re-stringifying cachedValue on every sync message when the
@@ -113,6 +131,17 @@ export const createAutomergeStorage = <TData>(
         return getAutomergeStoragePort()?.getSemanticMessage();
     };
 
+    const flushPendingWrite = (): void => {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        pendingAutomergeStorageWrites.delete(flushPendingWrite);
+        const message = pendingMessage;
+        pendingMessage = undefined;
+        writeToCrdt(cachedValue, message);
+    };
+
     return {
         get(): TData | null {
             return cachedValue;
@@ -128,11 +157,12 @@ export const createAutomergeStorage = <TData>(
                 // cleared the context in its `finally`, so reading it inside the
                 // RAF would always see `null` and record `message: undefined`.
                 // The first `set()` of a frame owns the coalesced write's message.
-                const message = getSemanticMessage();
+                pendingMessage = getSemanticMessage();
+                pendingAutomergeStorageWrites.add(flushPendingWrite);
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     try {
-                        writeToCrdt(cachedValue, message);
+                        flushPendingWrite();
                     } catch (error) {
                         logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
                     }
@@ -150,6 +180,8 @@ export const createAutomergeStorage = <TData>(
                 cancelAnimationFrame(rafId);
                 rafId = null;
             }
+            pendingAutomergeStorageWrites.delete(flushPendingWrite);
+            pendingMessage = undefined;
             try {
                 writeToCrdt(null, message);
             } catch {

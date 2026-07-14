@@ -41,7 +41,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     resetCrdtProjectAuthority: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
+vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
+vi.mock('../../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
