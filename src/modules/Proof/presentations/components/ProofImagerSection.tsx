@@ -15,15 +15,13 @@ type Props = {
     patch: ProofPatch;
     correlation: number;
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendParam }: Props): ReactElement => {
+export const ProofImagerSection = ({ patch, correlation, onPatchChange }: Props): ReactElement => {
     const updateWidth = (idx: number, value: number) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
         onPatchChange({ imgBandWidth: widths });
-        onSendParam(`img_width${idx}`, value);
     };
 
     // Correlation bar color
@@ -49,7 +47,6 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                         size="xs"
                         onClick={() => {
                             onPatchChange({ imgBypassed: !patch.imgBypassed });
-                            onSendParam('img_bypass', patch.imgBypassed ? 0 : 1);
                         }}
                     >
                         {patch.imgBypassed ? 'OFF' : 'ON'}
@@ -91,7 +88,6 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                         caps={false}
                         onClick={() => {
                             onPatchChange({ imgAutoMonoBass: !patch.imgAutoMonoBass });
-                            onSendParam('img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
                         }}
                     >
                         Auto Mono Bass
@@ -100,7 +96,6 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                         value={patch.imgMonoBassFreq}
                         onChange={(v) => {
                             onPatchChange({ imgMonoBassFreq: v });
-                            onSendParam('img_mono_bass_freq', v);
                         }}
                         min={40}
                         max={200}

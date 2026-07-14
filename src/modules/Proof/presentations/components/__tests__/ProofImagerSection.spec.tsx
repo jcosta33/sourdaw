@@ -6,9 +6,7 @@ import { ProofImagerSection } from '../ProofImagerSection';
 
 describe('ProofImagerSection', () => {
     it('should render', () => {
-        render(
-            <ProofImagerSection patch={DEFAULT_PATCH} correlation={0.5} onPatchChange={vi.fn()} onSendParam={vi.fn()} />
-        );
+        render(<ProofImagerSection patch={DEFAULT_PATCH} correlation={0.5} onPatchChange={vi.fn()} />);
         expect(screen.getByText(/stereo imager/i)).toBeInTheDocument();
     });
 });

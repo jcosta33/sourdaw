@@ -15,22 +15,12 @@ const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
 type Props = {
     patch: ProofPatch;
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
+export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.excBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ excBands: bands });
-        onSendParam(
-            `exc_band${idx}_${key}`,
-            (() => {
-                if (typeof value === 'boolean') {
-                    return value ? 1 : 0;
-                }
-                return value;
-            })()
-        );
     };
 
     return (
@@ -46,7 +36,6 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                         size="xs"
                         onClick={() => {
                             onPatchChange({ excBypassed: !patch.excBypassed });
-                            onSendParam('exc_bypass', patch.excBypassed ? 0 : 1);
                         }}
                     >
                         {patch.excBypassed ? 'OFF' : 'ON'}

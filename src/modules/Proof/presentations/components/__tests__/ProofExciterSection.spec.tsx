@@ -6,7 +6,7 @@ import { ProofExciterSection } from '../ProofExciterSection';
 
 describe('ProofExciterSection', () => {
     it('should render', () => {
-        render(<ProofExciterSection patch={DEFAULT_PATCH} onPatchChange={vi.fn()} onSendParam={vi.fn()} />);
+        render(<ProofExciterSection patch={DEFAULT_PATCH} onPatchChange={vi.fn()} />);
         expect(screen.getByText(/harmonic exciter/i)).toBeInTheDocument();
     });
 });

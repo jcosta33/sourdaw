@@ -22,38 +22,18 @@ type Props = {
     patch: ProofPatch;
     dynGr: [number, number, number, number];
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Props): ReactElement => {
+export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactElement => {
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.dynBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ dynBands: bands });
-        const paramName = (() => {
-            if (key === 'autoMakeup') {
-                return 'auto_makeup';
-            }
-            if (key === 'bypassed') {
-                return 'bypass';
-            }
-            return key;
-        })();
-        onSendParam(
-            `dyn_band${idx}_${paramName}`,
-            (() => {
-                if (typeof value === 'boolean') {
-                    return value ? 1 : 0;
-                }
-                return value;
-            })()
-        );
     };
 
     const updateXover = (idx: number, value: number) => {
         const freqs: [number, number, number] = [...patch.dynCrossoverFreqs];
         freqs[idx] = value;
         onPatchChange({ dynCrossoverFreqs: freqs });
-        onSendParam(`dyn_xover${idx}`, value);
     };
 
     return (
@@ -69,7 +49,6 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                         size="xs"
                         onClick={() => {
                             onPatchChange({ dynBypassed: !patch.dynBypassed });
-                            onSendParam('dyn_bypass', patch.dynBypassed ? 0 : 1);
                         }}
                     >
                         {patch.dynBypassed ? 'OFF' : 'ON'}

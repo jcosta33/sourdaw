@@ -6,7 +6,7 @@ import { ProofEqSection } from '../ProofEqSection';
 
 describe('ProofEqSection', () => {
     it('should render', () => {
-        render(<ProofEqSection patch={DEFAULT_PATCH} onPatchChange={vi.fn()} onSendParam={vi.fn()} />);
+        render(<ProofEqSection patch={DEFAULT_PATCH} onPatchChange={vi.fn()} />);
         expect(screen.getAllByText('EQ').length).toBeGreaterThan(0);
     });
 });

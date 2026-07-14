@@ -1,4 +1,4 @@
-import { persistDeviceParam } from '#/modules/Arrangement/stores';
+import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
@@ -141,14 +141,14 @@ export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetP
     updateProofPatch({ deviceId, patch: { [key]: value } });
 
     const mapped_param = getMappedScalarParam(input);
-    if (mapped_param) {
-        bridges.get(deviceId)?.setParam(mapped_param.name, mapped_param.value);
-        persistDeviceParam(deviceId, mapped_param.name, mapped_param.value);
-        return;
+    const persisted_params = mapped_param ? [mapped_param] : getPersistedPatchParams(input);
+    if (persisted_params.length > 0) {
+        persistDevicePatch(deviceId, Object.fromEntries(persisted_params.map((param) => [param.name, param.value])));
     }
 
-    for (const param of getPersistedPatchParams(input)) {
-        persistDeviceParam(deviceId, param.name, param.value);
+    if (mapped_param) {
+        bridges.get(deviceId)?.setParam(mapped_param.name, mapped_param.value);
+        return;
     }
 
     const bridge = bridges.get(deviceId);

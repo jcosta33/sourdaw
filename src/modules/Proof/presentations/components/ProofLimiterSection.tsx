@@ -18,16 +18,9 @@ type Props = {
     limiterGrDb: number;
     truePeakDb: number;
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofLimiterSection = ({
-    patch,
-    limiterGrDb,
-    truePeakDb,
-    onPatchChange,
-    onSendParam,
-}: Props): ReactElement => {
+export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchChange }: Props): ReactElement => {
     return (
         <div className="flex flex-col gap-1.5 px-2">
             <DawPluginSectionHeader
@@ -41,7 +34,6 @@ export const ProofLimiterSection = ({
                         size="xs"
                         onClick={() => {
                             onPatchChange({ limBypassed: !patch.limBypassed });
-                            onSendParam('lim_bypass', patch.limBypassed ? 0 : 1);
                         }}
                     >
                         {patch.limBypassed ? 'OFF' : 'ON'}
@@ -57,7 +49,6 @@ export const ProofLimiterSection = ({
                             value={patch.limCeiling}
                             onChange={(v) => {
                                 onPatchChange({ limCeiling: v });
-                                onSendParam('lim_ceiling', v);
                             }}
                             min={-12}
                             max={0}
@@ -77,7 +68,6 @@ export const ProofLimiterSection = ({
                             value={patch.limRelease}
                             onChange={(v) => {
                                 onPatchChange({ limRelease: v });
-                                onSendParam('lim_release', v);
                             }}
                             min={10}
                             max={500}
@@ -97,7 +87,6 @@ export const ProofLimiterSection = ({
                             value={patch.limLookahead}
                             onChange={(v) => {
                                 onPatchChange({ limLookahead: v });
-                                onSendParam('lim_lookahead', v);
                             }}
                             min={0.5}
                             max={10}
@@ -147,7 +136,6 @@ export const ProofLimiterSection = ({
                         onChange={(e) => {
                             const mode = DITHER_VALUES[parseInt(e.target.value)]!;
                             onPatchChange({ ditherMode: mode });
-                            onSendParam('dither_mode', parseInt(e.target.value));
                         }}
                     >
                         {DITHER_MODES.map((label, i) => (
@@ -166,7 +154,6 @@ export const ProofLimiterSection = ({
                             onChange={(e) => {
                                 const bits = parseInt(e.target.value);
                                 onPatchChange({ ditherBits: bits });
-                                onSendParam('dither_bits', bits);
                             }}
                         >
                             <option value={16}>16</option>

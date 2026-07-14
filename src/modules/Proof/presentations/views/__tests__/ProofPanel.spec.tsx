@@ -8,8 +8,14 @@ import { ProofPanel } from '../ProofPanel';
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
 // Mock it so the latency readout assertion can pin a known, non-44100 rate.
 const sampleRateMock = vi.fn<[], number>(() => 48_000);
+const { persistDevicePatchMock } = vi.hoisted(() => ({ persistDevicePatchMock: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => sampleRateMock(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    persistDevicePatch: persistDevicePatchMock,
 }));
 
 // persistDeviceParam writes into the Arrangement track store; isolate this view
@@ -151,5 +157,20 @@ describe('ProofPanel', () => {
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
         expect(screen.queryByText('Output Gain')).not.toBeInTheDocument();
+    });
+
+    it('routes Level 3 patch edits through owned patch persistence and engine sync', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const moduleToggles = screen.getAllByRole('button', { name: 'ON' });
+        fireEvent.click(moduleToggles.at(-1)!);
+
+        expect(getProofState(DEVICE_ID).patch.limBypassed).toBe(true);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, { lim_bypass: 1 });
+        expect(bridge.setParam).toHaveBeenCalledWith('lim_bypass', 1);
     });
 });

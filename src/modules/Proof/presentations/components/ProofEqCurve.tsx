@@ -145,10 +145,9 @@ type Props = {
     width: number;
     height: number;
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam }: Props): ReactElement => {
+export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragBandRef = useRef<number | null>(null);
 
@@ -382,7 +381,6 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         if (!bandUsesGain(dragBand.type)) {
             const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq } : b));
             onPatchChange({ eqBands: bands });
-            onSendParam(`eq_band${idx}_freq`, newFreq);
             return;
         }
 
@@ -390,8 +388,6 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
         const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq, gain: newGain } : b));
         onPatchChange({ eqBands: bands });
-        onSendParam(`eq_band${idx}_freq`, newFreq);
-        onSendParam(`eq_band${idx}_gain`, newGain);
     };
 
     const handlePointerUp = () => {

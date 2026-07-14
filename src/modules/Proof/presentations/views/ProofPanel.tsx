@@ -13,15 +13,8 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
-import {
-    proofStore,
-    setProofUiLevel,
-    setProofAbBypass,
-    getProofState,
-    updateProofPatch,
-    type ProofState,
-} from '../../stores/proofStore';
+import { TARGET_LUFS, type ProofPatch, type ProofTarget } from '../../models/ProofPatch';
+import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
@@ -621,6 +614,60 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
+function applyLevel3Patch(deviceId: string, patch: Partial<ProofPatch>): void {
+    if (patch.eqBands !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'eqBands', value: patch.eqBands });
+    }
+    if (patch.eqBypassed !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'eqBypassed', value: patch.eqBypassed });
+    }
+    if (patch.dynBands !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'dynBands', value: patch.dynBands });
+    }
+    if (patch.dynCrossoverFreqs !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'dynCrossoverFreqs', value: patch.dynCrossoverFreqs });
+    }
+    if (patch.dynBypassed !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'dynBypassed', value: patch.dynBypassed });
+    }
+    if (patch.imgBandWidth !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'imgBandWidth', value: patch.imgBandWidth });
+    }
+    if (patch.imgBypassed !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'imgBypassed', value: patch.imgBypassed });
+    }
+    if (patch.imgAutoMonoBass !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'imgAutoMonoBass', value: patch.imgAutoMonoBass });
+    }
+    if (patch.imgMonoBassFreq !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'imgMonoBassFreq', value: patch.imgMonoBassFreq });
+    }
+    if (patch.excBands !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'excBands', value: patch.excBands });
+    }
+    if (patch.excBypassed !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'excBypassed', value: patch.excBypassed });
+    }
+    if (patch.limBypassed !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'limBypassed', value: patch.limBypassed });
+    }
+    if (patch.limCeiling !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'limCeiling', value: patch.limCeiling });
+    }
+    if (patch.limRelease !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'limRelease', value: patch.limRelease });
+    }
+    if (patch.limLookahead !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'limLookahead', value: patch.limLookahead });
+    }
+    if (patch.ditherMode !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'ditherMode', value: patch.ditherMode });
+    }
+    if (patch.ditherBits !== undefined) {
+        setProofParamWithPatch({ deviceId, key: 'ditherBits', value: patch.ditherBits });
+    }
+}
+
 const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
 
@@ -630,36 +677,31 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
                 <ProofEqSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofDynSection
                     patch={patch}
                     dynGr={state.dynGr}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofImagerSection
                     patch={patch}
                     correlation={state.correlation}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofExciterSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofLimiterSection
                     patch={patch}
                     limiterGrDb={state.limiterGrDb}
                     truePeakDb={state.truePeakDb}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
                 />
             </div>
 

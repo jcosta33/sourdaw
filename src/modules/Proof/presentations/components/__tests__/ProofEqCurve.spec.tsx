@@ -16,13 +16,7 @@ import {
 describe('ProofEqCurve', () => {
     it('should render', () => {
         const { container } = render(
-            <ProofEqCurve
-                patch={DEFAULT_PATCH}
-                width={200}
-                height={100}
-                onPatchChange={vi.fn()}
-                onSendParam={vi.fn()}
-            />
+            <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={vi.fn()} />
         );
         expect(container.querySelector('canvas')).toBeTruthy();
     });
@@ -101,34 +95,24 @@ describe('ProofEqCurve', () => {
 
         const renderHp = () => {
             const onPatchChange = vi.fn();
-            const onSendParam = vi.fn();
             const { container } = render(
-                <ProofEqCurve
-                    patch={hpPatch}
-                    width={200}
-                    height={100}
-                    onPatchChange={onPatchChange}
-                    onSendParam={onSendParam}
-                />
+                <ProofEqCurve patch={hpPatch} width={200} height={100} onPatchChange={onPatchChange} />
             );
             const canvas = container.querySelector('canvas')!;
-            return { canvas, onPatchChange, onSendParam };
+            return { canvas, onPatchChange };
         };
 
         it('does not write gain when an HP band is dragged vertically', () => {
-            const { canvas, onPatchChange, onSendParam } = renderHp();
+            const { canvas, onPatchChange } = renderHp();
 
             // Grab the HP dot, then drag straight down (toward more negative gain).
             fireEvent.pointerDown(canvas, { clientX: DOT_X, clientY: DOT_Y, pointerId: 1 });
             fireEvent.pointerMove(canvas, { clientX: DOT_X, clientY: 95, pointerId: 1 });
 
-            // The drag must have been picked up (frequency param still flows).
+            // The drag must have been picked up and update frequency.
             expect(onPatchChange).toHaveBeenCalled();
-            expect(onSendParam).toHaveBeenCalledWith('eq_band0_freq', expect.any(Number));
 
-            // The gain axis is suppressed for HP: no gain param, and gain stays 0.
-            const gainCalls = onSendParam.mock.calls.filter(([name]) => name === 'eq_band0_gain');
-            expect(gainCalls).toEqual([]);
+            // The gain axis is suppressed for HP: gain stays 0 through the drag.
             const patchUpdates = onPatchChange.mock.calls as Array<[Partial<ProofPatch>]>;
             for (const [partial] of patchUpdates) {
                 expect(partial.eqBands?.[0]?.gain).toBe(0);
@@ -138,15 +122,8 @@ describe('ProofEqCurve', () => {
         it('still writes gain when a peak/shelf band is dragged vertically', () => {
             // Band 2 of DEFAULT_PATCH is an enabled peak at 250 Hz — gain must move.
             const onPatchChange = vi.fn();
-            const onSendParam = vi.fn();
             const { container } = render(
-                <ProofEqCurve
-                    patch={DEFAULT_PATCH}
-                    width={200}
-                    height={100}
-                    onPatchChange={onPatchChange}
-                    onSendParam={onSendParam}
-                />
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
             );
             const canvas = container.querySelector('canvas')!;
             expect(DEFAULT_PATCH.eqBands[2]!.type).toBe(EQ_PEAK);
@@ -156,10 +133,9 @@ describe('ProofEqCurve', () => {
             fireEvent.pointerDown(canvas, { clientX: PEAK_X, clientY: 50, pointerId: 2 });
             fireEvent.pointerMove(canvas, { clientX: PEAK_X, clientY: 20, pointerId: 2 });
 
-            const gainCalls = onSendParam.mock.calls.filter(([name]) => name === 'eq_band2_gain');
-            expect(gainCalls.length).toBeGreaterThan(0);
             // Dragging up from centre yields a positive gain.
-            expect(gainCalls.at(-1)![1]).toBeGreaterThan(0);
+            const patchUpdates = onPatchChange.mock.calls as Array<[Partial<ProofPatch>]>;
+            expect(patchUpdates.at(-1)?.[0].eqBands?.[2]?.gain).toBeGreaterThan(0);
         });
     });
 });

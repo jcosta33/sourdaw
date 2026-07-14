@@ -20,25 +20,12 @@ const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#95
 type Props = {
     patch: ProofPatch;
     onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
 };
 
-export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
-    // §8.20 — Previously `updateBand` forwarded `value as number` to `onSendParam`
-    // even when `value` was a boolean (the `enabled` toggle), and every knob's
-    // `onChange` then dispatched `onSendParam` again. Net effect: every numeric
-    // knob fired twice per turn, and the `enabled` toggle sent a boolean cast
-    // to `number` (NaN/1/0 depending on the JS runtime). Split the two concerns:
-    // `updatePatch` only mutates patch state; `updateBandAndSend` is the single
-    // numeric write-through. The boolean toggle uses an explicit 0/1 send.
+export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement => {
     const updatePatch = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ eqBands: bands });
-    };
-
-    const updateBandAndSend = (idx: number, key: string, value: number) => {
-        updatePatch(idx, key, value);
-        onSendParam(`eq_band${idx}_${key}`, value);
     };
 
     return (
@@ -54,7 +41,6 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                         size="xs"
                         onClick={() => {
                             onPatchChange({ eqBypassed: !patch.eqBypassed });
-                            onSendParam('eq_bypass', patch.eqBypassed ? 0 : 1);
                         }}
                     >
                         {patch.eqBypassed ? 'OFF' : 'ON'}
@@ -64,13 +50,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
 
             {/* Interactive frequency response graph */}
             <div className={patch.eqBypassed ? 'opacity-30' : ''}>
-                <ProofEqCurve
-                    patch={patch}
-                    width={500}
-                    height={120}
-                    onPatchChange={onPatchChange}
-                    onSendParam={onSendParam}
-                />
+                <ProofEqCurve patch={patch} width={500} height={120} onPatchChange={onPatchChange} />
             </div>
 
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>
@@ -87,14 +67,13 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             onClick={() => {
                                 const next = !band.enabled;
                                 updatePatch(i, 'enabled', next);
-                                onSendParam(`eq_band${i}_enabled`, next ? 1 : 0);
                             }}
                         />
 
                         {/* Frequency */}
                         <RotaryKnob
                             value={band.freq}
-                            onChange={(v) => updateBandAndSend(i, 'freq', v)}
+                            onChange={(v) => updatePatch(i, 'freq', v)}
                             min={20}
                             max={20000}
                             step={1}
@@ -109,7 +88,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                         {/* Gain */}
                         <RotaryKnob
                             value={band.gain}
-                            onChange={(v) => updateBandAndSend(i, 'gain', v)}
+                            onChange={(v) => updatePatch(i, 'gain', v)}
                             min={-18}
                             max={18}
                             step={0.5}
@@ -125,7 +104,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                         {/* Q */}
                         <RotaryKnob
                             value={band.q}
-                            onChange={(v) => updateBandAndSend(i, 'q', v)}
+                            onChange={(v) => updatePatch(i, 'q', v)}
                             min={0.1}
                             max={10}
                             step={0.1}
@@ -141,7 +120,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.type}
-                            onChange={(e) => updateBandAndSend(i, 'type', parseInt(e.target.value))}
+                            onChange={(e) => updatePatch(i, 'type', parseInt(e.target.value))}
                         >
                             {BAND_TYPES.map((label, ti) => (
                                 <option key={ti} value={ti}>
@@ -156,7 +135,7 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.channel}
-                            onChange={(e) => updateBandAndSend(i, 'channel', parseInt(e.target.value))}
+                            onChange={(e) => updatePatch(i, 'channel', parseInt(e.target.value))}
                         >
                             {CHANNEL_MODES.map((label, ci) => (
                                 <option key={ci} value={ci}>
