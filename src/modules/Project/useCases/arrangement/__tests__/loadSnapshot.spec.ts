@@ -15,9 +15,9 @@ const mocks = vi.hoisted(() => {
     }
 
     return {
-        automation_store: create_set_store_mock<ArrangementSnapshot['automation']>(),
         marker_store: create_set_store_mock<NonNullable<ArrangementSnapshot['markers']>>(),
         midi_store: create_set_store_mock<ArrangementSnapshot['midi']>(),
+        restore_automation_snapshot: vi.fn<(snapshot: unknown) => void>(),
         restore_track_snapshot: vi.fn<(snapshot: unknown) => void>(),
         take_lane_store: create_set_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(),
         tempo_map_store: create_set_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(),
@@ -34,7 +34,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreTrackSnapshot: mocks.restore_track_snapshot,
 }));
 
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: mocks.automation_store }));
+vi.mock('#/modules/Automation/useCases', () => ({
+    restoreAutomationSnapshot: mocks.restore_automation_snapshot,
+}));
 
 vi.mock('#/modules/MIDI/stores', () => ({ midiStore: mocks.midi_store }));
 
@@ -94,7 +96,7 @@ describe('loadSnapshot', () => {
         vi.clearAllMocks();
     });
 
-    it('delegates track restoration to Arrangement and writes Automation and MIDI stores', () => {
+    it('delegates track and Automation restoration to their owning modules', () => {
         const raw_track = create_track({ id: 'raw-track', name: 'Raw Track' });
         const snapshot: ArrangementSnapshot = {
             ...baseSnapshot,
@@ -106,7 +108,7 @@ describe('loadSnapshot', () => {
         loadSnapshot(snapshot);
 
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
-        expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
+        expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
     });
 
@@ -138,7 +140,7 @@ describe('loadSnapshot', () => {
         expect(mocks.marker_store.set).toHaveBeenCalledWith(snapshot.markers);
         expect(mocks.take_lane_store.set).toHaveBeenCalledWith(snapshot.takeLanes);
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
-        expect(mocks.automation_store.set).toHaveBeenCalledWith(snapshot.automation);
+        expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.midi_store.set).toHaveBeenCalledWith(snapshot.midi);
     });
 });
