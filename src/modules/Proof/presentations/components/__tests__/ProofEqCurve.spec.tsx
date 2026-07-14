@@ -180,5 +180,27 @@ describe('ProofEqCurve', () => {
             expect(edits).toHaveLength(2);
             expect(edits.some(([edit]) => edit.isTransient === false)).toBe(false);
         });
+
+        it('keeps the first pointer as drag owner when another pointer cancels', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const firstBandX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+            const secondBandX = (Math.log10(800 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: firstBandX, clientY: 50, pointerId: 5 });
+            fireEvent.pointerMove(canvas, { clientX: firstBandX + 5, clientY: 30, pointerId: 5 });
+            fireEvent.pointerDown(canvas, { clientX: secondBandX, clientY: 50, pointerId: 6 });
+            fireEvent.pointerCancel(canvas, { pointerId: 6 });
+            fireEvent.pointerMove(canvas, { clientX: firstBandX + 10, clientY: 20, pointerId: 5 });
+            fireEvent.pointerUp(canvas, { pointerId: 5 });
+
+            const edits = onPatchChange.mock.calls.map(([edit]) => edit as ProofPatchEdit);
+            expect(edits).toHaveLength(3);
+            expect(edits.map((edit) => edit.isTransient)).toEqual([true, true, false]);
+            expect(edits[2]).toMatchObject({ key: 'eqBands', value: edits[1]?.value });
+        });
     });
 });

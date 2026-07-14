@@ -149,6 +149,7 @@ type Props = {
 
 export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const activePointerIdRef = useRef<number | null>(null);
     const dragBandRef = useRef<number | null>(null);
     const dragStartBandRef = useRef<ProofPatch['eqBands'][number] | null>(null);
     const dragBandsRef = useRef<ProofPatch['eqBands'] | null>(null);
@@ -331,6 +332,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
 
     // Drag handling
     const handlePointerDown = (e: React.PointerEvent) => {
+        if (activePointerIdRef.current !== null || e.button !== 0) {
+            return;
+        }
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -358,17 +362,18 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
         }
 
         if (closestIdx >= 0) {
+            canvas.setPointerCapture(e.pointerId);
+            activePointerIdRef.current = e.pointerId;
             dragBandRef.current = closestIdx;
             dragStartBandRef.current = patch.eqBands[closestIdx] ?? null;
             dragBandsRef.current = patch.eqBands;
             pendingEditRef.current = null;
-            canvas.setPointerCapture(e.pointerId);
         }
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
         const idx = dragBandRef.current;
-        if (idx === null) {
+        if (idx === null || activePointerIdRef.current !== e.pointerId) {
             return;
         }
         const canvas = canvasRef.current;
@@ -424,7 +429,10 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
         onPatchChange(edit);
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e: React.PointerEvent) => {
+        if (activePointerIdRef.current !== e.pointerId) {
+            return;
+        }
         const pendingEdit = pendingEditRef.current;
         const bandIndex = dragBandRef.current;
         const startBand = dragStartBandRef.current;
@@ -434,6 +442,11 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
             startBand !== null &&
             finalBand !== null &&
             (startBand.freq !== finalBand.freq || (bandUsesGain(startBand.type) && startBand.gain !== finalBand.gain));
+        activePointerIdRef.current = null;
+        dragBandRef.current = null;
+        dragStartBandRef.current = null;
+        dragBandsRef.current = null;
+        pendingEditRef.current = null;
         if (pendingEdit?.key === 'eqBands' && changed) {
             onPatchChange({
                 key: 'eqBands',
@@ -442,10 +455,6 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
                 isTransient: false,
             });
         }
-        dragBandRef.current = null;
-        dragStartBandRef.current = null;
-        dragBandsRef.current = null;
-        pendingEditRef.current = null;
     };
 
     return (

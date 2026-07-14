@@ -40,6 +40,17 @@ describe('RotaryKnob', () => {
         expect(onChange).toHaveBeenCalledWith(50, false);
     });
 
+    it('does not emit a reset when the value is already the default', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} defaultValue={50} />);
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.doubleClick(root);
+        fireEvent.pointerDown(root, { button: 0, pointerId: 9, altKey: true });
+
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
     it('should drag and quantize value', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

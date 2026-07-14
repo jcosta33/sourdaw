@@ -131,12 +131,19 @@ export const RotaryKnob = ({
         return clamped;
     };
 
+    const resetToDefault = () => {
+        if (Object.is(value, defaultValue)) {
+            return;
+        }
+        onChange(defaultValue, false);
+    };
+
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (activePointerIdRef.current !== null || event.button !== 0) {
             return;
         }
         if (event.altKey) {
-            onChange(defaultValue, false);
+            resetToDefault();
             return;
         }
         if (typeof event.currentTarget.setPointerCapture === 'function') {
@@ -213,7 +220,7 @@ export const RotaryKnob = ({
     };
 
     const handleDoubleClick = () => {
-        onChange(defaultValue, false);
+        resetToDefault();
     };
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
