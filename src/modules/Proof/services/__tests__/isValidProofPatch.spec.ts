@@ -17,6 +17,12 @@ const invalidMutations: Array<[name: string, mutate: PatchMutation]> = [
     ['dither bit depth', (patch) => (patch.ditherBits = 20)],
     ['fixed target pairing', (patch) => (patch.targetLufs = -13)],
     ['chain permutation', (patch) => (patch.chainOrder = [0, 0, 1, 2, 3])],
+    ['sparse chain order', (patch) => Reflect.deleteProperty(patch.chainOrder, 2)],
+    ['sparse EQ bands', (patch) => Reflect.deleteProperty(patch.eqBands, 2)],
+    ['sparse dynamics crossovers', (patch) => Reflect.deleteProperty(patch.dynCrossoverFreqs, 1)],
+    ['sparse dynamics bands', (patch) => Reflect.deleteProperty(patch.dynBands, 1)],
+    ['sparse imager widths', (patch) => Reflect.deleteProperty(patch.imgBandWidth, 1)],
+    ['sparse exciter bands', (patch) => Reflect.deleteProperty(patch.excBands, 1)],
 ];
 
 describe('isValidProofPatch', () => {

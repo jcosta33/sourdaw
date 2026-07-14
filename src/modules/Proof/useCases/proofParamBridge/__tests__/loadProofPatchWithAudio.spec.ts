@@ -88,6 +88,17 @@ function makeTrackState(parameterValues: Record<string, number>): NonNullable<Re
 
 const DEVICE_ID = 'dev-1';
 
+type FixedAggregateKey = 'chainOrder' | 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands';
+
+const SPARSE_AGGREGATES: Array<[name: string, key: FixedAggregateKey, index: number]> = [
+    ['chain order', 'chainOrder', 2],
+    ['EQ bands', 'eqBands', 2],
+    ['dynamics crossovers', 'dynCrossoverFreqs', 1],
+    ['dynamics bands', 'dynBands', 1],
+    ['imager widths', 'imgBandWidth', 1],
+    ['exciter bands', 'excBands', 1],
+];
+
 describe('loadProofPatchWithAudio', () => {
     beforeEach(() => {
         bridges.clear();
@@ -141,6 +152,20 @@ describe('loadProofPatchWithAudio', () => {
         bridges.set(DEVICE_ID, bridge);
 
         loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: { ...DEFAULT_PATCH, limCeiling: 1 } });
+
+        expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
+    });
+
+    it.each(SPARSE_AGGREGATES)('rejects sparse %s before any write', (_name, key, index) => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const patch = structuredClone(DEFAULT_PATCH);
+        Reflect.deleteProperty(patch[key], index);
+
+        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch });
 
         expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
         expect(persistDevicePatch).not.toHaveBeenCalled();

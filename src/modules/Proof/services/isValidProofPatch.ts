@@ -16,8 +16,16 @@ function isIntegerInRange(value: number, range: NumberRange): boolean {
     return Number.isInteger(value) && isNumberInRange(value, range);
 }
 
-function hasSameLength(values: readonly unknown[], reference: readonly unknown[]): boolean {
-    return values.length === reference.length;
+function isDenseWithSameLength(values: readonly unknown[], reference: readonly unknown[]): boolean {
+    if (values.length !== reference.length) {
+        return false;
+    }
+    for (let index = 0; index < values.length; index++) {
+        if (!(index in values)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 export function isValidProofPatch(patch: ProofPatch): boolean {
@@ -44,7 +52,7 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
         isNumberInRange(patch.outputGain, PROOF_PATCH_RANGES.outputGain) &&
         scalarBooleans.every((value) => typeof value === 'boolean') &&
         Array.isArray(patch.eqBands) &&
-        hasSameLength(patch.eqBands, DEFAULT_PATCH.eqBands) &&
+        isDenseWithSameLength(patch.eqBands, DEFAULT_PATCH.eqBands) &&
         patch.eqBands.every(
             (band) =>
                 typeof band.enabled === 'boolean' &&
@@ -55,10 +63,10 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
                 isNumberInRange(band.q, PROOF_PATCH_RANGES.eqBand.q)
         ) &&
         Array.isArray(patch.dynCrossoverFreqs) &&
-        hasSameLength(patch.dynCrossoverFreqs, DEFAULT_PATCH.dynCrossoverFreqs) &&
+        isDenseWithSameLength(patch.dynCrossoverFreqs, DEFAULT_PATCH.dynCrossoverFreqs) &&
         isValidDynCrossoverFreqs(patch.dynCrossoverFreqs) &&
         Array.isArray(patch.dynBands) &&
-        hasSameLength(patch.dynBands, DEFAULT_PATCH.dynBands) &&
+        isDenseWithSameLength(patch.dynBands, DEFAULT_PATCH.dynBands) &&
         patch.dynBands.every(
             (band) =>
                 isNumberInRange(band.threshold, PROOF_PATCH_RANGES.dynBand.threshold) &&
@@ -71,11 +79,11 @@ export function isValidProofPatch(patch: ProofPatch): boolean {
                 typeof band.bypassed === 'boolean'
         ) &&
         Array.isArray(patch.imgBandWidth) &&
-        hasSameLength(patch.imgBandWidth, DEFAULT_PATCH.imgBandWidth) &&
+        isDenseWithSameLength(patch.imgBandWidth, DEFAULT_PATCH.imgBandWidth) &&
         patch.imgBandWidth.every((width) => isNumberInRange(width, PROOF_PATCH_RANGES.imgBandWidth)) &&
         isNumberInRange(patch.imgMonoBassFreq, PROOF_PATCH_RANGES.imgMonoBassFreq) &&
         Array.isArray(patch.excBands) &&
-        hasSameLength(patch.excBands, DEFAULT_PATCH.excBands) &&
+        isDenseWithSameLength(patch.excBands, DEFAULT_PATCH.excBands) &&
         patch.excBands.every(
             (band) =>
                 isIntegerInRange(band.type, PROOF_PATCH_RANGES.excBand.type) &&
