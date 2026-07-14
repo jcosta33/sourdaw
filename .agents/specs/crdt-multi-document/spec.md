@@ -69,6 +69,20 @@ The projection layer must pre-load child documents for the active window plus a 
 
 Verify with: `pnpm test:run -- crdtProjection`
 
+### AC-008 — Branch swaps preserve the stable root document key
+
+When the active branch changes, the branching repository must serialize the
+switch with all CRDT mutations and drain every deferred write to the outgoing
+root before snapshotting it. A write scheduled before the switch must remain in
+the outgoing branch and must never land in the incoming branch. Only after that
+barrier may the repository hot-swap the underlying Automerge `Doc` behind the
+fixed `DOC_PREFIX_ROOT` identifier, so UI, audio projection, and storage
+consumers continue to address the same root key rather than being retargeted to
+per-branch document IDs. Auto-save and merge-lineage detection must still
+address the real per-document IDs, not the fixed alias.
+
+Verify with: `pnpm test:run src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranchWriteIsolation.spec.ts`, using the real repository and storage adapter to queue an outgoing-root write, race the branch switch, and assert both branch documents and their persisted IDs.
+
 ## Open questions
 
 - [ ] (non-blocking) LRU eviction thresholds for the child-doc cache (entry count vs bytes), pending measurement on a 500-track project.

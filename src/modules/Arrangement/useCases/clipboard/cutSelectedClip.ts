@@ -4,6 +4,7 @@ import { workspaceStore } from '#/modules/Workspace/stores';
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
 import { removeClip } from '../clip/removeClip';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 export function cutSelectedClip(): void {
     const workspace = workspaceStore.value;
@@ -23,9 +24,10 @@ export function cutSelectedClip(): void {
     }
 
     const midiState = midiStore.value;
+    const tracks = getTrackStoreState()?.tracks ?? [];
     const entries = [];
     for (const id of ids) {
-        const found = findClipById(id);
+        const found = findClipById({ clipId: id, tracks });
         if (!found) {
             continue;
         }
@@ -36,9 +38,9 @@ export function cutSelectedClip(): void {
             sourceTrackId: found.trackId,
         });
     }
-    setClipClipboard(entries);
-
     for (const id of ids) {
         removeClip(id);
     }
+
+    setClipClipboard(entries);
 }
