@@ -107,6 +107,23 @@ describe('createStore', () => {
         ]);
     });
 
+    it('should not double-notify a pending store after a reentrant write', () => {
+        const first = createStore({ initialData: 0 });
+        const second = createStore({ initialData: 0 });
+        const secondSubscriber = vi.fn();
+        first.subscribe(() => second.set(2));
+        second.subscribe(secondSubscriber);
+
+        batchStoreUpdates(() => {
+            first.set(1);
+            second.set(1);
+        });
+
+        expect(second.value).toBe(2);
+        expect(secondSubscriber).toHaveBeenCalledOnce();
+        expect(secondSubscriber).toHaveBeenCalledWith(2);
+    });
+
     it('should notify subscribers with null on set(null)', () => {
         const store = createStore({ initialData: { count: 0 } });
         const subscriber = vi.fn();

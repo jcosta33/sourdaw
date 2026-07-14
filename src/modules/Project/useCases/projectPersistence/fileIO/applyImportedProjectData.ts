@@ -7,7 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -68,35 +68,39 @@ async function performImportedProjectDataApplication({
 
     // Preparation is complete and this transition still owns commit authority.
     // Replace the live project synchronously so no partial reset is observable.
-    const crdtReset = batchStoreUpdates(() => {
-        const reset = createCrdtProject(data.meta.name);
-        preparedStoredBuffers.publish();
-        preparedEmbeddedBuffers?.publish();
-        stopPlayback();
-        resetAudioGraph();
-        resetModuleStoresToDefault();
+    try {
+        batchStoreUpdates(() => {
+            resetCrdtProjectAuthority(data.meta.name);
+            preparedStoredBuffers.publish();
+            preparedEmbeddedBuffers?.publish();
+            stopPlayback();
+            resetAudioGraph();
+            resetModuleStoresToDefault();
 
-        // Publish the saved arrangement catalog and its active live snapshot.
-        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-        hydrateModuleStoresFromProjectData(data);
+            // Publish the saved arrangement catalog and its active live snapshot.
+            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+            hydrateModuleStoresFromProjectData(data);
 
-        projectStore.set({
-            name: data.meta.name,
-            createdAt: data.meta.createdAt,
-            updatedAt: data.meta.updatedAt,
-            keyRoot: data.meta.keyRoot,
-            scaleName: data.meta.scaleName,
-            tuning: data.meta.tuning,
-            dirty: false,
-            loading: false,
-            initialized: true,
+            projectStore.set({
+                name: data.meta.name,
+                createdAt: data.meta.createdAt,
+                updatedAt: data.meta.updatedAt,
+                keyRoot: data.meta.keyRoot,
+                scaleName: data.meta.scaleName,
+                tuning: data.meta.tuning,
+                dirty: false,
+                loading: false,
+                initialized: true,
+            });
+
+            verifyAudioBufferReferences();
+            clearUndoHistory();
         });
-
-        verifyAudioBufferReferences();
-        clearUndoHistory();
-        return reset;
-    });
-    void crdtReset.catch((error: unknown) => {
+    } catch (error) {
+        logger.warn('[applyImportedProjectData] Failed to reset imported CRDT authority:', error);
+        return false;
+    }
+    void compactProject().catch((error: unknown) => {
         logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority:', error);
     });
     return true;

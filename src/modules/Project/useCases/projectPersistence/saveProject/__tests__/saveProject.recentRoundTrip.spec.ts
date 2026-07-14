@@ -38,8 +38,9 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    createCrdtProject: vi.fn().mockResolvedValue(undefined),
+    compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
+    resetCrdtProjectAuthority: vi.fn(),
 }));
 
 vi.mock('../../fileIO/buildProjectData', () => ({

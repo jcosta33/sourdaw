@@ -42,8 +42,9 @@ const { audioContext, importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb
             .mockResolvedValue(prepared()),
     };
 });
-const { createCrdtProject, setSidechainRoutes } = vi.hoisted(() => ({
-    createCrdtProject: vi.fn().mockResolvedValue(undefined),
+const { compactProject, resetCrdtProjectAuthority, setSidechainRoutes } = vi.hoisted(() => ({
+    compactProject: vi.fn().mockResolvedValue(undefined),
+    resetCrdtProjectAuthority: vi.fn(),
     setSidechainRoutes: vi.fn(),
 }));
 
@@ -56,7 +57,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ compactProject, resetCrdtProjectAuthority }));
 vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
@@ -197,7 +198,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         importCachedAudioBuffers.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();
         setSidechainRoutes.mockClear();
-        createCrdtProject.mockClear();
+        compactProject.mockClear();
+        resetCrdtProjectAuthority.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -220,7 +222,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual(['buf-frozen', 'buf-1', 'buf-2', 'buf-alt']);
         expect(call?.shouldContinue?.()).toBe(true);
-        expect(createCrdtProject).toHaveBeenCalledWith('Round Trip');
+        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Round Trip');
         expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
             audioBufferId: 'buf-1',
             audioOffsetBeats: 1,
@@ -290,6 +292,18 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.audioContext).toBe(audioContext);
         expect(call?.bufferIds).toEqual([]);
         expect(call?.shouldContinue?.()).toBe(true);
+    });
+
+    it('rejects the load before store publication when CRDT authority reset fails', async () => {
+        const previousTracks = trackStore.value;
+        resetCrdtProjectAuthority.mockImplementationOnce(() => {
+            throw new Error('branch persistence failed');
+        });
+
+        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(false);
+
+        expect(trackStore.value).toEqual(previousTracks);
+        expect(compactProject).not.toHaveBeenCalled();
     });
 
     it('hydrates the transport store from the imported transport block', async () => {

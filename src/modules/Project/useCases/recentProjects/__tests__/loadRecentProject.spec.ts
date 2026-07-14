@@ -32,7 +32,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: vi.fn().mockResolvedValue(undefined),
+    resetCrdtProjectAuthority: vi.fn(),
+}));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));

@@ -93,6 +93,20 @@ function replacePinnedBufferIds(ids: readonly string[]): void {
     for (const id of ids) {
         pinnedBufferIds.add(id);
     }
+    while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
+        let lruKey: string | undefined;
+        for (const key of cache.keys()) {
+            if (!pinnedBufferIds.has(key)) {
+                lruKey = key;
+                break;
+            }
+        }
+        if (lruKey === undefined) {
+            break;
+        }
+        cache.delete(lruKey);
+        clearWaveformCachesForId(lruKey);
+    }
 }
 
 function audioCacheGet(id: string): AudioBuffer | undefined {
@@ -332,7 +346,14 @@ async function prepareBuffersFromIdb({
             staged.push({ id, buffer });
         }
     } catch {
-        return { publish: () => 0 };
+        return {
+            publish: () => {
+                if (ids) {
+                    replacePinnedBufferIds(ids);
+                }
+                return 0;
+            },
+        };
     }
 
     let published = false;

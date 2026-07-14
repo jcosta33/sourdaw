@@ -1,7 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
+import { batchStoreUpdates } from '#/infra/store/createStore';
+import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
+    DOC_PREFIX_ROOT,
+    getCrdtDoc,
     loadCrdtProject,
     projectCrdtToStores,
     startCrdtAutoSave,
@@ -11,6 +15,7 @@ import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 import { projectStore } from '../../stores/projectStore';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
@@ -39,28 +44,35 @@ export async function loadProject(): Promise<boolean> {
         return false;
     }
 
-    // Reset per-device-instance stores (§13.1) before hydration so stale device
-    // state from a previously open project does not leak into the loaded one. The
-    // CRDT document does not persist the device stores, so this is the only point
-    // that returns them to default on the CRDT-load path.
-    resetModuleStoresToDefault();
-
-    // Hydrate all stores from the Automerge document once.
-    // For stores whose keys don't exist in the doc yet (new project),
-    // hydrate() writes initialData through to the CRDT.
-    projectCrdtToStores();
-
-    // Run data migrations on loaded stores.
-    migrateAbsoluteMidiNotes();
-
-    // Ensure loading flag is cleared — hydrate may not trigger a notification
-    // if the value didn't change, so set it explicitly.
-    const project = projectStore.value;
-    if (project?.loading) {
-        projectStore.set({ ...project, loading: false, initialized: true });
+    const rootDoc = getCrdtDoc<{ tracks?: unknown }>(DOC_PREFIX_ROOT);
+    const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
+    const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
+        audioContext: getAudioContext(),
+        bufferIds: referencedBufferIds,
+        shouldContinue: transaction.isCurrent,
+    });
+    if (!preparedBuffers || !transaction.isCurrent()) {
+        return false;
     }
 
-    clearUndoHistory();
+    batchStoreUpdates(() => {
+        preparedBuffers.publish();
+        // Reset per-device-instance stores (§13.1) before hydration so stale
+        // device state from a previously open project cannot leak into it.
+        resetModuleStoresToDefault();
+        projectCrdtToStores();
+        migrateAbsoluteMidiNotes();
+
+        const project = projectStore.value;
+        if (project?.loading) {
+            projectStore.set({ ...project, loading: false, initialized: true });
+        }
+        clearUndoHistory();
+    });
+
+    if (!transaction.isCurrent()) {
+        return false;
+    }
 
     // Start debounced incremental auto-save so edits survive browser crashes.
     // Stop any previous auto-save loop first (e.g. if loadProject is called again).

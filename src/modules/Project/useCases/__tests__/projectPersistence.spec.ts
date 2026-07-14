@@ -10,12 +10,15 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState },
     projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
     createCrdtProject: vi.fn<() => void>(),
+    getCrdtDoc: vi.fn(),
     loadCrdtProject: vi.fn<() => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
     clearUndoHistory: vi.fn<() => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
+    prepareCachedAudioBuffersFromIdb: vi.fn(),
+    publishPreparedBuffers: vi.fn(() => 1),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -35,6 +38,8 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     createCrdtProject: mocks.createCrdtProject,
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: mocks.getCrdtDoc,
     loadCrdtProject: mocks.loadCrdtProject,
     projectCrdtToStores: mocks.projectCrdtToStores,
     startCrdtAutoSave: mocks.startCrdtAutoSave,
@@ -46,7 +51,12 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return { ...actual, cancelPendingAudioBufferImport: vi.fn() };
+    return {
+        ...actual,
+        cancelPendingAudioBufferImport: vi.fn(),
+        getAudioContext: vi.fn(() => ({})),
+        prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
+    };
 });
 
 // Relative to saveProject.ts: ../../recentProjects/addToRecentProjects
@@ -62,6 +72,18 @@ describe('Project Persistence Use Cases', () => {
             dirty: false,
             name: 'Initial',
         } as unknown as ProjectStoreState;
+        mocks.getCrdtDoc.mockReturnValue({
+            tracks: {
+                tracks: [
+                    {
+                        clips: [{ audioBufferId: 'active-buffer' }],
+                        alternatives: [],
+                        freezeState: { status: 'unfrozen' },
+                    },
+                ],
+            },
+        });
+        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: mocks.publishPreparedBuffers });
     });
 
     describe('loadProject', () => {
@@ -72,6 +94,12 @@ describe('Project Persistence Use Cases', () => {
 
             expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ loading: true }));
             expect(mocks.loadCrdtProject).toHaveBeenCalled();
+            expect(mocks.prepareCachedAudioBuffersFromIdb).toHaveBeenCalledWith(
+                expect.objectContaining({ bufferIds: ['active-buffer'] })
+            );
+            expect(mocks.publishPreparedBuffers.mock.invocationCallOrder[0]).toBeLessThan(
+                mocks.projectCrdtToStores.mock.invocationCallOrder[0]!
+            );
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
             expect(mocks.clearUndoHistory).toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();

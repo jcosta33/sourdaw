@@ -130,4 +130,28 @@ describe('switchArrangement', () => {
         expect(publishPreparedBuffers).not.toHaveBeenCalled();
         expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
     });
+
+    it('cancels a pending switch when the active arrangement is selected again', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+        let completePreparation: (() => void) | undefined;
+        prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    completePreparation = () => resolve({ publish: publishPreparedBuffers });
+                })
+        );
+
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(completePreparation).toBeDefined());
+        await switchArrangement(state.activeArrangementId);
+        completePreparation?.();
+        await switching;
+
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+    });
 });

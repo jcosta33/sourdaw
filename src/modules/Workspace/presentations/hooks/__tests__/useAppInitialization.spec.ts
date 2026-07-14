@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { restoreCachedAudioBuffersFromIdb, resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
@@ -13,15 +13,6 @@ const projectStoreMock = vi.hoisted(() => ({
     current: null as Record<string, unknown> | null,
     set: vi.fn(),
 }));
-type MockClip = { audioBufferId?: string | null };
-type MockTrack = { clips: MockClip[] };
-type MockTrackStoreValue = { tracks: MockTrack[] };
-
-const track_store_value_holder = vi.hoisted((): { current: MockTrackStoreValue } => ({
-    current: { tracks: [] },
-}));
-const audio_context_mock = vi.hoisted(() => ({ id: 'audio-context' }));
-
 // The hook fans out into the whole app boot sequence; every collaborator is
 // stubbed so the test can isolate the user-gesture effect (the fix-5 seam:
 // resumeEngine() must no longer be fire-and-forget). Async members resolve so
@@ -29,19 +20,11 @@ const audio_context_mock = vi.hoisted(() => ({ id: 'audio-context' }));
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value(): MockTrackStoreValue {
-            return track_store_value_holder.current;
-        },
-    },
-}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
-    getAudioContext: vi.fn(() => audio_context_mock),
+    getAudioContext: vi.fn(() => ({})),
     initWebMidi: vi.fn().mockResolvedValue(undefined),
     setMasterGainValue: vi.fn(),
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
 }));
@@ -57,7 +40,6 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 vi.mock('#/modules/Project/useCases', () => ({
-    verifyAudioBufferReferences: vi.fn().mockResolvedValue(undefined),
     loadProject: vi.fn().mockResolvedValue(undefined),
     finishProjectLoading: vi.fn(),
     saveProject: vi.fn(),
@@ -80,10 +62,6 @@ vi.mock('../../../stores/preferencesStore', () => ({
         subscribe: vi.fn(() => () => {}),
     },
 }));
-
-beforeEach(() => {
-    track_store_value_holder.current = { tracks: [] };
-});
 
 describe('useAppInitialization — first-gesture engine resume', () => {
     beforeEach(() => {
@@ -206,64 +184,6 @@ describe('useAppInitialization — autosave governed by preferences', () => {
 
         vi.advanceTimersByTime(20_000);
         expect(saveProject).toHaveBeenCalledTimes(3);
-    });
-});
-
-describe('useAppInitialization — AudioEngine cache restore boundary', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        projectStoreMock.current = null;
-        vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
-        try {
-            localStorage.setItem('wd:first-load-hint-shown', '1');
-        } catch {
-            // ignore: localStorage may be unavailable
-        }
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('restores referenced audio buffers through the AudioEngine use case', async () => {
-        track_store_value_holder.current = {
-            tracks: [
-                {
-                    clips: [{ audioBufferId: 'buffer-1' }, {}, { audioBufferId: '' }, { audioBufferId: 'buffer-2' }],
-                },
-            ],
-        };
-
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        });
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: audio_context_mock,
-            bufferIds: ['buffer-1', 'buffer-2'],
-        });
-    });
-
-    it('passes undefined bufferIds through the AudioEngine use case when no referenced IDs exist', async () => {
-        track_store_value_holder.current = {
-            tracks: [
-                {
-                    clips: [{}, { audioBufferId: '' }, { audioBufferId: null }],
-                },
-            ],
-        };
-
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        });
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: audio_context_mock,
-            bufferIds: undefined,
-        });
     });
 });
 

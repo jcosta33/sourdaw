@@ -7,7 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
@@ -84,8 +84,8 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             return false;
         }
 
-        const crdtReset = batchStoreUpdates(() => {
-            const reset = createCrdtProject(data.meta.name);
+        batchStoreUpdates(() => {
+            resetCrdtProjectAuthority(data.meta.name);
             preparedStoredBuffers.publish();
             preparedEmbeddedBuffers?.publish();
             stopPlayback();
@@ -110,9 +110,8 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             writeProjectJson(JSON.stringify(data));
             verifyAudioBufferReferences();
             clearUndoHistory();
-            return reset;
         });
-        void crdtReset.catch((error: unknown) => {
+        void compactProject().catch((error: unknown) => {
             logger.warn('[loadRecentProject] Failed to persist loaded CRDT authority:', error);
         });
 

@@ -29,6 +29,7 @@ function collectArrangementBufferIds(snapshot: ArrangementSnapshot): string[] {
 }
 
 export async function switchArrangement(id: string): Promise<void> {
+    const request = ++latestSwitchRequest;
     const state = arrangementStore.value;
     if (!state || state.activeArrangementId === id) {
         return;
@@ -39,7 +40,6 @@ export async function switchArrangement(id: string): Promise<void> {
         return;
     }
 
-    const request = ++latestSwitchRequest;
     const sourceProjectLoadEpoch = projectLoadEpoch.current;
     const sourceArrangementId = state.activeArrangementId;
     const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
