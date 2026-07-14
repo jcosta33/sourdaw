@@ -38,9 +38,9 @@ export function cutSelectedClip(): void {
             sourceTrackId: found.trackId,
         });
     }
-    setClipClipboard(entries);
-
     for (const id of ids) {
         removeClip(id);
     }
+
+    setClipClipboard(entries);
 }
