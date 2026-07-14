@@ -5,31 +5,18 @@ import { loadSnapshot } from '../loadSnapshot';
 
 type SnapshotTrack = ArrangementSnapshot['tracks']['tracks'][number];
 
-type SetStoreMock<TValue> = {
-    set: (new_value: TValue) => void;
-};
-
 const mocks = vi.hoisted(() => {
-    function create_set_store_mock<TValue>(): SetStoreMock<TValue> {
-        return { set: vi.fn<(new_value: TValue) => void>() };
-    }
-
     return {
-        marker_store: create_set_store_mock<NonNullable<ArrangementSnapshot['markers']>>(),
+        restore_arrangement_metadata_snapshot: vi.fn<(input: { markers?: unknown; takeLanes?: unknown }) => void>(),
         restore_timeline_map_snapshot: vi.fn<(input: { tempoMap?: unknown; timeSignatureMap?: unknown }) => void>(),
         restore_automation_snapshot: vi.fn<(snapshot: unknown) => void>(),
         restore_track_snapshot: vi.fn<(snapshot: unknown) => void>(),
         set_midi_store_state: vi.fn<(state: unknown) => void>(),
-        take_lane_store: create_set_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(),
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    markerStore: mocks.marker_store,
-    takeLaneStore: mocks.take_lane_store,
-}));
-
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    restoreArrangementMetadataSnapshot: mocks.restore_arrangement_metadata_snapshot,
     restoreTrackSnapshot: mocks.restore_track_snapshot,
 }));
 
@@ -110,10 +97,9 @@ describe('loadSnapshot', () => {
         expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
     });
 
-    it('delegates omitted timeline maps and clears the remaining shared stores', () => {
+    it('delegates omitted timeline maps and Arrangement metadata', () => {
         // A snapshot captured from an arrangement that had no tempo map, markers,
-        // or take lanes. Switching to it must not leave the previous arrangement's
-        // values installed in the shared stores.
+        // or take lanes. The Arrangement-owned restore must clear its stale stores.
         loadSnapshot(baseSnapshot);
 
         expect(mocks.restore_timeline_map_snapshot).toHaveBeenCalledTimes(1);
@@ -121,8 +107,11 @@ describe('loadSnapshot', () => {
             tempoMap: undefined,
             timeSignatureMap: undefined,
         });
-        expect(mocks.marker_store.set).toHaveBeenCalledWith({ markers: [], sections: [] });
-        expect(mocks.take_lane_store.set).toHaveBeenCalledWith({ lanes: [] });
+        expect(mocks.restore_arrangement_metadata_snapshot).toHaveBeenCalledTimes(1);
+        expect(mocks.restore_arrangement_metadata_snapshot).toHaveBeenCalledWith({
+            markers: undefined,
+            takeLanes: undefined,
+        });
     });
 
     it('should write the snapshot values when present', () => {
@@ -141,8 +130,11 @@ describe('loadSnapshot', () => {
             tempoMap: snapshot.tempoMap,
             timeSignatureMap: snapshot.timeSignatureMap,
         });
-        expect(mocks.marker_store.set).toHaveBeenCalledWith(snapshot.markers);
-        expect(mocks.take_lane_store.set).toHaveBeenCalledWith(snapshot.takeLanes);
+        expect(mocks.restore_arrangement_metadata_snapshot).toHaveBeenCalledTimes(1);
+        expect(mocks.restore_arrangement_metadata_snapshot).toHaveBeenCalledWith({
+            markers: snapshot.markers,
+            takeLanes: snapshot.takeLanes,
+        });
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);

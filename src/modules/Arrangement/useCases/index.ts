@@ -17,6 +17,7 @@ export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
 export { restoreTrackSnapshot } from './restoreTrackSnapshot';
+export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
