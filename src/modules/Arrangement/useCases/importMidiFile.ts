@@ -1,16 +1,95 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { readMidiFile } from '#/modules/MIDI/useCases';
+import { batchStoreUpdates } from '#/infra/store/createStore';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { mergeImportedMidiClipNotes, readMidiFile } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type Clip, trackStore } from '../stores/trackStore';
+import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { type Clip, type Track, type TrackStoreState } from '../stores/trackStore';
 
 import { createTrack } from './createTrack';
 import { getNextClipId } from './getNextClipId';
 import { getTrackStoreState } from './getTrackStoreState';
 import { setTrackState } from './setTrackState';
 
+type ApplyImportedTracksInput = {
+    tracks: Track[];
+    identities: ImportedTrackIdentities;
+};
+
+type ImportedTrackIdentities = {
+    trackIds: ReadonlySet<string>;
+    clipIds: ReadonlySet<string>;
+};
+
+function getImportedTrackIdentities(tracks: readonly Track[]): ImportedTrackIdentities | null {
+    const trackIds = new Set<string>();
+    const clipIds = new Set<string>();
+
+    for (const track of tracks) {
+        if (trackIds.has(track.id)) {
+            return null;
+        }
+        trackIds.add(track.id);
+
+        for (const clip of track.clips) {
+            if (clip.trackId !== track.id || clipIds.has(clip.id)) {
+                return null;
+            }
+            clipIds.add(clip.id);
+        }
+    }
+
+    return { trackIds, clipIds };
+}
+
+function hasImportedIdentityCollision(state: TrackStoreState, identities: ImportedTrackIdentities): boolean {
+    return (
+        state.ghostClips?.some((clip) => identities.clipIds.has(clip.id)) === true ||
+        state.tracks.some(
+            (track) =>
+                identities.trackIds.has(track.id) ||
+                collectTrackClipIds(track).some((clipId) => identities.clipIds.has(clipId))
+        )
+    );
+}
+
+function canApplyImportedTracks(identities: ImportedTrackIdentities): boolean {
+    const state = getTrackStoreState();
+    return state !== null && !hasImportedIdentityCollision(state, identities);
+}
+
+function applyImportedTracks({ tracks, identities }: ApplyImportedTracksInput): boolean {
+    const state = getTrackStoreState();
+    if (!state || hasImportedIdentityCollision(state, identities)) {
+        return false;
+    }
+
+    setTrackState({ ...state, tracks: [...state.tracks, ...tracks] });
+    return true;
+}
+
+function removeImportedTracks(identities: ImportedTrackIdentities): void {
+    const state = getTrackStoreState();
+    if (!state) {
+        return;
+    }
+
+    setTrackState({
+        ...state,
+        tracks: state.tracks.filter((track) => !identities.trackIds.has(track.id)),
+        selectedTrackId:
+            state.selectedTrackId && identities.trackIds.has(state.selectedTrackId) ? null : state.selectedTrackId,
+    });
+}
+
 export async function importMidiFile(file: File): Promise<void> {
-    const parsedTracks = await readMidiFile(file);
+    let parsedTracks: Awaited<ReturnType<typeof readMidiFile>>;
+    try {
+        parsedTracks = await readMidiFile(file);
+    } catch {
+        notifyUser(`Failed to import "${file.name}" - invalid or corrupt MIDI file`, 'error');
+        return;
+    }
     if (parsedTracks.length === 0) {
         return;
     }
@@ -20,14 +99,7 @@ export async function importMidiFile(file: File): Promise<void> {
         return;
     }
 
-    // §77.1 — stores are immutable-via-set, capture refs instead of
-    // structuredClone (which blocked the main thread for large projects).
-    const trackSnapshotBefore = trackStore.value;
-    const midiSnapshotBefore = midiStore.value;
-
-    const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {
-        ...(midiStore.value?.notesByClipId ?? {}),
-    };
+    const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
         const track = createTrack({ name: parsedTrack.name, kind: 'midi' });
@@ -57,42 +129,80 @@ export async function importMidiFile(file: File): Promise<void> {
         return { ...track, clips: [clip] };
     });
 
-    const trackState = getTrackStoreState();
-    if (trackState) {
-        setTrackState({
-            ...trackState,
-            tracks: [...trackState.tracks, ...tracksWithClips],
-        });
+    const identities = getImportedTrackIdentities(tracksWithClips);
+    if (!identities || !canApplyImportedTracks(identities)) {
+        notifyUser(`Failed to import "${file.name}" - generated track or clip IDs conflict with the project`, 'error');
+        return;
     }
 
-    midiStore.set({
-        notesByClipId: newMidiData,
-        ccByClipId: midiStore.value?.ccByClipId ?? {},
-        pitchBendByClipId: midiStore.value?.pitchBendByClipId ?? {},
-    });
+    let midiChange: ReturnType<typeof mergeImportedMidiClipNotes>;
+    try {
+        midiChange = batchStoreUpdates(() => {
+            const change = mergeImportedMidiClipNotes({
+                notesByClipId: newMidiData,
+            });
+            try {
+                if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
+                    throw new Error('Imported track or clip IDs conflict with the project');
+                }
+            } catch (error) {
+                try {
+                    change.undo();
+                } catch {
+                    // The MIDI owner already attempted to restore its previous state.
+                }
+                throw error;
+            }
 
-    const trackSnapshotAfter = trackStore.value;
-    const midiSnapshotAfter = midiStore.value;
+            return change;
+        });
+    } catch {
+        notifyUser(`Failed to import "${file.name}" - project state could not be updated`, 'error');
+        return;
+    }
+
     const importedName =
         parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
 
     pushUndoEntry(
         `Import MIDI: ${importedName}`,
         () => {
-            if (trackSnapshotBefore) {
-                trackStore.set(trackSnapshotBefore);
-            }
-            if (midiSnapshotBefore) {
-                midiStore.set(midiSnapshotBefore);
-            }
+            batchStoreUpdates(() => {
+                removeImportedTracks(identities);
+                try {
+                    midiChange.undo();
+                } catch (error) {
+                    applyImportedTracks({ tracks: tracksWithClips, identities });
+                    throw error;
+                }
+            });
         },
         () => {
-            if (trackSnapshotAfter) {
-                trackStore.set(trackSnapshotAfter);
-            }
-            if (midiSnapshotAfter) {
-                midiStore.set(midiSnapshotAfter);
-            }
+            return batchStoreUpdates(() => {
+                if (!canApplyImportedTracks(identities)) {
+                    notifyUser(
+                        `Failed to redo MIDI import for "${file.name}" - track or clip IDs now conflict`,
+                        'error'
+                    );
+                    return REDO_NOT_APPLIED;
+                }
+
+                midiChange.redo();
+                try {
+                    if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
+                        throw new Error('Cannot redo MIDI import because its track or clip IDs now conflict');
+                    }
+                } catch {
+                    try {
+                        midiChange.undo();
+                    } catch {
+                        // The MIDI owner already attempted to restore its previous state.
+                    }
+                    notifyUser(`Failed to redo MIDI import for "${file.name}"`, 'error');
+                    return REDO_NOT_APPLIED;
+                }
+                return undefined;
+            });
         }
     );
 }

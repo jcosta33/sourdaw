@@ -474,7 +474,7 @@ export type ActionUndoEntry = UndoEntryBase & {
 export type CallbackUndoEntry = UndoEntryBase & {
     kind: 'callback';
     undo: () => void;
-    redo: () => void;
+    redo: () => unknown;
 };
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { redo } from '../redo';
+import { REDO_NOT_APPLIED } from '../redoResult';
 
 import type { ActionUndoEntry, CallbackUndoEntry } from '../commandQueries';
 
@@ -95,6 +96,16 @@ describe('redo', () => {
             future: [],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('callback-1');
+    });
+
+    it('keeps a callback entry in future when redo reports that it was not applied', async () => {
+        const entry = callbackEntry({ redo: () => REDO_NOT_APPLIED });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
     });
 
     it('should not write when future is empty', async () => {
