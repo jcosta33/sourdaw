@@ -1,6 +1,6 @@
 import { markerStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { restoreTrackSnapshot } from '#/modules/Arrangement/useCases';
-import { automationStore } from '#/modules/Automation/stores';
+import { restoreAutomationSnapshot } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 
@@ -15,7 +15,7 @@ import {
 
 export function loadSnapshot(data: ArrangementSnapshot): void {
     restoreTrackSnapshot(data.tracks);
-    automationStore.set(data.automation);
+    restoreAutomationSnapshot(data.automation);
     midiStore.set(data.midi);
     // These four fields are optional on a snapshot but always live in shared
     // stores. When the target arrangement's snapshot omits one, reset that store

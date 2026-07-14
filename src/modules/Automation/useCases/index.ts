@@ -15,6 +15,7 @@ export { removeAutomationLanesForTrack } from './automation/removeAutomationLane
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
+export { restoreAutomationSnapshot } from './restoreAutomationSnapshot';
 export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';
