@@ -1,23 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
-import { type TrackStoreState, type MarkerStoreState } from '#/modules/Arrangement/stores';
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import { type AutomationStoreState } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { transportStore, type TransportState } from '#/modules/Transport/stores';
+import { restoreMarkerSnapshot, restoreTrackSnapshot } from '#/modules/Arrangement/useCases';
+import { restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { setMidiStoreState } from '#/modules/MIDI/useCases';
+import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 
 import { type ProjectSnapshot } from '../../../models/ProjectVersion';
-
-type ParsedSnapshotData = {
-    tracks?: TrackStoreState;
-    markers?: MarkerStoreState;
-    transport?: TransportState;
-    midi?: MidiStoreState;
-    automation?: AutomationStoreState;
-};
 
 /**
  * Restore a snapshot into the project stores.
@@ -26,28 +14,25 @@ export const restoreSnapshot = inject({ logger })(
     ({ logger }) =>
         function restoreSnapshot(snapshot: ProjectSnapshot): void {
             try {
-                const parsed = JSON.parse(snapshot.data) as ParsedSnapshotData;
+                const parsed: unknown = JSON.parse(snapshot.data);
                 if (typeof parsed !== 'object' || parsed === null) {
                     logger.warn('Snapshot data is not a valid object — skipping restore');
                     return;
                 }
-                if (parsed.tracks) {
-                    trackStore.set({
-                        ...parsed.tracks,
-                        tracks: (parsed.tracks.tracks ?? []).map(normalizeTrack),
-                    });
+                if ('tracks' in parsed && parsed.tracks) {
+                    restoreTrackSnapshot(parsed.tracks);
                 }
-                if (parsed.markers) {
-                    markerStore.set(parsed.markers);
+                if ('markers' in parsed && parsed.markers) {
+                    restoreMarkerSnapshot(parsed.markers);
                 }
-                if (parsed.transport) {
-                    transportStore.set(parsed.transport);
+                if ('transport' in parsed && parsed.transport) {
+                    restoreTransportSnapshot(parsed.transport);
                 }
-                if (parsed.midi) {
-                    midiStore.set(parsed.midi);
+                if ('midi' in parsed && parsed.midi) {
+                    setMidiStoreState(parsed.midi);
                 }
-                if (parsed.automation) {
-                    automationStore.set(parsed.automation);
+                if ('automation' in parsed && parsed.automation) {
+                    restoreAutomationSnapshot(parsed.automation);
                 }
             } catch (error) {
                 logger.error(new Error('Corrupt snapshot — failed to parse', { cause: error }));

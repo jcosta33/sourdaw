@@ -17,6 +17,7 @@ export { disableLooping } from './setLooping';
 export { setMasterGain } from './setMasterGain';
 export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
+export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 
 export { addSetlistItem } from './setlist/addSetlistItem';

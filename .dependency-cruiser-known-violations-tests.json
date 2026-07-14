@@ -964,51 +964,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
-    "to": "src/modules/Arrangement/stores/markerStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
-    "to": "src/modules/Arrangement/stores/trackStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
-    "to": "src/modules/Automation/stores/automationStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
-    "to": "src/modules/MIDI/stores/midiStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Project/useCases/versionControl/__tests__/snapshotHelpers.spec.ts",
-    "to": "src/modules/Transport/stores/transportStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Routing/useCases/__tests__/busControls.spec.ts",
     "to": "src/modules/AudioEngine/useCases/engineAccess/ensureBusStrip.ts",
     "rule": {
