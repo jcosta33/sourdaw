@@ -116,6 +116,7 @@ export const RotaryKnob = ({
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
     const draggingRef = useRef(false);
+    const activePointerIdRef = useRef<number | null>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
     const currentValue = useRef(value);
@@ -131,7 +132,7 @@ export const RotaryKnob = ({
     };
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0) {
+        if (activePointerIdRef.current !== null || event.button !== 0) {
             return;
         }
         if (event.altKey) {
@@ -141,6 +142,7 @@ export const RotaryKnob = ({
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
+        activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
         startY.current = event.clientY;
         startValue.current = value;
@@ -154,7 +156,7 @@ export const RotaryKnob = ({
             : Math.max(0, Math.min(1, (value - min) / (max - min)));
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!draggingRef.current) {
+        if (!draggingRef.current || activePointerIdRef.current !== event.pointerId) {
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -187,12 +189,13 @@ export const RotaryKnob = ({
         onChange(clamped, true);
     };
 
-    const commitDrag = (): boolean => {
-        if (!draggingRef.current) {
+    const commitDrag = (event: PointerEvent<HTMLDivElement>): boolean => {
+        if (!draggingRef.current || activePointerIdRef.current !== event.pointerId) {
             return false;
         }
 
         draggingRef.current = false;
+        activePointerIdRef.current = null;
         rootRef.current?.removeAttribute('data-dragging');
         if (!Object.is(currentValue.current, startValue.current)) {
             onChange(currentValue.current, false);
@@ -201,7 +204,7 @@ export const RotaryKnob = ({
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        if (!commitDrag()) {
+        if (!commitDrag(event)) {
             return;
         }
         if (typeof event.currentTarget.releasePointerCapture === 'function') {

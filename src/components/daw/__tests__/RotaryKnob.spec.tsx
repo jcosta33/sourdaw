@@ -74,6 +74,25 @@ describe('RotaryKnob', () => {
         expect(onChange.mock.calls.at(-1)).toEqual([transientValue, false]);
     });
 
+    it('keeps the first pointer as drag owner when another pointer cancels', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 4, clientY: 90 });
+        fireEvent.pointerDown(root, { button: 0, pointerId: 5, clientY: 50 });
+        fireEvent.pointerCancel(root, { pointerId: 5 });
+        fireEvent.pointerMove(root, { pointerId: 4, clientY: 70 });
+        fireEvent.pointerUp(root, { pointerId: 4 });
+
+        expect(onChange.mock.calls).toEqual([
+            [56.5, true],
+            [70, true],
+            [70, false],
+        ]);
+    });
+
     it('should apply shift fine mode during drag', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} step={1} />);
