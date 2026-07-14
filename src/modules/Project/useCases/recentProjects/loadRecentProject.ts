@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     getAudioContext,
     importCachedAudioBuffers,
@@ -6,6 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
@@ -72,35 +74,47 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             shouldContinue: transaction.isCurrent,
         });
 
-        if (!preparedStoredBuffers || !transaction.isCurrent()) {
+        if (!preparedStoredBuffers) {
+            return false;
+        }
+        if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
+            return false;
+        }
+        if (!transaction.isCurrent()) {
             return false;
         }
 
-        preparedStoredBuffers.publish();
-        preparedEmbeddedBuffers?.publish();
-        stopPlayback();
-        resetAudioGraph();
-        resetModuleStoresToDefault();
+        const crdtReset = batchStoreUpdates(() => {
+            const reset = createCrdtProject(data.meta.name);
+            preparedStoredBuffers.publish();
+            preparedEmbeddedBuffers?.publish();
+            stopPlayback();
+            resetAudioGraph();
+            resetModuleStoresToDefault();
 
-        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-        hydrateModuleStoresFromProjectData(data);
+            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+            hydrateModuleStoresFromProjectData(data);
 
-        projectStore.set({
-            name: data.meta.name,
-            createdAt: data.meta.createdAt,
-            updatedAt: data.meta.updatedAt,
-            keyRoot: data.meta.keyRoot,
-            scaleName: data.meta.scaleName,
-            tuning: data.meta.tuning,
-            dirty: false,
-            loading: false,
-            initialized: true,
+            projectStore.set({
+                name: data.meta.name,
+                createdAt: data.meta.createdAt,
+                updatedAt: data.meta.updatedAt,
+                keyRoot: data.meta.keyRoot,
+                scaleName: data.meta.scaleName,
+                tuning: data.meta.tuning,
+                dirty: false,
+                loading: false,
+                initialized: true,
+            });
+
+            writeProjectJson(JSON.stringify(data));
+            verifyAudioBufferReferences();
+            clearUndoHistory();
+            return reset;
         });
-
-        writeProjectJson(JSON.stringify(data));
-
-        verifyAudioBufferReferences();
-        clearUndoHistory();
+        void crdtReset.catch((error: unknown) => {
+            logger.warn('[loadRecentProject] Failed to persist loaded CRDT authority:', error);
+        });
 
         return true;
     } catch (error) {

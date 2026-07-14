@@ -1,6 +1,33 @@
 import { createMemoryStorage } from './storage/createMemoryStorage';
 import { type Store, type StoreOptions } from './types';
 
+let storeBatchDepth = 0;
+const pendingStoreNotifications = new Set<() => void>();
+
+function queueStoreNotification(notify: () => void): void {
+    if (storeBatchDepth > 0) {
+        pendingStoreNotifications.add(notify);
+        return;
+    }
+    notify();
+}
+
+export function batchStoreUpdates<TResult>(update: () => TResult): TResult {
+    storeBatchDepth++;
+    try {
+        return update();
+    } finally {
+        storeBatchDepth--;
+        if (storeBatchDepth === 0) {
+            const notifications = [...pendingStoreNotifications];
+            pendingStoreNotifications.clear();
+            for (const notify of notifications) {
+                notify();
+            }
+        }
+    }
+}
+
 export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TData> => {
     const logger = options.logger;
     const storageCandidate = options.storage;
@@ -74,7 +101,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
 
         set(value: TData | null): void {
             storage.set(value);
-            notify();
+            queueStoreNotification(notify);
         },
 
         update(updater: (current: TData | null) => TData | null): void {
@@ -83,7 +110,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
 
         clear(): void {
             storage.clear();
-            notify();
+            queueStoreNotification(notify);
         },
 
         hydrate(): void {
@@ -99,7 +126,7 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
                 }
                 if (changed) {
                     sanitizeStorageValue(storage.get());
-                    notify();
+                    queueStoreNotification(notify);
                 }
             }
         },

@@ -129,11 +129,12 @@ describe('audioBufferCache conversions', () => {
         const first = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const second = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] };
 
-        const firstCandidate = await audioBufferCache.importBuffers({ context, buffers: { shared: first } });
+        const firstCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: first } });
         expect(audioBufferCache.get('shared')).toBeUndefined();
+        await expect(firstCandidate?.persist()).resolves.toBe(true);
         firstCandidate?.publish();
 
-        const canceledCandidate = await audioBufferCache.importBuffers({
+        const canceledCandidate = audioBufferCache.importBuffers({
             context,
             buffers: { shared: second },
             shouldContinue: () => false,
@@ -141,7 +142,7 @@ describe('audioBufferCache conversions', () => {
         expect(canceledCandidate).toBeNull();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
-        const malformedCandidate = await audioBufferCache.importBuffers({
+        const malformedCandidate = audioBufferCache.importBuffers({
             context,
             buffers: {
                 shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
@@ -150,16 +151,56 @@ describe('audioBufferCache conversions', () => {
         expect(malformedCandidate).toBeNull();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
-        const unavailableNonresidentCandidate = await audioBufferCache.importBuffers({
+        const unavailableNonresidentCandidate = audioBufferCache.importBuffers({
             context,
             buffers: { shared: second, archived: first },
             cacheIds: ['shared'],
         });
-        expect(unavailableNonresidentCandidate).toBeNull();
+        await expect(unavailableNonresidentCandidate?.persist()).resolves.toBe(false);
 
-        const secondCandidate = await audioBufferCache.importBuffers({ context, buffers: { shared: second } });
+        const secondCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: second } });
+        await expect(secondCandidate?.persist()).resolves.toBe(true);
         secondCandidate?.publish();
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(audioBufferCache.get('archived')).toBeUndefined();
+    });
+
+    it('validates every embedded buffer before opening a persistence transaction', () => {
+        const open = vi.fn();
+        vi.stubGlobal('indexedDB', { open });
+        const context = {
+            createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(1) })),
+        } as unknown as BaseAudioContext;
+
+        try {
+            expect(
+                audioBufferCache.importBuffers({
+                    context,
+                    buffers: {
+                        valid: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] },
+                        invalid: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
+                    },
+                })
+            ).toBeNull();
+            expect(open).not.toHaveBeenCalled();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {
+        const exported = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
+        const ids = Array.from({ length: 65 }, (_, index) => `active-${index}`);
+        const buffers = Object.fromEntries(ids.map((id) => [id, exported]));
+        const context = {
+            createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(1) })),
+        } as unknown as BaseAudioContext;
+
+        const prepared = audioBufferCache.importBuffers({ context, buffers, cacheIds: ids });
+        await expect(prepared?.persist()).resolves.toBe(true);
+        prepared?.publish();
+
+        expect(audioBufferCache.get(ids[0]!)).toBeDefined();
+        expect(audioBufferCache.get(ids[64]!)).toBeDefined();
     });
 });

@@ -25,12 +25,14 @@ vi.mock('../../../repositories/project/storageOperations', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(() => audioContext),
-    importCachedAudioBuffers: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ createCrdtProject: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
 }));
@@ -74,7 +76,7 @@ describe('loadRecentProject', () => {
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(importCachedAudioBuffers)
             .mockReset()
-            .mockResolvedValue({ publish: () => 0 });
+            .mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 });
         vi.mocked(prepareCachedAudioBuffersFromIdb)
             .mockReset()
             .mockResolvedValue({ publish: () => 0 });

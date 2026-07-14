@@ -31,25 +31,68 @@ function base64ToFloat32(b64: string): Float32Array {
     return new Float32Array(bytes.buffer);
 }
 
-// Main AudioBuffer cache — bounded to prevent OOM on sessions with many takes.
-// When the cap is reached the least-recently-used buffer is evicted; it can be
-// reloaded from IDB on demand. Map insertion order is used as the LRU proxy.
+function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
+    if (
+        !Number.isFinite(data.sampleRate) ||
+        data.sampleRate <= 0 ||
+        !Number.isInteger(data.numberOfChannels) ||
+        data.numberOfChannels <= 0 ||
+        data.channelData.length !== data.numberOfChannels
+    ) {
+        return false;
+    }
+    let byteLength: number | undefined;
+    try {
+        for (const channel of data.channelData) {
+            const length = atob(channel).length;
+            if (length === 0 || length % Float32Array.BYTES_PER_ELEMENT !== 0) {
+                return false;
+            }
+            byteLength ??= length;
+            if (length !== byteLength) {
+                return false;
+            }
+        }
+    } catch {
+        return false;
+    }
+    return true;
+}
+
+// Main AudioBuffer cache. Non-project buffers are LRU bounded; buffers needed by
+// the active arrangement stay pinned because scheduling reads are synchronous.
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
+const pinnedBufferIds = new Set<string>();
 
 function audioCacheSet(id: string, buffer: AudioBuffer): void {
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
-    } else if (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
-        // Evict LRU entry (first key in insertion-order Map)
-        const lruKey = cache.keys().next().value;
-        if (lruKey !== undefined) {
+    } else {
+        while (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
+            let lruKey: string | undefined;
+            for (const key of cache.keys()) {
+                if (!pinnedBufferIds.has(key)) {
+                    lruKey = key;
+                    break;
+                }
+            }
+            if (lruKey === undefined) {
+                break;
+            }
             cache.delete(lruKey);
             clearWaveformCachesForId(lruKey);
         }
     }
     cache.set(id, buffer);
+}
+
+function replacePinnedBufferIds(ids: readonly string[]): void {
+    pinnedBufferIds.clear();
+    for (const id of ids) {
+        pinnedBufferIds.add(id);
+    }
 }
 
 function audioCacheGet(id: string): AudioBuffer | undefined {
@@ -107,6 +150,19 @@ type SerializedBuffer = {
 
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
+let activeImportTransaction: IDBTransaction | null = null;
+
+function cancelPendingImportTransaction(): void {
+    const transaction = activeImportTransaction;
+    activeImportTransaction = null;
+    if (transaction) {
+        try {
+            transaction.abort();
+        } catch {
+            // Transaction already completed.
+        }
+    }
+}
 
 function claimPersistenceGeneration(id: string): number {
     const generation = ++nextPersistenceGeneration;
@@ -206,6 +262,10 @@ type PreparedAudioBuffers = {
     publish: () => number;
 };
 
+type PreparedImportedAudioBuffers = PreparedAudioBuffers & {
+    persist: () => Promise<boolean>;
+};
+
 type PrepareBuffersFromIdbInput = {
     context: Pick<BaseAudioContext, 'createBuffer'>;
     ids?: string[];
@@ -238,9 +298,6 @@ async function prepareBuffersFromIdb({
                   });
 
         for (const key of keys) {
-            if (staged.length >= MAX_AUDIO_BUFFER_ENTRIES) {
-                break;
-            }
             if (shouldContinue?.() === false) {
                 return null;
             }
@@ -260,7 +317,12 @@ async function prepareBuffersFromIdb({
                 return null;
             }
             const length = data?.channelData[0]?.length ?? 0;
-            if (!data || length === 0) {
+            if (
+                !data ||
+                length === 0 ||
+                data.channelData.length !== data.numberOfChannels ||
+                data.channelData.some((channel) => channel.length !== length)
+            ) {
                 continue;
             }
             const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
@@ -280,6 +342,9 @@ async function prepareBuffersFromIdb({
                 return 0;
             }
             published = true;
+            if (ids) {
+                replacePinnedBufferIds(ids);
+            }
             for (const { id, buffer } of staged) {
                 audioCacheSet(id, buffer);
             }
@@ -305,6 +370,7 @@ export const audioBufferCache = {
 
     remove(id: string): void {
         cache.delete(id);
+        pinnedBufferIds.delete(id);
         clearWaveformCachesForId(id);
         void removeFromIdb(id);
     },
@@ -448,7 +514,9 @@ export const audioBufferCache = {
     },
 
     clear(): void {
+        cancelPendingImportTransaction();
         cache.clear();
+        pinnedBufferIds.clear();
         waveformCache.clear();
         persistenceGenerationById.clear();
         openDb()
@@ -461,6 +529,10 @@ export const audioBufferCache = {
                 /* ignore */
                 return null;
             });
+    },
+
+    cancelPendingImport(): void {
+        cancelPendingImportTransaction();
     },
 
     /** Serialize the given buffer IDs to base64-encoded PCM for embedding in a
@@ -523,7 +595,7 @@ export const audioBufferCache = {
 
     /** Decode authoritative embedded buffers without publishing them. The
      * caller owns the final synchronous project-transition commit. */
-    async importBuffers({
+    importBuffers({
         buffers,
         cacheIds,
         context,
@@ -533,42 +605,17 @@ export const audioBufferCache = {
         cacheIds?: string[];
         context: BaseAudioContext;
         shouldContinue?: () => boolean;
-    }): Promise<PreparedAudioBuffers | null> {
+    }): PreparedImportedAudioBuffers | null {
+        cancelPendingImportTransaction();
         const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
         const cacheIdSet = cacheIds ? new Set(cacheIds) : undefined;
-        for (const [id, data] of Object.entries(buffers)) {
+        const entries = Object.entries(buffers);
+
+        for (const [, data] of entries) {
             if (shouldContinue?.() === false) {
                 return null;
             }
-            try {
-                const channels = data.channelData.map(base64ToFloat32);
-                const length = channels[0]?.length ?? 0;
-                if (
-                    length === 0 ||
-                    channels.length !== data.numberOfChannels ||
-                    channels.some((channel) => channel.length !== length)
-                ) {
-                    return null;
-                }
-                const shouldCache = (!cacheIdSet || cacheIdSet.has(id)) && staged.length < MAX_AUDIO_BUFFER_ENTRIES;
-                const persisted = await persistSerializedToIdb(id, {
-                    sampleRate: data.sampleRate,
-                    numberOfChannels: data.numberOfChannels,
-                    channelData: channels,
-                    lastAccessed: Date.now(),
-                    sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
-                });
-                if ((!persisted && !shouldCache) || shouldContinue?.() === false) {
-                    return null;
-                }
-                if (shouldCache) {
-                    const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
-                    for (let channel = 0; channel < data.numberOfChannels; channel++) {
-                        buffer.getChannelData(channel).set(channels[channel]!);
-                    }
-                    staged.push({ id, buffer });
-                }
-            } catch {
+            if (!isValidExportedAudioBuffer(data)) {
                 return null;
             }
         }
@@ -577,13 +624,86 @@ export const audioBufferCache = {
             return null;
         }
 
+        for (const [id, data] of entries) {
+            if (!cacheIdSet || cacheIdSet.has(id)) {
+                const channels = data.channelData.map(base64ToFloat32);
+                const buffer = context.createBuffer(data.numberOfChannels, channels[0]!.length, data.sampleRate);
+                for (let channel = 0; channel < data.numberOfChannels; channel++) {
+                    buffer.getChannelData(channel).set(channels[channel]!);
+                }
+                staged.push({ id, buffer });
+            }
+        }
+
+        let persisted = false;
         let published = false;
         return {
+            persist: async () => {
+                if (persisted) {
+                    return true;
+                }
+                cancelPendingImportTransaction();
+                let database: IDBDatabase;
+                try {
+                    database = await openDb();
+                } catch {
+                    const allBuffersAreResident = entries.every(
+                        ([id]) => cacheIdSet === undefined || cacheIdSet.has(id)
+                    );
+                    persisted = allBuffersAreResident;
+                    return allBuffersAreResident;
+                }
+                if (shouldContinue?.() === false) {
+                    return false;
+                }
+
+                const generations = new Map<string, number>();
+                const transaction = database.transaction(STORE_NAME, 'readwrite');
+                activeImportTransaction = transaction;
+                try {
+                    const objectStore = transaction.objectStore(STORE_NAME);
+                    for (const [id, data] of entries) {
+                        const channels = data.channelData.map(base64ToFloat32);
+                        generations.set(id, claimPersistenceGeneration(id));
+                        objectStore.put(
+                            {
+                                sampleRate: data.sampleRate,
+                                numberOfChannels: data.numberOfChannels,
+                                channelData: channels,
+                                lastAccessed: Date.now(),
+                                sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
+                            } satisfies SerializedBuffer,
+                            id
+                        );
+                    }
+                    await new Promise<void>((resolve, reject) => {
+                        transaction.oncomplete = () => resolve();
+                        transaction.onabort = () => reject(transaction.error ?? new Error('IDB transaction aborted'));
+                        transaction.onerror = () => reject(transaction.error ?? new Error('IDB transaction failed'));
+                    });
+                    persisted = shouldContinue?.() !== false;
+                    return persisted;
+                } catch {
+                    return false;
+                } finally {
+                    if (activeImportTransaction === transaction) {
+                        activeImportTransaction = null;
+                    }
+                    for (const [id, generation] of generations) {
+                        if (persistenceGenerationById.get(id) === generation) {
+                            persistenceGenerationById.delete(id);
+                        }
+                    }
+                }
+            },
             publish: () => {
-                if (published) {
+                if (!persisted || published) {
                     return 0;
                 }
                 published = true;
+                if (cacheIds) {
+                    replacePinnedBufferIds(cacheIds);
+                }
                 for (const { id, buffer } of staged) {
                     clearWaveformCachesForId(id);
                     audioCacheSet(id, buffer);

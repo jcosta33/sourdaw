@@ -7,7 +7,7 @@ type ImportCachedAudioBuffersInput = {
     shouldContinue?: () => boolean;
 };
 
-type ImportCachedAudioBuffersOutput = ReturnType<typeof audioBufferCache.importBuffers>;
+type ImportCachedAudioBuffersOutput = Promise<ReturnType<typeof audioBufferCache.importBuffers>>;
 
 export function importCachedAudioBuffers({
     audioContext,
@@ -15,5 +15,7 @@ export function importCachedAudioBuffers({
     cacheIds,
     shouldContinue,
 }: ImportCachedAudioBuffersInput): ImportCachedAudioBuffersOutput {
-    return audioBufferCache.importBuffers({ context: audioContext, buffers, cacheIds, shouldContinue });
+    return Promise.resolve(
+        audioBufferCache.importBuffers({ context: audioContext, buffers, cacheIds, shouldContinue })
+    );
 }

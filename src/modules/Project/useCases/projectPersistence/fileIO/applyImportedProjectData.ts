@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     getAudioContext,
     importCachedAudioBuffers,
@@ -5,6 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -53,37 +56,49 @@ async function performImportedProjectDataApplication({
         shouldContinue: transaction.isCurrent,
     });
 
-    if (!preparedStoredBuffers || !transaction.isCurrent()) {
+    if (!preparedStoredBuffers) {
+        return false;
+    }
+    if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
+        return false;
+    }
+    if (!transaction.isCurrent()) {
         return false;
     }
 
     // Preparation is complete and this transition still owns commit authority.
     // Replace the live project synchronously so no partial reset is observable.
-    preparedStoredBuffers.publish();
-    preparedEmbeddedBuffers?.publish();
-    stopPlayback();
-    resetAudioGraph();
-    resetModuleStoresToDefault();
+    const crdtReset = batchStoreUpdates(() => {
+        const reset = createCrdtProject(data.meta.name);
+        preparedStoredBuffers.publish();
+        preparedEmbeddedBuffers?.publish();
+        stopPlayback();
+        resetAudioGraph();
+        resetModuleStoresToDefault();
 
-    // Publish the saved arrangement catalog and its active live snapshot.
-    hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-    hydrateModuleStoresFromProjectData(data);
+        // Publish the saved arrangement catalog and its active live snapshot.
+        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+        hydrateModuleStoresFromProjectData(data);
 
-    // 2. Hydrate Project Store (Meta & Tuning)
-    projectStore.set({
-        name: data.meta.name,
-        createdAt: data.meta.createdAt,
-        updatedAt: data.meta.updatedAt,
-        keyRoot: data.meta.keyRoot,
-        scaleName: data.meta.scaleName,
-        tuning: data.meta.tuning,
-        dirty: false,
-        loading: false,
-        initialized: true,
+        projectStore.set({
+            name: data.meta.name,
+            createdAt: data.meta.createdAt,
+            updatedAt: data.meta.updatedAt,
+            keyRoot: data.meta.keyRoot,
+            scaleName: data.meta.scaleName,
+            tuning: data.meta.tuning,
+            dirty: false,
+            loading: false,
+            initialized: true,
+        });
+
+        verifyAudioBufferReferences();
+        clearUndoHistory();
+        return reset;
     });
-
-    verifyAudioBufferReferences();
-    clearUndoHistory();
+    void crdtReset.catch((error: unknown) => {
+        logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority:', error);
+    });
     return true;
 }
 

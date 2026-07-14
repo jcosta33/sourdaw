@@ -8,12 +8,14 @@ import { switchArrangement } from '../arrangement/switchArrangement';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-const { prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
+const { cancelPendingAudioBufferImport, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport,
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb,
 }));

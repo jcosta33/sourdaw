@@ -1,3 +1,5 @@
+import { cancelPendingAudioBufferImport } from '#/modules/AudioEngine/useCases';
+
 let nextProjectTransitionId = 0;
 let activeProjectTransitionId = 0;
 
@@ -29,6 +31,7 @@ export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {
             }
             activeProjectTransitionId = transitionId;
             activated = true;
+            cancelPendingAudioBufferImport();
             return true;
         },
         canActivate: () => transitionId >= activeProjectTransitionId,

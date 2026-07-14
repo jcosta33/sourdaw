@@ -44,6 +44,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return { ...actual, cancelPendingAudioBufferImport: vi.fn() };
+});
 
 // Relative to saveProject.ts: ../../recentProjects/addToRecentProjects
 vi.mock('../recentProjects/addToRecentProjects', () => ({
@@ -61,12 +65,12 @@ describe('Project Persistence Use Cases', () => {
     });
 
     describe('loadProject', () => {
-        it('sets loading flag, loads CRDT, and hydrates stores', async () => {
+        it('loads CRDT and hydrates stores without publishing an abortable loading state', async () => {
             mocks.loadCrdtProject.mockResolvedValue(true);
 
             await loadProject();
 
-            expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ loading: true }));
+            expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ loading: true }));
             expect(mocks.loadCrdtProject).toHaveBeenCalled();
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
             expect(mocks.clearUndoHistory).toHaveBeenCalled();

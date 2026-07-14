@@ -5,6 +5,7 @@ import { createCrdtProject } from '../createCrdtProject';
 const mocks = vi.hoisted(() => ({
     createProject: vi.fn(),
     compactProject: vi.fn(),
+    branchStoreSet: vi.fn(),
 }));
 
 vi.mock('../../repositories/automergeRepository', () => ({
@@ -13,6 +14,10 @@ vi.mock('../../repositories/automergeRepository', () => ({
     },
 }));
 vi.mock('../compactProject', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../stores/branchStore', () => ({
+    branchStore: { set: mocks.branchStoreSet },
+    MAIN_BRANCH_ID: 'main',
+}));
 
 describe('createCrdtProject', () => {
     beforeEach(() => {
@@ -24,6 +29,16 @@ describe('createCrdtProject', () => {
         await createCrdtProject('New Project');
 
         expect(mocks.createProject).toHaveBeenCalledWith('New Project');
+        expect(mocks.branchStoreSet).toHaveBeenCalledWith({
+            branches: [
+                expect.objectContaining({
+                    branchId: 'main',
+                    rootDocId: 'root',
+                    sourceBranchId: null,
+                }),
+            ],
+            activeBranchId: 'main',
+        });
         expect(mocks.compactProject).toHaveBeenCalledOnce();
     });
 });

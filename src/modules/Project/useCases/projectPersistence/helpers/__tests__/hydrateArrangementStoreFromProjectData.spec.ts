@@ -7,6 +7,7 @@ import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { collectProjectAudioBufferIds } from '../collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../hydrateArrangementStoreFromProjectData';
 
 function projectTrack(id: string, bufferId: string, useRuntimeAlias = false): ProjectTrack {
@@ -172,5 +173,29 @@ describe('hydrateArrangementStoreFromProjectData', () => {
             pitchBendByClipId: {},
         });
         expect(arrangementStore.value?.arrangements[0]?.automation).toEqual({ lanes: [] });
+    });
+
+    it('uses the first saved arrangement consistently when the active id is invalid', () => {
+        const data = projectData();
+        data.arrangement.tracks = [projectTrack('top-level', 'top-level-buffer')];
+        data.arrangements = [
+            {
+                id: 'first',
+                name: 'First',
+                tracks: { tracks: [projectTrack('first-track', 'first-buffer')], selectedTrackId: 'first-track' },
+            },
+            {
+                id: 'second',
+                name: 'Second',
+                tracks: { tracks: [projectTrack('second-track', 'second-buffer')], selectedTrackId: null },
+            },
+        ];
+        data.activeArrangementId = 'missing';
+
+        hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+
+        expect(arrangementStore.value?.activeArrangementId).toBe('first');
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['first-track']);
+        expect(collectProjectAudioBufferIds({ data })).toEqual(['first-buffer']);
     });
 });

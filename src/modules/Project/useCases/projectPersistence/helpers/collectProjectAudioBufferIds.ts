@@ -1,4 +1,5 @@
 import { type HydratableProjectData, type HydratableProjectTrack } from './isHydratableProjectData';
+import { resolveActiveArrangementSnapshot } from './resolveActiveArrangementSnapshot';
 
 function collectTrackBufferIds({ ids, tracks }: { ids: Set<string>; tracks: readonly HydratableProjectTrack[] }): void {
     for (const track of tracks) {
@@ -29,7 +30,7 @@ type CollectProjectAudioBufferIdsInput = {
 
 export function collectProjectAudioBufferIds({ data }: CollectProjectAudioBufferIdsInput): string[] {
     const ids = new Set<string>();
-    const activeArrangement = data.arrangements?.find((arrangement) => arrangement.id === data.activeArrangementId);
+    const activeArrangement = resolveActiveArrangementSnapshot(data);
     collectTrackBufferIds({
         ids,
         tracks: activeArrangement?.tracks?.tracks ?? data.arrangement.tracks,

@@ -18,10 +18,6 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 export async function loadProject(): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     transaction.activate();
-    const current = projectStore.value;
-    if (current) {
-        projectStore.set({ ...current, loading: true });
-    }
 
     try {
         const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });

@@ -9,6 +9,7 @@ import {
     type HydratableProjectData,
     type HydratableProjectTrack,
 } from './isHydratableProjectData';
+import { resolveActiveArrangementSnapshot } from './resolveActiveArrangementSnapshot';
 
 type HydrateMidiWithInlineNotesInput = {
     midi: ProjectMidi | undefined;
@@ -83,7 +84,7 @@ type HydrateSavedArrangementInput = {
 };
 
 function hydrateSavedArrangement({ data, snapshot }: HydrateSavedArrangementInput): ArrangementSnapshot {
-    const useActiveFallback = snapshot.id === data.activeArrangementId;
+    const useActiveFallback = snapshot.id === resolveActiveArrangementSnapshot(data)?.id;
     const serializedTracks = snapshot.tracks?.tracks ?? (useActiveFallback ? data.arrangement.tracks : []);
     const midi = snapshot.midi ?? (useActiveFallback ? data.midi : undefined);
 
@@ -122,9 +123,9 @@ export function hydrateArrangementStoreFromProjectData({
 
         const fallbackArrangement = arrangements[0];
         if (fallbackArrangement) {
-            const requestedActiveArrangementId = data.activeArrangementId;
+            const effectiveActiveArrangementId = resolveActiveArrangementSnapshot(data)?.id;
             const activeArrangement =
-                arrangements.find((snapshot) => snapshot.id === requestedActiveArrangementId) ?? fallbackArrangement;
+                arrangements.find((snapshot) => snapshot.id === effectiveActiveArrangementId) ?? fallbackArrangement;
             arrangementStore.set({ arrangements, activeArrangementId: activeArrangement.id });
             loadSnapshot(activeArrangement);
             return;

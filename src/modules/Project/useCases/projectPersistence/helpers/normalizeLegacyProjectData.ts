@@ -17,6 +17,23 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
     const markerState = isRecord(value.markers) ? value.markers : undefined;
     const markers = Array.isArray(markerState?.markers) ? markerState.markers : [];
     const arrangementId = 'legacy-arrangement';
+    const arrangements = Array.isArray(value.arrangements)
+        ? value.arrangements
+        : [
+              {
+                  id: arrangementId,
+                  name: 'Arrangement 1',
+                  tracks: value.tracks,
+                  automation: value.automation,
+                  midi: value.midi,
+                  tempoMap: value.tempoMap,
+                  timeSignatureMap: value.timeSignatureMap,
+                  markers: markerState,
+                  takeLanes: value.takeLanes,
+              },
+          ];
+    const activeArrangementId =
+        typeof value.activeArrangementId === 'string' ? value.activeArrangementId : arrangementId;
 
     return {
         version: value.version,
@@ -38,20 +55,8 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
         timeSignatureMap: value.timeSignatureMap,
         takeLanes: value.takeLanes,
         sidechainRoutes: value.sidechainRoutes,
-        arrangements: [
-            {
-                id: arrangementId,
-                name: 'Arrangement 1',
-                tracks: value.tracks,
-                automation: value.automation,
-                midi: value.midi,
-                tempoMap: value.tempoMap,
-                timeSignatureMap: value.timeSignatureMap,
-                markers: markerState,
-                takeLanes: value.takeLanes,
-            },
-        ],
-        activeArrangementId: arrangementId,
+        arrangements,
+        activeArrangementId,
         history: { checkpoints: [] },
     };
 }

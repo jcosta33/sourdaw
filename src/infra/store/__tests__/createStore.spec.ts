@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
 
-import { createStore } from '../createStore';
+import { batchStoreUpdates, createStore } from '../createStore';
 import { createMemoryStorage } from '../storage/createMemoryStorage';
 
 const createDummyLogger = (): Logger => ({
@@ -85,6 +85,26 @@ describe('createStore', () => {
         store.set({ count: 1 });
 
         expect(subscriber).toHaveBeenCalledWith({ count: 1 });
+    });
+
+    it('should defer and deduplicate notifications until a store batch is complete', () => {
+        const first = createStore({ initialData: { count: 0 } });
+        const second = createStore({ initialData: { count: 0 } });
+        const observations: Array<[number, number]> = [];
+        first.subscribe(() => observations.push([first.value!.count, second.value!.count]));
+        second.subscribe(() => observations.push([first.value!.count, second.value!.count]));
+
+        batchStoreUpdates(() => {
+            first.set({ count: 1 });
+            first.set({ count: 2 });
+            second.set({ count: 3 });
+            expect(observations).toEqual([]);
+        });
+
+        expect(observations).toEqual([
+            [2, 3],
+            [2, 3],
+        ]);
     });
 
     it('should notify subscribers with null on set(null)', () => {

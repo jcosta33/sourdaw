@@ -38,6 +38,7 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    createCrdtProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 
@@ -48,9 +49,10 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 // loadRecentProject side effects — none touch the round-trip storage path.
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
     getAudioContext: vi.fn(),
-    importCachedAudioBuffers: vi.fn().mockResolvedValue({ publish: () => 0 }),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
