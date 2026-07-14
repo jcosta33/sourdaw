@@ -55,8 +55,6 @@ function getPersistedPatchParams(input: SetProofParamWithPatchInput): ProofEngin
             ]);
         case 'chainOrder':
             return input.value.map((value, index) => ({ name: `chain_order_${index}`, value }));
-        case 'name':
-        case 'presetId':
         case 'inputGain':
         case 'outputGain':
         case 'eqBypassed':
@@ -71,8 +69,6 @@ function getPersistedPatchParams(input: SetProofParamWithPatchInput): ProofEngin
         case 'limLookahead':
         case 'ditherMode':
         case 'ditherBits':
-        case 'target':
-        case 'targetLufs':
             return [];
     }
 
@@ -187,16 +183,12 @@ function getMappedScalarParam(input: SetProofParamWithPatchInput): GetMappedScal
             return { name: 'dither_mode', value: ditherModeToInt(input.value) };
         case 'ditherBits':
             return { name: 'dither_bits', value: input.value };
-        case 'name':
-        case 'presetId':
         case 'chainOrder':
         case 'eqBands':
         case 'dynCrossoverFreqs':
         case 'dynBands':
         case 'imgBandWidth':
         case 'excBands':
-        case 'target':
-        case 'targetLufs':
             return null;
     }
     return null;

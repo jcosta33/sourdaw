@@ -1,6 +1,7 @@
 import { type ProofPatch } from '../models/ProofPatch';
 
 import { ditherModeToInt } from './ditherModeToInt';
+import { proofTargetToInt } from './proofTargetCodec';
 
 export function getProofPatchParameterValues(patch: ProofPatch): Record<string, number> {
     const parameterValues: Record<string, number> = {
@@ -18,6 +19,8 @@ export function getProofPatchParameterValues(patch: ProofPatch): Record<string, 
         lim_lookahead: patch.limLookahead,
         dither_mode: ditherModeToInt(patch.ditherMode),
         dither_bits: patch.ditherBits,
+        target_mode: proofTargetToInt(patch.target),
+        target_lufs: patch.targetLufs,
     };
 
     for (const [index, band] of patch.eqBands.entries()) {

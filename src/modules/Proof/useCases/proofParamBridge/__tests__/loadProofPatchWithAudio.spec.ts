@@ -126,10 +126,12 @@ describe('loadProofPatchWithAudio', () => {
                 img_width3: DEFAULT_PATCH.imgBandWidth[3],
                 exc_band3_blend: DEFAULT_PATCH.excBands[3]!.blend,
                 dither_bits: DEFAULT_PATCH.ditherBits,
+                target_mode: 0,
+                target_lufs: DEFAULT_PATCH.targetLufs,
                 chain_order_4: DEFAULT_PATCH.chainOrder[4],
             })
         );
-        expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(122);
+        expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
     });
 
     it('should rehydrate restored scalar device params before syncing a default Proof patch', () => {
@@ -298,6 +300,23 @@ describe('loadProofPatchWithAudio', () => {
 
         expect(getProofState(DEVICE_ID).patch.ditherMode).toBe(expectedMode);
         expect(paramCalls(bridge).get('dither_mode')).toBe(restoredValue);
+    });
+
+    it('rehydrates an atomically persisted target and loudness value', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 3,
+                target_lufs: -23,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe('broadcast');
+        expect(patch.targetLufs).toBe(-23);
     });
 
     it('should rehydrate restored scalars when runtime-only state already created the Proof entry', () => {

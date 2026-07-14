@@ -87,13 +87,26 @@ export type ProofPatch = {
     targetLufs: number;
 };
 
+type ScalarProofPatchKey = Exclude<
+    keyof ProofPatch,
+    | 'name'
+    | 'presetId'
+    | 'eqBands'
+    | 'dynCrossoverFreqs'
+    | 'dynBands'
+    | 'imgBandWidth'
+    | 'excBands'
+    | 'target'
+    | 'targetLufs'
+>;
+
 type ScalarProofPatchEdit = {
-    [Key in Exclude<keyof ProofPatch, 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands'>]-?: {
+    [Key in ScalarProofPatchKey]-?: {
         key: Key;
         value: ProofPatch[Key];
         isTransient?: boolean;
     };
-}[Exclude<keyof ProofPatch, 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands'>];
+}[ScalarProofPatchKey];
 
 export type ProofPatchEdit =
     | ScalarProofPatchEdit

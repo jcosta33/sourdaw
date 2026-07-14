@@ -75,6 +75,37 @@ describe('ProofPanel', () => {
 
         expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
         expect(getProofState(DEVICE_ID).patch.targetLufs).toBe(-23);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, {
+            target_mode: 3,
+            target_lufs: -23,
+        });
+    });
+
+    it('sends only fields that changed during repeated Level 2 Exciter moves', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 2 });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        expect(knobs).toHaveLength(5);
+        const exciterKnob = knobs[2]!;
+
+        fireEvent.pointerDown(exciterKnob, { button: 0, pointerId: 7, clientY: 100 });
+        fireEvent.pointerMove(exciterKnob, { pointerId: 7, clientY: 90 });
+        bridge.setParam.mockClear();
+        fireEvent.pointerMove(exciterKnob, { pointerId: 7, clientY: 60 });
+
+        expect(bridge.setParam).toHaveBeenCalledTimes(4);
+        expect(bridge.setParam).toHaveBeenNthCalledWith(1, 'exc_band0_drive', expect.any(Number));
+        expect(bridge.setParam).toHaveBeenNthCalledWith(2, 'exc_band1_drive', expect.any(Number));
+        expect(bridge.setParam).toHaveBeenNthCalledWith(3, 'exc_band2_drive', expect.any(Number));
+        expect(bridge.setParam).toHaveBeenNthCalledWith(4, 'exc_band3_drive', expect.any(Number));
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        fireEvent.pointerUp(exciterKnob, { pointerId: 7 });
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
     });
 
     it('toggles A/B compare through the bridge and the store (no inline view-code store write)', () => {

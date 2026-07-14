@@ -20,6 +20,7 @@ import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
+import { setProofTarget } from '../../useCases/proofParamBridge/setProofTarget';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { LoudnessHistory } from '../components/LoudnessHistory';
 import { ProofDynSection } from '../components/ProofDynSection';
@@ -220,15 +221,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 tone="mint"
                                                 size="sm"
                                                 onClick={() => {
-                                                    setProofParamWithPatch({
+                                                    setProofTarget({
                                                         deviceId,
-                                                        key: 'target',
-                                                        value: option.value,
-                                                    });
-                                                    setProofParamWithPatch({
-                                                        deviceId,
-                                                        key: 'targetLufs',
-                                                        value: option.lufs,
+                                                        target: option.value,
+                                                        targetLufs: option.lufs,
                                                     });
                                                 }}
                                             >
@@ -430,8 +426,7 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofParamWithPatch({ deviceId, key: 'target', value: opt.value });
-                                setProofParamWithPatch({ deviceId, key: 'targetLufs', value: opt.lufs });
+                                setProofTarget({ deviceId, target: opt.value, targetLufs: opt.lufs });
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)
@@ -564,10 +559,11 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                             deviceId,
                             key: 'dynBands',
                             value: bands,
-                            changedParams: bands.map((_, bandIndex) => ({
-                                bandIndex,
-                                field: 'threshold' as const,
-                            })),
+                            changedParams: bands.flatMap((band, bandIndex) =>
+                                patch.dynBands[bandIndex]?.threshold === band.threshold
+                                    ? []
+                                    : [{ bandIndex, field: 'threshold' as const }]
+                            ),
                             isTransient,
                         });
                     }}
@@ -590,7 +586,9 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                             deviceId,
                             key: 'imgBandWidth',
                             value: widths,
-                            changedParams: [{ bandIndex: 2 }, { bandIndex: 3 }],
+                            changedParams: [2, 3].flatMap((bandIndex) =>
+                                patch.imgBandWidth[bandIndex] === widths[bandIndex] ? [] : [{ bandIndex }]
+                            ),
                             isTransient,
                         });
                     }}
@@ -615,10 +613,20 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                             deviceId,
                             key: 'excBands',
                             value: bands,
-                            changedParams: bands.flatMap((_, bandIndex) => [
-                                { bandIndex, field: 'drive' as const },
-                                { bandIndex, field: 'enabled' as const },
-                            ]),
+                            changedParams: bands.flatMap((band, bandIndex) => {
+                                const previousBand = patch.excBands[bandIndex];
+                                const changedParams: Array<{
+                                    bandIndex: number;
+                                    field: 'drive' | 'enabled';
+                                }> = [];
+                                if (previousBand?.drive !== band.drive) {
+                                    changedParams.push({ bandIndex, field: 'drive' as const });
+                                }
+                                if (previousBand?.enabled !== band.enabled) {
+                                    changedParams.push({ bandIndex, field: 'enabled' as const });
+                                }
+                                return changedParams;
+                            }),
                             isTransient,
                         });
                     }}

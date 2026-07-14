@@ -141,17 +141,6 @@ describe('setProofParamWithPatch', () => {
         expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ eq_band1_freq: 1_200 }));
     });
 
-    it('does not persist target fields in the scalar persistence slice', () => {
-        const bridge = makeBridge();
-        bridges.set('dev-1', bridge);
-
-        setProofParamWithPatch({ deviceId: 'dev-1', key: 'targetLufs', value: -16 });
-
-        expect(getProofState('dev-1').patch.targetLufs).toBe(-16);
-        expect(bridge.setParam).not.toHaveBeenCalled();
-        expect(persistDevicePatch).not.toHaveBeenCalled();
-    });
-
     it('still updates the store and persists mapped params when no bridge is registered', () => {
         setProofParamWithPatch({ deviceId: 'no-bridge', key: 'outputGain', value: 5 });
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);

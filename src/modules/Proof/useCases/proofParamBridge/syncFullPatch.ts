@@ -2,6 +2,7 @@ import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
 import { type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
+import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 
 import { bridges } from './helpers';
@@ -141,6 +142,13 @@ function getRestoredScalarPatch(parameterValues: Record<string, number>): Partia
     const ditherBits = integerFromRestoredParam(parameterValues.dither_bits, 16, 24);
     if (ditherBits === 16 || ditherBits === 24) {
         restoredPatch.ditherBits = ditherBits;
+    }
+
+    const target = proofTargetFromInt(parameterValues.target_mode);
+    const targetLufs = numberFromRestoredParam(parameterValues.target_lufs, -60, 0);
+    if (target !== null && targetLufs !== null) {
+        restoredPatch.target = target;
+        restoredPatch.targetLufs = targetLufs;
     }
 
     return restoredPatch;
