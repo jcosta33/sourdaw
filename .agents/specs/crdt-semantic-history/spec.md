@@ -78,7 +78,7 @@ context when it completes, and overlapping asynchronous top-level actions must b
 isolated scoped contexts so one action cannot clear or relabel another action's writes. Storage
 batching must not coalesce writes carrying different action contexts into one semantic change.
 
-Verify with: `pnpm test:run src/modules/Command/useCases/__tests__/executeAppAction.spec.ts src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts` using nested and overlapping action cases that reach the real storage mutation boundary.
+Verify with: `pnpm test:run src/modules/Command/useCases/__tests__/semanticCrdtAttribution.spec.ts`, covering nested and overlapping actions through the real storage mutation boundary and asserting that separate contexts produce separately attributed changes.
 
 ## Open questions
 

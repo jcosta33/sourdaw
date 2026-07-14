@@ -81,7 +81,7 @@ consumers continue to address the same root key rather than being retargeted to
 per-branch document IDs. Auto-save and merge-lineage detection must still
 address the real per-document IDs, not the fixed alias.
 
-Verify with: `pnpm test:run src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts`
+Verify with: `pnpm test:run src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranchWriteIsolation.spec.ts`, using the real repository and storage adapter to queue an outgoing-root write, race the branch switch, and assert both branch documents and their persisted IDs.
 
 ## Open questions
 
