@@ -194,6 +194,10 @@ count incoming type-only references. The separate type cruise uses
 test-inclusive graph. Those gates improve type-edge visibility but do not make the
 main `no-orphans` graph type-aware.
 
+The blanket shape exclusions are pre-existing classification debt, not evidence-backed
+per-file exceptions. They remain unchanged until the runtime/type-only/test-only triage
+required by AC-003 supports narrowing them; AC-005 governs new path-specific exceptions.
+
 ### Exact current exceptions
 
 These are the current path-specific exceptions, retained only with their evidence:
@@ -284,8 +288,10 @@ claim that every validator rule is ineffective.
   references before any exclusion is narrowed.
 - Dynamic entrypoints MUST be classified from direct launcher evidence, not from a
   filename, worker API shape, or a comment alone.
-- Exceptions MUST remain exact and evidence-backed; broad path patterns are not a
-  substitute for classification.
+- New path-specific exceptions MUST remain exact and evidence-backed; broad path
+  patterns are not a substitute for classification.
+- Existing blanket shape exclusions MUST NOT be broadened; narrowing them requires
+  the runtime/type-only/test-only triage required by AC-003.
 - No source import, barrel export, registry entry, or product consumer may be added
   only to make a warning disappear.
 - The five current warnings remain visible until [Push integration Q-004](../push-integration/spec.md)

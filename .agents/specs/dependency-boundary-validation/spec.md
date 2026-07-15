@@ -75,9 +75,11 @@ Verify with: focused source-reference search and `pnpm deps:validate`
 
 ### AC-005 — Exact exceptions only
 
-Every intentional orphan exception MUST match one exact path and an evidenced
+New intentional orphan exceptions MUST match one exact path and an evidenced
 classification such as a dynamic entrypoint, shared test fixture, or runtime-used
-type/helper; directory-wide orphan exceptions MUST NOT be added.
+type/helper; directory-wide orphan exceptions MUST NOT be added. The existing
+blanket shape exclusions are legacy classification debt documented in [research.md](research.md);
+they MUST NOT be broadened, and any narrowing is governed by AC-003.
 
 Verify with: `.dependency-cruiser.cjs` review and `pnpm deps:validate`
 
