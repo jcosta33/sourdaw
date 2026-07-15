@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
+import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { compactProject } from '../compactProject';
 import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
@@ -20,6 +22,8 @@ type VersionedQueueState = {
     pendingFullSnapshot: unknown;
     persistedBaseDocIds: Set<unknown>;
 };
+
+type PersistenceOperationOutcome = { kind: 'resolved' } | { kind: 'rejected'; error: unknown };
 
 function isVersionedQueueState(value: unknown): value is VersionedQueueState {
     if (typeof value !== 'object' || value === null) {
@@ -75,6 +79,87 @@ async function readBundle(
 
 function getPersistedDocumentKeys(persistence: TransactionalPersistence): string[] {
     return [...persistence.records.keys()].filter((key) => key !== PERSISTENCE_AUTHORITY_KEY);
+}
+
+async function readCurrentBundle(
+    persistence: TransactionalPersistence
+): Promise<Awaited<ReturnType<typeof loadAllFromIdb>>> {
+    return readBundle(persistence, persistence.getTransactions('readonly').length + 1);
+}
+
+async function commitRemoteBundle({
+    bundle,
+    persistence,
+}: {
+    bundle: DocumentBundle;
+    persistence: TransactionalPersistence;
+}): Promise<void> {
+    const occurrence = persistence.getTransactions('readwrite').length + 1;
+    const save = saveAllToIdb(bundle);
+    const transaction = await persistence.waitForTransaction('readwrite', occurrence);
+    transaction.complete();
+    await expect(save).resolves.toMatchObject({ status: 'committed' });
+}
+
+async function importPersistenceAfterQueueVersionMismatch(): Promise<typeof import('../persistCrdtProject')> {
+    const capturedStates: unknown[] = [];
+    vi.resetModules();
+    vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({
+        createHmrPersistentState: <State>(key: string, factory: () => State): State => {
+            const state = createHmrPersistentState(key, factory);
+            capturedStates.push(state);
+            return state;
+        },
+    }));
+    vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+    await import('../persistCrdtProject');
+
+    const state = capturedStates[capturedStates.length - 1];
+    if (!isVersionedQueueState(state)) {
+        throw new Error('Expected the queue HMR state holder');
+    }
+    state.version = 0;
+
+    vi.resetModules();
+    return import('../persistCrdtProject');
+}
+
+async function settleOperationCapturingWrites({
+    firstWriteOccurrence,
+    operation,
+    persistence,
+}: {
+    firstWriteOccurrence: number;
+    operation: Promise<void>;
+    persistence: TransactionalPersistence;
+}): Promise<{ error: unknown; writes: readonly import('./helpers/transactionalPersistence').TransactionWrite[] }> {
+    const outcomePromise: Promise<PersistenceOperationOutcome> = operation.then(
+        () => ({ kind: 'resolved' }),
+        (error: unknown) => ({ kind: 'rejected', error })
+    );
+    const writes: import('./helpers/transactionalPersistence').TransactionWrite[] = [];
+    let occurrence = firstWriteOccurrence;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const result = await Promise.race([
+            outcomePromise,
+            persistence
+                .waitForTransaction('readwrite', occurrence)
+                .then((transaction) => ({ kind: 'transaction' as const, transaction })),
+        ]);
+        if (result.kind !== 'transaction') {
+            return {
+                error: result.kind === 'rejected' ? result.error : null,
+                writes,
+            };
+        }
+
+        writes.push(...result.transaction.writes);
+        result.transaction.abort();
+        occurrence++;
+    }
+
+    throw new Error('Persistence operation did not settle after four aborted writes');
 }
 
 describe('persistCrdtProject', () => {
@@ -669,6 +754,263 @@ describe('persistCrdtProject', () => {
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ inFlightHmr: true });
     });
 
+    it('merges the durable bundle before adopting authority during incompatible queue migration', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+        const staleBundle = automergeRepository.saveAll();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.remoteMigrationEdit = true;
+        });
+        await commitRemoteBundle({ bundle: automergeRepository.saveAll(), persistence });
+
+        await expect(automergeRepository.loadAll({ bundle: staleBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.localMigrationEdit = true;
+        });
+
+        try {
+            const { persistCrdtProject: persistAfterMigration } = await importPersistenceAfterQueueVersionMismatch();
+            const recovery = persistAfterMigration();
+            const recoverySave = await persistence.waitForTransaction('readwrite', 3);
+            expect(recoverySave.writes.some((write) => write.kind === 'put' && write.key === 'root')).toBe(true);
+            recoverySave.complete();
+            await recovery;
+
+            const finalBundle = await readCurrentBundle(persistence);
+            if (!finalBundle) {
+                throw new Error('Expected the reconciled migration bundle');
+            }
+            automergeRepository.reset();
+            await expect(automergeRepository.loadAll({ bundle: finalBundle, shouldCommit: () => true })).resolves.toBe(
+                true
+            );
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                localMigrationEdit: true,
+                remoteMigrationEdit: true,
+            });
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+    });
+
+    it('revokes an in-flight migration merge when a replacement project resets the queue', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+        const staleBundle = automergeRepository.saveAll();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.remoteBeforeReplacement = true;
+        });
+        await commitRemoteBundle({ bundle: automergeRepository.saveAll(), persistence });
+        await expect(automergeRepository.loadAll({ bundle: staleBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+
+        let releaseMerge: (() => void) | null = null;
+        const mergeGate = new Promise<void>((resolve) => {
+            releaseMerge = resolve;
+        });
+        let markMergeStarted: (() => void) | null = null;
+        const mergeStarted = new Promise<void>((resolve) => {
+            markMergeStarted = resolve;
+        });
+        const mergeBundle = automergeRepository.mergeBundle.bind(automergeRepository);
+        vi.spyOn(automergeRepository, 'mergeBundle').mockImplementation(async (bundle, options) => {
+            markMergeStarted?.();
+            await mergeGate;
+            return mergeBundle(bundle, options);
+        });
+
+        try {
+            await importPersistenceAfterQueueVersionMismatch();
+            const queueAfterMigration = await import('../crdtPersistenceQueue');
+            await mergeStarted;
+
+            await queueAfterMigration.runCrdtPersistenceOperation('reset');
+            automergeRepository.createProject('replacement');
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.replacementProject = true;
+            });
+            const replacementCompaction = queueAfterMigration.runCrdtPersistenceOperation('compact');
+            releaseMerge?.();
+
+            const replacementSave = await persistence.waitForTransaction('readwrite', 3);
+            replacementSave.complete();
+            await replacementCompaction;
+            expect(persistence.getTransactions('readwrite')).toHaveLength(3);
+
+            const finalBundle = await readCurrentBundle(persistence);
+            if (!finalBundle) {
+                throw new Error('Expected the replacement project bundle');
+            }
+            automergeRepository.reset();
+            await expect(automergeRepository.loadAll({ bundle: finalBundle, shouldCommit: () => true })).resolves.toBe(
+                true
+            );
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                replacementProject: true,
+            });
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty(
+                'remoteBeforeReplacement'
+            );
+        } finally {
+            releaseMerge?.();
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+    });
+
+    it.each(['addition', 'deletion'] as const)(
+        'rejects a durable document $0 during incompatible queue migration and poisons retries',
+        async (remoteMembershipChange) => {
+            const documentId = `remote_${remoteMembershipChange}`;
+            automergeRepository.createProject('project');
+            if (remoteMembershipChange === 'deletion') {
+                automergeRepository.createChildDoc(documentId);
+            }
+
+            const baseCompaction = compactProject();
+            const baseSave = await persistence.waitForTransaction('readwrite', 1);
+            baseSave.complete();
+            await baseCompaction;
+            const staleBundle = automergeRepository.saveAll();
+
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.remoteMembershipEdit = remoteMembershipChange;
+            });
+            if (remoteMembershipChange === 'addition') {
+                automergeRepository.createChildDoc(documentId);
+            } else {
+                automergeRepository.removeDoc(documentId);
+            }
+            await commitRemoteBundle({ bundle: automergeRepository.saveAll(), persistence });
+
+            await expect(automergeRepository.loadAll({ bundle: staleBundle, shouldCommit: () => true })).resolves.toBe(
+                true
+            );
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.localStaleMembershipEdit = remoteMembershipChange;
+            });
+            expect(automergeRepository.hasDoc(documentId)).toBe(remoteMembershipChange === 'deletion');
+
+            try {
+                const { persistCrdtProject: persistAfterMigration } =
+                    await importPersistenceAfterQueueVersionMismatch();
+                const firstAttempt = await settleOperationCapturingWrites({
+                    firstWriteOccurrence: 3,
+                    operation: persistAfterMigration(),
+                    persistence,
+                });
+                const retry = await settleOperationCapturingWrites({
+                    firstWriteOccurrence: persistence.getTransactions('readwrite').length + 1,
+                    operation: persistAfterMigration(),
+                    persistence,
+                });
+
+                expect(firstAttempt.error).toMatchObject({ _tag: 'CrdtPersistenceMembershipConflict' });
+                expect(firstAttempt.writes).toEqual([]);
+                expect(retry.error).toMatchObject({ _tag: 'CrdtPersistenceMembershipConflict' });
+                expect(retry.writes).toEqual([]);
+                expect(automergeRepository.hasDoc(documentId)).toBe(remoteMembershipChange === 'deletion');
+                expect(getPersistedDocumentKeys(persistence).sort()).toEqual(
+                    remoteMembershipChange === 'addition' ? [documentId, 'root'].sort() : ['root']
+                );
+
+                const { loadCrdtProject: reloadAfterConflict } = await import('../loadCrdtProject');
+                await expect(reloadAfterConflict()).resolves.toBe(true);
+                expect(automergeRepository.hasDoc(documentId)).toBe(remoteMembershipChange === 'addition');
+
+                const { compactProject: compactAfterReload } = await import('../compactProject');
+                const postReloadCompaction = compactAfterReload();
+                const postReloadSave = await persistence.waitForTransaction(
+                    'readwrite',
+                    persistence.getTransactions('readwrite').length + 1
+                );
+                expect(postReloadSave.writes.some((write) => write.kind === 'put' && write.key === 'root')).toBe(true);
+                postReloadSave.complete();
+                await postReloadCompaction;
+
+                const finalBundle = await readCurrentBundle(persistence);
+                if (!finalBundle) {
+                    throw new Error('Expected the durable membership bundle to remain intact');
+                }
+                automergeRepository.reset();
+                await expect(
+                    automergeRepository.loadAll({ bundle: finalBundle, shouldCommit: () => true })
+                ).resolves.toBe(true);
+                expect(automergeRepository.hasDoc(documentId)).toBe(remoteMembershipChange === 'addition');
+                expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                    remoteMembershipEdit: remoteMembershipChange,
+                });
+                expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty(
+                    'localStaleMembershipEdit'
+                );
+            } finally {
+                vi.doUnmock('../../repositories/automergeRepository');
+                vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+                vi.resetModules();
+            }
+        }
+    );
+
+    it('rejects committed empty durable membership during incompatible queue migration', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+        const staleBundle = automergeRepository.saveAll();
+
+        automergeRepository.reset();
+        await commitRemoteBundle({ bundle: new Map(), persistence });
+        await expect(automergeRepository.loadAll({ bundle: staleBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.staleClearedProjectEdit = true;
+        });
+
+        try {
+            const { persistCrdtProject: persistAfterMigration } = await importPersistenceAfterQueueVersionMismatch();
+            const firstAttempt = await settleOperationCapturingWrites({
+                firstWriteOccurrence: 3,
+                operation: persistAfterMigration(),
+                persistence,
+            });
+            const retry = await settleOperationCapturingWrites({
+                firstWriteOccurrence: persistence.getTransactions('readwrite').length + 1,
+                operation: persistAfterMigration(),
+                persistence,
+            });
+
+            expect(firstAttempt.error).toMatchObject({ _tag: 'CrdtPersistenceMembershipConflict' });
+            expect(firstAttempt.writes).toEqual([]);
+            expect(retry.error).toMatchObject({ _tag: 'CrdtPersistenceMembershipConflict' });
+            expect(retry.writes).toEqual([]);
+            expect(getPersistedDocumentKeys(persistence)).toEqual([]);
+            await expect(readCurrentBundle(persistence)).resolves.toBeNull();
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+    });
+
     it('recovers a current full bundle after incompatible queue migration aborts an in-flight incremental', async () => {
         automergeRepository.createProject('project');
 
@@ -946,7 +1288,7 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(2);
+            expect(state.version).toBe(3);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();

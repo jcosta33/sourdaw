@@ -202,6 +202,30 @@ describe('mergeBundle sync fallback — byte-equivalence with the worker path (f
         expect(gotCount).toBe(refCount);
         expect(getHeads(mergedDoc)).toEqual(getHeads(referenceMerged));
     });
+
+    it('keeps the current repository intact when merge commit authority is revoked', async () => {
+        let local = init<Record<string, unknown>>('aaaaaaaaaaaaaaaa');
+        local = change(local, (doc) => {
+            doc.localOnly = true;
+        });
+        let remote = init<Record<string, unknown>>('bbbbbbbbbbbbbbbb');
+        remote = change(remote, (doc) => {
+            doc.remoteOnly = true;
+        });
+
+        automergeRepository.createProject('current');
+        automergeRepository.insertDoc('root', local);
+        const currentBytes = automergeRepository.saveDoc('root');
+
+        const result = await automergeRepository.mergeBundle(new Map([['root', save(remote)]]), {
+            shouldCommit: () => false,
+        });
+
+        expect(result).toEqual({ mergedDocIds: [], newDocIds: [] });
+        expect(automergeRepository.saveDoc('root')).toEqual(currentBytes);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ localOnly: true });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('remoteOnly');
+    });
 });
 
 describe('reset clears change listeners (fix 5)', () => {

@@ -28,6 +28,10 @@ type DecodedBundle = {
     rootId: DocId;
 };
 
+type MergeBundleOptions = {
+    shouldCommit?: () => boolean;
+};
+
 function createMissingRootError(): Error {
     return new Error('[AutomergeRepository] Non-empty bundle is missing the exact root document');
 }
@@ -523,8 +527,11 @@ class AutomergeRepository {
      * serialised once (save — fast), sent to the worker alongside the
      * incoming bundle, then the worker returns merged compacted binaries.
      */
-    async mergeBundle(bundle: DocumentBundle): Promise<MergeResult> {
+    async mergeBundle(bundle: DocumentBundle, { shouldCommit }: MergeBundleOptions = {}): Promise<MergeResult> {
         const decodedIncoming = await this.decodeAll(bundle);
+        if (shouldCommit?.() === false) {
+            return { mergedDocIds: [], newDocIds: [] };
+        }
         const normalizedIncoming: DocumentBundle = new Map();
         for (const [id, doc] of decodedIncoming.documents) {
             normalizedIncoming.set(id, save(doc));
@@ -549,9 +556,15 @@ class AutomergeRepository {
             newDocIds = response.newDocIds;
         } catch (error) {
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', error);
+            if (shouldCommit?.() === false) {
+                return { mergedDocIds: [], newDocIds: [] };
+            }
             return this._mergeBundleSync(normalizedIncoming);
         }
 
+        if (shouldCommit?.() === false) {
+            return { mergedDocIds: [], newDocIds: [] };
+        }
         for (const [id, bytes] of compacted) {
             this.docs.set(id, load<AnyDoc>(bytes));
         }
