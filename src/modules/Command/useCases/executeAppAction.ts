@@ -1,5 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import {
+    runWithAutomergeStorageTransaction,
+    waitForAutomergeSnapshotTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { pushActionHistoryEntry, setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
 import { getHandlerMap } from '../stores/handlerRegistry';
@@ -16,6 +20,8 @@ export type ExecuteOptions = {
     /** When true, skip pushing an undo entry and action history entry.
      *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
     skipUndo?: boolean;
+    /** Opaque owner for CRDT writes made synchronously by this action. */
+    snapshotTransaction?: object;
     /** When true, do not capture this execution in an active macro recording. */
     skipMacroRecording?: boolean;
 };
@@ -31,6 +37,8 @@ export const executeAppAction = inject({ logger })(
                 logger.error(new Error(`No handler registered for action: ${action.type}`));
                 return;
             }
+
+            await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
             // Capture undo info BEFORE executing — this lets describe() snapshot current
             // state for destructive actions like removeTrack / removeClip.
@@ -49,7 +57,10 @@ export const executeAppAction = inject({ logger })(
             });
 
             try {
-                await handler.execute(action);
+                const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
+                    handler.execute(action)
+                );
+                await execution;
             } catch (error) {
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                 throw error;

@@ -1,6 +1,9 @@
 export type RuntimeTrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
-type RuntimeDocumentBundle = Map<string, Uint8Array>;
+type RuntimeDocumentSnapshotEntry =
+    | { readonly state: 'present'; readonly bytes: Uint8Array }
+    | { readonly state: 'absent' };
+type RuntimeDocumentSnapshot = Map<string, RuntimeDocumentSnapshotEntry>;
 
 export type RuntimeAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: RuntimeTrackKind } }
@@ -364,6 +367,6 @@ export type RuntimeAction =
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: RuntimeDocumentBundle } };
+    | { type: 'restoreDsoSnapshot'; payload: { bundle: RuntimeDocumentSnapshot } };
 
 export type RuntimeActionType = RuntimeAction['type'];

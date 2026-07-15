@@ -5,6 +5,7 @@ import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '../createAutomergeStorage';
 
 type TestDoc = {
@@ -16,6 +17,7 @@ type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>
 type MutationRecord = {
     docId: string;
     message: string | undefined;
+    snapshotTransaction: object | undefined;
 };
 
 type CreateTestPortInput = {
@@ -36,9 +38,9 @@ const createTestPort = (
         getDoc: () => doc,
         getSemanticMessage,
         hasDoc: () => hasDoc,
-        mutateDoc: ({ docId, changeFn, message }) => {
+        mutateDoc: ({ docId, changeFn, message, snapshotTransaction }) => {
             changeFn(doc);
-            mutations.push({ docId, message });
+            mutations.push({ docId, message, snapshotTransaction });
         },
     };
 
@@ -102,7 +104,7 @@ describe('createAutomergeStorage', () => {
         store.hydrate();
 
         expect(store.value).toEqual({ count: 7 });
-        expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
         expect(doc.state).toEqual({ count: 7 });
     });
 
@@ -124,7 +126,7 @@ describe('createAutomergeStorage', () => {
 
         frameCallback?.(100);
 
-        expect(mutations).toEqual([{ docId: 'root', message: 'first change' }]);
+        expect(mutations).toEqual([{ docId: 'root', message: 'first change', snapshotTransaction: undefined }]);
         expect(doc.state).toEqual({ count: 2 });
     });
 
@@ -137,7 +139,7 @@ describe('createAutomergeStorage', () => {
         flushAutomergeStorageWrites();
 
         expect(cancelAnimationFrameMock).toHaveBeenCalledWith(42);
-        expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
         expect(doc.state).toEqual({ count: 7 });
     });
 
@@ -156,7 +158,7 @@ describe('createAutomergeStorage', () => {
         storage.clear();
 
         expect(cancelAnimationFrameMock).toHaveBeenCalledWith(42);
-        expect(mutations).toEqual([{ docId: 'root', message: 'clear write' }]);
+        expect(mutations).toEqual([{ docId: 'root', message: 'clear write', snapshotTransaction: undefined }]);
         expect(Object.hasOwn(doc, 'state')).toBe(false);
         expect(storage.get()).toBeNull();
     });
@@ -201,7 +203,55 @@ describe('createAutomergeStorage', () => {
         storage.set({ count: 9 });
 
         expect(storage.hydrate?.()).toBe(false);
-        expect(mutations).toEqual([{ docId: 'root', message: undefined }]);
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
         expect(doc.state).toEqual({ count: 9 });
+    });
+
+    it('flushes only writes owned by the requested snapshot transaction', () => {
+        const snapshotTransaction = {};
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const ownedStorage = createAutomergeStorage<{ count: number }>('root', 'owned');
+        const independentStorage = createAutomergeStorage<{ count: number }>('root', 'independent');
+
+        runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+            ownedStorage.set({ count: 1 });
+        });
+        independentStorage.set({ count: 2 });
+
+        flushAutomergeStorageWrites(snapshotTransaction);
+
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction }]);
+        expect(doc.owned).toEqual({ count: 1 });
+        expect(doc.independent).toBeUndefined();
+
+        flushAutomergeStorageWrites();
+        expect(mutations).toEqual([
+            { docId: 'root', message: undefined, snapshotTransaction },
+            { docId: 'root', message: undefined, snapshotTransaction: undefined },
+        ]);
+        expect(doc.independent).toEqual({ count: 2 });
+    });
+
+    it('does not coalesce writes with different snapshot owners in one adapter', () => {
+        const snapshotTransaction = {};
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+        runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+            storage.set({ count: 1 });
+        });
+        storage.set({ count: 2 });
+
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction }]);
+        expect(doc.state).toEqual({ count: 1 });
+
+        flushAutomergeStorageWrites();
+        expect(mutations).toEqual([
+            { docId: 'root', message: undefined, snapshotTransaction },
+            { docId: 'root', message: undefined, snapshotTransaction: undefined },
+        ]);
+        expect(doc.state).toEqual({ count: 2 });
     });
 });

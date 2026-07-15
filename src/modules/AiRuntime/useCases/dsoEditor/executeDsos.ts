@@ -233,15 +233,19 @@ function toDrumStyle(state: string): DrumPatternStyle {
  */
 type DsoExecContext = {
     lastInsertedDeviceId: string | null;
+    executeOptions: {
+        skipUndo: true;
+        source: 'ai';
+        snapshotTransaction?: object;
+    };
 };
 
 // ── Compilation (execution) ──────────────────────────────────────────────────
 
-/** Options passed to executeAppAction for all DSO sub-operations.
- *  skipUndo: the batch undo entry is managed by executeDsoEdit, not per-operation. */
-const DSO_EXEC_OPTIONS = { skipUndo: true, source: 'ai' as const };
-
 async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void> {
+    // The batch transaction handle is local to this execution, so concurrent
+    // plans cannot overwrite one another's action-write ownership.
+    const DSO_EXEC_OPTIONS = context.executeOptions;
     const state = trackStore.value;
     if (!state) {
         return;
@@ -690,8 +694,15 @@ type ExecuteDsosOutput = Promise<{
  * failures of any DSO that threw — callers must surface failures rather than
  * report unconditional success.
  */
-export async function executeDsos(dsos: Dso[]): ExecuteDsosOutput {
-    const context: DsoExecContext = { lastInsertedDeviceId: null };
+export async function executeDsos(dsos: Dso[], snapshotTransaction?: object): ExecuteDsosOutput {
+    const context: DsoExecContext = {
+        lastInsertedDeviceId: null,
+        executeOptions: {
+            skipUndo: true,
+            source: 'ai',
+            snapshotTransaction,
+        },
+    };
     const summaries: string[] = [];
     const failures: Array<{ op: Dso['op']; reason: string }> = [];
 
