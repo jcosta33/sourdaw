@@ -20,10 +20,11 @@ import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
+import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
-import { PROCESSOR_TYPES } from '../../useCases/processorFactory';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
+import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
 import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
@@ -525,6 +526,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                                     processorId={proc.id}
                                     processorType={proc.type}
                                     onSetParam={setYeastProcessorParam}
+                                    onCommand={sendYeastProcessorCommand}
                                 />
                             </div>
                         ) : null}
@@ -619,6 +621,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                                     processorId={proc.id}
                                     processorType={proc.type}
                                     onSetParam={setYeastProcessorParam}
+                                    onCommand={sendYeastProcessorCommand}
                                 />
                             </div>
                         ) : null}
@@ -700,6 +703,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                         processorId={proc.id}
                                         processorType={proc.type}
                                         onSetParam={setYeastProcessorParam}
+                                        onCommand={sendYeastProcessorCommand}
                                     />
                                 </div>
                             ) : null}

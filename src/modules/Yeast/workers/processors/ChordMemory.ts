@@ -1,0 +1,153 @@
+/**
+ * Chord Memory — Cthulhu-style one-finger chord recall.
+ *
+ * Store a voicing per trigger key, then recall it with a single finger.
+ * Optionally transpose stored chords relative to the original root.
+ */
+
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
+
+import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
+
+type StoredChord = {
+    root: number;
+    notes: number[]; // absolute MIDI notes
+};
+
+export class ChordMemory extends BaseMidiProcessor {
+    readonly name = 'Chord Memory';
+
+    private memory = new Map<number, StoredChord>(); // trigger note → stored chord
+    private learning = false;
+    private learnBuffer: number[] = [];
+    private learnRoot = -1;
+    private transposeMode = true; // transpose stored chord relative to trigger
+    // Track active chords for Note Off.
+    // Numeric key (channel << 7) | triggerNote matches MidiRack/ScaleQuantizer and
+    // avoids a per-event template-literal allocation on the audio thread.
+    private activeChords = new Map<string | undefined, Map<number, number[]>>();
+
+    constructor(id?: string) {
+        super(id ?? `chordmem-${Date.now()}`);
+    }
+
+    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+        for (const event of input) {
+            if (event.kind.type === 'noteOn') {
+                if (this.learning) {
+                    // Accumulate notes into learn buffer
+                    if (this.learnRoot === -1) {
+                        this.learnRoot = event.kind.note;
+                    }
+                    this.learnBuffer.push(event.kind.note);
+                    // Don't output during learning
+                    continue;
+                }
+
+                const stored = this.memory.get(event.kind.note);
+                if (stored) {
+                    const key = (event.kind.channel << 7) | event.kind.note;
+                    const emitted: number[] = [];
+                    const transpose = this.transposeMode ? event.kind.note - stored.root : 0;
+
+                    for (const node of stored.notes) {
+                        const note = Math.max(0, Math.min(127, node + transpose));
+                        emitted.push(note);
+                        output.push({
+                            timeSamples: event.timeSamples,
+                            trackId: event.trackId,
+                            kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
+                        });
+                    }
+                    const routeMap = this.activeChords.get(event.trackId) ?? new Map<number, number[]>();
+                    routeMap.set(key, emitted);
+                    this.activeChords.set(event.trackId, routeMap);
+                } else {
+                    // No memory for this key — pass through
+                    output.push(event);
+                }
+            } else if (event.kind.type === 'noteOff') {
+                if (this.learning) {
+                    // On release during learning, finalize if buffer has notes
+                    // (simplified: commit on first Note Off)
+                    if (this.learnBuffer.length > 0 && this.learnRoot >= 0) {
+                        this.memory.set(this.learnRoot, {
+                            root: this.learnRoot,
+                            notes: [...this.learnBuffer],
+                        });
+                        this.learnBuffer = [];
+                        this.learnRoot = -1;
+                        this.learning = false;
+                    }
+                    continue;
+                }
+
+                const key = (event.kind.channel << 7) | event.kind.note;
+                const routeMap = this.activeChords.get(event.trackId);
+                const emitted = routeMap?.get(key);
+                if (routeMap && emitted) {
+                    for (const note of emitted) {
+                        output.push({
+                            timeSamples: event.timeSamples,
+                            trackId: event.trackId,
+                            kind: { type: 'noteOff', channel: event.kind.channel, note },
+                        });
+                    }
+                    routeMap.delete(key);
+                    if (routeMap.size === 0) {
+                        this.activeChords.delete(event.trackId);
+                    }
+                } else {
+                    output.push(event);
+                }
+            } else {
+                output.push(event);
+            }
+        }
+    }
+
+    reset(): void {
+        this.activeChords.clear();
+        this.learnBuffer = [];
+        this.learnRoot = -1;
+        this.learning = false;
+    }
+
+    executeCommand(command: YeastProcessorCommand): boolean {
+        if (command.processorId !== this.id) {
+            return false;
+        }
+        switch (command.type) {
+            case 'chordMemory.learn':
+                this.learning = true;
+                this.learnBuffer = [];
+                this.learnRoot = -1;
+                return true;
+            case 'chordMemory.clear':
+                this.memory.clear();
+                return true;
+        }
+        return false;
+    }
+
+    protected resetParams(): void {
+        this.transposeMode = true;
+    }
+
+    setParam(name: string, value: number): void {
+        switch (name) {
+            case 'transpose_mode':
+                this.transposeMode = value > 0.5;
+                break;
+        }
+    }
+
+    /** Get stored chord count for UI. */
+    getStoredCount(): number {
+        return this.memory.size;
+    }
+    isLearning(): boolean {
+        return this.learning;
+    }
+}

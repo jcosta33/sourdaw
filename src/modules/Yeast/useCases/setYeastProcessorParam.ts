@@ -1,7 +1,23 @@
-import { getYeastRack, getWorkletNodeSync } from '../stores/yeastStore';
+import { yeastStore } from '../stores/yeastStore';
+
+import { commitYeastProjection } from './commitYeastProjection';
 
 export function setYeastProcessorParam(id: string, name: string, value: number): void {
-    const rack = getYeastRack();
-    rack.setProcessorParam(id, name, value);
-    getWorkletNodeSync()?.setParam(id, name, value);
+    const state = yeastStore.value;
+    if (!state) {
+        return;
+    }
+
+    const processor = state.processors.find((entry) => entry.id === id);
+    if (!processor) {
+        return;
+    }
+    if (processor.type === 'chordMemory' && (name === 'learn' || name === 'clear')) {
+        return;
+    }
+    commitYeastProjection(
+        state.processors.map((entry) =>
+            entry.id === id ? { ...entry, params: { ...entry.params, [name]: value } } : entry
+        )
+    );
 }

@@ -861,6 +861,9 @@ class AudioEngineImpl implements AudioEngine {
                         }
                     }
                 }
+                if (dn.grandBouleControls) {
+                    dn.grandBouleControls.allNotesOff();
+                }
                 if (dn.levainControls) {
                     // Levain has a realism-layer release burst per noteOff
                     // (bow-lift noise on strings). A 128-note fan-out would

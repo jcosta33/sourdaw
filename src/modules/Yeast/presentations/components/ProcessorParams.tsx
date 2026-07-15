@@ -6,14 +6,18 @@ import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProcessorType } from '../../useCases/processorFactory';
+import { type ProcessorType } from '../../models/ProcessorCatalog';
+
+import type { ChordMemoryCommand } from '../../models/YeastProcessorCommand';
 
 type OnSetParam = (id: string, name: string, value: number) => void;
+type OnCommand = (id: string, command: ChordMemoryCommand) => Promise<unknown> | void;
 
 type Props = {
     processorId: string;
     processorType: ProcessorType;
     onSetParam: OnSetParam;
+    onCommand: OnCommand;
 };
 
 const K = ({
@@ -89,7 +93,19 @@ const Sel = ({
     </div>
 );
 
-export const ProcessorParams = ({ processorId: pid, processorType, onSetParam }: Props): ReactElement | null => {
+export const ProcessorParams = ({
+    processorId: pid,
+    processorType,
+    onSetParam,
+    onCommand,
+}: Props): ReactElement | null => {
+    const handleCommand = (command: ChordMemoryCommand): void => {
+        const result = onCommand(pid, command);
+        if (result) {
+            void result.catch(() => undefined);
+        }
+    };
+
     switch (processorType) {
         case 'arpeggiator':
             return (
@@ -240,7 +256,7 @@ export const ProcessorParams = ({ processorId: pid, processorType, onSetParam }:
                     <button
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
-                        onClick={() => onSetParam(pid, 'learn', 1)}
+                        onClick={() => handleCommand('learn')}
                     >
                         Learn
                     </button>
@@ -255,7 +271,7 @@ export const ProcessorParams = ({ processorId: pid, processorType, onSetParam }:
                     <button
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-[var(--color-state-danger)]/30 cursor-pointer text-muted-foreground hover:text-[var(--color-state-danger)]"
-                        onClick={() => onSetParam(pid, 'clear', 1)}
+                        onClick={() => handleCommand('clear')}
                     >
                         Clear All
                     </button>
