@@ -5,8 +5,13 @@ title: RAVE AI timbre transfer
 status: draft
 owner: The Sourdaw team
 sources:
-  - "Originating design note: RAVE timbre transfer (.agents/specs/rave-timbre-transfer/)"
+  - ../audio-generation/research.md
+  - ../audio-generation/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
 ---
 
 # RAVE AI timbre transfer
@@ -33,10 +38,10 @@ identity model's input ramp within ±1e-3.
 
 Verify with: `pnpm test:run -- rave`
 
-### AC-002 — End-to-end transfer inserts a clip
+### AC-002 — Loaded-model transfer inserts a clip
 
-`transferTimbreToClip` must render output and insert a new clip on the source track via the
-existing clip-insertion path, honouring the `placement` mode.
+With a loaded model, `transferTimbreToClip` must render output and insert a new clip on the
+source track through the existing clip-insertion path, honouring the `placement` mode.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -147,17 +152,16 @@ Verify with: `pnpm test:run -- RavePanel`
 
 ### AC-017 — Model browser with factory list and custom import
 
-The panel's model-browser column must list the 5 factory models, each showing a size badge and
-its download/loaded state, and must provide an "Import custom .onnx" control for caching a
-user-supplied model.
+The panel's model-browser column MUST list the 5 factory models, each with a size badge and its
+download/loaded state, plus an "Import custom .onnx" control for caching a user-supplied model.
 
 Verify with: `pnpm test:run -- RavePanel`
 
 ### AC-018 — Source and target clip assignment controls
 
-The transfer controls must auto-set the source clip from the selected clip and allow
-reassigning it by dragging in another clip, and must present a target-clip drop zone that
-accepts either an arrangement clip reference or a file.
+The transfer controls MUST auto-set the source clip from the selected clip, permit reassignment by
+dragging in another clip, and present a target-clip drop zone accepting an arrangement clip
+reference or a file.
 
 Verify with: `pnpm test:run -- RavePanel`
 
@@ -196,14 +200,17 @@ whenever monitor mode is active.
 
 Verify with: `pnpm test:run -- RavePanel`
 
-### AC-024 — Direct pure-helper fallback
+### AC-024 — Direct deterministic helpers are test-only
 
-The existing pure `encodeAudio`, `decodeLatent`, and `timbreTransfer` functions MUST remain
-directly callable without a loaded model so deterministic tests and CI can use an explicit
-model-free fallback without downloading model weights.
+The current `encodeAudio.ts`, `decodeLatent.ts`, and `timbreTransfer.ts` files remain directly
+callable only as deterministic CI/test helpers, while product transfer uses the loaded model path
+and never silently calls these helpers. Future implementation MUST relocate each helper, with its
+tests and observable contract preserved, to its exact corresponding
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/` path before retiring the current
+`useCases/rave` file; helper-test success and product reachability are not retirement conditions.
 
 Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__` covering direct
-no-model calls to each named pure helper.
+calls to each named pure helper and the exact current-to-future path disposition.
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -215,51 +222,49 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-026 — Direct pure latent interpolation helper
 
-The pure `interpolateLatent` function MUST remain directly callable for deterministic CI/test use
-as a latent-space morph primitive with this observable contract: for `time` in `[0, 1]`,
+The current `interpolateLatent.ts` file remains directly callable as a deterministic CI/test
+latent-space primitive with this observable contract: for `time` in `[0, 1]`,
 `interpolateLatent(alpha, b, time)` returns a vector with `alpha.values.length` values in source
 order, linearly blending each source value with the corresponding `b.values` value (using `0`
-when that target dimension is absent) and `timeSec`; with equal-shaped vectors, `time = 0` and
-`time = 1` return the source and target vectors respectively, and the function does not mutate
-either input.
+when that target dimension is absent) and `timeSec`; equal-shaped endpoints return source/target
+vectors and neither input is mutated. Future implementation MUST relocate it, with this contract
+and its tests preserved, to
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` before retiring
+the exact current file; direct helper success and product reachability do not retire the warning.
 
 Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`
 covering equal-shaped `time = 0` and `time = 1` endpoints including `timeSec`, missing target
 dimensions defaulting to `0`, and deep-equality snapshots proving neither input is mutated.
 
-### AC-027 — Explicit model-free selection
+### AC-027 — Model-backed transfer provenance
 
-`transferTimbreToClip` MUST NOT select a model-free fallback mode or generic dispatcher when no
-model is loaded. The only model-free CI/test fallback is direct invocation of the named pure
-helpers `encodeAudio`, `decodeLatent`, `timbreTransfer`, and `interpolateLatent`; there is no
-implicit product fallback mode or dispatcher.
+With a loaded model, `transferTimbreToClip` derives the rendered audio, cache entry, and
+inserted clip bytes from the named worker's ONNX `encodeAudioWithOnnx` -> `decodeLatentWithOnnx`
+result. The owning test MUST make that model result intentionally different from every pure-helper
+result and assert that the inserted bytes equal the model result; pure-helper output is excluded
+from model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
-asserting that no-model execution returns `MODEL_NOT_LOADED` without invoking a pure helper, plus
-direct-helper tests `src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts`,
-`src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts`,
-`src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts`, and
-`src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`.
+asserting model-distinguishable bytes at render, cache, and insertion boundaries.
 
 ## Current-state ownership
 
-The four current `no-orphans` helpers are heuristic/test-only today and do not prove the
-model-backed product contracts in AC-001 through AC-005 or AC-027:
+The four current `no-orphans` paths are direct deterministic CI/test helpers only. Their green
+tests are intentionally non-retiring and do not prove the model-backed product contracts in
+AC-001 through AC-005 or AC-027:
 
-- `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`
-- `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`
-- `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts`
-- `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`
+| Current warning path | Current disposition | Required future helper path | Warning closes only when |
+| --- | --- | --- | --- |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
 
-Their sibling tests cover deterministic pure-helper behavior only; they do not prove the
-model-backed `transferTimbreToClip` contract. AC-005 owns its typed error behavior, including
-`MODEL_NOT_LOADED` without pure-helper invocation; AC-024 owns direct pure-helper availability for
-deterministic model-free CI/test fallback; AC-026 owns `interpolateLatent` as the pure latent-space
-interpolation primitive; and AC-027 owns the prohibition on an implicit product fallback mode or
-generic dispatcher. This promotion retains all four helpers; it does not silently
-authorize deletion or narrow either fallback contract. Any future retirement MUST name the
-exact helper path and change its owning acceptance criterion.
+Direct helper availability, passing CI tests, and product reachability are not warning retirement
+conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024` and `AC-026`
+own the direct test contracts and exact relocation; `AC-027` owns model-result provenance. This
+promotion retains all four current files and does not authorize a silent product fallback.
 
 ## Constraints
 

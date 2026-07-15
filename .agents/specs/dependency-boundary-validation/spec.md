@@ -6,11 +6,11 @@ status: draft
 owner: The Sourdaw team
 sources:
   - research.md
-  - code:../../../.dependency-cruiser.cjs
-  - code:../../../scripts/check-dependency-boundaries.mjs
-  - code:../../../.dependency-cruiser.types.cjs
-  - code:../../../.dependency-cruiser.tests.cjs
-  - code:../../../package.json
+  - ../../../.dependency-cruiser.cjs
+  - ../../../scripts/check-dependency-boundaries.mjs
+  - ../../../.dependency-cruiser.types.cjs
+  - ../../../.dependency-cruiser.tests.cjs
+  - ../../../package.json
 ---
 
 # Dependency boundary validation
@@ -38,15 +38,16 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages), [AC-024](../push-integration/spec.md#ac-024--allowlisted-controller-profile-capabilities), and [AC-025](../push-integration/spec.md#ac-025--no-profile-source-execution): retain only behind the typed-message, finite `ControllerProfileCapability` mapping, and no-source-execution boundaries; [Q-004](../push-integration/spec.md) is sequencing/generalization context only. |
-| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
-| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
-| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
-| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md): retain as a direct pure latent-interpolation CI/test primitive. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages) through [AC-027](../push-integration/spec.md#ac-027--bound-sendmidi-output): retain only as a visible dormant warning until the future typed binding, exact action/port mappings, and no-source boundaries are implemented, or an explicit exact-path retirement names this file; [Q-004](../push-integration/spec.md) is sequencing context only. |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md#ac-026--direct-pure-latent-interpolation-helper): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
 
-Each warning remains visible until real product wiring/reachability satisfies its
-linked owning requirement, or that owning spec records an explicit exact-path
-retirement; this map does not itself clear a warning.
+Each warning remains visible until its exact path-specific disposition is met. Direct helper
+availability, passing CI, product reachability, synthetic imports, and new registry entries do
+not clear the four RAVE warnings; only the named relocation plus exact current-path retirement or
+an explicit superseding ADR can do so.
 
 ## Requirements
 
@@ -61,8 +62,8 @@ Verify with: `pnpm deps:validate`
 ### AC-002 — No-orphans remains visible debt
 
 The `no-orphans` rule MUST remain a warning until the real dormant-module cleanup
-and product-owner decisions are complete; a passing baseline MUST NOT be presented
-as zero orphan debt while these five warnings remain.
+and product-owner decisions are complete; a passing baseline is not presented as
+zero orphan debt while these five warnings remain.
 
 Verify with: `pnpm deps:validate` and the `no-orphans` rule in `.dependency-cruiser.cjs`
 
@@ -79,7 +80,7 @@ Verify with: a dated type-aware orphan probe recorded beside this spec and `pnpm
 
 An intentional dynamic-entrypoint exception MUST be an exact file path backed by
 direct launcher evidence such as `new Worker(new URL(..., import.meta.url))`; a
-worker-shaped file without a launcher MUST remain a visible warning.
+worker-shaped file without a launcher remains a visible warning.
 
 Verify with: focused source-reference search and `pnpm deps:validate`
 
@@ -87,15 +88,15 @@ Verify with: focused source-reference search and `pnpm deps:validate`
 
 New intentional orphan exceptions MUST match one exact path and an evidenced
 classification such as a dynamic entrypoint, shared test fixture, or runtime-used
-type/helper; directory-wide orphan exceptions MUST NOT be added. The existing
+type/helper; directory-wide orphan exceptions are prohibited. The existing
 blanket shape exclusions are legacy classification debt documented in [research.md](research.md);
-they MUST NOT be broadened, and any narrowing is governed by AC-003.
+they are not broadened, and any narrowing is governed by AC-003.
 
 Verify with: `.dependency-cruiser.cjs` review and `pnpm deps:validate`
 
 ### AC-006 — No fake reachability
 
-No warning MAY be cleared by a synthetic import, empty barrel export, artificial
+No warning is cleared by a synthetic import, empty barrel export, artificial
 registration, or other cosmetic wiring; product wiring or deletion MUST be
 justified by its owning spec and verified by behavior coverage or explicit
 path-named retirement.
@@ -105,8 +106,8 @@ Verify with: focused reference search, owning-spec review, and `pnpm deps:valida
 ### AC-007 — Durable warning ownership
 
 The five current warning paths MUST remain covered by the path-specific ownership and
-disposition map above before source remediation; each path MUST point to an exact
-owning requirement or an explicit exact-path retirement condition.
+disposition map above before source remediation; each row points to an exact owning
+requirement or an explicit exact-path retirement condition.
 
 Verify with: the table and cross-links in this spec, the linked Push/RAVE requirements,
 and `rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`

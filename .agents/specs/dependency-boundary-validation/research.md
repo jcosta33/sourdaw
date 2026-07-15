@@ -5,11 +5,11 @@ title: Dependency boundary validation research
 status: current
 owner: The Sourdaw team
 sources:
-  - code:../../../.dependency-cruiser.cjs
-  - code:../../../scripts/check-dependency-boundaries.mjs
-  - code:../../../.dependency-cruiser.types.cjs
-  - code:../../../.dependency-cruiser.tests.cjs
-  - code:../../../package.json
+  - ../../../.dependency-cruiser.cjs
+  - ../../../scripts/check-dependency-boundaries.mjs
+  - ../../../.dependency-cruiser.types.cjs
+  - ../../../.dependency-cruiser.tests.cjs
+  - ../../../package.json
 ---
 
 # Research: dependency boundary validation
@@ -78,12 +78,12 @@ instructions, findings, run summary, blocked questions, and self-review.
   only by sibling specs and had no production/UI/runtime pipeline. The packet records
   all three verification items as passed and no source branch, worktree, PR, or
   merge as opened.
-- **Future-work constraints:** the MIDI path may be deleted only by exact-path
-  approval or retained behind a real controller-scripting spec; the four RAVE paths
-  may be deleted only by exact-path approval or retained behind a real product spec
-  covering runtime ownership, source/target audio selection, model execution, cache,
-  UI/actions, and verification. No dependency-cruiser exception or synthetic
-  reachability is allowed.
+- **Future-work constraints:** the MIDI path may be retired only by exact-path
+  approval or a compliant controller-profile implementation; each RAVE path remains a
+  direct deterministic CI/test helper now, then MUST move to its named
+  `__tests__/helpers/` path with tests/contract preserved before its exact current file is
+  retired. An explicit superseding ADR may replace an exact disposition. Product reachability,
+  dependency-cruiser exceptions, and synthetic reachability are not alternatives.
 - **Disposition:** all task requirements and its blocked questions are preserved in
   the durable warning ownership and roadmap invariants. The packet is deletion-
   eligible after merge; this branch does not delete the source.
@@ -104,10 +104,10 @@ decision options, task status, recommendation, and residual risk.
   no production RAVE pipeline. It records Suspec-only changes, no source worktree,
   branch, PR, or merge, and the remaining human-attention items.
 - **Future-work constraints:** source remediation stays blocked until exact path-
-  named deletion approval or a real product spec; the MIDI path also remains subject
-  to the worker trust/sandbox and typed-action decisions owned by Push integration,
-  and RAVE wiring must satisfy its real acceptance criteria rather than the dormant
-  heuristic tests.
+  named retirement or compliant implementation. The MIDI path remains subject to
+  the worker trust and typed-action decisions owned by Push integration. RAVE model-backed
+  transfer must satisfy its real acceptance criteria, and each helper warning still requires
+  the named relocation or an explicit superseding ADR rather than dormant heuristic tests.
 - **Disposition:** the complete review record, including its blocked verdict and
   residual risk, is represented here and in the durable warning sections. It is
   deletion-eligible after merge; this branch does not delete the source.
@@ -227,17 +227,18 @@ The MIDI worker contains a `self.onmessage` handler and executes supplied code w
 `new Function`, but source search found no launcher, static import, string/path
 reference, or test import. Its own comment says Worker isolation is only basic and
 is not a complete secure sandbox. The controller-profile boundaries belong to Push
-integration AC-023 through AC-025: typed message validation, the finite capability
-contract, and no profile-source execution. Q-004 is sequencing/generalization
+integration AC-023 through AC-027: typed message validation, the future binding and
+typed action/port contract, and no profile-source execution. Q-004 is sequencing/generalization
 context only; this research does not authorize arbitrary script execution.
 
 The four RAVE files are imported only by their sibling specs and have no production,
 UI, or runtime transform pipeline. `encodeAudio` is a deterministic spectral
 transform, `decodeLatent` is a synthetic sine-based decoder, and the interpolation
 and transfer helpers blend arrays in memory. The RAVE store explicitly describes the
-encoder as simulation rather than actual ONNX. They are test-only heuristic
-placeholders, not evidence for the real ONNX acceptance criteria in
-[RAVE timbre transfer](../rave-timbre-transfer/spec.md).
+encoder as simulation rather than actual ONNX. They are direct deterministic CI/test
+helpers, not evidence for the real model-backed acceptance criteria in
+[RAVE timbre transfer](../rave-timbre-transfer/spec.md); green helper tests are
+explicitly non-retiring.
 
 ## Historical evidence
 
@@ -296,9 +297,13 @@ claim that every validator rule is ineffective.
 - No source import, barrel export, registry entry, or product consumer may be added
   only to make a warning disappear.
 - The controller worker warning MUST remain visible until real product behavior satisfies
-  Push integration AC-023, AC-024, and AC-025, or an explicit exact-path retirement
+  Push integration AC-023 through AC-027, or an explicit exact-path retirement
   decision names the file; Q-004 is sequencing/generalization context only and MUST NOT
   close, defer, weaken, or replace those requirements.
-- The four RAVE helper warnings MUST remain visible until RAVE AC-024 and AC-026, as
-  mapped in the dependency-boundary spec, deliver real behavior, or an explicit
-  exact-path retirement decision names each file.
+- The four RAVE helper warnings MUST remain visible while their current files serve as
+  direct deterministic CI/test helpers. Each file MUST be relocated to its exact named
+  `__tests__/helpers/` path with tests/contract preserved before that current path is
+  retired, unless an explicit superseding ADR names the exact path; product reachability
+  and green helper tests MUST NOT close the warning.
+- Loaded-model RAVE transfer MUST derive rendered, cached, and inserted audio from the
+  worker/ONNX encode-decode result; pure-helper output MUST NOT satisfy that product contract.

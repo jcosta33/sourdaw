@@ -5,8 +5,9 @@ title: Ableton Push 2 hardware integration
 status: draft
 owner: The Sourdaw team
 sources:
-  - "Originating design note: Push 2 hardware integration (.agents/specs/push-integration/)"
+  - ../hardware-controller-ecosystem/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
 ---
 
 # Ableton Push 2 hardware integration
@@ -169,9 +170,9 @@ Verify with: `pnpm test:run -- ControlSurfacesTab`
 
 ### AC-021 — Function-button AppAction routing
 
-A pressed function button must dispatch its mapped `AppAction` via `routeButtonPress`. The v1
-essential map must cover Play, Stop, Record, metronome, undo, redo, Session, Note, Drum, Scale,
-and arrow-key navigation; unmapped buttons must emit a generic `button-press` event.
+A pressed function button MUST dispatch its mapped `AppAction` via `routeButtonPress`; the v1
+essential map covers Play, Stop, Record, metronome, undo, redo, Session, Note, Drum, Scale, and
+arrow-key navigation, while unmapped buttons emit a generic `button-press` event.
 
 Verify with: `pnpm test:run -- PushHardware`
 
@@ -184,43 +185,82 @@ Verify with: `pnpm test:run -- PushHardware`
 
 ### AC-023 — Schema-validated controller-profile messages
 
-Every controller-profile worker MUST accept only a schema-validated typed message union,
-rejecting malformed messages and unknown message kinds without dispatching a DAW or MIDI action.
+Every controller-profile boundary MUST accept only a schema-validated typed message union.
+Malformed messages and unknown kinds return the typed `INVALID_MESSAGE` rejection without
+dispatching an `AppAction` or writing to a MIDI output.
 
-Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
-covering valid, malformed, and unknown message kinds, and `pnpm deps:validate`.
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+valid, malformed, and unknown message kinds, plus `pnpm deps:validate`.
 
-### AC-024 — Allowlisted controller-profile capabilities
+### AC-024 — Future controller-profile host binding
 
-Controller-profile workers MUST implement exactly this finite initial `ControllerProfileCapability`
-union and no self-selected allowlist:
+The future host contract MUST validate controller-profile data and capability requests against a
+`ControllerProfileBinding` carrying exactly:
 
-| Identifier | Payload | Host mapping |
-| --- | --- | --- |
-| `setDeviceParameter` | `deviceId` and `paramId` are nonempty strings; `value` is a finite number | Resolve `(deviceId, paramId)` through the current automatable-parameter registry and map exactly to the typed `AppAction` `setDeviceParameter`; reject an unresolved target without dispatch. |
-| `sendMidi` | `bytes` is an array of 1-1024 integer values, each in `0..255` | Route only to the profile's bound MIDI output through a MIDI-owned typed use case/port; reject an unbound output and never represent the request as a generic DAW command. |
+| Field | Contract |
+| --- | --- |
+| `profileId` | The bound profile identifier. |
+| `allowedTargets` | The exact finite `{ deviceId, paramId }` tuples granted to this profile; no wildcard or self-selected target. |
+| `midiOutputId` | Exactly one bound MIDI output identifier. |
 
-Requests with an unknown identifier or invalid payload are rejected without invoking an
-`AppAction` or MIDI port. No other capability identifier or action is accepted. Any expansion
-requires explicit changes to this spec, the `ControllerProfileCapability` union, the host
-registry, and the exhaustive mapping tests.
+Host-side schema validation finishes before an `AppAction` is created or bytes are sent. The
+finite initial capability union contains only `setDeviceParameter` and `sendMidi`. Typed
+rejections are `INVALID_MESSAGE`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`, and
+`OUTPUT_UNBOUND`. This binding, its schema validator, the owner lookup, the typed action mapping,
+and the MIDI-owned typed output port are unimplemented today; this is a future host contract.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, using
-exhaustive tables for both mappings and rejecting unknown identifiers, invalid payloads, unresolved
-automatable targets, and unbound profile MIDI outputs; inspect the automatable-parameter registry,
-typed `setDeviceParameter` AppAction, and MIDI-owned typed use case/port; and run
+binding shape, exact-target matching, one-output binding, pre-dispatch validation, and the four
+typed rejection outcomes; inspect the current profile surface and run `pnpm deps:validate`.
+
+### AC-025 — No profile-source execution at any boundary
+
+Controller profiles remain schema-validated data from ingestion and loading through storage,
+host dispatch, and worker messaging. Every boundary MUST reject injected `source`, `code`, or
+equivalent fields, and no boundary executes profile-provided strings through `eval`, `new
+Function`, string-to-code compilation, or an equivalent mechanism.
+
+The complete current/future surface for this check is `src/modules/MIDI/models/ControllerProfile.ts`,
+`src/modules/MIDI/useCases/hardware/importHardwareMappings.ts`,
+`src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts`,
+`src/modules/MIDI/stores/hardwareControllerStore.ts`,
+`src/modules/MIDI/workers/controllerScriptingWorker.ts`, and any future controller-profile
+loader, host, or worker under `src/modules/MIDI/` or `src/modules/PushHardware/`. The current
+checkout is knowingly non-conforming: `ControllerProfile.scriptUrl` is a source field and the
+dormant worker calls `new Function`; the future requirement remains open until that worker is
+implemented to comply or the exact path is retired.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+injected source fields at ingestion, host, and worker boundaries; and
+`rg -n 'ControllerProfile|scriptUrl|eval|new Function|Function\(' src/modules/MIDI src/modules/PushHardware`
+after the surface exists, plus `pnpm deps:validate`.
+
+### AC-026 — Exact setDeviceParameter grant
+
+After AC-024 validation, `setDeviceParameter` MUST require an exact `{ deviceId, paramId }` tuple
+in `allowedTargets`, a successful owner lookup for that tuple, and a finite `value`, then map only
+to the typed `setDeviceParameter` `AppAction`. A missing grant returns
+`CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup returns `TARGET_UNRESOLVED`; neither
+outcome dispatches an action.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, using
+granted, denied, unresolved, non-finite, and unknown-target cases, plus `pnpm deps:validate`.
+
+### AC-027 — Bound sendMidi output
+
+After AC-024 validation, `sendMidi` MUST require the binding's single `midiOutputId` and an array
+of 1-1024 integer bytes, each in `0..255`, then route only through a MIDI-owned typed output port.
+An absent bound output returns `OUTPUT_UNBOUND`; invalid bytes return `INVALID_MESSAGE`; neither
+outcome sends bytes or creates a generic DAW command.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+valid bounds, empty/oversized/non-integer/out-of-range bytes, and unbound output, plus
 `pnpm deps:validate`.
-
-### AC-025 — No profile-source execution
-
-Controller-profile workers MUST NOT execute profile-provided source strings through `eval`, `new Function`,
-string-to-code compilation, or any equivalent dynamic execution mechanism; profiles provide data
-and capability identifiers rather than executable source.
-
-Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
-covering a source-string injection attempt, `rg -n 'eval|new Function|Function\(' src/modules/MIDI/workers`
-with no matches, and `pnpm deps:validate`.
 
 ## Open questions
 
@@ -239,8 +279,9 @@ with no matches, and `pnpm deps:validate`.
   expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
   not part of this Push-integration spec.
   Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
-  replace AC-023 through AC-025; the dependency-boundary map points to those requirements for
-  the current worker warning.
+  replace AC-023 through AC-027; any future scripting proposal still requires a data-only,
+  schema-validated profile contract and cannot authorize profile-source execution. The
+  dependency-boundary map points to those requirements for the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap
