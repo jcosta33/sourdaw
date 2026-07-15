@@ -31,6 +31,20 @@ await import('../yeastWorkletProcessor');
 
 const Processor = registeredProcessor.mock.calls[0]?.[1] as new () => FakeProcessor;
 
+const transport: TransportInfo = {
+    sampleRate: 48000,
+    bpm: 120,
+    ppqPosition: 0,
+    isPlaying: true,
+    barIndex: 0,
+    beatInBar: 0,
+    timeSigNum: 4,
+    timeSigDen: 4,
+    loopEnabled: false,
+    loopStartPpq: 0,
+    loopEndPpq: 0,
+};
+
 function createWorkletPortHarness(): { processor: FakeProcessor; port: FakePort } {
     const processor = new Processor();
     const port: FakePort = {
@@ -53,6 +67,7 @@ function makeThrowingProcessor(executeCommand: ReturnType<typeof vi.fn>): MidiPr
         name: 'Throwing processor',
         processMidi: () => {},
         reset: () => {},
+        replaceParams: () => {},
         setBypassed: () => {},
         isBypassed: () => false,
         setParam: () => {},
@@ -230,6 +245,70 @@ describe('YeastWorkletProcessor', () => {
                 type: 'projectionAck',
                 projectionId: 8,
                 events: [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }],
+            },
+        ]);
+    });
+
+    it('replaces removed parameter overrides before acknowledging the projection', () => {
+        const harness = createWorkletPortHarness();
+        harness.port.postMessage({
+            type: 'setProjection',
+            projectionId: 10,
+            processors: [{ id: 'filter-1', type: 'filter', bypassed: false, params: { note_min: 60 } }],
+        });
+        expect(
+            harness.processor._rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 59, velocity: 100 } }],
+                0,
+                64,
+                transport,
+                'track-a'
+            )
+        ).toHaveLength(0);
+        harness.processor._rack.processBlock(
+            [{ timeSamples: 64, kind: { type: 'noteOff', channel: 0, note: 59 } }],
+            64,
+            128,
+            transport,
+            'track-a'
+        );
+
+        const messages: unknown[] = [];
+        let outputAtAcknowledgement: MidiEvent[] | undefined;
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+            if (
+                typeof data === 'object' &&
+                data !== null &&
+                'type' in data &&
+                data.type === 'projectionAck' &&
+                'projectionId' in data &&
+                data.projectionId === 11
+            ) {
+                outputAtAcknowledgement = [
+                    ...harness.processor._rack.processBlock(
+                        [{ timeSamples: 128, kind: { type: 'noteOn', channel: 0, note: 59, velocity: 100 } }],
+                        128,
+                        256,
+                        transport,
+                        'track-a'
+                    ),
+                ];
+            }
+        };
+
+        harness.port.postMessage({
+            type: 'setProjection',
+            projectionId: 11,
+            processors: [{ id: 'filter-1', type: 'filter', bypassed: false, params: {} }],
+        });
+
+        expect(messages).toEqual([{ type: 'projectionAck', projectionId: 11, events: [] }]);
+        expect(outputAtAcknowledgement).toEqual([
+            {
+                timeSamples: 128,
+                trackId: 'track-a',
+                kind: { type: 'noteOn', channel: 0, note: 59, velocity: 100 },
             },
         ]);
     });

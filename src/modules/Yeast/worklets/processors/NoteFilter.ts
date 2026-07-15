@@ -83,6 +83,15 @@ export class NoteFilter extends BaseMidiProcessor {
         // without an intervening reset.
         this.filteredNotes.clear();
     }
+
+    protected resetParams(): void {
+        this.noteMin = 0;
+        this.noteMax = 127;
+        this.velMin = 0;
+        this.velMax = 127;
+        this.invert = false;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'note_min':

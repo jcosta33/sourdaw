@@ -89,6 +89,11 @@ export class MutationEngine extends BaseMidiProcessor {
         this.stepCounter = 0;
     }
 
+    protected resetParams(): void {
+        this.depth = 0.5;
+        this.stepsPerMutation = 4;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'depth':

@@ -110,6 +110,14 @@ export class ChordGenerator extends BaseMidiProcessor {
     reset(): void {
         this.generatedMap.clear();
     }
+
+    protected resetParams(): void {
+        this.chordType = 'major';
+        this.voicing = 'close';
+        this.strumMs = 0;
+        this.strumDirection = 'up';
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'chord_type': {

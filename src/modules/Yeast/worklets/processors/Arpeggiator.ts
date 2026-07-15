@@ -255,6 +255,19 @@ export class Arpeggiator extends BaseMidiProcessor {
         return this.stepIndex;
     }
 
+    protected resetParams(): void {
+        this.mode = 'up';
+        this.rate = { type: 'straight', denom: 8 };
+        this.gate = 0.8;
+        this.swing = 0;
+        this.octaveRange = 1;
+        this.octaveDirection = 'up';
+        this.velocityMode = 'input';
+        this.fixedVelocity = 100;
+        this.latchEnabled = false;
+        this.restartMode = 'restartOnNote';
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'mode':

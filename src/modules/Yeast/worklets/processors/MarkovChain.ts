@@ -208,6 +208,13 @@ export class MarkovChain extends BaseMidiProcessor {
         this.stateNoteCount = 0;
         this.scheduled.clear();
     }
+
+    protected resetParams(): void {
+        this.rate = { type: 'straight', denom: 8 };
+        this.gate = 0.7;
+        this.velocity = 100;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'rate_denom':

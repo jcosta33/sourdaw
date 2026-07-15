@@ -65,6 +65,15 @@ export class Transposer extends BaseMidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
+
+    protected resetParams(): void {
+        this.semitones = 0;
+        this.octaves = 0;
+        this.randomRange = 0;
+        this.clampMin = 0;
+        this.clampMax = 127;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'semitones':

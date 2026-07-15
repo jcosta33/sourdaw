@@ -7,7 +7,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
-import { type MidiProcessor } from './MidiProcessor';
+import { type MidiProcessor, type MidiProcessorParams } from './MidiProcessor';
 
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
@@ -25,6 +25,15 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
     abstract processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void;
     abstract reset(): void;
     abstract setParam(name: string, value: number): void;
+    /** Reset only fields controlled by setParam; live processor state must survive. */
+    protected abstract resetParams(): void;
+
+    replaceParams(params: MidiProcessorParams): void {
+        this.resetParams();
+        for (const [name, value] of Object.entries(params)) {
+            this.setParam(name, value);
+        }
+    }
 
     executeCommand(_command: YeastProcessorCommand): boolean {
         return false;

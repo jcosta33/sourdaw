@@ -105,6 +105,13 @@ export class Humanizer extends BaseMidiProcessor {
     reset(): void {
         this.noteTimingMap.clear();
     }
+
+    protected resetParams(): void {
+        this.timingMeanMs = 0;
+        this.timingSigmaMs = 5;
+        this.velSigma = 8;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'timing_mean_ms':

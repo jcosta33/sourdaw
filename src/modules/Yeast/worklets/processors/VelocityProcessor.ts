@@ -84,6 +84,15 @@ export class VelocityProcessor extends BaseMidiProcessor {
 
     reset(): void {}
 
+    protected resetParams(): void {
+        this.mode = 'passthrough';
+        this.fixedVel = 100;
+        this.compressAmount = 0.5;
+        this.curve = 'linear';
+        this.randomMin = 40;
+        this.randomMax = 120;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'mode':

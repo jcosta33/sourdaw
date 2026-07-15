@@ -116,6 +116,18 @@ export class EuclideanGenerator extends BaseMidiProcessor {
         this.lastStepTime = -Infinity;
         this.scheduled.clear();
     }
+
+    protected resetParams(): void {
+        this.hits = 5;
+        this.steps = 8;
+        this.rotation = 0;
+        this.rate = { type: 'straight', denom: 16 };
+        this.gate = 0.5;
+        this.note = 60;
+        this.velocity = 100;
+        this.rebuildPattern();
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'hits':

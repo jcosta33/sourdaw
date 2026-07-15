@@ -88,6 +88,13 @@ export class GrooveModule extends BaseMidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
+
+    protected resetParams(): void {
+        this.templateIndex = 0;
+        this.amount = 0.5;
+        this.subdivision = 16;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'template':

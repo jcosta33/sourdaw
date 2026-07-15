@@ -131,6 +131,10 @@ export class ChordMemory extends BaseMidiProcessor {
         return false;
     }
 
+    protected resetParams(): void {
+        this.transposeMode = true;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'transpose_mode':

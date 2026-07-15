@@ -97,14 +97,13 @@ export class MidiRack {
         }
 
         for (const desired of projection) {
-            const current = this.processors.find((processor) => processor.id === desired.id);
+            let current = this.processors.find((processor) => processor.id === desired.id);
             if (!current) {
-                this.addProcessor(createProcessor(desired.type, desired.id), desired.type);
+                current = createProcessor(desired.type, desired.id);
+                this.addProcessor(current, desired.type);
             }
-            this.setProcessorBypass(desired.id, desired.bypassed);
-            for (const [name, value] of Object.entries(desired.params)) {
-                this.setProcessorParam(desired.id, name, value);
-            }
+            current.replaceParams(desired.params);
+            current.setBypassed(desired.bypassed);
         }
 
         for (let targetIndex = 0; targetIndex < projection.length; targetIndex++) {

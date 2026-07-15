@@ -9,6 +9,8 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
+export type MidiProcessorParams = Readonly<Record<string, number>>;
+
 export type MidiProcessor = {
     readonly id: string;
     readonly name: string;
@@ -30,6 +32,9 @@ export type MidiProcessor = {
 
     /** Set a named parameter. */
     setParam(name: string, value: number): void;
+
+    /** Replace the complete sparse set of durable parameter overrides. */
+    replaceParams(params: MidiProcessorParams): void;
 
     /** Execute a typed one-shot command; unsupported processors return false. */
     executeCommand?(command: YeastProcessorCommand): boolean;

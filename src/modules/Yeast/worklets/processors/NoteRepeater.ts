@@ -72,6 +72,15 @@ export class NoteRepeater extends BaseMidiProcessor {
     reset(): void {
         this.scheduled.clear();
     }
+
+    protected resetParams(): void {
+        this.repeatCount = 3;
+        this.rate = { type: 'straight', denom: 16 };
+        this.decay = 0.7;
+        this.gate = 0.5;
+        this.pitchStep = 0;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'repeat_count':

@@ -150,6 +150,14 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     reset(): void {
         this.noteMap.clear();
     }
+
+    protected resetParams(): void {
+        this.root = 0;
+        this.scaleName = 'major';
+        this.remapMode = 'nearest';
+        this.transpose = 0;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':

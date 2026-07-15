@@ -111,6 +111,19 @@ export class CCGenerator extends BaseMidiProcessor {
         this.accumPhase = 0;
         this.lastEmittedValue = -1;
     }
+
+    protected resetParams(): void {
+        this.ccNumber = 1;
+        this.shape = 'sine';
+        this.rate = { type: 'straight', denom: 4 };
+        this.freeRateHz = 1;
+        this.syncMode = true;
+        this.min = 0;
+        this.max = 127;
+        this.phase = 0;
+        this.retriggerOnNote = false;
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'cc_number':

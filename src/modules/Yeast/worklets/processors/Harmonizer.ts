@@ -121,6 +121,17 @@ export class Harmonizer extends BaseMidiProcessor {
     reset(): void {
         this.generatedMap.clear();
     }
+
+    protected resetParams(): void {
+        this.root = 0;
+        this.scaleName = 'major';
+        this.voices = [
+            { degrees: 2, velocityOffset: -10, timeOffsetSamples: 0, enabled: true },
+            { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false },
+            { degrees: -1, velocityOffset: -20, timeOffsetSamples: 0, enabled: false },
+        ];
+    }
+
     setParam(name: string, value: number): void {
         switch (name) {
             case 'root':
