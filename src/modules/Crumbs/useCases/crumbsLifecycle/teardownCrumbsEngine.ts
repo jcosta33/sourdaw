@@ -1,4 +1,4 @@
-import { destroyCrumbsInstance } from '../../repositories/crumbsBridge';
+import { destroyCrumbsInstance } from '../../repositories/crumbsBridge/destroyCrumbsInstance';
 import { removeInstance } from '../../stores/crumbsStore';
 import { removePadInstance } from '../../stores/padStore';
 import { removeSliceInstance } from '../../stores/sliceStore';

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     activeSample: { sampleId: 7 } as { sampleId: number } | null,
 }));
 
-vi.mock('../../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge/detectOnsets', () => ({
     detectOnsets: mocks.detectOnsets,
 }));
 

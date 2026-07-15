@@ -1,4 +1,4 @@
-import { createCrumbsInstance } from '../../repositories/crumbsBridge';
+import { createCrumbsInstance } from '../../repositories/crumbsBridge/createCrumbsInstance';
 import { ensureInstance, removeInstance } from '../../stores/crumbsStore';
 import { ensurePadInstance, removePadInstance } from '../../stores/padStore';
 import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStore';

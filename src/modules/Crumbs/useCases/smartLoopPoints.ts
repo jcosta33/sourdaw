@@ -4,7 +4,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { detectSmartLoopPoints } from '../repositories/crumbsBridge';
+import { detectSmartLoopPoints } from '../repositories/crumbsBridge/detectSmartLoopPoints';
 import { crumbsStore, setLoopParams } from '../stores/crumbsStore';
 
 import { setCrumbsParamThrottled } from './crumbsParamBridge/setCrumbsParamThrottled';

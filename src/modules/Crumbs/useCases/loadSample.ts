@@ -6,7 +6,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { basename_from_path } from '#/utils/path-basename';
 
-import { getWaveformPeaks, loadSample } from '../repositories/crumbsBridge';
+import { getWaveformPeaks } from '../repositories/crumbsBridge/getWaveformPeaks';
+import { loadSample } from '../repositories/crumbsBridge/loadSample';
 import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
 
 import type { SampleCategory, SampleMeta } from '../models/CrumbsTypes';

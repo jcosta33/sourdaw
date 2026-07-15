@@ -1,4 +1,4 @@
-import { armRecording } from '../../repositories/crumbsBridge';
+import { armRecording } from '../../repositories/crumbsBridge/armRecording';
 import { padStore } from '../../stores/padStore';
 
 /** Clamp a number into [min, max]; non-finite input collapses to `min`. */

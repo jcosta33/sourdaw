@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { crumbsNoteOn } from '../../repositories/crumbsBridge';
+import { crumbsNoteOn } from '../../repositories/crumbsBridge/crumbsNoteOn';
 import { padStore } from '../../stores/padStore';
 
 /** Clamp a velocity into the MIDI 0..127 range the Rust `u8` field expects. */

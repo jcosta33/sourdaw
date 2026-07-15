@@ -5,7 +5,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { setCrumbsMode } from '../repositories/crumbsBridge';
+import { setCrumbsMode } from '../repositories/crumbsBridge/setCrumbsMode';
 import { setMode } from '../stores/crumbsStore';
 
 import type { CrumbsMode } from '../models/CrumbsTypes';
