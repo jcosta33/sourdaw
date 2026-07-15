@@ -1073,6 +1073,432 @@ describe('check-dependency-boundaries', () => {
         }
     });
 
+    it('should execute ordered CommonJS assignment chains and certain IIFEs', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-cjs-execution-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare let module: { exports: Record<string, unknown> };',
+                    'declare let exports: Record<string, unknown>;',
+                    'declare let require: (moduleName: string) => any;',
+                ],
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'ordered-chain-exports.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const chained = { command: 'exports-outer' };",
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const later = { command: 'exports-after-chain' };",
+                    'exports = module.exports = { chained };',
+                    'exports.afterChain = later;',
+                ],
+                'ordered-chain-module.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const chained = { command: 'module-outer' };",
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const later = { command: 'module-after-chain' };",
+                    'module.exports = exports = { chained };',
+                    'exports.afterChain = later;',
+                ],
+                'arrow-iife.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'arrow-iife' };",
+                    '(() => {',
+                    '    module.exports = { arrowIife: leaked };',
+                    '})();',
+                ],
+                'function-iife.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'function-iife' };",
+                    '(function () {',
+                    '    module.exports.functionIife = leaked;',
+                    '})();',
+                ],
+                'object-assign-alias.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'object-assign-alias' };",
+                    'const assign = Object.assign;',
+                    'assign(module.exports, { assignedAlias: leaked });',
+                ],
+                'object-assign-detached.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'object-assign-detached' };",
+                    'let assign = Object.assign;',
+                    'assign = () => ({ clean: true });',
+                    'assign(module.exports, { detachedAssign: leaked });',
+                ],
+                'not-executed.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'not-executed' };",
+                    'const later = () => {',
+                    '    module.exports = { notExecuted: leaked };',
+                    '};',
+                    'function alsoLater() {',
+                    '    module.exports.alsoNotExecuted = leaked;',
+                    '}',
+                    'void later;',
+                    'void alsoLater;',
+                ],
+                'shadowed-iife.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'shadowed-iife' };",
+                    '((module, exports) => {',
+                    '    module.exports = { shadowedModule: leaked };',
+                    '    exports.shadowedExports = leaked;',
+                    '})({ exports: {} }, {});',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-certain-execution.ts': [
+                    "const orderedExports = require('../repositories/ordered-chain-exports.cjs');",
+                    "const orderedModule = require('../repositories/ordered-chain-module.cjs');",
+                    "const arrowIife = require('../repositories/arrow-iife.cjs');",
+                    "const functionIife = require('../repositories/function-iife.cjs');",
+                    "const assignedAlias = require('../repositories/object-assign-alias.cjs');",
+                    "const detachedAssign = require('../repositories/object-assign-detached.cjs');",
+                    "const notExecuted = require('../repositories/not-executed.cjs');",
+                    "const shadowedIife = require('../repositories/shadowed-iife.cjs');",
+                    'void orderedExports;',
+                    'void orderedModule;',
+                    'void arrowIife;',
+                    'void functionIife;',
+                    'void assignedAlias;',
+                    'void detachedAssign;',
+                    'void notExecuted;',
+                    'void shadowedIife;',
+                    'export {};',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/ordered-chain-exports.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/ordered-chain-exports.cjs', 6),
+                    vendorFinding('src/modules/Foo/repositories/ordered-chain-module.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/ordered-chain-module.cjs', 6),
+                    vendorFinding('src/modules/Foo/repositories/arrow-iife.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/function-iife.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/object-assign-alias.cjs', 4),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(7);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should track the CommonJS module object through aliases and detachment', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-module-identity-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare let module: { exports: Record<string, unknown> };',
+                    'declare let exports: Record<string, unknown>;',
+                    'declare let require: (moduleName: string) => any;',
+                ],
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'module-object-alias.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'module-object-alias' };",
+                    'const m = module;',
+                    "m['exports'] = { wholeAlias: leaked };",
+                    'm.exports.elementAlias = leaked;',
+                    'const chained = m;',
+                    'chained.exports.chainedAlias = leaked;',
+                    'let moving = module;',
+                    'moving.exports.beforeDetach = leaked;',
+                    'moving = { exports: {} };',
+                    'moving.exports.afterDetach = leaked;',
+                    'let delayed;',
+                    'delayed = module;',
+                    "delayed['exports'].delayedAlias = leaked;",
+                    'delayed = { exports: {} };',
+                    "delayed['exports'] = { detachedWhole: leaked };",
+                ],
+                'shadowed-module-alias.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'shadowed-module-alias' };",
+                    '((module) => {',
+                    '    const m = module;',
+                    '    m.exports = { shadowedAlias: leaked };',
+                    '})({ exports: {} });',
+                    'module.exports = { clean: true };',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-module-object.ts': [
+                    "const moduleObject = require('../repositories/module-object-alias.cjs');",
+                    "const shadowedModule = require('../repositories/shadowed-module-alias.cjs');",
+                    'void moduleObject;',
+                    'void shadowedModule;',
+                    'export {};',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/module-object-alias.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/module-object-alias.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/module-object-alias.cjs', 7),
+                    vendorFinding('src/modules/Foo/repositories/module-object-alias.cjs', 9),
+                    vendorFinding('src/modules/Foo/repositories/module-object-alias.cjs', 14),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(5);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should resolve require identities through aliases, rebinding, and certain IIFEs', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-require-identity-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            const requireAliasDepth = 600;
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare let module: { exports: Record<string, unknown> };',
+                    'declare let exports: Record<string, unknown>;',
+                    'declare let require: (moduleName: string) => any;',
+                ],
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+
+            const typedSurface = (name: string): readonly string[] => [
+                "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                `const ${name} = { command: '${name}' };`,
+                `module.exports = { ${name} };`,
+            ];
+            writeFixtureFiles(repositoryDirectory, {
+                'alias-positive.cjs': typedSurface('aliasPositive'),
+                'alias-chain.cjs': typedSurface('aliasChain'),
+                'before-rebind.cjs': typedSurface('beforeRebind'),
+                'after-rebind.cjs': typedSurface('afterRebind'),
+                'direct-before.cjs': typedSurface('directBefore'),
+                'direct-after.cjs': typedSurface('directAfter'),
+                'iife-consumer.cjs': typedSurface('iifeConsumer'),
+                'noninvoked-consumer.cjs': typedSurface('noninvokedConsumer'),
+                'shadowed-consumer.cjs': typedSurface('shadowedConsumer'),
+                'long-alias.cjs': typedSurface('longAlias'),
+                'vendor-alias.cjs': [
+                    'const load = require;',
+                    "const vendor = load('@tauri-apps/api/core');",
+                    'module.exports = { vendor };',
+                ],
+                'vendor-detached.cjs': [
+                    'let load = require;',
+                    'load = () => ({ clean: true });',
+                    "const vendor = load('@tauri-apps/api/core');",
+                    'module.exports = { vendor };',
+                ],
+                'vendor-iife.cjs': [
+                    '(() => {',
+                    '    const load = require;',
+                    "    module.exports = { vendorIife: load('@tauri-apps/api/core') };",
+                    '})();',
+                ],
+            });
+
+            const longAliasConsumer = ['const load0000 = require;'];
+            for (let index = 1; index < requireAliasDepth; index += 1) {
+                const current = String(index).padStart(4, '0');
+                const previous = String(index - 1).padStart(4, '0');
+                longAliasConsumer.push(`const load${current} = load${previous};`);
+            }
+            longAliasConsumer.push(
+                `const longAlias = load${String(requireAliasDepth - 1).padStart(
+                    4,
+                    '0'
+                )}('../repositories/long-alias.cjs');`,
+                'void longAlias;',
+                'export {};'
+            );
+
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-alias-positive.ts': [
+                    'const load = require;',
+                    "const aliasPositive = load('../repositories/alias-positive.cjs');",
+                    'void aliasPositive;',
+                    'export {};',
+                ],
+                'consume-alias-chain.ts': [
+                    'const load = require;',
+                    'const again = load;',
+                    "const aliasChain = again('../repositories/alias-chain.cjs');",
+                    'void aliasChain;',
+                    'export {};',
+                ],
+                'consume-before-rebind.ts': [
+                    'let load = require;',
+                    "const beforeRebind = load('../repositories/before-rebind.cjs');",
+                    'load = () => ({ clean: true });',
+                    'void beforeRebind;',
+                    'export {};',
+                ],
+                'consume-after-rebind.ts': [
+                    'let load = require;',
+                    'load = () => ({ clean: true });',
+                    "const afterRebind = load('../repositories/after-rebind.cjs');",
+                    'void afterRebind;',
+                    'export {};',
+                ],
+                'consume-direct-order.ts': [
+                    "const directBefore = require('../repositories/direct-before.cjs');",
+                    'require = () => ({ clean: true });',
+                    "const directAfter = require('../repositories/direct-after.cjs');",
+                    'void directBefore;',
+                    'void directAfter;',
+                    'export {};',
+                ],
+                'consume-iife.ts': [
+                    '(() => {',
+                    '    const load = require;',
+                    "    const iifeConsumer = load('../repositories/iife-consumer.cjs');",
+                    '    void iifeConsumer;',
+                    '})();',
+                    'export {};',
+                ],
+                'consume-noninvoked.ts': [
+                    'const later = () => {',
+                    "    const noninvoked = require('../repositories/noninvoked-consumer.cjs');",
+                    '    return noninvoked;',
+                    '};',
+                    'void later;',
+                    'export {};',
+                ],
+                'consume-shadowed.ts': [
+                    '((require) => {',
+                    '    const load = require;',
+                    "    const shadowed = load('../repositories/shadowed-consumer.cjs');",
+                    '    void shadowed;',
+                    '})(() => ({ clean: true }));',
+                    'export {};',
+                ],
+                'consume-long-alias.ts': longAliasConsumer,
+                'consume-vendor-require.ts': [
+                    "const vendorAlias = require('../repositories/vendor-alias.cjs');",
+                    "const vendorDetached = require('../repositories/vendor-detached.cjs');",
+                    "const vendorIife = require('../repositories/vendor-iife.cjs');",
+                    'void vendorAlias;',
+                    'void vendorDetached;',
+                    'void vendorIife;',
+                    'export {};',
+                ],
+            });
+
+            const startedAt = performance.now();
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/alias-positive.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/alias-chain.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/before-rebind.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/direct-before.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/iife-consumer.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/long-alias.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/vendor-alias.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/vendor-iife.cjs', 3),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(8);
+            expect(elapsedMs).toBeLessThan(10_000);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    }, 20_000);
+
     it('should reject shadowed require consumers while preserving real require consumers', () => {
         let repositoryRoot: string | undefined;
 
