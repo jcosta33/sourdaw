@@ -13,6 +13,48 @@ import {
     EQ_LOW_PASS,
 } from '../ProofEqCurve';
 
+type PointerCaptureSpy = {
+    capturedPointerId: number | null;
+    events: string[];
+};
+
+const installPointerCaptureSpy = (element: HTMLElement): PointerCaptureSpy => {
+    const state: PointerCaptureSpy = { capturedPointerId: null, events: [] };
+    Object.defineProperty(element, 'setPointerCapture', {
+        configurable: true,
+        value: vi.fn((pointerId: number) => {
+            state.capturedPointerId = pointerId;
+            state.events.push(`set:${pointerId}`);
+        }),
+    });
+    Object.defineProperty(element, 'releasePointerCapture', {
+        configurable: true,
+        value: vi.fn((pointerId: number) => {
+            if (state.capturedPointerId === pointerId) {
+                state.capturedPointerId = null;
+            }
+            state.events.push(`release:${pointerId}`);
+        }),
+    });
+    return state;
+};
+
+const getCanvas = (container: HTMLElement): HTMLCanvasElement => {
+    const canvas = container.querySelector('canvas');
+    if (!(canvas instanceof HTMLCanvasElement)) {
+        throw new TypeError('Expected a ProofEqCurve canvas');
+    }
+    installPointerCaptureSpy(canvas);
+    return canvas;
+};
+
+const setDocumentVisibility = (state: DocumentVisibilityState): void => {
+    Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: state,
+    });
+};
+
 describe('ProofEqCurve', () => {
     it('should render', () => {
         const { container } = render(
@@ -98,7 +140,7 @@ describe('ProofEqCurve', () => {
             const { container } = render(
                 <ProofEqCurve patch={hpPatch} width={200} height={100} gestureOwner={0} onPatchChange={onPatchChange} />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             return { canvas, onPatchChange };
         };
 
@@ -124,7 +166,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             expect(DEFAULT_PATCH.eqBands[2]!.type).toBe(EQ_PEAK);
 
             // Peak band 2 dot: x at 250 Hz, y at 0 dB (= height/2 = 50).
@@ -152,7 +194,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 3 });
@@ -189,7 +231,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 10 });
@@ -224,7 +266,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={initialOnPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 11 });
@@ -273,7 +315,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 12 });
@@ -296,18 +338,84 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+            const capture = installPointerCaptureSpy(canvas);
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 13 });
             fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 13 });
+            capture.events.push('lost');
             fireEvent.lostPointerCapture(canvas, { pointerId: 13 });
+            capture.events.push('pointerup');
             fireEvent.pointerUp(canvas, { pointerId: 13 });
             unmount();
 
             const edits = onPatchChange.mock.calls.map(([edit]) => edit as ProofPatchEdit);
             expect(edits.map((edit) => edit.isTransient)).toEqual([true, false]);
+            expect(capture.events).toEqual(['set:13', 'lost', 'release:13', 'pointerup']);
         });
+
+        it.each(['window blur', 'canvas blur', 'hidden document'])(
+            'finalizes a drag on %s and allows a new gesture',
+            (source) => {
+                const onPatchChange = vi.fn();
+                const { container, unmount } = render(
+                    <ProofEqCurve
+                        patch={DEFAULT_PATCH}
+                        width={200}
+                        height={100}
+                        gestureOwner={0}
+                        onPatchChange={onPatchChange}
+                    />
+                );
+                const canvas = getCanvas(container);
+                const capture = installPointerCaptureSpy(canvas);
+                const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+                fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 17 });
+                fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 17 });
+                const firstTransientEdit = onPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
+
+                const previousVisibility = document.visibilityState;
+                if (source === 'window blur') {
+                    fireEvent.blur(window);
+                } else if (source === 'canvas blur') {
+                    fireEvent.blur(canvas);
+                } else {
+                    setDocumentVisibility('hidden');
+                    document.dispatchEvent(new Event('visibilitychange'));
+                }
+                setDocumentVisibility(previousVisibility);
+
+                expect(onPatchChange.mock.calls).toHaveLength(2);
+                expect(onPatchChange.mock.calls[1]?.[0]).toMatchObject({
+                    value: firstTransientEdit.value,
+                    isTransient: false,
+                });
+                expect(capture.events).toEqual(['set:17', 'release:17']);
+
+                fireEvent.lostPointerCapture(canvas, { pointerId: 17 });
+                fireEvent.pointerUp(canvas, { pointerId: 17 });
+
+                fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 18 });
+                fireEvent.pointerMove(canvas, { clientX: peakX + 15, clientY: 20, pointerId: 18 });
+                const secondTransientEdit = onPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
+                fireEvent.pointerUp(canvas, { pointerId: 18 });
+                unmount();
+
+                expect(onPatchChange.mock.calls.map(([edit]) => (edit as ProofPatchEdit).isTransient)).toEqual([
+                    true,
+                    false,
+                    true,
+                    false,
+                ]);
+                expect(onPatchChange.mock.calls[3]?.[0]).toMatchObject({
+                    value: secondTransientEdit.value,
+                    isTransient: false,
+                });
+                expect(capture.events).toEqual(['set:17', 'release:17', 'set:18', 'release:18']);
+            }
+        );
 
         it.each([
             ['pointerup', (canvas: HTMLCanvasElement) => fireEvent.pointerUp(canvas, { pointerId: 15 })],
@@ -328,7 +436,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 15 });
@@ -369,7 +477,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
 
             fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 4 });
@@ -393,7 +501,7 @@ describe('ProofEqCurve', () => {
                     onPatchChange={onPatchChange}
                 />
             );
-            const canvas = container.querySelector('canvas')!;
+            const canvas = getCanvas(container);
             const firstBandX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
             const secondBandX = (Math.log10(800 / 20) / Math.log10(20000 / 20)) * 200;
 

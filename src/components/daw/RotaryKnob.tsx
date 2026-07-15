@@ -1,4 +1,12 @@
-import { type MouseEvent, type ReactElement, type PointerEvent, useEffect, useLayoutEffect, useRef } from 'react';
+import {
+    type KeyboardEvent,
+    type MouseEvent,
+    type ReactElement,
+    type PointerEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+} from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores';
@@ -139,10 +147,24 @@ export const RotaryKnob = ({
     const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
+    const releasePointerCapture = (pointerId: number | null): void => {
+        if (pointerId === null || !rootRef.current || typeof rootRef.current.releasePointerCapture !== 'function') {
+            return;
+        }
+        try {
+            rootRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this finalizer runs.
+        }
+    };
+
     const clearDragState = (): void => {
+        const pointerId = activePointerIdRef.current;
         draggingRef.current = false;
         activePointerIdRef.current = null;
+        gestureOwnerAtStartRef.current = undefined;
         rootRef.current?.removeAttribute('data-dragging');
+        releasePointerCapture(pointerId);
     };
 
     const ownsGesture = (): boolean => {
@@ -185,12 +207,37 @@ export const RotaryKnob = ({
         };
     }, []);
 
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
+
     const clamp = (value1: number): number => {
         let clamped = Math.max(min, Math.min(max, value1));
         if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.01) {
             clamped = defaultValue;
         }
         return clamped;
+    };
+
+    const quantize = (raw: number, currentStep: number): number => {
+        const safeStep = Math.max(Number.EPSILON, currentStep);
+        const stepFromMin = Math.round((raw - min) / safeStep);
+        const quantized = min + stepFromMin * safeStep;
+        return clamp(Number(quantized.toPrecision(15)));
     };
 
     const resetToDefault = () => {
@@ -255,8 +302,7 @@ export const RotaryKnob = ({
         }
 
         const currentStep = event.shiftKey ? fineStep : step;
-        const quantized = Math.round(raw / currentStep) * currentStep;
-        const clamped = clamp(quantized);
+        const clamped = quantize(raw, currentStep);
         if (Object.is(clamped, currentValue.current)) {
             return;
         }
@@ -264,15 +310,46 @@ export const RotaryKnob = ({
         onChangeRef.current(clamped, true);
     };
 
-    const commitDrag = (event: PointerEvent<HTMLDivElement>): boolean => finalizeDragRef.current(event.pointerId);
-
-    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        if (!commitDrag(event)) {
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (draggingRef.current) {
             return;
         }
-        if (typeof event.currentTarget.releasePointerCapture === 'function') {
-            event.currentTarget.releasePointerCapture(event.pointerId);
+
+        const isIncrement = event.key === 'ArrowUp' || event.key === 'ArrowRight';
+        const isDecrement = event.key === 'ArrowDown' || event.key === 'ArrowLeft';
+        const isHome = event.key === 'Home';
+        const isEnd = event.key === 'End';
+        if (!isIncrement && !isDecrement && !isHome && !isEnd) {
+            return;
         }
+
+        event.preventDefault();
+        const currentStep = Math.max(Number.EPSILON, event.shiftKey ? fineStep : step);
+        let nextValue: number;
+        if (isHome) {
+            nextValue = clamp(min);
+        } else if (isEnd) {
+            nextValue = clamp(max);
+        } else {
+            const direction = isIncrement ? 1 : -1;
+            nextValue = quantize(value + direction * currentStep, currentStep);
+        }
+        if (Object.is(nextValue, value)) {
+            return;
+        }
+
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            const token = authority.acquire();
+            if (!authority.isCurrent(token)) {
+                return;
+            }
+        }
+        onChangeRef.current(nextValue, false);
+    };
+
+    const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        finalizeDragRef.current(event.pointerId);
     };
 
     const handleDoubleClick = () => {
@@ -299,10 +376,21 @@ export const RotaryKnob = ({
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
+    const accessibleName = label ?? paramId ?? 'Parameter control';
+    const ariaValue = Math.max(min, Math.min(max, value));
+    const handleFocusLoss = (): void => {
+        finalizeDragRef.current();
+    };
 
     return (
         <div
             ref={rootRef}
+            role="slider"
+            tabIndex={0}
+            aria-label={accessibleName}
+            aria-valuemin={min}
+            aria-valuemax={max}
+            aria-valuenow={ariaValue}
             className={cn(
                 'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
                 label && 'min-w-fit',
@@ -311,8 +399,10 @@ export const RotaryKnob = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
-            onPointerCancel={commitDrag}
-            onLostPointerCapture={commitDrag}
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
+            onKeyDown={handleKeyDown}
+            onBlur={handleFocusLoss}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
         >

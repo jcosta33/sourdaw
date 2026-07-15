@@ -169,12 +169,25 @@ export const ProofEqCurve = ({
     const onPatchChangeRef = useRef(onPatchChange);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
+    const releasePointerCapture = (pointerId: number | null): void => {
+        if (pointerId === null || !canvasRef.current || typeof canvasRef.current.releasePointerCapture !== 'function') {
+            return;
+        }
+        try {
+            canvasRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this finalizer runs.
+        }
+    };
+
     const clearDragState = (): void => {
+        const pointerId = activePointerIdRef.current;
         activePointerIdRef.current = null;
         dragBandRef.current = null;
         dragStartBandRef.current = null;
         dragValueRef.current = null;
         gestureOwnerAtStartRef.current = null;
+        releasePointerCapture(pointerId);
     };
 
     const ownsGesture = (): boolean => {
@@ -253,6 +266,24 @@ export const ProofEqCurve = ({
     useEffect(() => {
         return () => {
             finalizeDragRef.current();
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, []);
 
@@ -543,12 +574,11 @@ export const ProofEqCurve = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
-        if (!finalizeDragRef.current(e.pointerId)) {
-            return;
-        }
-        if (typeof e.currentTarget.releasePointerCapture === 'function') {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
+        finalizeDragRef.current(e.pointerId);
+    };
+
+    const handleFocusLoss = (): void => {
+        finalizeDragRef.current();
     };
 
     return (
@@ -561,6 +591,7 @@ export const ProofEqCurve = ({
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             onLostPointerCapture={handlePointerUp}
+            onBlur={handleFocusLoss}
             aria-label="8-band parametric EQ frequency response"
         />
     );
