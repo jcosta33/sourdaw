@@ -1,6 +1,6 @@
+import { type ProcessorType } from '../models/ProcessorCatalog';
 import { getYeastRack, getWorkletNodeSync, registerProcessorType, syncStoreFromRack } from '../stores/yeastStore';
-
-import { type ProcessorType, createProcessor } from './processorFactory';
+import { createProcessor } from '../worklets/processorFactory';
 
 export function addYeastProcessor(type: ProcessorType): void {
     const rack = getYeastRack();

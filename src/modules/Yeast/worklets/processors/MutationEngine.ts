@@ -6,9 +6,9 @@
  * probability, note selection weights.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { gaussianLcg } from '../../services/lcgRandom';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { gaussianLcg } from '../lcgRandom';
 
 type MutationTarget = {
     name: string;

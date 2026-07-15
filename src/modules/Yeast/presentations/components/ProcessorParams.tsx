@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProcessorType } from '../../useCases/processorFactory';
+import { type ProcessorType } from '../../models/ProcessorCatalog';
 
 type OnSetParam = (id: string, name: string, value: number) => void;
 

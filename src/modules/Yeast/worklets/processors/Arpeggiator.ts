@@ -7,7 +7,6 @@
  */
 
 import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -15,8 +14,9 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
-import { LCG_MAX, nextLcg } from '../../services/lcgRandom';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { LCG_MAX, nextLcg } from '../lcgRandom';
+import { type ActiveNote, ScheduledEventQueue } from '../MidiProcessor';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

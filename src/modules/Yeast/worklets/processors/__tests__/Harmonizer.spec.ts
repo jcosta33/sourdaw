@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
 import { Harmonizer } from '../Harmonizer';
 
 const transport: TransportInfo = { isPlaying: true, tempo: 120, sampleRate: 48000, positionInBeats: 0 };

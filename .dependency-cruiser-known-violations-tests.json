@@ -3475,51 +3475,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Yeast/useCases/processors/__tests__/ChordMemory.spec.ts",
-    "to": "../../models/MidiEvent",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/useCases/processors/__tests__/GrooveModule.spec.ts",
-    "to": "../../models/MidiEvent",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/useCases/processors/__tests__/Harmonizer.spec.ts",
-    "to": "../../models/MidiEvent",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/useCases/processors/__tests__/NoteRepeater.spec.ts",
-    "to": "../../models/MidiEvent",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/useCases/processors/__tests__/VelocityProcessor.spec.ts",
-    "to": "../../models/MidiEvent",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/setupTests.ts",
     "to": "src/modules/Workspace/presentations/hooks/useTracks.ts",
     "rule": {

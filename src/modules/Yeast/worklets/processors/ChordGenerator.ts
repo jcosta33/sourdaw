@@ -3,8 +3,8 @@
  * Supports voicing modes (close, drop 2, spread) and optional strum timing.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 const CHORD_FORMULAS: Record<string, number[]> = {
     major: [0, 4, 7],

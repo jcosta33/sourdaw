@@ -3,7 +3,6 @@
  * Uses Bjorklund's algorithm. Can drive the arp pattern or standalone note emission.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -11,7 +10,8 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { ScheduledEventQueue } from '../../models/MidiProcessor';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { ScheduledEventQueue } from '../MidiProcessor';
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {

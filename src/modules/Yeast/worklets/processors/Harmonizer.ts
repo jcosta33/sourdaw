@@ -3,8 +3,8 @@
  * Each voice transposes by scale degrees (not semitones) for musically correct harmonies.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],

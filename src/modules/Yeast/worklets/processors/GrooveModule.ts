@@ -3,8 +3,8 @@
  * Supports built-in groove presets and custom templates.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 type GrooveTemplate = {
     name: string;

@@ -3,7 +3,6 @@
  * Creates recognizable patterns with controlled randomness, unlike pure random mode.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -11,8 +10,9 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { ScheduledEventQueue } from '../../models/MidiProcessor';
-import { LCG_MAX, nextLcg } from '../../services/lcgRandom';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { LCG_MAX, nextLcg } from '../lcgRandom';
+import { ScheduledEventQueue } from '../MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 

@@ -20,9 +20,9 @@ import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
+import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
-import { PROCESSOR_TYPES } from '../../useCases/processorFactory';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';

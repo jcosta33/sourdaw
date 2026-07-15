@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
+import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 
 type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };

@@ -3,8 +3,8 @@
  * Useful for keyboard splits, velocity layers, and scale-based filtering.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 export class NoteFilter extends BaseMidiProcessor {
     readonly name = 'Note Filter';

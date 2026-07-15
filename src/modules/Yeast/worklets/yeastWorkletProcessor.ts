@@ -16,11 +16,11 @@
  *   ← { type: 'allNotesOff',  nowSamples }
  */
 
-import { MidiRack } from '../useCases/MidiRack';
-import { createProcessor } from '../useCases/processorFactory';
+import { MidiRack } from './MidiRack';
+import { createProcessor } from './processorFactory';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
-import type { ProcessorType } from '../useCases/processorFactory';
+import type { ProcessorType } from '../models/ProcessorCatalog';
 
 type YeastMsg =
     | { type: 'addProcessor'; processorType: ProcessorType; processorId: string }

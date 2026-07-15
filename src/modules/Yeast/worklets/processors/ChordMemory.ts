@@ -5,8 +5,8 @@
  * Optionally transpose stored chords relative to the original root.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 type StoredChord = {
     root: number;

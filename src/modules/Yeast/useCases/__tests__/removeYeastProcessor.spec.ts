@@ -3,8 +3,8 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { type MidiProcessor } from '../../models/MidiProcessor';
 import { getYeastRack } from '../../stores/yeastStore';
+import { type MidiProcessor } from '../../worklets/MidiProcessor';
 import { removeYeastProcessor } from '../removeYeastProcessor';
 
 const eventBus = { emit: vi.fn() };

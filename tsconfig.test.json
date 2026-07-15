@@ -11,6 +11,6 @@
     // own remediation campaign. Run with:
     //   node_modules/.bin/tsgo --noEmit -p tsconfig.test.json
     "extends": "./tsconfig.json",
-    "include": ["src/modules/Yeast/useCases/processors", "vite-env.d.ts"],
+    "include": ["src/modules/Yeast/worklets/processors", "vite-env.d.ts"],
     "exclude": ["dist", "build", "coverage", "storybook-static"]
 }

@@ -5,7 +5,7 @@
  * modifying, or retiming events. Processors are chained in a serial rack.
  */
 
-import { type MidiEvent, type TransportInfo } from './MidiEvent';
+import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 export type MidiProcessor = {
     readonly id: string;

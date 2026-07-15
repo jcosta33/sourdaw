@@ -5,7 +5,8 @@
  * Subclasses must implement: processMidi, reset, setParam (and declare id/name).
  */
 
-import { type MidiEvent, type TransportInfo } from './MidiEvent';
+import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
+
 import { type MidiProcessor } from './MidiProcessor';
 
 export abstract class BaseMidiProcessor implements MidiProcessor {

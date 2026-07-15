@@ -3,7 +3,6 @@
  * Supports synced and free-running rates, multiple waveforms, note retrigger.
  */
 
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -11,6 +10,7 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
+import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 

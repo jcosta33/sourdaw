@@ -18,16 +18,16 @@ import { createStore } from '#/infra/store/createStore';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
-import { MidiRack } from '../useCases/MidiRack';
-import { type ProcessorType } from '../useCases/processorFactory';
+import { type ProcessorType } from '../models/ProcessorCatalog';
+import { MidiRack } from '../worklets/MidiRack';
 
 import { YeastEventBus } from './yeastEventBus';
 
 /**
  * The processor-kind discriminant carried by the store's reactive state.
  *
- * `ProcessorType` is defined in `useCases/processorFactory`, where use-case
- * types are otherwise private (AGENTS.md). It surfaces here — and through
+ * `ProcessorType` is defined in the pure processor catalog model. It surfaces
+ * here — and through
  * `YeastState` on the store's public barrel — *intentionally*: the set of
  * processor kinds is reactive domain state the UI renders and filters on
  * (`YeastPanel` switches on `processor.type`), not a use-case implementation

@@ -6,7 +6,8 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
-import { type MidiProcessor, ScheduledEventQueue } from '../models/MidiProcessor';
+
+import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
 
 export class MidiRack {
     private processors: MidiProcessor[] = [];
