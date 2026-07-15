@@ -5,8 +5,7 @@ import { storageSupport } from './storageSupport';
  * localStorage fallback). The caller passes the complete key — e.g.
  * `sourdaw:project:<createdAt>` — so the write key matches the recent-projects
  * entry key and {@link readNamedProjectJson}'s read key exactly. This is the
- * single dual-write implementation; {@link writeNamedProjectJson} builds a key
- * from a name and delegates here.
+ * single dual-write implementation.
  */
 export function writeNamedProjectJsonByKey(key: string, json: string): void {
     storageSupport.putIndexedDb(key, json);
