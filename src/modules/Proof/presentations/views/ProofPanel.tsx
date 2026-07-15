@@ -228,7 +228,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const activeGestureTokenRef = useRef(0);
     const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
     const patchSnapshotRef = useRef(patchSnapshot);
-    const acceptedTransientPatchSnapshotRef = useRef<string | null>(null);
+    const acceptedPatchSnapshotRef = useRef<string | null>(null);
 
     const advanceGestureOwner = (): number => {
         const nextOwner = activeGestureTokenRef.current + 1;
@@ -238,7 +238,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     };
 
     const invalidateGesture = (): void => {
-        acceptedTransientPatchSnapshotRef.current = null;
+        acceptedPatchSnapshotRef.current = null;
         activeGestureFinalizerRef.current = null;
         advanceGestureOwner();
     };
@@ -246,7 +246,11 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const acquireGesture = (finalize: () => void): number => {
         const previousFinalizer = activeGestureFinalizerRef.current;
         activeGestureFinalizerRef.current = null;
-        previousFinalizer?.();
+        if (previousFinalizer) {
+            previousFinalizer();
+            // Accept A's committed snapshot before advancing ownership to B.
+            acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+        }
         const nextOwner = advanceGestureOwner();
         activeGestureFinalizerRef.current = finalize;
         return nextOwner;
@@ -260,9 +264,9 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     useLayoutEffect(() => {
         const previousPatchSnapshot = patchSnapshotRef.current;
         patchSnapshotRef.current = patchSnapshot;
-        const acceptedTransient = acceptedTransientPatchSnapshotRef.current === patchSnapshot;
-        acceptedTransientPatchSnapshotRef.current = null;
-        if (previousPatchSnapshot !== patchSnapshot && !acceptedTransient) {
+        const acceptedPatch = acceptedPatchSnapshotRef.current === patchSnapshot;
+        acceptedPatchSnapshotRef.current = null;
+        if (previousPatchSnapshot !== patchSnapshot && !acceptedPatch) {
             activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
         }
@@ -271,10 +275,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const handlePatchChange: ProofPatchChange = (edit) => {
         setProofParamWithPatch({ deviceId, ...edit });
         if (edit.isTransient === true) {
-            acceptedTransientPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+            acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
             return;
         }
-        acceptedTransientPatchSnapshotRef.current = null;
+        acceptedPatchSnapshotRef.current = null;
     };
 
     const levelMeta = getLevelMeta(uiLevel);

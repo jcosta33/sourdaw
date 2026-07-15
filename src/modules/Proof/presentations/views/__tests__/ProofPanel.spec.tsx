@@ -448,6 +448,61 @@ describe('ProofPanel', () => {
         }
     });
 
+    it('keeps a newer rotary gesture current after finalizing a factory-preset drag', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const factoryPreset = PROOF_PRESETS.find((preset) => preset.id === 'streaming');
+        if (!factoryPreset) {
+            throw new Error('Expected the Streaming Master factory preset');
+        }
+        seedState({ uiLevel: 3, patch: factoryPreset.patch });
+
+        const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        expect(knobs.length).toBeGreaterThan(10);
+        const firstKnob = knobs.item(6);
+        const secondKnob = knobs.item(10);
+
+        fireEvent.pointerDown(firstKnob, { button: 0, pointerId: 41, clientY: 100 });
+        fireEvent.pointerMove(firstKnob, { pointerId: 41, clientY: 80 });
+        const firstTransientPatch = getProofState(DEVICE_ID).patch;
+        expect(firstTransientPatch.presetId).toBe('streaming');
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        const secondStartGain = getProofState(DEVICE_ID).patch.eqBands[3]?.gain;
+        fireEvent.pointerDown(secondKnob, { button: 0, pointerId: 42, clientY: 100 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
+            1,
+            DEVICE_ID,
+            expect.objectContaining({ eq_band2_freq: firstTransientPatch.eqBands[2]?.freq })
+        );
+
+        fireEvent.pointerMove(secondKnob, { pointerId: 42, clientY: 80 });
+        const secondTransientPatch = getProofState(DEVICE_ID).patch;
+        expect(secondTransientPatch.eqBands[3]?.gain).not.toBe(secondStartGain);
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+
+        fireEvent.pointerUp(secondKnob, { pointerId: 42 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
+            2,
+            DEVICE_ID,
+            expect.objectContaining({ eq_band3_gain: secondTransientPatch.eqBands[3]?.gain })
+        );
+        expect(getProofState(DEVICE_ID).patch.eqBands[3]?.gain).toBe(secondTransientPatch.eqBands[3]?.gain);
+        expect(getProofState(DEVICE_ID).patch.presetId).toBeUndefined();
+
+        fireEvent.pointerUp(firstKnob, { pointerId: 41 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(getProofState(DEVICE_ID).patch.eqBands[3]?.gain).toBe(secondTransientPatch.eqBands[3]?.gain);
+
+        unmount();
+    });
+
     it.each(CURVE_KNOB_OVERLAP_CASES)(
         'serializes curve and same-band %s knob gestures when %s wins and the loser ends via %s',
         (field, winner, _end, endGesture) => {
