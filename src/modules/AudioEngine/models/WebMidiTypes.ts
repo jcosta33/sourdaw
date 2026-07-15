@@ -21,6 +21,11 @@ export function createWebMidiNoteKey(channel: number, note: number): WebMidiNote
     return `${channel}:${note}`;
 }
 
+export type ToasterNoteRoute = {
+    deviceId: string;
+    pad: number;
+};
+
 export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
@@ -28,14 +33,16 @@ export type ActiveNoteData = {
     note: number;
     /** Track that originated the note; selection changes must not retarget release. */
     trackId: string;
+    /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
+    instrumentTrackId: string;
     pressure?: number;
     slide?: number;
     pitchBend?: number;
     osc?: OscillatorNode & { _env?: GainNode };
     /** When the note was sent to a Fermenter instance, stores the device ID for noteOff routing */
     fermenterDeviceId?: string;
-    /** When the note was sent to a Toaster instance, stores the device ID for noteOff routing */
-    toasterDeviceId?: string;
+    /** Exact Toaster device and child pad that accepted the note. */
+    toasterRoute?: ToasterNoteRoute;
     /** When the note was sent to a Grand Boule instance, stores the device ID for noteOff routing */
     grandBouleDeviceId?: string;
     /** When the note was sent to a Levain instance, stores the device ID for noteOff routing */

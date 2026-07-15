@@ -389,7 +389,7 @@ describe('createYeastWorker — projection protocol', () => {
 
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 0, note: 60 }] }]);
     });
 
     it('dispatches projection note-offs grouped by their originating track', async () => {
@@ -407,8 +407,35 @@ describe('createYeastWorker — projection protocol', () => {
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
         expect(onNotesOff).toHaveBeenCalledWith([
-            { trackId: 'track-a', notes: [60] },
-            { trackId: 'track-b', notes: [60] },
+            { trackId: 'track-a', noteOffs: [{ channel: 0, note: 60 }] },
+            { trackId: 'track-b', noteOffs: [{ channel: 0, note: 60 }] },
+        ]);
+    });
+
+    it('preserves channel identity while deduplicating only exact note-off identities', async () => {
+        const node = await createYeastWorker(makeContext());
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 1, note: 60 } },
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 2, note: 60 } },
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 2, note: 60 } },
+            { timeSamples: 128, trackId: 'track-b', kind: { type: 'noteOff', channel: 2, note: 60 } },
+        ];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastWorker(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledExactlyOnceWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 1, note: 60 },
+                    { channel: 2, note: 60 },
+                ],
+            },
+            { trackId: 'track-b', noteOffs: [{ channel: 2, note: 60 }] },
         ]);
     });
 
@@ -462,12 +489,24 @@ describe('createYeastWorker — allNotesOff acknowledgement lifecycle', () => {
         const first = node.allNotesOff(512);
         replyRawAllNotesOffAck(lastWorker(), { type: 'allNotesOffAck', panicId: 99, completed: true });
         replyRawAllNotesOffAck(lastWorker(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
-        const events = [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        const events = [
+            { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 1, note: 60 } },
+            { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 2, note: 60 } },
+            { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 2, note: 60 } },
+        ];
         replyAllNotesOffAck(lastWorker(), 0, true, undefined, events);
         replyAllNotesOffAck(lastWorker(), 0, false, 'late duplicate', events);
         await expect(first).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 1, note: 60 },
+                    { channel: 2, note: 60 },
+                ],
+            },
+        ]);
 
         const second = node.allNotesOff(1024);
         replyAllNotesOffAck(lastWorker(), 0, false, 'late acknowledgement');

@@ -28,10 +28,12 @@ vi.mock('../../getActiveInput', () => ({
 vi.mock('../../../createWebAudioEngine', () => ({
     audioEngine: {
         context: { currentTime: 5 },
+        getTrackStrip: vi.fn(),
     },
 }));
 
 const { resetMidiState } = await import('../resetMidiState');
+const { audioEngine } = await import('../../../createWebAudioEngine');
 
 function makeOscWithEnv() {
     const setTargetAtTime = vi.fn();
@@ -57,6 +59,7 @@ describe('resetMidiState — smooth release on active notes', () => {
             channel: 0,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             osc,
         });
 
@@ -80,6 +83,7 @@ describe('resetMidiState — smooth release on active notes', () => {
             channel: 0,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             osc,
         });
         channelToNote.set(0, key);
@@ -88,5 +92,41 @@ describe('resetMidiState — smooth release on active notes', () => {
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
+    });
+
+    it('releases each stored Toaster route exactly once before clearing it', () => {
+        const noteOffA = vi.fn<void, [number]>();
+        const noteOffB = vi.fn<void, [number]>();
+        vi.mocked(audioEngine.getTrackStrip).mockImplementation((trackId: string) => ({
+            deviceNodes:
+                trackId === 'parent-a'
+                    ? [{ deviceId: 'toaster-a', toasterControls: { noteOff: noteOffA } }]
+                    : [{ deviceId: 'toaster-b', toasterControls: { noteOff: noteOffB } }],
+        }));
+        activeNotes.set(createWebMidiNoteKey(1, 61), {
+            startTime: 0,
+            startBeat: 0,
+            channel: 1,
+            note: 61,
+            trackId: 'removed-child-a',
+            instrumentTrackId: 'parent-a',
+            toasterRoute: { deviceId: 'toaster-a', pad: 0 },
+        });
+        activeNotes.set(createWebMidiNoteKey(2, 61), {
+            startTime: 0,
+            startBeat: 0,
+            channel: 2,
+            note: 61,
+            trackId: 'removed-child-b',
+            instrumentTrackId: 'parent-b',
+            toasterRoute: { deviceId: 'toaster-b', pad: 3 },
+        });
+
+        resetMidiState();
+        resetMidiState();
+
+        expect(noteOffA).toHaveBeenCalledExactlyOnceWith(0);
+        expect(noteOffB).toHaveBeenCalledExactlyOnceWith(3);
+        expect(activeNotes.size).toBe(0);
     });
 });

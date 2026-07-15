@@ -88,8 +88,22 @@ describe('handleWebMidiCC', () => {
         mpe_enabled.value = true;
         const matchingKey = createWebMidiNoteKey(4, 60);
         const otherKey = createWebMidiNoteKey(5, 60);
-        activeNotes.set(matchingKey, { channel: 4, note: 60, trackId: 'track-a', startTime: 0, startBeat: 0 });
-        activeNotes.set(otherKey, { channel: 5, note: 60, trackId: 'track-b', startTime: 0, startBeat: 0 });
+        activeNotes.set(matchingKey, {
+            channel: 4,
+            note: 60,
+            trackId: 'track-a',
+            instrumentTrackId: 'track-a',
+            startTime: 0,
+            startBeat: 0,
+        });
+        activeNotes.set(otherKey, {
+            channel: 5,
+            note: 60,
+            trackId: 'track-b',
+            instrumentTrackId: 'track-b',
+            startTime: 0,
+            startBeat: 0,
+        });
         channelToNote.set(4, matchingKey);
         channelToNote.set(5, otherKey);
         const fn = handleWebMidiCC._factory(make_dependencies());

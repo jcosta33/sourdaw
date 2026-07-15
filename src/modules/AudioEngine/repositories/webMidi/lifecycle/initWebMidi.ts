@@ -84,8 +84,8 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     if (!(initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub) {
         (initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub = true;
         const eventBus = Container.get(WebMidiEventBus);
-        eventBus.on('yeast.notesOff', ({ trackId, notes }) => {
-            routeYeastNoteOffsForTargetTrack(trackId, notes, {
+        eventBus.on('yeast.notesOff', ({ trackId, noteOffs }) => {
+            routeYeastNoteOffsForTargetTrack(trackId, noteOffs, {
                 getTrackStoreState: () => trackStore.value,
                 emitGrandBouleEvent: (deviceId, midiNote) => {
                     void eventBus.emit('midi.noteOff', { deviceId, midiNote });

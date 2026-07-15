@@ -98,6 +98,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 0,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 1,
             startBeat: 4,
         });
@@ -143,6 +144,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 0,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
         });
@@ -186,6 +188,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 0,
             note: 60,
             trackId: 'track-a',
+            instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
         });
@@ -215,6 +218,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 0,
             note: 64,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
             osc: {
@@ -263,6 +267,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 0,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
             grandBouleDeviceId: 'gb-1',
@@ -303,6 +308,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 1,
             note: 60,
             trackId: 'track-a',
+            instrumentTrackId: 'track-a',
             startTime: 0,
             startBeat: 0,
             fermenterDeviceId: 'ferm-a',
@@ -311,6 +317,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 2,
             note: 60,
             trackId: 'track-b',
+            instrumentTrackId: 'track-b',
             startTime: 0,
             startBeat: 0,
             fermenterDeviceId: 'ferm-b',
@@ -331,6 +338,7 @@ describe('handleWebMidiNoteOff', () => {
             channel: 3,
             note: 60,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
         });

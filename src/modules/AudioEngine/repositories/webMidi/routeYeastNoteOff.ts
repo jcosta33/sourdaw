@@ -15,20 +15,25 @@ import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
 
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
+type RoutedYeastNoteOff = {
+    channel: number;
+    note: number;
+};
+
 /**
- * Route a batch of Note Off note numbers to their explicit originating track's
+ * Route a batch of channel-complete Note Off identities to their explicit originating track's
  * instrument. Resolves the instrument track and strip once, then delivers each
  * note. A no-op when the origin track is missing or has no supported instrument.
  */
 export function routeYeastNoteOffsForTargetTrack(
     trackId: string,
-    notes: readonly number[],
+    noteOffs: readonly RoutedYeastNoteOff[],
     deps: {
         getTrackStoreState: () => TrackStoreState | null;
         emitGrandBouleEvent: (deviceId: string, midiNote: number) => void;
     }
 ): void {
-    if (notes.length === 0) {
+    if (noteOffs.length === 0) {
         return;
     }
     const instrumentTrack = resolveInstrumentTrack(deps.getTrackStoreState(), trackId);
@@ -36,7 +41,14 @@ export function routeYeastNoteOffsForTargetTrack(
         return;
     }
     const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-    for (const note of notes) {
+    const routedNotesByChannel = new Map<number, Set<number>>();
+    for (const { channel, note } of noteOffs) {
+        const routedNotes = routedNotesByChannel.get(channel) ?? new Set<number>();
+        if (routedNotes.has(note)) {
+            continue;
+        }
+        routedNotes.add(note);
+        routedNotesByChannel.set(channel, routedNotes);
         // Panic / processor-removal path: these are forced offs with no MIDI
         // release-velocity byte, so the release dynamic is 0.
         routeYeastNoteOffToInstrument(instrumentTrack, strip, note, 0, deps.emitGrandBouleEvent);

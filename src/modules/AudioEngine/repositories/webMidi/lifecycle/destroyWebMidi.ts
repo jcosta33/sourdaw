@@ -3,6 +3,7 @@ import { tauriInvoke } from '#/utils/tauriBridge';
 import { getMidiAccess } from '../getMidiAccess';
 import { getTauriEventUnlisten } from '../getTauriEventUnlisten';
 import { getTauriMode } from '../getTauriMode';
+import { releaseActiveToasterNote } from '../releaseActiveToasterNote';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
@@ -26,6 +27,7 @@ export function destroyWebMidi(): void {
     }
 
     for (const noteData of activeNotes.values()) {
+        releaseActiveToasterNote(noteData);
         if (noteData.osc) {
             try {
                 noteData.osc.stop();

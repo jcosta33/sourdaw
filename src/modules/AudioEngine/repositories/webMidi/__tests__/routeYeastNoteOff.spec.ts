@@ -114,7 +114,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             ],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-a', [60], {
+        routeYeastNoteOffsForTargetTrack('track-a', [{ channel: 0, note: 60 }], {
             getTrackStoreState: () => track_state,
             emitGrandBouleEvent: noop_emit,
         });
@@ -132,15 +132,46 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         });
         const get_track_store_state = vi.fn(() => track_state);
 
-        routeYeastNoteOffsForTargetTrack('track-1', [60, 64], {
-            getTrackStoreState: get_track_store_state,
-            emitGrandBouleEvent: noop_emit,
-        });
+        routeYeastNoteOffsForTargetTrack(
+            'track-1',
+            [
+                { channel: 0, note: 60 },
+                { channel: 0, note: 64 },
+            ],
+            {
+                getTrackStoreState: get_track_store_state,
+                emitGrandBouleEvent: noop_emit,
+            }
+        );
 
         expect(get_track_store_state).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledWith('track-1');
         expect(fermenter_note_off.mock.calls.map((call) => call[0])).toEqual([60, 64]);
+    });
+
+    it('routes same-pitch note-offs on distinct channels exactly once each', () => {
+        get_track_strip.mockReturnValue({
+            deviceNodes: [{ type: 'fermenter', fermenterControls: { noteOff: fermenter_note_off } }],
+        });
+        const track_state = create_track_state({
+            tracks: [create_track({ id: 'track-1', devices: [create_device({ id: 'ferm-1', type: 'fermenter' })] })],
+        });
+
+        routeYeastNoteOffsForTargetTrack(
+            'track-1',
+            [
+                { channel: 1, note: 60 },
+                { channel: 2, note: 60 },
+                { channel: 2, note: 60 },
+            ],
+            {
+                getTrackStoreState: () => track_state,
+                emitGrandBouleEvent: noop_emit,
+            }
+        );
+
+        expect(fermenter_note_off.mock.calls.map((call) => call[0])).toEqual([60, 60]);
     });
 
     it('should route forced Grand Boule offs with release velocity zero', () => {
@@ -152,7 +183,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         });
         const emit_grand_boule_event = vi.fn<(deviceId: string, midiNote: number) => void>();
 
-        routeYeastNoteOffsForTargetTrack('track-2', [72], {
+        routeYeastNoteOffsForTargetTrack('track-2', [{ channel: 0, note: 72 }], {
             getTrackStoreState: () => track_state,
             emitGrandBouleEvent: emit_grand_boule_event,
         });
@@ -169,7 +200,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             tracks: [create_track({ id: 'track-3', devices: [create_device({ id: 'lev-1', type: 'levain' })] })],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-3', [74], {
+        routeYeastNoteOffsForTargetTrack('track-3', [{ channel: 0, note: 74 }], {
             getTrackStoreState: () => track_state,
             emitGrandBouleEvent: noop_emit,
         });
@@ -178,7 +209,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     });
 
     it('should be a no-op when there is no target track', () => {
-        routeYeastNoteOffsForTargetTrack('', [60], {
+        routeYeastNoteOffsForTargetTrack('', [{ channel: 0, note: 60 }], {
             getTrackStoreState: () => null,
             emitGrandBouleEvent: noop_emit,
         });

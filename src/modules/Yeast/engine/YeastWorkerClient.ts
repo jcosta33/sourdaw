@@ -9,7 +9,7 @@
  * the rack and processor instances; this wrapper owns only the message protocol.
  */
 
-import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
+import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
@@ -338,22 +338,29 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const terminalErrorHandlers = new Set<(error: Error) => void>();
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
-        const notesByTrack = new Map<string, number[]>();
+        const notesOffByTrack = new Map<string, YeastNoteOffIdentity[]>();
+        const seenByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
         for (const evt of events) {
             if (evt.kind.type !== 'noteOff' || !evt.trackId) {
                 continue;
             }
-            const notes = notesByTrack.get(evt.trackId);
-            if (notes) {
-                notes.push(evt.kind.note);
-            } else {
-                notesByTrack.set(evt.trackId, [evt.kind.note]);
+            const seenByChannel = seenByTrackAndChannel.get(evt.trackId) ?? new Map<number, Set<number>>();
+            const seenNotes = seenByChannel.get(evt.kind.channel) ?? new Set<number>();
+            if (seenNotes.has(evt.kind.note)) {
+                continue;
             }
+            seenNotes.add(evt.kind.note);
+            seenByChannel.set(evt.kind.channel, seenNotes);
+            seenByTrackAndChannel.set(evt.trackId, seenByChannel);
+
+            const noteOffs = notesOffByTrack.get(evt.trackId) ?? [];
+            noteOffs.push({ channel: evt.kind.channel, note: evt.kind.note });
+            notesOffByTrack.set(evt.trackId, noteOffs);
         }
-        if (notesByTrack.size === 0) {
+        if (notesOffByTrack.size === 0) {
             return;
         }
-        const notesOff = [...notesByTrack].map(([trackId, notes]) => ({ trackId, notes }));
+        const notesOff = [...notesOffByTrack].map(([trackId, noteOffs]) => ({ trackId, noteOffs }));
         for (const handler of notesOffHandlers) {
             handler(notesOff);
         }

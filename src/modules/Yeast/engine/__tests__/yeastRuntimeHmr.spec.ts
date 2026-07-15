@@ -50,6 +50,7 @@ type LegacyRuntimeSession = {
     status: 'uninitialized' | 'initializing' | 'ready' | 'unavailable';
     error: string | undefined;
     onNotesOff: ((notesOff: YeastNotesOffPayload[]) => void) | null;
+    pendingNotesOff?: YeastNotesOffPayload[];
     pendingAllNotesOff: { context: BaseAudioContext; generation: number; nowSamples: number } | null;
     activeOutputNotes?: Map<string, { generation: number; trackId: string; channel: number; note: number }>;
 };
@@ -135,7 +136,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(5);
+        expect(legacySession.version).toBe(6);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -147,7 +148,8 @@ describe('yeastRuntime HMR migration', () => {
         expect(legacySession.appliedProjectionRevision).toBe(0);
         expect(legacySession.status).toBe('uninitialized');
         expect(legacySession.error).toBeUndefined();
-        expect(legacySession.onNotesOff).toBe(onNotesOff);
+        expect(legacySession.onNotesOff).toBeNull();
+        expect(legacySession.pendingNotesOff).toEqual([]);
         expect(legacySession.pendingAllNotesOff).toBeNull();
         expect(legacySession.activeOutputNotes).toEqual(new Map());
         expect(onNotesOff).not.toHaveBeenCalled();
@@ -172,7 +174,7 @@ describe('yeastRuntime HMR migration', () => {
         expect(stalePendingNode.processBlock).not.toHaveBeenCalled();
     });
 
-    it('settles retained v4 Worker output notes before revoking its generation', async () => {
+    it('defers retained v5 Worker output notes until the channel-complete sink is installed', async () => {
         const context = {} as BaseAudioContext;
         const worker = makeWorker(context);
         const onNotesOff = vi.fn();
@@ -181,7 +183,7 @@ describe('yeastRuntime HMR migration', () => {
             { id: 'arp-1', type: 'arpeggiator', bypassed: false, params: { rate_denom: 16 } },
         ];
         const retainedSession: LegacyRuntimeSession = {
-            version: 4,
+            version: 5,
             context,
             node: worker,
             nodePromise: null,
@@ -204,12 +206,26 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(retainedSession.version).toBe(5);
+        expect(retainedSession.version).toBe(6);
         expect(retainedSession.generation).toBe(generation + 1);
         expect(retainedSession.projection).toBe(projection);
         expect(retainedSession.activeOutputNotes).toEqual(new Map());
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [67] }]);
+        expect(onNotesOff).not.toHaveBeenCalled();
+        const channelCompleteNotesOff = vi.fn();
+        runtime.setYeastRuntimeNotesOffHandler(channelCompleteNotesOff);
+        runtime.setYeastRuntimeNotesOffHandler(channelCompleteNotesOff);
+
+        expect(channelCompleteNotesOff).toHaveBeenCalledTimes(1);
+        expect(channelCompleteNotesOff).toHaveBeenCalledWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 2, note: 67 },
+                    { channel: 3, note: 67 },
+                ],
+            },
+        ]);
+        expect(retainedSession.pendingNotesOff).toEqual([]);
         expect(worker.destroy).toHaveBeenCalledTimes(1);
 
         runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);

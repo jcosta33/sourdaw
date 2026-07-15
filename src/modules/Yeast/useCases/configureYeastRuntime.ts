@@ -12,7 +12,7 @@ export function configureYeastRuntime({ panicOutputNotes }: ConfigureYeastRuntim
     setYeastRuntimeOutputPanicHandler(panicOutputNotes);
     setYeastRuntimeNotesOffHandler((notesOff) => {
         for (const payload of notesOff) {
-            if (payload.notes.length > 0) {
+            if (payload.noteOffs.length > 0) {
                 void eventBus.emit('yeast.notesOff', payload);
             }
         }

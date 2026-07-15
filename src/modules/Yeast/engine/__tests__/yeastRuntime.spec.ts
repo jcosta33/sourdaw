@@ -301,6 +301,11 @@ describe('yeastRuntime', () => {
                 trackId: 'track-a',
                 kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 100 },
             },
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 3, note: 67, velocity: 100 },
+            },
         ]);
         createNode.mockResolvedValueOnce(node);
 
@@ -314,7 +319,15 @@ describe('yeastRuntime', () => {
         runtime.destroyYeastRuntime();
 
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [67] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 2, note: 67 },
+                    { channel: 3, note: 67 },
+                ],
+            },
+        ]);
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
         expect(node.allNotesOff).not.toHaveBeenCalled();
     });
@@ -378,7 +391,7 @@ describe('yeastRuntime', () => {
         runtime.destroyYeastRuntime();
 
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 0, note: 60 }] }]);
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
         expect(node.destroy).toHaveBeenCalledTimes(1);
     });
@@ -406,10 +419,10 @@ describe('yeastRuntime', () => {
         await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(contextA));
 
         await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
-        nodeA.emitNotesOff([{ trackId: 'track-a', notes: [69] }]);
+        nodeA.emitNotesOff([{ trackId: 'track-a', noteOffs: [{ channel: 3, note: 69 }] }]);
 
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [69] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 3, note: 69 }] }]);
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
         expect(nodeA.destroy).toHaveBeenCalledTimes(1);
         expect(nodeB.destroy).not.toHaveBeenCalled();
@@ -458,7 +471,7 @@ describe('yeastRuntime', () => {
             }
 
             expect(onNotesOff).toHaveBeenCalledTimes(1);
-            expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [65] }]);
+            expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 1, note: 65 }] }]);
             expect(panicOutputNotes).toHaveBeenCalledTimes(1);
             expect(node.destroy).toHaveBeenCalledTimes(1);
         }
@@ -476,6 +489,11 @@ describe('yeastRuntime', () => {
                 trackId: 'track-a',
                 kind: { type: 'noteOn' as const, channel: 1, note: 65, velocity: 100 },
             },
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 2, note: 65, velocity: 100 },
+            },
         ]);
         createNode.mockResolvedValueOnce(node);
 
@@ -484,11 +502,27 @@ describe('yeastRuntime', () => {
         runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
         await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
 
-        node.emitNotesOff([{ trackId: 'track-a', notes: [65] }]);
+        node.emitNotesOff([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 1, note: 65 },
+                    { channel: 2, note: 65 },
+                ],
+            },
+        ]);
         node.emitTerminalError(new Error('Worker crashed after panic'));
 
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [65] }]);
+        expect(onNotesOff).toHaveBeenCalledWith([
+            {
+                trackId: 'track-a',
+                noteOffs: [
+                    { channel: 1, note: 65 },
+                    { channel: 2, note: 65 },
+                ],
+            },
+        ]);
         expect(panicOutputNotes).not.toHaveBeenCalled();
     });
 

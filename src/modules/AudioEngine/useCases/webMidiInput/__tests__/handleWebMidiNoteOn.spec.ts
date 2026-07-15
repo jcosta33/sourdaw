@@ -148,6 +148,7 @@ describe('handleWebMidiNoteOn', () => {
             channel: 1,
             note: 60,
             trackId: 'track-old',
+            instrumentTrackId: 'track-old',
             startTime: 1,
             startBeat: 0,
         });

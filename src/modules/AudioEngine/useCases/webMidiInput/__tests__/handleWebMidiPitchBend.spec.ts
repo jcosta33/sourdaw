@@ -49,6 +49,7 @@ describe('handleWebMidiPitchBend', () => {
             channel: 2,
             note: 64,
             trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
             osc: {
@@ -59,6 +60,7 @@ describe('handleWebMidiPitchBend', () => {
             channel: 3,
             note: 64,
             trackId: 'track-2',
+            instrumentTrackId: 'track-2',
             startTime: 0,
             startBeat: 0,
         });

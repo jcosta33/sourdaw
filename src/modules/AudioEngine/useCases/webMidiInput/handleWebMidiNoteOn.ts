@@ -52,6 +52,7 @@ export const handleWebMidiNoteOn = inject({
                 channel,
                 note,
                 trackId: targetTrackId,
+                instrumentTrackId: targetTrackId,
             };
             activeNotes.set(noteKey, noteData);
 
@@ -87,7 +88,7 @@ export const handleWebMidiNoteOn = inject({
                 }
             }
 
-            noteData.trackId = instrumentTrackId;
+            noteData.instrumentTrackId = instrumentTrackId;
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
@@ -204,7 +205,7 @@ export const handleWebMidiNoteOn = inject({
                     }
                     if (pad >= 0 && pad < 16) {
                         deviceNode.toasterControls.noteOn(pad, velocity, pitchNote);
-                        noteData.toasterDeviceId = toasterDevice.id;
+                        noteData.toasterRoute = { deviceId: toasterDevice.id, pad };
                     }
                 }
                 return;

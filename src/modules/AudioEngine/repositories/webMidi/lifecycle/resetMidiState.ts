@@ -2,10 +2,12 @@ import { MIDI_CC } from '../../../models/WebMidiTypes';
 import { audioEngine } from '../../createWebAudioEngine';
 import { getActiveInput } from '../getActiveInput';
 import { getMidiAccess } from '../getMidiAccess';
+import { releaseActiveToasterNote } from '../releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../state';
 
 export function resetMidiState(): void {
     for (const [, noteData] of activeNotes) {
+        releaseActiveToasterNote(noteData);
         if (noteData.osc) {
             const now = audioEngine.context.currentTime;
             if (noteData.osc._env) {
