@@ -61,8 +61,11 @@ export function openDatabase(): Promise<IDBDatabase | null> {
 
             _db = database;
             database.onversionchange = () => {
+                const isCurrentDatabase = _db === database && _dbGeneration === generation;
                 database.close();
-                invalidateDatabase(generation);
+                if (isCurrentDatabase) {
+                    invalidateDatabase(generation);
+                }
             };
             resolve(database);
         };
