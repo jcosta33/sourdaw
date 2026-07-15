@@ -33,6 +33,10 @@ export class TransactionalPersistenceTransaction {
 
     objectStore(): {
         clear: () => FakeRequest<undefined>;
+        get: (key: string) => FakeRequest<Uint8Array | undefined> & {
+            onsuccess: (() => void) | null;
+            onerror: (() => void) | null;
+        };
         put: (value: Uint8Array, key: string) => FakeRequest<undefined>;
         add: (value: Uint8Array, key: string) => FakeRequest<undefined>;
         getAllKeys: () => FakeRequest<string[]>;
@@ -42,6 +46,28 @@ export class TransactionalPersistenceTransaction {
             clear: () => {
                 this.operations.push((records) => records.clear());
                 return { result: undefined };
+            },
+            get: (key) => {
+                let successHandler: (() => void) | null = null;
+                const request: FakeRequest<Uint8Array | undefined> & {
+                    onsuccess: (() => void) | null;
+                    onerror: (() => void) | null;
+                } = {
+                    result: this.persistence.records.has(key)
+                        ? new Uint8Array(this.persistence.records.get(key)!)
+                        : undefined,
+                    onsuccess: null,
+                    onerror: null,
+                };
+                Object.defineProperty(request, 'onsuccess', {
+                    configurable: true,
+                    get: () => successHandler,
+                    set: (handler: (() => void) | null) => {
+                        successHandler = handler;
+                        handler?.();
+                    },
+                });
+                return request;
             },
             put: (value, key) => {
                 const copy = new Uint8Array(value);
@@ -221,6 +247,7 @@ export class TransactionalPersistence {
             this.startNextReadwriteTransaction();
         } else {
             transaction.start();
+            queueMicrotask(() => transaction.complete());
         }
 
         return transaction;

@@ -1,5 +1,7 @@
 import { automergeRepository } from '../repositories/automergeRepository';
-import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
+import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
+
+import { setCrdtPersistenceAuthority } from './crdtPersistenceQueue';
 
 /**
  * Load a CRDT project from persistence (IndexedDB).
@@ -10,16 +12,21 @@ type LoadCrdtProjectInput = {
 };
 
 export async function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
-    const bundle = await loadAllFromIdb();
-    if (bundle) {
-        const committed = await automergeRepository.loadAll({ bundle, shouldCommit });
+    const snapshot = await loadPersistenceSnapshotFromIdb();
+    if (snapshot?.bundle) {
+        const committed = await automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit });
         if (!committed) {
             return false;
         }
         if (shouldCommit?.() === false) {
             return false;
         }
+        setCrdtPersistenceAuthority(snapshot.authority);
         return true;
+    }
+
+    if (snapshot) {
+        setCrdtPersistenceAuthority(snapshot.authority);
     }
     return false;
 }

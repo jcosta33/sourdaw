@@ -8,6 +8,7 @@ const TARGET_SNAPSHOT = { tag: 'target-snap' };
 const docs: Record<string, unknown> = {};
 
 const mocks = vi.hoisted(() => ({
+    flushAutomergeStorageWrites: vi.fn(),
     getDoc: vi.fn(),
     replaceDoc: vi.fn(),
     storeValue: {
@@ -25,6 +26,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mocks.clone }));
+vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+    flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
+}));
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: { getDoc: mocks.getDoc, replaceDoc: mocks.replaceDoc },
 }));
@@ -39,6 +43,7 @@ vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject })
 describe('switchBranch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         docs.root = ROOT_LIVE_DOC;
         docs.branch_other = TARGET_SNAPSHOT;
         mocks.getDoc.mockImplementation((id: string) => docs[id]);
@@ -57,6 +62,26 @@ describe('switchBranch', () => {
         // Then the target's snapshot is swapped into the root slot.
         const swap = mocks.replaceDoc.mock.calls.find((c) => c[0] === 'root');
         expect(swap).toBeDefined();
+    });
+
+    it('flushes deferred storage before reading the target and swapping the root slot', () => {
+        const order: string[] = [];
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => {
+            order.push('flush');
+        });
+        mocks.getDoc.mockImplementation((id: string) => {
+            order.push(`get:${id}`);
+            return docs[id];
+        });
+        mocks.replaceDoc.mockImplementation((id: string) => {
+            order.push(`replace:${id}`);
+        });
+
+        switchBranch('other');
+
+        expect(mocks.flushAutomergeStorageWrites).toHaveBeenCalledTimes(2);
+        expect(order[0]).toBe('flush');
+        expect(order.indexOf('flush', 1)).toBeLessThan(order.indexOf('replace:root'));
     });
 
     it('does not write back when the outgoing branch is main (root-backed)', () => {

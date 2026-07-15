@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 import { compactProject } from '../compactProject';
 import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
@@ -144,7 +145,7 @@ describe('compactProject', () => {
         fullSave.complete();
         await compaction;
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
-        expect(persistence.records.size).toBe(1);
+        expect([...persistence.records.keys()].filter((key) => key !== PERSISTENCE_AUTHORITY_KEY)).toHaveLength(1);
 
         const postSnapshotIncremental = await persistence.waitForTransaction('readwrite', 3);
         postSnapshotIncremental.complete();

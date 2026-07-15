@@ -1,6 +1,7 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
@@ -38,11 +39,13 @@ export function switchBranch(branchId: string): void {
         throw createBranchError(`Branch not found: ${branchId}`);
     }
 
+    flushAutomergeStorageWrites();
     const branchDoc = automergeRepository.getDoc(branch.rootDocId);
     if (!branchDoc) {
         throw createBranchError(`Branch document not found: ${branch.rootDocId}`);
     }
 
+    flushAutomergeStorageWrites();
     // 1. Write the outgoing active branch's live root-slot edits back into its
     //    own snapshot before we overwrite the root slot. Skip when the outgoing
     //    branch is backed directly by the root slot (main).

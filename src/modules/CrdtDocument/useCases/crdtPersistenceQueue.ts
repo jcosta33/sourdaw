@@ -3,8 +3,16 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
+import {
+    EMPTY_PERSISTENCE_AUTHORITY,
+    type CrdtPersistenceAuthority,
+} from '../repositories/crdtPersistence/persistenceAuthority';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
-import { saveIncrementalsToIdb } from '../repositories/crdtPersistence/saveIncrementalsToIdb';
+import {
+    saveIncrementalsToIdb,
+    type SaveIncrementalsToIdbResult,
+} from '../repositories/crdtPersistence/saveIncrementalsToIdb';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { CRDT_PROJECT_COMPACTION_THRESHOLD, crdtProjectCompactionState } from './crdtProjectCompactionState';
@@ -22,7 +30,7 @@ type PendingFullSnapshot = {
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
-const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 1;
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 2;
 
 type CrdtPersistenceQueueState = {
     version: number;
@@ -31,6 +39,8 @@ type CrdtPersistenceQueueState = {
     pendingChunks: PendingIncrementalChunk[];
     pendingFullSnapshot: PendingFullSnapshot | null;
     persistedBaseDocIds: Set<DocId>;
+    authority: CrdtPersistenceAuthority | null;
+    replacementEpoch: string | null;
 };
 
 function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
@@ -41,6 +51,8 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
         pendingChunks: [],
         pendingFullSnapshot: null,
         persistedBaseDocIds: new Set<DocId>([DOC_PREFIX_ROOT]),
+        authority: null,
+        replacementEpoch: null,
     };
 }
 
@@ -58,6 +70,8 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
     persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
+    persistenceState.authority = null;
+    persistenceState.replacementEpoch = null;
 
     const migrationGeneration = persistenceState.persistenceGeneration;
     const migrationRecovery = previousOperationTail.then(() => compactCrdtProject(migrationGeneration));
@@ -95,6 +109,12 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
     return run;
 }
 
+/** Adopt the authority read with the project bundle that this realm loaded. */
+export function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void {
+    persistenceState.authority = authority;
+    persistenceState.replacementEpoch = null;
+}
+
 function resetQueueState(): void {
     persistenceState.persistenceGeneration++;
     for (let index = persistenceState.pendingChunks.length - 1; index >= 0; index--) {
@@ -106,11 +126,39 @@ function resetQueueState(): void {
     persistenceState.pendingFullSnapshot = null;
     persistenceState.persistedBaseDocIds.clear();
     persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
+    // A project reset intentionally publishes a new epoch, but it still reads
+    // and claims the current durable revision before replacing the bundle. A
+    // concurrent realm can therefore never be cleared by an unseen reset.
+    persistenceState.authority = null;
+    persistenceState.replacementEpoch = crypto.randomUUID();
     crdtProjectCompactionState.incrementalSaveCount = 0;
 }
 
 function noOpPersistenceOperation(): Promise<void> {
     return Promise.resolve();
+}
+
+async function ensurePersistenceAuthority(generation: number): Promise<CrdtPersistenceAuthority> {
+    if (generation !== persistenceState.persistenceGeneration) {
+        return EMPTY_PERSISTENCE_AUTHORITY;
+    }
+    if (persistenceState.authority) {
+        return persistenceState.authority;
+    }
+
+    const snapshot = await loadPersistenceSnapshotFromIdb();
+    if (generation !== persistenceState.persistenceGeneration) {
+        return EMPTY_PERSISTENCE_AUTHORITY;
+    }
+
+    persistenceState.authority = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    return persistenceState.authority;
+}
+
+function assertSamePersistenceEpoch(expected: CrdtPersistenceAuthority, actual: CrdtPersistenceAuthority): void {
+    if (expected.epoch !== actual.epoch) {
+        throw new Error('[CrdtPersistence] Project authority changed; reload is required before saving');
+    }
 }
 
 function getPreviousOperationTail(state: unknown): Promise<void> {
@@ -138,6 +186,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 
 async function persistIncrementalCrdtProject(generation: number): Promise<void> {
     await flushPendingFullSnapshot(generation);
+    await ensurePersistenceAuthority(generation);
     await flushPendingChunks(generation);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
@@ -241,23 +290,46 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
         return;
     }
 
-    persistenceState.pendingFullSnapshot = pending;
+    let currentPending = pending;
+    persistenceState.pendingFullSnapshot = currentPending;
+
     try {
-        await saveAllToIdb(pending.bundle);
+        while (currentPending.generation === persistenceState.persistenceGeneration) {
+            const expectedAuthority = await ensurePersistenceAuthority(currentPending.generation);
+            const result = await saveAllToIdb(currentPending.bundle, {
+                expectedAuthority,
+                nextEpoch: persistenceState.replacementEpoch ?? expectedAuthority.epoch,
+            });
+
+            if (result.status === 'committed') {
+                persistenceState.authority = result.authority;
+                persistenceState.replacementEpoch = null;
+                break;
+            }
+
+            assertSamePersistenceEpoch(expectedAuthority, result.authority);
+            persistenceState.authority = result.authority;
+            await automergeRepository.mergeBundle(result.bundle);
+            currentPending = {
+                ...currentPending,
+                bundle: automergeRepository.saveAll(),
+            };
+            persistenceState.pendingFullSnapshot = currentPending;
+        }
     } catch (error: unknown) {
         if (pending.generation === persistenceState.persistenceGeneration) {
-            persistenceState.pendingFullSnapshot = pending;
+            persistenceState.pendingFullSnapshot = currentPending;
         }
         throw error;
     }
 
     if (
-        pending.generation === persistenceState.persistenceGeneration &&
-        persistenceState.pendingFullSnapshot === pending
+        currentPending.generation === persistenceState.persistenceGeneration &&
+        persistenceState.pendingFullSnapshot === currentPending
     ) {
         persistenceState.pendingFullSnapshot = null;
         persistenceState.persistedBaseDocIds.clear();
-        for (const id of pending.bundle.keys()) {
+        for (const id of currentPending.bundle.keys()) {
             persistenceState.persistedBaseDocIds.add(id);
         }
         crdtProjectCompactionState.incrementalSaveCount = 0;
@@ -297,13 +369,37 @@ async function flushPendingChunks(generation: number): Promise<void> {
         pending.inFlight = true;
     }
 
+    let result: SaveIncrementalsToIdbResult;
+    let rebasedToFullSnapshot = false;
     try {
-        await saveIncrementalsToIdb(
-            chunks.map(({ id, chunk }) => ({
-                id,
-                chunk,
-            }))
-        );
+        while (true) {
+            const expectedAuthority = await ensurePersistenceAuthority(generation);
+            result = await saveIncrementalsToIdb(
+                chunks.map(({ id, chunk }) => ({
+                    id,
+                    chunk,
+                })),
+                { expectedAuthority }
+            );
+
+            if (result.status === 'committed') {
+                persistenceState.authority = result.authority;
+                break;
+            }
+
+            const conflictResult: Extract<SaveIncrementalsToIdbResult, { status: 'conflict' }> = result;
+            assertSamePersistenceEpoch(expectedAuthority, conflictResult.authority);
+            persistenceState.authority = conflictResult.authority;
+            if (chunks.some(({ id }) => !conflictResult.bundle.has(id))) {
+                await automergeRepository.mergeBundle(conflictResult.bundle);
+                await persistFullSnapshot({
+                    generation,
+                    bundle: automergeRepository.saveAll(),
+                });
+                rebasedToFullSnapshot = true;
+                break;
+            }
+        }
     } finally {
         for (const pending of chunks) {
             pending.inFlight = false;
@@ -319,6 +415,9 @@ async function flushPendingChunks(generation: number): Promise<void> {
 
     for (const pending of chunks) {
         removePendingChunk(pending);
+    }
+    if (rebasedToFullSnapshot) {
+        return;
     }
     // Every chunk in the atomic transaction is non-empty and committed here.
     crdtProjectCompactionState.incrementalSaveCount += chunks.length;

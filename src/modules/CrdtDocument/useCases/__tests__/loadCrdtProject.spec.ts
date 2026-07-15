@@ -4,7 +4,7 @@ import { loadCrdtProject } from '../loadCrdtProject';
 
 const mocks = vi.hoisted(() => ({
     loadAll: vi.fn<(input: { bundle: Map<string, Uint8Array>; shouldCommit?: () => boolean }) => Promise<boolean>>(),
-    loadAllFromIdb: vi.fn(),
+    loadPersistenceSnapshotFromIdb: vi.fn(),
 }));
 
 vi.mock('../../repositories/automergeRepository', () => ({
@@ -12,17 +12,26 @@ vi.mock('../../repositories/automergeRepository', () => ({
         loadAll: mocks.loadAll,
     },
 }));
-vi.mock('../../repositories/crdtPersistence/loadAllFromIdb', () => ({ loadAllFromIdb: mocks.loadAllFromIdb }));
+vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
+    loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
+}));
 
 describe('loadCrdtProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.loadAll.mockResolvedValue(true);
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: { epoch: 'test-project', revision: 1 },
+            bundle: null,
+        });
     });
 
     it('should load from IDB and update the repository', async () => {
         const mockBundle = new Map();
-        mocks.loadAllFromIdb.mockResolvedValue(mockBundle);
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: { epoch: 'test-project', revision: 1 },
+            bundle: mockBundle,
+        });
 
         const result = await loadCrdtProject();
 
@@ -31,7 +40,7 @@ describe('loadCrdtProject', () => {
     });
 
     it('returns absence from one empty persistence read without committing', async () => {
-        mocks.loadAllFromIdb.mockResolvedValue(null);
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue(null);
 
         await expect(loadCrdtProject()).resolves.toBe(false);
 
@@ -45,7 +54,10 @@ describe('loadCrdtProject', () => {
             ['root', loadedRoot],
             ['branch_feat', olderBranchSnapshot],
         ]);
-        mocks.loadAllFromIdb.mockResolvedValue(bundle);
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: { epoch: 'test-project', revision: 1 },
+            bundle,
+        });
 
         await expect(loadCrdtProject()).resolves.toBe(true);
 
@@ -54,7 +66,10 @@ describe('loadCrdtProject', () => {
 
     it('does not restore branch state when repository commit is canceled', async () => {
         const should_commit = vi.fn(() => false);
-        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: { epoch: 'test-project', revision: 1 },
+            bundle: new Map(),
+        });
         mocks.loadAll.mockResolvedValue(false);
 
         const result = await loadCrdtProject({ shouldCommit: should_commit });
@@ -67,7 +82,10 @@ describe('loadCrdtProject', () => {
 
     it('does not restore branch state when authority is revoked after repository commit', async () => {
         let shouldCommit = true;
-        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: { epoch: 'test-project', revision: 1 },
+            bundle: new Map(),
+        });
         mocks.loadAll.mockImplementationOnce(() => {
             shouldCommit = false;
             return Promise.resolve(true);

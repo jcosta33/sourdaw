@@ -524,6 +524,11 @@ class AutomergeRepository {
      * incoming bundle, then the worker returns merged compacted binaries.
      */
     async mergeBundle(bundle: DocumentBundle): Promise<MergeResult> {
+        const decodedIncoming = await this.decodeAll(bundle);
+        const normalizedIncoming: DocumentBundle = new Map();
+        for (const [id, doc] of decodedIncoming.documents) {
+            normalizedIncoming.set(id, save(doc));
+        }
         const current = this.saveAll();
 
         let compacted: [string, Uint8Array][];
@@ -534,7 +539,7 @@ class AutomergeRepository {
             const response = await invokeWorker({
                 type: 'mergeBundle',
                 current: Array.from(current.entries()),
-                incoming: Array.from(bundle.entries()),
+                incoming: Array.from(normalizedIncoming.entries()),
             });
             if (response.type !== 'merged') {
                 throw new Error('Unexpected worker response type');
@@ -544,7 +549,7 @@ class AutomergeRepository {
             newDocIds = response.newDocIds;
         } catch (error) {
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', error);
-            return this._mergeBundleSync(bundle);
+            return this._mergeBundleSync(normalizedIncoming);
         }
 
         for (const [id, bytes] of compacted) {

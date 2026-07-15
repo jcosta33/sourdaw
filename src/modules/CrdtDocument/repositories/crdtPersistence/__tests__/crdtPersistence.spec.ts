@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clearCrdtIdb } from '../clearCrdtIdb';
 import { openDatabase } from '../helpers';
 import { loadAllFromIdb } from '../loadAllFromIdb';
+import { encodePersistenceAuthority } from '../persistenceAuthority';
 import { saveAllToIdb } from '../saveAllToIdb';
 import { saveIncrementalToIdb } from '../saveIncrementalToIdb';
 
@@ -13,6 +14,7 @@ vi.mock('../helpers', () => ({
 
 type MockStore = {
     clear: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
     put: ReturnType<typeof vi.fn>;
     add: ReturnType<typeof vi.fn>;
 };
@@ -28,8 +30,19 @@ type MockTransaction = {
 };
 
 function createMockStore(): MockStore {
+    const get = vi.fn().mockImplementation(() => {
+        const request: {
+            result: undefined;
+            onsuccess: (() => void) | null;
+            onerror: (() => void) | null;
+            error: Error | null;
+        } = { result: undefined, onsuccess: null, onerror: null, error: null };
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+    });
     return {
         clear: vi.fn(),
+        get,
         put: vi.fn(),
         add: vi.fn(),
     };
@@ -93,6 +106,16 @@ describe('crdtPersistence repository', () => {
             getAllKeys: vi.fn(),
             getAll: vi.fn(),
             clear: vi.fn().mockReturnValue(mockRequest),
+            get: vi.fn().mockImplementation(() => {
+                const request = {
+                    result: undefined,
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                    error: null as Error | null,
+                };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
+            }),
             put: vi.fn().mockReturnValue(mockRequest),
         };
 
@@ -186,6 +209,7 @@ describe('crdtPersistence repository', () => {
 
             const promise = saveAllToIdb(bundle);
             await Promise.resolve();
+            await Promise.resolve();
             mockTx.oncomplete(); // Trigger completion
             await promise;
 
@@ -206,20 +230,61 @@ describe('crdtPersistence repository', () => {
 
             const firstAttempt = saveAllToIdb(bundle);
             await Promise.resolve();
+            await Promise.resolve();
             firstTx.abort();
 
             await expect(waitForRejection(firstAttempt)).resolves.toBe(transactionError);
 
             const retry = saveAllToIdb(bundle);
             await Promise.resolve();
+            await Promise.resolve();
             retryTx.complete();
             await retry;
 
             expect(firstStore.clear).toHaveBeenCalledOnce();
             expect(retryStore.clear).toHaveBeenCalledOnce();
-            expect(firstStore.put).toHaveBeenCalledOnce();
-            expect(retryStore.put).toHaveBeenCalledOnce();
+            expect(firstStore.put.mock.calls.filter(([, key]) => key === 'doc1')).toHaveLength(1);
+            expect(retryStore.put.mock.calls.filter(([, key]) => key === 'doc1')).toHaveLength(1);
             expect(retryStore.put).toHaveBeenCalledWith(new Uint8Array([1]), 'doc1');
+        });
+
+        it('detects a stale full bundle inside the IDB transaction instead of clearing newer records', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            const bundle = new Map([['doc1', new Uint8Array([1])]]);
+            const authority = { epoch: '', revision: 0 };
+            let authorityReadCount = 0;
+            mockStore.get.mockImplementation(() => {
+                const request = {
+                    result:
+                        authorityReadCount++ === 0 ? undefined : encodePersistenceAuthority({ epoch: '', revision: 1 }),
+                    onsuccess: null as (() => void) | null,
+                    onerror: null as (() => void) | null,
+                    error: null as Error | null,
+                };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
+            });
+            mockStore.getAllKeys.mockReturnValue({ result: ['doc1'] });
+            mockStore.getAll.mockReturnValue({ result: [new Uint8Array([1])] });
+
+            const firstSave = saveAllToIdb(bundle, { expectedAuthority: authority });
+            await Promise.resolve();
+            await Promise.resolve();
+            mockTx.oncomplete();
+            await expect(firstSave).resolves.toMatchObject({ status: 'committed' });
+
+            const staleBundle = new Map([['doc1', new Uint8Array([2])]]);
+            const staleSave = saveAllToIdb(staleBundle, { expectedAuthority: authority });
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(mockStore.get).toHaveBeenCalledTimes(2);
+            expect(mockStore.get.mock.results[1]?.value.result).toEqual(
+                encodePersistenceAuthority({ epoch: '', revision: 1 })
+            );
+            mockTx.oncomplete();
+
+            await expect(staleSave).resolves.toMatchObject({ status: 'conflict' });
+            expect(mockStore.clear).toHaveBeenCalledOnce();
         });
     });
 
@@ -234,12 +299,14 @@ describe('crdtPersistence repository', () => {
 
             const firstAttempt = saveIncrementalToIdb('doc1', new Uint8Array([1]));
             await Promise.resolve();
+            await Promise.resolve();
             firstTx.abort();
 
             const abortError = await waitForRejection(firstAttempt);
             expect(abortError).toMatchObject({ message: 'IDB transaction aborted' });
 
             const retry = saveIncrementalToIdb('doc1', new Uint8Array([2]));
+            await Promise.resolve();
             await Promise.resolve();
             retryTx.complete();
             await retry;
@@ -252,7 +319,7 @@ describe('crdtPersistence repository', () => {
             expect(retryKey).toMatch(/^doc1:incremental:\d+-[0-9a-z]+$/);
             const firstSequence = Number.parseInt(String(firstKey).split('-').at(-1) ?? '', 36);
             const retrySequence = Number.parseInt(String(retryKey).split('-').at(-1) ?? '', 36);
-            expect(retrySequence).toBe(firstSequence + 1);
+            expect(retrySequence).toBe(firstSequence);
             expect(retryStore.add).toHaveBeenCalledWith(new Uint8Array([2]), retryKey);
         });
     });

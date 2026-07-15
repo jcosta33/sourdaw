@@ -4,6 +4,7 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 import { compactProject } from '../compactProject';
 import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
@@ -70,6 +71,10 @@ async function readBundle(
     const transaction = await persistence.waitForTransaction('readonly', occurrence);
     transaction.complete();
     return load;
+}
+
+function getPersistedDocumentKeys(persistence: TransactionalPersistence): string[] {
+    return [...persistence.records.keys()].filter((key) => key !== PERSISTENCE_AUTHORITY_KEY);
 }
 
 describe('persistCrdtProject', () => {
@@ -290,7 +295,7 @@ describe('persistCrdtProject', () => {
         firstTransaction.abort();
         await expect(firstAttempt).rejects.toThrow('IDB transaction aborted');
         expect(crdtProjectCompactionState.incrementalSaveCount).toBe(0);
-        expect([...persistence.records.keys()].sort()).toEqual(['child-1', 'root']);
+        expect(getPersistedDocumentKeys(persistence).sort()).toEqual(['child-1', 'root']);
 
         const retryAttempt = persistCrdtProject();
         const retryTransaction = await persistence.waitForTransaction('readwrite', 3);
@@ -418,7 +423,7 @@ describe('persistCrdtProject', () => {
         await retry;
 
         expect(persistence.getTransactions('readwrite')).toHaveLength(3);
-        expect([...persistence.records.keys()]).toEqual(['root']);
+        expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
     });
 
     it('does not let an old-generation incremental completion overwrite a new project', async () => {
@@ -477,7 +482,7 @@ describe('persistCrdtProject', () => {
         expect(newProjectSave.writes.some((write) => write.kind === 'add')).toBe(false);
         newProjectSave.complete();
         await newProject;
-        expect([...persistence.records.keys()]).toEqual(['root']);
+        expect(getPersistedDocumentKeys(persistence)).toEqual(['root']);
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.newEdit = true;
@@ -941,7 +946,7 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(1);
+            expect(state.version).toBe(2);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();

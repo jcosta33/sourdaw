@@ -6,6 +6,7 @@ const SOURCE_DOC = { tag: 'source' };
 const CLONED_DOC = { tag: 'cloned' };
 
 const mocks = vi.hoisted(() => ({
+    flushAutomergeStorageWrites: vi.fn(),
     getDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
@@ -20,6 +21,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@automerge/automerge', () => ({
     clone: mocks.clone,
     getHeads: mocks.getHeads,
+}));
+vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+    flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: {
@@ -39,6 +43,7 @@ vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mock
 describe('forkProjectBranch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         mocks.clone.mockReturnValue(CLONED_DOC);
         mocks.getHeads.mockReturnValue(['h1']);
         mocks.getDoc.mockImplementation((id: string) => (id === 'root' ? SOURCE_DOC : undefined));
@@ -56,6 +61,26 @@ describe('forkProjectBranch', () => {
         const insertCall = mocks.insertDoc.mock.calls[0];
         expect(insertCall[0]).toMatch(/^branch_/);
         expect(insertCall[1]).toBe(CLONED_DOC);
+    });
+
+    it('flushes deferred storage before reading the source and replacing the root slot', async () => {
+        const order: string[] = [];
+        mocks.flushAutomergeStorageWrites.mockImplementation(() => {
+            order.push('flush');
+        });
+        mocks.getDoc.mockImplementation((id: string) => {
+            order.push(`get:${id}`);
+            return id === 'root' ? SOURCE_DOC : undefined;
+        });
+        mocks.replaceDoc.mockImplementation(() => {
+            order.push('replace');
+        });
+
+        await forkProjectBranch('feature');
+
+        expect(mocks.flushAutomergeStorageWrites).toHaveBeenCalledTimes(2);
+        expect(order[0]).toBe('flush');
+        expect(order.indexOf('flush', 1)).toBeLessThan(order.indexOf('replace'));
     });
 
     it('marks the new branch active and persists', async () => {

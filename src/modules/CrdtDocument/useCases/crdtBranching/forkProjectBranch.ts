@@ -1,5 +1,7 @@
 import { getHeads, clone as cloneDoc } from '@automerge/automerge';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -17,6 +19,7 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
         throw createBranchError('Branch store not initialized');
     }
 
+    flushAutomergeStorageWrites();
     const sourceDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
     if (!sourceDoc) {
         throw createBranchError('No root document to fork');
@@ -36,6 +39,7 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     // produces a new handle stored only under the root slot, so the branch
     // snapshot does not drift when the two start from the same handle.
     const forkedDoc = cloneDoc(sourceDoc);
+    flushAutomergeStorageWrites();
     automergeRepository.insertDoc(branchDocId, forkedDoc);
     automergeRepository.replaceDoc(DOC_PREFIX_ROOT, forkedDoc);
 
