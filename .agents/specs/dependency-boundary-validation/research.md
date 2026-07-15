@@ -5,11 +5,11 @@ title: Dependency boundary validation research
 status: current
 owner: The Sourdaw team
 sources:
-  - code:.dependency-cruiser.cjs
-  - code:scripts/check-dependency-boundaries.mjs
-  - code:.dependency-cruiser.types.cjs
-  - code:.dependency-cruiser.tests.cjs
-  - code:package.json
+  - code:../../../.dependency-cruiser.cjs
+  - code:../../../scripts/check-dependency-boundaries.mjs
+  - code:../../../.dependency-cruiser.types.cjs
+  - code:../../../.dependency-cruiser.tests.cjs
+  - code:../../../package.json
 ---
 
 # Research: dependency boundary validation

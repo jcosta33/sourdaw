@@ -6,11 +6,11 @@ status: draft
 owner: The Sourdaw team
 sources:
   - research.md
-  - code:.dependency-cruiser.cjs
-  - code:scripts/check-dependency-boundaries.mjs
-  - code:.dependency-cruiser.types.cjs
-  - code:.dependency-cruiser.tests.cjs
-  - code:package.json
+  - code:../../../.dependency-cruiser.cjs
+  - code:../../../scripts/check-dependency-boundaries.mjs
+  - code:../../../.dependency-cruiser.types.cjs
+  - code:../../../.dependency-cruiser.tests.cjs
+  - code:../../../package.json
 ---
 
 # Dependency boundary validation
