@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { create_punch_region_patch } from '../punchRegion';
+import { createPunchRegionPatch } from '../punchRegion';
 
-describe('create_punch_region_patch', () => {
+describe('createPunchRegionPatch', () => {
     it.each([
         { edge: 'in', beat: Number.NaN },
         { edge: 'in', beat: Number.POSITIVE_INFINITY },
@@ -12,7 +12,7 @@ describe('create_punch_region_patch', () => {
         { edge: 'out', beat: Number.NEGATIVE_INFINITY },
     ] as const)('rejects $edge edge beat $beat with no patch', ({ edge, beat }) => {
         expect(
-            create_punch_region_patch({
+            createPunchRegionPatch({
                 current: { punchInBeat: 4, punchOutBeat: 12 },
                 beat,
                 edge,
