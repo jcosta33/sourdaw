@@ -5,6 +5,15 @@ import { newProject } from '#/modules/Project/useCases/projectPersistence/newPro
 
 import { LaunchScreen } from '../LaunchScreen';
 
+const { execute_app_action } = vi.hoisted(() => ({
+    execute_app_action: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: execute_app_action,
+}));
+
 vi.mock('#/modules/Project/useCases/projectPersistence/newProject', () => ({
     newProject: vi.fn(),
 }));
@@ -59,5 +68,13 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
 
         expect(newProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch a payloadless export action from the export click', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Export \.dawproject/ }));
+
+        expect(execute_app_action).toHaveBeenCalledWith({ type: 'exportDawProject' });
     });
 });

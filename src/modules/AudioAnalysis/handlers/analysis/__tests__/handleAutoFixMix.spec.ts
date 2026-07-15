@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { type AppAction } from '#/modules/Command/useCases';
+import { isAppActionCommittedError, type AppAction } from '#/modules/Command/useCases';
 
 import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix';
 import { handleAutoFixMix } from '../handleAutoFixMix';
@@ -40,7 +40,8 @@ vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.executeAppAction,
 }));
 
@@ -239,10 +240,44 @@ describe('handleAutoFixMix', () => {
         const failure = new Error('crash');
         vi.mocked(analyzeMix).mockRejectedValue(failure);
 
-        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        await expect(handleAutoFixMix.execute({ type: 'autoFixMix' })).rejects.toBe(failure);
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
+    });
+
+    it('should preserve an earlier fix and reject when a later fix fails', async () => {
+        const later_failure = new Error('second gain update failed');
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'first', gain: 0.8 },
+                { id: 'second', gain: 0.7 },
+            ],
+        });
+        vi.mocked(analyzeMix).mockResolvedValue(
+            create_analysis_result({
+                trackLevels: [
+                    create_track_level({ trackId: 'first', isClipping: true, peakDb: 2 }),
+                    create_track_level({ trackId: 'second', isClipping: true, peakDb: 1 }),
+                ],
+            })
+        );
+        mocks.executeAppAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(later_failure);
+
+        let reported_error: unknown;
+        try {
+            await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        } catch (error) {
+            reported_error = error;
+        }
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction.mock.calls[0]?.[0]).toEqual(
+            expect.objectContaining({ type: 'setTrackGain', payload: expect.objectContaining({ trackId: 'first' }) })
+        );
+        expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
+        expect(mocks.loggerError).toHaveBeenCalledWith(later_failure);
+        expect(isAppActionCommittedError(reported_error)).toBe(true);
     });
 
     afterEach(() => {

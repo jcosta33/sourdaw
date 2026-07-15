@@ -7,15 +7,19 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
+import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
+import { createAppActionCommittedError } from '../createAppActionCommittedError';
 import { executeAppAction } from '../executeAppAction';
+import { isAppActionCommittedError } from '../isAppActionCommittedError';
 
+import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
 
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
 type SetSemanticContextInput = Parameters<CrdtStoresModule['setSemanticContext']>[0];
-type PushActionHistoryEntryInput = Parameters<CrdtStoresModule['pushActionHistoryEntry']>[0];
 type CommitUndoEntryModule = typeof import('../commitUndoEntry');
 type CommitUndoEntryInput = Parameters<CommitUndoEntryModule['commitUndoEntry']>[0];
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
@@ -57,7 +61,10 @@ const mocks = vi.hoisted(() => ({
     } satisfies Logger,
     setSemanticContext: vi.fn<(ctx: SetSemanticContextInput) => void>(),
     clearSemanticContext: vi.fn<() => void>(),
-    pushActionHistoryEntry: vi.fn<(entry: PushActionHistoryEntryInput) => void>(),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(),
+    markActionHistoryMetadataReverted:
+        vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
+    clearActionHistoryMetadata: vi.fn<() => void>(),
     commitUndoEntry: vi.fn<(entry: CommitUndoEntryInput) => void>(),
     recordAction: vi.fn<(action: AppAction) => void>(),
 }));
@@ -66,9 +73,17 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
     ...(await importOriginal<CrdtStoresModule>()),
-    pushActionHistoryEntry: mocks.pushActionHistoryEntry,
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
+}));
+
+vi.mock('../actionHistoryMetadataPort', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../actionHistoryMetadataPort')>()),
+    actionHistoryMetadataPort: {
+        record: mocks.recordActionHistoryMetadata,
+        markReverted: mocks.markActionHistoryMetadataReverted,
+        clear: mocks.clearActionHistoryMetadata,
+    },
 }));
 
 vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
@@ -79,6 +94,8 @@ describe('executeAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearHandlerRegistry();
+        clearActionReplayCapabilities();
+        mocks.recordActionHistoryMetadata.mockReturnValue([]);
         configureAutomergeStoragePort(null);
     });
 
@@ -87,12 +104,37 @@ describe('executeAppAction', () => {
         configureAutomergeStoragePort(null);
     });
 
-    it('logs error if no handler is found', async () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('should reject as not dispatched and log when no handler is found', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
 
-        await executeAppAction(action);
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionNotDispatchedError);
 
         expect(mocks.logger.error).toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('should publicly discriminate committed failures without exposing the private error class', () => {
+        expect(isAppActionCommittedError(new AppActionCommittedError('togglePlayback', new Error('history')))).toBe(
+            true
+        );
+        expect(isAppActionCommittedError(new AppActionNotDispatchedError('togglePlayback'))).toBe(false);
+        expect(isAppActionCommittedError(new Error('handler failed'))).toBe(false);
+    });
+
+    it('should create a public Error value that retains committed classification', () => {
+        const failure = createAppActionCommittedError({
+            actionType: 'autoFixMix',
+            cause: new Error('later nested write failed'),
+        });
+
+        expect(failure).toBeInstanceOf(Error);
+        expect(isAppActionCommittedError(failure)).toBe(true);
     });
 
     it('executes a registered handler', async () => {
@@ -105,7 +147,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action);
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
-        expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
     });
 
     it('waits for snapshot ownership before describing or executing an action', async () => {
@@ -175,7 +217,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
-        expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
     });
 
     it('keeps macro recording enabled when only undo-history recording is suppressed', async () => {
@@ -188,7 +230,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action);
         expect(mocks.recordAction).toHaveBeenCalledWith(action);
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
@@ -210,8 +252,118 @@ describe('executeAppAction', () => {
         expect(reported_error.cause).toBe(cause);
         expect(mocks.clearSemanticContext).toHaveBeenCalledOnce();
         expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('should mint a replay capability only after a typed inverse follows successful execution', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        const history_entry = mocks.recordActionHistoryMetadata.mock.calls[0]?.[0];
+        if (!history_entry) {
+            throw new Error('Expected action metadata to be recorded');
+        }
+        expect(hasActionReplayCapability(history_entry.id)).toBe(true);
+    });
+
+    it('should revoke an exact capability when 200 non-replayable metadata rows evict its entry', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const replayable_entry_id = '00000000-0000-4000-8000-000000000001';
+        const metadata_entry_ids: string[] = [];
+        const random_uuid_spy = vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(replayable_entry_id);
+        mocks.recordActionHistoryMetadata.mockImplementation((entry) => {
+            metadata_entry_ids.push(entry.id);
+            if (metadata_entry_ids.length <= 200) {
+                return [];
+            }
+            return metadata_entry_ids.splice(0, metadata_entry_ids.length - 200);
+        });
+        registerHandlerMap({
+            [action.type]: create_mock_handler<SetSnapValueAction>({
+                describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+            }),
+        });
+
+        await executeAppAction(action);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(true);
+
+        clearHandlerRegistry();
+        registerHandlerMap({
+            [action.type]: create_mock_handler<SetSnapValueAction>({
+                describe: () => ({ label: 'Non-replayable' }),
+            }),
+        });
+        for (let index = 0; index < 200; index += 1) {
+            await executeAppAction(action);
+        }
+
+        expect(metadata_entry_ids).toHaveLength(200);
+        expect(metadata_entry_ids).not.toContain(replayable_entry_id);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(false);
+
+        random_uuid_spy.mockReturnValueOnce(replayable_entry_id);
+        await executeAppAction(action);
+
+        expect(metadata_entry_ids).toContain(replayable_entry_id);
+        expect(hasActionReplayCapability(replayable_entry_id)).toBe(false);
+    });
+
+    it('should not mint a replay capability when typed action execution fails', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+            execute: () => Promise.reject(new Error('handler failed')),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toThrow('handler failed');
+
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should preserve handler-provided committed classification', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const committed_failure = createAppActionCommittedError({
+            actionType: 'autoFixMix',
+            cause: new Error('later nested write failed'),
+        });
+        const handler = create_mock_handler<SetSnapValueAction>({
+            execute: () => Promise.reject(committed_failure),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBe(committed_failure);
+
+        expect(isAppActionCommittedError(committed_failure)).toBe(true);
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
+    it('should surface a committed error when metadata recording fails after handler execution', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const metadata_failure = new Error('metadata failed');
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+        });
+        mocks.recordActionHistoryMetadata.mockImplementation(() => {
+            throw metadata_failure;
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+
+        await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(handler.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(1);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        const reported_error = mocks.logger.error.mock.calls.at(-1)?.[0];
+        expect(reported_error).toBeInstanceOf(AppActionCommittedError);
+        expect(reported_error?.cause).toBe(metadata_failure);
     });
 
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an
@@ -237,7 +389,10 @@ describe('executeAppAction', () => {
         });
         registerHandlerMap({ [action.type]: handler });
         mocks.commitUndoEntry.mockImplementation(() => order.push('commitUndoEntry'));
-        mocks.pushActionHistoryEntry.mockImplementation(() => order.push('pushActionHistoryEntry'));
+        mocks.recordActionHistoryMetadata.mockImplementation(() => {
+            order.push('recordActionHistoryMetadata');
+            return [];
+        });
 
         await executeAppAction(action);
 
@@ -245,7 +400,7 @@ describe('executeAppAction', () => {
         expect(order[0]).toBe('describe');
         // …execute runs to completion before either record is pushed…
         expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('commitUndoEntry'));
-        expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('pushActionHistoryEntry'));
+        expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('recordActionHistoryMetadata'));
         // …and describe never runs after execute started.
         expect(order.indexOf('describe')).toBeLessThan(order.indexOf('execute:start'));
     });

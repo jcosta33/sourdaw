@@ -8,6 +8,7 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -16,13 +17,18 @@ import {
     hasCrdtDoc,
     getCrdtDocIds,
     persistCrdtProject,
+    sanitizeIncomingCrdtDocument,
     DOC_PREFIX_ROOT,
     DOC_BRANCHES,
 } from '#/modules/CrdtDocument/useCases';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../repositories/peerConnection';
+
+type PeerSyncTransport = {
+    getConnectedPeerIds: () => PeerId[];
+    sendCrdtSync: (input: { peerId: PeerId; message: PeerMessage }) => void;
+};
 
 // Branch-content docs share a `branch_<id>` id scheme minted by CrdtDocument's
 // crdtBranching (forkProjectBranch). CrdtDocument exposes no constant for the
@@ -72,7 +78,7 @@ type SyncStateMap = Map<PeerId, PerDocSyncStateMap>;
  */
 export class AutomergeSync {
     private syncStates: SyncStateMap = new Map();
-    private peerManager: PeerConnectionManager;
+    private peerManager: PeerSyncTransport;
     private unsubscribeFromChanges: (() => void) | null = null;
     private hooks: AutomergeSyncHooks;
     /**
@@ -83,7 +89,7 @@ export class AutomergeSync {
      */
     private isApplyingRemoteSync = false;
 
-    constructor(peerManager: PeerConnectionManager, hooks: AutomergeSyncHooks = {}) {
+    constructor(peerManager: PeerSyncTransport, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
         this.hooks = hooks;
     }
@@ -181,15 +187,24 @@ export class AutomergeSync {
             return;
         }
 
+        let sanitized_doc: Doc<unknown>;
+        try {
+            sanitized_doc = sanitizeIncomingCrdtDocument(newDoc);
+        } catch (error) {
+            logger.warn('[AutomergeSync] Remote document sanitation failed', peerId, docId, error);
+            return;
+        }
+
         peerStates.set(docId, newSyncState);
         this.syncStates.set(peerId, peerStates);
 
         // Update the document in the repository.
         // This triggers onChange → hydration. Guard the broadcast so the
         // resulting change isn't echoed straight back to every peer.
+        resetActionReplayAuthority();
         this.isApplyingRemoteSync = true;
         try {
-            replaceCrdtDoc({ id: docId, doc: newDoc });
+            replaceCrdtDoc({ id: docId, doc: sanitized_doc });
         } finally {
             this.isApplyingRemoteSync = false;
         }

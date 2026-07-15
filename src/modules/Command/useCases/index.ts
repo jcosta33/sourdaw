@@ -2,12 +2,15 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { describeAction } from './actionLabels';
+export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { setCommandEventBus } from './commandEventBus';
 
 export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
+export { createAppActionCommittedError } from './createAppActionCommittedError';
+export { isAppActionCommittedError } from './isAppActionCommittedError';
 export type { ExecuteOptions } from './executeAppAction';
 
 export { getMacroHandlers } from './getMacroHandlers';
@@ -27,6 +30,11 @@ export { undo } from './undo';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';
+export { getActionReplayStatus } from './getActionReplayStatus';
+export { revertAction } from './revertAction';
+export { clearActionHistory } from './clearActionHistory';
+export { resetActionReplayAuthority } from './resetActionReplayAuthority';
+export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';

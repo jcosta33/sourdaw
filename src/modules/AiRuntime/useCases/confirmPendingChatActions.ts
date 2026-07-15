@@ -1,4 +1,9 @@
-import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command/useCases';
+import {
+    describeAction,
+    executeAppAction,
+    generateGroupId,
+    isAppActionCommittedError,
+} from '#/modules/Command/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type DsoConfirmationTarget } from '../models/DsoTypes';
@@ -50,52 +55,70 @@ export async function confirmPendingChatActions(
 
     const group = generateGroupId(confirmation.prompt);
     const executedLabels: Array<{ actionType: string; label: string }> = [];
+    let action_history_failed_after_commit = false;
+    let execution_failure_reason: string | null = null;
 
-    try {
-        for (const action of confirmation.actions) {
+    for (const action of confirmation.actions) {
+        try {
             await executeAppAction(action, { ...group, source: 'prompt' });
-            const execution = { actionType: action.type, label: describeAction(action) };
-            executedLabels.push(execution);
-            recordPendingActionExecution({ confirmationId: confirmation.id, execution });
+        } catch (error) {
+            if (!isAppActionCommittedError(error)) {
+                execution_failure_reason = error instanceof Error ? error.message : String(error);
+                break;
+            }
+            action_history_failed_after_commit = true;
         }
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const execution = { actionType: action.type, label: describeAction(action) };
+        executedLabels.push(execution);
+        recordPendingActionExecution({ confirmationId: confirmation.id, execution });
+    }
+
+    if (executedLabels.length > 0) {
+        const historyGroup: AiActionGroup = {
+            id: group.groupId,
+            prompt: confirmation.prompt,
+            actions: executedLabels.map((entry) => ({
+                kind: 'appAction',
+                actionType: entry.actionType,
+                label: entry.label,
+            })),
+            groupId: group.groupId,
+            timestamp: Date.now(),
+            reverted: false,
+        };
+        pushAiActionGroup(historyGroup);
+        notifyAiChange(
+            `Confirmed: ${confirmation.prompt}`,
+            executedLabels.map((entry) => entry.actionType)
+        );
+    }
+
+    if (execution_failure_reason) {
+        const history_failure_warning = action_history_failed_after_commit
+            ? ' Action history also failed for an earlier applied action.'
+            : '';
         updatePendingActionConfirmationStatus({
             confirmationId: confirmation.id,
             status: 'failed',
-            error: reason,
+            error: execution_failure_reason,
         });
         updateChatMessage(confirmation.assistantMessageId, {
             pendingActionConfirmationStatus: 'failed',
-            error: reason,
-            content: `Failed to execute confirmed actions:\n\n${reason}`,
+            error: execution_failure_reason,
+            content:
+                executedLabels.length > 0
+                    ? `Partially executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nA later action failed: ${execution_failure_reason}.${history_failure_warning} Do not retry the whole command.`
+                    : `Failed to execute confirmed actions:\n\n${execution_failure_reason}`,
         });
-        return { status: 'failed', reason };
+        return { status: 'failed', reason: execution_failure_reason };
     }
-
-    const historyGroup: AiActionGroup = {
-        id: group.groupId,
-        prompt: confirmation.prompt,
-        actions: executedLabels.map((entry) => ({
-            kind: 'appAction',
-            actionType: entry.actionType,
-            label: entry.label,
-        })),
-        groupId: group.groupId,
-        timestamp: Date.now(),
-        reverted: false,
-    };
-    pushAiActionGroup(historyGroup);
-
-    notifyAiChange(
-        `Confirmed: ${confirmation.prompt}`,
-        confirmation.actions.map((action) => action.type)
-    );
 
     updatePendingActionConfirmationStatus({ confirmationId: confirmation.id, status: 'executed' });
     updateChatMessage(confirmation.assistantMessageId, {
         pendingActionConfirmationStatus: 'executed',
-        content: `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
+        content: action_history_failed_after_commit
+            ? `Applied after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}\n\nAction history failed after the change was applied. Do not retry these confirmed actions.`
+            : `Executed after confirmation:\n\n${executedLabels.map((entry) => `- **${entry.actionType}**: ${entry.label}`).join('\n')}`,
     });
 
     return { status: 'executed' };

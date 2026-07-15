@@ -1,3 +1,4 @@
+import { change, init, save } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { loadCrdtProject } from '../loadCrdtProject';
@@ -21,6 +22,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
     loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
 }));
+vi.mock('#/modules/Command/useCases', () => ({ resetActionReplayAuthority: vi.fn() }));
 vi.mock('../runCrdtPersistenceLoad', () => ({
     runCrdtPersistenceLoad: vi.fn(
         async (
@@ -85,8 +87,16 @@ describe('loadCrdtProject', () => {
     });
 
     it('keeps the loaded root authoritative over an older active-branch snapshot', async () => {
-        const loadedRoot = new Uint8Array([1, 2, 3]);
-        const olderBranchSnapshot = new Uint8Array([1]);
+        const loadedRoot = save(
+            change(init<Record<string, unknown>>(), (document) => {
+                document.project = 'loaded';
+            })
+        );
+        const olderBranchSnapshot = save(
+            change(init<Record<string, unknown>>(), (document) => {
+                document.project = 'older';
+            })
+        );
         const bundle = new Map([
             ['root', loadedRoot],
             ['branch_feat', olderBranchSnapshot],

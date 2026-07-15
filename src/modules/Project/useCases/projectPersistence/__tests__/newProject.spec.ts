@@ -4,7 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
@@ -23,6 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     createCrdtProject: vi.fn().mockResolvedValue(undefined),
+    projectActionHistoryToStore: vi.fn(),
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -32,6 +33,7 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({
 
 vi.mock('../helpers/runProjectLoadTransaction', () => ({
     runProjectLoadTransaction: vi.fn(() => ({
+        prepare: vi.fn(() => Promise.resolve(true)),
         activate: vi.fn(() => true),
         canActivate: () => true,
         isCurrent: () => true,
@@ -56,14 +58,17 @@ describe('newProject injectable', () => {
         vi.clearAllMocks();
     });
 
-    it('should forward to injected collaborators in fresh-project order', () => {
+    it('should forward to injected collaborators in fresh-project order', async () => {
         newProject('Test');
+
+        await vi.waitFor(() => expect(startCrdtAutoSave).toHaveBeenCalledTimes(1));
 
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(createCrdtProject).toHaveBeenCalledWith('Test');
+        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);

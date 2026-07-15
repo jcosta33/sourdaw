@@ -6,8 +6,10 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
+import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
@@ -102,10 +104,14 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return { ...actual, stopRecording };
 });
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject,
     persistCrdtProject,
+    projectActionHistoryToStore: vi.fn(),
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 }));
@@ -255,6 +261,8 @@ function makeProject(): ProjectData {
 
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
         importCachedAudioBuffers.mockClear();
@@ -381,6 +389,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
@@ -535,7 +544,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
         };
         const loading = applyImportedProjectData({ data: project });
         await vi.waitFor(() => expect(finishPreparation).toBeDefined());
-        runProjectLoadTransaction().activate();
+        const newerLoad = runProjectLoadTransaction();
+        await newerLoad.prepare();
+        newerLoad.activate();
 
         const completePreparation = finishPreparation;
         if (!completePreparation) {
@@ -592,7 +603,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         const applying = applyImportedProjectData({ data: makeProject() });
         await vi.waitFor(() => expect(stopAudioRecording).toHaveBeenCalledOnce());
-        runProjectLoadTransaction().activate();
+        const newerLoad = runProjectLoadTransaction();
+        await newerLoad.prepare();
+        newerLoad.activate();
 
         const completeRecordingFlush = finishRecordingFlush;
         if (!completeRecordingFlush) {

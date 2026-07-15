@@ -4,10 +4,13 @@ import {
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { pushActionHistoryEntry, setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
+import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
+import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
+import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandlerMap } from '../stores/handlerRegistry';
 
+import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
 import { commitUndoEntry } from './commitUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
@@ -26,7 +29,9 @@ export type ExecuteOptions = {
     skipMacroRecording?: boolean;
 };
 
-export const executeAppAction = inject({ logger })(
+type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+
+export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
@@ -34,8 +39,9 @@ export const executeAppAction = inject({ logger })(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const handler = getHandlerMap()[action.type] as ActionHandler<any> | undefined;
             if (!handler) {
-                logger.error(new Error(`No handler registered for action: ${action.type}`));
-                return;
+                const error = new AppActionNotDispatchedError(action.type);
+                logger.error(error);
+                throw error;
             }
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
@@ -62,46 +68,79 @@ export const executeAppAction = inject({ logger })(
                 );
                 await execution;
             } catch (error) {
+                try {
+                    clearSemanticContext();
+                } catch (clear_error) {
+                    logger.error(
+                        new Error(`Semantic context cleanup failed for action: ${action.type}`, {
+                            cause: clear_error,
+                        })
+                    );
+                }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                 throw error;
-            } finally {
+            }
+
+            try {
                 clearSemanticContext();
+            } catch (error) {
+                const committed_error = new AppActionCommittedError(action.type, error);
+                logger.error(committed_error);
+                throw committed_error;
             }
 
-            if (!options?.skipMacroRecording) {
-                recordAction(action);
-            }
-
-            if (!options?.skipUndo) {
-                // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                if (handler.undoable) {
-                    pushActionHistoryEntry({
-                        id: crypto.randomUUID(),
-                        label,
-                        actionKind: action.type,
-                        action,
-                        inverseAction: undoResult?.inverseAction ?? null,
-                        source: options?.source ?? 'manual',
-                        timestamp: Date.now(),
-                        groupId: options?.groupId,
-                        groupLabel: options?.groupLabel,
-                        reverted: false,
-                    });
+            try {
+                if (!options?.skipMacroRecording) {
+                    // Record to macro playback
+                    recordAction(action);
                 }
 
-                if (undoResult) {
-                    const entry = createUndoEntry(
-                        undoResult.label,
-                        action,
-                        undoResult.inverseAction ?? null,
-                        options?.source ?? 'manual'
-                    );
-                    if (options?.groupId) {
-                        entry.groupId = options.groupId;
-                        entry.groupLabel = options.groupLabel;
+                if (!options?.skipUndo) {
+                    // Record undoable actions to global history (skip UI-only actions like panel toggles)
+                    if (handler.undoable) {
+                        const entry_id = crypto.randomUUID();
+                        const inverse_action = undoResult?.inverseAction ?? null;
+                        const metadata = {
+                            id: entry_id,
+                            label,
+                            actionKind: action.type,
+                            source: options?.source ?? 'manual',
+                            timestamp: Date.now(),
+                            groupId: options?.groupId,
+                            groupLabel: options?.groupLabel,
+                            reverted: false,
+                        };
+                        const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
+                        for (const evicted_entry_id of evicted_entry_ids) {
+                            revokeActionReplayCapability(evicted_entry_id);
+                        }
+                        if (inverse_action) {
+                            registerActionReplayCapability({
+                                entryId: entry_id,
+                                inverseAction: inverse_action,
+                                metadata,
+                            });
+                        }
                     }
-                    commitUndoEntry(entry);
+
+                    if (undoResult) {
+                        const entry = createUndoEntry(
+                            undoResult.label,
+                            action,
+                            undoResult.inverseAction ?? null,
+                            options?.source ?? 'manual'
+                        );
+                        if (options?.groupId) {
+                            entry.groupId = options.groupId;
+                            entry.groupLabel = options.groupLabel;
+                        }
+                        commitUndoEntry(entry);
+                    }
                 }
+            } catch (error) {
+                const committed_error = new AppActionCommittedError(action.type, error);
+                logger.error(committed_error);
+                throw committed_error;
             }
         }
 );

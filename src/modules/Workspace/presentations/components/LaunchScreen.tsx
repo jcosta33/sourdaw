@@ -268,7 +268,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     const handleExportDawProject = (): void => {
-        void executeAppAction({ type: 'exportDawProject', payload: {} });
+        void executeAppAction({ type: 'exportDawProject' });
     };
 
     const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {

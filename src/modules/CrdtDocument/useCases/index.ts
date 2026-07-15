@@ -8,6 +8,8 @@ export { persistCrdtProject } from './persistCrdtProject';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';
+export { markActionHistoryEntryReverted } from './markActionHistoryEntryReverted';
+export { recordActionHistoryEntry } from './recordActionHistoryEntry';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
@@ -15,11 +17,13 @@ export { mutateCrdtDoc } from './mutateCrdtDoc';
 export type { MutateCrdtDocInput } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
+export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
+export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
 export { preserveBranchStateForSession } from './preserveBranchStateForSession';
 export { replaceBranchState } from './replaceBranchState';
@@ -28,8 +32,6 @@ export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession
 export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
 export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
-export { revertAction } from './revertAction/revertAction';
-export { canRevertAction } from './revertAction/canRevertAction';
 export { saveSnapshot } from './saveSnapshot';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';

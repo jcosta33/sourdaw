@@ -7,6 +7,8 @@ import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { cvGateStore } from '#/modules/Synth/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
+import { actionHistoryStore } from '../../stores/actionHistoryStore';
+
 /** All project-state stores backed by AutomergeStorage. */
 const projectStores = [
     trackStore,
@@ -20,6 +22,7 @@ const projectStores = [
     arrangementStore,
     projectStore,
     cvGateStore,
+    actionHistoryStore,
 ];
 
 export function projectCrdtToStores(): void {

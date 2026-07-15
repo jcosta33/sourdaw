@@ -1,5 +1,7 @@
-import { actionHistoryStore } from '../stores/actionHistoryStore';
+import { clearActionHistoryInActiveDocument } from '../repositories/clearActionHistoryInActiveDocument';
+import { actionHistoryStore, defaultActionHistoryState } from '../stores/actionHistoryStore';
 
 export function clearActionHistory(): void {
-    actionHistoryStore.set({ entries: [] });
+    clearActionHistoryInActiveDocument();
+    actionHistoryStore.set(defaultActionHistoryState);
 }

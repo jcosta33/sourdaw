@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
 
@@ -31,17 +31,30 @@ const defaultState: MixAnalysisStoreState = { result: null, isAnalyzing: false, 
 
 export const MixAnalysisPanel = (): ReactElement | null => {
     const state = useStore(mixAnalysisStore, defaultState);
+    const [action_error, setActionError] = useState<string | null>(null);
 
     if (!state.panelOpen) {
         return null;
     }
 
-    const handleRefresh = () => {
-        void runAppAction({ type: 'analyzeMix' });
+    const handleRefresh = async () => {
+        setActionError(null);
+        try {
+            await runAppAction({ type: 'analyzeMix' });
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setActionError(`Mix action failed: ${reason}`);
+        }
     };
 
-    const handleAutoFix = () => {
-        void runAppAction({ type: 'autoFixMix' });
+    const handleAutoFix = async () => {
+        setActionError(null);
+        try {
+            await runAppAction({ type: 'autoFixMix' });
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setActionError(`Mix action failed: ${reason}`);
+        }
     };
 
     return (
@@ -74,6 +87,14 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                     </div>
                 }
             />
+            {action_error ? (
+                <div
+                    role="alert"
+                    className="border-b border-border/50 px-3 py-1.5 text-[10px] text-[var(--color-state-danger)]"
+                >
+                    {action_error}
+                </div>
+            ) : null}
             <ScrollArea className="flex-1 max-h-[60vh]">
                 {state.result ? (
                     <div className="space-y-3 p-3">

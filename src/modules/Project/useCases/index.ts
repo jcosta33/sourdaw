@@ -3,6 +3,7 @@ export { newProject } from './projectPersistence/newProject';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
 export { loadProject } from './projectPersistence/loadProject';
+export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
 export { finishProjectLoading } from './finishProjectLoading';

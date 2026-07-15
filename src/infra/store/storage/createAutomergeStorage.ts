@@ -32,6 +32,8 @@ type AutomergeStorageOptions<TData> = {
     toCrdt?: (value: TData) => Partial<TData>;
     /** Optional function to normalize incoming data on hydrate (e.g. fill missing fields from older schemas). */
     fromCrdt?: (value: TData) => TData;
+    /** Replacement projection value when the active document has no slot for this store. */
+    hydrateMissing?: () => TData;
 };
 
 let automergeStoragePort: AutomergeStoragePort | null = null;
@@ -118,6 +120,7 @@ export const createAutomergeStorage = <TData>(
 ): StorageAdapter<TData> => {
     const toCrdt = options?.toCrdt;
     const fromCrdt = options?.fromCrdt;
+    const hydrateMissing = options?.hydrateMissing;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
@@ -278,6 +281,15 @@ export const createAutomergeStorage = <TData>(
             }
 
             if (cachedValue !== null) {
+                if (hydrateMissing) {
+                    const missing_value = toDocSafe(hydrateMissing());
+                    if (JSON.stringify(cachedValue) === JSON.stringify(missing_value)) {
+                        return false;
+                    }
+                    cachedValue = missing_value;
+                    lastHydratedJson = null;
+                    return true;
+                }
                 writeToCrdt(cachedValue);
             }
 

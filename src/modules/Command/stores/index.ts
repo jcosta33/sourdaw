@@ -11,3 +11,4 @@ export { shortcutStore } from './shortcutStore';
 export type { ShortcutStoreState, ShortcutDefinition, ShortcutAction } from './shortcutStore';
 
 export { registerHandlerMap, getHandlerMap, clearHandlerRegistry } from './handlerRegistry';
+export { actionReplayRevisionStore } from './actionReplayRevisionStore';

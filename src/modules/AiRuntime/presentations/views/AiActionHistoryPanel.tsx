@@ -1,6 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
-import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
+import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User, RefreshCw } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -9,8 +9,9 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
+import { actionReplayRevisionStore } from '#/modules/Command/stores';
+import { clearActionHistory, getActionReplayStatus, revertAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import { canRevertAction, clearActionHistory, revertAction } from '#/modules/CrdtDocument/useCases';
 
 import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
@@ -30,11 +31,11 @@ type ActionHistoryEntryView = {
     id: string;
     label: string;
     actionKind: string;
-    action: { type: string; payload?: unknown };
-    inverseAction: { type: string; payload?: unknown } | null;
     source: 'manual' | 'prompt' | 'voice' | 'ai';
     timestamp: number;
     reverted: boolean;
+    groupId?: string;
+    groupLabel?: string;
 };
 
 const defaultAiState = { groups: [] as AiActionGroupView[], panelOpen: false };
@@ -50,6 +51,8 @@ type HistoryItem = { kind: 'ai'; group: AiActionGroupView } | { kind: 'action'; 
 export const AiActionHistoryPanel = (): ReactElement | null => {
     const aiState = useStore(aiActionHistoryStore, defaultAiState);
     const historyState = useStore(actionHistoryStore, defaultHistoryState);
+    const replay_revision = useStore(actionReplayRevisionStore, 0);
+    const [clear_error, setClearError] = useState<string | null>(null);
 
     if (!aiState.panelOpen) {
         return null;
@@ -76,8 +79,14 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
     const visibleItems = items.slice(0, 50);
 
     const handleClearAll = () => {
-        clearAiHistory();
-        clearActionHistory();
+        setClearError(null);
+        try {
+            clearActionHistory();
+            clearAiHistory();
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setClearError(`Clear history failed: ${reason}`);
+        }
     };
 
     return (
@@ -111,6 +120,14 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                     </div>
                 }
             />
+            {clear_error ? (
+                <div
+                    role="alert"
+                    className="border-b border-border/50 px-3 py-1.5 text-[10px] text-[var(--color-state-danger)]"
+                >
+                    {clear_error}
+                </div>
+            ) : null}
             <ScrollArea className="flex-1 max-h-[50vh]">
                 {visibleItems.length === 0 ? (
                     <div className="p-3">
@@ -126,7 +143,10 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
                         item.kind === 'ai' ? (
                             <AiGroupItem key={`ai-${item.group.id}`} group={item.group} />
                         ) : (
-                            <ActionItem key={`action-${item.entry.id}-${idx}`} entry={item.entry} />
+                            <ActionItem
+                                key={`action-${getActionHistoryEntryIdentity(item.entry)}-${replay_revision}-${idx}`}
+                                entry={item.entry}
+                            />
                         )
                     )
                 )}
@@ -186,20 +206,83 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
 };
 
 const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
-    const revertable = canRevertAction(entry);
+    const replay_status = getActionReplayStatus(entry.id);
+    const [operation_status, setOperationStatus] = useState<
+        'idle' | 'pending' | 'executed' | 'executed-unmarked' | 'reconciled'
+    >('idle');
+    const [operation_error, setOperationError] = useState<string | null>(null);
+
+    const handleRevert = async () => {
+        setOperationStatus('pending');
+        setOperationError(null);
+        try {
+            const result = await revertAction(entry.id);
+            if (
+                result.status === 'executed' ||
+                result.status === 'executed-unmarked' ||
+                result.status === 'reconciled'
+            ) {
+                setOperationStatus(result.status);
+                return;
+            }
+            setOperationStatus('idle');
+            setOperationError('Revert is no longer available');
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            setOperationStatus('idle');
+            setOperationError(`Revert failed: ${reason}`);
+        }
+    };
+
+    let subtitle = formatTimeAgo(entry.timestamp);
+    if (operation_error) {
+        subtitle = operation_error;
+    } else if (operation_status === 'pending') {
+        subtitle = replay_status.status === 'reconcile-mark' ? 'Updating history...' : 'Reverting...';
+    } else if (operation_status === 'executed') {
+        subtitle = 'Reverted';
+    } else if (operation_status === 'executed-unmarked') {
+        subtitle = 'Change applied, but history row changed';
+    } else if (operation_status === 'reconciled') {
+        subtitle = 'History repaired';
+    } else if (replay_status.status === 'reconcile-mark') {
+        subtitle = 'History update pending';
+    }
+
+    let subtitle_class_name: string | undefined;
+    if (operation_error) {
+        subtitle_class_name = 'text-[var(--color-state-danger)]';
+    } else if (operation_status === 'executed-unmarked') {
+        subtitle_class_name = 'text-[var(--color-state-warning)]';
+    }
 
     let endSlotContent: ReactElement | null = null;
     if (entry.reverted) {
         endSlotContent = <span className="text-[8px] italic text-muted-foreground">undone</span>;
-    } else if (revertable) {
+    } else if (
+        (replay_status.status === 'ready' || replay_status.status === 'reconcile-mark') &&
+        operation_status !== 'executed' &&
+        operation_status !== 'executed-unmarked' &&
+        operation_status !== 'reconciled'
+    ) {
+        const is_reconciliation = replay_status.status === 'reconcile-mark';
+        const action_label = is_reconciliation ? 'Retry history update' : 'Revert this change';
         endSlotContent = (
             <Button
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => void revertAction(entry.id)}
-                title="Revert this change"
+                onClick={handleRevert}
+                disabled={operation_status === 'pending'}
+                title={action_label}
+                aria-label={action_label}
             >
-                <Undo2 className="size-3 text-muted-foreground/50" />
+                {is_reconciliation ? (
+                    <RefreshCw
+                        className={`size-3 text-muted-foreground/50 ${operation_status === 'pending' ? 'animate-spin' : ''}`}
+                    />
+                ) : (
+                    <Undo2 className="size-3 text-muted-foreground/50" />
+                )}
             </Button>
         );
     }
@@ -210,11 +293,24 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             dimmed={entry.reverted}
             startSlot={<User className="size-3 text-muted-foreground/50" />}
             title={entry.label}
-            subtitle={formatTimeAgo(entry.timestamp)}
+            subtitle={subtitle}
+            subtitleClassName={subtitle_class_name}
             endSlot={endSlotContent}
         />
     );
 };
+
+function getActionHistoryEntryIdentity(entry: ActionHistoryEntryView): string {
+    return JSON.stringify([
+        entry.id,
+        entry.label,
+        entry.actionKind,
+        entry.source,
+        entry.timestamp,
+        entry.groupId ?? null,
+        entry.groupLabel ?? null,
+    ]);
+}
 
 function formatTimeAgo(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);

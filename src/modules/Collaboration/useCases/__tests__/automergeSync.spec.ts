@@ -1,10 +1,24 @@
 import { init as automergeInit, initSyncState, generateSyncMessage, type Doc } from '@automerge/automerge';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { subscribeToCrdtChanges, getCrdtDoc, createCrdtDoc, replaceCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    subscribeToCrdtChanges,
+    getCrdtDoc,
+    createCrdtDoc,
+    replaceCrdtDoc,
+    sanitizeIncomingCrdtDocument,
+} from '#/modules/CrdtDocument/useCases';
 import { bytesToBase64 } from '#/utils/base64';
 
 import { AutomergeSync } from '../automergeSync';
+
+const command_mocks = vi.hoisted(() => ({
+    reset_action_replay_authority: vi.fn<() => void>(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    resetActionReplayAuthority: command_mocks.reset_action_replay_authority,
+}));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
@@ -14,6 +28,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
     DOC_BRANCHES: '__branches__',
 }));
@@ -46,7 +61,7 @@ describe('AutomergeSync', () => {
 
     it('subscribes to CRDT changes on start using injected dependencies', () => {
         vi.mocked(subscribeToCrdtChanges).mockReturnValue(() => {});
-        const sync = new AutomergeSync(makePeerManager() as never);
+        const sync = new AutomergeSync(makePeerManager());
 
         sync.start();
 
@@ -56,7 +71,7 @@ describe('AutomergeSync', () => {
     it('§fix-14 start() is idempotent: a second start unsubscribes the first', () => {
         const unsub = vi.fn();
         vi.mocked(subscribeToCrdtChanges).mockReturnValue(unsub);
-        const sync = new AutomergeSync(makePeerManager() as never);
+        const sync = new AutomergeSync(makePeerManager());
 
         sync.start();
         sync.start();
@@ -67,7 +82,7 @@ describe('AutomergeSync', () => {
     });
 
     it('§fix-5 drops a sync for an unknown docId (never mints arbitrary docs)', () => {
-        const sync = new AutomergeSync(makePeerManager() as never);
+        const sync = new AutomergeSync(makePeerManager());
 
         sync.receiveSync({ peerId: 'p1', docId: 'evil-doc', syncMessageBase64: makeRealSyncMessage() });
 
@@ -77,17 +92,63 @@ describe('AutomergeSync', () => {
 
     it('§fix-5 accepts a sync for a known docId (root)', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        const sync = new AutomergeSync(makePeerManager() as never);
+        const sync = new AutomergeSync(makePeerManager());
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
+    it.each(['root', 'branch_feature'])('sanitizes and persists an authorized peer document: %s', async (doc_id) => {
+        const { persistCrdtProject } = await import('#/modules/CrdtDocument/useCases');
+        const sanitized_document = createAmDoc();
+        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
+        vi.mocked(sanitizeIncomingCrdtDocument).mockReturnValueOnce(sanitized_document);
+        const sync = new AutomergeSync(makePeerManager());
+
+        sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: makeRealSyncMessage() });
+
+        expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
+        expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
+        expect(persistCrdtProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('should revoke replay authority before installing an accepted remote document', () => {
+        const order: string[] = [];
+        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
+        command_mocks.reset_action_replay_authority.mockImplementation(() => {
+            order.push('reset-authority');
+        });
+        vi.mocked(replaceCrdtDoc).mockImplementation(() => {
+            order.push('replace-document');
+        });
+        const sync = new AutomergeSync(makePeerManager());
+
+        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+
+        expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['reset-authority', 'replace-document']);
+    });
+
+    it('should abort install and persistence when CrdtDocument sanitation fails', async () => {
+        const { persistCrdtProject } = await import('#/modules/CrdtDocument/useCases');
+        vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
+        vi.mocked(sanitizeIncomingCrdtDocument).mockImplementationOnce(() => {
+            throw new Error('sanitation failed');
+        });
+        const sync = new AutomergeSync(makePeerManager());
+
+        sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
+
+        expect(command_mocks.reset_action_replay_authority).not.toHaveBeenCalled();
+        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+    });
+
     it('§fix-1 drops a sync from a peer without edit capability (canApplySync=false)', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(false);
-        const sync = new AutomergeSync(makePeerManager() as never, { canApplySync });
+        const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
         sync.receiveSync({ peerId: 'viewer', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
@@ -98,7 +159,7 @@ describe('AutomergeSync', () => {
     it('§fix-1 applies a sync from a peer with edit capability (canApplySync=true)', () => {
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const canApplySync = vi.fn().mockReturnValue(true);
-        const sync = new AutomergeSync(makePeerManager() as never, { canApplySync });
+        const sync = new AutomergeSync(makePeerManager(), { canApplySync });
 
         sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
@@ -120,7 +181,7 @@ describe('AutomergeSync', () => {
         });
 
         const peerManager = { getConnectedPeerIds: vi.fn().mockReturnValue(['p2']), sendCrdtSync: vi.fn() };
-        const sync = new AutomergeSync(peerManager as never);
+        const sync = new AutomergeSync(peerManager);
         sync.start();
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
@@ -135,7 +196,7 @@ describe('AutomergeSync', () => {
         vi.mocked(persistCrdtProject).mockRejectedValueOnce(new Error('idb full'));
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
         const onPersistError = vi.fn();
-        const sync = new AutomergeSync(makePeerManager() as never, { onPersistError });
+        const sync = new AutomergeSync(makePeerManager(), { onPersistError });
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
         // Let the rejected persist promise settle.

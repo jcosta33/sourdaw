@@ -33,7 +33,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mocks.clone }));
-vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({

@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { createAppActionCommittedError, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
@@ -33,6 +33,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             return;
         }
 
+        let did_apply_write = false;
         try {
             const result = await analyzeMix();
             mixAnalysisDisplayLifecycle.complete({ token, result });
@@ -54,6 +55,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                         type: 'setTrackGain',
                         payload: { trackId: tl.trackId, gain: newGain },
                     });
+                    did_apply_write = true;
                 }
             }
 
@@ -63,6 +65,7 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
                 const targetMasterLinear = currentMasterLinear / 10 ** (reductionDb / 20);
                 const newMasterGain = Math.max(0, Math.min(1, targetMasterLinear));
                 await executeAppAction({ type: 'setMasterGain', payload: { gain: newMasterGain } });
+                did_apply_write = true;
             }
 
             // The gain changes above ramp over time and feed smoothed
@@ -78,6 +81,10 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             // otherwise just stop the spinner and read as "nothing to fix". Log, then reset.
             logger.error(error instanceof Error ? error : new Error(`Auto-fix mix failed: ${String(error)}`));
             mixAnalysisDisplayLifecycle.fail({ token });
+            if (did_apply_write || isAppActionCommittedError(error)) {
+                throw createAppActionCommittedError({ actionType: 'autoFixMix', cause: error });
+            }
+            throw error;
         }
     },
     describe: () => ({ label: 'Auto-fix mix issues' }),

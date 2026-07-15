@@ -6,6 +6,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { switchArrangement } from '../arrangement/switchArrangement';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 const { cancelPendingAudioBufferImport, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
@@ -40,6 +41,7 @@ describe('switchArrangement', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
     });
@@ -123,7 +125,9 @@ describe('switchArrangement', () => {
 
         const switching = switchArrangement(target.id);
         await vi.waitFor(() => expect(completePreparation).toBeDefined());
-        runProjectLoadTransaction().activate();
+        const newerLoad = runProjectLoadTransaction();
+        await newerLoad.prepare();
+        newerLoad.activate();
         completePreparation?.();
         await switching;
 

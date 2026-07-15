@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson } from '../../repositories/project/storageOperations';
+import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
 import { getRecentProjects } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
@@ -61,6 +62,7 @@ vi.mock('../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () =
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
 }));
 
 vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
@@ -77,6 +79,7 @@ describe('recentProjects injectables', () => {
         storageMocks.mockSet.mockClear();
         vi.mocked(readNamedProjectJson).mockReset();
         vi.clearAllMocks();
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
 
     it('should prepend entry on addToRecentProjects', () => {

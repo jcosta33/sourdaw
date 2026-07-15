@@ -5,6 +5,8 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import {
     actionHistoryStore,
     defaultActionHistoryState,
+    markEntryReverted,
+    pushActionHistoryEntry,
     sanitize_action_history_state,
     type ActionHistoryState,
 } from '../actionHistoryStore';
@@ -51,13 +53,41 @@ describe('sanitize_action_history_state', () => {
         expect(sanitize_action_history_state('corrupt')).toEqual(defaultActionHistoryState);
     });
 
-    it('should preserve valid entries, clear hydrated inverses, and drop malformed action rows', () => {
+    it('should retain display metadata but strip executable fields from hydrated rows', () => {
+        expect(
+            sanitize_action_history_state({
+                entries: [
+                    {
+                        id: 'entry-1',
+                        label: 'Add track',
+                        actionKind: 'addTrack',
+                        action: { type: 'addTrack', payload: { name: 'Bass' } },
+                        inverseAction: { type: 'removeTrack', payload: { trackId: 'track-1' } },
+                        source: 'manual',
+                        timestamp: 10,
+                        reverted: false,
+                    },
+                ],
+            })
+        ).toEqual({
+            entries: [
+                {
+                    id: 'entry-1',
+                    label: 'Add track',
+                    actionKind: 'addTrack',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+            ],
+        });
+    });
+
+    it('should preserve valid metadata and drop malformed metadata rows', () => {
         const valid_entry = {
             id: 'entry-1',
             label: 'Add track',
             actionKind: 'app-action',
-            action: { type: 'addTrack', payload: { name: 'Bass' } },
-            inverseAction: { type: 'removeTrack', payload: { trackId: 'track-1' } },
             source: 'manual',
             timestamp: 10,
             groupId: 'group-1',
@@ -69,13 +99,11 @@ describe('sanitize_action_history_state', () => {
             sanitize_action_history_state({
                 entries: [
                     valid_entry,
-                    { ...valid_entry, id: 'bad-action', action: { payload: {} } },
-                    { ...valid_entry, id: 'bad-inverse', inverseAction: { payload: {} } },
                     { ...valid_entry, id: 'bad-source', source: 'robot' },
                     { ...valid_entry, id: 'bad-timestamp', timestamp: Number.NaN },
                 ],
             })
-        ).toEqual({ entries: [{ ...valid_entry, inverseAction: null }] });
+        ).toEqual({ entries: [valid_entry] });
     });
 
     it('should strip unknown fields and malformed optional group labels', () => {
@@ -86,8 +114,6 @@ describe('sanitize_action_history_state', () => {
                         id: 'entry-1',
                         label: 'Add track',
                         actionKind: 'app-action',
-                        action: { type: 'addTrack', payload: { name: 'Bass' }, stale: true },
-                        inverseAction: null,
                         source: 'ai',
                         timestamp: 10,
                         groupId: 42,
@@ -104,8 +130,6 @@ describe('sanitize_action_history_state', () => {
                     id: 'entry-1',
                     label: 'Add track',
                     actionKind: 'app-action',
-                    action: { type: 'addTrack', payload: { name: 'Bass' } },
-                    inverseAction: null,
                     source: 'ai',
                     timestamp: 10,
                     groupLabel: 'Group',
@@ -120,8 +144,6 @@ describe('sanitize_action_history_state', () => {
             id: `entry-${index}`,
             label: `Action ${index}`,
             actionKind: 'app-action',
-            action: { type: 'togglePlayback' },
-            inverseAction: null,
             source: 'manual' as const,
             timestamp: index,
             reverted: false,
@@ -163,8 +185,6 @@ describe('actionHistoryStore', () => {
                     id: 'entry-1',
                     label: 'Add track',
                     actionKind: 'app-action',
-                    action: { type: 'addTrack' },
-                    inverseAction: null,
                     source: 'manual',
                     timestamp: 10,
                     reverted: false,
@@ -178,5 +198,64 @@ describe('actionHistoryStore', () => {
 
         expect(actionHistoryStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
+    });
+
+    it('should return the exact metadata IDs evicted by a bounded write', () => {
+        const entries = Array.from({ length: 200 }, (_, index) => ({
+            id: `entry-${index}`,
+            label: `Action ${index}`,
+            actionKind: 'app-action',
+            source: 'manual' as const,
+            timestamp: index,
+            reverted: false,
+        }));
+        actionHistoryStore.set({ entries });
+
+        const evicted_entry_ids = pushActionHistoryEntry({
+            id: 'entry-200',
+            label: 'Action 200',
+            actionKind: 'app-action',
+            source: 'manual',
+            timestamp: 200,
+            reverted: false,
+        });
+
+        expect(evicted_entry_ids).toEqual(['entry-0']);
+        expect(actionHistoryStore.value?.entries[0]?.id).toBe('entry-1');
+        expect(actionHistoryStore.value?.entries.at(-1)?.id).toBe('entry-200');
+    });
+
+    it('should mark only the row whose ID and immutable fingerprint both match', () => {
+        actionHistoryStore.set({
+            entries: [
+                {
+                    id: 'shared-id',
+                    label: 'Local action',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+                {
+                    id: 'shared-id',
+                    label: 'Peer replacement',
+                    actionKind: 'setTempo',
+                    source: 'manual',
+                    timestamp: 10,
+                    reverted: false,
+                },
+            ],
+        });
+
+        const outcome = markEntryReverted({
+            entryId: 'shared-id',
+            expectedFingerprint: '["shared-id","Local action","setTempo","manual",10,null,null]',
+        });
+
+        expect(outcome).toEqual({ status: 'marked' });
+        expect(actionHistoryStore.value?.entries).toEqual([
+            expect.objectContaining({ label: 'Local action', reverted: true }),
+            expect.objectContaining({ label: 'Peer replacement', reverted: false }),
+        ]);
     });
 });

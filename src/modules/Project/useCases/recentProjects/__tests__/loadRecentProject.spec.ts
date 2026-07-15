@@ -11,10 +11,12 @@ import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
+import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
+import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
 import { loadRecentProject } from '../loadRecentProject';
 
 const { audioContext } = vi.hoisted(() => ({
@@ -34,11 +36,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProjectAuthority: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
 vi.mock('../../projectPersistence/helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
@@ -78,6 +84,8 @@ const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(startCrdtAutoSave).mockClear();
@@ -187,6 +195,7 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {
@@ -370,7 +379,9 @@ describe('loadRecentProject', () => {
 
         const loading = loadRecentProject('old-project');
         await vi.waitFor(() => expect(completeRestore).toBeDefined());
-        runProjectLoadTransaction().activate();
+        const newerLoad = runProjectLoadTransaction();
+        await newerLoad.prepare();
+        newerLoad.activate();
 
         const finishRestore = completeRestore;
         if (!finishRestore) {

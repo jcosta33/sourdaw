@@ -45,16 +45,25 @@ import {
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
-import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
+import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
+    setActionHistoryMetadataPort,
     setCommandEventBus,
     setPitchEditDependencies,
+    syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
-import { getDsoSnapshotHandlers, registerCrdtStorageRuntime } from '#/modules/CrdtDocument/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+import {
+    getDsoSnapshotHandlers,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntry,
+    clearActionHistory as clearCrdtActionHistory,
+    registerCrdtStorageRuntime,
+} from '#/modules/CrdtDocument/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -75,6 +84,7 @@ import {
     getSongStructureHandlers,
     getVersionControlHandlers,
     getDawProjectHandlers,
+    setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
@@ -99,6 +109,15 @@ import { eventBus, logger } from './registerDependencies';
 logCapabilities();
 
 registerCrdtStorageRuntime();
+setActionHistoryMetadataPort({
+    record: recordActionHistoryEntry,
+    markReverted: markActionHistoryEntryReverted,
+    clear: clearCrdtActionHistory,
+});
+syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
+actionHistoryStore.subscribe((state) => {
+    syncActionReplayMetadata(state?.entries ?? []);
+});
 setRuntimeLogger(logger);
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
@@ -117,6 +136,7 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
+setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 window.addEventListener('beforeunload', () => {
     teardownYeastRuntime();
@@ -132,7 +152,11 @@ setFermenterDependencies({
     updateDevicePatch,
 });
 
-setStopPlaybackCallback(stopPlayback);
+setStopPlaybackCallback(() => {
+    stopPlayback().catch((error: unknown) => {
+        logger.error(new Error('Scheduler stop request failed', { cause: error }));
+    });
+});
 
 setAutomationRecordingDependencies({
     getAudioContext,

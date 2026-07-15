@@ -20,6 +20,7 @@ export const handleAnalyzeMix = createHandler<'analyzeMix'>({
             // indistinguishable from "analysis ran and found nothing". Log it, then reset.
             logger.error(error instanceof Error ? error : new Error(`Mix analysis failed: ${String(error)}`));
             mixAnalysisDisplayLifecycle.fail({ token });
+            throw error;
         }
     },
     describe: () => ({ label: 'Analyze mix' }),
