@@ -16,7 +16,6 @@ import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 import { getProofPatchSnapshot, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
 import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
-import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
@@ -164,7 +163,6 @@ const ProofLevelContent = ({
         return (
             <Level2Shape
                 state={state}
-                deviceId={deviceId}
                 gestureOwner={gestureOwner}
                 gestureAuthority={gestureAuthority}
                 onPatchChange={onPatchChange}
@@ -247,6 +245,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
     const finalizeActiveGesture = (): void => {
         const finalizer = activeGestureFinalizerRef.current;
+        // Finalizers commit through handlePatchChange, so release ownership before invoking one.
         activeGestureFinalizerRef.current = null;
         finalizer?.();
     };
@@ -281,6 +280,9 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     }, [patchSnapshot]);
 
     const handlePatchChange: ProofPatchChange = (edit) => {
+        if (edit.isTransient !== true) {
+            finalizeActiveGesture();
+        }
         setProofParamWithPatch({ deviceId, ...edit });
         if (edit.isTransient === true) {
             acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
@@ -637,13 +639,11 @@ const Level1Play = ({
 
 const Level2Shape = ({
     state,
-    deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
 }: {
     state: ProofState;
-    deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
@@ -682,9 +682,7 @@ const Level2Shape = ({
                                         : `border border-current/20`
                                 }`}
                                 style={{ color: bypassed ? undefined : color }}
-                                onClick={() =>
-                                    setProofParamWithPatch({ deviceId, key: bypassKeys[moduleIdx]!, value: !bypassed })
-                                }
+                                onClick={() => onPatchChange({ key: bypassKeys[moduleIdx]!, value: !bypassed })}
                             >
                                 {label}
                             </button>
@@ -939,7 +937,7 @@ const Level4Route = ({
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
         newOrder[toIdx] = temp;
-        reorderChain({ deviceId, order: newOrder });
+        onPatchChange({ key: 'chainOrder', value: newOrder });
     };
 
     return (
