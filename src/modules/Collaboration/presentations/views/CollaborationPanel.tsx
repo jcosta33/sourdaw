@@ -12,13 +12,11 @@ import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCollaborationPanel } from '#/modules/Workspace/useCases';
 
-import {
-    createSession,
-    joinSession,
-    leaveSession,
-    generateInvite,
-    acceptAnswer,
-} from '../../useCases/collaboration/sessionManagement';
+import { acceptAnswer } from '../../useCases/collaboration/acceptAnswer';
+import { createSession } from '../../useCases/collaboration/createSession';
+import { generateInvite } from '../../useCases/collaboration/generateInvite';
+import { joinSession } from '../../useCases/collaboration/joinSession';
+import { leaveSession } from '../../useCases/collaboration/leaveSession';
 import { CollaborationBlock } from '../components/CollaborationBlock';
 import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
 import { InviteCodeRow } from '../components/InviteCodeRow';

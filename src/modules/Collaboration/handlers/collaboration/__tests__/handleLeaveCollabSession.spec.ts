@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     leaveSession: vi.fn(),
 }));
 
-vi.mock('../../../useCases/collaboration/sessionManagement', () => ({
+vi.mock('../../../useCases/collaboration/leaveSession', () => ({
     leaveSession: mocks.leaveSession,
 }));
 

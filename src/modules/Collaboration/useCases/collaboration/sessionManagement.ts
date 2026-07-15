@@ -338,7 +338,7 @@ function getLocalPeerInfo(): CollaborationPeer {
  * Create a new collaboration session as host.
  * Returns the session ID.
  */
-export function createSession(name: string): string {
+function createSession(name: string): string {
     // Clean up any existing session first
     cleanupSubsystems();
 
@@ -388,7 +388,7 @@ export function createSession(name: string): string {
  * Generate an invite string containing the SDP offer for a new peer.
  * The host calls this, copies the result, and the joiner pastes it into `joinSession`.
  */
-export async function generateInvite(): Promise<string> {
+async function generateInvite(): Promise<string> {
     if (!sessionState.peerManager) {
         throw createCollaborationError('No active session');
     }
@@ -421,7 +421,7 @@ export async function generateInvite(): Promise<string> {
  * Join a session by pasting an invite string.
  * Returns an answer string to send back to the host.
  */
-export async function joinSession(inviteString: string, name: string): Promise<string> {
+async function joinSession(inviteString: string, name: string): Promise<string> {
     cleanupSubsystems();
 
     if (!inviteString.trim()) {
@@ -504,7 +504,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 /**
  * Accept an answer from a joiner (host side, completes the connection).
  */
-export async function acceptAnswer(answerString: string): Promise<void> {
+async function acceptAnswer(answerString: string): Promise<void> {
     const json = await decompressInvite(answerString);
     const answer = JSON.parse(json) as SignalingMessage;
     if (answer.type !== 'answer') {
@@ -657,7 +657,7 @@ function stopPlayheadBroadcast(): void {
  * actually flushes. Returns a Promise so callers may await the flush; existing
  * fire-and-forget callers are unaffected (cleanup still runs after the await).
  */
-export async function leaveSession(): Promise<void> {
+async function leaveSession(): Promise<void> {
     const peerManager = sessionState.peerManager;
     if (peerManager) {
         const leaveMessage: PeerMessage = {
@@ -699,7 +699,7 @@ export async function leaveSession(): Promise<void> {
  * so the cursor broadcast and the playhead heartbeat no longer clobber each
  * other's state.
  */
-export function broadcastPresence(data: Partial<Omit<PresenceData, 'peerId' | 'name' | 'color'>>): void {
+function broadcastPresence(data: Partial<Omit<PresenceData, 'peerId' | 'name' | 'color'>>): void {
     if (!sessionState.peerManager) {
         return;
     }
@@ -723,7 +723,7 @@ export function broadcastPresence(data: Partial<Omit<PresenceData, 'peerId' | 'n
 /**
  * Subscribe to incoming presence data from peers.
  */
-export function onPresence(listener: (data: PresenceDelta) => void): () => void {
+function onPresence(listener: (data: PresenceDelta) => void): () => void {
     sessionState.presenceListeners.add(listener);
     return () => {
         sessionState.presenceListeners.delete(listener);
@@ -731,7 +731,7 @@ export function onPresence(listener: (data: PresenceDelta) => void): () => void 
 }
 
 /** Get the asset transfer instance (for requesting/providing assets). */
-export function getAssetTransfer(): AssetTransfer | null {
+function getAssetTransfer(): AssetTransfer | null {
     return sessionState.assetTransfer;
 }
 
@@ -965,3 +965,15 @@ async function decompressInvite(raw: string): Promise<string> {
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }
+
+/** Shared session runtime owner used by the focused use-case entry points. */
+export const collaborationSessionRuntime = {
+    createSession,
+    generateInvite,
+    joinSession,
+    acceptAnswer,
+    leaveSession,
+    broadcastPresence,
+    onPresence,
+    getAssetTransfer,
+};

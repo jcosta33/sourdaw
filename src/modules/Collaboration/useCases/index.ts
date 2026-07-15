@@ -1,11 +1,9 @@
-export {
-    createSession,
-    generateInvite,
-    joinSession,
-    acceptAnswer,
-    leaveSession,
-    broadcastPresence,
-    onPresence,
-    getAssetTransfer,
-} from './collaboration/sessionManagement';
+export { createSession } from './collaboration/createSession';
+export { generateInvite } from './collaboration/generateInvite';
+export { joinSession } from './collaboration/joinSession';
+export { acceptAnswer } from './collaboration/acceptAnswer';
+export { leaveSession } from './collaboration/leaveSession';
+export { broadcastPresence } from './collaboration/broadcastPresence';
+export { onPresence } from './collaboration/onPresence';
+export { getAssetTransfer } from './collaboration/getAssetTransfer';
 export { getCollaborationHandlers } from './getCollaborationHandlers';

@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { leaveSession } from '../../useCases/collaboration/sessionManagement';
+import { leaveSession } from '../../useCases/collaboration/leaveSession';
 
 export const handleLeaveCollabSession = createHandler<'leaveCollabSession'>({
     execute: () => {
