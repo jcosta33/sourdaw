@@ -12,6 +12,24 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
 
+type PunchRegion = Pick<TransportState, 'punchInBeat' | 'punchOutBeat'>;
+
+function get_updated_punch_region(calls: Array<[Partial<TransportState>]>, current: PunchRegion): PunchRegion {
+    const patch = calls[0]?.[0];
+    if (!patch) {
+        throw new Error('Expected a transport update');
+    }
+
+    return { ...current, ...patch };
+}
+
+function expect_valid_punch_region(region: PunchRegion): void {
+    expect(Number.isFinite(region.punchInBeat)).toBe(true);
+    expect(Number.isFinite(region.punchOutBeat)).toBe(true);
+    expect(region.punchInBeat).toBeGreaterThanOrEqual(0);
+    expect(region.punchOutBeat).toBeGreaterThan(region.punchInBeat);
+}
+
 describe('setPunchIn', () => {
     beforeEach(() => {
         vi.mocked(getTransportState).mockClear();
@@ -59,6 +77,33 @@ describe('setPunchIn', () => {
         setPunchIn(16);
 
         expect(update).toHaveBeenCalledWith({ punchInBeat: 16, punchOutBeat: 17 });
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+        'should keep a non-finite in-point out of transport state (%s)',
+        (beat) => {
+            const update = vi.fn<typeof updateTransportState>();
+            const current = { ...defaultTransportState, punchOutBeat: 16 };
+            vi.mocked(getTransportState).mockReturnValue(current);
+            vi.mocked(updateTransportState).mockImplementation(update);
+
+            setPunchIn(beat);
+
+            expect_valid_punch_region(get_updated_punch_region(update.mock.calls, current));
+        }
+    );
+
+    it('should keep a maximum finite in-point from collapsing the out-point', () => {
+        const update = vi.fn<typeof updateTransportState>();
+        const current = { ...defaultTransportState, punchOutBeat: 16 };
+        vi.mocked(getTransportState).mockReturnValue(current);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setPunchIn(Number.MAX_VALUE);
+
+        const next = get_updated_punch_region(update.mock.calls, current);
+        expect_valid_punch_region(next);
+        expect(next.punchOutBeat).toBe(Number.MAX_VALUE);
     });
 
     it('should not update when transport state is missing', () => {
