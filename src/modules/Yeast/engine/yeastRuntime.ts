@@ -19,6 +19,10 @@ type ProcessYeastRuntimeBlockInput = {
     transport: TransportInfo;
 };
 
+type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
+    projection: readonly YeastProcessorProjectionItem[];
+};
+
 type YeastRuntimeSession = {
     version: number;
     context: BaseAudioContext | null;
@@ -27,6 +31,8 @@ type YeastRuntimeSession = {
     projection: YeastProcessorProjection;
     processTail: Promise<void>;
     generation: number;
+    projectionRevision: number;
+    appliedProjectionRevision: number;
     status: YeastRuntimeStatus;
     error: string | undefined;
     onNotesOff: ((notes: number[]) => void) | null;
@@ -39,7 +45,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 2;
+const YEAST_RUNTIME_SESSION_VERSION = 3;
 const MIDI_PANIC_NOTES = Array.from({ length: 128 }, (_, note) => note);
 const fallbackReleasedNodes = new WeakSet<YeastWorkletNodeResult>();
 
@@ -51,6 +57,8 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     projection: [],
     processTail: Promise.resolve(),
     generation: 0,
+    projectionRevision: 0,
+    appliedProjectionRevision: 0,
     status: 'uninitialized',
     error: undefined,
     onNotesOff: null,
@@ -61,6 +69,9 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
 // unscoped panic array behind. Drop only that incompatible transient state.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     session.version = YEAST_RUNTIME_SESSION_VERSION;
+    session.processTail = Promise.resolve();
+    session.projectionRevision = 0;
+    session.appliedProjectionRevision = 0;
     session.pendingAllNotesOff = null;
 }
 
@@ -69,6 +80,51 @@ function cloneProjection(projection: readonly YeastProcessorProjectionItem[]): Y
         ...processor,
         params: { ...processor.params },
     }));
+}
+
+type ProjectionRecord = {
+    projection: YeastProcessorProjection;
+    revision: number;
+};
+
+function recordProjection(projection: readonly YeastProcessorProjectionItem[]): ProjectionRecord {
+    const nextProjection = cloneProjection(projection);
+    session.projection = nextProjection;
+    session.projectionRevision += 1;
+    return { projection: nextProjection, revision: session.projectionRevision };
+}
+
+function isLiveRuntime(node: YeastWorkletNodeResult, generation: number): boolean {
+    return session.node === node && session.generation === generation;
+}
+
+function prepareRuntimeContext(context: BaseAudioContext): void {
+    if (session.context !== null && session.context !== context) {
+        const previousNode = session.node;
+        if (previousNode) {
+            invalidateCurrentRuntime(previousNode);
+        } else {
+            session.generation += 1;
+            session.processTail = Promise.resolve();
+            session.appliedProjectionRevision = 0;
+        }
+        session.pendingAllNotesOff = null;
+        destroyCurrentNode();
+        session.nodePromise = null;
+        session.status = 'uninitialized';
+        session.error = undefined;
+    }
+
+    session.context = context;
+}
+
+function enqueueRuntimeOperation<TValue>(operation: () => Promise<TValue>): Promise<TValue> {
+    const next = session.processTail.then(operation, operation);
+    session.processTail = next.then(
+        () => undefined,
+        () => undefined
+    );
+    return next;
 }
 
 function setRuntimeUnavailable(error: unknown): void {
@@ -96,6 +152,7 @@ function invalidateCurrentRuntime(node: YeastWorkletNodeResult): boolean {
     destroyCurrentNode();
     session.nodePromise = null;
     session.processTail = Promise.resolve();
+    session.appliedProjectionRevision = 0;
     session.pendingAllNotesOff = null;
     return true;
 }
@@ -134,12 +191,12 @@ async function trySendAllNotesOff(
 ): Promise<boolean> {
     try {
         await node.allNotesOff(nowSamples);
-        if (session.node !== node || session.generation !== generation) {
+        if (!isLiveRuntime(node, generation)) {
             return false;
         }
         return true;
     } catch (error: unknown) {
-        if (session.node === node && session.generation === generation) {
+        if (isLiveRuntime(node, generation)) {
             failCurrentRuntime(node, error);
         }
         return false;
@@ -147,24 +204,43 @@ async function trySendAllNotesOff(
 }
 
 export async function applyYeastRuntimeProjection(projection: readonly YeastProcessorProjectionItem[]): Promise<void> {
-    session.projection = cloneProjection(projection);
-    const node = session.node;
-    if (!node) {
-        return;
-    }
-
-    const generation = session.generation;
-    try {
-        await node.setProjection(session.projection);
-    } catch (error: unknown) {
-        if (session.node === node && session.generation === generation) {
-            failCurrentRuntime(node, error);
+    const record = recordProjection(projection);
+    const initialNode = session.node;
+    const initialGeneration = session.generation;
+    const initialization = session.nodePromise;
+    await enqueueRuntimeOperation(async () => {
+        if (session.generation !== initialGeneration) {
+            throw new Error('Yeast AudioWorklet projection generation changed');
         }
-        throw error;
-    }
-    if (session.node !== node || session.generation !== generation) {
-        throw new Error('Yeast AudioWorklet projection generation changed');
-    }
+
+        let node = initialNode;
+        if (initialization) {
+            await initialization;
+            if (session.generation !== initialGeneration) {
+                throw new Error('Yeast AudioWorklet projection generation changed');
+            }
+            node = initialNode ?? session.node;
+        }
+        if (!node || !isLiveRuntime(node, initialGeneration)) {
+            return;
+        }
+
+        if (session.appliedProjectionRevision === record.revision) {
+            return;
+        }
+        try {
+            await node.setProjection(record.projection);
+        } catch (error: unknown) {
+            if (isLiveRuntime(node, initialGeneration)) {
+                failCurrentRuntime(node, error);
+            }
+            throw error;
+        }
+        if (!isLiveRuntime(node, initialGeneration)) {
+            throw new Error('Yeast AudioWorklet projection generation changed');
+        }
+        session.appliedProjectionRevision = record.revision;
+    });
 }
 
 /**
@@ -188,14 +264,19 @@ type YeastRuntimeCommandResult =
  */
 export async function sendYeastRuntimeCommand(command: YeastProcessorCommand): Promise<YeastRuntimeCommandResult> {
     const node = session.node;
-    if (!node) {
+    if (!node || session.status !== 'ready' || session.nodePromise) {
         return { delivered: false, reason: 'runtime-unavailable' };
     }
     const generation = session.generation;
 
     try {
-        const ack = await node.sendCommand(command);
-        if (session.node !== node || session.generation !== generation || !ack.accepted) {
+        const ack = await enqueueRuntimeOperation(async () => {
+            if (!isLiveRuntime(node, generation)) {
+                throw new Error('Yeast AudioWorklet runtime generation changed');
+            }
+            return node.sendCommand(command);
+        });
+        if (!isLiveRuntime(node, generation) || !ack.accepted) {
             return { delivered: false, reason: 'delivery-failed' };
         }
         return { delivered: true };
@@ -207,33 +288,19 @@ export async function sendYeastRuntimeCommand(command: YeastProcessorCommand): P
     }
 }
 
-export async function ensureYeastRuntime(input: {
-    context: BaseAudioContext;
-    projection: readonly YeastProcessorProjectionItem[];
-}): Promise<YeastWorkletNodeResult | null> {
-    session.projection = cloneProjection(input.projection);
-
-    if (session.context !== null && session.context !== input.context) {
-        const previousNode = session.node;
-        if (previousNode) {
-            invalidateCurrentRuntime(previousNode);
-        } else {
-            session.generation += 1;
-        }
-        session.pendingAllNotesOff = null;
-        destroyCurrentNode();
-        session.nodePromise = null;
-        session.processTail = Promise.resolve();
-        session.status = 'uninitialized';
-        session.error = undefined;
-    }
-
-    session.context = input.context;
-    if (session.node) {
-        return session.node;
-    }
+async function ensureYeastRuntimeInternal(
+    input: {
+        context: BaseAudioContext;
+        projection: readonly YeastProcessorProjectionItem[];
+    },
+    initializationProjection?: ProjectionRecord
+): Promise<YeastWorkletNodeResult | null> {
+    prepareRuntimeContext(input.context);
     if (session.nodePromise) {
         return session.nodePromise;
+    }
+    if (session.node) {
+        return session.node;
     }
 
     const generation = session.generation;
@@ -255,7 +322,12 @@ export async function ensureYeastRuntime(input: {
                 session.onNotesOff?.(notes);
             });
             try {
-                await node.setProjection(session.projection);
+                const projectionToApply = initializationProjection ?? {
+                    projection: session.projection,
+                    revision: session.projectionRevision,
+                };
+                await node.setProjection(projectionToApply.projection);
+                session.appliedProjectionRevision = projectionToApply.revision;
             } catch (error: unknown) {
                 if (session.node === node && session.generation === generation) {
                     failCurrentRuntime(node, error);
@@ -309,41 +381,100 @@ export async function ensureYeastRuntime(input: {
     return nodePromise;
 }
 
+export async function ensureYeastRuntime(input: {
+    context: BaseAudioContext;
+    projection: readonly YeastProcessorProjectionItem[];
+}): Promise<YeastWorkletNodeResult | null> {
+    recordProjection(input.projection);
+    return ensureYeastRuntimeInternal(input);
+}
+
 export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockInput): Promise<MidiEvent[] | null> {
     const node = session.node;
-    if (!node || node.context !== input.context) {
+    if (!node || session.status !== 'ready' || session.nodePromise || node.context !== input.context) {
         return null;
     }
 
     const generation = session.generation;
-    const operation = session.processTail.then(() => {
-        if (session.node !== node || session.generation !== generation) {
-            throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
-        }
-        return node.processBlock(input.events, input.blockStartSamples, input.blockEndSamples, input.transport);
-    });
-    session.processTail = operation.then(
-        () => undefined,
-        () => undefined
-    );
-
     try {
-        const processedEvents = await operation;
-        if (session.node !== node || session.generation !== generation) {
-            throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
-        }
-        return processedEvents;
+        return await enqueueRuntimeOperation(async () => {
+            if (!isLiveRuntime(node, generation)) {
+                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+            }
+            const processedEvents = await node.processBlock(
+                input.events,
+                input.blockStartSamples,
+                input.blockEndSamples,
+                input.transport
+            );
+            if (!isLiveRuntime(node, generation)) {
+                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+            }
+            return processedEvents;
+        });
     } catch (error: unknown) {
-        if (session.node === node && session.generation === generation) {
+        if (isLiveRuntime(node, generation)) {
             failCurrentRuntime(node, error);
         }
         throw error;
     }
 }
 
+export async function processYeastRuntimeTransaction(
+    input: ProcessYeastRuntimeTransactionInput
+): Promise<MidiEvent[] | null> {
+    const record = recordProjection(input.projection);
+    prepareRuntimeContext(input.context);
+    const transactionGeneration = session.generation;
+
+    return enqueueRuntimeOperation(async () => {
+        if (session.generation !== transactionGeneration || session.context !== input.context) {
+            return null;
+        }
+        const node = await ensureYeastRuntimeInternal(
+            { context: input.context, projection: record.projection },
+            record
+        );
+        if (!node || node.context !== input.context) {
+            return null;
+        }
+
+        const generation = session.generation;
+        if (!isLiveRuntime(node, generation)) {
+            throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+        }
+
+        try {
+            if (session.appliedProjectionRevision !== record.revision) {
+                await node.setProjection(record.projection);
+                if (!isLiveRuntime(node, generation)) {
+                    throw new Error('Yeast AudioWorklet projection generation changed');
+                }
+                session.appliedProjectionRevision = record.revision;
+            }
+
+            const processedEvents = await node.processBlock(
+                input.events,
+                input.blockStartSamples,
+                input.blockEndSamples,
+                input.transport
+            );
+            if (!isLiveRuntime(node, generation)) {
+                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+            }
+            return processedEvents;
+        } catch (error: unknown) {
+            if (isLiveRuntime(node, generation)) {
+                failCurrentRuntime(node, error);
+            }
+            throw error;
+        }
+    });
+}
+
 export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<void> {
     const node = session.node;
-    if (!node) {
+    if (!node || session.status !== 'ready' || session.nodePromise) {
         if (session.context === null) {
             // There is no context to scope this panic to yet, so do not retain it.
             return;
@@ -357,7 +488,19 @@ export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<v
         return;
     }
 
-    await trySendAllNotesOff(node, nowSamples, session.generation);
+    const generation = session.generation;
+    try {
+        await enqueueRuntimeOperation(async () => {
+            if (!isLiveRuntime(node, generation)) {
+                throw new Error('Yeast AudioWorklet runtime generation changed');
+            }
+            await trySendAllNotesOff(node, nowSamples, generation);
+        });
+    } catch (error: unknown) {
+        if (isLiveRuntime(node, generation)) {
+            failCurrentRuntime(node, error);
+        }
+    }
 }
 
 export function setYeastRuntimeNotesOffHandler(handler: (notes: number[]) => void): void {

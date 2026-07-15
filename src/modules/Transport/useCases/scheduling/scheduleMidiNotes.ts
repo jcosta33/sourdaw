@@ -77,6 +77,11 @@ type TransportInfo = {
     loopEndPpq: number;
 };
 
+export type SchedulerCancellation = {
+    generation: number;
+    isCurrent: () => boolean;
+};
+
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
 
@@ -190,8 +195,10 @@ export async function scheduleMidiNotes(
     lastScheduledBeat: number,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
-    currentTempo: number
+    currentTempo: number,
+    cancellation?: SchedulerCancellation
 ): Promise<void> {
+    const isCurrent = cancellation?.isCurrent ?? (() => true);
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -201,6 +208,9 @@ export async function scheduleMidiNotes(
     const changes = tempoMapStore.value?.changes ?? [];
 
     for (const track of tracks) {
+        if (!isCurrent()) {
+            return;
+        }
         if (track.kind !== 'midi' || track.muted) {
             continue;
         }
@@ -472,6 +482,9 @@ export async function scheduleMidiNotes(
                 const iterNotes = runYeastForIteration
                     ? await runYeastForIteration(clip.startBeat + iterOffset)
                     : notes;
+                if (!isCurrent()) {
+                    return;
+                }
                 if (!iterNotes) {
                     continue;
                 }
@@ -499,6 +512,9 @@ export async function scheduleMidiNotes(
                     }
 
                     if (noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat) {
+                        if (!isCurrent()) {
+                            return;
+                        }
                         const probability = note.probability ?? 100;
                         if (probability < 100 && seededRandom(clip.id, noteStartBeat) * 100 >= probability) {
                             continue;

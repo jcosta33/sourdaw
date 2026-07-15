@@ -66,7 +66,7 @@ describe('YeastWorkletProcessor', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards panic note-offs before acknowledging execution', () => {
+    it('carries panic note-offs inside the correlated acknowledgement', () => {
         const harness = createWorkletPortHarness();
         const noteOn: MidiEvent = {
             timeSamples: 0,
@@ -82,19 +82,21 @@ describe('YeastWorkletProcessor', () => {
 
         expect(messages).toEqual([
             {
-                type: 'notesOff',
+                type: 'allNotesOffAck',
+                panicId: 7,
+                completed: true,
                 events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
             },
-            { type: 'allNotesOffAck', panicId: 7, completed: true },
         ]);
         expect(harness.processor.port.postMessage.mock.calls).toEqual([
             [
                 {
-                    type: 'notesOff',
+                    type: 'allNotesOffAck',
+                    panicId: 7,
+                    completed: true,
                     events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
                 },
             ],
-            [{ type: 'allNotesOffAck', panicId: 7, completed: true }],
         ]);
     });
 
@@ -107,7 +109,7 @@ describe('YeastWorkletProcessor', () => {
 
         harness.port.postMessage({ type: 'allNotesOff', panicId: 8, nowSamples: 512 });
 
-        expect(messages).toEqual([{ type: 'allNotesOffAck', panicId: 8, completed: true }]);
+        expect(messages).toEqual([{ type: 'allNotesOffAck', panicId: 8, completed: true, events: [] }]);
     });
 
     it('ignores an allNotesOff envelope without a valid panic id', () => {
@@ -197,7 +199,7 @@ describe('YeastWorkletProcessor', () => {
         ]);
     });
 
-    it('acknowledges a successful projection after rack execution and note-offs', () => {
+    it('carries projection note-offs inside the correlated acknowledgement', () => {
         const harness = createWorkletPortHarness();
         const messages: unknown[] = [];
         harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
@@ -224,10 +226,10 @@ describe('YeastWorkletProcessor', () => {
 
         expect(messages).toEqual([
             {
-                type: 'notesOff',
+                type: 'projectionAck',
+                projectionId: 8,
                 events: [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }],
             },
-            { type: 'projectionAck', projectionId: 8 },
         ]);
     });
 

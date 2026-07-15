@@ -6,15 +6,14 @@
  *
  * Port protocol (this.port.onmessage):
  *   ← { type: 'setProjection', processors }
- *   → { type: 'projectionAck', projectionId }
+ *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
- *   → { type: 'notesOff',     events }   // hung-note offs from projection changes
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
- *   → { type: 'allNotesOffAck', panicId, completed, error? }
+ *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
 
 import { MidiRack } from './MidiRack';
@@ -192,10 +191,7 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 }
                 try {
                     const offs = this._rack.replaceProjection(parsed.processors, createProcessor, currentFrame);
-                    if (offs.length > 0) {
-                        this.port.postMessage({ type: 'notesOff', events: offs });
-                    }
-                    this.port.postMessage({ type: 'projectionAck', projectionId: parsed.projectionId });
+                    this.port.postMessage({ type: 'projectionAck', projectionId: parsed.projectionId, events: offs });
                 } catch (error: unknown) {
                     this.port.postMessage({
                         type: 'projectionError',
@@ -213,10 +209,12 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 }
                 try {
                     const offs = this._rack.allNotesOff(parsed.nowSamples);
-                    if (offs.length > 0) {
-                        this.port.postMessage({ type: 'notesOff', events: offs });
-                    }
-                    this.port.postMessage({ type: 'allNotesOffAck', panicId: parsed.panicId, completed: true });
+                    this.port.postMessage({
+                        type: 'allNotesOffAck',
+                        panicId: parsed.panicId,
+                        completed: true,
+                        events: offs,
+                    });
                 } catch (error: unknown) {
                     this.port.postMessage({
                         type: 'allNotesOffAck',

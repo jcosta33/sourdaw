@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { scheduleAdjustmentLayers } from '#/modules/AudioEngine/useCases/adjustmentLayer/scheduleAdjustmentLayers';
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
 import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
@@ -8,7 +9,10 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
+import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
+import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
+import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 
 type FakeWorker = {
@@ -436,4 +440,32 @@ describe('playhead scheduler tick', () => {
         await fireTick();
         expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBeGreaterThan(midiCallsAfterFirst);
     });
+
+    it.each(['pause', 'stop', 'seek'])(
+        'does not schedule post-await work after the %s teardown invalidates the tick',
+        async () => {
+            let releaseMidi: (() => void) | null = null;
+            const midiPending = new Promise<void>((resolve) => {
+                releaseMidi = resolve;
+            });
+            vi.mocked(scheduleMidiNotes).mockReturnValueOnce(midiPending);
+
+            startPlayheadScheduler();
+            const worker = harness.workers[harness.workers.length - 1]!;
+            harness.clock = 0.05;
+            worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            stopPlayheadScheduler();
+            releaseMidi!();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(vi.mocked(scheduleAudioClips)).not.toHaveBeenCalled();
+            expect(vi.mocked(applyVcaGains)).not.toHaveBeenCalled();
+            expect(vi.mocked(applyAutomation)).not.toHaveBeenCalled();
+            expect(vi.mocked(scheduleAdjustmentLayers)).not.toHaveBeenCalled();
+        }
+    );
 });

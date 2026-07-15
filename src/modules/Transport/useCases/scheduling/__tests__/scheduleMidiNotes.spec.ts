@@ -15,7 +15,7 @@ import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { getTempoAtBeat } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
-import { scheduleFrozenTrack, scheduleMidiNotes } from '../scheduleMidiNotes';
+import { scheduleFrozenTrack, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -163,6 +163,38 @@ describe('scheduleMidiNotes', () => {
         expect(call[2]).toBe(64); // pitch from the generator
         expect(call[5]).toBe(90); // velocity carried through, not garbled
         // Probability defaults to 100 from the template, so the note is not gated out.
+    });
+
+    it('drops transformed MIDI when the scheduler generation is cancelled during Yeast processing', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        };
+
+        type YeastProcessResult = Awaited<ReturnType<typeof processYeastMidi>>;
+        let resolveYeast!: (events: YeastProcessResult) => void;
+        const pendingYeast = new Promise<YeastProcessResult>((resolve) => {
+            resolveYeast = resolve;
+        });
+        vi.mocked(processYeastMidi).mockReturnValueOnce(pendingYeast);
+        let current = true;
+        const cancellation: SchedulerCancellation = {
+            generation: 1,
+            isCurrent: () => current,
+        };
+
+        const scheduling = scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120, cancellation);
+        await Promise.resolve();
+        current = false;
+        resolveYeast([
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+            { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
+
+        await scheduling;
+
+        expect(scheduleNote).not.toHaveBeenCalled();
     });
 
     // §2 — A looping Yeast clip must run the worklet once per loop iteration so a

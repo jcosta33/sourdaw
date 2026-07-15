@@ -17,6 +17,19 @@ type Deferred<T> = {
     reject: (reason?: unknown) => void;
 };
 
+type RuntimeBlockInput = {
+    context: BaseAudioContext;
+    projection: YeastProcessorProjection;
+    events: readonly MidiEvent[];
+    blockStartSamples: number;
+    blockEndSamples: number;
+    transport: TransportInfo;
+};
+
+type RuntimeWithTransaction = typeof import('../yeastRuntime') & {
+    processYeastRuntimeTransaction: (input: RuntimeBlockInput) => Promise<MidiEvent[] | null>;
+};
+
 function deferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void;
     let rejectDeferred!: (reason?: unknown) => void;
@@ -25,6 +38,12 @@ function deferred<T>(): Deferred<T> {
         rejectDeferred = reject;
     });
     return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+}
+
+async function flushRuntimeQueue(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 }
 
 function makeNode(context: BaseAudioContext) {
@@ -147,6 +166,7 @@ describe('yeastRuntime', () => {
         });
 
         runtime.setYeastRuntimeProjection(projectionB);
+        await flushRuntimeQueue();
 
         expect(onNotesOff).toHaveBeenCalledTimes(1);
         expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
@@ -360,6 +380,127 @@ describe('yeastRuntime', () => {
         expect(runtime.getYeastRuntimeError()).toBe(panicError.message);
     });
 
+    it('keeps each projection paired with its block when A and B overlap', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        createNode.mockResolvedValueOnce(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+
+        const calls: string[] = [];
+        const blockA = deferred<MidiEvent[]>();
+        node.setProjection.mockImplementation(async (projection: YeastProcessorProjection) => {
+            calls.push(`projection:${projection[0]?.id ?? 'empty'}`);
+        });
+        node.processBlock.mockImplementation(async (events: readonly MidiEvent[]) => {
+            const note = events[0]?.kind.type === 'noteOn' ? events[0].kind.note : -1;
+            calls.push(`block:${note}`);
+            if (note === 60) {
+                return blockA.promise;
+            }
+            return [];
+        });
+
+        const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
+        const inputA: RuntimeBlockInput = {
+            context,
+            projection: projectionA,
+            events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                bpm: 120,
+                isPlaying: true,
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            },
+        };
+        const inputB = {
+            ...inputA,
+            projection: projectionB,
+            events: [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 61, velocity: 100 } }],
+        } satisfies RuntimeBlockInput;
+
+        const processingA = processYeastRuntimeTransaction(inputA);
+        await flushRuntimeQueue();
+        const processingB = processYeastRuntimeTransaction(inputB);
+        await flushRuntimeQueue();
+
+        expect(calls).toEqual(['projection:arp-1', 'block:60']);
+
+        blockA.resolve([]);
+        await expect(Promise.all([processingA, processingB])).resolves.toEqual([[], []]);
+        expect(calls).toEqual(['projection:arp-1', 'block:60', 'projection:filter-1', 'block:61']);
+    });
+
+    it('orders dynamic projection, command, and panic behind an in-flight block', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        createNode.mockResolvedValueOnce(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+
+        const calls: string[] = [];
+        const block = deferred<MidiEvent[]>();
+        node.setProjection.mockImplementation(async (projection: YeastProcessorProjection) => {
+            calls.push(`projection:${projection[0]?.id ?? 'empty'}`);
+        });
+        node.processBlock.mockImplementation(async () => {
+            calls.push('block');
+            return block.promise;
+        });
+        node.sendCommand.mockImplementation(async () => {
+            calls.push('command');
+            return { accepted: true };
+        });
+        node.allNotesOff.mockImplementation(async () => {
+            calls.push('panic');
+        });
+
+        const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
+        const processing = processYeastRuntimeTransaction({
+            context,
+            projection: projectionA,
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                bpm: 120,
+                isPlaying: true,
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            },
+        });
+        await flushRuntimeQueue();
+
+        runtime.setYeastRuntimeProjection(projectionB);
+        const command = runtime.sendYeastRuntimeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' });
+        const panic = runtime.sendYeastRuntimeAllNotesOff(512);
+        await flushRuntimeQueue();
+        expect(calls).toEqual(['projection:arp-1', 'block']);
+
+        block.resolve([]);
+        await expect(processing).resolves.toEqual([]);
+        await expect(command).resolves.toEqual({ delivered: true });
+        await expect(panic).resolves.toBeUndefined();
+        await flushRuntimeQueue();
+        expect(calls).toEqual(['projection:arp-1', 'block', 'projection:filter-1', 'command', 'panic']);
+    });
+
     it('does not resolve initialization before a queued panic acknowledgement', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
@@ -496,6 +637,7 @@ describe('yeastRuntime', () => {
         await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
         nodeA.sendCommand.mockReturnValueOnce(pendingAck.promise);
         const delivery = runtime.sendYeastRuntimeCommand(command);
+        await flushRuntimeQueue();
 
         await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
         pendingAck.resolve({ accepted: true });
@@ -539,6 +681,42 @@ describe('yeastRuntime', () => {
         lateResult.resolve([]);
 
         await expect(processing).rejects.toThrow(/runtime changed/);
+        expect(nodeB.processBlock).not.toHaveBeenCalled();
+    });
+
+    it('does not initialize a stale queued transaction after context replacement', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeB = makeNode(contextB);
+        createNode.mockResolvedValueOnce(nodeB);
+
+        const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
+        const staleProcessing = processYeastRuntimeTransaction({
+            context: contextA,
+            projection: projectionA,
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                bpm: 120,
+                isPlaying: true,
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            },
+        });
+
+        const replacement = runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+
+        await expect(replacement).resolves.toBe(nodeB);
+        await expect(staleProcessing).resolves.toBeNull();
         expect(nodeB.processBlock).not.toHaveBeenCalled();
     });
 });

@@ -77,16 +77,32 @@ function replyRawCommandAck(port: FakePort, data: unknown): void {
     port.onmessage?.({ data } as MessageEvent);
 }
 
-function replyAllNotesOffAck(port: FakePort, panicId: number, completed: boolean, error?: string): void {
-    port.onmessage?.({ data: { type: 'allNotesOffAck', panicId, completed, error } } as MessageEvent);
+function replyAllNotesOffAck(
+    port: FakePort,
+    panicId: number,
+    completed: boolean,
+    error?: string,
+    events: unknown[] = []
+): void {
+    port.onmessage?.({
+        data: {
+            type: 'allNotesOffAck',
+            panicId,
+            completed,
+            error,
+            events,
+        },
+    } as MessageEvent);
 }
 
 function replyRawAllNotesOffAck(port: FakePort, data: unknown): void {
     port.onmessage?.({ data } as MessageEvent);
 }
 
-function replyProjectionAck(port: FakePort, projectionId: number): void {
-    port.onmessage?.({ data: { type: 'projectionAck', projectionId } } as MessageEvent);
+function replyProjectionAck(port: FakePort, projectionId: number, events: unknown[] = []): void {
+    port.onmessage?.({
+        data: { type: 'projectionAck', projectionId, events },
+    } as MessageEvent);
 }
 
 function replyProjectionError(port: FakePort, projectionId: number, error: string): void {
@@ -235,7 +251,7 @@ describe('createYeastWorkletNode — projection protocol', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('delivers worklet note-offs to the registered listener', async () => {
+    it('ignores uncorrelated worklet note-offs', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
@@ -250,7 +266,38 @@ describe('createYeastWorkletNode — projection protocol', () => {
             },
         } as MessageEvent);
 
+        expect(onNotesOff).not.toHaveBeenCalled();
+    });
+
+    it('dispatches projection note-offs only once from the matching acknowledgement', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastPort(), 0, events);
+        replyProjectionAck(lastPort(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
         expect(onNotesOff).toHaveBeenCalledWith([60]);
+    });
+
+    it('falls silent on wrong, late, or lost projection acknowledgements', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastPort(), 99, events);
+        const assertion = expect(result).rejects.toThrow(/projection acknowledgement timed out/);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        await assertion;
+
+        replyProjectionAck(lastPort(), 0, events);
+        expect(onNotesOff).not.toHaveBeenCalled();
     });
 });
 
@@ -261,7 +308,9 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
         const result = node.allNotesOff(512);
 
         expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'allNotesOff', panicId: 0, nowSamples: 512 });
-        replyAllNotesOffAck(lastPort(), 0, true);
+        replyAllNotesOffAck(lastPort(), 0, true, undefined, [
+            { timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } },
+        ]);
 
         await expect(result).resolves.toBeUndefined();
         expect(vi.getTimerCount()).toBe(0);
@@ -279,13 +328,18 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
 
     it('ignores wrong, duplicate, and late acknowledgements', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
 
         const first = node.allNotesOff(512);
         replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true });
         replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
-        replyAllNotesOffAck(lastPort(), 0, true);
-        replyAllNotesOffAck(lastPort(), 0, false, 'late duplicate');
+        const events = [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        replyAllNotesOffAck(lastPort(), 0, true, undefined, events);
+        replyAllNotesOffAck(lastPort(), 0, false, 'late duplicate', events);
         await expect(first).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([60]);
 
         const second = node.allNotesOff(1024);
         replyAllNotesOffAck(lastPort(), 0, false, 'late acknowledgement');
@@ -293,6 +347,22 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
 
         await expect(second).resolves.toBeUndefined();
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('falls silent on wrong, late, or lost panic acknowledgements', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+
+        const result = node.allNotesOff(512);
+        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true, events });
+        const assertion = expect(result).rejects.toThrow(/allNotesOff acknowledgement timed out/);
+        await vi.advanceTimersByTimeAsync(1000);
+        await assertion;
+
+        replyAllNotesOffAck(lastPort(), 0, true, undefined, events);
+        expect(onNotesOff).not.toHaveBeenCalled();
     });
 
     it('rejects on a silent worklet acknowledgement timeout', async () => {

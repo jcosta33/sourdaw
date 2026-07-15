@@ -48,12 +48,18 @@ type ParsedCommandAck = {
 
 type YeastAllNotesOffAck = {
     completed: boolean;
+    events: MidiEvent[];
     error?: string;
 };
 
 type ParsedAllNotesOffAck = {
     panicId: number;
     ack: YeastAllNotesOffAck;
+};
+
+type ParsedProjectionAck = {
+    projectionId: number;
+    events: MidiEvent[];
 };
 
 const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorkletNode command acknowledgement';
@@ -105,6 +111,24 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     return false;
 }
 
+function isNoteOffEvent(value: unknown): value is MidiEvent {
+    if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isPlainObject(value.kind)) {
+        return false;
+    }
+    return value.kind.type === 'noteOff' && isMidiChannel(value.kind.channel) && isMidiNote(value.kind.note);
+}
+
+function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boolean): MidiEvent[] | undefined {
+    const events = value.events;
+    if (events === undefined) {
+        return required ? undefined : [];
+    }
+    if (!Array.isArray(events) || !events.every(isNoteOffEvent)) {
+        return undefined;
+    }
+    return events;
+}
+
 function parseProcessedMessage(value: Record<string, unknown>): { requestId: number; events: MidiEvent[] } | undefined {
     if (value.type !== 'processed' || !isCommandId(value.requestId)) {
         return undefined;
@@ -119,18 +143,15 @@ function parseProcessedMessage(value: Record<string, unknown>): { requestId: num
     return { requestId: value.requestId, events };
 }
 
-function parseNotesOffMessage(value: Record<string, unknown>): MidiEvent[] | undefined {
-    if (value.type !== 'notesOff') {
+function parseProjectionAck(value: unknown): ParsedProjectionAck | undefined {
+    if (!isPlainObject(value) || value.type !== 'projectionAck' || !isCommandId(value.projectionId)) {
         return undefined;
     }
-    const events = value.events;
-    if (events === undefined) {
-        return [];
-    }
-    if (!Array.isArray(events) || !events.every(isMidiEvent)) {
+    const events = parseAcknowledgedNoteOffs(value, true);
+    if (!events) {
         return undefined;
     }
-    return events;
+    return { projectionId: value.projectionId, events };
 }
 
 function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
@@ -174,9 +195,17 @@ function parseAllNotesOffAck(value: unknown): ParsedAllNotesOffAck | undefined {
         return undefined;
     }
 
+    const events = parseAcknowledgedNoteOffs(value, value.completed);
+    if (!events) {
+        return undefined;
+    }
+
     return {
         panicId: value.panicId,
-        ack: error === undefined ? { completed: value.completed } : { completed: value.completed, error },
+        ack:
+            error === undefined
+                ? { completed: value.completed, events }
+                : { completed: value.completed, events, error },
     };
 }
 
@@ -342,6 +371,21 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
 
     const notesOffHandlers = new Set<(notes: number[]) => void>();
 
+    const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
+        const notes: number[] = [];
+        for (const evt of events) {
+            if (evt.kind.type === 'noteOff') {
+                notes.push(evt.kind.note);
+            }
+        }
+        if (notes.length === 0) {
+            return;
+        }
+        for (const handler of notesOffHandlers) {
+            handler(notes);
+        }
+    };
+
     node.port.onmessage = (event: MessageEvent): void => {
         if (!isPlainObject(event.data)) {
             return;
@@ -369,12 +413,26 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             }
             if (parsed.ack.completed) {
                 entry.resolve();
+                dispatchNotesOff(parsed.ack.events);
             } else {
                 entry.reject(new Error(parsed.ack.error ?? INVALID_ALL_NOTES_OFF_ACK_ERROR));
             }
             return;
         }
-        if (event.data.type === 'projectionAck' || event.data.type === 'projectionError') {
+        if (event.data.type === 'projectionAck') {
+            const parsed = parseProjectionAck(event.data);
+            if (!parsed) {
+                return;
+            }
+            const entry = settleProjection(parsed.projectionId);
+            if (!entry) {
+                return;
+            }
+            entry.resolve();
+            dispatchNotesOff(parsed.events);
+            return;
+        }
+        if (event.data.type === 'projectionError') {
             const value = event.data;
             if (!isCommandId(value.projectionId)) {
                 return;
@@ -383,30 +441,12 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             if (!entry) {
                 return;
             }
-            if (value.type === 'projectionAck' && value.error === undefined) {
-                entry.resolve();
-            } else if (value.type === 'projectionError' && typeof value.error === 'string') {
+            if (typeof value.error === 'string') {
                 entry.reject(new Error(value.error));
             } else {
                 entry.reject(new Error(INVALID_PROJECTION_ACK_ERROR));
             }
             return;
-        }
-
-        const events = parseNotesOffMessage(event.data);
-        if (!events) {
-            return;
-        }
-        const notes: number[] = [];
-        for (const evt of events) {
-            if (evt.kind.type === 'noteOff') {
-                notes.push(evt.kind.note);
-            }
-        }
-        if (notes.length > 0) {
-            for (const handler of notesOffHandlers) {
-                handler(notes);
-            }
         }
     };
 
