@@ -53,14 +53,20 @@ Two concurrent `ensureRaveWorker` calls for the same model must return the same 
 
 Verify with: `pnpm test:run -- rave`
 
-### AC-005 — Typed model-backed error paths
+### AC-005 — `transferTimbreToClip` typed error contract
 
-Model-backed RAVE product entrypoints MUST return typed `RaveError` variants rather than throw:
-`MODEL_NOT_LOADED` when no model is loaded, `SAMPLE_RATE_MISMATCH` for invalid sample-rate input,
-and `CLIP_NOT_AUDIO` for invalid clip-type input.
+`transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this contract:
 
-Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/raveDispatcher.spec.ts`
-covering no-model, sample-rate, and clip-type error paths.
+| Input condition | Result | Pure-helper behavior |
+| --- | --- | --- |
+| No model is loaded | `MODEL_NOT_LOADED` | No invocation of `encodeAudio`, `decodeLatent`, `timbreTransfer`, or `interpolateLatent` |
+| Loaded model; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | Not applicable |
+| Loaded model; invalid clip-type input | `CLIP_NOT_AUDIO` | Not applicable |
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
+covering no-model, sample-rate, and clip-type error paths and asserting that no-model execution
+does not invoke a pure helper.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -207,14 +213,15 @@ merely round-trip the assignment data.
 
 Verify with: `pnpm test:run -- rave`
 
-### AC-026 — Latent interpolation fallback
+### AC-026 — Direct pure latent interpolation helper
 
-The model-free RAVE fallback MUST retain `interpolateLatent` as a pure latent-space morph
-primitive with this observable contract: for `time` in `[0, 1]`, `interpolateLatent(alpha, b,
-time)` returns a vector with `alpha.values.length` values in source order, linearly blending
-each source value with the corresponding `b.values` value (using `0` when that target dimension
-is absent) and `timeSec`; with equal-shaped vectors, `time = 0` and `time = 1` return the source
-and target vectors respectively, and the function does not mutate either input.
+The pure `interpolateLatent` function MUST remain directly callable for deterministic CI/test use
+as a latent-space morph primitive with this observable contract: for `time` in `[0, 1]`,
+`interpolateLatent(alpha, b, time)` returns a vector with `alpha.values.length` values in source
+order, linearly blending each source value with the corresponding `b.values` value (using `0`
+when that target dimension is absent) and `timeSec`; with equal-shaped vectors, `time = 0` and
+`time = 1` return the source and target vectors respectively, and the function does not mutate
+either input.
 
 Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`
 covering equal-shaped `time = 0` and `time = 1` endpoints including `timeSec`, missing target
@@ -222,13 +229,18 @@ dimensions defaulting to `0`, and deep-equality snapshots proving neither input 
 
 ### AC-027 — Explicit model-free selection
 
-Model-free fallback selection MUST be explicit through a dedicated mode or entrypoint or direct
-invocation of a named pure helper; a model-backed product dispatcher silently substituting pure
-helpers when no model is loaded is prohibited.
+`transferTimbreToClip` MUST NOT select a model-free fallback mode or generic dispatcher when no
+model is loaded. The only model-free CI/test fallback is direct invocation of the named pure
+helpers `encodeAudio`, `decodeLatent`, `timbreTransfer`, and `interpolateLatent`; there is no
+implicit product fallback mode or dispatcher.
 
-Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/raveDispatcher.spec.ts`
-covering explicit model-free selection and a no-model model-backed dispatch that returns
-`MODEL_NOT_LOADED` without invoking a pure helper.
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
+asserting that no-model execution returns `MODEL_NOT_LOADED` without invoking a pure helper, plus
+direct-helper tests `src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts`,
+`src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts`,
+`src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts`, and
+`src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`.
 
 ## Current-state ownership
 
@@ -241,11 +253,11 @@ model-backed product contracts in AC-001 through AC-005 or AC-027:
 - `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`
 
 Their sibling tests cover deterministic pure-helper behavior only; they do not prove the
-model-backed entrypoint or dispatcher contracts. AC-005 owns typed `MODEL_NOT_LOADED` behavior
-for model-backed product entrypoints, AC-024 owns direct pure-helper availability for
-deterministic model-free fallback, AC-026 owns `interpolateLatent` as the pure latent-space
-interpolation primitive, and AC-027 owns explicit fallback selection and the prohibition on
-silent dispatcher substitution. This promotion retains all four helpers; it does not silently
+model-backed `transferTimbreToClip` contract. AC-005 owns its typed error behavior, including
+`MODEL_NOT_LOADED` without pure-helper invocation; AC-024 owns direct pure-helper availability for
+deterministic model-free CI/test fallback; AC-026 owns `interpolateLatent` as the pure latent-space
+interpolation primitive; and AC-027 owns the prohibition on an implicit product fallback mode or
+generic dispatcher. This promotion retains all four helpers; it does not silently
 authorize deletion or narrow either fallback contract. Any future retirement MUST name the
 exact helper path and change its owning acceptance criterion.
 

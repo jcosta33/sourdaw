@@ -192,12 +192,25 @@ covering valid, malformed, and unknown message kinds, and `pnpm deps:validate`.
 
 ### AC-024 — Allowlisted controller-profile capabilities
 
-Controller-profile workers MUST map capability requests only when their identifiers are explicitly
-allowlisted, routing approved requests through the typed DAW action boundary and rejecting unknown
-or unauthorized requests without invoking an action.
+Controller-profile workers MUST implement exactly this finite initial `ControllerProfileCapability`
+union and no self-selected allowlist:
 
-Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
-covering allowlisted mappings and unauthorized-request rejection, and `pnpm deps:validate`.
+| Identifier | Payload | Host mapping |
+| --- | --- | --- |
+| `setDeviceParameter` | `deviceId` and `paramId` are nonempty strings; `value` is a finite number | Resolve `(deviceId, paramId)` through the current automatable-parameter registry and map exactly to the typed `AppAction` `setDeviceParameter`; reject an unresolved target without dispatch. |
+| `sendMidi` | `bytes` is an array of 1-1024 integer values, each in `0..255` | Route only to the profile's bound MIDI output through a MIDI-owned typed use case/port; reject an unbound output and never represent the request as a generic DAW command. |
+
+Requests with an unknown identifier or invalid payload are rejected without invoking an
+`AppAction` or MIDI port. No other capability identifier or action is accepted. Any expansion
+requires explicit changes to this spec, the `ControllerProfileCapability` union, the host
+registry, and the exhaustive mapping tests.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, using
+exhaustive tables for both mappings and rejecting unknown identifiers, invalid payloads, unresolved
+automatable targets, and unbound profile MIDI outputs; inspect the automatable-parameter registry,
+typed `setDeviceParameter` AppAction, and MIDI-owned typed use case/port; and run
+`pnpm deps:validate`.
 
 ### AC-025 — No profile-source execution
 
@@ -225,17 +238,9 @@ with no matches, and `pnpm deps:validate`.
   shipped as a standalone Push module first and generalised later. Note: the per-note
   expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
   not part of this Push-integration spec.
-  This is also the durable owner for the current
-  `src/modules/MIDI/workers/controllerScriptingWorker.ts` warning: validation found a
-  worker-shaped `self.onmessage` body but no launcher, static import, string/path reference,
-  or test. The unresolved product decision is whether the Push driver should use a generic
-  controller-profile abstraction now or ship standalone and generalize later.
-  The enforceable security baseline for any controller-profile worker is AC-023 through AC-025:
-  schema-validated typed messages, explicit allowlisted capabilities through the typed DAW
-  action boundary, and no profile-provided source execution. A Web Worker alone is not proof of
-  a secure sandbox. Q-004 remains open only for the product sequencing/generalization decision;
-  it MUST NOT defer, weaken, or replace AC-023 through AC-025. Keep the warning visible until
-  real product behavior satisfies AC-023 through AC-025 or the exact file is explicitly retired.
+  Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
+  replace AC-023 through AC-025; the dependency-boundary map points to those requirements for
+  the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap

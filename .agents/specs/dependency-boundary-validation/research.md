@@ -226,9 +226,10 @@ helpers: they have no direct runtime entrypoint or production consumer.
 The MIDI worker contains a `self.onmessage` handler and executes supplied code with
 `new Function`, but source search found no launcher, static import, string/path
 reference, or test import. Its own comment says Worker isolation is only basic and
-is not a complete secure sandbox. Product trust, sandbox, and typed action-bridge
-decisions belong to [Push integration Q-004](../push-integration/spec.md); this
-research does not authorize arbitrary script execution.
+is not a complete secure sandbox. The controller-profile boundaries belong to Push
+integration AC-023 through AC-025: typed message validation, the finite capability
+contract, and no profile-source execution. Q-004 is sequencing/generalization
+context only; this research does not authorize arbitrary script execution.
 
 The four RAVE files are imported only by their sibling specs and have no production,
 UI, or runtime transform pipeline. `encodeAudio` is a deterministic spectral
@@ -294,6 +295,10 @@ claim that every validator rule is ineffective.
   the runtime/type-only/test-only triage required by AC-003.
 - No source import, barrel export, registry entry, or product consumer may be added
   only to make a warning disappear.
-- The five current warnings remain visible until [Push integration Q-004](../push-integration/spec.md)
-  or [RAVE timbre transfer](../rave-timbre-transfer/spec.md) delivers real behavior,
-  or an explicit retirement decision names the exact path.
+- The controller worker warning MUST remain visible until real product behavior satisfies
+  Push integration AC-023, AC-024, and AC-025, or an explicit exact-path retirement
+  decision names the file; Q-004 is sequencing/generalization context only and MUST NOT
+  close, defer, weaken, or replace those requirements.
+- The four RAVE helper warnings MUST remain visible until RAVE AC-024 and AC-026, as
+  mapped in the dependency-boundary spec, deliver real behavior, or an explicit
+  exact-path retirement decision names each file.

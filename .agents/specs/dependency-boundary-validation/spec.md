@@ -38,11 +38,11 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages), [AC-024](../push-integration/spec.md#ac-024--allowlisted-controller-profile-capabilities), and [AC-025](../push-integration/spec.md#ac-025--no-profile-source-execution): retain only behind the typed-message, allowlisted-capability/action, and no-source-execution boundaries; [Q-004](../push-integration/spec.md) is context only for unresolved product sequencing/generalization. |
-| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
-| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
-| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
-| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md): retain as the pure latent-interpolation fallback primitive. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages), [AC-024](../push-integration/spec.md#ac-024--allowlisted-controller-profile-capabilities), and [AC-025](../push-integration/spec.md#ac-025--no-profile-source-execution): retain only behind the typed-message, finite `ControllerProfileCapability` mapping, and no-source-execution boundaries; [Q-004](../push-integration/spec.md) is sequencing/generalization context only. |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a direct pure-helper CI/test surface. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md): retain as a direct pure latent-interpolation CI/test primitive. |
 
 Each warning remains visible until real product wiring/reachability satisfies its
 linked owning requirement, or that owning spec records an explicit exact-path
