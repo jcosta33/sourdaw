@@ -376,7 +376,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(engineGraph.value).toBe('old-project');
         expect(crdtAuthority.value).toBe('Old Project');
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
-        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
@@ -543,7 +544,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(crdtAuthority.value).toBe('Old Project');
     });
 
-    it('reports a committed degraded replacement when reset fails after stopping playback and recording', async () => {
+    it('aborts and restores the previous graph when audio reset fails before commit', async () => {
         const order: string[] = [];
         const persistEmbedded = vi.fn(() => {
             order.push('persist');
@@ -558,6 +559,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
             'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
         };
         importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: publishEmbedded });
+        trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
         transportStore.set({
             ...transportStore.value!,
             isPlaying: true,
@@ -570,18 +572,20 @@ describe('applyImportedProjectData round-trip hydration', () => {
             throw new Error('audio reset failed');
         });
 
-        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(false);
 
-        expect(order).toEqual(['reset', 'publish', 'persist']);
-        expect(stopAudioRecording).toHaveBeenCalledOnce();
-        expect(stopRecording).toHaveBeenCalledOnce();
-        expect(stopAllScheduled).toHaveBeenCalled();
-        expect(resetMidiState).toHaveBeenCalledOnce();
-        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
-        expect(transportStore.value).toMatchObject({ tempo: 137, isPlaying: false, isRecording: false });
-        expect(engineGraph.value).toBe('empty');
-        expect(crdtAuthority.value).toBe('Round Trip');
-        expect(restoreOldAudioGraph).not.toHaveBeenCalled();
+        expect(order).toEqual(['reset']);
+        expect(publishEmbedded).not.toHaveBeenCalled();
+        expect(persistEmbedded).not.toHaveBeenCalled();
+        expect(stopAudioRecording).not.toHaveBeenCalled();
+        expect(stopRecording).not.toHaveBeenCalled();
+        expect(stopAllScheduled).not.toHaveBeenCalled();
+        expect(resetMidiState).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
+        expect(transportStore.value).toMatchObject({ isPlaying: true, isRecording: true, playheadPosition: 8 });
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+        expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {

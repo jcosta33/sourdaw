@@ -8,7 +8,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 
@@ -34,6 +34,14 @@ type ProjectReplacementResult = { status: 'aborted' } | { status: 'committed'; d
 
 function logPreparationFailure(context: ReplaceProjectDataInput['context'], error: unknown): void {
     logger.error(new Error(`[${context}] Project replacement preparation failed`, { cause: error }));
+}
+
+function restorePreviousAudioGraph(context: ReplaceProjectDataInput['context']): void {
+    try {
+        ensureTrackStrips();
+    } catch (error) {
+        logger.error(new Error(`[${context}] Previous audio graph restoration failed`, { cause: error }));
+    }
 }
 
 export async function replaceProjectData({
@@ -83,6 +91,14 @@ export async function replaceProjectData({
         return { status: 'aborted' };
     }
 
+    try {
+        resetAudioGraph();
+    } catch (error) {
+        logPreparationFailure(context, error);
+        restorePreviousAudioGraph(context);
+        return { status: 'aborted' };
+    }
+
     let previousPersistenceStopped = false;
     try {
         stopActiveAutoSave();
@@ -90,6 +106,7 @@ export async function replaceProjectData({
         resetCrdtProjectAuthority(data.meta.name);
     } catch (error) {
         logPreparationFailure(context, error);
+        restorePreviousAudioGraph(context);
         if (previousPersistenceStopped) {
             try {
                 setAutoSaveHandle(startCrdtAutoSave());
@@ -116,10 +133,9 @@ export async function replaceProjectData({
         }
     }
 
-    // The CRDT authority now owns the incoming project. Every remaining
-    // operation is best-effort, and no later failure can turn it into an abort.
+    // The audio graph and CRDT authority now own the incoming project. Every
+    // remaining operation is best-effort; no later failure can become an abort.
     runCommittedStep('transport shutdown', stopPlayback);
-    runCommittedStep('audio graph reset', resetAudioGraph);
 
     try {
         // Notification coalescing only: each write remains independently fallible

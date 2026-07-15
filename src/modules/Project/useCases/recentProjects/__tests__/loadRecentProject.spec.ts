@@ -7,6 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -25,7 +26,7 @@ vi.mock('../../../repositories/project/storageOperations', () => ({
     writeProjectJson: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -80,6 +81,7 @@ describe('loadRecentProject', () => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(startCrdtAutoSave).mockClear();
+        vi.mocked(ensureTrackStrips).mockClear();
         vi.mocked(resetAudioGraph).mockReset();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
@@ -157,7 +159,7 @@ describe('loadRecentProject', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
-    it('reports a committed degraded load when graph reset fails before state publication', async () => {
+    it('aborts and restores the previous graph when reset fails before state publication', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         const order: string[] = [];
         const persistEmbedded = vi.fn(() => {
@@ -177,11 +179,14 @@ describe('loadRecentProject', () => {
             throw new Error('graph reset failed');
         });
 
-        await expect(loadRecentProject('reset-failure')).resolves.toBe(true);
+        await expect(loadRecentProject('reset-failure')).resolves.toBe(false);
 
-        expect(order).toEqual(['reset', 'publish', 'persist']);
-        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
-        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(order).toEqual(['reset']);
+        expect(publishEmbedded).not.toHaveBeenCalled();
+        expect(persistEmbedded).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {
