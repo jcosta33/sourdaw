@@ -3,7 +3,7 @@ import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomer
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
-import { saveIncrementalToIdb } from '../repositories/crdtPersistence/saveIncrementalToIdb';
+import { saveIncrementalsToIdb } from '../repositories/crdtPersistence/saveIncrementalsToIdb';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { CRDT_PROJECT_COMPACTION_THRESHOLD, crdtProjectCompactionState } from './crdtProjectCompactionState';
@@ -24,6 +24,7 @@ let persistenceGeneration = 0;
 let operationTail: Promise<void> = Promise.resolve();
 let pendingChunks: PendingIncrementalChunk[] = [];
 let pendingFullSnapshot: PendingFullSnapshot | null = null;
+let persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
 
 type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset';
 
@@ -55,6 +56,7 @@ function resetQueueState(): void {
     persistenceGeneration++;
     pendingChunks = pendingChunks.filter((pending) => pending.inFlight);
     pendingFullSnapshot = null;
+    persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
     crdtProjectCompactionState.incrementalSaveCount = 0;
 }
 
@@ -69,20 +71,39 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
         return;
     }
 
-    const chunk = automergeRepository.saveDocIncremental(DOC_PREFIX_ROOT);
-    if (chunk && chunk.length > 0) {
-        const pending: PendingIncrementalChunk = {
+    const activeDocIds = getActiveDocIds();
+    if (activeDocIds.length === 0) {
+        if (persistedBaseDocIds.size > 0) {
+            await compactCrdtProject(generation);
+        }
+        return;
+    }
+
+    // Incremental records require a full base record for their document. A
+    // newly created or removed document changes the persisted shape, so write
+    // one current full bundle before advancing any new incremental cursor.
+    if (hasPersistedDocumentShapeChanged(activeDocIds)) {
+        await compactCrdtProject(generation);
+        return;
+    }
+
+    for (const id of activeDocIds) {
+        const chunk = automergeRepository.saveDocIncremental(id);
+        if (!chunk || chunk.length === 0) {
+            continue;
+        }
+
+        pendingChunks.push({
             generation,
-            id: DOC_PREFIX_ROOT,
+            id,
             chunk: new Uint8Array(chunk),
             inFlight: false,
-        };
-        pendingChunks.push(pending);
-        await persistPendingChunk(pending);
+        });
+    }
 
-        if (generation === persistenceGeneration) {
-            crdtProjectCompactionState.incrementalSaveCount++;
-        }
+    await flushPendingChunks(generation);
+    if (generation !== persistenceGeneration) {
+        return;
     }
 
     if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
@@ -130,6 +151,14 @@ async function flushPendingFullSnapshot(generation: number): Promise<void> {
         return;
     }
 
+    if (!hasSameDocumentIds(pending.bundle, getActiveDocIds())) {
+        // An obsolete full bundle can contain a document removed since the
+        // failed attempt. Supersede it before retrying so a crash cannot leave
+        // the deleted document as the latest durable state.
+        pendingFullSnapshot = null;
+        return;
+    }
+
     await persistFullSnapshot(pending);
 }
 
@@ -151,6 +180,7 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
 
     if (pending.generation === persistenceGeneration && pendingFullSnapshot === pending) {
         pendingFullSnapshot = null;
+        persistedBaseDocIds = new Set<DocId>(pending.bundle.keys());
         crdtProjectCompactionState.incrementalSaveCount = 0;
     }
 }
@@ -176,29 +206,76 @@ function areDocumentBundlesEqual(left: DocumentBundle, right: DocumentBundle): b
 }
 
 async function flushPendingChunks(generation: number): Promise<void> {
-    const chunks = pendingChunks.filter((pending) => pending.generation === generation);
+    prunePendingChunks(generation);
+    const chunks = pendingChunks.filter((pending) => pending.generation === generation && !pending.inFlight);
+    if (chunks.length === 0) {
+        return;
+    }
+
     for (const pending of chunks) {
-        if (generation !== persistenceGeneration) {
-            return;
-        }
-        await persistPendingChunk(pending);
-        if (generation === persistenceGeneration) {
-            crdtProjectCompactionState.incrementalSaveCount++;
+        pending.inFlight = true;
+    }
+
+    try {
+        await saveIncrementalsToIdb(
+            chunks.map(({ id, chunk }) => ({
+                id,
+                chunk,
+            }))
+        );
+    } finally {
+        for (const pending of chunks) {
+            pending.inFlight = false;
+            if (pending.generation !== persistenceGeneration) {
+                removePendingChunk(pending);
+            }
         }
     }
+
+    if (generation !== persistenceGeneration) {
+        return;
+    }
+
+    for (const pending of chunks) {
+        removePendingChunk(pending);
+    }
+    // Every chunk in the atomic transaction is non-empty and committed here.
+    crdtProjectCompactionState.incrementalSaveCount += chunks.length;
 }
 
-async function persistPendingChunk(pending: PendingIncrementalChunk): Promise<void> {
-    pending.inFlight = true;
-    try {
-        await saveIncrementalToIdb(pending.id, pending.chunk);
-        removePendingChunk(pending);
-    } finally {
-        pending.inFlight = false;
-        if (pending.generation !== persistenceGeneration) {
-            removePendingChunk(pending);
+function prunePendingChunks(generation: number): void {
+    const activeDocIds = new Set(automergeRepository.getDocIds());
+    pendingChunks = pendingChunks.filter(
+        (pending) => pending.generation !== generation || pending.inFlight || activeDocIds.has(pending.id)
+    );
+}
+
+function getActiveDocIds(): DocId[] {
+    return automergeRepository.getDocIds().sort((alpha, bravo) => {
+        if (alpha < bravo) {
+            return -1;
         }
+        if (alpha > bravo) {
+            return 1;
+        }
+        return 0;
+    });
+}
+
+function hasPersistedDocumentShapeChanged(activeDocIds: DocId[]): boolean {
+    if (activeDocIds.length !== persistedBaseDocIds.size) {
+        return true;
     }
+
+    return activeDocIds.some((id) => !persistedBaseDocIds.has(id));
+}
+
+function hasSameDocumentIds(bundle: DocumentBundle, docIds: DocId[]): boolean {
+    if (bundle.size !== docIds.length) {
+        return false;
+    }
+
+    return docIds.every((id) => bundle.has(id));
 }
 
 function removePendingChunk(pending: PendingIncrementalChunk): void {
