@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setLayerMix } from '../setLayerMix';
 
-import type { AdjustmentLayerState } from '../../stores/adjustmentLayer';
+import type { AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
     adjustmentLayerStoreValue: { value: { layers: [] } },
     adjustmentLayerStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
+vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
         get value() {
             return mocks.adjustmentLayerStoreValue.value;
