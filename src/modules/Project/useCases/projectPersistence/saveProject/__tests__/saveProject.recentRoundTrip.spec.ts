@@ -10,7 +10,7 @@ import type { ProjectStoreState } from '../../../../stores/projectStore';
 
 // save -> list -> load round-trip. saveProject is the producer the recent list
 // depends on: it must write a flat-JSON ProjectData snapshot under the recent
-// entry's key so loadRecentProject can reopen it. Real storageOperations
+// entry's key so loadRecentProject can reopen it. Real project storage
 // (localStorage in jsdom), real addToRecentProjects/getRecentProjects, real
 // loadRecentProject read path — only CRDT persist, the serializer, the audio
 // side effects, and store hydration are stubbed.

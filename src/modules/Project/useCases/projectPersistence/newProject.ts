@@ -5,7 +5,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { removeProjectJson } from '../../repositories/project/storageOperations';
+import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
 

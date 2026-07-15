@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 
-import { writeNamedProjectJsonByKey } from '../../../repositories/project/storageOperations';
+import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
