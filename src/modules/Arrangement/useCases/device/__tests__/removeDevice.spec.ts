@@ -4,8 +4,7 @@ import { removeDevice } from '../removeDevice';
 
 import type { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import type { unloadPlugin } from '#/modules/Plugin/useCases';
-import type { Device } from '../../../models/Device';
-import type { Track } from '../../../models/Track';
+import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
 import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
 
