@@ -7,6 +7,9 @@ owner: The Sourdaw team
 sources:
   - ../hardware-controller-ecosystem/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../../src/modules/Command/useCases/index.ts
+  - ../../../src/modules/Command/useCases/executeAppAction.ts
+  - ../../../src/modules/Command/useCases/commandQueries.ts
   - ../../../src/modules/MIDI/models/ControllerProfile.ts
   - ../../../src/modules/MIDI/useCases/hardware/importHardwareMappings.ts
   - ../../../src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts
@@ -191,7 +194,8 @@ Verify with: `pnpm test:run -- PushHardware`
 
 Every declarative controller-profile host boundary MUST accept only a schema-validated typed
 message union. Malformed messages and unknown kinds return the typed `INVALID_MESSAGE`
-rejection without dispatching an `AppAction` or writing to a MIDI output.
+rejection without dispatching an `AppAction` or writing to a MIDI output; attempts to provide
+binding authority are rejected under AC-024.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
@@ -199,8 +203,9 @@ valid, malformed, and unknown message kinds, plus `pnpm deps:validate`.
 
 ### AC-024 — Future controller-profile host binding
 
-The future host contract MUST validate declarative controller-profile data and capability
-requests against a `ControllerProfileBinding` carrying exactly:
+The future host contract MUST obtain each `ControllerProfileBinding` exclusively from a trusted
+connection/session-owned host component, then validate declarative controller-profile data and
+capability requests against that binding, which carries exactly:
 
 | Field | Contract |
 | --- | --- |
@@ -208,16 +213,23 @@ requests against a `ControllerProfileBinding` carrying exactly:
 | `allowedTargets` | The exact finite `{ deviceId, paramId }` tuples granted to this profile; no wildcard or self-selected target. |
 | `midiOutputId` | Exactly one bound MIDI output identifier. |
 
-Host-side schema validation finishes before an `AppAction` is created or bytes are sent. The
-finite initial capability union contains only `setDeviceParameter` and `sendMidi`. Typed
-rejections are `INVALID_MESSAGE`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`, and
-`OUTPUT_UNBOUND`. This binding, its schema validator, the owner lookup, the typed action mapping,
-and the MIDI-owned typed output port are unimplemented today; this is a future host contract.
+The binding is host-private, opaque runtime authority associated with the trusted connection or
+session out of band. It is never deserialized from or exposed as profile data, controller input,
+or a worker message; none of those untrusted channels can supply, replace, or expand its
+`profileId`, `allowedTargets`, or `midiOutputId`. Host-side binding-authenticity and message-schema
+validation finish before an `AppAction` is created or bytes are sent. The finite initial
+capability union contains only `setDeviceParameter` and `sendMidi`. Typed rejections are
+`INVALID_MESSAGE`, `BINDING_UNTRUSTED`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`, and
+`OUTPUT_UNBOUND`. This binding issuer, private authority registry, schema validator, owner lookup,
+typed action mapping, and MIDI-owned typed output port are unimplemented today; this is a future
+host contract.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
-binding shape, exact-target matching, one-output binding, pre-dispatch validation, and the four
-typed rejection outcomes; inspect the current profile surface and run `pnpm deps:validate`.
+host-issued binding setup, exact-target matching, one-output binding, and all five typed rejection
+outcomes. Forged/self-issued bindings and binding fields supplied through profile JSON,
+controller input, or worker messages are rejected as `BINDING_UNTRUSTED` before `AppAction`
+creation or MIDI send; inspect the current profile surface and run `pnpm deps:validate`.
 
 ### AC-025 — Declarative profiles are source-free data
 
@@ -248,27 +260,35 @@ after the surface exists, plus `pnpm deps:validate`.
 
 ### AC-026 — Exact setDeviceParameter grant
 
-After AC-024 validation, `setDeviceParameter` MUST require an exact `{ deviceId, paramId }` tuple
-in `allowedTargets`, a successful owner lookup for that tuple, and a finite `value`, then map only
-to the typed `setDeviceParameter` `AppAction`. A missing grant returns
-`CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup returns `TARGET_UNRESOLVED`; neither
-outcome dispatches an action.
+After AC-024 host-authority and message validation, `setDeviceParameter` MUST require an exact
+`{ deviceId, paramId }` tuple in `allowedTargets`, a successful owner lookup for that tuple, and a
+finite `value`, then dispatch only the typed `setDeviceParameter` `AppAction` through Command's
+public `executeAppAction` export from `#/modules/Command/useCases`. The host never calls Command's
+handler registry or a registered handler directly, invokes Arrangement's owning
+`setDeviceParameter` use case directly, or writes any store. A missing grant returns
+`CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup returns `TARGET_UNRESOLVED`; an
+untrusted binding returns `BINDING_UNTRUSTED`; none dispatches an action.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
-granted, denied, unresolved, non-finite, and unknown-target cases, plus `pnpm deps:validate`.
+granted, denied, unresolved, non-finite, unknown-target, and forged-binding cases. The granted case
+observes one exact call to the public `executeAppAction` contract; rejected cases observe no call,
+and the handler registry, owner use case, and stores are never invoked directly. Also run
+`pnpm deps:validate`.
 
 ### AC-027 — Bound sendMidi output
 
-After AC-024 validation, `sendMidi` MUST require the binding's single `midiOutputId` and an array
-of 1-1024 integer bytes, each in `0..255`, then route only through a MIDI-owned typed output port.
-An absent bound output returns `OUTPUT_UNBOUND`; invalid bytes return `INVALID_MESSAGE`; neither
-outcome sends bytes or creates a generic DAW command.
+After AC-024 host-authority and message validation, `sendMidi` MUST require the host-private
+binding's single `midiOutputId` and an array of 1-1024 integer bytes, each in `0..255`, then route
+only through a MIDI-owned typed output port. An absent bound output returns `OUTPUT_UNBOUND`;
+invalid bytes return `INVALID_MESSAGE`; a forged, self-issued, replaced, or expanded binding
+returns `BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
-valid bounds, empty/oversized/non-integer/out-of-range bytes, and unbound output, plus
-`pnpm deps:validate`.
+valid bounds, empty/oversized/non-integer/out-of-range bytes, unbound output, and attempts to
+supply or replace `midiOutputId` through each untrusted channel. Every forged/self-issued case is
+rejected before the MIDI-owned port receives bytes; also run `pnpm deps:validate`.
 
 ### AC-028 — Separate sandboxed script artifact
 

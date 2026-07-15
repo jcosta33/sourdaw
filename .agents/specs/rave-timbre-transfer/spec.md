@@ -37,22 +37,23 @@ No loaded-model AudioEngine/ONNX transfer path exists today. The current `loadMo
 marks a model `loaded` and records `activeModelId` in `raveStore`; it does not fetch model bytes,
 create an ONNX session or worker, or enable `transferTimbreToClip`. The four warning paths named
 under Current-state ownership are directly callable deterministic test helpers, not a product
-transfer implementation. Every model-backed requirement below is future work.
+transfer implementation. The store flag is not the verified session capability defined by AC-028.
+Every model-backed requirement below is future work.
 
 ## Requirements
 
 ### AC-001 — Real ONNX encode/decode round-trip
 
-The future `encodeAudioWithOnnx` → `decodeLatentWithOnnx` path through a genuinely loaded model
-MUST reproduce an identity model's input ramp within ±1e-3.
+The future `encodeAudioWithOnnx` → `decodeLatentWithOnnx` path through a genuinely loaded model as
+defined by AC-028 MUST reproduce an identity model's input ramp within ±1e-3.
 
 Verify with: `pnpm test:run -- rave`
 
 ### AC-002 — Loaded-model transfer inserts a clip
 
-A future `transferTimbreToClip` invocation with a genuinely loaded model MUST render output and
-insert a new clip on the source track through the existing clip-insertion path, honouring the
-`placement` mode.
+A future `transferTimbreToClip` invocation carrying the verified AC-028 session capability MUST
+render output and insert a new clip on the source track through the existing clip-insertion path,
+honouring the `placement` mode.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -65,7 +66,8 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-004 — Warm worker reuse
 
-Two concurrent `ensureRaveWorker` calls for the same model must return the same worker.
+Two concurrent `ensureRaveWorker` calls MUST coalesce only when both `modelId` and the SHA-256
+`modelDigest` of the selected model bytes match; a different digest is a different session key.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -76,14 +78,15 @@ contract:
 
 | Input condition | Result | Pure-helper behavior |
 | --- | --- | --- |
-| No model is loaded | `MODEL_NOT_LOADED` | No invocation of `encodeAudio`, `decodeLatent`, `timbreTransfer`, or `interpolateLatent` |
-| Loaded model; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | Not applicable |
-| Loaded model; invalid clip-type input | `CLIP_NOT_AUDIO` | Not applicable |
+| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, wrong-model-or-digest, or fabricated-capability input | `MODEL_NOT_LOADED` | No invocation of `encodeAudio`, `decodeLatent`, `timbreTransfer`, or `interpolateLatent`; no worker/session request |
+| Verified session capability; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | Not applicable |
+| Verified session capability; invalid clip-type input | `CLIP_NOT_AUDIO` | Not applicable |
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 covering no-model, sample-rate, and clip-type error paths and asserting that no-model execution
-does not invoke a pure helper.
+does not invoke a pure helper or worker/session. Flag-only, deterministic-shim, fake-worker,
+wrong-model-or-digest, and fabricated-capability cases each return `MODEL_NOT_LOADED`.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -164,8 +167,9 @@ Verify with: `pnpm test:run -- RavePanel`
 
 ### AC-017 — Model browser with factory list and custom import
 
-The panel's model-browser column MUST list the 5 factory models, each with a size badge and its
-download/loaded state, plus an "Import custom .onnx" control for caching a user-supplied model.
+The panel's model-browser column MUST list the 5 factory models, each with a size badge, separate
+download/cache and verified AC-028 session states, plus an "Import custom .onnx" control for
+caching a user-supplied model. A store flag alone is never presented as a loaded session.
 
 Verify with: `pnpm test:run -- RavePanel`
 
@@ -252,21 +256,43 @@ dimensions defaulting to `0`, and deep-equality snapshots proving neither input 
 
 ### AC-027 — Model-backed transfer provenance
 
-A future `transferTimbreToClip` invocation with a genuinely loaded model MUST derive its rendered
-audio, cache entry, and inserted clip bytes from the named worker's ONNX
-`encodeAudioWithOnnx` -> `decodeLatentWithOnnx` result. The owning test makes that model result
-intentionally different from every pure-helper result and proves the rendered, cached, and
-inserted bytes equal the model result; pure-helper output cannot satisfy model-backed transfer.
+A future `transferTimbreToClip` invocation with the verified AC-028 session capability MUST derive
+its rendered audio, cache entry, and inserted clip bytes from encode/decode requests received by
+that capability's named worker and worker-owned `onnxruntime-web` session. The owning test observes
+the verified session receive both encode and decode, makes its result intentionally different from
+every pure-helper result, and proves the rendered, cached, and inserted bytes equal the session
+result; pure-helper output cannot satisfy model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
-asserting model-distinguishable bytes at render, cache, and insertion boundaries.
+asserting the verified session's encode/decode calls and model-distinguishable bytes at render,
+cache, and insertion boundaries.
+
+### AC-028 — Verified ONNX session capability
+
+A future model-backed transfer MUST accept a model as genuinely loaded only through an opaque,
+unforgeable, non-serializable `RaveSessionCapability` issued by the trusted RAVE worker host after
+the named worker successfully initializes an `onnxruntime-web` session from the exact selected
+model bytes and binds that session to `{ modelId, modelDigest }`, where `modelDigest` is the SHA-256
+digest of those bytes. Capability authenticity plus the model identity and digest bindings are
+verified against the host-private session registry before transfer; the capability and session
+never enter `raveStore`, project data, or caller-supplied worker messages. A `loaded` store flag,
+deterministic helper or shim, worker-like object, wrong model identity or digest, or fabricated
+capability is not loaded and returns `MODEL_NOT_LOADED` before render, cache, insertion,
+pure-helper invocation, or worker/session request. This contract is unimplemented today.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
+obtaining a capability only through successful worker/session initialization for selected bytes,
+then proving flag-only, deterministic-shim, fake-worker, wrong-model-or-digest, and
+fabricated-capability inputs return `MODEL_NOT_LOADED` while the verified capability reaches the
+bound session.
 
 ## Current-state ownership
 
 The four current `no-orphans` paths are direct deterministic CI/test helpers only. Their green
 tests are intentionally non-retiring and do not prove the model-backed product contracts in
-AC-001 through AC-005 or AC-027:
+AC-001 through AC-005, AC-027, or AC-028:
 
 | Current warning path | Current disposition | Required future helper path | Warning closes only when |
 | --- | --- | --- | --- |
@@ -277,8 +303,9 @@ AC-001 through AC-005 or AC-027:
 
 Direct helper availability, passing CI tests, and product reachability are not warning retirement
 conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024` and `AC-026`
-own the direct test contracts and exact relocation; `AC-027` owns model-result provenance. This
-spec retains all four current files and does not authorize a silent product fallback.
+own the direct test contracts and exact relocation; `AC-027` owns model-result provenance; and
+`AC-028` owns loaded-session authenticity. This spec retains all four current files and does not
+authorize a silent product fallback.
 
 ## Constraints
 

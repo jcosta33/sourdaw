@@ -166,5 +166,7 @@ explicitly non-retiring.
   `__tests__/helpers/` path with tests/contract preserved before that current path is
   retired, unless an explicit superseding ADR names the exact path; product reachability
   and green helper tests MUST NOT close the warning.
-- Future loaded-model RAVE transfer MUST derive rendered, cached, and inserted audio from the
+- Future loaded-model RAVE transfer MUST derive rendered, cached, and inserted audio through the
+  verified session capability in
+  [RAVE AC-028](../rave-timbre-transfer/spec.md#ac-028--verified-onnx-session-capability) from its
   worker/ONNX encode-decode result; pure-helper output MUST NOT satisfy that product contract.
