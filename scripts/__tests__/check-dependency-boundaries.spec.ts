@@ -724,6 +724,61 @@ describe('check-dependency-boundaries', () => {
                     "function cleanRuntime() { return invoke('clean-runtime'); }",
                     'module.exports = cleanRuntime;',
                 ],
+                'commonjs-assign-exports.cjs': [
+                    'const source = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    exposed(args) { return args; },',
+                    '};',
+                    'Object.assign(exports, source);',
+                ],
+                'commonjs-assign-module.cjs': [
+                    "const computedName = 'computedExposed';",
+                    "const clean = { runtimeOnly: () => 'clean' };",
+                    'const leaked = {',
+                    "    /** @returns {import('@tauri-apps/api/core').InvokeArgs} */",
+                    '    get [computedName]() { return null; },',
+                    '};',
+                    'Object.assign(module.exports, clean, leaked);',
+                ],
+                'commonjs-assign-dynamic.cjs': [
+                    '/** @returns {any} */',
+                    'function loadExports() {',
+                    '    return {',
+                    "        /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '        dynamicLeak(args) { return args; },',
+                    '    };',
+                    '}',
+                    'Object.assign(exports, loadExports());',
+                ],
+                'commonjs-assign-shadowed.cjs': [
+                    'const Object = { assign() {} };',
+                    'Object.assign(exports, {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    shadowed(args) { return args; },',
+                    '});',
+                ],
+                'commonjs-assign-clean-runtime.cjs': [
+                    "const { invoke } = require('@tauri-apps/api/core');",
+                    '/** @type {{ runtimeOnly(): Promise<string> }} */',
+                    "const runtime = { runtimeOnly: () => invoke('assign-clean-runtime') };",
+                    'Object.assign(exports, runtime);',
+                ],
+                'commonjs-assign-overwrite.cjs': [
+                    'const leaked = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    overwritten(args) { return args; },',
+                    '};',
+                    "const clean = { overwritten() { return 'clean'; } };",
+                    'Object.assign(exports, leaked, clean);',
+                ],
+                'commonjs-assign-replaced.cjs': [
+                    'const source = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    replaced(args) { return args; },',
+                    '};',
+                    'Object.assign(module.exports, source);',
+                    "module.exports = { replaced() { return 'clean'; } };",
+                ],
                 'import-type-source.ts': [
                     "export type Leaked = import('@tauri-apps/api/core').InvokeArgs;",
                     'export type Clean = string;',
@@ -741,6 +796,13 @@ describe('check-dependency-boundaries', () => {
                     "const { hiddenMethod } = require('../repositories/commonjs-fallback');",
                     "const { unknownMethod } = require('../repositories/commonjs-partial');",
                     "const { unknownClean } = require('../repositories/commonjs-clean-runtime');",
+                    "const { exposed } = require('../repositories/commonjs-assign-exports');",
+                    "const { computedExposed } = require('../repositories/commonjs-assign-module');",
+                    "const { dynamicLeak } = require('../repositories/commonjs-assign-dynamic');",
+                    "const { shadowed } = require('../repositories/commonjs-assign-shadowed');",
+                    "const { runtimeOnly } = require('../repositories/commonjs-assign-clean-runtime');",
+                    "const { overwritten } = require('../repositories/commonjs-assign-overwrite');",
+                    "const { replaced } = require('../repositories/commonjs-assign-replaced');",
                     '',
                     "export type ExternalMember = import('../repositories/import-type-source').Leaked;",
                     "export type ExternalQualified = import('../repositories/import-type-source').Api.Leaked;",
@@ -757,6 +819,13 @@ describe('check-dependency-boundaries', () => {
                     'void hiddenMethod;',
                     'void unknownMethod;',
                     'void unknownClean;',
+                    'void exposed;',
+                    'void computedExposed;',
+                    'void dynamicLeak;',
+                    'void shadowed;',
+                    'void runtimeOnly;',
+                    'void overwritten;',
+                    'void replaced;',
                 ],
             });
 
@@ -767,11 +836,13 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/commonjs-surface.cjs', 5),
                     vendorFinding('src/modules/Foo/repositories/commonjs-fallback.cjs', 5),
                     vendorFinding('src/modules/Foo/repositories/commonjs-partial.cjs', 1),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-exports.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-module.cjs', 7),
                     vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 1),
                     vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 3),
                 ])
             );
-            expect(vendorFindings).toHaveLength(5);
+            expect(vendorFindings).toHaveLength(7);
             expect(vendorFindings).not.toEqual(
                 expect.arrayContaining([
                     vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 3),
@@ -779,6 +850,11 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 5),
                     vendorFinding('src/modules/Foo/repositories/factory-runtime.ts', 3),
                     vendorFinding('src/modules/Foo/repositories/commonjs-clean-runtime.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-dynamic.cjs', 8),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-shadowed.cjs', 2),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-clean-runtime.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-overwrite.cjs', 6),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-assign-replaced.cjs', 5),
                 ])
             );
         } finally {

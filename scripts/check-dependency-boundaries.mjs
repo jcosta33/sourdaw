@@ -370,6 +370,25 @@ function commonJsExportName(left) {
     return propertyNameText(name);
 }
 
+function hasLocalDeclaration(context, sourceFile, identifier) {
+    try {
+        const symbol = context.checker.getSymbolAtLocation(identifier);
+        return (symbol?.declarations ?? []).some((declaration) => declaration.getSourceFile() === sourceFile);
+    } catch {
+        return true;
+    }
+}
+
+function isUnshadowedCommonJsTarget(context, sourceFile, node) {
+    if (isIdentifierNamed(node, 'exports')) {
+        return !hasLocalDeclaration(context, sourceFile, node);
+    }
+    if (!isModuleExportsObject(node)) {
+        return false;
+    }
+    return !hasLocalDeclaration(context, sourceFile, node.expression);
+}
+
 function createRepositoryTypeEnvironment(repositoryRoot) {
     const options = {
         allowJs: true,
@@ -876,32 +895,85 @@ function addDeclarationRecord(context, sourceFile, statement, declaration, expor
     });
 }
 
-function enumerateCommonJsProperties(context, sourceFile, statement, valueNode) {
-    let properties;
+function commonJsPropertyRecords(context, sourceFile, statement, valueNode) {
+    let type;
     try {
-        const type = context.checker.getTypeAtLocation(valueNode);
+        type = context.checker.getTypeAtLocation(valueNode);
         if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
-            return false;
+            return null;
         }
-        properties = type.getProperties?.() ?? null;
+        if (type.getStringIndexType?.() || type.getNumberIndexType?.()) {
+            return null;
+        }
     } catch {
-        return false;
+        return null;
     }
+    const properties = type.getProperties?.() ?? null;
     if (!properties) {
+        return null;
+    }
+    return properties
+        .filter((symbol) => !symbol.name.startsWith('__@'))
+        .map((symbol) => {
+            const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0] ?? null;
+            return {
+                diagnosticNode: statement,
+                exportedName: symbol.name,
+                isCommonJs: true,
+                symbol,
+                symbolNode: declaration?.name ?? declaration,
+                valueNode: declaration ?? valueNode,
+            };
+        });
+}
+
+function enumerateCommonJsProperties(context, sourceFile, statement, valueNode) {
+    const records = commonJsPropertyRecords(context, sourceFile, statement, valueNode);
+    if (!records) {
         return false;
     }
-    for (const symbol of properties) {
-        const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0] ?? null;
-        addRepositoryRecord(context, sourceFile, {
-            diagnosticNode: statement,
-            exportedName: symbol.name,
-            isCommonJs: true,
-            symbol,
-            symbolNode: declaration?.name ?? declaration,
-            valueNode: declaration ?? valueNode,
-        });
+    for (const record of records) {
+        addRepositoryRecord(context, sourceFile, record);
     }
     return true;
+}
+
+function collectCommonJsObjectAssign(context, sourceFile, node) {
+    if (!ts.isCallExpression(node) || node.arguments.length < 2) {
+        return;
+    }
+    const callee = node.expression;
+    if (
+        !ts.isPropertyAccessExpression(callee) ||
+        !isIdentifierNamed(callee.expression, 'Object') ||
+        !isIdentifierNamed(callee.name, 'assign') ||
+        hasLocalDeclaration(context, sourceFile, callee.expression)
+    ) {
+        return;
+    }
+    const statement = node.parent;
+    if (
+        !ts.isExpressionStatement(statement) ||
+        statement.parent !== sourceFile ||
+        !isUnshadowedCommonJsTarget(context, sourceFile, node.arguments[0])
+    ) {
+        return;
+    }
+
+    const recordsByName = new Map();
+    for (const source of node.arguments.slice(1)) {
+        const records = commonJsPropertyRecords(context, sourceFile, statement, source);
+        if (!records) {
+            recordsByName.clear();
+            continue;
+        }
+        for (const record of records) {
+            recordsByName.set(record.exportedName, record);
+        }
+    }
+    for (const record of recordsByName.values()) {
+        addRepositoryRecord(context, sourceFile, record);
+    }
 }
 
 function collectExportRecords(context, sourceFile) {
@@ -986,6 +1058,7 @@ function collectExportRecords(context, sourceFile) {
     }
 
     const visitCommonJs = (node) => {
+        collectCommonJsObjectAssign(context, sourceFile, node);
         if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
             const propertyName = commonJsExportName(node.left);
             const isWholeModuleAssignment =
