@@ -16,6 +16,7 @@ type AutomergeStorageMutationInput = {
     docId: AutomergeStorageDocId;
     changeFn: (doc: AutomergeStorageMutableDoc) => void;
     message?: string;
+    snapshotTransaction?: object;
 };
 
 type AutomergeStoragePort = {
@@ -23,6 +24,7 @@ type AutomergeStoragePort = {
     hasDoc(docId: AutomergeStorageDocId): boolean;
     getDoc(docId: AutomergeStorageDocId): AutomergeStorageReadableDoc | undefined;
     mutateDoc(input: AutomergeStorageMutationInput): void;
+    waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
 type AutomergeStorageOptions<TData> = {
@@ -33,13 +35,36 @@ type AutomergeStorageOptions<TData> = {
 };
 
 let automergeStoragePort: AutomergeStoragePort | null = null;
-const pendingAutomergeStorageWrites = new Set<() => void>();
+type PendingAutomergeStorageWrite = {
+    readonly snapshotTransaction: object | undefined;
+    readonly flush: () => void;
+};
 
-export function flushAutomergeStorageWrites(): void {
+const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
+let activeAutomergeStorageTransaction: object | undefined;
+
+/** Scope one synchronous action write path to an opaque snapshot transaction. */
+export function runWithAutomergeStorageTransaction<Result>(
+    snapshotTransaction: object | undefined,
+    callback: () => Result
+): Result {
+    const previousTransaction = activeAutomergeStorageTransaction;
+    activeAutomergeStorageTransaction = snapshotTransaction;
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageTransaction = previousTransaction;
+    }
+}
+
+export function flushAutomergeStorageWrites(snapshotTransaction?: object): void {
     let firstError: unknown;
-    for (const flush of [...pendingAutomergeStorageWrites]) {
+    for (const pending of [...pendingAutomergeStorageWrites]) {
+        if (snapshotTransaction !== undefined && pending.snapshotTransaction !== snapshotTransaction) {
+            continue;
+        }
         try {
-            flush();
+            pending.flush();
         } catch (error) {
             firstError ??= error;
         }
@@ -58,6 +83,10 @@ export function configureAutomergeStoragePort(port: AutomergeStoragePort | null)
 const getAutomergeStoragePort = (): AutomergeStoragePort | null => {
     return automergeStoragePort;
 };
+
+export function waitForAutomergeSnapshotTransaction(snapshotTransaction?: object): Promise<void> {
+    return getAutomergeStoragePort()?.waitForSnapshotTransaction?.(snapshotTransaction) ?? Promise.resolve();
+}
 
 /**
  * A storage adapter that persists store state in an Automerge CRDT document.
@@ -92,6 +121,7 @@ export const createAutomergeStorage = <TData>(
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
+    let pendingWrite: PendingAutomergeStorageWrite | null = null;
     /**
      * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
      * skip re-stringifying cachedValue on every sync message when the
@@ -102,7 +132,7 @@ export const createAutomergeStorage = <TData>(
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
-    const writeToCrdt = (value: TData | null, message?: string): void => {
+    const writeToCrdt = (value: TData | null, message?: string, snapshotTransaction?: object): void => {
         const port = getAutomergeStoragePort();
         if (!port) {
             return;
@@ -124,6 +154,7 @@ export const createAutomergeStorage = <TData>(
                 }
             },
             message,
+            snapshotTransaction,
         });
     };
 
@@ -131,15 +162,31 @@ export const createAutomergeStorage = <TData>(
         return getAutomergeStoragePort()?.getSemanticMessage();
     };
 
-    const flushPendingWrite = (): void => {
+    const flushPendingWrite = (write: PendingAutomergeStorageWrite): void => {
+        if (pendingWrite !== write) {
+            return;
+        }
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
             rafId = null;
         }
-        pendingAutomergeStorageWrites.delete(flushPendingWrite);
+        pendingAutomergeStorageWrites.delete(write);
+        pendingWrite = null;
         const message = pendingMessage;
         pendingMessage = undefined;
-        writeToCrdt(cachedValue, message);
+        writeToCrdt(cachedValue, message, write.snapshotTransaction);
+    };
+
+    const discardPendingWrite = (): void => {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        if (pendingWrite) {
+            pendingAutomergeStorageWrites.delete(pendingWrite);
+            pendingWrite = null;
+        }
+        pendingMessage = undefined;
     };
 
     return {
@@ -148,9 +195,13 @@ export const createAutomergeStorage = <TData>(
         },
 
         set(value: TData | null): void {
+            const snapshotTransaction = activeAutomergeStorageTransaction;
+            if (pendingWrite && pendingWrite.snapshotTransaction !== snapshotTransaction) {
+                flushPendingWrite(pendingWrite);
+            }
             cachedValue = value;
 
-            if (rafId === null) {
+            if (!pendingWrite) {
                 // Capture the semantic context now, while the caller's context
                 // is live. The actual write is deferred to the next animation
                 // frame; by the time it fires, `executeAppAction` has already
@@ -158,11 +209,16 @@ export const createAutomergeStorage = <TData>(
                 // RAF would always see `null` and record `message: undefined`.
                 // The first `set()` of a frame owns the coalesced write's message.
                 pendingMessage = getSemanticMessage();
-                pendingAutomergeStorageWrites.add(flushPendingWrite);
+                const write: PendingAutomergeStorageWrite = {
+                    snapshotTransaction,
+                    flush: () => flushPendingWrite(write),
+                };
+                pendingWrite = write;
+                pendingAutomergeStorageWrites.add(write);
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     try {
-                        flushPendingWrite();
+                        flushPendingWrite(write);
                     } catch (error) {
                         logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
                     }
@@ -171,19 +227,18 @@ export const createAutomergeStorage = <TData>(
         },
 
         clear(): void {
+            const snapshotTransaction = activeAutomergeStorageTransaction;
+            if (pendingWrite && pendingWrite.snapshotTransaction !== snapshotTransaction) {
+                flushPendingWrite(pendingWrite);
+            }
             cachedValue = null;
             // Flush immediately on clear rather than batching. The write is
             // synchronous here, so the caller's semantic context (set by
             // `executeAppAction`) is still live and can annotate the change.
             const message = getSemanticMessage();
-            if (rafId !== null) {
-                cancelAnimationFrame(rafId);
-                rafId = null;
-            }
-            pendingAutomergeStorageWrites.delete(flushPendingWrite);
-            pendingMessage = undefined;
+            discardPendingWrite();
             try {
-                writeToCrdt(null, message);
+                writeToCrdt(null, message, snapshotTransaction);
             } catch {
                 // Best-effort
             }

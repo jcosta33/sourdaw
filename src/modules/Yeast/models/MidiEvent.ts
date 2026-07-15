@@ -16,6 +16,8 @@ export type MidiEvent = {
     /** Absolute sample time on the global timeline. */
     timeSamples: number;
     kind: MidiEventKind;
+    /** Originating instrument track for runtime routing and panic recovery. */
+    trackId?: string;
 };
 
 export type TransportInfo = {

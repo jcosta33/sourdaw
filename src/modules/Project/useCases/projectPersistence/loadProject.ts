@@ -33,11 +33,11 @@ export async function loadProject(): Promise<boolean> {
             await createCrdtProject('Untitled Project');
         }
     } catch (error) {
-        logger.warn('[loadProject] CRDT load failed, creating new project:', error);
         if (!transaction.isCurrent()) {
             return false;
         }
-        await createCrdtProject('Untitled Project');
+        logger.error(new Error('[loadProject] CRDT load failed; preserving persisted project', { cause: error }));
+        throw error;
     }
 
     if (!transaction.isCurrent()) {

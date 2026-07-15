@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
@@ -87,6 +88,16 @@ describe('Project Persistence Use Cases', () => {
     });
 
     describe('loadProject', () => {
+        it('creates a new project only after the authoritative load reports absence', async () => {
+            mocks.loadCrdtProject.mockResolvedValue(false);
+
+            await expect(loadProject()).resolves.toBe(true);
+
+            expect(mocks.loadCrdtProject).toHaveBeenCalledWith({ shouldCommit: expect.any(Function) });
+            expect(mocks.createCrdtProject).toHaveBeenCalledWith('Untitled Project');
+            expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+        });
+
         it('loads CRDT and hydrates stores without publishing an abortable loading state', async () => {
             mocks.loadCrdtProject.mockResolvedValue(true);
 
@@ -103,6 +114,34 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
             expect(mocks.clearUndoHistory).toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
+        });
+
+        it('does not create or mutate a replacement project when persistence rejects', async () => {
+            const persistenceFailure = new Error('[CrdtPersistence] Failed to open IndexedDB');
+            mocks.loadCrdtProject.mockRejectedValue(persistenceFailure);
+
+            await expect(loadProject()).rejects.toThrow(persistenceFailure);
+
+            expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.getCrdtDoc).not.toHaveBeenCalled();
+            expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+            expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        });
+
+        it('returns benign false without creating a project when a newer load cancels it', async () => {
+            mocks.loadCrdtProject.mockImplementationOnce(() => {
+                const newerLoad = runProjectLoadTransaction();
+                newerLoad.activate();
+                return Promise.resolve(false);
+            });
+
+            await expect(loadProject()).resolves.toBe(false);
+
+            expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
         });
     });
 

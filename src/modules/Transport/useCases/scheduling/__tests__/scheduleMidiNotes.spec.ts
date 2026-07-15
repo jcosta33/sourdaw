@@ -10,12 +10,12 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { scheduleNote } from '#/modules/Synth/useCases';
-import { getYeastRack } from '#/modules/Yeast/stores';
+import { processYeastMidi } from '#/modules/Yeast/useCases';
 
-import { getTempoAtBeat } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
-import { scheduleFrozenTrack, scheduleMidiNotes } from '../scheduleMidiNotes';
+import { scheduleFrozenTrack, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -23,14 +23,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
 }));
-vi.mock('../../stores/tempoMapStore', () => ({
+vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
-}));
-vi.mock('../../../models/TempoMap', () => ({
-    getTempoAtBeat: vi.fn(() => 120),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
@@ -56,9 +53,8 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
 }));
-vi.mock('#/modules/Yeast/stores', () => ({
-    getYeastRack: vi.fn(() => ({ getProcessorIds: () => [], processBlock: vi.fn() })),
-    getYeastWorkletNodeAsync: vi.fn(() => null),
+vi.mock('#/modules/Yeast/useCases', () => ({
+    processYeastMidi: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
@@ -97,10 +93,11 @@ describe('scheduleMidiNotes', () => {
         vi.clearAllMocks();
         (trackStore as { value: unknown }).value = { tracks: [] };
         (midiStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) => clips);
         vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
-        vi.mocked(getTempoAtBeat).mockReturnValue(120);
+        vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {
@@ -148,16 +145,18 @@ describe('scheduleMidiNotes', () => {
         // Empty source clip — no authored notes.
         (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': [] } };
 
-        // Yeast rack with a processor that emits a generated note.
-        vi.mocked(getYeastRack).mockReturnValue({
-            getProcessorIds: () => ['gen'],
-            processBlock: vi.fn(() => [
-                { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
-                { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
-            ]),
-        } as never);
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
+            { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
 
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: track.id,
+            })
+        );
 
         // The generated note reaches the synth as a complete note built from the
         // default template (rather than being dropped or silently malformed).
@@ -169,10 +168,42 @@ describe('scheduleMidiNotes', () => {
         // Probability defaults to 100 from the template, so the note is not gated out.
     });
 
-    // §2 — A looping Yeast clip must run the worklet once per loop iteration so a
+    it('drops transformed MIDI when the scheduler generation is cancelled during Yeast processing', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        };
+
+        type YeastProcessResult = Awaited<ReturnType<typeof processYeastMidi>>;
+        let resolveYeast!: (events: YeastProcessResult) => void;
+        const pendingYeast = new Promise<YeastProcessResult>((resolve) => {
+            resolveYeast = resolve;
+        });
+        vi.mocked(processYeastMidi).mockReturnValueOnce(pendingYeast);
+        let current = true;
+        const cancellation: SchedulerCancellation = {
+            generation: 1,
+            isCurrent: () => current,
+        };
+
+        const scheduling = scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120, cancellation);
+        await Promise.resolve();
+        current = false;
+        resolveYeast([
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+            { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
+
+        await scheduling;
+
+        expect(scheduleNote).not.toHaveBeenCalled();
+    });
+
+    // §2 — A looping Yeast clip must run the Worker once per loop iteration so a
     // bar-aware processor sees iter-correct event positions, instead of running
     // once and replaying one iteration's output at every offset.
-    it('runs the Yeast worklet per loop iteration over a looping clip (§2)', async () => {
+    it('runs the Yeast Worker per loop iteration over a looping clip (§2)', async () => {
         const track = midiTrack({
             clips: [midiClip({ endBeat: 8, loopEnabled: true, loopLength: 2 })],
             devices: [{ id: 'y', type: 'yeast' }],
@@ -183,23 +214,21 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         };
 
-        // Record the noteOn sample positions the worklet sees per call. The
+        // Record the noteOn sample positions the Worker sees per call. The
         // processor echoes its input back so we observe per-iteration placement.
         const seenNoteOnSamples: number[][] = [];
-        const processBlock = vi.fn((events: { timeSamples: number; kind: { type: string } }[]) => {
+        const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
+            const events = input.events;
             seenNoteOnSamples.push(events.filter((e) => e.kind.type === 'noteOn').map((e) => e.timeSamples));
             return events;
         });
-        vi.mocked(getYeastRack).mockReturnValue({
-            getProcessorIds: () => ['gen'],
-            processBlock,
-        } as never);
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         // clip endBeat 8, loopLength 2 => ceil(8/2) = 4 iterations.
         await scheduleMidiNotes(0, 8, 0, -1, [], defaultTransportState, 120);
 
-        // The worklet ran once per iteration (was once total before the fix).
-        expect(processBlock).toHaveBeenCalledTimes(4);
+        // The Worker ran once per iteration (was once total before the fix).
+        expect(processYeast).toHaveBeenCalledTimes(4);
         // Each iteration placed its note at a distinct, iteration-shifted sample
         // position (2 beats apart at 120bpm/48k = 48000 samples), not a single
         // replayed position.
@@ -216,20 +245,72 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
         };
         // Tempo map reports 240bpm at the block; transport.tempo stays at 120.
-        vi.mocked(getTempoAtBeat).mockReturnValue(240);
+        (tempoMapStore as { value: unknown }).value = {
+            changes: [{ id: 'tempo-0', beat: 0, tempo: 240, curve: 'instant' }],
+        };
 
         let seenNoteOnSample: number | undefined;
-        const processBlock = vi.fn((events: { timeSamples: number; kind: { type: string } }[]) => {
-            seenNoteOnSample = events.find((e) => e.kind.type === 'noteOn')?.timeSamples;
-            return events;
+        const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
+            seenNoteOnSample = input.events.find((e) => e.kind.type === 'noteOn')?.timeSamples;
+            return input.events;
         });
-        vi.mocked(getYeastRack).mockReturnValue({ getProcessorIds: () => ['gen'], processBlock } as never);
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
 
         // spb = 240/60 = 4; beat 1 => round(1 * 48000 / 4) = 12000.
         // Flat-tempo (buggy) spb = 120/60 = 2 would give 24000.
         expect(seenNoteOnSample).toBe(12000);
+    });
+
+    it('uses integrated samples and drains a spanning note-off in the post-change Worker block', async () => {
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n0', pitch: 60, startBeat: 3, duration: 2, velocity: 100 }],
+            },
+        };
+        (tempoMapStore as { value: unknown }).value = {
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 4, tempo: 240, curve: 'instant' },
+            ],
+        };
+        const retained: Array<{ timeSamples: number; kind: { type: string } }> = [];
+        const processYeast = vi.fn(
+            async (input: {
+                events: Array<{ timeSamples: number; kind: { type: string } }>;
+                blockStartSamples: number;
+                blockEndSamples: number;
+                transport: { bpm: number; ppqPosition: number };
+            }) => {
+                retained.push(...input.events);
+                const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
+                const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
+                retained.splice(0, retained.length, ...future);
+                return due as Awaited<ReturnType<typeof processYeastMidi>>;
+            }
+        );
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
+
+        await scheduleMidiNotes(3, 6, 3, -1, [], defaultTransportState, 120);
+
+        expect(processYeast).toHaveBeenCalledTimes(2);
+        expect(processYeast.mock.calls.map(([input]) => input.blockStartSamples)).toEqual([72000, 96000]);
+        expect(processYeast.mock.calls.map(([input]) => input.blockEndSamples)).toEqual([96000, 120000]);
+        expect(processYeast.mock.calls.map(([input]) => input.transport)).toEqual([
+            expect.objectContaining({ bpm: 120, ppqPosition: 3 }),
+            expect.objectContaining({ bpm: 240, ppqPosition: 4 }),
+        ]);
+        expect(processYeast.mock.calls[0]![0].events.map((event) => event.timeSamples)).toEqual([72000, 108000]);
+        expect(processYeast.mock.calls[1]![0].events).toEqual([]);
+        expect(retained).toEqual([]);
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.75);
     });
 
     // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time
@@ -250,18 +331,16 @@ describe('scheduleMidiNotes', () => {
         };
 
         let seenTransport: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number } | undefined;
-        const processBlock = vi.fn(
-            (
-                _events: unknown,
-                _start: number,
-                _end: number,
-                transportInfo: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number }
-            ) => {
-                seenTransport = transportInfo;
-                return [];
+        const processYeast = vi.fn(
+            (input: {
+                transport: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number };
+                events: unknown[];
+            }) => {
+                seenTransport = input.transport;
+                return Promise.resolve([]);
             }
         );
-        vi.mocked(getYeastRack).mockReturnValue({ getProcessorIds: () => ['gen'], processBlock } as never);
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         // Block starts at beat 6 — bar 3 (index 2), beat 1 in 3/4. Flat 4/4 (buggy)
         // would report barIndex floor(6/4)=1, beatInBar 6%4=2, timeSigNum 4.

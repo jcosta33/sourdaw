@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
@@ -84,12 +86,31 @@ describe('handleWebMidiCC', () => {
 
     it('should store MPE slide on the active note for the matching channel', () => {
         mpe_enabled.value = true;
-        activeNotes.set(60, { channel: 4, startTime: 0, startBeat: 0 });
-        channelToNote.set(4, 60);
+        const matchingKey = createWebMidiNoteKey(4, 60);
+        const otherKey = createWebMidiNoteKey(5, 60);
+        activeNotes.set(matchingKey, {
+            channel: 4,
+            note: 60,
+            trackId: 'track-a',
+            instrumentTrackId: 'track-a',
+            startTime: 0,
+            startBeat: 0,
+        });
+        activeNotes.set(otherKey, {
+            channel: 5,
+            note: 60,
+            trackId: 'track-b',
+            instrumentTrackId: 'track-b',
+            startTime: 0,
+            startBeat: 0,
+        });
+        channelToNote.set(4, matchingKey);
+        channelToNote.set(5, otherKey);
         const fn = handleWebMidiCC._factory(make_dependencies());
 
         fn(4, 74, 52);
 
-        expect(activeNotes.get(60)?.slide).toBe(52);
+        expect(activeNotes.get(matchingKey)?.slide).toBe(52);
+        expect(activeNotes.get(otherKey)?.slide).toBeUndefined();
     });
 });

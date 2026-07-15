@@ -4,6 +4,7 @@ vi.mock('#/utils/tauriBridge', () => ({
     isTauri: () => false,
 }));
 
+import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 import { getSnapshot } from '../getSnapshot';
 import { getState } from '../getState';
 import { resetMidiState } from '../lifecycle/resetMidiState';
@@ -44,8 +45,16 @@ describe('webMidi state accessors', () => {
     });
 
     it('should share singleton runtime maps with lifecycle cleanup', () => {
-        activeNotes.set(60, { channel: 1, startTime: 0, startBeat: 0 });
-        channelToNote.set(1, 60);
+        const key = createWebMidiNoteKey(1, 60);
+        activeNotes.set(key, {
+            channel: 1,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+        channelToNote.set(1, key);
         midiLearn.active = true;
         midiLearn.callback = vi.fn();
 

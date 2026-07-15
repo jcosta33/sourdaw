@@ -4,6 +4,7 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
+import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
@@ -29,6 +30,7 @@ export function pausePlayback(): void {
     // empty session/clip sets).
     stopActiveRecording();
 
+    panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();

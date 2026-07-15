@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
+import {
+    configureAutomergeStoragePort,
+    createAutomergeStorage,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
@@ -74,6 +79,12 @@ describe('executeAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
     });
 
     it('logs error if no handler is found', async () => {
@@ -95,6 +106,89 @@ describe('executeAppAction', () => {
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+    });
+
+    it('waits for snapshot ownership before describing or executing an action', async () => {
+        let releaseWait!: () => void;
+        const wait = new Promise<void>((resolve) => {
+            releaseWait = resolve;
+        });
+        const waitForSnapshotTransaction = vi.fn(() => wait);
+        configureAutomergeStoragePort({
+            getDoc: () => undefined,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => false,
+            mutateDoc: () => undefined,
+            waitForSnapshotTransaction,
+        });
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+        await Promise.resolve();
+
+        expect(waitForSnapshotTransaction).toHaveBeenCalledWith(undefined);
+        expect(handler.describe).not.toHaveBeenCalled();
+        expect(handler.execute).not.toHaveBeenCalled();
+
+        releaseWait();
+        await execution;
+        expect(handler.describe).toHaveBeenCalledOnce();
+        expect(handler.execute).toHaveBeenCalledWith(action);
+    });
+
+    it('scopes the snapshot transaction to storage writes made by the action', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const snapshotTransaction = {};
+        const mutations: Array<{ snapshotTransaction?: object }> = [];
+        const doc: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn, snapshotTransaction: mutationTransaction }) => {
+                changeFn(doc);
+                mutations.push({ snapshotTransaction: mutationTransaction });
+            },
+        });
+        const storage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => storage.set({ tool: 'marquee' }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipUndo: true, snapshotTransaction });
+        flushAutomergeStorageWrites(snapshotTransaction);
+
+        expect(mutations).toEqual([{ snapshotTransaction }]);
+        expect(doc.editingTool).toEqual({ tool: 'marquee' });
+    });
+
+    it('suppresses macro recording independently of undo-history recording', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipMacroRecording: true });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).toHaveBeenCalled();
+        expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+    });
+
+    it('keeps macro recording enabled when only undo-history recording is suppressed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipUndo: true });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).toHaveBeenCalledWith(action);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {

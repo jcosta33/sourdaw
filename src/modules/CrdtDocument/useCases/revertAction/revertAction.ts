@@ -33,6 +33,7 @@ export async function revertAction(entryId: string): Promise<boolean> {
     await executeAppAction(entry.inverseAction, {
         source: entry.source,
         groupLabel: `Reverted: ${entry.label}`,
+        skipMacroRecording: true,
     });
 
     markEntryReverted(entryId);

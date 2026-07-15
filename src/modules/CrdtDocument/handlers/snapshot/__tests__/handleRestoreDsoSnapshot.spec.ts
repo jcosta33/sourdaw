@@ -11,7 +11,7 @@ describe('handleRestoreDsoSnapshot', () => {
     });
 
     it('should delegate to restoreSnapshot', () => {
-        const bundle = new Map();
+        const bundle = new Map([['created', { state: 'present' as const, bytes: new Uint8Array([1]) }]]);
         void handleRestoreDsoSnapshot.execute({ type: 'restoreDsoSnapshot', payload: { bundle } });
         expect(restoreSnapshot).toHaveBeenCalledWith(bundle);
     });
