@@ -56,6 +56,11 @@ export async function replaceProjectData({
     data,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
+    const currentProject = projectStore.value;
+    if (currentProject) {
+        projectStore.set({ ...currentProject, loading: true, initialized: false });
+    }
+
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
             return { status: 'aborted' };

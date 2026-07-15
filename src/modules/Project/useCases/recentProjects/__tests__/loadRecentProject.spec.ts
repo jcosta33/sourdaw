@@ -11,6 +11,7 @@ import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
+import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
@@ -84,6 +85,7 @@ const validProject = JSON.stringify(validProjectData);
 describe('loadRecentProject', () => {
     beforeEach(() => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
         vi.mocked(startCrdtAutoSave).mockClear();
@@ -193,6 +195,7 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
     });
 
     it('continues the committed replacement after a mid-commit store reset failure', async () => {

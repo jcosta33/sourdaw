@@ -6,6 +6,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
@@ -261,6 +262,7 @@ function makeProject(): ProjectData {
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
         importCachedAudioBuffers.mockClear();
@@ -387,6 +389,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({ loading: true, initialized: false });
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
