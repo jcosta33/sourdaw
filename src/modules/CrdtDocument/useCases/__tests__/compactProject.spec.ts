@@ -1,3 +1,4 @@
+import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -163,5 +164,62 @@ describe('compactProject', () => {
             beforeCompaction: true,
             afterSnapshot: true,
         });
+    });
+
+    it('keeps a failed branch-switch snapshot ahead of later autosave edits', async () => {
+        automergeRepository.createProject('project');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.outgoingBranch = true;
+        });
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+
+        automergeRepository.createChildDoc('branch_target');
+        automergeRepository.changeDoc('branch_target', (doc: Record<string, unknown>) => {
+            doc.targetBranch = true;
+        });
+        const targetDoc = automergeRepository.getDoc('branch_target');
+        if (!targetDoc) {
+            throw new Error('Expected the target branch document');
+        }
+        automergeRepository.replaceDoc('root', cloneDoc(targetDoc));
+
+        const failedBranchSwitchCompaction = compactProject();
+        const failedFullSave = await persistence.waitForTransaction('readwrite', 2);
+        const failedRoot = failedFullSave.writes.find((write) => write.kind === 'put' && write.key === 'root');
+        expect(failedRoot).toBeDefined();
+        failedFullSave.abort();
+        await expect(failedBranchSwitchCompaction).rejects.toThrow('IDB transaction aborted');
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.afterFailedSnapshot = true;
+        });
+        const autosave = persistCrdtProject();
+        const retriedFullSave = await persistence.waitForTransaction('readwrite', 3);
+        expect(retriedFullSave.writes.some((write) => write.kind === 'add')).toBe(false);
+        const retriedRoot = retriedFullSave.writes.find((write) => write.kind === 'put' && write.key === 'root');
+        expect(retriedRoot?.value).toEqual(failedRoot?.value);
+        retriedFullSave.complete();
+
+        const postSnapshotIncremental = await persistence.waitForTransaction('readwrite', 4);
+        postSnapshotIncremental.complete();
+        await autosave;
+
+        const bundle = await readBundle(persistence, 1);
+        if (!bundle) {
+            throw new Error('Expected the switched project bundle');
+        }
+        expect([...bundle.keys()].filter((key) => key.startsWith('root:incremental:'))).toHaveLength(1);
+
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle, shouldCommit: () => true })).resolves.toBe(true);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            targetBranch: true,
+            afterFailedSnapshot: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('outgoingBranch');
     });
 });
