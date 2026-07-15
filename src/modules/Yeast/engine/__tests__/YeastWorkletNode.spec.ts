@@ -77,6 +77,14 @@ function replyRawCommandAck(port: FakePort, data: unknown): void {
     port.onmessage?.({ data } as MessageEvent);
 }
 
+function replyAllNotesOffAck(port: FakePort, panicId: number, completed: boolean, error?: string): void {
+    port.onmessage?.({ data: { type: 'allNotesOffAck', panicId, completed, error } } as MessageEvent);
+}
+
+function replyRawAllNotesOffAck(port: FakePort, data: unknown): void {
+    port.onmessage?.({ data } as MessageEvent);
+}
+
 describe('createYeastWorkletNode — processBlock lifecycle', () => {
     it('resolves processBlock when the worklet replies with a matching requestId', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
@@ -177,6 +185,83 @@ describe('createYeastWorkletNode — projection protocol', () => {
         } as MessageEvent);
 
         expect(onNotesOff).toHaveBeenCalledWith([60]);
+    });
+});
+
+describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () => {
+    it('posts a correlated panic id and resolves after execution acknowledgement', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const result = node.allNotesOff(512);
+
+        expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'allNotesOff', panicId: 0, nowSamples: 512 });
+        replyAllNotesOffAck(lastPort(), 0, true);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('rejects a negative execution acknowledgement', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const result = node.allNotesOff(512);
+        replyAllNotesOffAck(lastPort(), 0, false, 'rack panic failed');
+
+        await expect(result).rejects.toThrow('rack panic failed');
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('ignores wrong, duplicate, and late acknowledgements', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const first = node.allNotesOff(512);
+        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true });
+        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
+        replyAllNotesOffAck(lastPort(), 0, true);
+        replyAllNotesOffAck(lastPort(), 0, false, 'late duplicate');
+        await expect(first).resolves.toBeUndefined();
+
+        const second = node.allNotesOff(1024);
+        replyAllNotesOffAck(lastPort(), 0, false, 'late acknowledgement');
+        replyAllNotesOffAck(lastPort(), 1, true);
+
+        await expect(second).resolves.toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('rejects on a silent worklet acknowledgement timeout', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const result = node.allNotesOff(512);
+        const assertion = expect(result).rejects.toThrow(/allNotesOff acknowledgement timed out/);
+
+        await vi.advanceTimersByTimeAsync(1000);
+
+        await assertion;
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('rejects a pending panic when destroyed and clears its timer', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const result = node.allNotesOff(512);
+        node.destroy();
+
+        await expect(result).rejects.toThrow(/destroyed before allNotesOff acknowledgement/);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('converts a synchronous post failure into a rejected panic promise', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const error = new Error('panic post failed');
+        lastPort().postMessage.mockImplementationOnce(() => {
+            throw error;
+        });
+
+        const result = node.allNotesOff(512);
+
+        await expect(result).rejects.toThrow(error.message);
+        expect(vi.getTimerCount()).toBe(0);
     });
 });
 

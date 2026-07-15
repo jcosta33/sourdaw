@@ -11,7 +11,8 @@
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
  *   → { type: 'notesOff',     events }   // hung-note offs from projection changes
- *   ← { type: 'allNotesOff',  nowSamples }
+ *   ← { type: 'allNotesOff',  panicId, nowSamples }
+ *   → { type: 'allNotesOffAck', panicId, completed, error? }
  */
 
 import { MidiRack } from './MidiRack';
@@ -23,7 +24,6 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 
 type YeastMsg =
     | { type: 'setProjection'; processors: YeastProcessorProjectionItem[] }
-    | { type: 'executeCommand'; commandId: number; command: YeastProcessorCommand }
     | {
           type: 'processBlock';
           requestId: number;
@@ -31,8 +31,7 @@ type YeastMsg =
           blockStart: number;
           blockEnd: number;
           transport: TransportInfo;
-      }
-    | { type: 'allNotesOff'; nowSamples?: number };
+      };
 
 type ParsedExecuteCommand = {
     commandId: number;
@@ -51,6 +50,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isCommandId(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function parseAllNotesOff(value: unknown): { panicId: number; nowSamples: number } | undefined {
+    if (!isPlainObject(value) || value.type !== 'allNotesOff' || !isCommandId(value.panicId)) {
+        return undefined;
+    }
+    const nowSamples = value.nowSamples;
+    if (nowSamples !== undefined && (typeof nowSamples !== 'number' || !Number.isFinite(nowSamples))) {
+        return undefined;
+    }
+    return { panicId: value.panicId, nowSamples: nowSamples ?? currentFrame };
 }
 
 function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
@@ -116,17 +126,32 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 return;
             }
 
-            const message = data as Exclude<YeastMsg, { type: 'executeCommand' }>;
-            switch (message.type) {
-                case 'setProjection': {
-                    const offs = this._rack.replaceProjection(message.processors, createProcessor, currentFrame);
+            if (data.type === 'allNotesOff') {
+                const parsed = parseAllNotesOff(data);
+                if (!parsed) {
+                    return;
+                }
+                try {
+                    const offs = this._rack.allNotesOff(parsed.nowSamples);
                     if (offs.length > 0) {
                         this.port.postMessage({ type: 'notesOff', events: offs });
                     }
-                    break;
+                    this.port.postMessage({ type: 'allNotesOffAck', panicId: parsed.panicId, completed: true });
+                } catch (error: unknown) {
+                    this.port.postMessage({
+                        type: 'allNotesOffAck',
+                        panicId: parsed.panicId,
+                        completed: false,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
                 }
-                case 'allNotesOff': {
-                    const offs = this._rack.allNotesOff(message.nowSamples ?? currentFrame);
+                return;
+            }
+
+            const message = data as YeastMsg;
+            switch (message.type) {
+                case 'setProjection': {
+                    const offs = this._rack.replaceProjection(message.processors, createProcessor, currentFrame);
                     if (offs.length > 0) {
                         this.port.postMessage({ type: 'notesOff', events: offs });
                     }

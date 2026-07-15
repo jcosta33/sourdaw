@@ -66,7 +66,7 @@ describe('YeastWorkletProcessor', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards panic note-offs back through the node port', () => {
+    it('forwards panic note-offs before acknowledging execution', () => {
         const harness = createWorkletPortHarness();
         const noteOn: MidiEvent = {
             timeSamples: 0,
@@ -78,18 +78,61 @@ describe('YeastWorkletProcessor', () => {
             messages.push(data);
         };
 
-        harness.port.postMessage({ type: 'allNotesOff', nowSamples: 512 });
+        harness.port.postMessage({ type: 'allNotesOff', panicId: 7, nowSamples: 512 });
 
         expect(messages).toEqual([
             {
                 type: 'notesOff',
                 events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
             },
+            { type: 'allNotesOffAck', panicId: 7, completed: true },
         ]);
-        expect(harness.processor.port.postMessage).toHaveBeenCalledWith({
-            type: 'notesOff',
-            events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+        expect(harness.processor.port.postMessage.mock.calls).toEqual([
+            [
+                {
+                    type: 'notesOff',
+                    events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                },
+            ],
+            [{ type: 'allNotesOffAck', panicId: 7, completed: true }],
+        ]);
+    });
+
+    it('acknowledges a panic even when no notes are active', () => {
+        const harness = createWorkletPortHarness();
+        const messages: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+        };
+
+        harness.port.postMessage({ type: 'allNotesOff', panicId: 8, nowSamples: 512 });
+
+        expect(messages).toEqual([{ type: 'allNotesOffAck', panicId: 8, completed: true }]);
+    });
+
+    it('ignores an allNotesOff envelope without a valid panic id', () => {
+        const harness = createWorkletPortHarness();
+        const allNotesOff = vi.spyOn(harness.processor._rack, 'allNotesOff');
+
+        harness.port.postMessage({ type: 'allNotesOff', panicId: '8', nowSamples: 512 });
+
+        expect(allNotesOff).not.toHaveBeenCalled();
+    });
+
+    it('returns a negative acknowledgement when rack panic execution throws', () => {
+        const harness = createWorkletPortHarness();
+        const error = new Error('rack panic failed');
+        vi.spyOn(harness.processor._rack, 'allNotesOff').mockImplementation(() => {
+            throw error;
         });
+        const messages: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+        };
+
+        harness.port.postMessage({ type: 'allNotesOff', panicId: 9, nowSamples: 512 });
+
+        expect(messages).toEqual([{ type: 'allNotesOffAck', panicId: 9, completed: false, error: error.message }]);
     });
 
     it('emits exactly one positive acknowledgement through the connected port after the rack accepts it', () => {

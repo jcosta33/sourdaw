@@ -26,23 +26,30 @@ const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
  */
 const PROCESS_BLOCK_TIMEOUT_MS = 5000;
 const COMMAND_ACK_TIMEOUT_MS = 1000;
+const ALL_NOTES_OFF_ACK_TIMEOUT_MS = 1000;
 
 type YeastCommandAck = {
     accepted: boolean;
     error?: string;
 };
 
-type YeastPortMessage =
-    | { type: 'processed'; requestId: number; events?: MidiEvent[] }
-    | { type: 'commandAck'; commandId: number; accepted: boolean; error?: string }
-    | { type: 'notesOff'; events?: MidiEvent[] };
-
 type ParsedCommandAck = {
     commandId: number;
     ack: YeastCommandAck;
 };
 
+type YeastAllNotesOffAck = {
+    completed: boolean;
+    error?: string;
+};
+
+type ParsedAllNotesOffAck = {
+    panicId: number;
+    ack: YeastAllNotesOffAck;
+};
+
 const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorkletNode command acknowledgement';
+const INVALID_ALL_NOTES_OFF_ACK_ERROR = 'Invalid YeastWorkletNode allNotesOff acknowledgement';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -54,6 +61,67 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isCommandId(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isMidiChannel(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 15;
+}
+
+function isMidiNote(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 127;
+}
+
+function isMidiEvent(value: unknown): value is MidiEvent {
+    if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isPlainObject(value.kind)) {
+        return false;
+    }
+
+    const kind = value.kind;
+    if (kind.type === 'noteOn') {
+        return isMidiChannel(kind.channel) && isMidiNote(kind.note) && isFiniteNumber(kind.velocity);
+    }
+    if (kind.type === 'noteOff') {
+        return isMidiChannel(kind.channel) && isMidiNote(kind.note);
+    }
+    if (kind.type === 'cc') {
+        return isMidiChannel(kind.channel) && Number.isInteger(kind.cc) && isFiniteNumber(kind.value);
+    }
+    if (kind.type === 'pitchBend' || kind.type === 'channelPressure') {
+        return isMidiChannel(kind.channel) && isFiniteNumber(kind.value);
+    }
+    return false;
+}
+
+function parseProcessedMessage(value: Record<string, unknown>): { requestId: number; events: MidiEvent[] } | undefined {
+    if (value.type !== 'processed' || !isCommandId(value.requestId)) {
+        return undefined;
+    }
+    const events = value.events;
+    if (events === undefined) {
+        return { requestId: value.requestId, events: [] };
+    }
+    if (!Array.isArray(events) || !events.every(isMidiEvent)) {
+        return undefined;
+    }
+    return { requestId: value.requestId, events };
+}
+
+function parseNotesOffMessage(value: Record<string, unknown>): MidiEvent[] | undefined {
+    if (value.type !== 'notesOff') {
+        return undefined;
+    }
+    const events = value.events;
+    if (events === undefined) {
+        return [];
+    }
+    if (!Array.isArray(events) || !events.every(isMidiEvent)) {
+        return undefined;
+    }
+    return events;
 }
 
 function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
@@ -79,6 +147,28 @@ function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
     return error === undefined
         ? { commandId: value.commandId, ack: { accepted: false } }
         : { commandId: value.commandId, ack: { accepted: false, error } };
+}
+
+function parseAllNotesOffAck(value: unknown): ParsedAllNotesOffAck | undefined {
+    if (!isPlainObject(value) || value.type !== 'allNotesOffAck' || !isCommandId(value.panicId)) {
+        return undefined;
+    }
+    if (typeof value.completed !== 'boolean') {
+        return undefined;
+    }
+
+    const error = value.error;
+    if (error !== undefined && typeof error !== 'string') {
+        return undefined;
+    }
+    if (value.completed && error !== undefined) {
+        return undefined;
+    }
+
+    return {
+        panicId: value.panicId,
+        ack: error === undefined ? { completed: value.completed } : { completed: value.completed, error },
+    };
 }
 
 function toError(error: unknown): Error {
@@ -113,7 +203,7 @@ export type YeastWorkletNodeResult = {
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => void;
-    allNotesOff: (nowSamples: number) => void;
+    allNotesOff: (nowSamples: number) => Promise<void>;
     /**
      * Register a listener for Note Offs a projection change left hanging in the
      * worklet rack. The worklet computes them and posts them back here; without
@@ -134,6 +224,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
 
     let nextRequestId = 0;
     let nextCommandId = 0;
+    let nextPanicId = 0;
     let destroyed = false;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
@@ -147,7 +238,12 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         timer: ReturnType<typeof setTimeout>;
     };
     const pendingCommands = new Map<number, PendingCommandEntry>();
-
+    type PendingPanicEntry = {
+        resolve: () => void;
+        reject: (err: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+    };
+    const pendingPanics = new Map<number, PendingPanicEntry>();
     const settle = (requestId: number): PendingEntry | undefined => {
         const entry = pending.get(requestId);
         if (entry) {
@@ -166,26 +262,56 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         return entry;
     };
 
+    const settlePanic = (panicId: number): PendingPanicEntry | undefined => {
+        const entry = pendingPanics.get(panicId);
+        if (entry) {
+            pendingPanics.delete(panicId);
+            clearTimeout(entry.timer);
+        }
+        return entry;
+    };
+
     const notesOffHandlers = new Set<(notes: number[]) => void>();
 
     node.port.onmessage = (event: MessageEvent): void => {
         if (!isPlainObject(event.data)) {
             return;
         }
-        const msg = event.data as YeastPortMessage;
-        if (msg.type === 'processed') {
-            settle(msg.requestId)?.resolve(msg.events ?? []);
+        const processed = parseProcessedMessage(event.data);
+        if (processed) {
+            settle(processed.requestId)?.resolve(processed.events);
             return;
         }
-        if (msg.type === 'commandAck') {
+        if (event.data.type === 'commandAck') {
             const parsed = parseCommandAck(event.data);
             if (parsed) {
                 settleCommand(parsed.commandId)?.resolve(parsed.ack);
             }
             return;
         }
+        if (event.data.type === 'allNotesOffAck') {
+            const parsed = parseAllNotesOffAck(event.data);
+            if (!parsed) {
+                return;
+            }
+            const entry = settlePanic(parsed.panicId);
+            if (!entry) {
+                return;
+            }
+            if (parsed.ack.completed) {
+                entry.resolve();
+            } else {
+                entry.reject(new Error(parsed.ack.error ?? INVALID_ALL_NOTES_OFF_ACK_ERROR));
+            }
+            return;
+        }
+
+        const events = parseNotesOffMessage(event.data);
+        if (!events) {
+            return;
+        }
         const notes: number[] = [];
-        for (const evt of msg.events ?? []) {
+        for (const evt of events) {
             if (evt.kind.type === 'noteOff') {
                 notes.push(evt.kind.note);
             }
@@ -245,6 +371,27 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             }
         });
 
+    const allNotesOff = (nowSamples: number): Promise<void> =>
+        new Promise((resolve, reject) => {
+            if (destroyed) {
+                reject(new Error('YeastWorkletNode is destroyed'));
+                return;
+            }
+
+            const panicId = nextPanicId++;
+            const timer = setTimeout(() => {
+                if (settlePanic(panicId)) {
+                    reject(new Error(`YeastWorkletNode allNotesOff acknowledgement timed out (panicId ${panicId})`));
+                }
+            }, ALL_NOTES_OFF_ACK_TIMEOUT_MS);
+            pendingPanics.set(panicId, { resolve, reject, timer });
+            try {
+                node.port.postMessage({ type: 'allNotesOff', panicId, nowSamples });
+            } catch (error: unknown) {
+                settlePanic(panicId)?.reject(toError(error));
+            }
+        });
+
     return {
         context: ctx,
         processBlock,
@@ -257,7 +404,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                     params: { ...processor.params },
                 })),
             }),
-        allNotesOff: (nowSamples) => node.port.postMessage({ type: 'allNotesOff', nowSamples }),
+        allNotesOff,
         onNotesOff: (handler) => {
             notesOffHandlers.add(handler);
             return () => {
@@ -280,8 +427,14 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                     new Error('YeastWorkletNode destroyed before command acknowledgement')
                 );
             }
+            for (const panicId of [...pendingPanics.keys()]) {
+                settlePanic(panicId)?.reject(
+                    new Error('YeastWorkletNode destroyed before allNotesOff acknowledgement')
+                );
+            }
             pending.clear();
             pendingCommands.clear();
+            pendingPanics.clear();
             notesOffHandlers.clear();
             try {
                 node.port.close();

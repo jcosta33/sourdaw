@@ -41,6 +41,7 @@ type PendingAllNotesOff = {
 
 const YEAST_RUNTIME_SESSION_VERSION = 2;
 const MIDI_PANIC_NOTES = Array.from({ length: 128 }, (_, note) => note);
+const fallbackReleasedNodes = new WeakSet<YeastWorkletNodeResult>();
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -79,22 +80,32 @@ function destroyCurrentNode(): void {
     const node = session.node;
     session.node = null;
     if (node) {
-        node.destroy();
+        try {
+            node.destroy();
+        } catch (error: unknown) {
+            logger.warn('[Yeast] AudioWorklet runtime destroy failed:', error);
+        }
     }
 }
 
-function invalidateCurrentRuntime(node: YeastWorkletNodeResult): void {
+function invalidateCurrentRuntime(node: YeastWorkletNodeResult): boolean {
     if (session.node !== node) {
-        return;
+        return false;
     }
     session.generation += 1;
     destroyCurrentNode();
     session.nodePromise = null;
     session.processTail = Promise.resolve();
     session.pendingAllNotesOff = null;
+    return true;
 }
 
-function invokeNotesOffFallback(): void {
+function invokeNotesOffFallback(node: YeastWorkletNodeResult): void {
+    if (fallbackReleasedNodes.has(node)) {
+        return;
+    }
+    fallbackReleasedNodes.add(node);
+
     const handler = session.onNotesOff;
     if (!handler) {
         return;
@@ -107,15 +118,30 @@ function invokeNotesOffFallback(): void {
     }
 }
 
-function trySendAllNotesOff(node: YeastWorkletNodeResult, nowSamples: number): boolean {
+function failCurrentRuntime(node: YeastWorkletNodeResult, error: unknown): void {
+    invokeNotesOffFallback(node);
+    if (invalidateCurrentRuntime(node)) {
+        setRuntimeUnavailable(error);
+    }
+}
+
+async function trySendAllNotesOff(
+    node: YeastWorkletNodeResult,
+    nowSamples: number,
+    generation: number
+): Promise<boolean> {
     try {
-        node.allNotesOff(nowSamples);
+        await node.allNotesOff(nowSamples);
+        if (session.node !== node || session.generation !== generation) {
+            invokeNotesOffFallback(node);
+            return false;
+        }
         return true;
     } catch (error: unknown) {
-        if (session.node === node) {
-            invalidateCurrentRuntime(node);
-            setRuntimeUnavailable(error);
-            invokeNotesOffFallback();
+        if (session.node === node && session.generation === generation) {
+            failCurrentRuntime(node, error);
+        } else {
+            invokeNotesOffFallback(node);
         }
         return false;
     }
@@ -127,11 +153,11 @@ export function setYeastRuntimeProjection(projection: readonly YeastProcessorPro
         return;
     }
 
+    const node = session.node;
     try {
-        session.node.setProjection(session.projection);
+        node.setProjection(session.projection);
     } catch (error: unknown) {
-        invalidateCurrentRuntime(session.node);
-        setRuntimeUnavailable(error);
+        failCurrentRuntime(node, error);
     }
 }
 
@@ -158,8 +184,9 @@ export async function sendYeastRuntimeCommand(command: YeastProcessorCommand): P
         return { delivered: true };
     } catch (error: unknown) {
         if (session.node === node && session.generation === generation) {
-            invalidateCurrentRuntime(node);
-            setRuntimeUnavailable(error);
+            failCurrentRuntime(node, error);
+        } else {
+            invokeNotesOffFallback(node);
         }
         return { delivered: false, reason: 'delivery-failed' };
     }
@@ -172,7 +199,13 @@ export async function ensureYeastRuntime(input: {
     session.projection = cloneProjection(input.projection);
 
     if (session.context !== null && session.context !== input.context) {
-        session.generation += 1;
+        const previousNode = session.node;
+        if (previousNode) {
+            invokeNotesOffFallback(previousNode);
+            invalidateCurrentRuntime(previousNode);
+        } else {
+            session.generation += 1;
+        }
         session.pendingAllNotesOff = null;
         destroyCurrentNode();
         session.nodePromise = null;
@@ -194,16 +227,25 @@ export async function ensureYeastRuntime(input: {
     session.error = undefined;
 
     const nodePromise = createYeastWorkletNode(input.context)
-        .then((node) => {
+        .then(async (node) => {
             if (session.generation !== generation || session.context !== input.context) {
-                node.destroy();
+                try {
+                    node.destroy();
+                } catch (error: unknown) {
+                    logger.warn('[Yeast] Stale AudioWorklet runtime destroy failed:', error);
+                }
                 return null;
             }
             session.node = node;
             node.onNotesOff((notes) => {
                 session.onNotesOff?.(notes);
             });
-            node.setProjection(session.projection);
+            try {
+                node.setProjection(session.projection);
+            } catch (error: unknown) {
+                failCurrentRuntime(node, error);
+                return null;
+            }
             const pendingAllNotesOff = session.pendingAllNotesOff;
             session.pendingAllNotesOff = null;
             if (
@@ -211,7 +253,7 @@ export async function ensureYeastRuntime(input: {
                 pendingAllNotesOff.context === input.context &&
                 pendingAllNotesOff.generation === generation
             ) {
-                if (!trySendAllNotesOff(node, pendingAllNotesOff.nowSamples)) {
+                if (!(await trySendAllNotesOff(node, pendingAllNotesOff.nowSamples, generation))) {
                     return null;
                 }
             }
@@ -224,10 +266,12 @@ export async function ensureYeastRuntime(input: {
         })
         .catch((error: unknown) => {
             if (session.generation === generation && session.context === input.context) {
-                if (session.node) {
-                    invalidateCurrentRuntime(session.node);
+                const currentNode = session.node;
+                if (currentNode) {
+                    failCurrentRuntime(currentNode, error);
+                } else {
+                    destroyCurrentNode();
                 }
-                destroyCurrentNode();
                 if (session.nodePromise === nodePromise) {
                     session.nodePromise = null;
                 }
@@ -262,14 +306,15 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
         return await operation;
     } catch (error: unknown) {
         if (session.node === node) {
-            invalidateCurrentRuntime(node);
-            setRuntimeUnavailable(error);
+            failCurrentRuntime(node, error);
+        } else {
+            invokeNotesOffFallback(node);
         }
         throw error;
     }
 }
 
-export function sendYeastRuntimeAllNotesOff(nowSamples: number): void {
+export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<void> {
     const node = session.node;
     if (!node) {
         if (session.context === null) {
@@ -285,7 +330,7 @@ export function sendYeastRuntimeAllNotesOff(nowSamples: number): void {
         return;
     }
 
-    trySendAllNotesOff(node, nowSamples);
+    await trySendAllNotesOff(node, nowSamples, session.generation);
 }
 
 export function setYeastRuntimeNotesOffHandler(handler: (notes: number[]) => void): void {
