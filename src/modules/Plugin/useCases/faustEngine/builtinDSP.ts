@@ -8,7 +8,6 @@
  * Extracted from faustEngine.ts for maintainability.
  */
 
-import { registerFaustDSP } from './compilerEngine';
 import compressor1176Dsp from './dsp/1176-compressor.dsp?raw';
 import acidBass303Dsp from './dsp/acid-bass-303.dsp?raw';
 import brickWallLimiterDsp from './dsp/brick-wall-limiter.dsp?raw';
@@ -26,6 +25,7 @@ import springReverbDsp from './dsp/spring-reverb.dsp?raw';
 import stereoWidenerDsp from './dsp/stereo-widener.dsp?raw';
 import tapeDelayDsp from './dsp/tape-delay.dsp?raw';
 import zitaRev1Dsp from './dsp/zita-rev1.dsp?raw';
+import { registerFaustDSP } from './registerFaustDSP';
 
 export function registerBuiltinFaustDSP(): void {
     // ── Zita-Rev1 algorithmic reverb ──────────────────────────
