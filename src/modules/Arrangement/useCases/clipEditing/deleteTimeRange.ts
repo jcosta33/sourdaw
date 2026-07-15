@@ -1,22 +1,8 @@
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+import { removeMidiClipData, splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-
-function cleanupMidiForClip(clipId: string): void {
-    const ms = midiStore.value;
-    if (!ms) {
-        return;
-    }
-    const { [clipId]: _notes, ...restNotes } = ms.notesByClipId;
-    const { [clipId]: _cc, ...restCc } = ms.ccByClipId;
-    const { [clipId]: _pb, ...restPb } = ms.pitchBendByClipId;
-    if (_notes || _cc || _pb) {
-        midiStore.set({ ...ms, notesByClipId: restNotes, ccByClipId: restCc, pitchBendByClipId: restPb });
-    }
-}
 
 export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: string[]): void {
     const state = getTrackState();
@@ -91,7 +77,7 @@ export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: st
     setTrackState({ ...state, tracks: newTracks });
 
     for (const id of deletedClipIds) {
-        cleanupMidiForClip(id);
+        removeMidiClipData([id]);
     }
     for (const op of splitOps) {
         splitMidiNotesAtBeat(op);

@@ -95,7 +95,10 @@ describe('insertTime', () => {
         shiftAutomationAfterBeat.mockClear();
         shiftTimelineMapsAfterBeat.mockClear();
         shiftMidiNotesAfterBeat.mockClear();
-        setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
+        setTimeOperationDependencies({
+            shiftTimelineMapsAfterBeat,
+            deleteTimelineMapsTimeRange: vi.fn(),
+        });
     });
 
     it('should shift clips, markers, automation, timeline maps, and MIDI after the insertion beat', () => {

@@ -36,6 +36,7 @@ export { toggleAutoAdvance } from './setlist/toggleAutoAdvance';
 export { updateSetlistItem } from './setlist/updateSetlistItem';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
+export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';

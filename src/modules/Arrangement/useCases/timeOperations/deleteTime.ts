@@ -1,16 +1,23 @@
-import { automationStore } from '#/modules/Automation/stores';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { deleteAutomationTimeRange } from '#/modules/Automation/useCases';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
 
+import { timeOperationDependencies } from './timeOperationDependencies';
+
 export function deleteTime(startBeat: number, endBeat: number): void {
     const state = getTrackState();
     if (!state) {
         return;
     }
+
+    const deps = timeOperationDependencies;
+    if (!deps) {
+        throw new Error('Arrangement time operation dependencies are not registered');
+    }
+
     const duration = endBeat - startBeat;
 
     setTrackState({
@@ -50,38 +57,6 @@ export function deleteTime(startBeat: number, endBeat: number): void {
         });
     }
 
-    const autoState = automationStore.value;
-    if (autoState) {
-        automationStore.set({
-            ...autoState,
-            lanes: autoState.lanes.map((lane) => ({
-                ...lane,
-                points: lane.points
-                    .filter((param) => param.beat < startBeat || param.beat >= endBeat)
-                    .map((param) => (param.beat >= endBeat ? { ...param, beat: param.beat - duration } : param)),
-            })),
-        });
-    }
-
-    // Tempo changes inside the deleted range are removed; those after shift back.
-    const tempoState = tempoMapStore.value;
-    if (tempoState) {
-        tempoMapStore.set({
-            ...tempoState,
-            changes: tempoState.changes
-                .filter((context) => context.beat < startBeat || context.beat >= endBeat)
-                .map((context) => (context.beat >= endBeat ? { ...context, beat: context.beat - duration } : context)),
-        });
-    }
-
-    // Time signature changes inside the deleted range are removed; those after shift back.
-    const timeSigState = timeSignatureMapStore.value;
-    if (timeSigState) {
-        timeSignatureMapStore.set({
-            ...timeSigState,
-            changes: timeSigState.changes
-                .filter((context) => context.beat < startBeat || context.beat >= endBeat)
-                .map((context) => (context.beat >= endBeat ? { ...context, beat: context.beat - duration } : context)),
-        });
-    }
+    deleteAutomationTimeRange({ startBeat, endBeat });
+    deps.deleteTimelineMapsTimeRange({ startBeat, endBeat });
 }

@@ -5,6 +5,7 @@ type ShiftTimelineMapsAfterBeatInput = {
 
 export type TimeOperationDependencies = {
     shiftTimelineMapsAfterBeat: (input: ShiftTimelineMapsAfterBeatInput) => void;
+    deleteTimelineMapsTimeRange: (input: { startBeat: number; endBeat: number }) => void;
 };
 
 export let timeOperationDependencies: TimeOperationDependencies | null = null;
