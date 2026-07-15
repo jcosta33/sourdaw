@@ -8,6 +8,8 @@
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
+import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
+
 type StoredChord = {
     root: number;
     notes: number[]; // absolute MIDI notes
@@ -104,20 +106,27 @@ export class ChordMemory extends BaseMidiProcessor {
         this.learning = false;
     }
 
-    setParam(name: string, value: number): void {
-        switch (name) {
-            case 'learn':
-                this.learning = value > 0.5;
+    executeCommand(command: YeastProcessorCommand): boolean {
+        if (command.processorId !== this.id) {
+            return false;
+        }
+        switch (command.type) {
+            case 'chordMemory.learn':
+                this.learning = true;
                 this.learnBuffer = [];
                 this.learnRoot = -1;
-                break;
+                return true;
+            case 'chordMemory.clear':
+                this.memory.clear();
+                return true;
+        }
+        return false;
+    }
+
+    setParam(name: string, value: number): void {
+        switch (name) {
             case 'transpose_mode':
                 this.transposeMode = value > 0.5;
-                break;
-            case 'clear':
-                if (value > 0.5) {
-                    this.memory.clear();
-                }
                 break;
         }
     }

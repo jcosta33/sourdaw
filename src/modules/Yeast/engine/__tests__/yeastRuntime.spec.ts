@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import type { YeastWorkletNodeResult } from '../YeastWorkletNode';
 
@@ -33,6 +34,7 @@ function makeNode(context: BaseAudioContext): YeastWorkletNodeResult {
             _transport: TransportInfo
         ) => [],
         setProjection: vi.fn(),
+        sendCommand: vi.fn(),
         allNotesOff: vi.fn(),
         onNotesOff: vi.fn(() => () => {}),
         destroy: vi.fn(),
@@ -108,5 +110,44 @@ describe('yeastRuntime', () => {
 
         await expect(initialization).resolves.toBe(node);
         expect(node.allNotesOff).toHaveBeenCalledWith(512);
+    });
+
+    it('returns a truthful unavailable result instead of queueing a command during initialization', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const pending = deferred<YeastWorkletNodeResult>();
+        const node = makeNode(context);
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
+        createNode.mockReturnValueOnce(pending.promise);
+
+        const initialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
+
+        expect(runtime.sendYeastRuntimeCommand(command)).toEqual({
+            delivered: false,
+            reason: 'runtime-unavailable',
+        });
+        pending.resolve(node);
+
+        await initialization;
+        expect(node.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a delivered command on projection replay or context replacement', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        expect(runtime.sendYeastRuntimeCommand(command)).toEqual({ delivered: true });
+        runtime.setYeastRuntimeProjection(projectionB);
+        await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+
+        expect(nodeA.sendCommand).toHaveBeenCalledTimes(1);
+        expect(nodeA.sendCommand).toHaveBeenCalledWith(command);
+        expect(nodeB.sendCommand).not.toHaveBeenCalled();
     });
 });

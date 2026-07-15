@@ -6,6 +6,7 @@
  *
  * Port protocol (this.port.onmessage):
  *   ← { type: 'setProjection', processors }
+ *   ← { type: 'executeCommand', command }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
  *   → { type: 'processed',    requestId, events }
  *   → { type: 'notesOff',     events }   // hung-note offs from projection changes
@@ -16,10 +17,12 @@ import { MidiRack } from './MidiRack';
 import { createProcessor } from './processorFactory';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 type YeastMsg =
     | { type: 'setProjection'; processors: YeastProcessorProjectionItem[] }
+    | { type: 'executeCommand'; command: YeastProcessorCommand }
     | {
           type: 'processBlock';
           requestId: number;
@@ -37,6 +40,10 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
         super();
         this.port.onmessage = ({ data }: MessageEvent<YeastMsg>) => {
             switch (data.type) {
+                case 'executeCommand': {
+                    this._rack.executeCommand(data.command);
+                    break;
+                }
                 case 'setProjection': {
                     const offs = this._rack.replaceProjection(data.processors, createProcessor, currentFrame);
                     if (offs.length > 0) {

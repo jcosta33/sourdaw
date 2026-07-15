@@ -11,6 +11,18 @@ export type YeastProcessorProjection = YeastProcessorProjectionItem[];
 
 export type YeastRuntimeStatus = 'uninitialized' | 'initializing' | 'ready' | 'unavailable';
 
+export function createDurableYeastProcessorParams(
+    type: ProcessorType,
+    params: Record<string, number> | undefined
+): Record<string, number> {
+    const durableParams = { ...(params ?? {}) };
+    if (type === 'chordMemory') {
+        delete durableParams.learn;
+        delete durableParams.clear;
+    }
+    return durableParams;
+}
+
 type YeastProcessorProjectionSource = {
     id: string;
     type: ProcessorType;
@@ -25,6 +37,6 @@ export function createYeastProcessorProjection(
         id: processor.id,
         type: processor.type,
         bypassed: processor.bypassed,
-        params: { ...processor.params },
+        params: createDurableYeastProcessorParams(processor.type, processor.params),
     }));
 }

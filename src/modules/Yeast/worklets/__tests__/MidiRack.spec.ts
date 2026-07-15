@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../models/MidiEvent';
 import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
+import { ChordMemory } from '../processors/ChordMemory';
 
 type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };
 
@@ -147,6 +148,55 @@ describe('MidiRack', () => {
         });
     });
 
+    describe('one-shot processor commands', () => {
+        it('executes learn once and does not replay it during durable projection reconciliation', () => {
+            const rack = new MidiRack();
+            const chordMemory = new ChordMemory('cm-1');
+            rack.addProcessor(chordMemory, 'chordMemory');
+            const projection = [
+                { id: 'cm-1', type: 'chordMemory' as const, bypassed: false, params: { transpose_mode: 1 } },
+            ];
+
+            expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
+            rack.processBlock([noteOn(0, 60), noteOn(0, 64), noteOn(0, 67)], 0, 128, transport);
+            rack.processBlock([noteOff(128, 60)], 128, 256, transport);
+
+            expect(chordMemory.getStoredCount()).toBe(1);
+            expect(chordMemory.isLearning()).toBe(false);
+
+            rack.replaceProjection(projection, (_type, id) => new ChordMemory(id), 256);
+
+            expect(chordMemory.getStoredCount()).toBe(1);
+            expect(chordMemory.isLearning()).toBe(false);
+        });
+
+        it('executes clear once without letting later projection updates clear new memory', () => {
+            const rack = new MidiRack();
+            const chordMemory = new ChordMemory('cm-1');
+            rack.addProcessor(chordMemory, 'chordMemory');
+            const projection = [
+                { id: 'cm-1', type: 'chordMemory' as const, bypassed: false, params: { transpose_mode: 1 } },
+            ];
+
+            expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport);
+            rack.processBlock([noteOff(128, 60)], 128, 256, transport);
+            expect(chordMemory.getStoredCount()).toBe(1);
+
+            expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.clear' })).toBe(true);
+            expect(chordMemory.getStoredCount()).toBe(0);
+
+            expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
+            rack.processBlock([noteOn(256, 62)], 256, 384, transport);
+            rack.processBlock([noteOff(384, 62)], 384, 512, transport);
+            expect(chordMemory.getStoredCount()).toBe(1);
+
+            rack.replaceProjection(projection, (_type, id) => new ChordMemory(id), 512);
+
+            expect(chordMemory.getStoredCount()).toBe(1);
+        });
+    });
+
     describe('processBlock (fix #2: degenerate block range)', () => {
         it('does not swallow input into the scheduled queue when blockEnd < blockStart', () => {
             const rack = new MidiRack();
@@ -253,3 +303,11 @@ describe('MidiRack', () => {
         });
     });
 });
+
+function noteOn(timeSamples: number, note: number): MidiEvent {
+    return { timeSamples, kind: { type: 'noteOn', channel: 0, note, velocity: 100 } };
+}
+
+function noteOff(timeSamples: number, note: number): MidiEvent {
+    return { timeSamples, kind: { type: 'noteOff', channel: 0, note } };
+}

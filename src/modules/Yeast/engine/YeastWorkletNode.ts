@@ -12,6 +12,7 @@
 import yeastWorkletProcessorUrl from '../worklets/yeastWorkletProcessor.ts?worker&url';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
@@ -51,6 +52,7 @@ export type YeastWorkletNodeResult = {
         blockEnd: number,
         transport: TransportInfo
     ) => Promise<MidiEvent[]>;
+    sendCommand: (command: YeastProcessorCommand) => void;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => void;
     allNotesOff: (nowSamples: number) => void;
     /**
@@ -133,6 +135,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     return {
         context: ctx,
         processBlock,
+        sendCommand: (command) => node.port.postMessage({ type: 'executeCommand', command }),
         setProjection: (projection) =>
             node.port.postMessage({
                 type: 'setProjection',

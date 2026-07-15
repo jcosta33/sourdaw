@@ -4,6 +4,7 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from './YeastWorkletNode';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type {
     YeastProcessorProjection,
     YeastProcessorProjectionItem,
@@ -75,6 +76,34 @@ export function setYeastRuntimeProjection(projection: readonly YeastProcessorPro
     } catch (error: unknown) {
         destroyCurrentNode();
         setRuntimeUnavailable(error);
+    }
+}
+
+type YeastRuntimeCommandResult =
+    | { delivered: true }
+    | { delivered: false; reason: 'runtime-unavailable' | 'delivery-failed' };
+
+/**
+ * Commands are delivered only to the ready node; they are never retained for
+ * projection replay or retried after a successful port send.
+ */
+export function sendYeastRuntimeCommand(command: YeastProcessorCommand): YeastRuntimeCommandResult {
+    const node = session.node;
+    if (!node) {
+        return { delivered: false, reason: 'runtime-unavailable' };
+    }
+
+    try {
+        node.sendCommand(command);
+        return { delivered: true };
+    } catch (error: unknown) {
+        if (session.node === node) {
+            session.generation += 1;
+            destroyCurrentNode();
+            session.nodePromise = null;
+            setRuntimeUnavailable(error);
+        }
+        return { delivered: false, reason: 'delivery-failed' };
     }
 }
 

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
+
 const store = vi.hoisted(() => ({
     value: {
         processors: [],
@@ -48,6 +50,26 @@ describe('addYeastProcessor — projection/runtime ownership', () => {
                 type: 'arpeggiator',
                 bypassed: false,
                 params: {},
+            },
+        ]);
+    });
+
+    it('strips legacy Chord Memory command keys while retaining durable parameters', () => {
+        expect(
+            createYeastProcessorProjection([
+                {
+                    id: 'cm-1',
+                    type: 'chordMemory',
+                    bypassed: false,
+                    params: { learn: 1, clear: 1, transpose_mode: 0 },
+                },
+            ])
+        ).toEqual([
+            {
+                id: 'cm-1',
+                type: 'chordMemory',
+                bypassed: false,
+                params: { transpose_mode: 0 },
             },
         ]);
     });

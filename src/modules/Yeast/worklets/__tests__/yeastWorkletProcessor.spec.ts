@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rackMocks = vi.hoisted(() => ({
     allNotesOff: vi.fn(() => [{ timeSamples: 512, kind: { type: 'noteOff' as const, channel: 0, note: 60 } }]),
+    executeCommand: vi.fn(),
     processBlock: vi.fn(() => []),
     replaceProjection: vi.fn(() => []),
 }));
@@ -9,6 +10,7 @@ const rackMocks = vi.hoisted(() => ({
 vi.mock('../MidiRack', () => ({
     MidiRack: class {
         allNotesOff = rackMocks.allNotesOff;
+        executeCommand = rackMocks.executeCommand;
         processBlock = rackMocks.processBlock;
         replaceProjection = rackMocks.replaceProjection;
     },
@@ -55,5 +57,15 @@ describe('YeastWorkletProcessor', () => {
             type: 'notesOff',
             events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
         });
+    });
+
+    it('forwards each typed one-shot command to the rack exactly once', () => {
+        const processor = new Processor();
+        const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
+
+        processor.port.onmessage?.({ data: { type: 'executeCommand', command } } as MessageEvent);
+
+        expect(rackMocks.executeCommand).toHaveBeenCalledTimes(1);
+        expect(rackMocks.executeCommand).toHaveBeenCalledWith(command);
     });
 });

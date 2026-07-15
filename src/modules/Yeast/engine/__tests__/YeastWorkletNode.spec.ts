@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../YeastWorkletNode';
 
 import type { TransportInfo } from '../../models/MidiEvent';
+import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
 /**
@@ -167,6 +168,15 @@ describe('createYeastWorkletNode — projection protocol', () => {
         } as MessageEvent);
 
         expect(onNotesOff).toHaveBeenCalledWith([60]);
+    });
+
+    it('posts a typed one-shot command separately from projection state', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
+
+        node.sendCommand(command);
+
+        expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'executeCommand', command });
     });
 });
 

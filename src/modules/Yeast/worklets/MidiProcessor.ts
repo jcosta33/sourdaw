@@ -7,6 +7,8 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
+
 export type MidiProcessor = {
     readonly id: string;
     readonly name: string;
@@ -25,6 +27,9 @@ export type MidiProcessor = {
 
     /** Set a named parameter. */
     setParam(name: string, value: number): void;
+
+    /** Execute a typed one-shot command; unsupported processors return false. */
+    executeCommand?(command: YeastProcessorCommand): boolean;
 
     /** Get the processor's reported latency in samples. */
     latencySamples(): number;

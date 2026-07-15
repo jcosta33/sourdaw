@@ -2,3 +2,4 @@ export { processRealtimeMidiInput } from './yeastSchedulingBridge/processRealtim
 export { processYeastMidi } from './yeastSchedulingBridge/processYeastMidi';
 export { yeastPanic } from './yeastSchedulingBridge/yeastPanic';
 export { configureYeastRuntime } from './configureYeastRuntime';
+export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';

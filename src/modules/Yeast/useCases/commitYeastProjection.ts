@@ -1,5 +1,5 @@
 import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
-import { createYeastProcessorProjection } from '../models/YeastProcessorProjection';
+import { createDurableYeastProcessorParams, createYeastProcessorProjection } from '../models/YeastProcessorProjection';
 import { yeastStore, type YeastProcessorInfo } from '../stores/yeastStore';
 
 export function commitYeastProjection(processors: readonly YeastProcessorInfo[]): void {
@@ -10,7 +10,7 @@ export function commitYeastProjection(processors: readonly YeastProcessorInfo[])
 
     const nextProcessors = processors.map((processor) => ({
         ...processor,
-        params: { ...processor.params },
+        params: createDurableYeastProcessorParams(processor.type, processor.params),
     }));
     yeastStore.set({
         ...state,

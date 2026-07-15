@@ -12,6 +12,9 @@ export function setYeastProcessorParam(id: string, name: string, value: number):
     if (!processor) {
         return;
     }
+    if (processor.type === 'chordMemory' && (name === 'learn' || name === 'clear')) {
+        return;
+    }
     commitYeastProjection(
         state.processors.map((entry) =>
             entry.id === id ? { ...entry, params: { ...entry.params, [name]: value } } : entry

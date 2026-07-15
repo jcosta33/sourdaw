@@ -24,16 +24,16 @@ describe('ChordMemory', () => {
         expect(cm.isLearning()).toBe(false);
     });
 
-    it('can enter learn mode via setParam', () => {
+    it('can enter learn mode via a typed command', () => {
         const cm = new ChordMemory('t3');
-        cm.setParam('learn', 1);
+        cm.executeCommand({ processorId: 't3', type: 'chordMemory.learn' });
         expect(cm.isLearning()).toBe(true);
     });
 
-    it('can exit learn mode', () => {
+    it('does not treat one-shot commands as durable parameters', () => {
         const cm = new ChordMemory('t4');
         cm.setParam('learn', 1);
-        cm.setParam('learn', 0);
+        cm.setParam('clear', 1);
         expect(cm.isLearning()).toBe(false);
     });
 
@@ -53,7 +53,7 @@ describe('ChordMemory', () => {
 
     it('stores chords when learning', () => {
         const cm = new ChordMemory('t7');
-        cm.setParam('learn', 1);
+        cm.executeCommand({ processorId: 't7', type: 'chordMemory.learn' });
         const out: MidiEvent[] = [];
         cm.processMidi([note_on(0, 60), note_on(0, 64), note_on(0, 67)], out, transport);
         cm.processMidi([note_off(100, 60), note_off(100, 64), note_off(100, 67)], out, transport);
@@ -62,7 +62,7 @@ describe('ChordMemory', () => {
 
     it('reset clears learn mode', () => {
         const cm = new ChordMemory('t8');
-        cm.setParam('learn', 1);
+        cm.executeCommand({ processorId: 't8', type: 'chordMemory.learn' });
         cm.reset();
         expect(cm.isLearning()).toBe(false);
     });
@@ -70,7 +70,7 @@ describe('ChordMemory', () => {
     it('all setParam values accepted', () => {
         const cm = new ChordMemory('t9');
         cm.setParam('learn', 1);
-        cm.setParam('learn', 0);
+        cm.setParam('clear', 1);
         cm.setParam('trigger_mode', 1);
         cm.setParam('velocity', 80);
         const out: MidiEvent[] = [];

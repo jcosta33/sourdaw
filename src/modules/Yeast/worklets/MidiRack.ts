@@ -10,6 +10,7 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
 
 import type { ProcessorType } from '../models/ProcessorCatalog';
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 export class MidiRack {
@@ -260,6 +261,15 @@ export class MidiRack {
     setProcessorParam(processorId: string, name: string, value: number): void {
         const proc = this.processors.find((param) => param.id === processorId);
         proc?.setParam(name, value);
+    }
+
+    /** Execute one typed command on the worklet-owned processor instance. */
+    executeCommand(command: YeastProcessorCommand): boolean {
+        const processor = this.processors.find((entry) => entry.id === command.processorId);
+        if (!processor || this.processorTypes.get(command.processorId) !== 'chordMemory') {
+            return false;
+        }
+        return processor.executeCommand?.(command) ?? false;
     }
 
     /** Toggle bypass on a specific processor. */

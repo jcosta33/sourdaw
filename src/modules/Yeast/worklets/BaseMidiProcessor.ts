@@ -9,6 +9,8 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import { type MidiProcessor } from './MidiProcessor';
 
+import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
+
 export abstract class BaseMidiProcessor implements MidiProcessor {
     readonly id: string;
     abstract readonly name: string;
@@ -22,6 +24,10 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
     abstract processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void;
     abstract reset(): void;
     abstract setParam(name: string, value: number): void;
+
+    executeCommand(_command: YeastProcessorCommand): boolean {
+        return false;
+    }
 
     setBypassed(b: boolean): void {
         this.bypassed = b;
