@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-dependency-boundary-validation
 title: Dependency boundary validation
-status: in-progress
+status: draft
 owner: The Sourdaw team
 sources:
   - research.md
