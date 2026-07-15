@@ -53,12 +53,14 @@ Two concurrent `ensureRaveWorker` calls for the same model must return the same 
 
 Verify with: `pnpm test:run -- rave`
 
-### AC-005 — Typed error paths
+### AC-005 — Typed model-backed error paths
 
-`MODEL_NOT_LOADED`, `SAMPLE_RATE_MISMATCH`, and `CLIP_NOT_AUDIO` must each surface as their
-`RaveError` variant rather than throwing.
+Model-backed RAVE product entrypoints MUST return typed `RaveError` variants rather than throw:
+`MODEL_NOT_LOADED` when no model is loaded, `SAMPLE_RATE_MISMATCH` for invalid sample-rate input,
+and `CLIP_NOT_AUDIO` for invalid clip-type input.
 
-Verify with: `pnpm test:run -- rave`
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/raveDispatcher.spec.ts`
+covering no-model, sample-rate, and clip-type error paths.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -188,13 +190,14 @@ whenever monitor mode is active.
 
 Verify with: `pnpm test:run -- RavePanel`
 
-### AC-024 — Pure functions remain a model-free fallback for CI
+### AC-024 — Direct pure-helper fallback
 
-The existing pure `encodeAudio`, `decodeLatent`, and `timbreTransfer` functions must remain
-usable as a model-free fallback path when no model is loaded, so tests and CI can run the
-pipeline end-to-end without downloading model weights.
+The existing pure `encodeAudio`, `decodeLatent`, and `timbreTransfer` functions MUST remain
+directly callable without a loaded model so deterministic tests and CI can use an explicit
+model-free fallback without downloading model weights.
 
-Verify with: `pnpm test:run -- rave`
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__` covering direct
+no-model calls to each named pure helper.
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -207,28 +210,42 @@ Verify with: `pnpm test:run -- rave`
 ### AC-026 — Latent interpolation fallback
 
 The model-free RAVE fallback MUST retain `interpolateLatent` as a pure latent-space morph
-primitive. For `time` in `[0, 1]`, `interpolateLatent(alpha, b, time)` MUST return a vector
-with `alpha.values.length` values in source order, linearly blending each source value with
-the corresponding `b.values` value (using `0` when that target dimension is absent), and
-linearly blending `timeSec`; with equal-shaped vectors, `time = 0` and `time = 1` MUST return
-the source and target vectors respectively. The function MUST NOT mutate either input.
+primitive with this observable contract: for `time` in `[0, 1]`, `interpolateLatent(alpha, b,
+time)` returns a vector with `alpha.values.length` values in source order, linearly blending
+each source value with the corresponding `b.values` value (using `0` when that target dimension
+is absent) and `timeSec`; with equal-shaped vectors, `time = 0` and `time = 1` return the source
+and target vectors respectively, and the function does not mutate either input.
 
 Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`
+covering equal-shaped `time = 0` and `time = 1` endpoints including `timeSec`, missing target
+dimensions defaulting to `0`, and deep-equality snapshots proving neither input is mutated.
+
+### AC-027 — Explicit model-free selection
+
+Model-free fallback selection MUST be explicit through a dedicated mode or entrypoint or direct
+invocation of a named pure helper; a model-backed product dispatcher silently substituting pure
+helpers when no model is loaded is prohibited.
+
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/raveDispatcher.spec.ts`
+covering explicit model-free selection and a no-model model-backed dispatch that returns
+`MODEL_NOT_LOADED` without invoking a pure helper.
 
 ## Current-state ownership
 
-The four current `no-orphans` helpers are heuristic/test-only today and do not prove
-model-backed AC-001 through AC-003:
+The four current `no-orphans` helpers are heuristic/test-only today and do not prove the
+model-backed product contracts in AC-001 through AC-005 or AC-027:
 
 - `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`
 - `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`
 - `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts`
 - `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`
 
-Their sibling tests cover deterministic heuristics only. AC-024 intentionally owns the
-future model-free fallback use of its named `encodeAudio`, `decodeLatent`, and
-`timbreTransfer` helpers, while AC-026 owns `interpolateLatent` as the pure latent-space
-interpolation primitive. This promotion retains all four helpers; it does not silently
+Their sibling tests cover deterministic pure-helper behavior only; they do not prove the
+model-backed entrypoint or dispatcher contracts. AC-005 owns typed `MODEL_NOT_LOADED` behavior
+for model-backed product entrypoints, AC-024 owns direct pure-helper availability for
+deterministic model-free fallback, AC-026 owns `interpolateLatent` as the pure latent-space
+interpolation primitive, and AC-027 owns explicit fallback selection and the prohibition on
+silent dispatcher substitution. This promotion retains all four helpers; it does not silently
 authorize deletion or narrow either fallback contract. Any future retirement MUST name the
 exact helper path and change its owning acceptance criterion.
 

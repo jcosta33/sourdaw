@@ -182,6 +182,33 @@ is reflected on the hardware.
 
 Verify with: `pnpm test:run -- PushHardware`
 
+### AC-023 — Schema-validated controller-profile messages
+
+Every controller-profile worker MUST accept only a schema-validated typed message union,
+rejecting malformed messages and unknown message kinds without dispatching a DAW or MIDI action.
+
+Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
+covering valid, malformed, and unknown message kinds, and `pnpm deps:validate`.
+
+### AC-024 — Allowlisted controller-profile capabilities
+
+Controller-profile workers MUST map capability requests only when their identifiers are explicitly
+allowlisted, routing approved requests through the typed DAW action boundary and rejecting unknown
+or unauthorized requests without invoking an action.
+
+Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
+covering allowlisted mappings and unauthorized-request rejection, and `pnpm deps:validate`.
+
+### AC-025 — No profile-source execution
+
+Controller-profile workers MUST NOT execute profile-provided source strings through `eval`, `new Function`,
+string-to-code compilation, or any equivalent dynamic execution mechanism; profiles provide data
+and capability identifiers rather than executable source.
+
+Verify with: `pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`
+covering a source-string injection attempt, `rg -n 'eval|new Function|Function\(' src/modules/MIDI/workers`
+with no matches, and `pnpm deps:validate`.
+
 ## Open questions
 
 - [ ] Q-001 — Default encoder target: selected-device parameters or selected-track volumes?
@@ -201,11 +228,14 @@ Verify with: `pnpm test:run -- PushHardware`
   This is also the durable owner for the current
   `src/modules/MIDI/workers/controllerScriptingWorker.ts` warning: validation found a
   worker-shaped `self.onmessage` body but no launcher, static import, string/path reference,
-  or test. Before implementation, decide the trust and permission model, sandbox boundary,
-  and typed action bridge through which a profile may request DAW or MIDI changes. A Web
-  Worker alone is not proof of a secure sandbox, and this spec does not authorize arbitrary
-  `new Function` execution. Keep the warning visible until this question is resolved by real
-  product behavior or the exact file is explicitly retired.
+  or test. The unresolved product decision is whether the Push driver should use a generic
+  controller-profile abstraction now or ship standalone and generalize later.
+  The enforceable security baseline for any controller-profile worker is AC-023 through AC-025:
+  schema-validated typed messages, explicit allowlisted capabilities through the typed DAW
+  action boundary, and no profile-provided source execution. A Web Worker alone is not proof of
+  a secure sandbox. Q-004 remains open only for the product sequencing/generalization decision;
+  it MUST NOT defer, weaken, or replace AC-023 through AC-025. Keep the warning visible until
+  real product behavior satisfies AC-023 through AC-025 or the exact file is explicitly retired.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap

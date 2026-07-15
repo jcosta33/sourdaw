@@ -38,7 +38,7 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration Q-004](../push-integration/spec.md): retain behind its trust, capability, sandbox, and typed-action boundary; no launcher or action wiring is authorized by this map. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages), [AC-024](../push-integration/spec.md#ac-024--allowlisted-controller-profile-capabilities), and [AC-025](../push-integration/spec.md#ac-025--no-profile-source-execution): retain only behind the typed-message, allowlisted-capability/action, and no-source-execution boundaries; [Q-004](../push-integration/spec.md) is context only for unresolved product sequencing/generalization. |
 | `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
 | `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
 | `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
