@@ -19,6 +19,8 @@ export type ExecuteOptions = {
     skipUndo?: boolean;
     /** Opaque owner for CRDT writes made synchronously by this action. */
     snapshotTransaction?: object;
+    /** When true, do not capture this execution in an active macro recording. */
+    skipMacroRecording?: boolean;
 };
 
 export const executeAppAction = inject({ logger })(
@@ -61,8 +63,9 @@ export const executeAppAction = inject({ logger })(
                 clearSemanticContext();
             }
 
-            // Record to macro playback
-            recordAction(action);
+            if (!options?.skipMacroRecording) {
+                recordAction(action);
+            }
 
             if (!options?.skipUndo) {
                 // Record undoable actions to global history (skip UI-only actions like panel toggles)

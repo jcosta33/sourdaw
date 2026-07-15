@@ -52,7 +52,7 @@ describe('revertActionGroup', () => {
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
-    it('reverts every entry in the group newest-first with skipUndo and rebuilds the split', async () => {
+    it('reverts every entry newest-first without undo or macro recording and rebuilds the split', async () => {
         const other = actionEntry('keep', 'g0');
         const g1 = actionEntry('1', 'g1');
         const g2 = actionEntry('2', 'g1');
@@ -60,8 +60,17 @@ describe('revertActionGroup', () => {
 
         await revertActionGroup('g1');
 
-        // Inverse replays must run under skipUndo so they do not push fresh entries.
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(1, { type: 'toggleRecording' }, { skipUndo: true });
+        // Inverse replays must not push fresh undo entries or leak into macro recording.
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
         // Group entries are stripped from past and prepended (in order) to future.
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({

@@ -5,6 +5,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
 
+import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function seekPlayhead(beat: number): void {
@@ -26,6 +27,7 @@ export function seekPlayhead(beat: number): void {
         stopActiveRecording();
     }
 
+    panicYeastRuntime();
     if (wasPlaying) {
         stopPlayheadScheduler();
         stopAllScheduled();

@@ -2,6 +2,7 @@ import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTim
 import { handleNextSetlistItem } from '../handlers/transport/handleNextSetlistItem';
 import { handlePreviousSetlistItem } from '../handlers/transport/handlePreviousSetlistItem';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
+import { handleRestorePunchRegion } from '../handlers/transport/handleRestorePunchRegion';
 import { handleSeekPlayhead } from '../handlers/transport/handleSeekPlayhead';
 import { handleSetCountInBars } from '../handlers/transport/handleSetCountInBars';
 import { handleSetLoopRegion } from '../handlers/transport/handleSetLoopRegion';
@@ -28,6 +29,7 @@ export type TransportHandlersMap = {
     nextSetlistItem: typeof handleNextSetlistItem;
     previousSetlistItem: typeof handlePreviousSetlistItem;
     removeTimeSignatureChange: typeof handleRemoveTimeSignatureChange;
+    restorePunchRegion: typeof handleRestorePunchRegion;
     seekPlayhead: typeof handleSeekPlayhead;
     setCountInBars: typeof handleSetCountInBars;
     setLoopRegion: typeof handleSetLoopRegion;
@@ -72,6 +74,7 @@ export function getTransportHandlers(): TransportHandlersMap {
         setTimeSignature: handleSetTimeSignature,
         addTimeSignatureChange: handleAddTimeSignatureChange,
         removeTimeSignatureChange: handleRemoveTimeSignatureChange,
+        restorePunchRegion: handleRestorePunchRegion,
         togglePreRoll: handleTogglePreRoll,
         setPreRollBars: handleSetPreRollBars,
         togglePunchRecording: handleTogglePunchRecording,

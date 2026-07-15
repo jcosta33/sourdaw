@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput/resetMidiState';
+import { yeastPanic } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
@@ -20,6 +21,14 @@ vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
 vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
     resetMidiState: vi.fn(),
 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
+}));
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
+    yeastPanic: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
@@ -35,6 +44,7 @@ describe('stopPlayback', () => {
         vi.mocked(stopPlayheadScheduler).mockClear();
         vi.mocked(stopAllScheduled).mockClear();
         vi.mocked(resetMidiState).mockClear();
+        vi.mocked(yeastPanic).mockClear();
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
@@ -55,6 +65,7 @@ describe('stopPlayback', () => {
         stopPlayback();
 
         expect(stopPlayheadScheduler).toHaveBeenCalled();
+        expect(yeastPanic).toHaveBeenCalledWith(48000);
         expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false, playheadPosition: 0 });
         expect(playheadPositionRef.current).toBe(0);
     });

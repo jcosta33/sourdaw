@@ -80,12 +80,12 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
     // instrument. The Yeast rack emits this app event because it has no
     // instrument downstream of its own; the AudioEngine owns instrument routing,
     // so it subscribes here (once, for the MIDI-routing lifetime) and forwards
-    // each off to the current target track's instrument device node.
+    // each off to the event's originating track instrument.
     if (!(initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub) {
         (initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub = true;
         const eventBus = Container.get(WebMidiEventBus);
-        eventBus.on('yeast.notesOff', ({ notes }) => {
-            routeYeastNoteOffsForTargetTrack(notes, {
+        eventBus.on('yeast.notesOff', ({ trackId, noteOffs }) => {
+            routeYeastNoteOffsForTargetTrack(trackId, noteOffs, {
                 getTrackStoreState: () => trackStore.value,
                 emitGrandBouleEvent: (deviceId, midiNote) => {
                     void eventBus.emit('midi.noteOff', { deviceId, midiNote });

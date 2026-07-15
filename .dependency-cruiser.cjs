@@ -35,7 +35,7 @@
 //   Private folders (never importable cross-module):
 //     models/, repositories/, services/, validators/, transformers/,
 //     presentations/hooks|stores|context|components|renderers/,
-//     engine/, worklets/, runtime/, errors/, handlers/.
+//     engine/, worklets/, workers/, runtime/, errors/, handlers/.
 //
 // Intra-module dependency direction:
 //   presentations/ → useCases → repositories / stores / validators / services
@@ -75,7 +75,7 @@ module.exports = {
         // current flat 34-module tree: the `Common/` / `Supporting/` module
         // subgroups, the `application/` layer, the `presentations/stores/` and
         // `presentations/context/` folders, and the `validators/` / `runtime/` /
-        // `worklets/` private folders. They enforce nothing today (no files
+        // `worklets/` and `workers/` private folders. They enforce nothing today (no files
         // match), but they guard the intended structure the moment it is added,
         // so they are kept in place deliberately — do not delete them.
         // --------------------------------------------------------------------
@@ -174,7 +174,7 @@ module.exports = {
                 'except useCases/, events/, stores/, and presentations/views/ within the same module. ' +
                 'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
-                'engine/, runtime/, or worklets/ is forbidden.',
+                'engine/, runtime/, worklets/, or workers/ is forbidden.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
             },
@@ -403,12 +403,12 @@ module.exports = {
         {
             name: 'presentation-no-engine-runtime-imports',
             severity: 'error',
-            comment: 'Presentation code cannot import engine/, runtime/, or worklets/ directly.',
+            comment: 'Presentation code cannot import engine/, runtime/, worklets/, or workers/ directly.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(engine|runtime|worklets)/.+' + SOURCE_FILE_RE,
+                path: '^$1$2/(engine|runtime|worklets|workers)/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -466,7 +466,7 @@ module.exports = {
             severity: 'error',
             comment:
                 'Domain models are pure module-owned data. They must not import useCases, stores, events, IO, ' +
-                'handlers, services, validators, transformers, presentation, engine, worklets, or runtime ' +
+                'handlers, services, validators, transformers, presentation, engine, worklets, workers, or runtime ' +
                 'from any module. Existing Command catalog violations are explicit baseline debt.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'models/.+' + SOURCE_FILE_RE,
@@ -474,7 +474,7 @@ module.exports = {
             to: {
                 path:
                     'src/modules/(?:Common/|Supporting/)?[^/]+/' +
-                    '(useCases|repositories|stores|events|handlers|services|validators|transformers|presentations|engine|worklets|runtime)/.+' +
+                    '(useCases|repositories|stores|events|handlers|services|validators|transformers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
         },
@@ -492,7 +492,7 @@ module.exports = {
             to: {
                 path:
                     'src/modules/(?:Common/|Supporting/)?[^/]+/' +
-                    '(useCases|repositories|stores|handlers|presentations|engine|worklets|runtime|services|validators|transformers)/.+' +
+                    '(useCases|repositories|stores|handlers|presentations|engine|worklets|workers|runtime|services|validators|transformers)/.+' +
                     SOURCE_FILE_RE,
             },
         },
@@ -508,7 +508,7 @@ module.exports = {
             to: {
                 path:
                     'src/modules/(?:Common/|Supporting/)?[^/]+/' +
-                    '(repositories|useCases|stores|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    '(repositories|useCases|stores|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
         },
@@ -525,7 +525,7 @@ module.exports = {
             to: {
                 path:
                     'src/modules/(?:Common/|Supporting/)?[^/]+/' +
-                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
         },
@@ -542,13 +542,13 @@ module.exports = {
             to: {
                 path:
                     'src/modules/(?:Common/|Supporting/)?[^/]+/' +
-                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|runtime)/.+' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
         },
 
         // --------------------------------------------------------------------
-        // Engine / runtime / worklets
+        // Engine / runtime / worklets / workers
         // --------------------------------------------------------------------
         {
             name: 'worklets-no-module-runtime-imports',
@@ -567,11 +567,69 @@ module.exports = {
         },
 
         {
+            name: 'module-runtime-no-worklet-imports',
+            severity: 'error',
+            comment:
+                'Use cases, repositories, stores, handlers, and presentations must not import module worklet internals. ' +
+                'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
+            from: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'worklets-no-app-helper-or-tauri',
             severity: 'error',
             comment: 'Worklets must not depend on application/, src/helpers/, or Tauri APIs.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^(application/|src/helpers/)|/@tauri-apps/',
+            },
+        },
+
+        {
+            name: 'workers-no-module-runtime-imports',
+            severity: 'error',
+            comment:
+                'Dedicated Worker files must remain isolated from business, repository, store, engine, runtime, and presentation code.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'module-runtime-no-worker-imports',
+            severity: 'error',
+            comment:
+                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
+                'The engine-owned Worker client is the only application entrypoint for a Worker module.',
+            from: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/workers/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'workers-no-app-helper-or-tauri',
+            severity: 'error',
+            comment: 'Dedicated Workers must not depend on application/, src/helpers/, or Tauri APIs.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
             },
             to: {
                 path: '^(application/|src/helpers/)|/@tauri-apps/',

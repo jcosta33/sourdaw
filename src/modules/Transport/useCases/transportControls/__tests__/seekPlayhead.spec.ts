@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput/resetMidiState';
+import { yeastPanic } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
@@ -24,6 +25,14 @@ vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
 vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
     resetMidiState: vi.fn(),
 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
+}));
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
+    yeastPanic: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
 }));
@@ -37,6 +46,7 @@ describe('seekPlayhead', () => {
         vi.mocked(startPlayheadScheduler).mockClear();
         vi.mocked(stopAllScheduled).mockClear();
         vi.mocked(resetMidiState).mockClear();
+        vi.mocked(yeastPanic).mockClear();
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
@@ -73,6 +83,7 @@ describe('seekPlayhead', () => {
         seekPlayhead(3);
 
         expect(stopPlayheadScheduler).toHaveBeenCalled();
+        expect(yeastPanic).toHaveBeenCalledWith(48000);
         expect(stopAllScheduled).toHaveBeenCalled();
         expect(resetMidiState).toHaveBeenCalled();
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
@@ -124,5 +135,16 @@ describe('seekPlayhead', () => {
         expect(stopPlayheadScheduler).not.toHaveBeenCalled();
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
         expect(update).toHaveBeenCalledWith({ playheadPosition: 5 });
+    });
+
+    it('should panic Yeast even when seeking while already stopped', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+        });
+
+        seekPlayhead(5);
+
+        expect(yeastPanic).toHaveBeenCalledWith(48000);
     });
 });

@@ -13,9 +13,9 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
 import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
-import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
+import { processYeastMidi } from '#/modules/Yeast/useCases';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
+import { beatToSamples, getTempoAtBeat, samplesToBeat, splitRangeAtTempoChanges } from '../../models/TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -50,7 +50,7 @@ type DrumKit = {
 };
 
 // Transport-local shapes (AGENTS.md model isolation). Structurally compatible
-// with what Yeast's processors and worklet accept; we do not import Yeast's model.
+// with what Yeast's processors and Worker accept; we do not import Yeast's model.
 type YeastMidiEventKind =
     | { type: 'noteOn'; channel: number; note: number; velocity: number }
     | { type: 'noteOff'; channel: number; note: number }
@@ -61,6 +61,7 @@ type YeastMidiEventKind =
 type MidiEvent = {
     timeSamples: number;
     kind: YeastMidiEventKind;
+    trackId?: string;
 };
 
 type TransportInfo = {
@@ -75,6 +76,11 @@ type TransportInfo = {
     loopEnabled: boolean;
     loopStartPpq: number;
     loopEndPpq: number;
+};
+
+export type SchedulerCancellation = {
+    generation: number;
+    isCurrent: () => boolean;
 };
 
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
@@ -190,8 +196,10 @@ export async function scheduleMidiNotes(
     lastScheduledBeat: number,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
-    currentTempo: number
+    currentTempo: number,
+    cancellation?: SchedulerCancellation
 ): Promise<void> {
+    const isCurrent = cancellation?.isCurrent ?? (() => true);
     const tracks = trackStore.value?.tracks;
     const midiState = midiStore.value;
     if (!tracks || !midiState) {
@@ -201,6 +209,9 @@ export async function scheduleMidiNotes(
     const changes = tempoMapStore.value?.changes ?? [];
 
     for (const track of tracks) {
+        if (!isCurrent()) {
+            return;
+        }
         if (track.kind !== 'midi' || track.muted) {
             continue;
         }
@@ -229,7 +240,7 @@ export async function scheduleMidiNotes(
             }
 
             const hasYeast = track.devices.some((data) => data.type === 'yeast');
-            // §2 — When the clip loops, run the Yeast worklet once per loop
+            // §2 — When the clip loops, run the Yeast Worker once per loop
             // iteration over that iteration's absolute window, so bar-aware
             // processors see iter-correct transport metadata instead of the
             // first iteration's bar replayed at every offset. The transformed
@@ -242,43 +253,33 @@ export async function scheduleMidiNotes(
             let runYeastForIteration: ((iterAbsBase: number) => Promise<typeof notes | null>) | null = null;
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             if (hasYeast) {
-                const yeastRack = getYeastRack();
-                if (yeastRack.getProcessorIds().length > 0) {
-                    const rawNotes = notes;
-                    runYeastForIteration = async (iterAbsBase: number) => {
-                        // Use the tempo map's value at the block start rather than
-                        // the flat transport tempo, so beats↔samples conversion
-                        // respects tempo changes within the project (§3).
-                        const blockTempo = getTempoAtBeat(changes, fromBeat, transport.tempo);
-                        const spb = blockTempo / 60;
-                        const yeastSr = getAudioContext().sampleRate;
-                        // §2 / audit row 2 — Bar index, beat-in-bar, and time
-                        // signature must derive from the same authority the metronome
-                        // uses (the time-signature map), not the flat transport
-                        // numerator/denominator. Otherwise a bar-aware Yeast processor
-                        // reads the wrong bar after a mid-project meter change while
-                        // the metronome stays correct. `getBarBeatAtPosition` is the
-                        // map-aware accumulator (1-indexed bar/beat + tick); convert to
-                        // the worklet's 0-indexed convention. `tick` is 0..479 of a
-                        // beat, so `(beat - 1) + tick/480` reconstructs the fractional
-                        // 0-indexed beat-in-bar.
-                        const tsChanges = timeSignatureMapStore.value?.changes ?? [];
+                const rawNotes = notes;
+                runYeastForIteration = async (iterAbsBase: number) => {
+                    const yeastSr = getAudioContext().sampleRate;
+                    const tsChanges = timeSignatureMapStore.value?.changes ?? [];
+                    const ctx = getAudioContext();
+                    const processed: MidiEvent[] = [];
+                    for (const block of splitRangeAtTempoChanges(changes, fromBeat, toBeat)) {
+                        if (!isCurrent()) {
+                            return null;
+                        }
+                        const blockTempo = getTempoAtBeat(changes, block.fromBeat, transport.tempo);
                         const barBeat = getBarBeatAtPosition(
                             tsChanges,
-                            fromBeat,
+                            block.fromBeat,
                             transport.timeSignatureNumerator,
                             transport.timeSignatureDenominator
                         );
                         const blockTimeSig = getTimeSignatureAtBeat(
                             tsChanges,
-                            fromBeat,
+                            block.fromBeat,
                             transport.timeSignatureNumerator,
                             transport.timeSignatureDenominator
                         );
                         const yeastTransport: TransportInfo = {
                             sampleRate: yeastSr,
                             bpm: blockTempo,
-                            ppqPosition: fromBeat,
+                            ppqPosition: block.fromBeat,
                             isPlaying: true,
                             barIndex: barBeat.bar - 1,
                             beatInBar: barBeat.beat - 1 + barBeat.tick / 480,
@@ -291,116 +292,128 @@ export async function scheduleMidiNotes(
 
                         const midiEvents: MidiEvent[] = [];
                         for (const node of rawNotes) {
-                            // Map each source note to its absolute beat in *this*
-                            // iteration so the worklet places it in the right bar.
                             const noteStartBeat = iterAbsBase + node.startBeat;
-                            if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) {
+                            if (noteStartBeat < block.fromBeat || noteStartBeat >= block.toBeat) {
                                 continue;
                             }
-                            const timeSamples = Math.round((noteStartBeat * yeastSr) / spb);
                             midiEvents.push({
-                                timeSamples,
-                                kind: { type: 'noteOn', channel: 0, note: node.pitch, velocity: node.velocity ?? 100 },
+                                timeSamples: beatToSamples(changes, noteStartBeat, transport.tempo, yeastSr),
+                                trackId: track.id,
+                                kind: {
+                                    type: 'noteOn',
+                                    channel: 0,
+                                    note: node.pitch,
+                                    velocity: node.velocity,
+                                },
                             });
-                            const offTimeSamples = Math.round(((noteStartBeat + node.duration) * yeastSr) / spb);
                             midiEvents.push({
-                                timeSamples: offTimeSamples,
+                                timeSamples: beatToSamples(
+                                    changes,
+                                    noteStartBeat + node.duration,
+                                    transport.tempo,
+                                    yeastSr
+                                ),
+                                trackId: track.id,
                                 kind: { type: 'noteOff', channel: 0, note: node.pitch },
                             });
                         }
 
-                        const blockStartSamples = Math.round((fromBeat * yeastSr) / spb);
-                        const blockEndSamples = Math.round((toBeat * yeastSr) / spb);
-                        const ctx = getAudioContext();
-                        const workletNode = await getYeastWorkletNodeAsync(ctx);
-                        const processed = workletNode
-                            ? await workletNode.processBlock(
-                                  midiEvents,
-                                  blockStartSamples,
-                                  blockEndSamples,
-                                  yeastTransport
-                              )
-                            : yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
+                        const blockProcessed = await processYeastMidi({
+                            context: ctx,
+                            trackId: track.id,
+                            events: midiEvents,
+                            blockStartSamples: beatToSamples(changes, block.fromBeat, transport.tempo, yeastSr),
+                            blockEndSamples: beatToSamples(changes, block.toBeat, transport.tempo, yeastSr),
+                            transport: yeastTransport,
+                        });
+                        if (!isCurrent()) {
+                            return null;
+                        }
+                        processed.push(...blockProcessed);
+                    }
 
-                        // §154.1 — Build a per-note index of noteOff events so the
-                        // noteOn → noteOff match is O(1) instead of O(N) per noteOn.
-                        // Events within `processed` are time-ordered by construction,
-                        // so a single forward pass produces stacks of pending-off
-                        // timeSamples per pitch. A noteOn then pops the earliest
-                        // noteOff whose time > startTime.
-                        const noteOffsByPitch = new Map<number, number[]>();
-                        for (const evt of processed) {
-                            if (evt.kind.type === 'noteOff') {
-                                const existing = noteOffsByPitch.get(evt.kind.note);
-                                if (existing) {
-                                    existing.push(evt.timeSamples);
-                                } else {
-                                    noteOffsByPitch.set(evt.kind.note, [evt.timeSamples]);
-                                }
+                    // §154.1 — Build a per-note index of noteOff events so the
+                    // noteOn → noteOff match is O(1) instead of O(N) per noteOn.
+                    // Events within `processed` are time-ordered by construction,
+                    // so a single forward pass produces stacks of pending-off
+                    // timeSamples per pitch. A noteOn then pops the earliest
+                    // noteOff whose time > startTime.
+                    const noteOffsByKey = new Map<number, number[]>();
+                    for (const evt of processed) {
+                        if (evt.kind.type === 'noteOff') {
+                            const noteKey = evt.kind.channel * 128 + evt.kind.note;
+                            const existing = noteOffsByKey.get(noteKey);
+                            if (existing) {
+                                existing.push(evt.timeSamples);
+                            } else {
+                                noteOffsByKey.set(noteKey, [evt.timeSamples]);
                             }
                         }
-                        const noteOffCursor = new Map<number, number>();
+                    }
+                    const noteOffCursor = new Map<number, number>();
 
-                        // §6 — A Yeast generator (e.g. EuclideanGenerator) can emit
-                        // notes even when the source clip has none. In that case
-                        // `rawNotes[0]` is undefined and spreading it would yield
-                        // notes missing id / probability / MPE fields. Use the first
-                        // source note as a template when present, otherwise a
-                        // fully-specified default so every generated note is a
-                        // complete MidiNote.
-                        const noteTemplate: NonNullable<(typeof midiState.notesByClipId)[string]>[number] =
-                            rawNotes[0] ?? {
-                                id: clip.id,
-                                pitch: 60,
-                                startBeat: 0,
-                                duration: 0,
-                                velocity: 100,
-                                probability: 100,
-                            };
-
-                        const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
-                        for (const evt of processed) {
-                            if (evt.kind.type === 'noteOn') {
-                                const evtNote = evt.kind.note;
-                                const evtVel = evt.kind.velocity;
-                                // Emit the worklet output at its absolute beat, less
-                                // the clip's MIDI content offset (preserving the
-                                // original behaviour, which applied midiOffset to the
-                                // worklet output). The per-note loop consumes these
-                                // notes by their absolute beat directly — it does not
-                                // re-apply iterOffset / midiOffset, since this
-                                // iteration's run already placed them.
-                                const startBeat = (evt.timeSamples * spb) / yeastSr - clipMidiOffset;
-
-                                const offs = noteOffsByPitch.get(evtNote);
-                                let offTime: number | null = null;
-                                if (offs) {
-                                    let cursor = noteOffCursor.get(evtNote) ?? 0;
-                                    while (cursor < offs.length && offs[cursor]! <= evt.timeSamples) {
-                                        cursor++;
-                                    }
-                                    if (cursor < offs.length) {
-                                        offTime = offs[cursor]!;
-                                        noteOffCursor.set(evtNote, cursor + 1);
-                                    } else {
-                                        noteOffCursor.set(evtNote, cursor);
-                                    }
-                                }
-                                const endBeat =
-                                    offTime !== null ? (offTime * spb) / yeastSr - clipMidiOffset : startBeat + 0.25;
-                                transformedNotes.push({
-                                    ...noteTemplate,
-                                    id: `${noteTemplate.id}:yeast:${evtNote}:${evt.timeSamples}`,
-                                    pitch: evtNote,
-                                    velocity: evtVel,
-                                    startBeat,
-                                    duration: endBeat - startBeat,
-                                });
-                            }
-                        }
-                        return transformedNotes;
+                    // §6 — A Yeast generator (e.g. EuclideanGenerator) can emit
+                    // notes even when the source clip has none. In that case
+                    // `rawNotes[0]` is undefined and spreading it would yield
+                    // notes missing id / probability / MPE fields. Use the first
+                    // source note as a template when present, otherwise a
+                    // fully-specified default so every generated note is a
+                    // complete MidiNote.
+                    const noteTemplate: NonNullable<(typeof midiState.notesByClipId)[string]>[number] = rawNotes[0] ?? {
+                        id: clip.id,
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 0,
+                        velocity: 100,
+                        probability: 100,
                     };
-                }
+
+                    const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
+                    for (const evt of processed) {
+                        if (evt.kind.type === 'noteOn') {
+                            const evtNote = evt.kind.note;
+                            const evtVel = evt.kind.velocity;
+                            // Emit the Worker output at its absolute beat, less
+                            // the clip's MIDI content offset (preserving the
+                            // original behaviour, which applied midiOffset to the
+                            // Worker output). The per-note loop consumes these
+                            // notes by their absolute beat directly — it does not
+                            // re-apply iterOffset / midiOffset, since this
+                            // iteration's run already placed them.
+                            const startBeat =
+                                samplesToBeat(changes, evt.timeSamples, transport.tempo, yeastSr) - clipMidiOffset;
+
+                            const noteKey = evt.kind.channel * 128 + evtNote;
+                            const offs = noteOffsByKey.get(noteKey);
+                            let offTime: number | null = null;
+                            if (offs) {
+                                let cursor = noteOffCursor.get(noteKey) ?? 0;
+                                while (cursor < offs.length && offs[cursor]! <= evt.timeSamples) {
+                                    cursor++;
+                                }
+                                if (cursor < offs.length) {
+                                    offTime = offs[cursor]!;
+                                    noteOffCursor.set(noteKey, cursor + 1);
+                                } else {
+                                    noteOffCursor.set(noteKey, cursor);
+                                }
+                            }
+                            const endBeat =
+                                offTime !== null
+                                    ? samplesToBeat(changes, offTime, transport.tempo, yeastSr) - clipMidiOffset
+                                    : startBeat + 0.25;
+                            transformedNotes.push({
+                                ...noteTemplate,
+                                id: `${noteTemplate.id}:yeast:${evtNote}:${evt.timeSamples}`,
+                                pitch: evtNote,
+                                velocity: evtVel,
+                                startBeat,
+                                duration: endBeat - startBeat,
+                            });
+                        }
+                    }
+                    return transformedNotes;
+                };
             }
 
             const synthParams = drumKit || drumKitDef ? null : getSynthParamsForTrack(track.id);
@@ -471,13 +484,16 @@ export async function scheduleMidiNotes(
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
 
-                // §2 — For a Yeast track, run the worklet per loop iteration with
+                // §2 — For a Yeast track, run the Worker per loop iteration with
                 // iter-correct transport metadata. The returned notes carry their
                 // absolute beat directly, so the per-note loop must not re-apply
                 // iterOffset / midiOffset to them.
                 const iterNotes = runYeastForIteration
                     ? await runYeastForIteration(clip.startBeat + iterOffset)
                     : notes;
+                if (!isCurrent()) {
+                    return;
+                }
                 if (!iterNotes) {
                     continue;
                 }
@@ -505,6 +521,9 @@ export async function scheduleMidiNotes(
                     }
 
                     if (noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat) {
+                        if (!isCurrent()) {
+                            return;
+                        }
                         const probability = note.probability ?? 100;
                         if (probability < 100 && seededRandom(clip.id, noteStartBeat) * 100 >= probability) {
                             continue;
@@ -517,14 +536,15 @@ export async function scheduleMidiNotes(
                             pitch = transposeForChordTrack(pitch, refChord, targetChord);
                         }
 
-                        const noteTempo = getTempoAtBeat(changes, noteStartBeat, transport.tempo);
-                        const noteBeatsPerSecond = noteTempo / 60;
-                        const beatOffset = noteStartBeat - accumulatedPosition;
-                        const time = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
-                        const sampleFrame = Math.round(time * sr);
                         const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
-                        const duration = (noteEndBeat - noteStartBeat) / noteBeatsPerSecond;
-                        const endSampleFrame = Math.round((time + duration) * sr);
+                        const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
+                        const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
+                        const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);
+                        const time = getCurrentTime() + (noteStartSamples - accumulatedSamples) / sr + compensation;
+                        const sampleFrame = Math.round(time * sr);
+                        const durationSamples = noteEndSamples - noteStartSamples;
+                        const duration = durationSamples / sr;
+                        const endSampleFrame = sampleFrame + durationSamples;
 
                         if (toasterRoute) {
                             let pad = toasterRoute.pad;

@@ -1,13 +1,16 @@
-import { getYeastRack, getWorkletNodeSync, registerProcessorType, syncStoreFromRack } from '../stores/yeastStore';
+import { PROCESSOR_TYPES, type ProcessorType } from '../models/ProcessorCatalog';
+import { yeastStore } from '../stores/yeastStore';
 
-import { type ProcessorType, createProcessor } from './processorFactory';
+import { commitYeastProjection } from './commitYeastProjection';
 
 export function addYeastProcessor(type: ProcessorType): void {
-    const rack = getYeastRack();
+    const state = yeastStore.value;
+    if (!state) {
+        return;
+    }
+
     const id = `${type}-${crypto.randomUUID()}`;
-    const processor = createProcessor(type, id);
-    registerProcessorType(id, type);
-    rack.addProcessor(processor);
-    getWorkletNodeSync()?.addProcessor(type, id);
-    syncStoreFromRack();
+    const catalogEntry = PROCESSOR_TYPES.find((entry) => entry.type === type);
+    const name = catalogEntry?.name ?? type;
+    commitYeastProjection([...state.processors, { id, type, name, bypassed: false, params: {} }]);
 }

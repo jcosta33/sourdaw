@@ -791,6 +791,21 @@ describe('AudioEngine', () => {
             );
             expect(fermNoteOffs.length).toBe(0);
         });
+
+        it('releases Grand Boule through its control-level allNotesOff contract', () => {
+            const allNotesOff = vi.fn();
+            const strip = engine.ensureTrackStrip('tGrandBoule');
+            strip.deviceNodes.push({
+                deviceId: 'grand-boule-dev',
+                type: 'grand-boule',
+                nodes: [],
+                grandBouleControls: { allNotesOff },
+            } as never);
+
+            engine.stopAllScheduled();
+
+            expect(allNotesOff).toHaveBeenCalledTimes(1);
+        });
     });
 
     // ── Fix 6: the transport SAB allocation is guarded by hasSharedArrayBuffer ────

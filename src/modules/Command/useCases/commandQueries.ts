@@ -217,6 +217,11 @@ export type AppAction =
     | { type: 'seekPlayhead'; payload: { beat: number } }
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
+    | {
+          /** Internal inverse action that atomically restores both punch endpoints. */
+          type: 'restorePunchRegion';
+          payload: { punchInBeat: number; punchOutBeat: number };
+      }
     | { type: 'togglePunch'; payload?: undefined }
     | { type: 'toggleCountIn'; payload?: undefined }
     | { type: 'setCountInBars'; payload: { bars: number } }
