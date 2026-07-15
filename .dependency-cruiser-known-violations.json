@@ -592,23 +592,5 @@
       "severity": "error",
       "name": "components-no-view-access"
     }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/services/yeastWorkletProcessor.ts",
-    "to": "src/modules/Yeast/useCases/MidiRack.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/services/yeastWorkletProcessor.ts",
-    "to": "src/modules/Yeast/useCases/processorFactory.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
   }
 ]

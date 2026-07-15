@@ -9,7 +9,7 @@
  * audio-thread rack stays in sync with the main-thread rack (UI state tracker).
  */
 
-import yeastWorkletProcessorUrl from '../services/yeastWorkletProcessor.ts?worker&url';
+import yeastWorkletProcessorUrl from './yeastWorkletProcessor.ts?worker&url';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { ProcessorType } from '../useCases/processorFactory';
