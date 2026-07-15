@@ -7,8 +7,13 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import {
+    compactProject,
+    persistCrdtProject,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { projectStore } from '../../stores/projectStore';
@@ -30,6 +35,40 @@ type PerformRecentProjectLoadInput = {
     key: string;
     transaction: ProjectLoadTransaction;
 };
+
+function restoreAudioGraphAfterAbortedLoad(): void {
+    try {
+        ensureTrackStrips();
+    } catch (error) {
+        logger.error(new Error('[loadRecentProject] Failed to restore the previous audio graph', { cause: error }));
+    }
+}
+
+async function persistCommittedCrdtProject(): Promise<void> {
+    try {
+        await compactProject();
+    } catch (error) {
+        logger.warn('[loadRecentProject] Failed to persist loaded CRDT authority; retrying:', error);
+        try {
+            await compactProject();
+        } catch (recoveryError) {
+            logger.error(
+                new Error('[loadRecentProject] CRDT persistence recovery failed after project commit', {
+                    cause: recoveryError,
+                })
+            );
+            try {
+                await persistCrdtProject();
+            } catch (incrementalRecoveryError) {
+                logger.error(
+                    new Error('[loadRecentProject] Incremental CRDT recovery failed after project commit', {
+                        cause: incrementalRecoveryError,
+                    })
+                );
+            }
+        }
+    }
+}
 
 async function performRecentProjectLoad({ key, transaction }: PerformRecentProjectLoadInput): Promise<boolean> {
     try {
@@ -79,13 +118,6 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
         if (!preparedStoredBuffers) {
             return false;
         }
-        try {
-            stopPlayback();
-            resetAudioGraph();
-        } catch (error) {
-            logger.warn('[loadRecentProject] Failed to prepare the audio runtime for project commit:', error);
-            return false;
-        }
         if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
             return false;
         }
@@ -93,37 +125,60 @@ async function performRecentProjectLoad({ key, transaction }: PerformRecentProje
             return false;
         }
 
-        batchStoreUpdates(() => {
-            resetCrdtProjectAuthority(data.meta.name);
-            preparedStoredBuffers.publish();
-            preparedEmbeddedBuffers?.publish();
-            resetModuleStoresToDefault();
-
-            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-            hydrateModuleStoresFromProjectData(data);
-
-            projectStore.set({
-                name: data.meta.name,
-                createdAt: data.meta.createdAt,
-                updatedAt: data.meta.updatedAt,
-                keyRoot: data.meta.keyRoot,
-                scaleName: data.meta.scaleName,
-                tuning: data.meta.tuning,
-                dirty: false,
-                loading: false,
-                initialized: true,
-            });
-
-            writeProjectJson(JSON.stringify(data));
-            verifyAudioBufferReferences();
-            clearUndoHistory();
-        });
-        await compactProject();
-        if (!transaction.isCurrent()) {
+        // Preparation is complete and this transition still owns commit authority.
+        // Resetting the graph is the live commit boundary; aborts before it leave
+        // the previous project untouched, while failures at the boundary rebuild
+        // the previous graph before returning false.
+        try {
+            stopPlayback();
+            resetAudioGraph();
+        } catch (error) {
+            logger.warn('[loadRecentProject] Failed to prepare the audio runtime for project commit:', error);
+            restoreAudioGraphAfterAbortedLoad();
             return false;
         }
-        stopActiveAutoSave();
-        setAutoSaveHandle(startCrdtAutoSave());
+
+        try {
+            batchStoreUpdates(() => {
+                resetCrdtProjectAuthority(data.meta.name);
+                preparedStoredBuffers.publish();
+                preparedEmbeddedBuffers?.publish();
+                resetModuleStoresToDefault();
+
+                hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
+                hydrateModuleStoresFromProjectData(data);
+
+                projectStore.set({
+                    name: data.meta.name,
+                    createdAt: data.meta.createdAt,
+                    updatedAt: data.meta.updatedAt,
+                    keyRoot: data.meta.keyRoot,
+                    scaleName: data.meta.scaleName,
+                    tuning: data.meta.tuning,
+                    dirty: false,
+                    loading: false,
+                    initialized: true,
+                });
+
+                verifyAudioBufferReferences();
+                clearUndoHistory();
+            });
+        } catch (error) {
+            logger.warn('[loadRecentProject] Failed to commit loaded project state:', error);
+            restoreAudioGraphAfterAbortedLoad();
+            return false;
+        }
+
+        await persistCommittedCrdtProject();
+        if (transaction.isCurrent()) {
+            try {
+                writeProjectJson(JSON.stringify(data));
+            } catch (error) {
+                logger.warn('[loadRecentProject] Failed to persist recent project JSON:', error);
+            }
+            stopActiveAutoSave();
+            setAutoSaveHandle(startCrdtAutoSave());
+        }
 
         return true;
     } catch (error) {

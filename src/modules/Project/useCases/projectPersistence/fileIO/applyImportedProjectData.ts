@@ -7,8 +7,13 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import {
+    compactProject,
+    persistCrdtProject,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../helpers/autoSaveHandle';
@@ -26,6 +31,42 @@ type PerformImportedProjectDataApplicationInput = {
     data: HydratableProjectData;
     transaction: ProjectLoadTransaction;
 };
+
+function restoreAudioGraphAfterAbortedLoad(): void {
+    try {
+        ensureTrackStrips();
+    } catch (error) {
+        logger.error(
+            new Error('[applyImportedProjectData] Failed to restore the previous audio graph', { cause: error })
+        );
+    }
+}
+
+async function persistCommittedCrdtProject(): Promise<void> {
+    try {
+        await compactProject();
+    } catch (error) {
+        logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority; retrying:', error);
+        try {
+            await compactProject();
+        } catch (recoveryError) {
+            logger.error(
+                new Error('[applyImportedProjectData] CRDT persistence recovery failed after project commit', {
+                    cause: recoveryError,
+                })
+            );
+            try {
+                await persistCrdtProject();
+            } catch (incrementalRecoveryError) {
+                logger.error(
+                    new Error('[applyImportedProjectData] Incremental CRDT recovery failed after project commit', {
+                        cause: incrementalRecoveryError,
+                    })
+                );
+            }
+        }
+    }
+}
 
 async function performImportedProjectDataApplication({
     data,
@@ -61,13 +102,6 @@ async function performImportedProjectDataApplication({
     if (!preparedStoredBuffers) {
         return false;
     }
-    try {
-        stopPlayback();
-        resetAudioGraph();
-    } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to prepare the audio runtime for project commit:', error);
-        return false;
-    }
     if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
         return false;
     }
@@ -76,7 +110,18 @@ async function performImportedProjectDataApplication({
     }
 
     // Preparation is complete and this transition still owns commit authority.
-    // Replace the live project synchronously so no partial reset is observable.
+    // Resetting the graph is the live commit boundary; aborts before it leave
+    // the previous project untouched, while failures at the boundary rebuild
+    // the previous graph before returning false.
+    try {
+        stopPlayback();
+        resetAudioGraph();
+    } catch (error) {
+        logger.warn('[applyImportedProjectData] Failed to prepare the audio runtime for project commit:', error);
+        restoreAudioGraphAfterAbortedLoad();
+        return false;
+    }
+
     try {
         batchStoreUpdates(() => {
             resetCrdtProjectAuthority(data.meta.name);
@@ -104,20 +149,16 @@ async function performImportedProjectDataApplication({
             clearUndoHistory();
         });
     } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to reset imported CRDT authority:', error);
+        logger.warn('[applyImportedProjectData] Failed to commit imported project state:', error);
+        restoreAudioGraphAfterAbortedLoad();
         return false;
     }
-    try {
-        await compactProject();
-    } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority:', error);
-        return false;
+
+    await persistCommittedCrdtProject();
+    if (transaction.isCurrent()) {
+        stopActiveAutoSave();
+        setAutoSaveHandle(startCrdtAutoSave());
     }
-    if (!transaction.isCurrent()) {
-        return false;
-    }
-    stopActiveAutoSave();
-    setAutoSaveHandle(startCrdtAutoSave());
     return true;
 }
 

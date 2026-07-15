@@ -4,7 +4,9 @@ import {
     getAudioContext,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
+    resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
+import { compactProject, persistCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -34,6 +36,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
+    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProjectAuthority: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
@@ -76,6 +79,10 @@ describe('loadRecentProject', () => {
     beforeEach(() => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
+        vi.mocked(compactProject).mockClear();
+        vi.mocked(persistCrdtProject).mockClear();
+        vi.mocked(startCrdtAutoSave).mockClear();
+        vi.mocked(resetAudioGraph).mockClear();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
@@ -112,6 +119,30 @@ describe('loadRecentProject', () => {
             buffers: validProjectData.audioBuffers,
         });
         expect(importInput?.shouldContinue?.()).toBe(true);
+    });
+
+    it('does not reset the old graph when embedded buffer persistence fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        const persistEmbedded = vi.fn().mockResolvedValue(false);
+        vi.mocked(importCachedAudioBuffers).mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
+
+        await expect(loadRecentProject('embedded-persist-failure')).resolves.toBe(false);
+
+        expect(persistEmbedded).toHaveBeenCalledOnce();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+    });
+
+    it('reports a committed load while retrying failed CRDT persistence', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(compactProject)
+            .mockRejectedValueOnce(new Error('CRDT persistence failed'))
+            .mockRejectedValueOnce(new Error('CRDT retry failed'));
+
+        await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe(true);
+
+        expect(compactProject).toHaveBeenCalledTimes(2);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('restores only buffers referenced by the candidate project', async () => {

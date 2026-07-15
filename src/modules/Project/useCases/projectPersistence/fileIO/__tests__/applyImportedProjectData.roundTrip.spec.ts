@@ -7,6 +7,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
+import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
@@ -28,26 +29,53 @@ type ImportCachedAudioBuffersInput = {
 type PreparedAudioBuffers = { publish: () => number };
 type PreparedImportedAudioBuffers = PreparedAudioBuffers & { persist: () => Promise<boolean> };
 
-const { audioContext, importCachedAudioBuffers, prepareCachedAudioBuffersFromIdb } = vi.hoisted(() => {
+const {
+    audioContext,
+    compactProject,
+    crdtAuthority,
+    engineGraph,
+    importCachedAudioBuffers,
+    prepareCachedAudioBuffersFromIdb,
+    persistCrdtProject,
+    resetAudioGraph,
+    resetCrdtProjectAuthority,
+    restoreOldAudioGraph,
+    setSidechainRoutes,
+    startCrdtAutoSave,
+} = vi.hoisted(() => {
     function prepared(): PreparedImportedAudioBuffers {
         return { persist: () => Promise.resolve(true), publish: () => 0 };
     }
+    const engineGraph = { value: 'old-project' };
+    const crdtAuthority = { value: 'Old Project' };
+    const resetAudioGraph = vi.fn(() => {
+        engineGraph.value = 'empty';
+    });
+    const resetCrdtProjectAuthority = vi.fn((name: string) => {
+        crdtAuthority.value = name;
+    });
+    const restoreOldAudioGraph = vi.fn(() => {
+        engineGraph.value = 'old-project';
+    });
     return {
         audioContext: {},
+        compactProject: vi.fn().mockResolvedValue(undefined),
+        crdtAuthority,
+        engineGraph,
         importCachedAudioBuffers: vi
             .fn<(input: ImportCachedAudioBuffersInput) => Promise<PreparedImportedAudioBuffers | null>>()
             .mockResolvedValue(prepared()),
         prepareCachedAudioBuffersFromIdb: vi
             .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
             .mockResolvedValue(prepared()),
+        persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+        resetAudioGraph,
+        resetCrdtProjectAuthority,
+        restoreOldAudioGraph,
+        setSidechainRoutes: vi.fn(),
+        startCrdtAutoSave: vi.fn(() => vi.fn()),
     };
 });
-const { compactProject, resetCrdtProjectAuthority, setSidechainRoutes, startCrdtAutoSave } = vi.hoisted(() => ({
-    compactProject: vi.fn().mockResolvedValue(undefined),
-    resetCrdtProjectAuthority: vi.fn(),
-    setSidechainRoutes: vi.fn(),
-    startCrdtAutoSave: vi.fn(() => vi.fn()),
-}));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
@@ -55,11 +83,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: () => null,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
-    resetAudioGraph: vi.fn(),
+    resetAudioGraph,
 }));
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject,
+    persistCrdtProject,
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 }));
@@ -68,6 +97,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
+        ensureTrackStrips: restoreOldAudioGraph,
         restoreTimelineMapSnapshot: vi.fn(),
         stopPlayback: vi.fn(),
     };
@@ -209,11 +239,17 @@ function makeProject(): ProjectData {
 
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
+        engineGraph.value = 'old-project';
+        crdtAuthority.value = 'Old Project';
         importCachedAudioBuffers.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();
         setSidechainRoutes.mockClear();
         compactProject.mockClear();
         resetCrdtProjectAuthority.mockClear();
+        resetAudioGraph.mockClear();
+        restoreOldAudioGraph.mockClear();
+        persistCrdtProject.mockClear();
+        startCrdtAutoSave.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -309,7 +345,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it('rejects the load before store publication when CRDT authority reset fails', async () => {
-        const previousTracks = trackStore.value;
+        const previousTracks = { tracks: [baseTrack('old-track', [])], selectedTrackId: null };
+        trackStore.set(previousTracks);
+        engineGraph.value = 'old-project';
+        crdtAuthority.value = 'Old Project';
         resetCrdtProjectAuthority.mockImplementationOnce(() => {
             throw new Error('branch persistence failed');
         });
@@ -317,7 +356,89 @@ describe('applyImportedProjectData round-trip hydration', () => {
         await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(false);
 
         expect(trackStore.value).toEqual(previousTracks);
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
         expect(compactProject).not.toHaveBeenCalled();
+    });
+
+    it('keeps the old live project when embedded buffer persistence fails', async () => {
+        const previousTracks = { tracks: [baseTrack('old-track', [])], selectedTrackId: null };
+        trackStore.set(previousTracks);
+        const persistEmbedded = vi.fn().mockResolvedValue(false);
+        importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
+        const project = makeProject();
+        project.audioBuffers = {
+            'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+        };
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(false);
+
+        expect(persistEmbedded).toHaveBeenCalledOnce();
+        expect(trackStore.value).toEqual(previousTracks);
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+
+    it('reports a committed live project while recovering failed CRDT persistence', async () => {
+        compactProject
+            .mockRejectedValueOnce(new Error('CRDT persistence failed'))
+            .mockRejectedValueOnce(new Error('CRDT retry failed'));
+
+        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
+
+        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
+        expect(engineGraph.value).toBe('empty');
+        expect(crdtAuthority.value).toBe('Round Trip');
+        expect(compactProject).toHaveBeenCalledTimes(2);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('does not reset the old graph when a newer transaction supersedes the prepared load', async () => {
+        let finishPersist: ((result: boolean) => void) | undefined;
+        const persistEmbedded = vi.fn(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    finishPersist = resolve;
+                })
+        );
+        importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
+        const project = makeProject();
+        project.audioBuffers = {
+            'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+        };
+        const loading = applyImportedProjectData({ data: project });
+        await vi.waitFor(() => expect(persistEmbedded).toHaveBeenCalledOnce());
+        runProjectLoadTransaction().activate();
+
+        const resolvePersist = finishPersist;
+        if (!resolvePersist) {
+            throw new Error('Expected embedded persistence to be pending');
+        }
+        resolvePersist(true);
+
+        await expect(loading).resolves.toBe(false);
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+    });
+
+    it('restores the old graph when the reset boundary throws after tearing it down', async () => {
+        resetAudioGraph.mockImplementationOnce(() => {
+            engineGraph.value = 'empty';
+            throw new Error('audio reset failed');
+        });
+
+        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(false);
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+        expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
     });
 
     it('hydrates the transport store from the imported transport block', async () => {
@@ -500,7 +621,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
 
-        expect(arrangementStore.value?.arrangements[0]?.automation?.lanes[0]).toMatchObject({
+        expect(arrangementStore.value?.arrangements[0].automation.lanes[0]).toMatchObject({
             points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
             objects: [],
             visible: true,
