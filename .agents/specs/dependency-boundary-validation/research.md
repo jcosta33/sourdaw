@@ -16,17 +16,20 @@ sources:
 
 ## Promoted evidence provenance
 
-The substantive evidence from these promotion inputs is preserved in this research.
-Their transient workspace paths are intentionally omitted.
+Only the `no-orphans` evidence and sections used by this promotion are preserved in
+this research. The listed source artifacts may contain other findings or material
+that is not represented here; this provenance does not claim that those artifacts
+are exhausted or safe to delete. Their transient workspace paths are intentionally
+omitted.
 
-| Source ID and name | Date or capture | Status at promotion |
-| --- | --- | --- |
-| `INV-depcruiser-no-orphans-overexclusion-2026-06-30` — Dependency-cruiser no-orphans over-exclusion inventory | 2026-06-30 | current |
-| `TASK-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate | capture 2026-07-15 | blocked |
-| `REVIEW-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate review | capture 2026-07-15 | blocked |
-| `FINDING-depcruiser-laundering-gaps` — dep-cruiser enforces value edges, not laundering paths — gaps an adversarial review proved | 2026-06-16 | accepted |
-| `FINDING-depcruiser-warn-backlog` — Two dependency-cruiser rules landed at warn pending a real cleanup pass | 2026-06-16 | accepted |
-| `INV-deadcode` — Dead-code map (knip) inventory | 2026-06-13 | open |
+| Source ID and name | Date or capture | Promoted scope | Status at promotion |
+| --- | --- | --- | --- |
+| `INV-depcruiser-no-orphans-overexclusion-2026-06-30` — Dependency-cruiser no-orphans over-exclusion inventory | 2026-06-30 | no-orphans evidence used here | current |
+| `TASK-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate | capture 2026-07-15 | no-orphans sections used here | blocked |
+| `REVIEW-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate review | capture 2026-07-15 | no-orphans sections used here | blocked |
+| `FINDING-depcruiser-laundering-gaps` — dep-cruiser enforces value edges, not laundering paths — gaps an adversarial review proved | 2026-06-16 | no-orphans evidence/sections only | accepted |
+| `FINDING-depcruiser-warn-backlog` — Two dependency-cruiser rules landed at warn pending a real cleanup pass | 2026-06-16 | no-orphans evidence/sections only | accepted |
+| `INV-deadcode` — Dead-code map (knip) inventory | 2026-06-13 | no-orphans evidence/sections only | open |
 
 ## Promotion-time evidence
 
