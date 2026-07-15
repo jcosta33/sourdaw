@@ -1,4 +1,4 @@
-import { type ActionHandler } from '../useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '../useCases/commandQueries';
 
 /**
  * Action-handler registry shared across the app.
@@ -14,8 +14,9 @@ import { type ActionHandler } from '../useCases/commandQueries';
  * statically imports another module's handler factory.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HandlerMap = Record<string, ActionHandler<any>>;
+type HandlerMap = {
+    [ActionType in AppAction['type']]?: ActionHandler<Extract<AppAction, { type: ActionType }>>;
+};
 
 const registry: HandlerMap = {};
 
@@ -31,16 +32,22 @@ export function registerHandlerMap(map: HandlerMap): void {
             // environment so the conflict is caught at wire-up time.
             throw new Error(`[handlerRegistry] Duplicate handler for action type: ${key}`);
         }
-        registry[key] = map[key]!;
     }
+    Object.assign(registry, map);
 }
 
 export function getHandlerMap(): HandlerMap {
     return registry;
 }
 
+export function getHandler<ActionType extends AppAction['type']>(
+    action: Extract<AppAction, { type: ActionType }>
+): ActionHandler<Extract<AppAction, { type: ActionType }>> | undefined {
+    return registry[action.type];
+}
+
 export function clearHandlerRegistry(): void {
     for (const key of Object.keys(registry)) {
-        delete registry[key];
+        Reflect.deleteProperty(registry, key);
     }
 }
