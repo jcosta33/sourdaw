@@ -6,6 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - "Originating design note: RAVE timbre transfer (.agents/specs/rave-timbre-transfer/)"
+  - ../dependency-boundary-validation/spec.md
 ---
 
 # RAVE AI timbre transfer
@@ -187,13 +188,16 @@ whenever monitor mode is active.
 
 Verify with: `pnpm test:run -- RavePanel`
 
-### AC-024 — Pure functions remain a model-free fallback for CI
+### AC-024 — Prototype transforms do not satisfy ONNX acceptance
 
-The existing pure `encodeAudio`, `decodeLatent`, and `timbreTransfer` functions must remain
-usable as a model-free fallback path when no model is loaded, so tests and CI can run the
-pipeline end-to-end without downloading model weights.
+Until spec-governed replacement or retirement, the current pure `encodeAudio`,
+`decodeLatent`, `interpolateLatent`, and `timbreTransfer` helpers MUST remain classified
+as test-only heuristic placeholders. They MUST NOT be used as a production or model-free
+fallback, counted as evidence for AC-001 through AC-003, or cosmetically wired only to
+clear a `no-orphans` warning. Real RAVE work MUST replace them with model-backed transforms
+or explicitly retire the exact paths under this spec.
 
-Verify with: `pnpm test:run -- rave`
+Verify with: `pnpm test:run -- rave` and `pnpm deps:validate`
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -202,6 +206,20 @@ per-track real-time assignments after the audio engine is ready and the project 
 merely round-trip the assignment data.
 
 Verify with: `pnpm test:run -- rave`
+
+## Dormant prototype ownership
+
+This spec owns the four current `no-orphans` paths:
+
+- `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`
+- `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`
+- `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts`
+- `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`
+
+Their sibling tests cover deterministic heuristics only; they do not satisfy the real
+ONNX acceptance criteria. Replacement must satisfy the model-backed requirements above,
+and retirement must name the exact paths. Adding imports, barrel exports, or runtime
+registrations solely to make dependency validation green is out of scope.
 
 ## Constraints
 
