@@ -201,6 +201,12 @@ export const RotaryKnob = ({
         };
     });
 
+    useLayoutEffect(() => {
+        if (!draggingRef.current) {
+            currentValue.current = value;
+        }
+    }, [value]);
+
     useEffect(() => {
         return () => {
             finalizeDragRef.current();
@@ -325,6 +331,7 @@ export const RotaryKnob = ({
 
         event.preventDefault();
         const currentStep = Math.max(Number.EPSILON, event.shiftKey ? fineStep : step);
+        const liveValue = currentValue.current;
         let nextValue: number;
         if (isHome) {
             nextValue = clamp(min);
@@ -332,9 +339,9 @@ export const RotaryKnob = ({
             nextValue = clamp(max);
         } else {
             const direction = isIncrement ? 1 : -1;
-            nextValue = quantize(value + direction * currentStep, currentStep);
+            nextValue = quantize(liveValue + direction * currentStep, currentStep);
         }
-        if (Object.is(nextValue, value)) {
+        if (Object.is(nextValue, liveValue)) {
             return;
         }
 
@@ -345,6 +352,7 @@ export const RotaryKnob = ({
                 return;
             }
         }
+        currentValue.current = nextValue;
         onChangeRef.current(nextValue, false);
     };
 

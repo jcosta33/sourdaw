@@ -364,6 +364,34 @@ describe('RotaryKnob', () => {
         expect(onChange.mock.calls.every(([, isTransient]) => isTransient === false)).toBe(true);
     });
 
+    it('accumulates repeated keyboard edits before the controlled value rerenders', () => {
+        const onChange = vi.fn();
+        const { container } = render(<RotaryKnob value={2} onChange={onChange} min={1} max={5} step={1} />);
+        const root = getRoot(container);
+
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+        fireEvent.keyDown(root, { key: 'ArrowUp' });
+        fireEvent.keyDown(root, { key: 'ArrowDown' });
+        fireEvent.keyDown(root, { key: 'ArrowDown' });
+
+        expect(onChange.mock.calls).toEqual([
+            [3, false],
+            [4, false],
+            [3, false],
+            [2, false],
+        ]);
+    });
+
+    it('resynchronizes keyboard edits from an externally controlled value', () => {
+        const onChange = vi.fn();
+        const { container, rerender } = render(<RotaryKnob value={2} onChange={onChange} min={1} max={5} step={1} />);
+        rerender(<RotaryKnob value={4} onChange={onChange} min={1} max={5} step={1} />);
+
+        fireEvent.keyDown(getRoot(container), { key: 'ArrowUp' });
+
+        expect(onChange).toHaveBeenCalledWith(5, false);
+    });
+
     it('checks synchronous keyboard gesture authority and preserves pointer ownership', () => {
         let currentToken = 0;
         let allowKeyboard = true;
