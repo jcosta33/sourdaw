@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach } from 'vitest';
 
-import { type ActionHandler } from '../../useCases/commandQueries';
-import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../handlerRegistry';
+import { type ActionHandler, type AppAction } from '../../useCases/commandQueries';
+import { clearHandlerRegistry, getHandler, getHandlerMap, registerHandlerMap } from '../handlerRegistry';
 
 // A minimal stub handler; the registry never invokes it in these tests.
 function stub(label: string): ActionHandler {
@@ -9,6 +9,17 @@ function stub(label: string): ActionHandler {
         undoable: false,
         execute: () => {},
         describe: () => ({ label }),
+    };
+}
+
+function typedHandler<ActionType extends AppAction['type']>(
+    actionType: ActionType,
+    execute: (action: Extract<AppAction, { type: ActionType }>) => void
+): ActionHandler<Extract<AppAction, { type: ActionType }>> {
+    return {
+        undoable: false,
+        execute,
+        describe: () => ({ label: actionType }),
     };
 }
 
@@ -23,6 +34,33 @@ describe('handlerRegistry / registerHandlerMap', () => {
 
         const map = getHandlerMap();
         expect(Object.keys(map).sort()).toEqual(['stopPlayback', 'togglePlayback']);
+    });
+
+    it('keeps action discriminants through registration and lookup', async () => {
+        const executions: string[] = [];
+        const toggleHandler = typedHandler('togglePlayback', (action) => {
+            executions.push(action.type);
+        });
+        const tempoHandler = typedHandler('setTempo', (action) => {
+            executions.push(`${action.type}:${action.payload.bpm}`);
+        });
+
+        registerHandlerMap({ togglePlayback: toggleHandler });
+        registerHandlerMap({ setTempo: tempoHandler });
+
+        const toggleAction = { type: 'togglePlayback' } satisfies Extract<AppAction, { type: 'togglePlayback' }>;
+        const tempoAction = {
+            type: 'setTempo',
+            payload: { bpm: 120 },
+        } satisfies Extract<AppAction, { type: 'setTempo' }>;
+
+        expectTypeOf(getHandler(toggleAction)).toEqualTypeOf<typeof toggleHandler | undefined>();
+        expectTypeOf(getHandler(tempoAction)).toEqualTypeOf<typeof tempoHandler | undefined>();
+
+        await getHandler(toggleAction)?.execute(toggleAction);
+        await getHandler(tempoAction)?.execute(tempoAction);
+
+        expect(executions).toEqual(['togglePlayback', 'setTempo:120']);
     });
 
     it('throws on a duplicate action-type registration (one handler per action type)', () => {
