@@ -22,6 +22,8 @@ export function createDawApi(): DawApi {
         notify: (message: string) => {
             notifyUser(message);
         },
+        // SECURITY: ExtensionManifest permissions are not enforced and script calls are not rate-limited.
+        // A Worker sandbox remains required before this API ships.
         executeAction: async (action: DawAction) => {
             type AppAction = Parameters<typeof executeAppAction>[0];
             await executeAppAction(action as AppAction, { source: 'ai' });
