@@ -74,6 +74,21 @@ describe('RotaryKnob', () => {
         expect(screen.getByText('Gain')).toBeInTheDocument();
     });
 
+    it('accepts an explicit accessible name while preserving the visible label and parameter identity', () => {
+        const { container } = render(
+            <RotaryKnob
+                value={50}
+                onChange={vi.fn()}
+                label="Visible gain"
+                aria-label="Input gain"
+                paramId="input-gain"
+            />
+        );
+
+        expect(getRoot(container)).toHaveAttribute('aria-label', 'Input gain');
+        expect(screen.getByText('Visible gain')).toBeInTheDocument();
+    });
+
     it('should reset to default on double click', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={10} onChange={onChange} defaultValue={50} min={0} max={100} />);

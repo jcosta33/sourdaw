@@ -80,6 +80,7 @@ export const ProofImagerSection = ({
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}
+                                aria-label={`Imager ${label} width`}
                                 onChange={(value, isTransient) => updateWidth(i, value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -119,6 +120,7 @@ export const ProofImagerSection = ({
                     </DawPluginToggle>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
+                        aria-label="Imager auto mono bass frequency"
                         onChange={(value, isTransient) => {
                             onPatchChange({
                                 key: 'imgMonoBassFreq',

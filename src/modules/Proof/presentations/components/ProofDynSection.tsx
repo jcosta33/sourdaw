@@ -100,6 +100,7 @@ export const ProofDynSection = ({
                         <div key={crossoverKey} className="flex items-center gap-0.5">
                             <RotaryKnob
                                 value={freq}
+                                aria-label={`Dynamics ${crossoverKey} crossover frequency`}
                                 onChange={(value, isTransient) => updateXover(i, value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -146,6 +147,7 @@ export const ProofDynSection = ({
 
                             <RotaryKnob
                                 value={band.threshold}
+                                aria-label={`Dynamics ${label} threshold`}
                                 onChange={(value, isTransient) => updateBand(i, 'threshold', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -160,6 +162,7 @@ export const ProofDynSection = ({
 
                             <RotaryKnob
                                 value={band.ratio}
+                                aria-label={`Dynamics ${label} ratio`}
                                 onChange={(value, isTransient) => updateBand(i, 'ratio', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -174,6 +177,7 @@ export const ProofDynSection = ({
 
                             <RotaryKnob
                                 value={band.attack}
+                                aria-label={`Dynamics ${label} attack`}
                                 onChange={(value, isTransient) => updateBand(i, 'attack', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -188,6 +192,7 @@ export const ProofDynSection = ({
 
                             <RotaryKnob
                                 value={band.release}
+                                aria-label={`Dynamics ${label} release`}
                                 onChange={(value, isTransient) => updateBand(i, 'release', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}

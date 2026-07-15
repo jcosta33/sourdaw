@@ -193,6 +193,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 step={mappedStep}
                 fineStep={mappedFineStep}
                 defaultValue={mappedDefaultValue}
+                aria-label={param.name}
                 bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
                 modulations={
                     modulation !== 0

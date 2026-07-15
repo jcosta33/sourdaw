@@ -125,6 +125,47 @@ describe('ProofPanel', () => {
         expect(screen.getByText('Mission')).toBeInTheDocument();
     });
 
+    it.each([
+        {
+            uiLevel: 1,
+            expectedNames: ['Mission limiter ceiling', 'Master limiter ceiling'],
+        },
+        {
+            uiLevel: 2,
+            expectedNames: [
+                'Dynamics Threshold',
+                'Imager Width',
+                'Exciter Drive',
+                'Limiter Ceiling',
+                'Master limiter ceiling',
+            ],
+        },
+        {
+            uiLevel: 3,
+            expectedNames: [
+                'EQ Low Cut frequency',
+                'Dynamics Sub threshold',
+                'Imager Sub width',
+                'Exciter Sub drive',
+                'Limiter ceiling',
+                'Master limiter ceiling',
+            ],
+        },
+        {
+            uiLevel: 4,
+            expectedNames: ['Input gain', 'Output gain', 'Master limiter ceiling'],
+        },
+    ])('gives level $uiLevel controls stable, distinct accessible names', ({ uiLevel, expectedNames }) => {
+        seedState({ uiLevel });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const names = screen.getAllByRole('slider').map((control) => control.getAttribute('aria-label'));
+
+        expect(names).toEqual(expect.arrayContaining(expectedNames));
+        expect(names.every((name) => name !== null && name !== 'Parameter control')).toBe(true);
+        expect(new Set(names).size).toBe(names.length);
+    });
+
     it('persists a target selection atomically and updates the store', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);

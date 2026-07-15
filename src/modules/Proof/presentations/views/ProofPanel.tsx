@@ -472,6 +472,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
+                                    aria-label="Master limiter ceiling"
                                     onChange={(value, isTransient) =>
                                         handlePatchChange({
                                             key: 'limCeiling',
@@ -588,6 +589,7 @@ const Level1Play = ({
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
+                    aria-label="Mission limiter ceiling"
                     onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
                     gestureOwner={gestureOwner}
                     min={-12}
@@ -981,6 +983,7 @@ const Level4Route = ({
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
+                        aria-label="Input gain"
                         onChange={(value, isTransient) => onPatchChange({ key: 'inputGain', value, isTransient })}
                         gestureOwner={gestureOwner}
                         min={-24}
@@ -1000,6 +1003,7 @@ const Level4Route = ({
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
+                        aria-label="Output gain"
                         onChange={(value, isTransient) => onPatchChange({ key: 'outputGain', value, isTransient })}
                         gestureOwner={gestureOwner}
                         min={-24}
@@ -1252,6 +1256,7 @@ const KnobColumn = ({
         </span>
         <RotaryKnob
             value={value}
+            aria-label={`${label} ${sublabel}`}
             onChange={onChange}
             gestureOwner={gestureOwner}
             gestureAuthority={gestureAuthority}

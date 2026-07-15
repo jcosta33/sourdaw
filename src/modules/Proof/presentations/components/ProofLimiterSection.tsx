@@ -61,6 +61,7 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limCeiling}
+                            aria-label="Limiter ceiling"
                             onChange={(value, isTransient) => {
                                 onPatchChange({
                                     key: 'limCeiling',
@@ -86,6 +87,7 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limRelease}
+                            aria-label="Limiter release"
                             onChange={(value, isTransient) => {
                                 onPatchChange({
                                     key: 'limRelease',
@@ -111,6 +113,7 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limLookahead}
+                            aria-label="Limiter lookahead"
                             onChange={(value, isTransient) => {
                                 onPatchChange({
                                     key: 'limLookahead',

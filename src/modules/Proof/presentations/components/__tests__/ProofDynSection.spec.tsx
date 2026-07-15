@@ -11,6 +11,35 @@ describe('ProofDynSection', () => {
         expect(screen.getByText(/multiband dynamics/i)).toBeInTheDocument();
     });
 
+    it('names crossover and repeated band controls with their band identity', () => {
+        render(<ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} gestureOwner={0} onPatchChange={vi.fn()} />);
+
+        const names = screen.getAllByRole('slider').map((control) => control.getAttribute('aria-label'));
+
+        expect(names).toEqual([
+            'Dynamics low crossover frequency',
+            'Dynamics mid crossover frequency',
+            'Dynamics high crossover frequency',
+            'Dynamics Sub threshold',
+            'Dynamics Sub ratio',
+            'Dynamics Sub attack',
+            'Dynamics Sub release',
+            'Dynamics Low-Mid threshold',
+            'Dynamics Low-Mid ratio',
+            'Dynamics Low-Mid attack',
+            'Dynamics Low-Mid release',
+            'Dynamics Hi-Mid threshold',
+            'Dynamics Hi-Mid ratio',
+            'Dynamics Hi-Mid attack',
+            'Dynamics Hi-Mid release',
+            'Dynamics High threshold',
+            'Dynamics High ratio',
+            'Dynamics High attack',
+            'Dynamics High release',
+        ]);
+        expect(new Set(names).size).toBe(names.length);
+    });
+
     it("colours each band's GR meter bar with that band's own colour, not a constant", () => {
         // Non-zero GR on every band so each bar has a visible width and a colour to read.
         const { container } = render(

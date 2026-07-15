@@ -50,8 +50,16 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
 }));
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-        <button data-testid="rotary-knob" data-value={value} onClick={() => onChange(value + 1)}>
+    RotaryKnob: ({
+        value,
+        onChange,
+        'aria-label': ariaLabel,
+    }: {
+        value: number;
+        onChange: (v: number) => void;
+        'aria-label'?: string;
+    }) => (
+        <button data-testid="rotary-knob" data-value={value} aria-label={ariaLabel} onClick={() => onChange(value + 1)}>
             Knob
         </button>
     ),
@@ -118,6 +126,11 @@ describe('DeviceParameterControl', () => {
     it('should render rotary knob for float parameters', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
+    });
+
+    it('gives the rotary knob the parameter name as its accessible name', () => {
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+        expect(screen.getByTestId('rotary-knob')).toHaveAttribute('aria-label', 'Gain');
     });
 
     it('should call setDeviceParameter when knob value changes', () => {

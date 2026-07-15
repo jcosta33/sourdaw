@@ -75,6 +75,8 @@ type RotaryKnobProps = {
     className?: string;
     /** Label rendered below the knob. When set, the component expands its min-width to prevent label overlap. */
     label?: string;
+    /** Explicit accessible name for contexts where the visible label is owned by surrounding markup. */
+    'aria-label'?: string;
     paramId?: string;
     targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
     trackId?: string;
@@ -123,6 +125,7 @@ export const RotaryKnob = ({
     scale = 'linear',
     gestureOwner,
     gestureAuthority,
+    'aria-label': ariaLabel,
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -384,7 +387,7 @@ export const RotaryKnob = ({
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
-    const accessibleName = label ?? paramId ?? 'Parameter control';
+    const accessibleName = ariaLabel ?? label ?? paramId ?? 'Parameter control';
     const ariaValue = Math.max(min, Math.min(max, value));
     const handleFocusLoss = (): void => {
         finalizeDragRef.current();

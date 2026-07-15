@@ -17,4 +17,21 @@ describe('ProofLimiterSection', () => {
         );
         expect(screen.getByText(/limiter/i)).toBeInTheDocument();
     });
+
+    it('gives each limiter control a meaningful accessible name', () => {
+        render(
+            <ProofLimiterSection
+                patch={DEFAULT_PATCH}
+                limiterGrDb={0}
+                truePeakDb={-0.5}
+                gestureOwner={0}
+                onPatchChange={vi.fn()}
+            />
+        );
+
+        const names = screen.getAllByRole('slider').map((control) => control.getAttribute('aria-label'));
+
+        expect(names).toEqual(['Limiter ceiling', 'Limiter release', 'Limiter lookahead']);
+        expect(new Set(names).size).toBe(names.length);
+    });
 });

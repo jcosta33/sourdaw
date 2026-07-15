@@ -16,6 +16,16 @@ import { ProofEqCurve } from './ProofEqCurve';
 const BAND_TYPES = ['Peak', 'Lo Shelf', 'Hi Shelf', 'HP', 'LP'] as const;
 const CHANNEL_MODES = ['L/R', 'Mid', 'Side'] as const;
 const EQ_BAND_KEYS = ['low-cut', 'low-shelf', 'low-mid', 'mid', 'high-mid', 'high', 'high-shelf', 'high-cut'] as const;
+const EQ_BAND_LABELS = [
+    'Low Cut',
+    'Low Shelf',
+    'Low-Mid',
+    'Mid',
+    'High-Mid',
+    'High',
+    'High Shelf',
+    'High Cut',
+] as const;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 
 type Props = {
@@ -98,6 +108,7 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                         {/* Frequency */}
                         <RotaryKnob
                             value={band.freq}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} frequency`}
                             onChange={(value, isTransient) => updatePatch(i, 'freq', value, isTransient)}
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}
@@ -115,6 +126,7 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                         {/* Gain */}
                         <RotaryKnob
                             value={band.gain}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} gain`}
                             onChange={(value, isTransient) => updatePatch(i, 'gain', value, isTransient)}
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}
@@ -133,6 +145,7 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                         {/* Q */}
                         <RotaryKnob
                             value={band.q}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} Q`}
                             onChange={(value, isTransient) => updatePatch(i, 'q', value, isTransient)}
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}

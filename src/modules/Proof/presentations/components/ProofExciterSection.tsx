@@ -99,6 +99,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                             {/* Drive */}
                             <RotaryKnob
                                 value={band.drive}
+                                aria-label={`Exciter ${label} drive`}
                                 onChange={(value, isTransient) => updateBand(i, 'drive', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
@@ -114,6 +115,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                             {/* Blend */}
                             <RotaryKnob
                                 value={band.blend}
+                                aria-label={`Exciter ${label} blend`}
                                 onChange={(value, isTransient) => updateBand(i, 'blend', value, isTransient)}
                                 gestureOwner={gestureOwner}
                                 gestureAuthority={gestureAuthority}
