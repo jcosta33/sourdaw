@@ -5,8 +5,8 @@ title: Progressive disclosure, metering, and gain-matched bypass for plugin UIs
 status: open
 owner: The Sourdaw team
 sources:
-  - FabFilter, iZotope, Soundtoys plugin UX; EBU R128 / ITU-R BS.1770 loudness
-  - Lock-free SPSC ring-buffer (rtrb) and WebGPU visualization references
+    - FabFilter, iZotope, Soundtoys plugin UX; EBU R128 / ITU-R BS.1770 loudness
+    - Lock-free SPSC ring-buffer (rtrb) and WebGPU visualization references
 ---
 
 # Research: Progressive disclosure, metering, and gain-matched bypass for plugin UIs
@@ -77,8 +77,9 @@ makes bypass comparisons honest — all without touching DSP?
   staging should expose auto-gain, a LUFS target, and dynamic-range analysis.
 - **Evidence:** The durable Proof surface already reserves Route-tier reference slots and Lab-tier
   match-EQ/ONNX Suggest controls, while `SPEC-loudness-metering-ebur128` provides the R128
-  measurement foundation. The consolidated audit found no user-facing learn/match/auto-gain flow;
-  the `realfft` occurrence is transitive lockfile evidence, not an implemented capability.
+  measurement foundation. The consolidated audit found no end-to-end learn/reference-match/auto-gain
+  flow in Proof; Gluten's plugin-level Auto gain and Match controls do not provide that mastering
+  workflow. The `realfft` occurrence is transitive lockfile evidence, not an implemented capability.
 - **Confidence:** medium
 - **Bears on:** Future Proof/mastering-page work; it does not change this spec's current DSP-free
   UI scope.
@@ -86,14 +87,14 @@ makes bypass comparisons honest — all without touching DSP?
 ## Open questions
 
 - [ ] Q-001 — Is the five-tier model uniform across all five plugins, or do some
-  (e.g. Crust) collapse to fewer tiers? Confirm per-plugin tier counts.
+      (e.g. Crust) collapse to fewer tiers? Confirm per-plugin tier counts.
 - [ ] Q-002 — Metering bridge topology: one ring per meter vs one multiplexed
-  ring per plugin instance?
+      ring per plugin instance?
 - [ ] Q-003 — WebGPU fallback for Grinder's Lab visualization on runtimes
-  lacking WebGPU.
+      lacking WebGPU.
 - [ ] Q-004 — Which deterministic mastering-assistance slice ships first (learn EQ, reference
-  matching, or gain staging), and where does its DSP implementation live? Keep this UI spec
-  presentation/metering-only until that ownership is decided.
+      matching, or gain staging), and where does its DSP implementation live? Keep this UI spec
+      presentation/metering-only until that ownership is decided.
 
 ## Recommendation
 
