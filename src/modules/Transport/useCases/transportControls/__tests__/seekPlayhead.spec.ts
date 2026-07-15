@@ -8,12 +8,15 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../../playheadScheduler';
+import { startPlayheadScheduler } from '../../startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../../stopPlayheadScheduler';
 import { seekPlayhead } from '../seekPlayhead';
 import { stopActiveRecording } from '../stopActiveRecording';
 
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
+}));
+vi.mock('../../stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../stopActiveRecording', () => ({

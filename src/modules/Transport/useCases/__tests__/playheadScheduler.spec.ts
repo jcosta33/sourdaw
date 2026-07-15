@@ -8,12 +8,14 @@ import { stopAutomationRecording } from '#/modules/Automation/useCases/automatio
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
-import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
+import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
+import { startPlayheadScheduler } from '../startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
 
 type FakeWorker = {
     onmessage: ((e: MessageEvent<unknown>) => void) | null;

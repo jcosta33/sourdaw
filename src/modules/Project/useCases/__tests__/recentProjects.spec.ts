@@ -19,12 +19,6 @@ const storageMocks = vi.hoisted(() => {
     return { mockGet, mockSet };
 });
 
-/** Avoid loading playheadScheduler → scheduleAudioClips → sessionManagement → branchStore (needs real storage shape). */
-vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
-    startPlayheadScheduler: vi.fn(),
-    stopPlayheadScheduler: vi.fn(),
-}));
-
 vi.mock('#/modules/Project/repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
 }));

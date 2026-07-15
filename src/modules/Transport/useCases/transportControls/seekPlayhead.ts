@@ -3,7 +3,8 @@ import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
+import { startPlayheadScheduler } from '../startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
@@ -24,10 +25,10 @@ export function seekPlayhead(beat: number): void {
     // Without this, seeking mid-take left the media recorder capturing and the
     // recorded buffer never landed in its clip.
     if (wasRecording) {
-        stopActiveRecording();
+        void stopActiveRecording();
     }
 
-    panicYeastRuntime();
+    void panicYeastRuntime();
     if (wasPlaying) {
         stopPlayheadScheduler();
         stopAllScheduled();

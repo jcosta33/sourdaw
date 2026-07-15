@@ -6,7 +6,7 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { ensureTrackStrips } from '../ensureTrackStrips';
-import { startPlayheadScheduler } from '../playheadScheduler';
+import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 export function startPlayback(): void {
     const state = getTransportState();

@@ -7,11 +7,11 @@ import { yeastPanic } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { stopPlayheadScheduler } from '../../playheadScheduler';
+import { stopPlayheadScheduler } from '../../stopPlayheadScheduler';
 import { pausePlayback } from '../pausePlayback';
 import { stopActiveRecording } from '../stopActiveRecording';
 
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../stopActiveRecording', () => ({

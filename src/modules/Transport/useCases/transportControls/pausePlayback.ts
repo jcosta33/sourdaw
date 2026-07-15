@@ -2,7 +2,7 @@ import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { stopPlayheadScheduler } from '../playheadScheduler';
+import { stopPlayheadScheduler } from '../stopPlayheadScheduler';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
@@ -28,9 +28,9 @@ export function pausePlayback(): void {
     // `stopActiveRecording` clears the count-in timer and is a safe no-op when
     // nothing is recording (the audio recorder and clip finaliser both bail on
     // empty session/clip sets).
-    stopActiveRecording();
+    void stopActiveRecording();
 
-    panicYeastRuntime();
+    void panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();

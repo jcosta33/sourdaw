@@ -685,15 +685,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Project/useCases/__tests__/recentProjects.spec.ts",
-    "to": "src/modules/Transport/useCases/playheadScheduler.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts",
     "to": "src/modules/Arrangement/stores/markerStore.ts",
     "rule": {
