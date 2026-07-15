@@ -100,7 +100,7 @@ describe('CRDT branch persistence adapter interleavings', () => {
         });
     });
 
-    it('writes a queued pre-switch edit to the outgoing snapshot before loading the target', () => {
+    it('writes a queued pre-switch edit to the outgoing snapshot before loading the target', async () => {
         automergeRepository.createProject('project');
         automergeRepository.createChildDoc('branch_target');
         automergeRepository.insertDoc('branch_feat', cloneDoc(automergeRepository.getDoc('root')!));
@@ -120,7 +120,7 @@ describe('CRDT branch persistence adapter interleavings', () => {
         const storage = createAutomergeStorage<Record<string, unknown>>('root', 'state');
         storage.set({ queuedBeforeSwitch: true });
 
-        switchBranch('target');
+        await switchBranch('target');
 
         expect(automergeRepository.getDoc('branch_feat')).toMatchObject({
             state: { queuedBeforeSwitch: true },
@@ -146,7 +146,7 @@ describe('CRDT branch persistence adapter interleavings', () => {
             doc.featureOnly = true;
         });
 
-        switchBranch(MAIN_BRANCH_ID);
+        await switchBranch(MAIN_BRANCH_ID);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             sharedBeforeFork: true,
         });
@@ -155,7 +155,7 @@ describe('CRDT branch persistence adapter interleavings', () => {
             doc.mainOnly = true;
         });
 
-        switchBranch(featureId);
+        await switchBranch(featureId);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             sharedBeforeFork: true,
             featureOnly: true,
@@ -168,14 +168,14 @@ describe('CRDT branch persistence adapter interleavings', () => {
             true
         );
 
-        switchBranch(MAIN_BRANCH_ID);
+        await switchBranch(MAIN_BRANCH_ID);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             sharedBeforeFork: true,
             mainOnly: true,
         });
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('featureOnly');
 
-        switchBranch(featureId);
+        await switchBranch(featureId);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             sharedBeforeFork: true,
             featureOnly: true,

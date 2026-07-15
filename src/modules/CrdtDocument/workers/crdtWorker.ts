@@ -141,7 +141,7 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
             const bundle = new Map<string, Uint8Array>(data.bundle);
             const result = processLoad(bundle);
             self.postMessage({ id, type: 'loaded', compacted: result.compacted, rootId: result.rootId });
-        } else if (data.type === 'mergeBundle') {
+        } else {
             const current = new Map<string, Uint8Array>(data.current);
             const incoming = new Map<string, Uint8Array>(data.incoming);
             const result = processMerge(current, incoming);

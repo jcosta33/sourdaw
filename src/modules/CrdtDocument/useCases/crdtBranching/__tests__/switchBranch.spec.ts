@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { switchBranch } from '../switchBranch';
 
 const ROOT_LIVE_DOC = { tag: 'root-live' };
+const FEATURE_SNAPSHOT = { tag: 'feature-snap' };
 const TARGET_SNAPSHOT = { tag: 'target-snap' };
 
 const docs: Record<string, unknown> = {};
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     hasDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
+    removeDoc: vi.fn(),
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -25,8 +27,9 @@ const mocks = vi.hoisted(() => ({
         vi.fn<(state: { branches: Array<{ branchId: string; rootDocId: string }>; activeBranchId: string }) => void>(),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
+    loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
-    clone: vi.fn((d: unknown) => ({ tag: 'cloned', from: d })),
+    clone: vi.fn((doc: unknown) => structuredClone(doc)),
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mocks.clone }));
@@ -39,6 +42,7 @@ vi.mock('../../../repositories/automergeRepository', () => ({
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
+        removeDoc: mocks.removeDoc,
     },
 }));
 vi.mock('../../../stores/branchStore', () => ({
@@ -48,6 +52,7 @@ vi.mock('../../../stores/branchStore', () => ({
 }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
 }));
@@ -57,16 +62,26 @@ describe('switchBranch', () => {
         vi.clearAllMocks();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         docs.root = ROOT_LIVE_DOC;
-        docs.branch_feat = { tag: 'feature-snap' };
+        docs.branch_feat = FEATURE_SNAPSHOT;
         docs.branch_other = TARGET_SNAPSHOT;
         mocks.getDoc.mockImplementation((id: string) => docs[id]);
         mocks.hasDoc.mockImplementation((id: string) => id in docs);
+        mocks.insertDoc.mockImplementation((id: string, doc: unknown) => {
+            docs[id] = doc;
+        });
+        mocks.replaceDoc.mockImplementation((id: string, doc: unknown) => {
+            docs[id] = doc;
+        });
+        mocks.removeDoc.mockImplementation((id: string) => {
+            delete docs[id];
+        });
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.storeValue.activeBranchId = 'feat';
     });
 
-    it('writes the outgoing branch live edits back to its snapshot before swapping', () => {
-        switchBranch('other');
+    it('writes the outgoing branch live edits back to its snapshot before swapping', async () => {
+        await switchBranch('other');
 
         // Regression: the outgoing branch (feat) is not main, so its live root
         // edits must be flushed into branch_feat — otherwise they are lost/aliased.
@@ -78,7 +93,7 @@ describe('switchBranch', () => {
         expect(swap).toBeDefined();
     });
 
-    it('flushes deferred storage before reading the target and swapping the root slot', () => {
+    it('flushes deferred storage before reading the target and swapping the root slot', async () => {
         const order: string[] = [];
         mocks.flushAutomergeStorageWrites.mockImplementation(() => {
             order.push('flush');
@@ -94,16 +109,16 @@ describe('switchBranch', () => {
             order.push(`insert:${id}`);
         });
 
-        switchBranch('other');
+        await switchBranch('other');
 
         expect(mocks.flushAutomergeStorageWrites).toHaveBeenCalledTimes(2);
         expect(order[0]).toBe('flush');
         expect(order.indexOf('flush', 1)).toBeLessThan(order.indexOf('replace:root'));
     });
 
-    it('migrates an outgoing legacy main branch to an independent backing document', () => {
+    it('migrates an outgoing legacy main branch to an independent backing document', async () => {
         mocks.storeValue.activeBranchId = 'main';
-        switchBranch('other');
+        await switchBranch('other');
 
         expect(mocks.insertDoc).toHaveBeenCalledWith('branch_main', expect.anything());
         expect(mocks.replaceDoc).toHaveBeenCalledWith('root', expect.anything());
@@ -114,8 +129,8 @@ describe('switchBranch', () => {
         );
     });
 
-    it('persists after the swap', () => {
-        switchBranch('other');
+    it('persists after the swap', async () => {
+        await switchBranch('other');
         expect(mocks.runCrdtPersistenceOperation).toHaveBeenCalledWith({
             type: 'root-lineage-transition',
             from: 'feat',
@@ -125,13 +140,25 @@ describe('switchBranch', () => {
         expect(mocks.compactProject).toHaveBeenCalled();
     });
 
-    it('is a no-op when switching to the already-active branch', () => {
-        switchBranch('feat');
+    it('rejects and restores the prior branch when persistence fails', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
+        expect(docs.root).toEqual(ROOT_LIVE_DOC);
+        expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
+    });
+
+    it('is a no-op when switching to the already-active branch', async () => {
+        await switchBranch('feat');
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
         expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
-    it('throws when the target branch does not exist', () => {
-        expect(() => switchBranch('ghost')).toThrow(/Branch not found/);
+    it('rejects when the target branch does not exist', async () => {
+        await expect(switchBranch('ghost')).rejects.toThrow(/Branch not found/);
     });
 });
