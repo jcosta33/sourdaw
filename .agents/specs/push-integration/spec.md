@@ -348,21 +348,31 @@ are never invoked directly. Also run `pnpm deps:validate`.
 
 After AC-023 schema validation and AC-024 binding-authenticity validation, the host MUST consume
 only the `kind: "sendMidi"` member, take its exact `payload.bytes` array, and route it only through
-the MIDI-owned typed output port selected by the trusted binding's `midiOutputId`. The request has
-no output-identity field. A `null` bound output returns `OUTPUT_UNBOUND`; invalid bytes return
-`INVALID_MESSAGE` before binding/output access; `midiOutputId` or either other AC-024 authority
-field on a request/profile/controller/worker object also returns `INVALID_MESSAGE` before binding
-lookup. Only a forged, replaced, or non-registry host-private binding handle or object returns
-`BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
+the MIDI-owned typed output port selected by the trusted binding's `midiOutputId`. Before typed-port
+access, the host takes the binding-owner connection/session key from AC-024's out-of-band private
+registry association, and the MIDI-owned output registry resolves a non-null id to its current
+`{ port, ownerKey, connectionState }` entry. It returns the port only when `connectionState` is
+`"connected"` and `ownerKey` equals the binding-owner key. A `null` id, absent/stale entry,
+disconnected entry, same-id entry rebound to another owner, or foreign-owner entry returns
+`OUTPUT_UNBOUND`; that one outcome covers every unavailable or no-longer-owned binding. The request
+has no output-identity field.
+Invalid bytes return `INVALID_MESSAGE` before binding/output lookup; `midiOutputId` or either other
+AC-024 authority field on a request/profile/controller/worker object also returns `INVALID_MESSAGE`
+before binding lookup. Only a forged, replaced, or non-registry host-private binding handle or object
+returns `BINDING_UNTRUSTED`. Every rejection occurs before typed-port access and causes zero MIDI,
+Command, store, or logging effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
 the exact `sendMidi` variant with lengths 1 and 1024, empty/oversized/non-integer/out-of-range
-bytes, extra keys, a wrong variant, a `null` output, and attempts to supply or replace
-`midiOutputId` through each untrusted channel. Each authority-field fixture expects
-`INVALID_MESSAGE` and zero binding lookups; forged/replaced/non-registry host-private binding
-fixtures expect `BINDING_UNTRUSTED`. Every invalid, forged, or unbound case is rejected before the
-MIDI-owned port receives bytes; a valid case sends the same validated bytes exactly once; also run
+bytes, extra keys, a wrong variant, and attempts to supply or replace `midiOutputId` through each
+untrusted channel. Registry fixtures cover a same-owner connected port, `null`, stale/absent,
+disconnected, same-id rebound, and foreign-owner entries. Each unavailable/ownership fixture expects
+`OUTPUT_UNBOUND` and zero typed-port access, MIDI writes, Command calls, store writes, or logs; the
+null fixture makes zero output-registry lookups, and each other fixture makes exactly one. Each
+authority-field fixture expects `INVALID_MESSAGE` and zero binding lookups;
+forged/replaced/non-registry host-private binding fixtures expect `BINDING_UNTRUSTED`. The valid case
+performs one output-registry lookup and sends the same validated bytes exactly once; also run
 `pnpm deps:validate`.
 
 ### AC-028 — Separate capability-secure script artifact

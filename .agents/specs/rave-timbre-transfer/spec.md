@@ -84,6 +84,7 @@ contract:
 | Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                         |
 | Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                         |
 | Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                         |
+| AC-037 source/target frame, request-byte, or aggregate pending-byte limit is exceeded                                                               | `WORKER_REQUEST_TOO_LARGE`  | No resample, request id/record, clone/post, render, cache write, or insertion     |
 | AC-035 session already has 32 unexpired pending requests before registration                                                                        | `WORKER_REQUEST_OVERLOADED` | No request id, correlation record, worker post, render, cache write, or insertion |
 | AC-035 pending request reaches its 30,000 ms monotonic deadline                                                                                     | `WORKER_REQUEST_TIMEOUT`    | Correlation removed before settlement; no render, cache write, or clip insertion  |
 | AC-035 pending request is cancelled or its session is torn down                                                                                     | `WORKER_REQUEST_CANCELLED`  | Correlation removed before settlement; no render, cache write, or clip insertion  |
@@ -99,8 +100,9 @@ Verify with: the future owning test, run as
 covering every table row. No-model execution invokes neither a pure helper nor a worker/session;
 flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability cases each
 return `MODEL_NOT_LOADED`. Pending-capacity, timeout, and cancellation fixtures return the three
-named request outcomes. Oversized AC-031 identifiers and terminal diagnostics return
-`WORKER_RESPONSE_TOO_LARGE`. Every selection or response rejection occurs before the listed effects.
+named lifecycle outcomes; every AC-037 over-limit fixture returns `WORKER_REQUEST_TOO_LARGE`.
+Oversized AC-031 identifiers and terminal diagnostics return `WORKER_RESPONSE_TOO_LARGE`. Every
+selection, request, or response rejection occurs before the listed effects.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -315,16 +317,20 @@ Before accepting a RAVE worker-host implementation, an ADR listed as accepted in
 `.agents/decisions/README.md` selects exactly one trust and availability branch:
 
 - `resource-isolated-runner`: a runner and transport outside the receiving JavaScript realm enforce
-  ADR-pinned positive-safe-integer `MAX_PREDELIVERY_RAVE_RESPONSE_BYTES` and
-  `MAX_PREDELIVERY_RAVE_QUEUED_RESPONSES` values before structured clone or host-queue insertion.
-  The ADR names the enforcing component and overload outcome; only this branch keeps availability
-  under a compromised Worker in scope.
+  ADR-pinned positive-safe-integer `MAX_PREDELIVERY_RAVE_REQUEST_BYTES`,
+  `MAX_PREDELIVERY_RAVE_QUEUED_REQUESTS`, `MAX_PREDELIVERY_RAVE_RESPONSE_BYTES`, and
+  `MAX_PREDELIVERY_RAVE_QUEUED_RESPONSES` values. Request limits run before runner-side structured
+  clone or request-queue insertion; response limits run before host-side clone or response-queue
+  insertion. The request-byte value is no greater than AC-037's
+  `MAX_RAVE_WORKER_REQUEST_BYTES`, and the queued-request value is no greater than AC-035's
+  `MAX_PENDING_REQUESTS_PER_SESSION`. The ADR names each enforcing component and overload outcome;
+  only this branch keeps availability under a compromised Worker in scope.
 - `integrity-verified-worker`: the host verifies the exact Worker, bootstrap, `onnxruntime-web`, and
   model-session artifacts before issuing the capability, and the ADR explicitly excludes a
-  compromised Worker from the threat model. AC-031/AC-034/AC-036 host validation after structured
-  clone still protects integrity, fail-closed effects, and work performed after delivery, but
-  cannot prevent clone allocation or host-queue exhaustion and provides no availability
-  confinement.
+  compromised Worker from the threat model. AC-037 request validation before posting and
+  AC-031/AC-034/AC-036 response validation after structured clone still protect integrity,
+  fail-closed effects, and work after each boundary, but cannot prevent response-clone allocation or
+  host-queue exhaustion and provide no compromised-Worker availability confinement.
 
 No accepted RAVE worker-host ADR or implementation exists today; any availability claim is
 contingent on the selected branch.
@@ -335,7 +341,8 @@ obtaining a capability only through successful worker/session initialization for
 then proving flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability
 inputs return `MODEL_NOT_LOADED` while the verified capability reaches its bound session. The
 selected ADR branch additionally proves either pre-delivery byte/queue enforcement at each pinned
-value and one unit above or exact artifact-integrity rejection before capability issuance.
+request and response value and one unit above, or exact artifact-integrity rejection before
+capability issuance.
 
 ### AC-029 — Capability matches the host-owned selection
 
@@ -361,9 +368,10 @@ The incoming correlation tuple `[requestId, sessionCorrelationId, modelId, model
 equals the pending record's five named fields as one validation result; `type` and every result,
 audio, channel, metadata, or error field are validated under AC-031/AC-034/AC-036 and are excluded
 from this tuple. When the tuple matches, the host transitions that record from `pending` to
-`consumed` before any result use or render/cache/insertion effect. The transition is serialized so
-concurrent delivery cannot accept the same pending record twice; each valid request therefore
-produces at most one accepted terminal response and at most one corresponding effect.
+`consumed` and subtracts its AC-037 `requestBytes` charge from the session aggregate before any
+result use or render/cache/insertion effect. The transition is serialized so concurrent delivery
+cannot accept the same pending record twice; each valid request therefore produces at most one
+accepted terminal response and at most one corresponding effect.
 
 Consumed replay state is scoped to one host-private verified RAVE session. The session uses
 `MAX_CONSUMED_REQUESTS_PER_SESSION = 256`, `CONSUMED_REQUEST_TTL_MS = 300_000`, a monotonic host
@@ -499,9 +507,10 @@ correlation, payload logging, render, cache-write, and clip-insertion calls. The
 fixture proves only post-clone integrity and fail-closed effects. A valid correlated terminal error
 still returns `WORKER_OPERATION_FAILED` with the same zero effects.
 
-AC-029 through AC-031 and AC-034 through AC-036 are unimplemented today; no current worker/session
+AC-029 through AC-031 and AC-034 through AC-037 are unimplemented today; no current worker/session
 transfer path emits the closed response union or can satisfy their selection, request-lifetime,
-response-correlation, envelope-validation, result-shape, or result-buffer contracts.
+request-resource, response-correlation, envelope-validation, result-shape, or result-buffer
+contracts.
 
 ### AC-032 — Direct decode helper remains test-only
 
@@ -579,25 +588,31 @@ logging, or any render/cache/insertion effect.
 
 Each verified session MUST own a host-private pending-request map with
 `MAX_PENDING_REQUESTS_PER_SESSION = 32` and `PENDING_REQUEST_TIMEOUT_MS = 30_000`. Before assigning a
-`requestId` or posting each encode/decode request, the host runs the timeout sweep below and counts
-the remaining records. If 32 remain, it returns `WORKER_REQUEST_OVERLOADED` before generating a
-request id, mutating the pending or consumed map, or calling Worker `postMessage`; saturation creates
-no correlation and posts no message. Otherwise, it generates an id absent from both maps and
-atomically registers `{ requestId, sessionCorrelationId, modelId, modelDigest, phase,
-registeredAtMonotonicMs, deadlineMonotonicMs }`. The non-authority `sessionCorrelationId` is bound by
-the host-private registry to the verified AC-028 session; model identity/digest come from AC-029;
+`requestId` or posting each encode/decode request, the host runs the timeout sweep below and AC-037's
+frame/per-request planning, then enters one session-serialized admission transition. That transition
+first applies AC-037's aggregate-byte guard, then counts the remaining records. Either AC-037 failure
+returns `WORKER_REQUEST_TOO_LARGE`; if 32 records remain after those checks pass, the host returns
+`WORKER_REQUEST_OVERLOADED`. Either rejection precedes request-id generation, map mutation, resample,
+and Worker `postMessage`. Otherwise, within that transition the host generates an id absent from both
+maps, registers `{ requestId, sessionCorrelationId, modelId, modelDigest, phase, requestBytes,
+registeredAtMonotonicMs, deadlineMonotonicMs }`, and adds `requestBytes` to the host-private session
+counter `pendingRequestBytes`. The non-authority `sessionCorrelationId` is bound by the host-private
+registry to the verified AC-028 session; model identity/digest come from AC-029;
 `deadlineMonotonicMs = registeredAtMonotonicMs + PENDING_REQUEST_TIMEOUT_MS`. The Worker post occurs
-only after registration.
+only after registration and is serialized with timeout, cancellation, and teardown: it proceeds only
+if that exact record remains pending. If cleanup wins during resampling, the host discards the
+resample buffers and posts no message.
 
 The host runs the timeout sweep before capacity checks, before AC-030 response lookup, and when a
 deadline timer fires. A record expires when `nowMonotonicMs >= deadlineMonotonicMs`; the host
-atomically removes it before settling `WORKER_REQUEST_TIMEOUT`, and any later response for that id
-is `WORKER_RESPONSE_STALE`. Explicit cancellation atomically removes its record before settling
-`WORKER_REQUEST_CANCELLED`. Session teardown removes every pending record, settles each pending
-operation as `WORKER_REQUEST_CANCELLED`, clears the map, and posts no new message. Timeout,
-cancellation, and teardown restore capacity immediately and cause no render, cache-write, or
-clip-insertion effect. AC-030's consumed replay map has its own 256-entry/300-second policy and does
-not count toward this 32-record cap.
+atomically removes it and subtracts its `requestBytes` charge before settling
+`WORKER_REQUEST_TIMEOUT`, and any later response for that id is `WORKER_RESPONSE_STALE`. Explicit
+cancellation performs the same removal/charge subtraction before settling
+`WORKER_REQUEST_CANCELLED`. Session teardown subtracts every pending charge, removes and settles
+every pending operation as `WORKER_REQUEST_CANCELLED`, clears the map, sets `pendingRequestBytes` to
+zero, and posts no new message. Timeout, cancellation, and teardown restore count/byte capacity immediately and cause no
+render, cache-write, or clip-insertion effect. AC-030's consumed replay map has its own
+256-entry/300-second policy and does not count toward either pending cap.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, leaving
@@ -605,9 +620,11 @@ Verify with: the future owning test, run as
 rejection adds no request id, map entry, or Worker post. Advance the monotonic clock to exactly
 30,000 ms and prove timeout removal/settlement before lookup, a stale late response, and restored
 capacity. Explicit cancellation has the same removal, stale-response, and restored-capacity
-observations. Teardown settles and clears all remaining pending records, leaves no correlation,
-posts no message, and makes every later response stale while AC-030 consumed-replay tests remain
-independent.
+observations, including exact AC-037 byte-charge release. Teardown settles and clears all remaining
+pending records and byte charges, leaves no correlation, posts no message, and makes every later
+response stale while AC-030 consumed-replay tests remain independent. A cleanup-during-resample
+fixture proves cleanup wins the serialized post transition, releases the charge and buffers, and
+posts no message.
 
 ### AC-036 — Worker result buffers have fixed storage limits
 
@@ -631,13 +648,63 @@ counted once, the byte cap is checked before element iteration, and every reject
 specified typed outcome with zero correlation, payload logging, render, cache-write, and insertion
 calls.
 
+### AC-037 — Worker requests have fixed PCM and byte budgets
+
+After AC-005 input validation and the AC-035 timeout sweep, but before source/target resampling,
+request-id generation, AC-035 registration, structured clone, or Worker `postMessage`, the RAVE host
+MUST apply these request limits:
+
+```text
+MAX_RAVE_PCM_FRAMES_PER_INPUT = 1_440_000
+MAX_RAVE_WORKER_REQUEST_BYTES = 32 * 1024 * 1024
+MAX_PENDING_RAVE_REQUEST_BYTES_PER_SESSION = 64 * 1024 * 1024
+```
+
+Source and target PCM each contain one or two equal-length channels satisfying AC-036's ordinary
+`Float32Array` view, ordinary `ArrayBuffer` backing, nonempty-view, distinct-backing, and finite-value
+predicates; AC-037 supplies the request-side limits and outcomes. `inputFrameCount` is that channel
+length. The frame limit applies independently to each original input and its planned model-rate
+result. Before allocating a resample, the host rejects multiplication overflow when
+`inputFrameCount > floor(Number.MAX_SAFE_INTEGER / modelSampleRate)`, then computes
+`plannedFrameCount = ceil(inputFrameCount * modelSampleRate / inputSampleRate)` from the validated
+positive input rate and pinned descriptor rate. For every input whose rate differs from the model
+rate, the host computes its contribution to `plannedPcmBytes` with checked
+`plannedFrameCount * channelCount * 4` operations; same-rate and non-PCM inputs contribute zero. The
+resampler creates tight host-owned `Float32Array` buffers totaling exactly `plannedPcmBytes`.
+
+For every encode or decode request, the host initializes `requestBytes = 0`, visits each distinct
+request typed-array backing once, and before adding its `byteLength` requires
+`byteLength <= MAX_RAVE_WORKER_REQUEST_BYTES - requestBytes`. `inputBackingBytes` is the resulting
+subtotal. It then visits each planned resample contribution and, before adding it, requires
+`contribution <= MAX_RAVE_WORKER_REQUEST_BYTES - requestBytes`. The final conservative charge is
+`requestBytes = inputBackingBytes + plannedPcmBytes`; it charges both inspected input storage and
+every additional resample allocation, and every subtraction precedes its addition. As the first
+check in AC-035's session-serialized admission transition, the host accepts aggregate admission only when
+`requestBytes <= MAX_PENDING_RAVE_REQUEST_BYTES_PER_SESSION - pendingRequestBytes`; the subtraction
+precedes addition. A source/target original or planned frame overflow, checked-arithmetic failure,
+per-request overflow, or aggregate pending overflow returns `WORKER_REQUEST_TOO_LARGE`. Because
+AC-037 runs before AC-035's count check, this byte outcome wins when both byte and count limits fail.
+Rejection creates no request id, correlation/byte charge, resample buffer, clone/post, render, cache
+write, or clip insertion. AC-035 registration adds the charge atomically; AC-030 terminal consumption
+and AC-035 timeout/cancellation/teardown remove it atomically.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
+source and target frame counts 1, 1,440,000, and 1,440,001; exact and one-over planned resample
+frames; checked multiplication failure; shared and distinct request backings; a small view over a
+large backing; per-request charges exactly 32 MiB and one byte over; and aggregate pending charges
+exactly 64 MiB and one byte over. A fixture exceeding both aggregate bytes and 32 pending records
+returns `WORKER_REQUEST_TOO_LARGE`. Every over-limit fixture returns that code before the named
+operations with zero effects, while terminal, timeout, cancellation, and teardown fixtures prove
+the exact charge is released.
+
 ## Current-state ownership
 
 The four current `no-orphans` paths are direct deterministic CI/test helpers only. The focused
 command is green. The encode/decode tests make the direct calls described in AC-024/AC-032; the
 timbre test is export-only; and the interpolation test calls only midpoint/missing-dimension cases,
 without the required endpoint `timeSec` or immutability evidence. None proves the model-backed
-product contracts in AC-001 through AC-005, AC-027 through AC-031, or AC-034 through AC-036, and
+product contracts in AC-001 through AC-005, AC-027 through AC-031, or AC-034 through AC-037, and
 none retires a warning by passing:
 
 | Current warning path                                         | Current disposition                                                             | Required future helper path                                                    | Warning closes only when                                                                                                                                                           |
@@ -655,8 +722,9 @@ only ADR retirement condition; `AC-027` owns model-result provenance; and
 `AC-028` owns loaded-session authenticity. `AC-029` owns the host-selection/session match; `AC-030`
 owns response correlation and replay rejection; `AC-031` owns the closed response envelope and
 string limits; `AC-034` owns host-derived result shapes; `AC-035` owns pending-request admission and
-lifetime; and `AC-036` owns result-view backing, bytes, and numeric finiteness. This spec retains all
-four current files and does not authorize a silent product fallback.
+lifetime; `AC-036` owns result-view backing, bytes, and numeric finiteness; and `AC-037` owns request
+PCM and byte budgets. This spec retains all four current files and does not authorize a silent
+product fallback.
 
 ## Constraints
 

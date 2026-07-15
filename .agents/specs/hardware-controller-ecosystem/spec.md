@@ -7,6 +7,7 @@ owner: The Sourdaw team
 sources:
     - ../workflow-ui/research.md
     - ../dependency-boundary-validation/spec.md
+    - ../rave-timbre-transfer/spec.md
     - ../../decisions/README.md
     - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
     - ../../../src/modules/Command/useCases/index.ts
@@ -42,9 +43,10 @@ Verify with: `manual` — connect a known controller and confirm its profile loa
 Before any executable script-bundle implementation accepts source or launches a product session,
 an ADR listed as accepted in `.agents/decisions/README.md` MUST select one concrete
 capability-secure interpreter/compartment, or equivalently proven isolated runtime, and its exact
-version. The ADR names package/artifact provenance and integrity checks, the Worker bootstrap and
-lockdown order, runtime configuration and endowment construction, the pinned TypeScript compiler
-and options, source/emitted-byte and execution time/memory limits, the denied-global and
+version. The ADR names package/artifact provenance and integrity checks, AC-009's serialized bundle
+format and trusted decoder, the Worker bootstrap and lockdown order, runtime configuration and
+endowment construction, the pinned TypeScript compiler and options, source/emitted-byte and
+execution time/memory limits, the denied-global and
 constructor/prototype escape threat model, runtime-specific denial signaling, and the
 version-upgrade revalidation rule. It also cites
 a checked-in, reproducible proof against that exact runtime/version that the bootstrap exposes only
@@ -215,15 +217,43 @@ through AC-011 evidence, `rg -n "controllerScriptingWorker" src .agents/specs`, 
 
 ### AC-009 — Script source loading is closed
 
-The trusted host script-bundle loader MUST accept only the exact data object
+The untrusted script-bundle ingress MUST accept one serialized `bundleBytes` value, not a caller-
+constructed object record. Its first operation is `ArrayBuffer.isView(bundleBytes)`; `false` returns
+`SCRIPT_SOURCE_INVALID` without reflection or property access. For a view, the host next requires
+`Object.getPrototypeOf(bundleBytes) === Uint8Array.prototype`, then uses captured intrinsic typed-
+array `buffer` and `byteLength` getters rather than caller property lookup. It requires an ordinary
+`ArrayBuffer` backing rather than `SharedArrayBuffer` and
+`byteLength <= MAX_SCRIPT_BUNDLE_BYTES`, where
+`MAX_SCRIPT_BUNDLE_BYTES = MAX_SCRIPT_SOURCE_BYTES + 4096 = 1_052_672`. The host copies that view
+into a host-owned buffer only after `Reflect.ownKeys` and
+`Object.getOwnPropertyDescriptors` find no symbol, accessor, or string key other than canonical
+indices satisfying `Number.isSafeInteger(Number(key))`, `Number(key) >= 0`,
+`Number(key) < byteLength`, and `String(Number(key)) === key`. It then invokes the exact serialized
+format and trusted decoder pinned by AC-002's ADR. Direct object-form input, including an object or
+typed-array Proxy, accessor-bearing object, class instance, null-prototype object, inherited-field
+object, or symbol-bearing object, returns `SCRIPT_SOURCE_INVALID`; ECMAScript has no general
+trap-free Proxy predicate, so `ArrayBuffer.isView` rejects Proxy wrappers before the loader reflects
+on them.
+
+The trusted decoder never returns caller-created objects: it creates the internal record
 `{ scriptId: WorkerProtocolId, apiVersion: supported literal, language: 'javascript' | 'typescript', sourceBytes: Uint8Array }`
-with no unknown fields, source URL, blob URL, package/module graph, compiler options, plugin, or
-loader hook supplied by the bundle. `sourceBytes` is an ordinary `Uint8Array` backed by an
-`ArrayBuffer` rather than a `SharedArrayBuffer`, and its view `byteLength` is at most the
-ADR-pinned `MAX_SCRIPT_SOURCE_BYTES = 1_048_576`; only the view's bytes are decoded and hashed.
-The bundle record and every JSON-like nested object have only their shown own string keys and no
-symbols; the `sourceBytes` indexed storage is the sole typed-byte payload and has no authority
-fields.
+with no source URL, blob URL, package/module graph, compiler options, plugin, or loader hook. Before
+reading a field from each decoded record, the host requires
+`Object.getPrototypeOf(record) === Object.prototype`, then obtains `Reflect.ownKeys(record)` and
+`Object.getOwnPropertyDescriptors(record)`. The root has exactly the four shown string keys and no
+symbols; every record property is an own data descriptor with exactly
+`{ enumerable: true, writable: false, configurable: false }`, never an accessor or inherited field.
+Only after that record's complete descriptor set passes does the host read values from the returned
+descriptor table; it applies the same predicate recursively before reading fields from any future
+JSON-like nested record. The ADR-owned decoder constructs every such record, so these checks cannot
+invoke caller-controlled Proxy traps. The decoder creates `sourceBytes` as a host-owned ordinary
+`Uint8Array` backed by an `ArrayBuffer`, not a
+`SharedArrayBuffer`, with no own symbol or non-index key and view
+`byteLength <= MAX_SCRIPT_SOURCE_BYTES = 1_048_576`; only that view's bytes are decoded and hashed.
+The `sourceBytes` indexed storage is the sole typed-byte payload and has no authority fields. Any
+ingress, decoder, prototype, key, descriptor, or typed-array failure returns
+`SCRIPT_SOURCE_INVALID` before source-text decoding, canonicalization, hashing, parsing, compilation,
+runtime/session creation, or logging.
 
 The host decodes `sourceBytes` first with `new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })`.
 A decoder failure returns `SCRIPT_SOURCE_INVALID` before parsing, canonicalization, digesting, or
@@ -252,10 +282,17 @@ grant, intent, or effect.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSource.spec.ts`,
-covering exact JavaScript and TypeScript byte inputs, the `[0xC3, 0x28]` fatal-decoder case,
-decoded-record RFC 8785/source-digest fixtures, malformed/unknown fields, URL and module-loading
-forms, bundle-supplied compiler configuration, compile diagnostics, the 1 MiB source/emitted byte
-limits, and proof that rejected source never reaches the selected runtime
+covering exact JavaScript and TypeScript serialized bundles, the 1,052,672-byte ingress boundary,
+ordinary and wrong typed-array/backing cases, and the `[0xC3, 0x28]` fatal source-decoder case.
+Object-form fixtures cover getters, a Proxy-wrapped object, a Proxy-wrapped `Uint8Array`, class and
+null prototypes, inherited fields, symbols, and typed arrays with accessor/non-index properties;
+getter and Proxy trap counters remain zero. Trusted-decoder record fixtures cover extra/missing
+keys, symbols, accessors, and each wrong enumerable/writable/configurable flag before any value read.
+Also cover decoded-record RFC 8785/source-digest fixtures, URL and module-loading forms, bundle-
+supplied compiler configuration, compile diagnostics, the 1 MiB source/emitted byte limits, and
+proof that structural/ingress rejection returns the named outcome with zero source decode, hash,
+compile, runtime/session, grant, intent, logging, or effect calls. Source-decoder and later failures
+occur only at their named stage and still produce zero subsequent-stage or effect calls.
 
 ### AC-010 — Script results use one closed protocol
 
@@ -284,6 +321,32 @@ AC-009's host-side `SCRIPT_SOURCE_INVALID`, `SCRIPT_SOURCE_TOO_LARGE`, and
 `SCRIPT_COMPILE_REJECTED` outcomes occur before a Worker request; callers receive only those typed
 outcomes or an AC-010 terminal result, never a raw compiler diagnostic, exception, or Worker object.
 
+Each script session reuses the atomic consumption/retention ordering in
+[RAVE AC-030](../rave-timbre-transfer/spec.md#ac-030--worker-responses-are-correlated-once) and the
+session-serialized count admission/deadline cleanup in
+[AC-035](../rave-timbre-transfer/spec.md#ac-035--pending-worker-requests-have-fixed-admission-and-lifetime);
+RAVE-specific `requestBytes` and AC-037 PCM accounting do not apply. The script constants are
+`MAX_PENDING_SCRIPT_REQUESTS_PER_SESSION = 32`, `SCRIPT_REQUEST_TIMEOUT_MS = 30_000`,
+`MAX_CONSUMED_SCRIPT_REQUESTS_PER_SESSION = 256`, and
+`SCRIPT_CONSUMED_REQUEST_TTL_MS = 300_000`. The script correlation tuple is
+`[requestId, sessionId, scriptId, scriptDigest, operation]`, where `operation` is `"load"` or
+`"execute"`; each pending record stores those five values plus registration/deadline timestamps.
+After the monotonic timeout sweep, the session-serialized admission transition returns
+`SCRIPT_REQUEST_OVERLOADED` for a 33rd pending request before request-id generation, map mutation, or
+`postMessage`. Timeout, explicit cancellation, and teardown atomically remove pending records before
+settling `SCRIPT_REQUEST_TIMEOUT` or `SCRIPT_REQUEST_CANCELLED`; teardown clears both maps.
+
+After exact envelope validation, all five incoming tuple fields equal the corresponding fields of
+one pending record before the host atomically moves it to consumed state. That transition precedes
+`SCRIPT_READY`, intent
+processing, or any Command/MIDI/store effect, so concurrent delivery accepts one terminal result at
+most. Consumed entries use RAVE AC-030's monotonic TTL boundary, increasing sequence, and
+`(consumedAtMonotonicMs, consumptionSequence, requestId)` eviction order. A retained consumed exact
+tuple returns `SCRIPT_RESPONSE_DUPLICATE`; a pending or retained-consumed `requestId` with any other
+tuple field changed returns `SCRIPT_RESPONSE_MISMATCH`; a never-issued, timed-out, cancelled,
+expired, evicted, or post-teardown id returns `SCRIPT_RESPONSE_STALE`. These lifecycle outcomes do
+not process intents or cause Command, MIDI, store, or logging effects.
+
 The selected runtime adapter maps its ADR-proven denied-global signal to
 `SCRIPT_SANDBOX_VIOLATION` even when the real ambient value is absent, and never exposes a native
 exception or runtime object. The trusted bootstrap is the only code allowed to call Worker
@@ -296,9 +359,9 @@ the longest UTF-8 code-point prefix within
 `postMessage` and independently exact-schema-validates every result after structured clone and
 before correlation, payload logging, or AC-004 through AC-007 intent processing. Over-limit
 `requestId`, `sessionId`, or `scriptId`, an invalid `scriptDigest`, a load-phase intent,
-unknown/extra field, wrong correlation, unrecognized outcome, over-limit intent list, duplicate
-terminal result, or script-originated message returns `SCRIPT_PROTOCOL_INVALID` and terminates the
-session. An AC-005-invalid intent returns `SCRIPT_MESSAGE_INVALID`. Receiver validation cannot
+unknown/extra field, unrecognized outcome, over-limit intent list, or script-originated message
+returns `SCRIPT_PROTOCOL_INVALID` and terminates the session. An AC-005-invalid intent returns
+`SCRIPT_MESSAGE_INVALID`. Receiver validation cannot
 prevent structured-clone allocation or host-queue exhaustion by a compromised Worker and is not an
 availability guarantee. It protects protocol integrity, effect gating, and subsequent host work;
 that work remains under AC-005's string/array predicates and this AC's 256-intent limit.
@@ -308,13 +371,18 @@ non-success outcome causes zero Command, MIDI, or store effects.
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptProtocol.spec.ts`,
 covering every request/result variant and typed outcome, absent denied globals, malformed and
-mis-correlated envelopes, duplicate results, raw script messaging, and intent overflow. Boundary
-fixtures cover exact-limit and one-byte-over-limit ASCII and multibyte `requestId`, `sessionId`, and
-`scriptId`, a 65-character and non-hex `scriptDigest`, AC-005 intent identifiers, trusted pre-post
-enforcement, and independent compromised-Worker rejection after clone. Each future event, intent,
-or result string member adds exact-limit and one-byte-over-limit tests for its named bound. All
-rejections assert zero correlation, payload logging, intent processing, Command dispatches, MIDI
-writes, and store writes.
+mis-correlated envelopes, raw script messaging, and intent overflow. Lifecycle fixtures leave 32
+requests pending and reject the 33rd without an id/map entry/post; exercise the exact 30,000 ms
+timeout, cancellation, and teardown cleanup; match all five tuple fields; and prove concurrent
+terminal delivery consumes once before intents/effects. They retain an exact replay inside the
+256-entry/300-second window as `SCRIPT_RESPONSE_DUPLICATE`, vary each other tuple field as
+`SCRIPT_RESPONSE_MISMATCH`, then force oldest-entry eviction and TTL expiry as
+`SCRIPT_RESPONSE_STALE`. Boundary fixtures cover exact-limit and one-byte-over-limit ASCII and
+multibyte `requestId`, `sessionId`, and `scriptId`, a 65-character and non-hex `scriptDigest`, AC-005
+intent identifiers, trusted pre-post enforcement, and independent compromised-Worker rejection
+after clone. Each future event, intent, or result string member adds exact-limit and one-byte-over-
+limit tests for its named bound. All rejections assert zero payload logging, intent processing,
+Command dispatches, MIDI writes, and store writes.
 
 ### AC-011 — Selected-runtime confinement is observed
 
