@@ -1,42 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/modules/AiRuntime/models/MidiPatternLibrary.ts",
-    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AiRuntime/models/Patterns/BassPatterns.ts",
-    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AiRuntime/models/Patterns/ChordPatterns.ts",
-    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AiRuntime/models/Patterns/MelodyPatterns.ts",
-    "to": "src/modules/AiRuntime/services/scaleTheory.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
     "to": "src/modules/AiGeneration/useCases/index.ts",
     "rule": {

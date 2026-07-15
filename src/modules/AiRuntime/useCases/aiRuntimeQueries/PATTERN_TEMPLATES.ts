@@ -1,4 +1,4 @@
-import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../models/MidiPatternLibrary';
+import { PATTERN_TEMPLATES as patternTemplates } from '../../services/MidiPatternLibrary';
 
 import { toPublicPatternTemplate } from './toPublicPatternTemplate';
 
@@ -23,4 +23,4 @@ type PublicPatternTemplate = {
     lengthBeats: number;
 };
 
-export const PATTERN_TEMPLATES: PublicPatternTemplate[] = modelPatternTemplates.map(toPublicPatternTemplate);
+export const PATTERN_TEMPLATES: PublicPatternTemplate[] = patternTemplates.map(toPublicPatternTemplate);

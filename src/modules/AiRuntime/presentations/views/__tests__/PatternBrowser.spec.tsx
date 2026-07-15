@@ -4,13 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PatternBrowser } from '../PatternBrowser';
 
 // Mock external dependencies
-vi.mock('../../../models/MidiPatternLibrary', () => ({
-    PATTERN_CATEGORIES: [
-        { id: 'chords', label: 'Chords' },
-        { id: 'bass', label: 'Bass' },
-        { id: 'drums', label: 'Drums' },
-        { id: 'melody', label: 'Melody' },
-    ],
+vi.mock('../../../useCases/aiRuntimeQueries/PATTERN_TEMPLATES', () => ({
     PATTERN_TEMPLATES: [
         {
             id: 't1',
@@ -23,13 +17,9 @@ vi.mock('../../../models/MidiPatternLibrary', () => ({
             generate: vi.fn(() => [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }]),
         },
     ],
-    ALL_KEYS: ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
-    SCALE_TYPES: ['major', 'minor'],
-    SCALE_LABELS: { major: 'Major', minor: 'Minor' },
-    ALL_GENRES: [
-        { id: 'pop', label: 'Pop' },
-        { id: 'rock', label: 'Rock' },
-    ],
+}));
+
+vi.mock('../../../useCases/aiRuntimeQueries/filterTemplates', () => ({
     filterTemplates: vi.fn(({ query, category }: { query?: string; category?: string }) => {
         const templates = [
             {
@@ -51,7 +41,6 @@ vi.mock('../../../models/MidiPatternLibrary', () => ({
             return true;
         });
     }),
-    resolveTemplateScale: vi.fn((_template: unknown, params: { scale: string }) => params.scale),
 }));
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({

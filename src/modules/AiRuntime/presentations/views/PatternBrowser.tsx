@@ -19,21 +19,21 @@ import { cn } from '#/utils/Styles/cn';
 
 import {
     PATTERN_CATEGORIES,
-    PATTERN_TEMPLATES,
     ALL_KEYS,
     SCALE_TYPES,
     SCALE_LABELS,
     ALL_GENRES,
-    filterTemplates,
-    resolveTemplateScale,
-    type PatternTemplate,
     type PatternCategory,
     type PatternGenre,
     type PatternNote,
     type KeyName,
     type ScaleType,
     type GenerationParams,
-} from '../../models/MidiPatternLibrary';
+} from '../../models/MidiPatternType';
+import { filterTemplates } from '../../useCases/aiRuntimeQueries/filterTemplates';
+import { PATTERN_TEMPLATES } from '../../useCases/aiRuntimeQueries/PATTERN_TEMPLATES';
+
+type PatternTemplate = (typeof PATTERN_TEMPLATES)[number];
 
 // ── Mini piano-roll preview ──
 
@@ -196,7 +196,7 @@ const TemplateCard = ({
     // one shown in the mini piano-roll.
     // §14.6 / G6 — honour the template's `scaleOverride` so identity-carrying
     // templates (Blues, Dorian Vamp, etc.) do not run on an incompatible scale.
-    const notes = template.generate({ ...genParams, scale: resolveTemplateScale(template, genParams) });
+    const notes = template.generate(genParams);
 
     return (
         <DawPickerCard

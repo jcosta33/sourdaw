@@ -3,8 +3,8 @@
  * generation, snap-to-scale, chord building from scale degrees, and
  * pattern-template filtering.
  *
- * No state, no I/O. Templates and types live in `models/MidiPatternType.ts`;
- * the aggregated catalog lives in `models/MidiPatternLibrary.ts`.
+ * No state, no I/O. Types live in `models/MidiPatternType.ts`; the pattern
+ * catalog and generators live in the sibling `services/` boundary.
  */
 
 import {
@@ -12,6 +12,7 @@ import {
     type ScaleType,
     type PatternNote,
     type PatternTemplate,
+    type GenerationParams,
     type PatternFilters,
     KEY_SEMITONES,
     SCALE_INTERVALS,
@@ -87,6 +88,11 @@ export function chordFromDegrees(
         const pitch = scalePitches[degreeInOctave]! + 12 * octavesFromBase;
         return { pitch, velocity: vel, startBeat: beat, durationBeats: dur };
     });
+}
+
+/** Resolve the scale a template should use before generation. */
+export function resolveTemplateScale(template: PatternTemplate, params: GenerationParams): ScaleType {
+    return template.scaleOverride ?? params.scale;
 }
 
 /** Filter pattern templates by category, genres, tags, and free-text query. */

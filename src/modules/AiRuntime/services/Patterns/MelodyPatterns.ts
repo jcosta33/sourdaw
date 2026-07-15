@@ -1,5 +1,5 @@
-import { getScalePitches } from '../../services/scaleTheory';
-import { type PatternTemplate, type PatternNote } from '../MidiPatternType';
+import { type PatternTemplate, type PatternNote } from '../../models/MidiPatternType';
+import { getScalePitches } from '../scaleTheory';
 
 /** Melody pattern templates — arpeggios, runs, motifs across jazz, pop, ambient, and more. */
 export const melodyPatterns: PatternTemplate[] = [

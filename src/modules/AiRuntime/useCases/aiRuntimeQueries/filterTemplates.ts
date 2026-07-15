@@ -1,4 +1,4 @@
-import { filterTemplates as filterModelTemplates } from '../../models/MidiPatternLibrary';
+import { filterTemplates as filterPatternTemplates } from '../../services/MidiPatternLibrary';
 
 import { toPublicPatternTemplate } from './toPublicPatternTemplate';
 
@@ -31,5 +31,5 @@ type FilterTemplatesOutput = Array<{
 }>;
 
 export function filterTemplates(filters: FilterTemplatesInput): FilterTemplatesOutput {
-    return filterModelTemplates(filters).map(toPublicPatternTemplate);
+    return filterPatternTemplates(filters).map(toPublicPatternTemplate);
 }
