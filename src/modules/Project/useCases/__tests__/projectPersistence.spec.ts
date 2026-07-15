@@ -116,15 +116,18 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
 
-        it('does not create or compact a replacement project when persistence is corrupt', async () => {
-            const corruption = new Error('orphan incremental references missing base document');
-            mocks.loadCrdtProject.mockRejectedValue(corruption);
+        it('does not create or mutate a replacement project when persistence rejects', async () => {
+            const persistenceFailure = new Error('[CrdtPersistence] Failed to open IndexedDB');
+            mocks.loadCrdtProject.mockRejectedValue(persistenceFailure);
 
-            await expect(loadProject()).rejects.toThrow(corruption);
+            await expect(loadProject()).rejects.toThrow(persistenceFailure);
 
             expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.getCrdtDoc).not.toHaveBeenCalled();
             expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
             expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         });
 

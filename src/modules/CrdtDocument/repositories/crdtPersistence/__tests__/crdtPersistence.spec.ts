@@ -47,10 +47,17 @@ describe('crdtPersistence repository', () => {
     });
 
     describe('loadAllFromIdb', () => {
-        it('should return null if DB fails to open', async () => {
+        it('should return null when IndexedDB is unsupported', async () => {
             vi.mocked(openDatabase).mockResolvedValue(null);
             const result = await loadAllFromIdb();
             expect(result).toBeNull();
+        });
+
+        it('should propagate an operational database open failure', async () => {
+            const failure = new Error('IndexedDB permission denied');
+            vi.mocked(openDatabase).mockRejectedValue(failure);
+
+            await expect(loadAllFromIdb()).rejects.toBe(failure);
         });
 
         it('should return null if no keys found', async () => {
