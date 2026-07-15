@@ -7,6 +7,7 @@ owner: The Sourdaw team
 sources:
   - ../workflow-ui/research.md
   - ../dependency-boundary-validation/spec.md
+  - ../../decisions/README.md
   - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
   - ../../../src/modules/Command/useCases/index.ts
   - ../../../src/modules/Command/useCases/executeAppAction.ts
@@ -36,41 +37,24 @@ profile with visual mapping overlays, without manual MIDI Learn.
 
 Verify with: `manual` — connect a known controller and confirm its profile loads and maps automatically
 
-### AC-002 — Scripts run in a capability-secure compartment
+### AC-002 — Scripts require an accepted runtime ADR
 
-The executable script-bundle pipeline separated by
-[Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact) MUST execute
-third-party JS/TS only inside a HardwareController-owned `ControllerScriptCompartment`: a
-capability-secure interpreter/compartment bootstrapped inside a Web Worker. The Worker supplies
-scheduling and crash isolation only; it is never treated as the network or authority sandbox.
+Before any executable script-bundle implementation accepts source or launches a product session,
+an ADR listed as accepted in `.agents/decisions/README.md` MUST select one concrete
+capability-secure interpreter/compartment, or equivalently proven isolated runtime, and its exact
+version. The ADR names package/artifact provenance and integrity checks, the Worker bootstrap and
+lockdown order, runtime configuration and endowment construction, the pinned TypeScript compiler
+and options, source/emitted-byte and execution time/memory limits, the denied-global and
+constructor/prototype escape threat model, runtime-specific denial signaling, and the
+version-upgrade revalidation rule. It also cites
+a checked-in, reproducible proof against that exact runtime/version that the bootstrap exposes only
+frozen allowlisted language intrinsics and the frozen `ControllerScriptApi`; AC-010 host requests
+and that endowment are the script's only authority. A plain Web Worker, `new Function`, native
+`eval`/module loading, dynamic `import()`, or CSP alone is not a runtime decision or confinement
+proof. No such accepted ADR or runtime implementation exists today.
 
-The compartment parses and executes source without native `eval`, `Function`, a native module
-loader, or dynamic `import()`. Each script receives a fresh realm with frozen, explicitly
-allowlisted language intrinsics and one frozen `ControllerScriptApi` endowment. That endowment's
-trusted bridge emits only the host-validated intents governed by AC-004 through AC-007; trusted
-host messages are the script's only authority. The script has no ambient Worker `self`,
-`globalThis`, `postMessage`, `fetch`, `WebSocket`, `XMLHttpRequest`, `importScripts`,
-`indexedDB`/IndexedDB, `caches`/Cache, worker creation, filesystem/storage, `location`/navigation, or
-constructor/prototype path back to the Worker global; any compartment-local global object carries
-no ambient authority.
-
-Before accepting source, issuing a grant, or forwarding a controller event, the trusted bootstrap
-initializes the compartment, freezes its realm/endowments, and verifies the deny policy. Missing
-runtime support, failed policy installation, failed integrity checks, or any reachable ambient
-authority returns `SCRIPT_SANDBOX_UNAVAILABLE`, terminates the script worker/session, and produces
-zero grants or effect intents. There is no fallback to a plain Worker, `new Function`, native
-dynamic import, or ambient-global execution. A dedicated Worker CSP is defense in depth only and
-cannot satisfy this requirement without the compartment/bootstrap boundary.
-
-Verify with: the future owning test, run as
-`pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSandbox.spec.ts`,
-attempting actual `fetch`, `WebSocket`, `XMLHttpRequest`, `importScripts`, IndexedDB, Cache, dynamic
-import, navigation, worker creation, and representative `globalThis`/`self`/constructor/prototype
-attempts to reach the ambient Worker global. Each attempt returns `SCRIPT_SANDBOX_VIOLATION` with
-zero outbound I/O and zero host effect messages. Bootstrap-unavailable, policy-tamper, and
-integrity-failure cases return
-`SCRIPT_SANDBOX_UNAVAILABLE`, terminate the session, issue no grant, and prove no plain-Worker,
-`new Function`, or CSP-only fallback runs.
+Verify with: the accepted ADR and ledger entry, its pinned dependency/integrity evidence, and the
+exact runtime bootstrap proof command recorded by that ADR
 
 ### AC-003 — Mappings import and export as portable JSON
 
@@ -143,11 +127,6 @@ covering a valid bound output, no binding, a stale/foreign output, and worker-su
 denied cases produce zero Command dispatches, zero store writes, and never reach the MIDI-owned
 port.
 
-AC-002 and AC-004 through AC-007 are unimplemented today. The dormant current worker accepts raw
-source through `new Function` and posts unvalidated `setParam`/`sendMidi` messages, but no current
-launcher, trusted grant issuer, validating script host, Command dispatch, or MIDI-owned output
-binding implements this future contract.
-
 ### AC-008 — Current worker warning has one exact disposition
 
 Under
@@ -155,17 +134,114 @@ Under
 the `src/modules/MIDI/workers/controllerScriptingWorker.ts` warning MUST remain visible until either:
 
 - that exact file becomes the distinct product script-bundle worker and satisfies AC-002 and
-  AC-004 through AC-007 plus
+  AC-004 through AC-007 and AC-009 through AC-011 plus
   [Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact), including
-  AC-002's fail-closed bootstrap and negative attempted-I/O/global-escape tests; or
-- an explicit superseding ADR names and retires that exact path.
+  the accepted runtime ADR, closed source/protocol boundaries, and selected-runtime confinement
+  evidence; or
+- the same change satisfies the canonical accepted-ADR retirement condition in
+  [dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
 
 Worker presence, `new Function`, CSP alone, a launcher or synthetic import, a different replacement
 worker, a registry entry, an orphan exception, or generic product reachability does not activate or
-retire this warning. A replacement path is valid only through the exact-path ADR retirement branch.
+retire this warning. A replacement path is valid only through dependency AC-008's same-change
+retirement condition.
 
-Verify with: the linked dependency ownership row, the AC-002 and AC-004 through AC-007 owning tests,
-`rg -n "controllerScriptingWorker" src .agents/specs`, and `pnpm deps:validate`.
+Verify with: the linked dependency ownership row, the AC-002, AC-004 through AC-007, and AC-009
+through AC-011 evidence, `rg -n "controllerScriptingWorker" src .agents/specs`, and
+`pnpm deps:validate`.
+
+### AC-009 — Script source loading is closed
+
+The trusted host script-bundle loader MUST accept only the exact data object
+`{ scriptId: string, apiVersion: supported literal, language: 'javascript' | 'typescript', source: UTF-8 text }`
+with no unknown fields, source URL, blob URL, package/module graph, compiler options, plugin, or
+loader hook supplied by the bundle. It rejects static imports/exports, `require`, `importScripts`,
+dynamic `import()`, source-loading directives, malformed UTF-8, and unsupported API/language values
+as `SCRIPT_SOURCE_INVALID`. JavaScript is parsed as one script. TypeScript is compiled without
+executing it by the trusted host using the compiler version and fixed no-module, no-resolution,
+no-plugin, no-source-map options selected in AC-002's ADR; any diagnostic returns
+`SCRIPT_COMPILE_REJECTED` with no emit. The host computes `sourceDigest` as SHA-256 over the RFC 8785
+canonical JSON encoding of the exact input, computes `scriptDigest` as SHA-256 over the emitted
+JavaScript UTF-8 bytes, and retains `{ sourceDigest, scriptDigest, compiler identity/options }` in
+the host-private session record. The Worker bootstrap accepts only that emitted JavaScript,
+recomputes `scriptDigest`, and rejects a mismatch as `SCRIPT_SOURCE_INVALID`. Only the
+digest-matched emitted JavaScript enters the ADR-selected runtime, never a native Worker evaluator.
+Source or emitted JavaScript above the ADR's finite byte limit returns
+`SCRIPT_SOURCE_TOO_LARGE` before runtime load.
+Every rejection creates no runtime session, grant, intent, or effect.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSource.spec.ts`,
+covering exact JavaScript and TypeScript inputs, digest binding, malformed/unknown fields, URL and
+module-loading forms, bundle-supplied compiler configuration, compile diagnostics, source/emitted
+byte limits, and proof that rejected source never reaches the selected runtime
+
+### AC-010 — Script results use one closed protocol
+
+The trusted host and Worker bootstrap MUST communicate only through these exact, no-extra-field
+envelopes:
+
+| Direction | Envelope |
+| --- | --- |
+| Host to Worker load | `{ kind: 'load', requestId, sessionId, scriptId, scriptDigest, apiVersion, source }`, where `source` is only AC-009's emitted JavaScript |
+| Worker to host load success | `{ kind: 'result', operation: 'load', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_READY' }` |
+| Host to Worker execution | `{ kind: 'execute', requestId, sessionId, scriptId, scriptDigest, event }`, where `event` is one exact member of the closed `apiVersion`-owned `ControllerScriptEvent` union |
+| Worker to host execution success | `{ kind: 'result', operation: 'execute', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_EXECUTION_OK', intents }`, where `intents` is an array of at most 256 AC-005 `ControllerScriptIntent` values |
+| Worker to host failure | The correlated result fields for its operation, no `intents`, and one outcome from `SCRIPT_SOURCE_INVALID`, `SCRIPT_SANDBOX_UNAVAILABLE`, `SCRIPT_SANDBOX_VIOLATION`, `SCRIPT_EXECUTION_TIMEOUT`, `SCRIPT_EXECUTION_LIMIT`, or `SCRIPT_RUNTIME_ERROR` |
+
+`requestId` and `sessionId` are host-generated non-empty opaque strings; `scriptId`,
+`scriptDigest`, `apiVersion`, and `source` are the exact AC-009 values, with
+`scriptDigest` encoded as 64 lowercase hexadecimal SHA-256 digits. An `apiVersion` is unsupported
+until its complete `ControllerScriptEvent` union and exact per-member schemas are checked in.
+AC-009's host-side `SCRIPT_SOURCE_INVALID`, `SCRIPT_SOURCE_TOO_LARGE`, and
+`SCRIPT_COMPILE_REJECTED` outcomes occur before a Worker request; callers receive only those typed
+outcomes or an AC-010 terminal result, never a raw compiler diagnostic, exception, or Worker object.
+
+The selected runtime adapter maps its ADR-proven denied-global signal to
+`SCRIPT_SANDBOX_VIOLATION` even when the real ambient value is absent, and never exposes a native
+exception or runtime object. The trusted bootstrap is the only code allowed to call Worker
+`postMessage`; it buffers script intents and emits exactly one terminal result per request. The
+host exact-schema-validates and correlates the whole result before AC-004 through AC-007 are
+permitted to process an intent. A load-phase intent, unknown/extra field, wrong correlation,
+unrecognized outcome, over-limit intent list, duplicate terminal result, or script-originated
+message returns `SCRIPT_PROTOCOL_INVALID`, terminates the session, and causes zero Command, MIDI,
+or store effects. Every non-success outcome is fail closed with those same zero effects.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptProtocol.spec.ts`,
+covering every request/result variant and typed outcome, absent denied globals, malformed and
+mis-correlated envelopes, duplicate results, raw script messaging, intent overflow, and zero effects
+for every failure
+
+### AC-011 — Selected-runtime confinement is observed
+
+The confinement integration harness MUST launch the production Worker bootstrap with the exact
+runtime/version accepted under AC-002, not a fake Worker, deterministic shim, or API-name stub. The
+ADR supplies a complete manifest of ambient capabilities for every supported Worker environment;
+the harness fails if the live Worker global exposes an unclassified callable or authority-bearing
+object. Before bootstrap, the harness instruments the Worker realm and canary endpoints to observe
+constructor calls, network attempts, storage/filesystem access, navigation, child-worker creation,
+and every Worker-to-host message. It then executes scripts that probe every manifest entry and, at
+minimum, direct and `globalThis`/`self`/constructor/prototype paths to `postMessage`, `fetch`,
+`WebSocket`, `XMLHttpRequest`, `EventSource`, `WebTransport`, `BroadcastChannel`, `importScripts`,
+IndexedDB, Cache, storage/filesystem APIs, dynamic import, location/navigation, and Worker creation.
+Forbidden source forms return the AC-009 source/compile outcome; runtime access and escape attempts
+return `SCRIPT_SANDBOX_VIOLATION`. All probes observe zero outbound I/O, zero ambient side effects,
+and no host message except the single AC-010 result. Bootstrap absence, integrity failure, lockdown
+failure, manifest drift, or tampering returns `SCRIPT_SANDBOX_UNAVAILABLE`, terminates the session,
+and never falls back to plain Worker execution. The same proof runs with Worker CSP relaxed or
+absent; CSP remains defense in depth.
+
+Verify with: the future owning integration test, run as
+`pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSandbox.spec.ts`,
+using the ADR-selected production runtime/bootstrap and asserting the Worker-side observation log,
+complete ambient-capability manifest, exact outcomes, and zero effects
+
+AC-002 and AC-004 through AC-011 are unimplemented today. The dormant current worker accepts raw
+source through `new Function` and posts unvalidated `setParam`/`sendMidi` messages, but no current
+accepted runtime ADR, closed loader/protocol, confinement harness, launcher, trusted grant issuer,
+validating script host, Command dispatch, or MIDI-owned output binding implements this future
+contract.
 
 ## Open questions
 

@@ -223,19 +223,19 @@ whenever monitor mode is active.
 
 Verify with: `pnpm test:run -- RavePanel`
 
-### AC-024 — Direct deterministic helpers are test-only
+### AC-024 — Direct encode helper remains test-only
 
-No loaded-model product transfer exists today. The current `encodeAudio.ts`, `decodeLatent.ts`,
-and `timbreTransfer.ts` files remain directly callable only as deterministic CI/test helpers.
-Future implementation MUST relocate each helper, with its tests and observable contract
-preserved, to its exact corresponding
-`src/modules/AudioEngine/useCases/rave/__tests__/helpers/` path before retiring the current
-`useCases/rave` file; helper-test success and product reachability are not retirement conditions.
+No loaded-model product transfer exists today. The current `encodeAudio.ts` MUST remain a direct
+deterministic test helper until it is relocated, with its direct behavioral test and observable
+contract preserved, to
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts` and the exact current path
+is removed in the same change. Its current test directly covers empty/short input, frame count,
+latent dimension, `timeSec`, and finite output. Product reachability and a green test alone do not
+retire the warning; an ADR branch is valid only under
+[dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
 
-Verify with: the three focused helper tests:
-`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts`,
-covering direct calls to each named pure helper, plus inspection of the exact current-to-future
-path disposition.
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts`,
+exact current/future path searches, and `pnpm deps:validate`
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -247,19 +247,25 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-026 — Direct pure latent interpolation helper
 
-The current `interpolateLatent.ts` file remains directly callable as a deterministic CI/test
-latent-space primitive with this observable contract: for `time` in `[0, 1]`,
+The current `interpolateLatent.ts` file MUST remain a directly callable deterministic CI/test
+latent-space primitive until its complete direct test is green and the same change either performs
+the exact relocation/removal below or satisfies
+[dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
+Its observable contract for `time` in `[0, 1]` is:
 `interpolateLatent(alpha, b, time)` returns a vector with `alpha.values.length` values in source
 order, linearly blending each source value with the corresponding `b.values` value (using `0`
 when that target dimension is absent) and `timeSec`; equal-shaped endpoints return source/target
-vectors and neither input is mutated. Future implementation MUST relocate it, with this contract
-and its tests preserved, to
-`src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` before retiring
-the exact current file; direct helper success and product reachability do not retire the warning.
+vectors and neither input is mutated. The current test proves only one midpoint and one missing
+target-dimension case; it does not prove either endpoint or input immutability and is not relocation
+or retirement evidence. The exact relocation preserves this contract at
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` and removes the
+current file. Direct helper success and product reachability do not retire the warning.
 
-Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`
-covering equal-shaped `time = 0` and `time = 1` endpoints including `timeSec`, missing target
-dimensions defaulting to `0`, and deep-equality snapshots proving neither input is mutated.
+Verify with: the strengthened
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts` covering
+equal-shaped `time = 0` and `time = 1` endpoints including `timeSec`, missing target dimensions
+defaulting to `0`, and deep-equality snapshots proving neither input is mutated, followed by exact
+path searches and `pnpm deps:validate`
 
 ### AC-027 — Model-backed transfer provenance
 
@@ -357,22 +363,59 @@ clip-insertion calls.
 AC-029 through AC-031 are unimplemented today; no current worker/session transfer path can satisfy
 their selection, response-correlation, or payload-validation contracts.
 
+### AC-032 — Direct decode helper remains test-only
+
+The current `decodeLatent.ts` MUST remain a direct deterministic test helper until it is relocated,
+with its direct behavioral test and observable contract preserved, to
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts` and the exact current path
+is removed in the same change. Its current test directly covers empty input, output frame length,
+and finite output. Product reachability and a green test alone do not retire the warning; an ADR
+branch is valid only under
+[dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
+
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts`,
+exact current/future path searches, and `pnpm deps:validate`
+
+### AC-033 — Direct timbre helper needs behavioral evidence
+
+The current `timbreTransfer.ts` MUST remain a direct deterministic test helper until a direct
+behavioral test proves its finite-blend contract: blend is clamped to `[0, 1]`; output follows
+source-vector order and `timeSec`; non-empty target vectors cycle by source index; missing target
+dimensions contribute `0`; an empty target preserves source values; and neither input is mutated.
+Only after that test is green is the same change permitted to relocate the helper and test to
+`src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts` and remove the exact
+current path, or satisfy
+[dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
+The current `timbreTransfer.spec.ts` only checks that the export exists; it does not call the helper
+or prove any preserved behavior. Product reachability and the current green export-only test are
+non-retiring.
+
+Verify with: the strengthened
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts` covering every
+named behavior and deep-equality snapshots of both inputs, followed by exact path searches and
+`pnpm deps:validate`
+
 ## Current-state ownership
 
-The four current `no-orphans` paths are direct deterministic CI/test helpers only. Their green
-tests are intentionally non-retiring and do not prove the model-backed product contracts in
-AC-001 through AC-005 or AC-027 through AC-031:
+The four current `no-orphans` paths are direct deterministic CI/test helpers only. The focused
+command is green. The encode/decode tests make the direct calls described in AC-024/AC-032; the
+timbre test is export-only; and the interpolation test calls only midpoint/missing-dimension cases,
+without the required endpoint `timeSec` or immutability evidence. None proves the model-backed
+product contracts in AC-001 through AC-005 or AC-027 through AC-031, and none retires a warning by
+passing:
 
 | Current warning path | Current disposition | Required future helper path | Warning closes only when |
 | --- | --- | --- | --- |
-| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
-| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
-| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
-| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; retain now. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | The exact current file is retired after relocation with tests/contract preserved, or an explicit superseding ADR names this exact path. |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | Direct deterministic test helper; current direct test exists. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts` | AC-024's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | Direct deterministic test helper; current direct test exists. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts` | AC-032's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | Direct deterministic test helper; current test is export-only and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts` | AC-033's missing direct test is green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; current test is partial and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | AC-026's missing endpoint/immutability assertions are green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
 
 Direct helper availability, passing CI tests, and product reachability are not warning retirement
-conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024` and `AC-026`
-own the direct test contracts and exact relocation; `AC-027` owns model-result provenance; and
+conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024`, `AC-026`,
+`AC-032`, and `AC-033` own the path-specific direct-test and relocation gates; dependency
+[AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement) owns the
+only ADR retirement condition; `AC-027` owns model-result provenance; and
 `AC-028` owns loaded-session authenticity. `AC-029` owns the host-selection/session match; `AC-030`
 owns response correlation and replay rejection; and `AC-031` owns response schema and payload
 bounds. This spec retains all four current files and does not authorize a silent product fallback.

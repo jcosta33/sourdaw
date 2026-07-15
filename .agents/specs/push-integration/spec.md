@@ -7,6 +7,7 @@ owner: The Sourdaw team
 sources:
   - ../hardware-controller-ecosystem/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../decisions/README.md
   - ../../../src/modules/Command/useCases/index.ts
   - ../../../src/modules/Command/useCases/executeAppAction.ts
   - ../../../src/modules/Command/useCases/commandQueries.ts
@@ -250,11 +251,14 @@ ingestion, loader, store, host, or worker boundary under `src/modules/MIDI/` or
 `ControllerProfile.scriptUrl` conflates profile data with executable-source location, and the
 dormant worker accepts source and calls `new Function`. That worker leaves the declarative-profile
 scan only after the distinct artifact/API split in AC-028 proves it cannot receive declarative
-profiles, or after its exact path is retired. Leaving the declarative-profile scan after a split
-does not activate or retire its `no-orphans` warning; AC-028 defers that exact disposition to
+profiles, or after its exact path is retired under
+[dependency-boundary-validation AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
+Leaving the declarative-profile scan after a split does not activate or retire its `no-orphans`
+warning; AC-028 defers that exact disposition to
 [hardware-controller-ecosystem AC-008](../hardware-controller-ecosystem/spec.md#ac-008--current-worker-warning-has-one-exact-disposition)
 and
-[dependency-boundary-validation AC-007](../dependency-boundary-validation/spec.md#ac-007--durable-warning-ownership).
+[dependency-boundary-validation AC-007](../dependency-boundary-validation/spec.md#ac-007--durable-warning-ownership)
+and the canonical dependency AC-008 condition linked above.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`, covering
@@ -300,8 +304,11 @@ A future executable controller-script artifact/API, provisionally `ControllerScr
 use a distinct hardware-controller-ecosystem-owned ingestion, storage, and worker pipeline and
 never enter the declarative profile ingestion, storage, binding, host-message, or worker-message
 path governed by AC-023 through AC-027. That separate pipeline is the sole route for JS/TS to the
-HardwareController-owned capability-secure compartment and fail-closed bootstrap required by
-[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-in-a-capability-secure-compartment)
+HardwareController-owned ADR-selected restricted runtime required by
+[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-require-an-accepted-runtime-adr),
+[closed source loader](../hardware-controller-ecosystem/spec.md#ac-009--script-source-loading-is-closed),
+[closed protocol](../hardware-controller-ecosystem/spec.md#ac-010--script-results-use-one-closed-protocol),
+and [selected-runtime harness](../hardware-controller-ecosystem/spec.md#ac-011--selected-runtime-confinement-is-observed),
 and remains subject to the ecosystem-owned
 [trusted-grant](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite),
 [intent-schema](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas),
@@ -310,25 +317,29 @@ and [bound-output](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-
 contracts.
 
 A plain Web Worker, `new Function`, a launcher, or CSP-only confinement cannot satisfy this
-executable path. The exact current-worker activation or ADR retirement remains owned by
+executable path. The exact current-worker activation or canonical accepted-ADR retirement remains
+owned by
 [hardware-controller-ecosystem AC-008](../hardware-controller-ecosystem/spec.md#ac-008--current-worker-warning-has-one-exact-disposition)
 and
-[dependency-boundary-validation AC-007](../dependency-boundary-validation/spec.md#ac-007--durable-warning-ownership).
+[dependency-boundary-validation AC-007](../dependency-boundary-validation/spec.md#ac-007--durable-warning-ownership)
+and [AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement).
 
 Those hardware-controller-ecosystem requirements remain authoritative for executable-script
-compartment isolation, grants, intent validation, and effects; Push AC-023 through AC-027 remain
-authoritative for declarative profiles and their host capabilities. A split or replacement of
-common `ControllerProfile` types is valid only when one explicit superseding ADR names both
-specifications, assigns distinct public data-profile and script-bundle types/APIs, updates both
-cross-links and owning tests in the same change, and preserves both requirement sets. Otherwise
-neither specification supersedes the other. This contract is unimplemented today: the current
-`scriptUrl` field and dormant `new Function` worker conflate the artifacts and satisfy neither
-contract.
+runtime confinement, source loading, protocol, grants, intent validation, and effects; Push AC-023
+through AC-027 remain authoritative for declarative profiles and their host capabilities. A split
+or replacement of common `ControllerProfile` types is valid only when an accepted ADR listed in
+`.agents/decisions/README.md` names both specifications, assigns distinct public data-profile and
+script-bundle types/APIs, updates both cross-links and owning tests in the same change, and
+preserves both requirement sets. If that split retires a warning path, the same change also
+satisfies dependency AC-008. Otherwise neither specification supersedes the other. This contract
+is unimplemented today: the current `scriptUrl` field and dormant `new Function` worker conflate
+the artifacts and satisfy neither contract.
 
 Verify with: the future declarative-profile boundary test
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`,
-proving a script bundle is rejected by every declarative boundary; the future ecosystem compartment
-and host tests under `src/modules/HardwareController/useCases/__tests__/`; and
+proving a script bundle is rejected by every declarative boundary; the future ecosystem runtime,
+source, protocol, confinement, and host tests under
+`src/modules/HardwareController/useCases/__tests__/`; and
 `pnpm deps:validate`.
 
 ## Open questions
@@ -350,7 +361,7 @@ and host tests under `src/modules/HardwareController/useCases/__tests__/`; and
   Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
   replace AC-023 through AC-028. Declarative profiles remain data-only under AC-025; executable
   script bundles use only the separate ecosystem-owned restricted-runtime path in AC-028 and
-  hardware-controller-ecosystem AC-002 and AC-004 through AC-008. The dependency-boundary map
+  hardware-controller-ecosystem AC-002, AC-004 through AC-011. The dependency-boundary map
   points to those requirements for the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").

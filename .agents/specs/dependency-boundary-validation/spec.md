@@ -6,6 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - research.md
+  - ../../decisions/README.md
   - ../hardware-controller-ecosystem/spec.md
   - ../push-integration/spec.md
   - ../rave-timbre-transfer/spec.md
@@ -46,18 +47,17 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-in-a-capability-secure-compartment), [AC-004](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite), [AC-005](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas), [AC-006](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command), [AC-007](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-intents-use-one-bound-output), [AC-008](../hardware-controller-ecosystem/spec.md#ac-008--current-worker-warning-has-one-exact-disposition), and [Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact): the current file is an unlaunched plain Worker/`new Function` body with none of the required capability-secure compartment/bootstrap, grant, validation, or effect boundaries, not a declarative-profile host. Retain the visible warning until this exact path either becomes the distinct product script-bundle worker satisfying every linked requirement, including AC-002's fail-closed and negative attempted-I/O/global-escape evidence, while Push AC-023 through AC-027 remain on the separate declarative path, or an explicit superseding ADR retires this exact file. Worker presence, a launcher, `new Function`, CSP alone, product reachability, a declarative-profile role, or an orphan exception does not close it. |
-| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
-| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
-| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
-| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md#ac-026--direct-pure-latent-interpolation-helper): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-require-an-accepted-runtime-adr), [AC-004](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite), [AC-005](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas), [AC-006](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command), [AC-007](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-intents-use-one-bound-output), [AC-008](../hardware-controller-ecosystem/spec.md#ac-008--current-worker-warning-has-one-exact-disposition), [AC-009](../hardware-controller-ecosystem/spec.md#ac-009--script-source-loading-is-closed), [AC-010](../hardware-controller-ecosystem/spec.md#ac-010--script-results-use-one-closed-protocol), [AC-011](../hardware-controller-ecosystem/spec.md#ac-011--selected-runtime-confinement-is-observed), and [Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact): retain the warning until this exact file becomes the distinct script-bundle worker satisfying every linked requirement, or the same change satisfies the canonical accepted-ADR retirement condition in AC-008 below. Worker presence, a launcher, `new Function`, CSP alone, product reachability, a declarative-profile role, or an orphan exception does not close it. |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-encode-helper-remains-test-only): retain as a direct deterministic helper until the exact-path relocation and direct-test gate is completed, or the same change satisfies AC-008 below. Product reachability and green helper tests do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-032](../rave-timbre-transfer/spec.md#ac-032--direct-decode-helper-remains-test-only): retain as a direct deterministic helper until the exact-path relocation and direct-test gate is completed, or the same change satisfies AC-008 below. Product reachability and green helper tests do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-033](../rave-timbre-transfer/spec.md#ac-033--direct-timbre-helper-needs-behavioral-evidence): retain as a direct deterministic helper until the exact-path relocation and missing direct-behavior test gate is completed, or the same change satisfies AC-008 below. Product reachability and its current export-only test do not close this warning. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md#ac-026--direct-pure-latent-interpolation-helper): retain as a direct deterministic helper until the exact-path relocation and missing endpoint/immutability test gate is completed, or the same change satisfies AC-008 below. Product reachability and its current partial test do not close this warning. |
 
 Each warning remains visible until its exact path-specific disposition is met. Direct helper
 availability, passing CI, product reachability, synthetic imports, and new registry entries do
-not clear the four RAVE warnings; only the named relocation plus exact current-path retirement or
-an explicit superseding ADR can do so. The controller-worker warning likewise requires its exact
-capability-secure script activation or ADR-owned exact-path retirement, not Worker presence or
-wiring alone.
+not clear the four RAVE warnings. An ADR retirement is valid only under AC-008; the
+controller-worker warning likewise requires exact compliant activation or that same canonical
+retirement condition, not Worker presence or wiring alone.
 
 ## Requirements
 
@@ -109,8 +109,8 @@ Verify with: `.dependency-cruiser.cjs` review and `pnpm deps:validate`
 
 No warning is cleared by a synthetic import, empty barrel export, artificial
 registration, or other cosmetic wiring; product wiring or deletion MUST be
-justified by its owning spec and verified by behavior coverage or explicit
-path-named retirement.
+justified by its owning spec and verified by behavior coverage or AC-008's
+accepted exact-path retirement condition.
 
 Verify with: focused reference search, owning-spec review, and `pnpm deps:validate`
 
@@ -118,11 +118,24 @@ Verify with: focused reference search, owning-spec review, and `pnpm deps:valida
 
 The five current warning paths MUST remain covered by the path-specific ownership and
 disposition map above before source remediation; each row points to an exact owning
-requirement or an explicit exact-path retirement condition.
+requirement and, where applicable, AC-008's exact-path retirement condition.
 
 Verify with: the table and cross-links in this spec, the linked hardware-controller, Push, and RAVE
 requirements, and
 `rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`
+
+### AC-008 — Accepted exact-path retirement
+
+Any ADR-based retirement of a warning path in this map MUST be one atomic change that uses an
+accepted ADR listed in `.agents/decisions/README.md`; names the exact path, its removal or relocation
+disposition, its replacement or explicit no-replacement decision, the behavioral contract preserved
+or ended, and direct evidence for that disposition; removes or relocates the exact path; updates its
+owning cross-links and preservation tests; and records `pnpm deps:validate` evidence that the exact
+warning is absent without a synthetic import or new orphan exception. A draft, unlisted,
+prose-only, or future-intent ADR is not retirement authority.
+
+Verify with: the accepted ADR and ledger entry, the same-change source/test/spec diff, focused
+exact-path search, and `pnpm deps:validate`
 
 ## Open questions
 
