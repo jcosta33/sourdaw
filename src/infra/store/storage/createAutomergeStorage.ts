@@ -37,12 +37,12 @@ type AutomergeStorageOptions<TData> = {
 };
 
 type AutomergeStorageWriteContext = {
-    readonly commitOwner: object | undefined;
+    readonly commitOwner: object;
     readonly snapshotTransaction: object | undefined;
 };
 
 type PendingAutomergeStorageWrite = {
-    readonly commitOwner: object | undefined;
+    readonly commitOwner: object;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
     readonly flush: () => AutomergeStorageMutationInput | null;
@@ -101,7 +101,7 @@ export function runWithAutomergeStorageTransaction<Result>(
 
 function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
     let firstError: unknown;
-    const groups = new Map<string, Map<object | undefined, PendingAutomergeStorageWrite[]>>();
+    const groups = new Map<string, Map<object, PendingAutomergeStorageWrite[]>>();
 
     for (const pending of [...pendingAutomergeStorageWrites]) {
         if (!matches(pending)) {
@@ -220,6 +220,7 @@ export const createAutomergeStorage = <TData>(
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
     let pendingWrite: PendingAutomergeStorageWrite | null = null;
+    let unscopedCommitOwner: object | undefined;
     /**
      * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
      * skip re-stringifying cachedValue on every sync message when the
@@ -272,9 +273,14 @@ export const createAutomergeStorage = <TData>(
     };
 
     const getWriteContext = (): AutomergeStorageWriteContext => {
+        if (activeAutomergeStorageTransaction) {
+            return activeAutomergeStorageTransaction;
+        }
+
+        unscopedCommitOwner ??= Object.freeze({});
         return {
-            commitOwner: activeAutomergeStorageTransaction?.commitOwner,
-            snapshotTransaction: activeAutomergeStorageTransaction?.snapshotTransaction,
+            commitOwner: unscopedCommitOwner,
+            snapshotTransaction: undefined,
         };
     };
 
@@ -288,6 +294,9 @@ export const createAutomergeStorage = <TData>(
         }
         pendingAutomergeStorageWrites.delete(write);
         pendingWrite = null;
+        if (unscopedCommitOwner === write.commitOwner) {
+            unscopedCommitOwner = undefined;
+        }
         const message = pendingMessage;
         pendingMessage = undefined;
         return createMutation(cachedValue, message, write.snapshotTransaction);
@@ -322,7 +331,7 @@ export const createAutomergeStorage = <TData>(
         rafId = requestAnimationFrame(() => {
             rafId = null;
             try {
-                flushAutomergeStorageWrites(write.snapshotTransaction);
+                flushAutomergeStorageWriteOwner(write);
             } catch (error) {
                 logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
             }

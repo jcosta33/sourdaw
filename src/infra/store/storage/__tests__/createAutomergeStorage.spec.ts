@@ -263,8 +263,10 @@ describe('createAutomergeStorage', () => {
 
         const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
         const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
-        arrangementStorage.set({ imported: true });
-        midiStorage.set({ imported: true });
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+            midiStorage.set({ imported: true });
+        });
 
         frameCallback?.(100);
 
@@ -297,8 +299,10 @@ describe('createAutomergeStorage', () => {
 
         const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
         const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
-        arrangementStorage.set({ imported: true });
-        midiStorage.set({ imported: true });
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+            midiStorage.set({ imported: true });
+        });
 
         expect(() => flushAutomergeStorageWrites()).toThrow('MIDI write failed');
         expect(doc).toEqual({});
@@ -326,6 +330,56 @@ describe('createAutomergeStorage', () => {
         expect(mutations).toEqual([
             { docId: 'root', message: 'First action', snapshotTransaction: undefined },
             { docId: 'root', message: 'Second action', snapshotTransaction: undefined },
+        ]);
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
+    });
+
+    it('flushes only the action owner whose animation frame fired', () => {
+        const snapshotTransaction = {};
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+        });
+        runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+            midiStorage.set({ imported: true });
+        });
+
+        const arrangementFrame = requestAnimationFrameMock.mock.calls[0]?.[0];
+        arrangementFrame?.(100);
+
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
+        expect(doc.tracks).toEqual({ imported: true });
+        expect(doc.midi).toBeUndefined();
+
+        flushAutomergeStorageWrites(snapshotTransaction);
+        expect(doc.midi).toEqual({ imported: true });
+    });
+
+    it('keeps newly scheduled unscoped adapter writes in separate owner groups', () => {
+        let semanticMessage: string | undefined = 'Arrangement direct write';
+        const { doc, mutations, port } = createTestPort({
+            getSemanticMessage: () => semanticMessage,
+        });
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        arrangementStorage.set({ imported: true });
+        semanticMessage = 'MIDI direct write';
+        midiStorage.set({ imported: true });
+
+        flushAutomergeStorageWrites();
+
+        expect(mutations).toEqual([
+            { docId: 'root', message: 'Arrangement direct write', snapshotTransaction: undefined },
+            { docId: 'root', message: 'MIDI direct write', snapshotTransaction: undefined },
         ]);
         expect(doc).toEqual({
             tracks: { imported: true },
