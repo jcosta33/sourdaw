@@ -68,7 +68,7 @@ describe('redo', () => {
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
-    it('should execute the action and move the entry back to past', async () => {
+    it('replays the original action with normal macro-recording semantics and moves it back to past', async () => {
         const entry = actionEntry();
         mocks.undoStoreValue.value = { past: [], future: [entry] };
 

@@ -162,22 +162,8 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
-    describe('restorePunchRegion', () => {
-        it('should accept only an exact finite, non-negative, strictly ordered pair', () => {
-            const guard = PAYLOAD_VALIDATORS.restorePunchRegion;
-            expect(guard).not.toBe('unchecked');
-            if (guard === 'unchecked') {
-                return;
-            }
-
-            expect(guard({ punchInBeat: 0, punchOutBeat: Number.MIN_VALUE })).toBe(true);
-            expect(guard({ punchInBeat: 4.5, punchOutBeat: 8.25 })).toBe(true);
-            expect(guard({ punchInBeat: 4, punchOutBeat: 4 })).toBe(false);
-            expect(guard({ punchInBeat: 8, punchOutBeat: 4 })).toBe(false);
-            expect(guard({ punchInBeat: -1, punchOutBeat: 4 })).toBe(false);
-            expect(guard({ punchInBeat: 0, punchOutBeat: Number.POSITIVE_INFINITY })).toBe(false);
-            expect(guard({ punchInBeat: 0, punchOutBeat: 4, extra: true })).toBe(false);
-        });
+    it('should not expose the internal punch-region inverse to model payload validation', () => {
+        expect(PAYLOAD_VALIDATORS).not.toHaveProperty('restorePunchRegion');
     });
 
     describe('joinCollabSession', () => {

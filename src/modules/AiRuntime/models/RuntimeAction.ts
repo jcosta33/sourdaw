@@ -176,11 +176,6 @@ export type RuntimeAction =
     | { type: 'seekPlayhead'; payload: { beat: number } }
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
-    | {
-          /** Internal inverse action for atomic punch-region restoration. */
-          type: 'restorePunchRegion';
-          payload: { punchInBeat: number; punchOutBeat: number };
-      }
     | { type: 'togglePunch'; payload?: undefined }
     | { type: 'toggleCountIn'; payload?: undefined }
     | { type: 'setCountInBars'; payload: { bars: number } }

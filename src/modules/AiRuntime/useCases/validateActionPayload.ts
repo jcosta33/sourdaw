@@ -70,16 +70,6 @@ function hasFinitePunchBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
     return isObj(param) && hasExactKeys(param, ['beat']) && isNumber(param.beat);
 }
 
-function hasValidPunchRegion(param: unknown): param is PayloadOf<'restorePunchRegion'> {
-    return (
-        isObj(param) &&
-        hasExactKeys(param, ['punchInBeat', 'punchOutBeat']) &&
-        isNonNegativeNumber(param.punchInBeat) &&
-        isNonNegativeNumber(param.punchOutBeat) &&
-        param.punchOutBeat > param.punchInBeat
-    );
-}
-
 function hasNoPayload(value: unknown): value is undefined {
     return value === undefined;
 }
@@ -243,7 +233,6 @@ const validators = {
     setLoopRegion: 'unchecked',
     setPunchIn: hasFinitePunchBeat,
     setPunchOut: hasFinitePunchBeat,
-    restorePunchRegion: hasValidPunchRegion,
     setCountInBars: 'unchecked',
     setPreRollBars: 'unchecked',
     seekPlayhead: 'unchecked',
