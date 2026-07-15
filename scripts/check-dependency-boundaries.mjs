@@ -251,14 +251,14 @@ function walkFiles(directory, symlinkPaths = []) {
     return files.sort(comparePaths);
 }
 
-function staticGuardFindings() {
+export function findStaticGuardFindings(repositoryRoot = root) {
     const symlinkPaths = [];
-    const files = walkFiles(resolve(root, 'src/modules'), symlinkPaths).map((absolutePath) => ({
+    const files = walkFiles(resolve(repositoryRoot, 'src/modules'), symlinkPaths).map((absolutePath) => ({
         absolutePath,
-        repoPath: toPosixPath(relative(root, absolutePath)),
+        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
     }));
     const symlinkFindings = symlinkPaths.map((absolutePath) => ({
-        file: toPosixPath(relative(root, absolutePath)),
+        file: toPosixPath(relative(repositoryRoot, absolutePath)),
         line: 1,
         reason: 'symbolic links are not permitted under src/modules',
     }));
@@ -350,7 +350,7 @@ function writeBaseline(name, gate, cruise) {
 }
 
 function main() {
-    const staticFindings = staticGuardFindings();
+    const staticFindings = findStaticGuardFindings();
     if (staticFindings.length > 0) {
         for (const finding of staticFindings) {
             console.error(`${finding.file}:${finding.line}: ${finding.reason}`);

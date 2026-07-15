@@ -1,9 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, relative } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -12,6 +10,7 @@ import {
     compareRows,
     findMixedTypeValueExports,
     findModelCasingFindings,
+    findStaticGuardFindings,
     isModuleRootIndex,
     isUseCaseBarrel,
 } from '../check-dependency-boundaries.mjs';
@@ -297,19 +296,24 @@ describe('check-dependency-boundaries', () => {
     });
 
     it('should reject symlinked model directories and source files before walking targets', ({ skip }) => {
-        const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-        const moduleDirectory = mkdtempSync(join(repoRoot, 'src/modules/SymlinkRegression-'));
-        const targetDirectory = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-'));
-        const targetModelsDirectory = join(targetDirectory, 'models-target');
-        const targetModelsFile = join(targetModelsDirectory, 'foo', 'Hidden.ts');
-        const targetSourceFile = join(targetDirectory, 'Source.ts');
-        const symlinkedModelsDirectory = join(moduleDirectory, 'models');
-        const symlinkedSourceFile = join(moduleDirectory, 'Source.ts');
+        let repositoryRoot: string | undefined;
+        let targetDirectory: string | undefined;
 
         try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-repo-'));
+            targetDirectory = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-target-'));
+
+            const moduleDirectory = join(repositoryRoot, 'src/modules/SymlinkRegression');
+            const targetModelsDirectory = join(targetDirectory, 'models-target');
+            const targetModelsFile = join(targetModelsDirectory, 'foo', 'Hidden.ts');
+            const targetSourceFile = join(targetDirectory, 'UseCasesIndex.ts');
+            const symlinkedModelsDirectory = join(moduleDirectory, 'models');
+            const symlinkedSourceFile = join(moduleDirectory, 'useCases/index.ts');
+
             mkdirSync(dirname(targetModelsFile), { recursive: true });
+            mkdirSync(join(moduleDirectory, 'useCases'), { recursive: true });
             writeFileSync(targetModelsFile, 'export const hidden = true;\n');
-            writeFileSync(targetSourceFile, 'export const source = true;\n');
+            writeFileSync(targetSourceFile, "export { run, type RunInput } from './run';\n");
 
             try {
                 symlinkSync(targetModelsDirectory, symlinkedModelsDirectory, 'dir');
@@ -322,23 +326,30 @@ describe('check-dependency-boundaries', () => {
                 throw error;
             }
 
-            const result = spawnSync(process.execPath, ['scripts/check-dependency-boundaries.mjs'], {
-                cwd: repoRoot,
-                encoding: 'utf8',
-            });
-            const relativeModelsPath = relative(repoRoot, symlinkedModelsDirectory).replaceAll('\\', '/');
-            const relativeSourcePath = relative(repoRoot, symlinkedSourceFile).replaceAll('\\', '/');
+            const findings = findStaticGuardFindings(repositoryRoot);
+            const relativeModelsPath = relative(repositoryRoot, symlinkedModelsDirectory).replaceAll('\\', '/');
+            const relativeSourcePath = relative(repositoryRoot, symlinkedSourceFile).replaceAll('\\', '/');
 
-            expect(result.status).toBe(1);
-            expect(result.stderr).toContain(
-                `${relativeModelsPath}:1: symbolic links are not permitted under src/modules`
-            );
-            expect(result.stderr).toContain(
-                `${relativeSourcePath}:1: symbolic links are not permitted under src/modules`
-            );
+            expect(findings).toEqual([
+                {
+                    file: relativeModelsPath,
+                    line: 1,
+                    reason: 'symbolic links are not permitted under src/modules',
+                },
+                {
+                    file: relativeSourcePath,
+                    line: 1,
+                    reason: 'symbolic links are not permitted under src/modules',
+                },
+            ]);
+            expect(new Set(findings.map(({ file }) => file)).size).toBe(findings.length);
         } finally {
-            rmSync(moduleDirectory, { force: true, recursive: true });
-            rmSync(targetDirectory, { force: true, recursive: true });
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+            if (targetDirectory) {
+                rmSync(targetDirectory, { force: true, recursive: true });
+            }
         }
     });
 
