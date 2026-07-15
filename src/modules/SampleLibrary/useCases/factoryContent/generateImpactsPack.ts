@@ -1,20 +1,12 @@
-import {
-    applyEnvelope,
-    biquad,
-    createMono,
-    createStereo,
-    feedbackDelay,
-    mixMono,
-    mixMonoIntoStereo,
-    normalizeStereo,
-    renderEnvelope,
-    renderNoise,
-    renderSine,
-    renderTriangle,
-    softClipStereo,
-    toAudioBufferStereo,
-    SAMPLE_RATE,
-} from './synthesis';
+import { createMono, createStereo, toAudioBufferStereo } from '../../services/factorySynthesis/bufferCreation';
+import { SAMPLE_RATE } from '../../services/factorySynthesis/constants';
+import { normalizeStereo, softClipStereo } from '../../services/factorySynthesis/dynamics';
+import { feedbackDelay } from '../../services/factorySynthesis/effects';
+import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
+import { biquad } from '../../services/factorySynthesis/filters';
+import { mixMono, mixMonoIntoStereo } from '../../services/factorySynthesis/mixing';
+import { renderNoise, renderSine, renderTriangle } from '../../services/factorySynthesis/oscillators';
+
 import { type FactorySample } from './types';
 
 function renderSubDrop(): [Float32Array, Float32Array] {

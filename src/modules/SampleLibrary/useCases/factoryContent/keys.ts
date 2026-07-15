@@ -1,19 +1,17 @@
+import { createMono, toAudioBufferMono } from '../../services/factorySynthesis/bufferCreation';
+import { normalize, softClip } from '../../services/factorySynthesis/dynamics';
+import { feedbackDelay } from '../../services/factorySynthesis/effects';
+import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
+import { biquad } from '../../services/factorySynthesis/filters';
+import { mixMono } from '../../services/factorySynthesis/mixing';
 import {
-    applyEnvelope,
-    biquad,
-    createMono,
-    feedbackDelay,
-    mixMono,
-    normalize,
-    renderEnvelope,
+    midiToFreq,
     renderFmOscillator,
     renderSaw,
     renderSine,
     renderTriangle,
-    softClip,
-    toAudioBufferMono,
-    midiToFreq,
-} from './synthesis';
+} from '../../services/factorySynthesis/oscillators';
+
 import { type FactorySample } from './types';
 
 const C3 = 48;
