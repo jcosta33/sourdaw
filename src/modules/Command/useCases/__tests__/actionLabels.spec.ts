@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { type AppAction } from '../../models/AppAction';
 import { describeAction, ACTION_LABELS } from '../actionLabels';
-import { type AppAction } from '../commandQueries';
 
 describe('actionLabels', () => {
     it('should cover common action types used in the label map', () => {

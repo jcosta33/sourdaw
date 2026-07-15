@@ -4,7 +4,11 @@
  * and any other consumer that needs to search the command catalog.
  */
 
-import { type CommandEntry } from '../models/CommandEntry';
+type SearchableCommandEntry = {
+    label: string;
+    description: string;
+    category: string;
+};
 
 /** Subsequence fuzzy match: every char of `query` appears in `text` in order. */
 export function fuzzyMatch(query: string, text: string): boolean {
@@ -20,7 +24,7 @@ export function fuzzyMatch(query: string, text: string): boolean {
 }
 
 /** Filter the supplied catalog by free-text query (label/description/category). */
-export function searchCommands(registry: CommandEntry[], query: string): CommandEntry[] {
+export function searchCommands<Entry extends SearchableCommandEntry>(registry: Entry[], query: string): Entry[] {
     if (!query.trim()) {
         return registry;
     }

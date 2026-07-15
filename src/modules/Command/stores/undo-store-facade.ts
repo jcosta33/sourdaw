@@ -1,6 +1,6 @@
 import { type ReadableStore } from '#/infra/store/types';
 
-import { type UndoEntry } from '../useCases/commandQueries';
+import { type UndoEntry } from '../models/UndoEntry';
 
 import { undoStore as mutable_undo_store, type UndoStoreState as MutableUndoStoreState } from './undoStore';
 

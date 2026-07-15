@@ -15,8 +15,9 @@ import { createAppActionCommittedError } from '../createAppActionCommittedError'
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
 
+import type { AppAction } from '../../models/AppAction';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
-import type { ActionHandler, AppAction, HandlerDescribeResult } from '../commandQueries';
+import type { ActionHandler, HandlerDescribeResult } from '../commandQueries';
 
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
 type SetSemanticContextInput = Parameters<CrdtStoresModule['setSemanticContext']>[0];

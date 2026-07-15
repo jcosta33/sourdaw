@@ -4,10 +4,10 @@ const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
 async function loadSubject() {
     vi.resetModules();
-    const commandQueries = await import('../../useCases/commandQueries');
+    const createUndoEntryModule = await import('../../useCases/createUndoEntry');
     const undoStoreModule = await import('../undoStore');
     return {
-        createUndoEntry: commandQueries.createUndoEntry,
+        createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
         undoStore: undoStoreModule.undoStore,
     };

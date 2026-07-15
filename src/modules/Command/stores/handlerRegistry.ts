@@ -1,4 +1,5 @@
-import { type ActionHandler, type AppAction } from '../useCases/commandQueries';
+import { type AppAction } from '../models/AppAction';
+import { type ActionHandler } from '../useCases/commandQueries';
 
 /**
  * Action-handler registry shared across the app.

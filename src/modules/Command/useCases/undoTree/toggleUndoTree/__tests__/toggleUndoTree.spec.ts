@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createEmptyTree } from '../../../../models/UndoTree';
 import { undoStore } from '../../../../stores/undoStore';
 import { undoTreeStore } from '../../../../stores/undoTree';
-import { createUndoEntry } from '../../../commandQueries';
+import { createUndoEntry } from '../../../createUndoEntry';
 import { toggleUndoTree } from '../toggleUndoTree';
 
 describe('toggleUndoTree', () => {

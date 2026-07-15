@@ -1,12 +1,13 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedTrackId } from '../../useCases/selectionHelpers/getSelectedTrackId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
+
+import { type CallableCommandEntry } from './commandEntry';
 
 /** Track commands — add, duplicate, delete, rename, freeze, mute, solo, group, arm. */
-export const trackCommands: CommandEntry[] = [
+export const trackCommands: CallableCommandEntry[] = [
     {
         id: 'add-audio-track',
         label: 'Add Audio Track',

@@ -1,6 +1,6 @@
+import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
-import { type UndoEntry } from './commandQueries';
 import { executeAppAction } from './executeAppAction';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';

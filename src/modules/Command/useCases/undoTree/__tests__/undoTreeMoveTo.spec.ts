@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { createEmptyTree, pushToTree, type UndoTree } from '../../../models/UndoTree';
 import { undoTreeStore } from '../../../stores/undoTree';
-import { createUndoEntry } from '../../commandQueries';
+import { createUndoEntry } from '../../createUndoEntry';
 import { undoTreeMoveTo } from '../undoTreeMoveTo';
 
 function buildLinearTree(): { tree: UndoTree; ids: string[] } {

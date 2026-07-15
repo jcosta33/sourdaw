@@ -298,51 +298,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Command/models/AppAction.ts",
-    "to": "src/modules/Command/useCases/commandQueries.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Command/models/CommandEntry.ts",
-    "to": "src/modules/Command/useCases/commandQueries.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Command/models/Macro.ts",
-    "to": "src/modules/Command/useCases/commandQueries.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Command/models/UndoEntry.ts",
-    "to": "src/modules/Command/useCases/commandQueries.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Command/models/UndoTree.ts",
-    "to": "src/modules/Command/useCases/commandQueries.ts",
-    "rule": {
-      "severity": "error",
-      "name": "models-are-pure-type-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Command/useCases/index.ts",
     "to": "src/modules/Command/useCases/commandQueries.ts",
     "rule": {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { createEmptyTree, pushToTree } from '../../../../models/UndoTree';
 import { undoTreeStore } from '../../../../stores/undoTree';
-import { createUndoEntry } from '../../../commandQueries';
+import { createUndoEntry } from '../../../createUndoEntry';
 import { setNodeLabel } from '../setNodeLabel';
 
 describe('setNodeLabel', () => {

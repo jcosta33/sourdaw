@@ -1,10 +1,11 @@
 import { automationStore } from '#/modules/Automation/stores';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+
+import { type CallableCommandEntry } from './commandEntry';
 
 /** Automation commands — scale, invert, thin automation points. */
-export const automationCommands: CommandEntry[] = [
+export const automationCommands: CallableCommandEntry[] = [
     {
         id: 'scale-automation',
         label: 'Scale Automation',

@@ -1,4 +1,4 @@
-import { type UndoEntry } from '../useCases/commandQueries';
+import { type UndoEntry } from './UndoEntry';
 
 /**
  * UndoTreeNode — a node in the branching undo tree.

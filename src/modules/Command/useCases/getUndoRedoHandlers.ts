@@ -1,7 +1,8 @@
 import { handleRedo } from '../handlers/undoRedo/handleRedo';
 import { handleUndo } from '../handlers/undoRedo/handleUndo';
+import { type AppAction } from '../models/AppAction';
 
-import { type ActionHandler, type AppAction } from './commandQueries';
+import { type ActionHandler } from './commandQueries';
 
 type UndoRedoAppAction = Extract<AppAction, { type: 'undo' }> | Extract<AppAction, { type: 'redo' }>;
 

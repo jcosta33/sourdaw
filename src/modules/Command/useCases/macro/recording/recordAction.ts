@@ -1,5 +1,5 @@
+import { type AppAction } from '../../../models/AppAction';
 import { macroStore } from '../../../stores/macroStore';
-import { type AppAction } from '../../commandQueries';
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */
 const EXCLUDED_ACTIONS = new Set([

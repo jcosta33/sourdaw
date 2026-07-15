@@ -11,12 +11,13 @@ import {
     startOnboardingTour,
 } from '#/modules/Workspace/useCases';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+
+import { type CallableCommandEntry } from './commandEntry';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
-export const viewCommands: CommandEntry[] = [
+export const viewCommands: CallableCommandEntry[] = [
     {
         id: 'zoom-to-fit',
         label: 'Zoom to Fit',

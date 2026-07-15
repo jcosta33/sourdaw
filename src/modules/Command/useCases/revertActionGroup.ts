@@ -1,6 +1,6 @@
+import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
-import { type UndoEntry } from './commandQueries';
 import { executeAppAction } from './executeAppAction';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 

@@ -1,7 +1,26 @@
-// Canonical UndoEntry types and factories live in their defining use-case files.
-// This module remains a compatibility surface for existing Command internals;
-// this task only split the helper functions out of `commandQueries`.
-export { createUndoEntry } from '../useCases/commandQueries';
-export { createCallbackUndoEntry } from '../useCases/createCallbackUndoEntry';
+import { type AppAction } from './AppAction';
 
-export type { UndoSource, ActionUndoEntry, CallbackUndoEntry, UndoEntry } from '../useCases/commandQueries';
+export type UndoSource = 'manual' | 'prompt' | 'voice' | 'ai';
+
+type UndoEntryBase = {
+    id: string;
+    label: string;
+    timestamp: number;
+    source: UndoSource;
+    groupId?: string;
+    groupLabel?: string;
+};
+
+export type ActionUndoEntry = UndoEntryBase & {
+    kind: 'action';
+    action: AppAction;
+    inverseAction: AppAction | null;
+};
+
+export type CallbackUndoEntry = UndoEntryBase & {
+    kind: 'callback';
+    undo: () => void;
+    redo: () => unknown;
+};
+
+export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;

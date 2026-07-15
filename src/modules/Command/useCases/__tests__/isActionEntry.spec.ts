@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createUndoEntry } from '../commandQueries';
 import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
+import { createUndoEntry } from '../createUndoEntry';
 import { isActionEntry } from '../isActionEntry';
 
 describe('isActionEntry', () => {

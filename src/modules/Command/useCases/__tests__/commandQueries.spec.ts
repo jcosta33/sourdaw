@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { createUndoEntry, type AppAction } from '../commandQueries';
+import { type AppAction } from '../../models/AppAction';
+import { createUndoEntry } from '../createUndoEntry';
 
 describe('commandQueries (undo helpers)', () => {
     it('should build an action undo entry with sequential ids and the given source', () => {

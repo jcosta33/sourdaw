@@ -1,15 +1,16 @@
 import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+
+import { type CallableCommandEntry } from './commandEntry';
 
 /**
  * Miscellaneous commands covering: time editing, app settings,
  * chords, arrangement, clip patterns, macros, recording, performance
  * (loop station, setlist), mixing, hardware, extensions, and audio engine.
  */
-export const miscCommands: CommandEntry[] = [
+export const miscCommands: CallableCommandEntry[] = [
     {
         id: 'preferences',
         label: 'Preferences',

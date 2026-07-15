@@ -1,10 +1,11 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 
-const requireMidiClip = (fn: (clipId: string) => void): (() => void) => {
+import { type CallableCommandEntry } from './commandEntry';
+
+function requireMidiClip(fn: (clipId: string) => void): () => void {
     return () => {
         const clipId = getSelectedClipId();
         if (!clipId) {
@@ -13,10 +14,10 @@ const requireMidiClip = (fn: (clipId: string) => void): (() => void) => {
         }
         fn(clipId);
     };
-};
+}
 
 /** AI / generation commands — generate patterns, detect tempo/key, audio-to-MIDI, apply groove, structure detection, RAVE models. */
-export const aiCommands: CommandEntry[] = [
+export const aiCommands: CallableCommandEntry[] = [
     {
         id: 'generate-drums',
         label: 'AI: Generate Drum Pattern',

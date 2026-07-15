@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { undoToIndex } from '../undoToIndex';
 
-import type { ActionUndoEntry } from '../commandQueries';
+import type { ActionUndoEntry, UndoEntry } from '../../models/UndoEntry';
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
         value: {
-            past: [] as import('../commandQueries').UndoEntry[],
-            future: [] as import('../commandQueries').UndoEntry[],
+            past: [] as UndoEntry[],
+            future: [] as UndoEntry[],
         } as import('../../stores/undoStore').UndoStoreState | null,
     },
     redo: vi.fn<() => Promise<void>>(),

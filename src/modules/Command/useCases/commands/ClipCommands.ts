@@ -2,14 +2,15 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { getSelectedClipIds } from '../../useCases/selectionHelpers/getSelectedClipIds';
-import { getSelectedTrackId } from '../../useCases/selectionHelpers/getSelectedTrackId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+import { getSelectedClipIds } from '../selectionHelpers/getSelectedClipIds';
+import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
+
+import { type CallableCommandEntry } from './commandEntry';
 
 /** Clip commands — rename, split, normalize, reverse, glue, loop, consolidate. */
-export const clipCommands: CommandEntry[] = [
+export const clipCommands: CallableCommandEntry[] = [
     {
         id: 'rename-clip',
         label: 'Rename Clip',
