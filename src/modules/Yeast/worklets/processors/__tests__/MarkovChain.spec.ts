@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
 
+import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
 import { MarkovChain } from '../MarkovChain';
+
+const transport: TransportInfo = {
+    isPlaying: true,
+    ppqPosition: 0,
+    bpm: 120,
+    sampleRate: 48000,
+    barIndex: 0,
+    beatInBar: 0,
+    timeSigNum: 4,
+    timeSigDen: 4,
+    loopEnabled: false,
+    loopStartPpq: 0,
+    loopEndPpq: 0,
+};
+
+const noteOn = (timeSamples: number, note: number): MidiEvent => ({
+    timeSamples,
+    kind: { type: 'noteOn' as const, channel: 0, note, velocity: 100 },
+});
 
 describe('MarkovChain', () => {
     it('constructs with default matrix', () => {
@@ -17,32 +37,48 @@ describe('MarkovChain', () => {
         }
     });
 
-    it('sampleNext returns valid state', () => {
+    it('processes a held note through its public MIDI behavior', () => {
         const mc = new MarkovChain('t3');
-        const state = mc.sampleNext();
-        expect(state).toBeGreaterThanOrEqual(0);
-        expect(state).toBeLessThan(mc.getStateCount());
+        mc.setParam('rate_denom', 1024);
+        const output: MidiEvent[] = [];
+        mc.processMidi([noteOn(0, 60)], output, transport);
+        expect(output.some((event) => event.kind.type === 'noteOn')).toBe(true);
     });
 
     it('reset returns to state 0', () => {
         const mc = new MarkovChain('t4');
-        mc.sampleNext();
+        mc.processMidi([noteOn(0, 60)], [], transport);
         mc.reset();
         expect(mc.getCurrentState()).toBe(0);
     });
 
     it('setTransition modifies probabilities', () => {
         const mc = new MarkovChain('t5');
+        const output: MidiEvent[] = [];
+        mc.processMidi([noteOn(0, 60)], output, transport);
         mc.setTransition(0, 0, 1.0);
         const matrix = mc.getMatrix();
-        expect(matrix[0][0]).toBeGreaterThan(matrix[0][1] ?? 0);
+        const firstRow = matrix[0];
+        expect(firstRow).toBeDefined();
+        if (!firstRow) {
+            return;
+        }
+        expect(firstRow[0]).toBeGreaterThan(firstRow[1] ?? 0);
     });
 
     it('deterministic with identity transition', () => {
         const mc = new MarkovChain('t6');
+        mc.processMidi([noteOn(0, 60)], [], transport);
         mc.setTransition(0, 0, 1.0);
-        const state = mc.sampleNext();
-        expect(state).toBe(0);
+        mc.setParam('rate_denom', 1024);
+        const output: ReturnType<typeof noteOn>[] = [];
+        mc.processMidi([], output, transport);
+        const generated = output.find((event) => event.kind.type === 'noteOn');
+        expect(generated).toBeDefined();
+        if (!generated || generated.kind.type !== 'noteOn') {
+            return;
+        }
+        expect(generated.kind.note).toBe(60);
     });
 
     it('all setParam values accepted', () => {

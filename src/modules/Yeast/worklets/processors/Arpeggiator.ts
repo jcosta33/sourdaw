@@ -25,6 +25,7 @@ type HeldNote = {
     note: number;
     velocity: number;
     pressedOrder: number;
+    trackId?: string;
 };
 
 type ArpMode = 'up' | 'down' | 'upDown' | 'downUp' | 'random' | 'order' | 'chord' | 'pattern';
@@ -72,13 +73,13 @@ export class Arpeggiator extends BaseMidiProcessor {
         // Handle incoming Note On/Off to update held notes
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                this.addHeldNote(event.kind.channel, event.kind.note, event.kind.velocity);
+                this.addHeldNote(event.kind.channel, event.kind.note, event.kind.velocity, event.trackId);
                 if (this.restartMode === 'restartOnNote') {
                     this.stepIndex = 0;
                     this.lastStepTimeSamples = event.timeSamples;
                 }
             } else if (event.kind.type === 'noteOff') {
-                this.removeHeldNote(event.kind.channel, event.kind.note);
+                this.removeHeldNote(event.kind.channel, event.kind.note, event.trackId);
             } else {
                 // Pass through non-note events
                 output.push(event);
@@ -151,6 +152,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 for (const an of this.activeGenerated) {
                     this.scheduled.push({
                         timeSamples: an.offTimeSamples,
+                        trackId: an.trackId,
                         kind: { type: 'noteOff', channel: an.channel, note: an.note },
                     });
                 }
@@ -198,6 +200,7 @@ export class Arpeggiator extends BaseMidiProcessor {
 
                     output.push({
                         timeSamples: ratchetTime,
+                        trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
                     });
 
@@ -205,6 +208,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                     const offTime = ratchetTime + noteDuration;
                     this.scheduled.push({
                         timeSamples: offTime,
+                        trackId: sn.trackId,
                         kind: { type: 'noteOff', channel: sn.channel, note: sn.note },
                     });
 
@@ -212,6 +216,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                         channel: sn.channel,
                         note: sn.note,
                         offTimeSamples: offTime,
+                        trackId: sn.trackId,
                     });
                 }
             }
@@ -292,14 +297,14 @@ export class Arpeggiator extends BaseMidiProcessor {
 
     // ── Internal ─────────────────────────────────────────────────────────
 
-    private addHeldNote(channel: number, note: number, velocity: number): void {
+    private addHeldNote(channel: number, note: number, velocity: number, trackId?: string): void {
         // Avoid duplicates
-        if (this.held.some((h) => h.channel === channel && h.note === note)) {
+        if (this.held.some((h) => h.channel === channel && h.note === note && h.trackId === trackId)) {
             return;
         }
 
         this.pressCounter++;
-        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter };
+        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter, trackId };
         this.held.push(hn);
 
         if (this.latchEnabled) {
@@ -309,9 +314,9 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
     }
 
-    private removeHeldNote(channel: number, note: number): void {
+    private removeHeldNote(channel: number, note: number, trackId?: string): void {
         // Audio-thread: in-place removal avoids allocating a new array
-        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note);
+        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note && h.trackId === trackId);
         if (idx !== -1) {
             this.held.splice(idx, 1);
         }
@@ -434,6 +439,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         for (const an of this.activeGenerated) {
             output.push({
                 timeSamples: now,
+                trackId: an.trackId,
                 kind: { type: 'noteOff', channel: an.channel, note: an.note },
             });
         }
@@ -449,6 +455,7 @@ export class Arpeggiator extends BaseMidiProcessor {
             if (node.offTimeSamples <= now) {
                 output.push({
                     timeSamples: node.offTimeSamples,
+                    trackId: node.trackId,
                     kind: { type: 'noteOff', channel: node.channel, note: node.note },
                 });
             } else {

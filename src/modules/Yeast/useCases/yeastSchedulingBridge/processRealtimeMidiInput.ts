@@ -6,6 +6,7 @@ import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
 type ProcessRealtimeMidiInputInput = {
     context: BaseAudioContext;
+    trackId: string;
     note: number;
     velocity: number;
     channel: number;
@@ -18,6 +19,7 @@ type ProcessRealtimeMidiInputInput = {
 export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
     const event: MidiEvent = {
         timeSamples: input.sampleTime,
+        trackId: input.trackId,
         kind: input.isNoteOn
             ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
             : { type: 'noteOff', channel: input.channel, note: input.note },
@@ -44,6 +46,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
 
     return processYeastMidi({
         context: input.context,
+        trackId: input.trackId,
         events: [event],
         blockStartSamples: input.sampleTime,
         blockEndSamples: input.sampleTime + (input.blockSize ?? 128),

@@ -24,6 +24,7 @@ describe('processRealtimeMidiInput', () => {
         const context = {} as BaseAudioContext;
         const result = await processRealtimeMidiInput({
             context,
+            trackId: 'track-a',
             note: 60,
             velocity: 96,
             channel: 2,
@@ -36,9 +37,11 @@ describe('processRealtimeMidiInput', () => {
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
                 context,
+                trackId: 'track-a',
                 events: [
                     {
                         timeSamples: 128,
+                        trackId: 'track-a',
                         kind: { type: 'noteOn', channel: 2, note: 60, velocity: 96 },
                     },
                 ],

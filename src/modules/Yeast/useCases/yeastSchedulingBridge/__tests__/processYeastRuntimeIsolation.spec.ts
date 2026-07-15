@@ -64,6 +64,7 @@ describe('processYeastMidi — worklet-only runtime', () => {
         await expect(
             processYeastMidi({
                 context,
+                trackId: 'track-a',
                 events,
                 blockStartSamples: 0,
                 blockEndSamples: 128,
@@ -73,6 +74,7 @@ describe('processYeastMidi — worklet-only runtime', () => {
 
         expect(processRuntimeTransaction).toHaveBeenCalledWith({
             context,
+            trackId: 'track-a',
             events,
             blockStartSamples: 0,
             blockEndSamples: 128,

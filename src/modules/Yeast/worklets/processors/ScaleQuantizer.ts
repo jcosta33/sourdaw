@@ -34,7 +34,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
     // Track note mapping for proper Note Off
-    private noteMap = new Map<number, number>(); // ch*128+inNote → outNote
+    private noteMap = new Map<string | undefined, Map<number, number>>(); // ch*128+inNote → outNote
 
     constructor(id?: string) {
         super(id ?? `scale-${Date.now()}`);
@@ -51,17 +51,25 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 note = Math.max(0, Math.min(127, note));
 
-                this.noteMap.set(event.kind.channel * 128 + event.kind.note, note);
+                const routeMap = this.noteMap.get(event.trackId) ?? new Map<number, number>();
+                routeMap.set(event.kind.channel * 128 + event.kind.note, note);
+                this.noteMap.set(event.trackId, routeMap);
                 output.push({
                     timeSamples: event.timeSamples,
+                    trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                 });
             } else if (event.kind.type === 'noteOff') {
                 const key = event.kind.channel * 128 + event.kind.note;
-                const mappedNote = this.noteMap.get(key) ?? event.kind.note;
-                this.noteMap.delete(key);
+                const routeMap = this.noteMap.get(event.trackId);
+                const mappedNote = routeMap?.get(key) ?? event.kind.note;
+                routeMap?.delete(key);
+                if (routeMap?.size === 0) {
+                    this.noteMap.delete(event.trackId);
+                }
                 output.push({
                     timeSamples: event.timeSamples,
+                    trackId: event.trackId,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: mappedNote },
                 });
             } else {

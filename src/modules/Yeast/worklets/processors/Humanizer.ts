@@ -35,7 +35,7 @@ export class Humanizer extends BaseMidiProcessor {
     private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer.
-    private noteTimingMap = new Map<number, number>();
+    private noteTimingMap = new Map<string | undefined, Map<number, number>>();
 
     constructor(id?: string) {
         super(id ?? `humanize-${Date.now()}`);
@@ -52,20 +52,23 @@ export class Humanizer extends BaseMidiProcessor {
                 // Bound the map: a dropped Note Off (e.g. a transport seek before
                 // panic) would otherwise leave a stale entry forever. Evict the
                 // oldest tracked note once we exceed the live-note ceiling.
-                if (!this.noteTimingMap.has(key) && this.noteTimingMap.size >= MAX_TRACKED_NOTES) {
+                const routeMap = this.noteTimingMap.get(event.trackId) ?? new Map<number, number>();
+                if (!routeMap.has(key) && routeMap.size >= MAX_TRACKED_NOTES) {
                     // size >= ceiling (> 0) ⇒ the map is non-empty, so the iterator
                     // yields a real oldest key (insertion order). Evict it. The
                     // `!== undefined` guard narrows the IteratorResult value type;
                     // it can never actually be undefined given the size check.
-                    const oldest = this.noteTimingMap.keys().next().value;
+                    const oldest = routeMap.keys().next().value;
                     if (oldest !== undefined) {
-                        this.noteTimingMap.delete(oldest);
+                        routeMap.delete(oldest);
                     }
                 }
-                this.noteTimingMap.set(key, timingOffsetSamples);
+                routeMap.set(key, timingOffsetSamples);
+                this.noteTimingMap.set(event.trackId, routeMap);
 
                 output.push({
                     timeSamples: event.timeSamples + timingOffsetSamples,
+                    trackId: event.trackId,
                     kind: {
                         type: 'noteOn',
                         channel: event.kind.channel,
@@ -75,11 +78,16 @@ export class Humanizer extends BaseMidiProcessor {
                 });
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const offset = this.noteTimingMap.get(key) ?? 0;
-                this.noteTimingMap.delete(key);
+                const routeMap = this.noteTimingMap.get(event.trackId);
+                const offset = routeMap?.get(key) ?? 0;
+                routeMap?.delete(key);
+                if (routeMap?.size === 0) {
+                    this.noteTimingMap.delete(event.trackId);
+                }
 
                 output.push({
                     timeSamples: event.timeSamples + offset,
+                    trackId: event.trackId,
                     kind: event.kind,
                 });
             } else {

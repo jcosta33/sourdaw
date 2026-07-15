@@ -1,22 +1,19 @@
-import { getTargetTrackId } from './getTargetTrackId';
-
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
 type Track = NonNullable<TrackStoreState['tracks']>[number];
 
 /**
- * Resolve the instrument-bearing track for the current MIDI target track.
+ * Resolve the instrument-bearing track for an explicit MIDI origin track.
  *
  * Mirrors the resolution `handleNoteOff` performs: a child track whose parent
  * carries a `toaster` device routes to the parent. Returns null when there is
  * no target track or the store is empty.
  */
-export function resolveInstrumentTrack(trackState: TrackStoreState | null): Track | null {
-    const targetTrackId = getTargetTrackId();
-    if (!targetTrackId || !trackState) {
+export function resolveInstrumentTrack(trackState: TrackStoreState | null, trackId: string): Track | null {
+    if (!trackId || !trackState) {
         return null;
     }
-    const targetTrack = trackState.tracks.find((time) => time.id === targetTrackId);
+    const targetTrack = trackState.tracks.find((time) => time.id === trackId);
     if (!targetTrack) {
         return null;
     }

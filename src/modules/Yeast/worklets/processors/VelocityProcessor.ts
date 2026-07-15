@@ -29,6 +29,7 @@ export class VelocityProcessor extends BaseMidiProcessor {
                 const vel = this.processVelocity(event.kind.velocity);
                 output.push({
                     timeSamples: event.timeSamples,
+                    trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
                 });
             } else {

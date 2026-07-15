@@ -90,10 +90,12 @@ export class EuclideanGenerator extends BaseMidiProcessor {
             if (this.pattern[this.stepIndex % this.pattern.length]) {
                 output.push({
                     timeSamples: stepTime,
+                    trackId: this.trackId,
                     kind: { type: 'noteOn', channel: 0, note: this.note, velocity: this.velocity },
                 });
                 this.scheduled.push({
                     timeSamples: stepTime + noteLen,
+                    trackId: this.trackId,
                     kind: { type: 'noteOff', channel: 0, note: this.note },
                 });
             }

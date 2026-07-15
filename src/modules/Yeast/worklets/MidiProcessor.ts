@@ -25,6 +25,9 @@ export type MidiProcessor = {
     /** Whether this processor is currently bypassed. */
     isBypassed(): boolean;
 
+    /** Set the route whose block is currently being processed. */
+    setTrackId?(trackId: string): void;
+
     /** Set a named parameter. */
     setParam(name: string, value: number): void;
 
@@ -43,6 +46,7 @@ export type ActiveNote = {
     channel: number;
     note: number;
     offTimeSamples: number;
+    trackId?: string;
 };
 
 /**
@@ -89,23 +93,28 @@ export class ScheduledEventQueue {
     /**
      * Flush all scheduled Note Ons as immediate Note Offs.
      *
-     * Each distinct (channel, note) yields exactly one Note Off. `emittedKeys`
-     * (numeric key `(channel << 7) | note`) carries the offs already emitted by
-     * the caller for currently-active notes, so a scheduled re-trigger of a note
-     * that is already sounding does not produce a duplicate off; it also guards
-     * against two scheduled Note Ons for the same (channel, note) double-emitting.
-     * Keys for newly emitted offs are added to the set.
+     * Each distinct (track, channel, note) yields exactly one Note Off.
+     * `emittedKeys` carries the numeric `(channel << 7) | note` offs already
+     * emitted by the caller for currently-active notes, scoped by track, so a
+     * scheduled re-trigger does not duplicate a release while another track's
+     * same note still receives its own release.
      */
-    flushAllNotesOff(output: MidiEvent[], nowSamples: number, emittedKeys: Set<number> = new Set()): void {
+    flushAllNotesOff(output: MidiEvent[], nowSamples: number, emittedKeys: Map<string, Set<number>> = new Map()): void {
         for (const event of this.events) {
-            if (event.kind.type === 'noteOn') {
+            if (event.kind.type === 'noteOn' && event.trackId) {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                if (emittedKeys.has(key)) {
+                let trackKeys = emittedKeys.get(event.trackId);
+                if (!trackKeys) {
+                    trackKeys = new Set<number>();
+                    emittedKeys.set(event.trackId, trackKeys);
+                }
+                if (trackKeys.has(key)) {
                     continue;
                 }
-                emittedKeys.add(key);
+                trackKeys.add(key);
                 output.push({
                     timeSamples: nowSamples,
+                    trackId: event.trackId,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
                 });
             }

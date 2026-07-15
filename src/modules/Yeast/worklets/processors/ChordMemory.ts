@@ -26,7 +26,7 @@ export class ChordMemory extends BaseMidiProcessor {
     // Track active chords for Note Off.
     // Numeric key (channel << 7) | triggerNote matches MidiRack/ScaleQuantizer and
     // avoids a per-event template-literal allocation on the audio thread.
-    private activeChords = new Map<number, number[]>();
+    private activeChords = new Map<string | undefined, Map<number, number[]>>();
 
     constructor(id?: string) {
         super(id ?? `chordmem-${Date.now()}`);
@@ -56,10 +56,13 @@ export class ChordMemory extends BaseMidiProcessor {
                         emitted.push(note);
                         output.push({
                             timeSamples: event.timeSamples,
+                            trackId: event.trackId,
                             kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                         });
                     }
-                    this.activeChords.set(key, emitted);
+                    const routeMap = this.activeChords.get(event.trackId) ?? new Map<number, number[]>();
+                    routeMap.set(key, emitted);
+                    this.activeChords.set(event.trackId, routeMap);
                 } else {
                     // No memory for this key — pass through
                     output.push(event);
@@ -81,15 +84,20 @@ export class ChordMemory extends BaseMidiProcessor {
                 }
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const emitted = this.activeChords.get(key);
-                if (emitted) {
+                const routeMap = this.activeChords.get(event.trackId);
+                const emitted = routeMap?.get(key);
+                if (routeMap && emitted) {
                     for (const note of emitted) {
                         output.push({
                             timeSamples: event.timeSamples,
+                            trackId: event.trackId,
                             kind: { type: 'noteOff', channel: event.kind.channel, note },
                         });
                     }
-                    this.activeChords.delete(key);
+                    routeMap.delete(key);
+                    if (routeMap.size === 0) {
+                        this.activeChords.delete(event.trackId);
+                    }
                 } else {
                     output.push(event);
                 }

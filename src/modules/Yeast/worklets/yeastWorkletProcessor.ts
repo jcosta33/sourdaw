@@ -9,7 +9,7 @@
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
- *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
+ *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport }
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
@@ -26,6 +26,7 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 type YeastMsg = {
     type: 'processBlock';
     requestId: number;
+    trackId: string;
     events: MidiEvent[];
     blockStart: number;
     blockEnd: number;
@@ -50,6 +51,87 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isCommandId(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isTrackId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isMidiEventKind(value: unknown): value is MidiEvent['kind'] {
+    if (!isPlainObject(value) || typeof value.type !== 'string') {
+        return false;
+    }
+    switch (value.type) {
+        case 'noteOn':
+            return isFiniteNumber(value.channel) && isFiniteNumber(value.note) && isFiniteNumber(value.velocity);
+        case 'noteOff':
+            return isFiniteNumber(value.channel) && isFiniteNumber(value.note);
+        case 'cc':
+            return isFiniteNumber(value.channel) && isFiniteNumber(value.cc) && isFiniteNumber(value.value);
+        case 'pitchBend':
+        case 'channelPressure':
+            return isFiniteNumber(value.channel) && isFiniteNumber(value.value);
+        default:
+            return false;
+    }
+}
+
+function isMidiEvent(value: unknown): value is MidiEvent {
+    if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isMidiEventKind(value.kind)) {
+        return false;
+    }
+    return value.trackId === undefined || isTrackId(value.trackId);
+}
+
+function isMidiEventArray(value: unknown): value is MidiEvent[] {
+    return Array.isArray(value) && value.every(isMidiEvent);
+}
+
+function isTransportInfo(value: unknown): value is TransportInfo {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    return (
+        isFiniteNumber(value.sampleRate) &&
+        isFiniteNumber(value.bpm) &&
+        isFiniteNumber(value.ppqPosition) &&
+        typeof value.isPlaying === 'boolean' &&
+        isFiniteNumber(value.barIndex) &&
+        isFiniteNumber(value.beatInBar) &&
+        isFiniteNumber(value.timeSigNum) &&
+        isFiniteNumber(value.timeSigDen) &&
+        typeof value.loopEnabled === 'boolean' &&
+        isFiniteNumber(value.loopStartPpq) &&
+        isFiniteNumber(value.loopEndPpq)
+    );
+}
+
+function parseProcessBlock(value: unknown): YeastMsg | undefined {
+    if (
+        !isPlainObject(value) ||
+        value.type !== 'processBlock' ||
+        !isCommandId(value.requestId) ||
+        !isTrackId(value.trackId) ||
+        !isMidiEventArray(value.events) ||
+        !isFiniteNumber(value.blockStart) ||
+        !isFiniteNumber(value.blockEnd) ||
+        !isTransportInfo(value.transport)
+    ) {
+        return undefined;
+    }
+    return {
+        type: 'processBlock',
+        requestId: value.requestId,
+        trackId: value.trackId,
+        events: value.events,
+        blockStart: value.blockStart,
+        blockEnd: value.blockEnd,
+        transport: value.transport,
+    };
 }
 
 function isProcessorType(value: unknown): value is YeastProcessorProjectionItem['type'] {
@@ -226,12 +308,16 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 return;
             }
 
-            const message = data as YeastMsg;
+            const message = parseProcessBlock(data);
+            if (!message) {
+                return;
+            }
             const processed = this._rack.processBlock(
                 message.events,
                 message.blockStart,
                 message.blockEnd,
-                message.transport
+                message.transport,
+                message.trackId
             );
             this.port.postMessage({ type: 'processed', requestId: message.requestId, events: processed });
         };

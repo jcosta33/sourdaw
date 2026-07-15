@@ -19,6 +19,8 @@ export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
     channel: number;
+    /** Track that originated the note; selection changes must not retarget release. */
+    trackId: string;
     pressure?: number;
     slide?: number;
     pitchBend?: number;

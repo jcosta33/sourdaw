@@ -16,6 +16,7 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
     abstract readonly name: string;
 
     private bypassed = false;
+    protected trackId: string | undefined;
 
     constructor(id: string) {
         this.id = id;
@@ -35,6 +36,10 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
 
     isBypassed(): boolean {
         return this.bypassed;
+    }
+
+    setTrackId(trackId: string): void {
+        this.trackId = trackId;
     }
 
     latencySamples(): number {

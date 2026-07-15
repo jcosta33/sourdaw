@@ -18,7 +18,7 @@ export class NoteFilter extends BaseMidiProcessor {
     // Track filtered Note Ons to suppress matching Note Offs.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer/Humanizer
     // and avoids a per-event template-literal allocation on the audio thread.
-    private filteredNotes = new Set<number>();
+    private filteredNotes = new Map<string | undefined, Set<number>>();
 
     constructor(id?: string) {
         super(id ?? `filter-${Date.now()}`);
@@ -36,12 +36,18 @@ export class NoteFilter extends BaseMidiProcessor {
                 if (passes) {
                     output.push(event);
                 } else {
-                    this.filteredNotes.add(key);
+                    const routeSet = this.filteredNotes.get(event.trackId) ?? new Set<number>();
+                    routeSet.add(key);
+                    this.filteredNotes.set(event.trackId, routeSet);
                 }
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                if (this.filteredNotes.has(key)) {
-                    this.filteredNotes.delete(key);
+                const routeSet = this.filteredNotes.get(event.trackId);
+                if (routeSet?.has(key)) {
+                    routeSet.delete(key);
+                    if (routeSet.size === 0) {
+                        this.filteredNotes.delete(event.trackId);
+                    }
                     // Suppress the Note Off for a filtered Note On
                 } else {
                     output.push(event);

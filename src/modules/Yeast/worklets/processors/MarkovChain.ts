@@ -16,6 +16,11 @@ import { ScheduledEventQueue } from '../MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
 
+type HeldNote = {
+    note: number;
+    trackId?: string;
+};
+
 export class MarkovChain extends BaseMidiProcessor {
     readonly name = 'Markov';
 
@@ -35,8 +40,9 @@ export class MarkovChain extends BaseMidiProcessor {
     // Map states to MIDI notes (from held notes or scale degrees).
     // Pre-allocated at MAX_STATES; `stateNoteCount` tracks the active length.
     private readonly stateToNote: number[] = Array.from({ length: MAX_STATES }, () => 0);
+    private readonly stateToTrack: Array<string | undefined> = Array.from({ length: MAX_STATES }, () => undefined);
     private stateNoteCount = 0;
-    private held: number[] = [];
+    private held: HeldNote[] = [];
 
     constructor(id?: string) {
         super(id ?? `markov-${Date.now()}`);
@@ -122,13 +128,17 @@ export class MarkovChain extends BaseMidiProcessor {
         // Track held notes to build state-to-note mapping
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                if (!this.held.includes(event.kind.note)) {
-                    this.held.push(event.kind.note);
-                    this.held.sort((alpha, b) => alpha - b);
+                const note = event.kind.note;
+                const trackId = event.trackId;
+                if (!this.held.some((heldNote) => heldNote.note === note && heldNote.trackId === trackId)) {
+                    this.held.push({ note, trackId });
+                    this.held.sort((alpha, b) => alpha.note - b.note);
                     // Copy held notes into pre-allocated stateToNote buffer (no allocation)
                     this.stateNoteCount = Math.min(this.held.length, MAX_STATES);
                     for (let kIndex = 0; kIndex < this.stateNoteCount; kIndex++) {
-                        this.stateToNote[kIndex] = this.held[kIndex]!;
+                        const heldNote = this.held[kIndex]!;
+                        this.stateToNote[kIndex] = heldNote.note;
+                        this.stateToTrack[kIndex] = heldNote.trackId;
                     }
                     if (this.stateCount !== this.held.length) {
                         this.fillDefaultMatrix(this.held.length);
@@ -137,7 +147,9 @@ export class MarkovChain extends BaseMidiProcessor {
             } else if (event.kind.type === 'noteOff') {
                 // Audio-thread: in-place removal avoids allocating a new array
                 const offNote = event.kind.note;
-                const idx = this.held.indexOf(offNote);
+                const idx = this.held.findIndex(
+                    (heldNote) => heldNote.note === offNote && heldNote.trackId === event.trackId
+                );
                 if (idx !== -1) {
                     this.held.splice(idx, 1);
                 }
@@ -171,10 +183,12 @@ export class MarkovChain extends BaseMidiProcessor {
 
             output.push({
                 timeSamples: stepTime,
+                trackId: this.stateToTrack[this.currentState % this.stateNoteCount],
                 kind: { type: 'noteOn', channel: 0, note, velocity: this.velocity },
             });
             this.scheduled.push({
                 timeSamples: stepTime + noteLen,
+                trackId: this.stateToTrack[this.currentState % this.stateNoteCount],
                 kind: { type: 'noteOff', channel: 0, note },
             });
 

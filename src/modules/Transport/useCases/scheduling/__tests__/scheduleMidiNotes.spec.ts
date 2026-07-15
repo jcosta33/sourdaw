@@ -155,6 +155,12 @@ describe('scheduleMidiNotes', () => {
 
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
 
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: track.id,
+            })
+        );
+
         // The generated note reaches the synth as a complete note built from the
         // default template (rather than being dropped or silently malformed).
         // scheduleNote(ctx, gain, pitch, time, duration, velocity, params, mpe, gain).

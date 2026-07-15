@@ -34,6 +34,7 @@ describe('processYeastMidi', () => {
 
         const out = await processYeastMidi({
             context: {} as BaseAudioContext,
+            trackId: 'track-a',
             events,
             blockStartSamples: 0,
             blockEndSamples: 128,

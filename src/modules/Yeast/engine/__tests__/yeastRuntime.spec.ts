@@ -19,6 +19,7 @@ type Deferred<T> = {
 
 type RuntimeBlockInput = {
     context: BaseAudioContext;
+    trackId: string;
     projection: YeastProcessorProjection;
     events: readonly MidiEvent[];
     blockStartSamples: number;
@@ -140,19 +141,17 @@ describe('yeastRuntime', () => {
         await Promise.resolve();
 
         expect(node.destroy).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
     });
 
-    it('releases downstream notes when projection delivery fails', async () => {
+    it('does not emit unscoped notes when projection delivery fails', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
         const lifecycle: string[] = [];
-        const onNotesOff = vi.fn(() => {
-            lifecycle.push('fallback');
-        });
+        const onNotesOff = vi.fn();
         const error = new Error('projection post failed');
         createNode.mockResolvedValueOnce(node);
 
@@ -168,10 +167,9 @@ describe('yeastRuntime', () => {
         runtime.setYeastRuntimeProjection(projectionB);
         await flushRuntimeQueue();
 
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(node.destroy).toHaveBeenCalledTimes(1);
-        expect(lifecycle).toEqual(['fallback', 'destroy']);
+        expect(lifecycle).toEqual(['destroy']);
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
     });
@@ -237,7 +235,7 @@ describe('yeastRuntime', () => {
         expect(node.allNotesOff).toHaveBeenCalledWith(1024);
     });
 
-    it('falls back to valid MIDI panic notes when a ready panic cannot be delivered', async () => {
+    it('does not emit unscoped notes when a ready panic cannot be delivered', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
@@ -253,14 +251,13 @@ describe('yeastRuntime', () => {
 
         await runtime.sendYeastRuntimeAllNotesOff(512);
 
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(node.destroy).toHaveBeenCalledTimes(1);
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
     });
 
-    it('observes an asynchronous panic rejection and releases downstream notes once', async () => {
+    it('does not emit unscoped notes after an asynchronous panic rejection', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
@@ -274,8 +271,7 @@ describe('yeastRuntime', () => {
 
         await expect(runtime.sendYeastRuntimeAllNotesOff(512)).resolves.toBeUndefined();
 
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(node.destroy).toHaveBeenCalledTimes(1);
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
@@ -327,7 +323,7 @@ describe('yeastRuntime', () => {
         expect(nodeB.destroy).not.toHaveBeenCalled();
     });
 
-    it('settles lazy initialization as unavailable and does not replay an uncertain queued panic', async () => {
+    it('settles lazy initialization without replaying an uncertain queued panic', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const pending = deferred<YeastWorkletNodeResult>();
@@ -346,8 +342,7 @@ describe('yeastRuntime', () => {
         pending.resolve(node);
 
         await expect(initialization).resolves.toBeNull();
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(node.destroy).toHaveBeenCalledTimes(1);
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
@@ -356,15 +351,12 @@ describe('yeastRuntime', () => {
         expect(replacement.allNotesOff).not.toHaveBeenCalled();
     });
 
-    it('keeps panic cleanup when the owner fallback handler throws', async () => {
+    it('keeps panic cleanup when delivery fails without an origin', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
         const panicError = new Error('panic post failed');
-        const fallbackError = new Error('fallback failed');
-        const onNotesOff = vi.fn(() => {
-            throw fallbackError;
-        });
+        const onNotesOff = vi.fn();
         createNode.mockResolvedValueOnce(node);
 
         await runtime.ensureYeastRuntime({ context, projection: projectionA });
@@ -374,7 +366,7 @@ describe('yeastRuntime', () => {
         });
 
         await expect(runtime.sendYeastRuntimeAllNotesOff(512)).resolves.toBeUndefined();
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).not.toHaveBeenCalled();
         expect(node.destroy).toHaveBeenCalledTimes(1);
         expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
         expect(runtime.getYeastRuntimeError()).toBe(panicError.message);
@@ -404,6 +396,7 @@ describe('yeastRuntime', () => {
         const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
         const inputA: RuntimeBlockInput = {
             context,
+            trackId: 'track-a',
             projection: projectionA,
             events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
             blockStartSamples: 0,
@@ -433,11 +426,58 @@ describe('yeastRuntime', () => {
         const processingB = processYeastRuntimeTransaction(inputB);
         await flushRuntimeQueue();
 
-        expect(calls).toEqual(['projection:arp-1', 'block:60']);
+        expect(calls).toEqual(['block:60']);
 
         blockA.resolve([]);
         await expect(Promise.all([processingA, processingB])).resolves.toEqual([[], []]);
-        expect(calls).toEqual(['projection:arp-1', 'block:60', 'projection:filter-1', 'block:61']);
+        expect(calls).toEqual(['block:60', 'projection:filter-1', 'block:61']);
+    });
+
+    it('reuses unchanged projection revisions and orders a changed projection before its block', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const calls: string[] = [];
+        createNode.mockResolvedValueOnce(node);
+        node.setProjection.mockImplementation(async (projection: YeastProcessorProjection) => {
+            calls.push(`projection:${projection[0]?.id ?? 'empty'}`);
+        });
+        node.processBlock.mockImplementation(async () => {
+            calls.push('block');
+            return [];
+        });
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
+        const input = {
+            context,
+            trackId: 'track-a',
+            projection: projectionA,
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                bpm: 120,
+                isPlaying: true,
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            },
+        } satisfies RuntimeBlockInput;
+
+        await processYeastRuntimeTransaction(input);
+        await processYeastRuntimeTransaction(input);
+        await processYeastRuntimeTransaction({ ...input, projection: projectionB });
+        await processYeastRuntimeTransaction({ ...input, projection: projectionB });
+
+        expect(node.setProjection).toHaveBeenCalledTimes(2);
+        expect(calls).toEqual(['projection:arp-1', 'block', 'block', 'projection:filter-1', 'block', 'block']);
     });
 
     it('orders dynamic projection, command, and panic behind an in-flight block', async () => {
@@ -467,6 +507,7 @@ describe('yeastRuntime', () => {
         const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
         const processing = processYeastRuntimeTransaction({
             context,
+            trackId: 'track-a',
             projection: projectionA,
             events: [],
             blockStartSamples: 0,
@@ -491,14 +532,14 @@ describe('yeastRuntime', () => {
         const command = runtime.sendYeastRuntimeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' });
         const panic = runtime.sendYeastRuntimeAllNotesOff(512);
         await flushRuntimeQueue();
-        expect(calls).toEqual(['projection:arp-1', 'block']);
+        expect(calls).toEqual(['block']);
 
         block.resolve([]);
         await expect(processing).resolves.toEqual([]);
         await expect(command).resolves.toEqual({ delivered: true });
         await expect(panic).resolves.toBeUndefined();
         await flushRuntimeQueue();
-        expect(calls).toEqual(['projection:arp-1', 'block', 'projection:filter-1', 'command', 'panic']);
+        expect(calls).toEqual(['block', 'projection:filter-1', 'command', 'panic']);
     });
 
     it('does not resolve initialization before a queued panic acknowledgement', async () => {
@@ -664,6 +705,7 @@ describe('yeastRuntime', () => {
 
         const processing = runtime.processYeastRuntimeBlock({
             context: contextA,
+            trackId: 'track-a',
             events: [],
             blockStartSamples: 0,
             blockEndSamples: 128,
@@ -694,6 +736,7 @@ describe('yeastRuntime', () => {
         const processYeastRuntimeTransaction = (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction;
         const staleProcessing = processYeastRuntimeTransaction({
             context: contextA,
+            trackId: 'track-a',
             projection: projectionA,
             events: [],
             blockStartSamples: 0,

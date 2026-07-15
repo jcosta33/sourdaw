@@ -38,6 +38,7 @@ export const handleWebMidiNoteOn = inject({
                 startTime: now,
                 startBeat: transport ? deps.playheadPositionRef.current : 0,
                 channel,
+                trackId: targetTrackId,
             };
             activeNotes.set(note, noteData);
 
@@ -73,6 +74,8 @@ export const handleWebMidiNoteOn = inject({
                 }
             }
 
+            noteData.trackId = instrumentTrackId;
+
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
             const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
@@ -80,6 +83,7 @@ export const handleWebMidiNoteOn = inject({
                 const sampleTime = Math.round(now * engine.context.sampleRate);
                 const processedEvents = await deps.processRealtimeMidiInput({
                     context: engine.context,
+                    trackId: instrumentTrackId,
                     note,
                     velocity,
                     channel,

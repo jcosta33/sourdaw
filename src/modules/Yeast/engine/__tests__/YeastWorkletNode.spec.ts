@@ -69,6 +69,10 @@ function replyProcessed(port: FakePort, requestId: number, events: unknown[] = [
     port.onmessage?.({ data: { type: 'processed', requestId, events } } as MessageEvent);
 }
 
+function replyRawProcessed(port: FakePort, data: unknown): void {
+    port.onmessage?.({ data } as MessageEvent);
+}
+
 function replyCommandAck(port: FakePort, commandId: number, accepted: boolean, error?: string): void {
     port.onmessage?.({ data: { type: 'commandAck', commandId, accepted, error } } as MessageEvent);
 }
@@ -114,17 +118,67 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const port = lastPort();
 
-        const promise = node.processBlock([], 0, 128, transport);
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
         // requestId starts at 0 for the first call.
         replyProcessed(port, 0, []);
 
         await expect(promise).resolves.toEqual([]);
     });
 
+    it('includes the originating track in every block request', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const port = lastPort();
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
+
+        expect(port.postMessage).toHaveBeenCalledWith({
+            type: 'processBlock',
+            requestId: 0,
+            events: [],
+            blockStart: 0,
+            blockEnd: 128,
+            transport,
+            trackId: 'track-a',
+        });
+
+        replyProcessed(port, 0, []);
+        await expect(promise).resolves.toEqual([]);
+    });
+
+    it('ignores wrong, duplicate, and late processed replies', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const port = lastPort();
+        const event = { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } };
+
+        const first = node.processBlock([], 0, 128, transport, 'track-a');
+        replyProcessed(port, 99, [event]);
+        replyProcessed(port, 0, [event]);
+        replyProcessed(port, 0, [event]);
+        await expect(first).resolves.toEqual([event]);
+
+        const second = node.processBlock([], 128, 256, transport, 'track-a');
+        replyProcessed(port, 0, [event]);
+        replyProcessed(port, 1, []);
+        await expect(second).resolves.toEqual([]);
+    });
+
+    it.each([
+        ['missing events', { type: 'processed', requestId: 0 }],
+        ['malformed events', { type: 'processed', requestId: 0, events: [{ nope: true }] }],
+    ] as const)('times out instead of accepting %s as silence', async (_label, message) => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
+        const assertion = expect(promise).rejects.toThrow(/timed out/);
+
+        replyRawProcessed(lastPort(), message);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+
+        await assertion;
+    });
+
     it('rejects processBlock when the worklet never replies (no leaked Promise)', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
 
-        const promise = node.processBlock([], 0, 128, transport);
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
         // Attach the rejection expectation before advancing timers so the
         // rejection is always observed (no unhandled-rejection noise).
         const assertion = expect(promise).rejects.toThrow(/timed out/);
@@ -136,7 +190,7 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
 
     it('rejects processBlock within the scheduler-safe deadline', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        const promise = node.processBlock([], 0, 128, transport);
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
         let rejection: unknown;
         void promise.catch((error: unknown) => {
             rejection = error;
@@ -152,7 +206,7 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const port = lastPort();
 
-        const promise = node.processBlock([], 0, 128, transport);
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
         const onReject = vi.fn();
         promise.catch(onReject);
         replyProcessed(port, 0, [{ timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }]);
@@ -169,8 +223,8 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
             makeContextWithAddModule(() => Promise.resolve())
         );
 
-        const a = node.processBlock([], 0, 128, transport);
-        const b = node.processBlock([], 128, 256, transport);
+        const a = node.processBlock([], 0, 128, transport, 'track-a');
+        const b = node.processBlock([], 128, 256, transport, 'track-a');
 
         node.destroy();
 
@@ -273,7 +327,7 @@ describe('createYeastWorkletNode — projection protocol', () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
-        const events = [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.setProjection([]);
         replyProjectionAck(lastPort(), 0, events);
@@ -281,14 +335,34 @@ describe('createYeastWorkletNode — projection protocol', () => {
 
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([60]);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
+    });
+
+    it('dispatches projection note-offs grouped by their originating track', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+        const events = [
+            { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 128, trackId: 'track-b', kind: { type: 'noteOff', channel: 0, note: 60 } },
+        ];
+
+        const result = node.setProjection([]);
+        replyProjectionAck(lastPort(), 0, events);
+
+        await expect(result).resolves.toBeUndefined();
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([
+            { trackId: 'track-a', notes: [60] },
+            { trackId: 'track-b', notes: [60] },
+        ]);
     });
 
     it('falls silent on wrong, late, or lost projection acknowledgements', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
-        const events = [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.setProjection([]);
         replyProjectionAck(lastPort(), 99, events);
@@ -309,7 +383,7 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
 
         expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'allNotesOff', panicId: 0, nowSamples: 512 });
         replyAllNotesOffAck(lastPort(), 0, true, undefined, [
-            { timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
         ]);
 
         await expect(result).resolves.toBeUndefined();
@@ -334,12 +408,12 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
         const first = node.allNotesOff(512);
         replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true });
         replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
-        const events = [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        const events = [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
         replyAllNotesOffAck(lastPort(), 0, true, undefined, events);
         replyAllNotesOffAck(lastPort(), 0, false, 'late duplicate', events);
         await expect(first).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith([60]);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
 
         const second = node.allNotesOff(1024);
         replyAllNotesOffAck(lastPort(), 0, false, 'late acknowledgement');
@@ -353,7 +427,7 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
-        const events = [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }];
+        const events = [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.allNotesOff(512);
         replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true, events });

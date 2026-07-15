@@ -11,6 +11,7 @@
 
 import yeastWorkletProcessorUrl from '../worklets/yeastWorkletProcessor.ts?worker&url';
 
+import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
@@ -90,8 +91,15 @@ function isMidiNote(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 127;
 }
 
+function isTrackId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0;
+}
+
 function isMidiEvent(value: unknown): value is MidiEvent {
     if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isPlainObject(value.kind)) {
+        return false;
+    }
+    if (value.trackId !== undefined && !isTrackId(value.trackId)) {
         return false;
     }
 
@@ -115,7 +123,12 @@ function isNoteOffEvent(value: unknown): value is MidiEvent {
     if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isPlainObject(value.kind)) {
         return false;
     }
-    return value.kind.type === 'noteOff' && isMidiChannel(value.kind.channel) && isMidiNote(value.kind.note);
+    return (
+        value.kind.type === 'noteOff' &&
+        isMidiChannel(value.kind.channel) &&
+        isMidiNote(value.kind.note) &&
+        isTrackId(value.trackId)
+    );
 }
 
 function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boolean): MidiEvent[] | undefined {
@@ -134,9 +147,6 @@ function parseProcessedMessage(value: Record<string, unknown>): { requestId: num
         return undefined;
     }
     const events = value.events;
-    if (events === undefined) {
-        return { requestId: value.requestId, events: [] };
-    }
     if (!Array.isArray(events) || !events.every(isMidiEvent)) {
         return undefined;
     }
@@ -281,7 +291,8 @@ export type YeastWorkletNodeResult = {
         events: readonly MidiEvent[],
         blockStart: number,
         blockEnd: number,
-        transport: TransportInfo
+        transport: TransportInfo,
+        trackId: string
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
@@ -292,7 +303,7 @@ export type YeastWorkletNodeResult = {
      * routing them to the live instrument, the note hangs. Returns an
      * unsubscribe function. Multiple listeners are supported.
      */
-    onNotesOff: (handler: (notes: number[]) => void) => () => void;
+    onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => () => void;
     destroy: () => void;
 };
 
@@ -369,20 +380,27 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         return entry;
     };
 
-    const notesOffHandlers = new Set<(notes: number[]) => void>();
+    const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
-        const notes: number[] = [];
+        const notesByTrack = new Map<string, number[]>();
         for (const evt of events) {
-            if (evt.kind.type === 'noteOff') {
+            if (evt.kind.type !== 'noteOff' || !evt.trackId) {
+                continue;
+            }
+            const notes = notesByTrack.get(evt.trackId);
+            if (notes) {
                 notes.push(evt.kind.note);
+            } else {
+                notesByTrack.set(evt.trackId, [evt.kind.note]);
             }
         }
-        if (notes.length === 0) {
+        if (notesByTrack.size === 0) {
             return;
         }
+        const notesOff = [...notesByTrack].map(([trackId, notes]) => ({ trackId, notes }));
         for (const handler of notesOffHandlers) {
-            handler(notes);
+            handler(notesOff);
         }
     };
 
@@ -454,7 +472,8 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         events: readonly MidiEvent[],
         blockStart: number,
         blockEnd: number,
-        transport: TransportInfo
+        transport: TransportInfo,
+        trackId: string
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (destroyed) {
@@ -471,7 +490,15 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             }, PROCESS_BLOCK_TIMEOUT_MS);
             pending.set(requestId, { resolve, reject, timer });
             try {
-                node.port.postMessage({ type: 'processBlock', requestId, events, blockStart, blockEnd, transport });
+                node.port.postMessage({
+                    type: 'processBlock',
+                    requestId,
+                    events,
+                    blockStart,
+                    blockEnd,
+                    transport,
+                    trackId,
+                });
             } catch (error: unknown) {
                 settle(requestId)?.reject(toError(error));
             }

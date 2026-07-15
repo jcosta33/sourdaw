@@ -36,7 +36,7 @@ export class Harmonizer extends BaseMidiProcessor {
     // Track generated harmony notes for proper Note Off.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
     // per-event template-literal allocation on the audio thread.
-    private generatedMap = new Map<number, number[]>();
+    private generatedMap = new Map<string | undefined, Map<number, number[]>>();
 
     constructor(id?: string) {
         super(id ?? `harmonizer-${Date.now()}`);
@@ -68,22 +68,30 @@ export class Harmonizer extends BaseMidiProcessor {
 
                     output.push({
                         timeSamples: event.timeSamples + voice.timeOffsetSamples,
+                        trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note: harmonyNote, velocity: vel },
                     });
                 }
 
-                this.generatedMap.set(key, harmonyNotes);
+                const routeMap = this.generatedMap.get(event.trackId) ?? new Map<number, number[]>();
+                routeMap.set(key, harmonyNotes);
+                this.generatedMap.set(event.trackId, routeMap);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const generated = this.generatedMap.get(key);
-                if (generated) {
+                const routeMap = this.generatedMap.get(event.trackId);
+                const generated = routeMap?.get(key);
+                if (routeMap && generated) {
                     for (const note of generated) {
                         output.push({
                             timeSamples: event.timeSamples,
+                            trackId: event.trackId,
                             kind: { type: 'noteOff', channel: event.kind.channel, note },
                         });
                     }
-                    this.generatedMap.delete(key);
+                    routeMap.delete(key);
+                    if (routeMap.size === 0) {
+                        this.generatedMap.delete(event.trackId);
+                    }
                 }
             }
         }

@@ -76,7 +76,8 @@ describe('MidiRack', () => {
                 ],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
 
             const offs = rack.removeProcessor('p1', 256);
@@ -95,7 +96,8 @@ describe('MidiRack', () => {
                 [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
 
             const removeOffs = rack.removeProcessor('p1', 200);
@@ -113,7 +115,8 @@ describe('MidiRack', () => {
                 [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
             expect(rack.removeProcessor('does-not-exist', 200)).toHaveLength(0);
             // The unknown removal must not clear tracking — a panic still fires.
@@ -130,7 +133,8 @@ describe('MidiRack', () => {
                 [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
 
             const offs = rack.replaceProjection(
@@ -158,8 +162,8 @@ describe('MidiRack', () => {
             ];
 
             expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
-            rack.processBlock([noteOn(0, 60), noteOn(0, 64), noteOn(0, 67)], 0, 128, transport);
-            rack.processBlock([noteOff(128, 60)], 128, 256, transport);
+            rack.processBlock([noteOn(0, 60), noteOn(0, 64), noteOn(0, 67)], 0, 128, transport, 'track-a');
+            rack.processBlock([noteOff(128, 60)], 128, 256, transport, 'track-a');
 
             expect(chordMemory.getStoredCount()).toBe(1);
             expect(chordMemory.isLearning()).toBe(false);
@@ -179,16 +183,16 @@ describe('MidiRack', () => {
             ];
 
             expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
-            rack.processBlock([noteOn(0, 60)], 0, 128, transport);
-            rack.processBlock([noteOff(128, 60)], 128, 256, transport);
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a');
+            rack.processBlock([noteOff(128, 60)], 128, 256, transport, 'track-a');
             expect(chordMemory.getStoredCount()).toBe(1);
 
             expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.clear' })).toBe(true);
             expect(chordMemory.getStoredCount()).toBe(0);
 
             expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
-            rack.processBlock([noteOn(256, 62)], 256, 384, transport);
-            rack.processBlock([noteOff(384, 62)], 384, 512, transport);
+            rack.processBlock([noteOn(256, 62)], 256, 384, transport, 'track-a');
+            rack.processBlock([noteOff(384, 62)], 384, 512, transport, 'track-a');
             expect(chordMemory.getStoredCount()).toBe(1);
 
             rack.replaceProjection(projection, (_type, id) => new ChordMemory(id), 512);
@@ -205,13 +209,14 @@ describe('MidiRack', () => {
                 [{ timeSamples: 100, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 200,
                 100, // blockEnd < blockStart
-                transport
+                transport,
+                'track-a'
             );
             expect(out).toHaveLength(0);
             // The degenerate block must NOT have routed the input into the
             // scheduled queue. A later EMPTY block (no new input) would otherwise
             // resurface a ghost note. With the guard, nothing leaks out.
-            const out2 = rack.processBlock([], 0, 1024, transport);
+            const out2 = rack.processBlock([], 0, 1024, transport, 'track-a');
             expect(out2).toHaveLength(0);
         });
 
@@ -222,7 +227,8 @@ describe('MidiRack', () => {
                 [{ timeSamples: 10, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
             expect(out.some((event) => event.kind.type === 'noteOn' && event.kind.note === 60)).toBe(true);
         });
@@ -237,7 +243,8 @@ describe('MidiRack', () => {
                 [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
             // The note survived the throw and reached the output.
             expect(out.some((event) => event.kind.type === 'noteOn' && event.kind.note === 60)).toBe(true);
@@ -258,7 +265,8 @@ describe('MidiRack', () => {
                 ],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
 
             const offs = rack.allNotesOff(500).filter(isNoteOff);
@@ -277,7 +285,8 @@ describe('MidiRack', () => {
                 ],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
             const offs = rack.allNotesOff(500).filter(isNoteOff);
             const note67Offs = offs.filter((event) => event.kind.note === 67 && event.kind.channel === 0);
@@ -294,12 +303,38 @@ describe('MidiRack', () => {
                 ],
                 0,
                 128,
-                transport
+                transport,
+                'track-a'
             );
             const offs = rack.allNotesOff(500).filter(isNoteOff);
             // Same note number, different channels => two distinct offs.
             expect(offs).toHaveLength(2);
             expect(offs.map((event) => event.kind.channel).sort()).toEqual([0, 1]);
+        });
+
+        it('releases the same note once for each originating track', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                0,
+                128,
+                transport,
+                'track-a'
+            );
+            rack.processBlock(
+                [{ timeSamples: 128, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                128,
+                256,
+                transport,
+                'track-b'
+            );
+
+            expect(rack.allNotesOff(512).filter(isNoteOff)).toEqual([
+                { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+                { timeSamples: 512, trackId: 'track-b', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ]);
         });
     });
 });

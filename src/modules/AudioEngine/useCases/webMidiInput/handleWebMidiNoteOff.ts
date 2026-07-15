@@ -2,7 +2,6 @@ import { inject } from '#/infra/di/inject';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
-import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -67,7 +66,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             channelToNote.delete(noteData.channel);
         }
 
-        const targetTrackId = getTargetTrackId();
+        const targetTrackId = noteData.trackId;
         if (targetTrackId) {
             const trackState = deps.getTrackStoreState();
             const targetTrack = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
@@ -85,6 +84,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 const sampleTime = Math.round(context.currentTime * context.sampleRate);
                 const processedEvents = await deps.processRealtimeMidiInput({
                     context,
+                    trackId: instrumentTrack.id,
                     note,
                     velocity: 0,
                     channel,

@@ -72,7 +72,7 @@ describe('YeastWorkletProcessor', () => {
             timeSamples: 0,
             kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
         };
-        harness.processor._rack.processBlock([noteOn], 0, 128, {} as TransportInfo);
+        harness.processor._rack.processBlock([noteOn], 0, 128, {} as TransportInfo, 'track-a');
         const messages: unknown[] = [];
         harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
             messages.push(data);
@@ -85,7 +85,7 @@ describe('YeastWorkletProcessor', () => {
                 type: 'allNotesOffAck',
                 panicId: 7,
                 completed: true,
-                events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                events: [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }],
             },
         ]);
         expect(harness.processor.port.postMessage.mock.calls).toEqual([
@@ -94,7 +94,7 @@ describe('YeastWorkletProcessor', () => {
                     type: 'allNotesOffAck',
                     panicId: 7,
                     completed: true,
-                    events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                    events: [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }],
                 },
             ],
         ]);
@@ -216,7 +216,8 @@ describe('YeastWorkletProcessor', () => {
             [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
             0,
             128,
-            {} as TransportInfo
+            {} as TransportInfo,
+            'track-a'
         );
         harness.port.postMessage({
             type: 'setProjection',
@@ -228,7 +229,7 @@ describe('YeastWorkletProcessor', () => {
             {
                 type: 'projectionAck',
                 projectionId: 8,
-                events: [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                events: [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }],
             },
         ]);
     });

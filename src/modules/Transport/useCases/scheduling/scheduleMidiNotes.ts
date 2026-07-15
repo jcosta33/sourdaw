@@ -61,6 +61,7 @@ type YeastMidiEventKind =
 type MidiEvent = {
     timeSamples: number;
     kind: YeastMidiEventKind;
+    trackId?: string;
 };
 
 type TransportInfo = {
@@ -308,11 +309,13 @@ export async function scheduleMidiNotes(
                         const timeSamples = Math.round((noteStartBeat * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples,
+                            trackId: track.id,
                             kind: { type: 'noteOn', channel: 0, note: node.pitch, velocity: node.velocity ?? 100 },
                         });
                         const offTimeSamples = Math.round(((noteStartBeat + node.duration) * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples: offTimeSamples,
+                            trackId: track.id,
                             kind: { type: 'noteOff', channel: 0, note: node.pitch },
                         });
                     }
@@ -322,6 +325,7 @@ export async function scheduleMidiNotes(
                     const ctx = getAudioContext();
                     const processed = await processYeastMidi({
                         context: ctx,
+                        trackId: track.id,
                         events: midiEvents,
                         blockStartSamples,
                         blockEndSamples,

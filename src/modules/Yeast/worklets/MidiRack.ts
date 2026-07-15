@@ -17,9 +17,9 @@ export class MidiRack {
     private processors: MidiProcessor[] = [];
     private processorTypes: Map<string, ProcessorType> = new Map();
     private scheduled = new ScheduledEventQueue();
-    // Numeric key = (channel << 7) | note avoids per-event template-literal
-    // string allocation in AudioWorkletGlobalScope (§149.2).
-    private activeNotes: Map<number, MidiEvent> = new Map();
+    // Route-scoped numeric keys preserve same-note voices from different tracks
+    // without allocating composite string keys on the block path.
+    private activeNotes: Map<string, Map<number, MidiEvent>> = new Map();
     // Scratch buffers reused across blocks to avoid per-processor array
     // allocation (§149.1). Ping-pong between scratchA / scratchB during the
     // processor chain loop. `separateOutput` is the persistent return buffer.
@@ -41,13 +41,12 @@ export class MidiRack {
      * Removing a processor mid-playback changes the chain's output, so any note
      * currently sounding may no longer receive its Note Off from the (now reset
      * and detached) processor — e.g. an Arpeggiator's `reset()` drops its
-     * scheduled Note Offs and `activeGenerated` set without emitting them.
-     * `activeNotes` carries no per-processor attribution, so we conservatively
-     * emit a Note Off for every currently-active note and clear the tracking,
-     * mirroring `allNotesOff`. The offs are stamped at `nowSamples` (the offs
-     * are immediate, not at the original Note On time). Returns the emitted
-     * Note Offs so the caller can route them downstream (parity with
-     * `allNotesOff`).
+     * scheduled Note Offs and `activeGenerated` set without emitting them. It
+     * must emit a Note Off for every currently-active note and clear the
+     * tracking, mirroring `allNotesOff`. The offs retain their originating
+     * track and are stamped at `nowSamples` (the offs are immediate, not at the
+     * original Note On time). Returns the emitted Note Offs so the caller can
+     * route them downstream (parity with `allNotesOff`).
      */
     removeProcessor(id: string, nowSamples = 0): MidiEvent[] {
         const output: MidiEvent[] = [];
@@ -55,17 +54,25 @@ export class MidiRack {
         if (idx === -1) {
             return output;
         }
+        const emittedKeys = new Map<string, Set<number>>();
         // Capture active notes BEFORE reset/splice — once the processor is gone
         // these notes would hang with no source to terminate them.
-        for (const [, event] of this.activeNotes) {
-            if (event.kind.type === 'noteOn') {
-                output.push({
-                    timeSamples: nowSamples,
-                    kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
-                });
+        for (const [trackId, notes] of this.activeNotes) {
+            const trackKeys = new Set<number>();
+            emittedKeys.set(trackId, trackKeys);
+            for (const [key, event] of notes) {
+                if (event.kind.type === 'noteOn') {
+                    trackKeys.add(key);
+                    output.push({
+                        timeSamples: nowSamples,
+                        trackId,
+                        kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
+                    });
+                }
             }
         }
         this.activeNotes.clear();
+        this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);
         this.processors[idx]!.reset();
         this.processors.splice(idx, 1);
         this.processorTypes.delete(id);
@@ -128,7 +135,8 @@ export class MidiRack {
         inputEvents: readonly MidiEvent[],
         blockStartSamples: number,
         blockEndSamples: number,
-        transport: TransportInfo
+        transport: TransportInfo,
+        trackId: string
     ): MidiEvent[] {
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
         // drain window is empty (drainRangeInto drains nothing) AND the separator
@@ -149,7 +157,9 @@ export class MidiRack {
 
         // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
-            current0.push(inputEvents[index]!);
+            const event = inputEvents[index]!;
+            event.trackId = trackId;
+            current0.push(event);
         }
         current0.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
 
@@ -158,12 +168,16 @@ export class MidiRack {
         let input: MidiEvent[] = current0;
         let output: MidiEvent[] = this.scratchB;
         for (const processor of this.processors) {
+            processor.setTrackId?.(trackId);
             if (processor.isBypassed()) {
                 continue;
             }
             output.length = 0;
             try {
                 processor.processMidi(input, output, transport);
+                for (const event of output) {
+                    event.trackId ??= trackId;
+                }
             } catch {
                 // A throwing processor must not abort the rest of the chain (or
                 // the block). Treat it as a transparent bypass for this block:
@@ -178,18 +192,32 @@ export class MidiRack {
         }
         const current = input;
 
+        for (const event of current) {
+            event.trackId ??= trackId;
+        }
+
         // 4. Sort final output
         current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
 
-        // 5. Track active notes for panic. Numeric key avoids a per-event
-        // template literal allocation in the worklet (§149.2).
+        // 5. Track active notes for panic with route-scoped numeric keys.
         for (const event of current) {
             if (event.kind.type === 'noteOn') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                this.activeNotes.set(key, event);
+                const eventTrackId = event.trackId ?? trackId;
+                let trackNotes = this.activeNotes.get(eventTrackId);
+                if (!trackNotes) {
+                    trackNotes = new Map<number, MidiEvent>();
+                    this.activeNotes.set(eventTrackId, trackNotes);
+                }
+                trackNotes.set(key, event);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                this.activeNotes.delete(key);
+                const eventTrackId = event.trackId ?? trackId;
+                const trackNotes = this.activeNotes.get(eventTrackId);
+                trackNotes?.delete(key);
+                if (trackNotes?.size === 0) {
+                    this.activeNotes.delete(eventTrackId);
+                }
             }
         }
 
@@ -214,26 +242,29 @@ export class MidiRack {
     /** Panic: send Note Off for all active notes. */
     allNotesOff(nowSamples: number): MidiEvent[] {
         const output: MidiEvent[] = [];
-        // Track (channel<<7)|note of every off emitted so each sounding/scheduled
-        // note gets exactly one Note Off — no stray/duplicate offs from a note
-        // that is both active and re-scheduled, or scheduled more than once.
-        const emittedKeys = new Set<number>();
+        // Track (channel<<7)|note of every off emitted per origin so each
+        // sounding/scheduled note gets exactly one Note Off.
+        const emittedKeys = new Map<string, Set<number>>();
 
         // Kill tracked active notes
-        for (const [key, event] of this.activeNotes) {
-            if (event.kind.type === 'noteOn') {
-                emittedKeys.add(key);
-                output.push({
-                    timeSamples: nowSamples,
-                    kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
-                });
+        for (const [trackId, notes] of this.activeNotes) {
+            const trackKeys = new Set<number>();
+            emittedKeys.set(trackId, trackKeys);
+            for (const [key, event] of notes) {
+                if (event.kind.type === 'noteOn') {
+                    trackKeys.add(key);
+                    output.push({
+                        timeSamples: nowSamples,
+                        trackId,
+                        kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
+                    });
+                }
             }
         }
         this.activeNotes.clear();
 
         // Flush scheduled queue, de-duped against the active-note offs above.
         this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);
-        this.scheduled.clear();
 
         // Reset all processors
         for (const processor of this.processors) {

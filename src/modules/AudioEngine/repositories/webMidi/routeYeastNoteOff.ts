@@ -1,5 +1,5 @@
 /**
- * Route Yeast-rack Note Off events to the live instrument on a track strip.
+ * Route Yeast-rack Note Off events to the live instrument on their origin track strip.
  *
  * Extracted from `handleNoteOff` so the same device-node delivery is reused by
  * (a) the live-keyboard Note Off path and (b) the processor-removal panic path
@@ -16,13 +16,12 @@ import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
 import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
 /**
- * Route a batch of Note Off note numbers (e.g. the offs a removed Yeast
- * processor left hanging) to the current target track's instrument. Resolves
- * the instrument track and strip once, then delivers each note. A no-op when
- * there is no target track or no supported instrument — the same guard the
- * live path applies.
+ * Route a batch of Note Off note numbers to their explicit originating track's
+ * instrument. Resolves the instrument track and strip once, then delivers each
+ * note. A no-op when the origin track is missing or has no supported instrument.
  */
 export function routeYeastNoteOffsForTargetTrack(
+    trackId: string,
     notes: readonly number[],
     deps: {
         getTrackStoreState: () => TrackStoreState | null;
@@ -32,7 +31,7 @@ export function routeYeastNoteOffsForTargetTrack(
     if (notes.length === 0) {
         return;
     }
-    const instrumentTrack = resolveInstrumentTrack(deps.getTrackStoreState());
+    const instrumentTrack = resolveInstrumentTrack(deps.getTrackStoreState(), trackId);
     if (!instrumentTrack) {
         return;
     }

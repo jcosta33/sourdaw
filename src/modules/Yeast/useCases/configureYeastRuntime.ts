@@ -5,9 +5,11 @@ import { YeastEventBus } from '../stores/yeastEventBus';
 
 export function configureYeastRuntime(): void {
     const eventBus = Container.get(YeastEventBus);
-    setYeastRuntimeNotesOffHandler((notes) => {
-        if (notes.length > 0) {
-            void eventBus.emit('yeast.notesOff', { notes });
+    setYeastRuntimeNotesOffHandler((notesOff) => {
+        for (const payload of notesOff) {
+            if (payload.notes.length > 0) {
+                void eventBus.emit('yeast.notesOff', payload);
+            }
         }
     });
 }

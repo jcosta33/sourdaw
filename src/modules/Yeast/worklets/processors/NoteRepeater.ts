@@ -45,12 +45,14 @@ export class NoteRepeater extends BaseMidiProcessor {
                     // Schedule Note On
                     this.scheduled.push({
                         timeSamples: time,
+                        trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: vel },
                     });
 
                     // Schedule Note Off
                     this.scheduled.push({
                         timeSamples: time + noteLenSamples,
+                        trackId: event.trackId,
                         kind: { type: 'noteOff', channel: event.kind.channel, note },
                     });
                 }

@@ -6,6 +6,7 @@ import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
 type ProcessYeastMidiInput = {
     context: BaseAudioContext;
+    trackId: string;
     events: readonly MidiEvent[];
     blockStartSamples: number;
     blockEndSamples: number;

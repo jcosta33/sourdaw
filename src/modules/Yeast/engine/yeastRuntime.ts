@@ -3,6 +3,7 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from './YeastWorkletNode';
 
+import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type {
@@ -13,6 +14,7 @@ import type {
 
 type ProcessYeastRuntimeBlockInput = {
     context: BaseAudioContext;
+    trackId: string;
     events: readonly MidiEvent[];
     blockStartSamples: number;
     blockEndSamples: number;
@@ -35,7 +37,7 @@ type YeastRuntimeSession = {
     appliedProjectionRevision: number;
     status: YeastRuntimeStatus;
     error: string | undefined;
-    onNotesOff: ((notes: number[]) => void) | null;
+    onNotesOff: ((notesOff: YeastNotesOffPayload[]) => void) | null;
     pendingAllNotesOff: PendingAllNotesOff | null;
 };
 
@@ -46,8 +48,6 @@ type PendingAllNotesOff = {
 };
 
 const YEAST_RUNTIME_SESSION_VERSION = 3;
-const MIDI_PANIC_NOTES = Array.from({ length: 128 }, (_, note) => note);
-const fallbackReleasedNodes = new WeakSet<YeastWorkletNodeResult>();
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -65,8 +65,8 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     pendingAllNotesOff: null,
 }));
 
-// HMR retains the live node/session, but an older module may have left an
-// unscoped panic array behind. Drop only that incompatible transient state.
+// HMR retains the live node/session, but older module versions may have left
+// incompatible transient state behind. Drop only that state on version change.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     session.version = YEAST_RUNTIME_SESSION_VERSION;
     session.processTail = Promise.resolve();
@@ -87,7 +87,45 @@ type ProjectionRecord = {
     revision: number;
 };
 
+function projectionsEqual(
+    current: readonly YeastProcessorProjectionItem[],
+    next: readonly YeastProcessorProjectionItem[]
+): boolean {
+    if (current.length !== next.length) {
+        return false;
+    }
+    for (let index = 0; index < current.length; index++) {
+        const currentProcessor = current[index]!;
+        const nextProcessor = next[index]!;
+        if (
+            currentProcessor.id !== nextProcessor.id ||
+            currentProcessor.type !== nextProcessor.type ||
+            currentProcessor.bypassed !== nextProcessor.bypassed
+        ) {
+            return false;
+        }
+
+        const currentParams = currentProcessor.params;
+        const nextParams = nextProcessor.params;
+        const currentParamNames = Object.keys(currentParams);
+        const nextParamNames = Object.keys(nextParams);
+        if (currentParamNames.length !== nextParamNames.length) {
+            return false;
+        }
+        for (const name of currentParamNames) {
+            if (currentParams[name] !== nextParams[name]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 function recordProjection(projection: readonly YeastProcessorProjectionItem[]): ProjectionRecord {
+    if (projectionsEqual(session.projection, projection)) {
+        return { projection: session.projection, revision: session.projectionRevision };
+    }
+
     const nextProjection = cloneProjection(projection);
     session.projection = nextProjection;
     session.projectionRevision += 1;
@@ -157,29 +195,10 @@ function invalidateCurrentRuntime(node: YeastWorkletNodeResult): boolean {
     return true;
 }
 
-function invokeNotesOffFallback(node: YeastWorkletNodeResult): void {
-    if (fallbackReleasedNodes.has(node)) {
-        return;
-    }
-    fallbackReleasedNodes.add(node);
-
-    const handler = session.onNotesOff;
-    if (!handler) {
-        return;
-    }
-
-    try {
-        handler([...MIDI_PANIC_NOTES]);
-    } catch (error: unknown) {
-        logger.warn('[Yeast] Panic Note Off fallback failed:', error);
-    }
-}
-
 function failCurrentRuntime(node: YeastWorkletNodeResult, error: unknown): void {
     if (session.node !== node) {
         return;
     }
-    invokeNotesOffFallback(node);
     invalidateCurrentRuntime(node);
     setRuntimeUnavailable(error);
 }
@@ -405,7 +424,8 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                input.transport
+                input.transport,
+                input.trackId
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
@@ -457,7 +477,8 @@ export async function processYeastRuntimeTransaction(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                input.transport
+                input.transport,
+                input.trackId
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
@@ -503,7 +524,7 @@ export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<v
     }
 }
 
-export function setYeastRuntimeNotesOffHandler(handler: (notes: number[]) => void): void {
+export function setYeastRuntimeNotesOffHandler(handler: (notesOff: YeastNotesOffPayload[]) => void): void {
     session.onNotesOff = handler;
 }
 

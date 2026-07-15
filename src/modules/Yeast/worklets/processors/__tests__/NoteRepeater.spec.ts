@@ -3,7 +3,19 @@ import { describe, it, expect } from 'vitest';
 import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
 import { NoteRepeater } from '../NoteRepeater';
 
-const transport: TransportInfo = { isPlaying: true, tempo: 120, sampleRate: 48000, positionInBeats: 0 };
+const transport: TransportInfo = {
+    isPlaying: true,
+    ppqPosition: 0,
+    bpm: 120,
+    sampleRate: 48000,
+    barIndex: 0,
+    beatInBar: 0,
+    timeSigNum: 4,
+    timeSigDen: 4,
+    loopEnabled: false,
+    loopStartPpq: 0,
+    loopEndPpq: 0,
+};
 const note_on = (t: number, n: number, v = 100): MidiEvent => ({
     timeSamples: t,
     kind: { type: 'noteOn', channel: 0, note: n, velocity: v },

@@ -55,6 +55,7 @@ export class MutationEngine extends BaseMidiProcessor {
                 const vel = Math.max(1, Math.min(127, Math.round(event.kind.velocity + velOffset)));
                 output.push({
                     timeSamples: event.timeSamples,
+                    trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
                 });
             } else {
