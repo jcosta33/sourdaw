@@ -1,7 +1,10 @@
 import { type PresenceDelta } from '../../models/CollaborationTypes';
 
-import { collaborationSessionRuntime } from './sessionManagement';
+import { sessionRuntimePrimitives as runtime } from './sessionManagement';
 
 export function onPresence(listener: (data: PresenceDelta) => void): () => void {
-    return collaborationSessionRuntime.onPresence(listener);
+    runtime.state.presenceListeners.add(listener);
+    return () => {
+        runtime.state.presenceListeners.delete(listener);
+    };
 }
