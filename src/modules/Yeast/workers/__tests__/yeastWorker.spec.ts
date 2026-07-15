@@ -31,6 +31,18 @@ function dispatch(rack: MidiRack, data: unknown, messages: unknown[]): void {
 }
 
 describe('YeastWorker', () => {
+    it('acknowledges only a validated startup handshake', () => {
+        const rack = new MidiRack();
+        const messages: unknown[] = [];
+
+        dispatch(rack, { type: 'initialize', protocolVersion: '1' }, messages);
+        dispatch(rack, { type: 'initialize', protocolVersion: 2 }, messages);
+        expect(messages).toEqual([]);
+
+        dispatch(rack, { type: 'initialize', protocolVersion: 1 }, messages);
+        expect(messages).toEqual([{ type: 'ready', protocolVersion: 1 }]);
+    });
+
     it('carries panic note-offs inside the correlated acknowledgement', () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];

@@ -50,7 +50,7 @@ type DrumKit = {
 };
 
 // Transport-local shapes (AGENTS.md model isolation). Structurally compatible
-// with what Yeast's processors and worklet accept; we do not import Yeast's model.
+// with what Yeast's processors and Worker accept; we do not import Yeast's model.
 type YeastMidiEventKind =
     | { type: 'noteOn'; channel: number; note: number; velocity: number }
     | { type: 'noteOff'; channel: number; note: number }
@@ -240,7 +240,7 @@ export async function scheduleMidiNotes(
             }
 
             const hasYeast = track.devices.some((data) => data.type === 'yeast');
-            // §2 — When the clip loops, run the Yeast worklet once per loop
+            // §2 — When the clip loops, run the Yeast Worker once per loop
             // iteration over that iteration's absolute window, so bar-aware
             // processors see iter-correct transport metadata instead of the
             // first iteration's bar replayed at every offset. The transformed
@@ -268,7 +268,7 @@ export async function scheduleMidiNotes(
                     // reads the wrong bar after a mid-project meter change while
                     // the metronome stays correct. `getBarBeatAtPosition` is the
                     // map-aware accumulator (1-indexed bar/beat + tick); convert to
-                    // the worklet's 0-indexed convention. `tick` is 0..479 of a
+                    // the Yeast runtime's 0-indexed convention. `tick` is 0..479 of a
                     // beat, so `(beat - 1) + tick/480` reconstructs the fractional
                     // 0-indexed beat-in-bar.
                     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
@@ -301,7 +301,7 @@ export async function scheduleMidiNotes(
                     const midiEvents: MidiEvent[] = [];
                     for (const node of rawNotes) {
                         // Map each source note to its absolute beat in *this*
-                        // iteration so the worklet places it in the right bar.
+                        // iteration so the Worker places it in the right bar.
                         const noteStartBeat = iterAbsBase + node.startBeat;
                         if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) {
                             continue;
@@ -372,10 +372,10 @@ export async function scheduleMidiNotes(
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
                             const evtVel = evt.kind.velocity;
-                            // Emit the worklet output at its absolute beat, less
+                            // Emit the Worker output at its absolute beat, less
                             // the clip's MIDI content offset (preserving the
                             // original behaviour, which applied midiOffset to the
-                            // worklet output). The per-note loop consumes these
+                            // Worker output). The per-note loop consumes these
                             // notes by their absolute beat directly — it does not
                             // re-apply iterOffset / midiOffset, since this
                             // iteration's run already placed them.
@@ -479,7 +479,7 @@ export async function scheduleMidiNotes(
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
 
-                // §2 — For a Yeast track, run the worklet per loop iteration with
+                // §2 — For a Yeast track, run the Worker per loop iteration with
                 // iter-correct transport metadata. The returned notes carry their
                 // absolute beat directly, so the per-note loop must not re-apply
                 // iterOffset / midiOffset to them.

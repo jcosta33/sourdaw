@@ -105,4 +105,21 @@ describe('processYeastMidi — Worker-only runtime', () => {
         ).resolves.toEqual(events);
         expect(processRuntimeTransaction).toHaveBeenCalledTimes(1);
     });
+
+    it('passes authored events through when the Worker dies during processing', async () => {
+        processRuntimeTransaction.mockRejectedValueOnce(new Error('Worker crashed'));
+        const events = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 96 } }];
+
+        await expect(
+            processYeastMidi({
+                context,
+                trackId: 'track-a',
+                events,
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport,
+            })
+        ).resolves.toEqual(events);
+        expect(processRuntimeTransaction).toHaveBeenCalledTimes(1);
+    });
 });

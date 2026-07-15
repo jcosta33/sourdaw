@@ -47,7 +47,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 3;
+const YEAST_RUNTIME_SESSION_VERSION = 4;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -65,14 +65,31 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     pendingAllNotesOff: null,
 }));
 
-// HMR retains the live node/session, but older module versions may have left
-// incompatible transient state behind. Drop only that state on version change.
+// Version 3 retained an AudioWorklet-backed node. Revoke every runtime handle
+// before preserving only projection data and the stable host note-off sink.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
+    const staleNode = session.node;
     session.version = YEAST_RUNTIME_SESSION_VERSION;
+    session.generation =
+        Number.isSafeInteger(session.generation) && session.generation < Number.MAX_SAFE_INTEGER
+            ? session.generation + 1
+            : 1;
+    session.context = null;
+    session.node = null;
+    session.nodePromise = null;
     session.processTail = Promise.resolve();
     session.projectionRevision = 0;
     session.appliedProjectionRevision = 0;
+    session.status = 'uninitialized';
+    session.error = undefined;
     session.pendingAllNotesOff = null;
+    if (staleNode) {
+        try {
+            staleNode.destroy();
+        } catch (error: unknown) {
+            logger.warn('[Yeast] Stale HMR runtime destroy failed:', error);
+        }
+    }
 }
 
 function cloneProjection(projection: readonly YeastProcessorProjectionItem[]): YeastProcessorProjection {
@@ -333,6 +350,14 @@ async function ensureYeastRuntimeInternal(
                 return null;
             }
             session.node = node;
+            node.onTerminalError((error) => {
+                if (isLiveRuntime(node, generation)) {
+                    failCurrentRuntime(node, error);
+                }
+            });
+            if (!isLiveRuntime(node, generation)) {
+                return null;
+            }
             node.onNotesOff((notes) => {
                 session.onNotesOff?.(notes);
             });

@@ -66,7 +66,7 @@ const schedulerSession = {
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
-    // Re-entrancy guard. `tick` is async and awaits the Yeast worklet round-trip
+    // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
     // (`scheduleGrainMs`, default 10ms), the next worker message would start a
     // second `tick` while the first is still suspended, and both would mutate the
@@ -145,7 +145,7 @@ export function startPlayheadScheduler(): void {
     const grainMs = state.scheduleGrainMs;
 
     async function tick(): Promise<void> {
-        // A prior tick is still awaiting its scheduling work (the Yeast worklet
+        // A prior tick is still awaiting its scheduling work (the Yeast Worker
         // round-trip in particular). Starting now would let two ticks mutate the
         // shared session mutables across one another's awaits. Skip this worker
         // tick; the in-flight tick already advances the playhead and the next

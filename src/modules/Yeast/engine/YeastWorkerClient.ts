@@ -6,7 +6,7 @@
  * MIDI events; caller supplies `requestId` correlation internally.
  *
  * Sends the serializable processor projection to the Worker. The Worker owns
- * the rack and processor instances; this wrapper owns only the port protocol.
+ * the rack and processor instances; this wrapper owns only the message protocol.
  */
 
 import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
@@ -27,6 +27,8 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 const SCHEDULER_LOOKAHEAD_MS = 100;
 const SCHEDULER_GRAIN_MS = 10;
 export const YEAST_WORKER_DEADLINE_MS = SCHEDULER_LOOKAHEAD_MS - SCHEDULER_GRAIN_MS;
+const YEAST_WORKER_PROTOCOL_VERSION = 1;
+const STARTUP_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const COMMAND_ACK_TIMEOUT_MS = 1000;
@@ -72,6 +74,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isCommandId(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isReadyMessage(value: unknown): boolean {
+    return isPlainObject(value) && value.type === 'ready' && value.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -248,6 +254,8 @@ export type YeastWorkerResult = {
      * unsubscribe function. Multiple listeners are supported.
      */
     onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => () => void;
+    /** Register for an unrecoverable Worker startup/runtime failure. */
+    onTerminalError: (handler: (error: Error) => void) => () => void;
     destroy: () => void;
 };
 
@@ -258,8 +266,14 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     let nextCommandId = 0;
     let nextPanicId = 0;
     let nextProjectionId = 0;
-    let destroyed = false;
+    let terminalError: Error | null = null;
+    let terminalWasFailure = false;
+    let terminated = false;
+    let startupResolve: (() => void) | null = null;
+    let startupReject: ((error: Error) => void) | null = null;
+    let startupTimer: ReturnType<typeof setTimeout> | null = null;
     let latestSample = 0;
+    const readTerminalError = (): Error | null => terminalError;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
@@ -321,6 +335,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     };
 
     const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
+    const terminalErrorHandlers = new Set<(error: Error) => void>();
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
         const notesByTrack = new Map<string, number[]>();
@@ -344,7 +359,91 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }
     };
 
+    type PendingFailureErrors = {
+        process: Error;
+        command: Error;
+        panic: Error;
+        projection: Error;
+    };
+
+    const closeClient = (input: {
+        error: Error;
+        notifyTerminalHandlers: boolean;
+        pendingErrors?: PendingFailureErrors;
+    }): void => {
+        if (terminalError) {
+            return;
+        }
+
+        terminalError = input.error;
+        terminalWasFailure = input.notifyTerminalHandlers;
+        worker.onmessage = null;
+        worker.onerror = null;
+        worker.onmessageerror = null;
+
+        if (startupTimer !== null) {
+            clearTimeout(startupTimer);
+            startupTimer = null;
+        }
+        const rejectStartup = startupReject;
+        startupResolve = null;
+        startupReject = null;
+
+        const pendingErrors = input.pendingErrors ?? {
+            process: input.error,
+            command: input.error,
+            panic: input.error,
+            projection: input.error,
+        };
+        for (const requestId of [...pending.keys()]) {
+            settle(requestId)?.reject(pendingErrors.process);
+        }
+        for (const commandId of [...pendingCommands.keys()]) {
+            settleCommand(commandId)?.reject(pendingErrors.command);
+        }
+        for (const panicId of [...pendingPanics.keys()]) {
+            settlePanic(panicId)?.reject(pendingErrors.panic);
+        }
+        for (const projectionId of [...pendingProjections.keys()]) {
+            settleProjection(projectionId)?.reject(pendingErrors.projection);
+        }
+        notesOffHandlers.clear();
+
+        const handlers = input.notifyTerminalHandlers ? [...terminalErrorHandlers] : [];
+        terminalErrorHandlers.clear();
+        rejectStartup?.(input.error);
+        if (!terminated) {
+            terminated = true;
+            worker.terminate();
+        }
+        for (const handler of handlers) {
+            try {
+                handler(input.error);
+            } catch {
+                // A failed observer cannot leave later terminal observers unnotified.
+            }
+        }
+    };
+
+    const acknowledgeReady = (): void => {
+        const resolveStartup = startupResolve;
+        if (!resolveStartup) {
+            return;
+        }
+        if (startupTimer !== null) {
+            clearTimeout(startupTimer);
+            startupTimer = null;
+        }
+        startupResolve = null;
+        startupReject = null;
+        resolveStartup();
+    };
+
     worker.onmessage = (event: MessageEvent): void => {
+        if (isReadyMessage(event.data)) {
+            acknowledgeReady();
+            return;
+        }
         if (!isPlainObject(event.data)) {
             return;
         }
@@ -416,6 +515,20 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }
     };
 
+    worker.onerror = (event: ErrorEvent): void => {
+        event.preventDefault();
+        closeClient({
+            error: new Error(event.message || 'YeastWorker runtime failed'),
+            notifyTerminalHandlers: true,
+        });
+    };
+    worker.onmessageerror = (): void => {
+        closeClient({
+            error: new Error('YeastWorker message decoding failed'),
+            notifyTerminalHandlers: true,
+        });
+    };
+
     const processBlock = (
         events: readonly MidiEvent[],
         blockStart: number,
@@ -424,8 +537,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         trackId: string
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
-            if (destroyed) {
-                reject(new Error('YeastWorker is destroyed'));
+            if (terminalError) {
+                reject(terminalError);
                 return;
             }
             const requestId = nextRequestId++;
@@ -455,8 +568,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
 
     const sendCommand = (command: YeastProcessorCommand): Promise<YeastCommandAck> =>
         new Promise((resolve, reject) => {
-            if (destroyed) {
-                reject(new Error('YeastWorker is destroyed'));
+            if (terminalError) {
+                reject(terminalError);
                 return;
             }
 
@@ -476,8 +589,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
 
     const allNotesOff = (nowSamples: number): Promise<void> =>
         new Promise((resolve, reject) => {
-            if (destroyed) {
-                reject(new Error('YeastWorker is destroyed'));
+            if (terminalError) {
+                reject(terminalError);
                 return;
             }
 
@@ -498,8 +611,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
 
     const setProjection = (projection: readonly YeastProcessorProjectionItem[]): Promise<void> =>
         new Promise((resolve, reject) => {
-            if (destroyed) {
-                reject(new Error('YeastWorker is destroyed'));
+            if (terminalError) {
+                reject(terminalError);
                 return;
             }
 
@@ -527,6 +640,27 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }
         });
 
+    const startup = new Promise<void>((resolve, reject) => {
+        startupResolve = resolve;
+        startupReject = reject;
+        startupTimer = setTimeout(() => {
+            closeClient({
+                error: new Error(`YeastWorker startup timed out after ${STARTUP_TIMEOUT_MS}ms`),
+                notifyTerminalHandlers: true,
+            });
+        }, STARTUP_TIMEOUT_MS);
+        try {
+            worker.postMessage({ type: 'initialize', protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
+        } catch (error: unknown) {
+            closeClient({ error: toError(error), notifyTerminalHandlers: true });
+        }
+    });
+    await startup;
+    const startupFailure = readTerminalError();
+    if (startupFailure) {
+        throw startupFailure;
+    }
+
     return {
         context: ctx,
         processBlock,
@@ -534,39 +668,37 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         setProjection,
         allNotesOff,
         onNotesOff: (handler) => {
+            if (terminalError) {
+                return () => {};
+            }
             notesOffHandlers.add(handler);
             return () => {
                 notesOffHandlers.delete(handler);
             };
         },
+        onTerminalError: (handler) => {
+            if (terminalError) {
+                if (terminalWasFailure) {
+                    handler(terminalError);
+                }
+                return () => {};
+            }
+            terminalErrorHandlers.add(handler);
+            return () => {
+                terminalErrorHandlers.delete(handler);
+            };
+        },
         destroy: () => {
-            if (destroyed) {
-                return;
-            }
-            destroyed = true;
-            // The Worker is terminated; no reply can ever arrive. Reject
-            // and clear every in-flight request and command so awaiting callers
-            // fail fast instead of hanging on Promises that can never settle.
-            for (const requestId of [...pending.keys()]) {
-                settle(requestId)?.reject(new Error('YeastWorker destroyed before processBlock completed'));
-            }
-            for (const commandId of [...pendingCommands.keys()]) {
-                settleCommand(commandId)?.reject(new Error('YeastWorker destroyed before command acknowledgement'));
-            }
-            for (const panicId of [...pendingPanics.keys()]) {
-                settlePanic(panicId)?.reject(new Error('YeastWorker destroyed before allNotesOff acknowledgement'));
-            }
-            for (const projectionId of [...pendingProjections.keys()]) {
-                settleProjection(projectionId)?.reject(
-                    new Error('YeastWorker destroyed before projection acknowledgement')
-                );
-            }
-            pending.clear();
-            pendingCommands.clear();
-            pendingPanics.clear();
-            pendingProjections.clear();
-            notesOffHandlers.clear();
-            worker.terminate();
+            closeClient({
+                error: new Error('YeastWorker is destroyed'),
+                notifyTerminalHandlers: false,
+                pendingErrors: {
+                    process: new Error('YeastWorker destroyed before processBlock completed'),
+                    command: new Error('YeastWorker destroyed before command acknowledgement'),
+                    panic: new Error('YeastWorker destroyed before allNotesOff acknowledgement'),
+                    projection: new Error('YeastWorker destroyed before projection acknowledgement'),
+                },
+            });
         },
     };
 }

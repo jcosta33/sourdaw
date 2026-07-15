@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createYeastWorker, type YeastWorkerResult, YEAST_WORKER_DEADLINE_MS } from '../YeastWorkerClient';
+import {
+    createYeastWorker as createYeastWorkerClient,
+    type YeastWorkerResult,
+    YEAST_WORKER_DEADLINE_MS,
+} from '../YeastWorkerClient';
 
 import type { TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
@@ -14,6 +18,8 @@ import type { YeastProcessorProjection } from '../../models/YeastProcessorProjec
 type FakeWorker = {
     postMessage: ReturnType<typeof vi.fn>;
     onmessage: ((event: MessageEvent) => void) | null;
+    onerror: ((event: ErrorEvent) => void) | null;
+    onmessageerror: ((event: MessageEvent) => void) | null;
     terminate: ReturnType<typeof vi.fn>;
 };
 
@@ -30,13 +36,30 @@ const transport: TransportInfo = {
 } as unknown as TransportInfo;
 
 let installedWorkers: FakeWorker[] = [];
+let acknowledgeReady = true;
 
 beforeEach(() => {
     vi.useFakeTimers();
     installedWorkers = [];
+    acknowledgeReady = true;
     globalThis.Worker = class FakeWorker {
-        postMessage = vi.fn();
+        postMessage = vi.fn((message: unknown) => {
+            if (
+                acknowledgeReady &&
+                typeof message === 'object' &&
+                message !== null &&
+                'type' in message &&
+                message.type === 'initialize'
+            ) {
+                void Promise.resolve().then(() => {
+                    this.onmessage?.({ data: { type: 'ready', protocolVersion: 1 } } as MessageEvent);
+                    return undefined;
+                });
+            }
+        });
         onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: ((event: ErrorEvent) => void) | null = null;
+        onmessageerror: ((event: MessageEvent) => void) | null = null;
         terminate = vi.fn();
 
         constructor() {
@@ -56,6 +79,28 @@ function lastWorker(): FakeWorker {
         throw new Error('no Worker was created');
     }
     return worker;
+}
+
+async function createYeastWorker(context: BaseAudioContext): Promise<YeastWorkerResult> {
+    const node = await createYeastWorkerClient(context);
+    lastWorker().postMessage.mockClear();
+    return node;
+}
+
+function replyReady(worker: FakeWorker, protocolVersion: unknown = 1): void {
+    worker.onmessage?.({ data: { type: 'ready', protocolVersion } } as MessageEvent);
+}
+
+function triggerWorkerFailure(worker: FakeWorker, kind: 'error' | 'messageerror', message: string): void {
+    if (kind === 'error') {
+        worker.onerror?.({
+            error: new Error(message),
+            message,
+            preventDefault: vi.fn(),
+        } as unknown as ErrorEvent);
+        return;
+    }
+    worker.onmessageerror?.({ data: message } as MessageEvent);
 }
 
 /** Simulate the Worker replying 'processed' for a given requestId. */
@@ -607,6 +652,137 @@ describe('createYeastWorker — command acknowledgement lifecycle', () => {
     });
 });
 
+describe('createYeastWorker — ready and terminal lifecycle', () => {
+    it('waits for a validated Worker-ready acknowledgement', async () => {
+        acknowledgeReady = false;
+        const creation = createYeastWorkerClient(makeContext());
+        let settled = false;
+        void creation.then(() => {
+            settled = true;
+            return undefined;
+        });
+
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(lastWorker().postMessage).toHaveBeenCalledWith({ type: 'initialize', protocolVersion: 1 });
+
+        replyReady(lastWorker(), '1');
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        replyReady(lastWorker());
+        await expect(creation).resolves.toBeDefined();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('terminates and rejects within the bounded startup deadline when ready never arrives', async () => {
+        acknowledgeReady = false;
+        const creation = createYeastWorkerClient(makeContext());
+        const rejection = creation.catch((error: unknown) => error);
+
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
+
+        const startupError = await rejection;
+        expect(startupError).toEqual(expect.any(Error));
+        expect((startupError as Error).message).toMatch(/startup timed out/);
+        expect(lastWorker().terminate).toHaveBeenCalledTimes(1);
+        expect(lastWorker().onmessage).toBeNull();
+        expect(lastWorker().onerror).toBeNull();
+        expect(lastWorker().onmessageerror).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(['error', 'messageerror'] as const)('rejects startup immediately on Worker %s', async (kind) => {
+        acknowledgeReady = false;
+        const creation = createYeastWorkerClient(makeContext());
+        const rejection = creation.catch((error: unknown) => error);
+
+        triggerWorkerFailure(lastWorker(), kind, 'startup failed');
+
+        await expect(rejection).resolves.toEqual(expect.any(Error));
+        expect(lastWorker().terminate).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(['error', 'messageerror'] as const)(
+        'terminally fails every in-flight request on Worker %s',
+        async (kind) => {
+            const node = await createYeastWorker(makeContext());
+            const worker = lastWorker();
+            const onTerminalError = vi.fn();
+            const onNotesOff = vi.fn();
+            node.onTerminalError(onTerminalError);
+            node.onNotesOff(onNotesOff);
+
+            const block = node.processBlock([], 0, 128, transport, 'track-a').catch((error: unknown) => error);
+            const command = node
+                .sendCommand({ processorId: 'cm-1', type: 'chordMemory.clear' })
+                .catch((error: unknown) => error);
+            const panic = node.allNotesOff(128).catch((error: unknown) => error);
+            const projection = node.setProjection([]).catch((error: unknown) => error);
+            const staleMessageHandler = worker.onmessage;
+
+            triggerWorkerFailure(worker, kind, 'runtime failed');
+            staleMessageHandler?.({
+                data: {
+                    type: 'projectionAck',
+                    projectionId: 0,
+                    events: [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                },
+            } as MessageEvent);
+
+            for (const result of await Promise.all([block, command, panic, projection])) {
+                expect(result).toBeInstanceOf(Error);
+            }
+            expect(onTerminalError).toHaveBeenCalledTimes(1);
+            expect(onNotesOff).not.toHaveBeenCalled();
+            expect(worker.terminate).toHaveBeenCalledTimes(1);
+            expect(worker.onmessage).toBeNull();
+            expect(worker.onerror).toBeNull();
+            expect(worker.onmessageerror).toBeNull();
+            expect(vi.getTimerCount()).toBe(0);
+
+            const postedBeforeLateCalls = worker.postMessage.mock.calls.length;
+            const lateCalls = [
+                node.processBlock([], 128, 256, transport, 'track-a').catch((error: unknown) => error),
+                node.sendCommand({ processorId: 'cm-1', type: 'chordMemory.learn' }).catch((error: unknown) => error),
+                node.allNotesOff(256).catch((error: unknown) => error),
+                node.setProjection([]).catch((error: unknown) => error),
+            ];
+            for (const result of await Promise.all(lateCalls)) {
+                expect(result).toBeInstanceOf(Error);
+            }
+            expect(worker.postMessage).toHaveBeenCalledTimes(postedBeforeLateCalls);
+            expect(vi.getTimerCount()).toBe(0);
+        }
+    );
+
+    it.each(['error-first', 'destroy-first'] as const)('terminates exactly once in the %s race', async (order) => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onTerminalError = vi.fn();
+        node.onTerminalError(onTerminalError);
+        const capturedErrorHandler = worker.onerror;
+
+        if (order === 'error-first') {
+            triggerWorkerFailure(worker, 'error', 'runtime failed');
+            node.destroy();
+        } else {
+            node.destroy();
+            capturedErrorHandler?.({
+                error: new Error('late error'),
+                message: 'late error',
+                preventDefault: vi.fn(),
+            } as unknown as ErrorEvent);
+        }
+        node.destroy();
+
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(onTerminalError).toHaveBeenCalledTimes(order === 'error-first' ? 1 : 0);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
 describe('createYeastWorker constructor lifecycle', () => {
     it('rejects when Worker construction fails', async () => {
         const error = new Error('Worker construction failed');
@@ -616,6 +792,6 @@ describe('createYeastWorker constructor lifecycle', () => {
             }
         } as unknown as typeof Worker;
 
-        await expect(createYeastWorker(makeContext())).rejects.toThrow(error.message);
+        await expect(createYeastWorkerClient(makeContext())).rejects.toThrow(error.message);
     });
 });

@@ -392,7 +392,7 @@ describe('playhead scheduler tick', () => {
     });
 
     // audit row 1 — `tick` is async and awaits scheduleMidiNotes (the Yeast
-    // worklet round-trip). If that await outruns the worker interval, the next
+    // Worker round-trip). If that await outruns the scheduler interval, the next
     // worker message must NOT start a second tick body while the first is still
     // suspended — both would mutate the shared session mutables (accumulatedPosition,
     // lastScheduledBeat, the dedup Sets, playheadPositionRef) concurrently.

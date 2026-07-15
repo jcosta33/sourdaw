@@ -203,10 +203,10 @@ describe('scheduleMidiNotes', () => {
         expect(scheduleNote).not.toHaveBeenCalled();
     });
 
-    // §2 — A looping Yeast clip must run the worklet once per loop iteration so a
+    // §2 — A looping Yeast clip must run the Worker once per loop iteration so a
     // bar-aware processor sees iter-correct event positions, instead of running
     // once and replaying one iteration's output at every offset.
-    it('runs the Yeast worklet per loop iteration over a looping clip (§2)', async () => {
+    it('runs the Yeast Worker per loop iteration over a looping clip (§2)', async () => {
         const track = midiTrack({
             clips: [midiClip({ endBeat: 8, loopEnabled: true, loopLength: 2 })],
             devices: [{ id: 'y', type: 'yeast' }],
@@ -217,7 +217,7 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         };
 
-        // Record the noteOn sample positions the worklet sees per call. The
+        // Record the noteOn sample positions the Worker sees per call. The
         // processor echoes its input back so we observe per-iteration placement.
         const seenNoteOnSamples: number[][] = [];
         const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
@@ -230,7 +230,7 @@ describe('scheduleMidiNotes', () => {
         // clip endBeat 8, loopLength 2 => ceil(8/2) = 4 iterations.
         await scheduleMidiNotes(0, 8, 0, -1, [], defaultTransportState, 120);
 
-        // The worklet ran once per iteration (was once total before the fix).
+        // The Worker ran once per iteration (was once total before the fix).
         expect(processYeast).toHaveBeenCalledTimes(4);
         // Each iteration placed its note at a distinct, iteration-shifted sample
         // position (2 beats apart at 120bpm/48k = 48000 samples), not a single

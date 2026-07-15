@@ -5,7 +5,9 @@
  * Keeps `MidiRack.processBlock()` and every processor away from the audio
  * render thread; the host sends serialized sample positions for timing.
  *
- * Port protocol (self.onmessage):
+ * Message protocol (self.onmessage):
+ *   ← { type: 'initialize', protocolVersion: 1 }
+ *   → { type: 'ready', protocolVersion: 1 }
  *   ← { type: 'setProjection', projectionId, nowSamples, processors }
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
@@ -48,6 +50,7 @@ type ParsedSetProjection = {
 
 const INVALID_EXECUTE_COMMAND_ERROR = 'Invalid executeCommand message';
 const INVALID_SET_PROJECTION_ERROR = 'Invalid setProjection message';
+const YEAST_WORKER_PROTOCOL_VERSION = 1;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -252,6 +255,12 @@ export type YeastWorkerMessageHandlerInput = {
 
 export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorkerMessageHandlerInput): void {
     if (!isPlainObject(data)) {
+        return;
+    }
+    if (data.type === 'initialize') {
+        if (data.protocolVersion === YEAST_WORKER_PROTOCOL_VERSION) {
+            postMessage({ type: 'ready', protocolVersion: YEAST_WORKER_PROTOCOL_VERSION });
+        }
         return;
     }
     if (data.type === 'executeCommand') {

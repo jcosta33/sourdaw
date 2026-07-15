@@ -48,6 +48,7 @@ async function flushRuntimeQueue(): Promise<void> {
 }
 
 function makeNode(context: BaseAudioContext) {
+    let terminalErrorHandler: ((error: Error) => void) | null = null;
     return {
         context,
         processBlock: vi.fn(
@@ -58,6 +59,17 @@ function makeNode(context: BaseAudioContext) {
         sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         allNotesOff: vi.fn(),
         onNotesOff: vi.fn(() => () => {}),
+        onTerminalError: vi.fn((handler: (error: Error) => void) => {
+            terminalErrorHandler = handler;
+            return () => {
+                if (terminalErrorHandler === handler) {
+                    terminalErrorHandler = null;
+                }
+            };
+        }),
+        emitTerminalError: (error: Error) => {
+            terminalErrorHandler?.(error);
+        },
         destroy: vi.fn(),
     };
 }
@@ -194,6 +206,80 @@ describe('yeastRuntime', () => {
         await expect(initializationA).resolves.toBeNull();
         expect(nodeA.destroy).toHaveBeenCalledTimes(1);
         expect(nodeB.setProjection).toHaveBeenCalledWith(projectionB);
+    });
+
+    it('invalidates a terminally failed Worker and replaces it through the runtime', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const nodeA = makeNode(context);
+        const nodeB = makeNode(context);
+        const processed = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 67, velocity: 100 } }];
+        nodeB.processBlock.mockResolvedValueOnce(processed);
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await expect(runtime.ensureYeastRuntime({ context, projection: projectionA })).resolves.toBe(nodeA);
+        expect(nodeA.onTerminalError).toHaveBeenCalledTimes(1);
+
+        nodeA.emitTerminalError(new Error('Worker crashed'));
+
+        expect(nodeA.destroy).toHaveBeenCalledTimes(1);
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        expect(runtime.getYeastRuntimeError()).toBe('Worker crashed');
+
+        const result = await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction({
+            context,
+            trackId: 'track-a',
+            projection: projectionA,
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                bpm: 120,
+                isPlaying: true,
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            },
+        });
+
+        expect(result).toEqual(processed);
+        expect(createNode).toHaveBeenCalledTimes(2);
+        expect(nodeB.setProjection).toHaveBeenCalledWith(projectionA);
+    });
+
+    it('fences a terminally failed panic and never settles notes against its replacement', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const nodeA = makeNode(context);
+        const nodeB = makeNode(context);
+        const pendingAck = deferred<void>();
+        const onNotesOff = vi.fn();
+        nodeA.allNotesOff.mockReturnValueOnce(pendingAck.promise);
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        const panic = runtime.sendYeastRuntimeAllNotesOff(512);
+        await flushRuntimeQueue();
+        expect(nodeA.allNotesOff).toHaveBeenCalledWith(512);
+
+        nodeA.emitTerminalError(new Error('Worker crashed during panic'));
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        await expect(runtime.ensureYeastRuntime({ context, projection: projectionA })).resolves.toBe(nodeB);
+
+        pendingAck.reject(new Error('Worker crashed during panic'));
+        await expect(panic).resolves.toBeUndefined();
+
+        expect(onNotesOff).not.toHaveBeenCalled();
+        expect(nodeB.allNotesOff).not.toHaveBeenCalled();
+        expect(nodeB.destroy).not.toHaveBeenCalled();
+        expect(runtime.getYeastRuntimeStatus()).toBe('ready');
     });
 
     it('discards a panic queued for context A when context B replaces its generation', async () => {

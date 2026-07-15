@@ -3,7 +3,7 @@ import { yeastPanic } from '#/modules/Yeast/useCases';
 
 /**
  * Transport owns teardown ordering; Yeast owns the runtime reset itself. Post
- * the panic before scheduler restart so the worklet's ordered message queue
+ * the panic before scheduler restart so the Worker's ordered message queue
  * clears generated state before a later block can be processed.
  */
 export function panicYeastRuntime(): void {
