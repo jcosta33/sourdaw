@@ -1,28 +1,43 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { deleteTime } from '../deleteTime';
+import { setTimeOperationDependencies } from '../timeOperationDependencies';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     setTrackState: vi.fn(),
+    markerStoreSet: vi.fn(),
+    deleteAutomationTimeRange: vi.fn(),
+    deleteTimelineMapsTimeRange: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
-vi.mock('../../../stores/markerStore', () => ({ markerStore: { value: { markers: [] }, set: vi.fn() } }));
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] }, set: vi.fn() } }));
-vi.mock('#/modules/Transport/stores', () => ({
-    tempoMapStore: { value: { changes: [] }, set: vi.fn() },
-    timeSignatureMapStore: { value: { changes: [] }, set: vi.fn() },
+vi.mock('../../../stores/markerStore', () => ({
+    markerStore: { value: { markers: [] }, set: mocks.markerStoreSet },
+}));
+vi.mock('#/modules/Automation/useCases', () => ({
+    deleteAutomationTimeRange: mocks.deleteAutomationTimeRange,
+}));
+vi.mock('#/modules/Transport/useCases', () => ({
+    deleteTimelineMapsTimeRange: mocks.deleteTimelineMapsTimeRange,
 }));
 
 describe('deleteTime', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        setTimeOperationDependencies({
+            shiftTimelineMapsAfterBeat: vi.fn(),
+            deleteTimelineMapsTimeRange: mocks.deleteTimelineMapsTimeRange,
+        });
+    });
 
     it('does nothing with no state', () => {
         mocks.getTrackState.mockReturnValue(null);
         expect(() => deleteTime(0, 4)).not.toThrow();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.deleteAutomationTimeRange).not.toHaveBeenCalled();
+        expect(mocks.deleteTimelineMapsTimeRange).not.toHaveBeenCalled();
     });
 
     it('processes time deletion with empty tracks', () => {
@@ -43,11 +58,28 @@ describe('deleteTime', () => {
             ],
             selectedTrackId: 't1',
         } as never);
-        expect(() => deleteTime(2, 6)).not.toThrow();
+        deleteTime(2, 6);
+
+        expect(mocks.setTrackState).toHaveBeenCalledWith({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 2 },
+                        { id: 'c2', startBeat: 2, endBeat: 4 },
+                    ],
+                },
+            ],
+            selectedTrackId: 't1',
+        });
+        expect(mocks.deleteAutomationTimeRange).toHaveBeenCalledWith({ startBeat: 2, endBeat: 6 });
+        expect(mocks.deleteTimelineMapsTimeRange).toHaveBeenCalledWith({ startBeat: 2, endBeat: 6 });
     });
 
     it('handles zero-length deletion', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null } as never);
-        expect(() => deleteTime(4, 4)).not.toThrow();
+        deleteTime(4, 4);
+        expect(mocks.deleteAutomationTimeRange).toHaveBeenCalledWith({ startBeat: 4, endBeat: 4 });
+        expect(mocks.deleteTimelineMapsTimeRange).toHaveBeenCalledWith({ startBeat: 4, endBeat: 4 });
     });
 });

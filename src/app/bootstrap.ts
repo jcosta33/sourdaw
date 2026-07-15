@@ -93,6 +93,7 @@ import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/us
 import {
     getTransportHandlers,
     getTransportState,
+    deleteTimelineMapsTimeRange,
     setSetlistEventBus,
     setStopPlaybackCallback,
     shiftTimelineMapsAfterBeat,
@@ -135,7 +136,7 @@ setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
-setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
+setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 window.addEventListener('beforeunload', () => {
