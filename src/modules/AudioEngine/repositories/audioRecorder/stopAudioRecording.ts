@@ -9,6 +9,10 @@ export function stopAudioRecording(): Promise<void> {
     recordingLifecycleState.startGeneration++;
     const stoppedTrackIds = new Set(activeSessions.keys());
     for (const session of activeSessions.values()) {
+        if (session.status === 'stopping') {
+            continue;
+        }
+        session.status = 'stopping';
         session.recordingNode?.port.postMessage({ type: 'stop' });
         session.recordingWorker?.postMessage({ type: 'stop' });
         cleanupNodesForRecordingSession(session);

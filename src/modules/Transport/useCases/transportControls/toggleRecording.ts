@@ -5,6 +5,7 @@ import {
     getAudioContext,
     scheduleClick,
     startAudioRecording,
+    stopAudioRecording,
     getCompensationDelay,
     cacheAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
@@ -20,47 +21,65 @@ import { setCountInTimerId } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
-function beginActualRecording(): void {
-    const clips = startRecording();
-    updateTransportState({ isRecording: true });
-
+async function beginActualRecording(): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
-
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
-    for (const track of armedTracks) {
-        if (track.kind === 'audio') {
-            const trackLatencySec = getCompensationDelay(track.id);
-            const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
+    const audioTracks = armedTracks.filter((track) => track.kind === 'audio');
+    let clips: ReturnType<typeof startRecording> = [];
 
+    const recordingStarts = audioTracks.map((track) => {
+        const trackLatencySec = getCompensationDelay(track.id);
+        const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
+
+        return startAudioRecording(track.id, (buffer) => {
             const recClip = clips.find((context) => context.trackId === track.id);
-            void startAudioRecording(track.id, (buffer) => {
+            if (recClip) {
                 const bufferId = `rec-${crypto.randomUUID()}`;
                 cacheAudioBuffer({ buffer, bufferId });
 
-                if (recClip) {
-                    const transport = getTransportState();
-                    const bpm = transport?.tempo ?? 120;
+                const transport = getTransportState();
+                const bpm = transport?.tempo ?? 120;
+                const offsetBeats = totalLatencySec * (bpm / 60);
+                const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
+                const durationBeats = buffer.duration * (bpm / 60);
+                const exactEndBeat = newStartBeat + durationBeats;
 
-                    const offsetBeats = totalLatencySec * (bpm / 60);
-                    const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
-                    const durationBeats = buffer.duration * (bpm / 60);
-                    const exactEndBeat = newStartBeat + durationBeats;
+                void Promise.resolve().then(() => {
+                    updateClip(recClip.id, (context) => ({
+                        ...context,
+                        audioBufferId: bufferId,
+                        startBeat: newStartBeat,
+                        endBeat: exactEndBeat,
+                    }));
+                    return null;
+                });
+            }
+        });
+    });
 
-                    // Update in one go
-                    void Promise.resolve().then(() => {
-                        updateClip(recClip.id, (context) => ({
-                            ...context,
-                            audioBufferId: bufferId,
-                            startBeat: newStartBeat,
-                            endBeat: exactEndBeat,
-                        }));
-                        return null;
-                    });
-                }
-            });
+    if (recordingStarts.length > 0) {
+        const started = await Promise.all(recordingStarts);
+        if (started.some((didStart) => !didStart)) {
+            await stopAudioRecording();
+            notifyUser('Unable to start recording. Check the selected audio input.', 'error');
+            return false;
         }
     }
+
+    clips = startRecording();
+    updateTransportState({ isRecording: true });
+    return true;
+}
+
+function beginRecordingAndMaybePlayback(): void {
+    void beginActualRecording().then((started) => {
+        const current = getTransportState();
+        if (started && current && !current.isPlaying) {
+            startPlayback();
+        }
+        return null;
+    });
 }
 
 export function toggleRecording(): void {
@@ -70,7 +89,7 @@ export function toggleRecording(): void {
     }
 
     if (state.isRecording) {
-        stopActiveRecording();
+        void stopActiveRecording();
         return;
     }
 
@@ -78,10 +97,7 @@ export function toggleRecording(): void {
         // Punch-in: start recording immediately and begin playback.
         // The punch-in/out points are enforced by the scheduler, which
         // only writes audio between the in/out markers.
-        beginActualRecording();
-        if (!state.isPlaying) {
-            startPlayback();
-        }
+        beginRecordingAndMaybePlayback();
         return;
     }
 
@@ -117,19 +133,11 @@ export function toggleRecording(): void {
 
         const timerId = setTimeout(() => {
             setCountInTimerId(null);
-            beginActualRecording();
-            const current = getTransportState();
-            if (current && !current.isPlaying) {
-                startPlayback();
-            }
+            beginRecordingAndMaybePlayback();
         }, countInDurationSec * 1000);
         setCountInTimerId(timerId);
         return;
     }
 
-    beginActualRecording();
-
-    if (!state.isPlaying) {
-        startPlayback();
-    }
+    beginRecordingAndMaybePlayback();
 }

@@ -15,6 +15,7 @@ export type RecordingSession = {
     sourceNode: MediaStreamAudioSourceNode | null;
     recordingNode: AudioWorkletNode | null;
     recordingWorker: Worker | null;
+    status: 'starting' | 'recording' | 'stopping';
     onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
     stopFlushTimer: ReturnType<typeof setTimeout> | null;
 };

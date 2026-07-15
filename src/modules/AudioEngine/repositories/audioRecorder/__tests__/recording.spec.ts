@@ -147,4 +147,20 @@ describe('startAudioRecording', () => {
         expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
         expect(media_track_stop).toHaveBeenCalledOnce();
     });
+
+    it('waits for a stopping session before restarting the same track', async () => {
+        await expect(startAudioRecording('track-restart', vi.fn())).resolves.toBe(true);
+
+        const stopping = stopAudioRecording();
+        const restarting = startAudioRecording('track-restart', vi.fn());
+        await Promise.resolve();
+
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        await stopping;
+
+        await expect(restarting).resolves.toBe(true);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    });
 });

@@ -27,6 +27,8 @@ type TestTrackState = {
     tracks: TestTrack[];
 };
 
+type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<boolean>;
+
 const mocks = vi.hoisted(() => ({
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     resumeEngine: vi.fn<() => Promise<void>>(),
@@ -38,8 +40,8 @@ const mocks = vi.hoisted(() => ({
     startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
     startPlayback: vi.fn<() => void>(),
     cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
-    startAudioRecording:
-        vi.fn<(trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<void> | void>(),
+    startAudioRecording: vi.fn<StartAudioRecording>(),
+    stopAudioRecording: vi.fn<() => Promise<void>>(),
     getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
     timeSignatureMapStore: { value: { changes: [] } as { changes: unknown[] } },
 }));
@@ -74,6 +76,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: mocks.scheduleClick,
     cacheAudioBuffer: mocks.cacheAudioBuffer,
     startAudioRecording: mocks.startAudioRecording,
+    stopAudioRecording: mocks.stopAudioRecording,
     getCompensationDelay: mocks.getCompensationDelay,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
@@ -85,6 +88,8 @@ describe('toggleRecording', () => {
         // resumeEngine returns Promise<void>; default to resolved so the `.catch`
         // chain in the count-in path has a thenable.
         mocks.resumeEngine.mockResolvedValue(undefined);
+        mocks.startAudioRecording.mockResolvedValue(true);
+        mocks.stopAudioRecording.mockResolvedValue(undefined);
         mocks.getAudioContext.mockReturnValue({ currentTime: 0, baseLatency: 0, outputLatency: 0 });
         mocks.timeSignatureMapStore.value = { changes: [] };
     });
@@ -192,6 +197,10 @@ describe('toggleRecording', () => {
 
         toggleRecording();
 
+        await vi.waitFor(() => {
+            expect(mocks.startRecording).toHaveBeenCalledOnce();
+        });
+
         const recording_callback = mocks.startAudioRecording.mock.calls[0]?.[1];
         if (!recording_callback) {
             throw new Error('Expected recording callback to be registered');
@@ -222,5 +231,28 @@ describe('toggleRecording', () => {
             startBeat: 10,
             endBeat: 14,
         });
+    });
+
+    it('does not create recording state when an audio recorder cannot start', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+
+        toggleRecording();
+
+        await vi.waitFor(() => {
+            expect(mocks.stopAudioRecording).toHaveBeenCalledOnce();
+        });
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
     });
 });

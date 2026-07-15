@@ -9,22 +9,19 @@ import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function stopPlayback(): Promise<void> {
+    // Runtime recording can still be flushing after transport state turns false,
+    // and this also cancels a pending count-in.
+    const recordingFlush = stopActiveRecording();
     const state = getTransportState();
     if (!state) {
-        return Promise.resolve();
+        return recordingFlush;
     }
-
-    let recordingFlush = Promise.resolve();
 
     // §8.7 / N5 — Spacebar stop used to flip `isRecording: false` directly,
     // which bypassed `stopAudioRecording` + `stopRecording`: the media
     // recorder kept capturing, the audio buffer never flushed, and the clip
     // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
-    if (state.isRecording) {
-        recordingFlush = stopActiveRecording();
-    }
-
     panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();

@@ -90,16 +90,34 @@ describe('stopPlayback', () => {
         expect(order).toEqual(['stopActiveRecording', 'stopPlayheadScheduler']);
     });
 
-    it('should not call stopActiveRecording when not recording', () => {
+    it('waits for recorder teardown even when transport is no longer recording', async () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
             isRecording: false,
         });
+        let finishRecordingStop: (() => void) | undefined;
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingStop = resolve;
+            })
+        );
+        let settled = false;
 
-        stopPlayback();
+        const stopping = stopPlayback().then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
 
-        expect(stopActiveRecording).not.toHaveBeenCalled();
+        expect(stopActiveRecording).toHaveBeenCalledOnce();
+        expect(settled).toBe(false);
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected recorder teardown to be pending');
+        }
+        finish();
+        await stopping;
+        expect(settled).toBe(true);
     });
 
     it('should jump playhead to loop start when a loop is defined', () => {
