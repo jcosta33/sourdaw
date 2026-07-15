@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     setSidechainRoutes: vi.fn(),
     grinderStoreSet: vi.fn(),
     grinderTelemetryStoreSet: vi.fn(),
+    arrangementStoreSet: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -52,6 +53,14 @@ vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { set: mocks.timeSignatureMapStoreSet },
 }));
 
+vi.mock('../../../../stores/arrangementStore', () => ({
+    arrangementStore: { set: mocks.arrangementStoreSet },
+    defaultArrangementStoreState: {
+        arrangements: [],
+        activeArrangementId: 'default-arrangement',
+    },
+}));
+
 import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 describe('resetModuleStoresToDefault', () => {
@@ -65,6 +74,7 @@ describe('resetModuleStoresToDefault', () => {
         mocks.setSidechainRoutes.mockClear();
         mocks.grinderStoreSet.mockClear();
         mocks.grinderTelemetryStoreSet.mockClear();
+        mocks.arrangementStoreSet.mockClear();
     });
 
     it('should reset arrangement, transport, automation, MIDI, and routing stores', () => {
@@ -81,6 +91,10 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+        expect(mocks.arrangementStoreSet).toHaveBeenCalledWith({
+            arrangements: [],
+            activeArrangementId: 'default-arrangement',
+        });
     });
 
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {

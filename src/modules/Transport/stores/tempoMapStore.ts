@@ -92,7 +92,7 @@ function is_exact_tempo_map_state(value: unknown): value is TempoMapStoreState {
     );
 }
 
-function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
+export function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
     if (is_exact_tempo_map_state(value)) {
         return value;
     }

@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 
-import { type ActiveNoteData } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -16,10 +16,22 @@ export const handleWebMidiNoteOn = inject({
     handleWebMidiNoteOff,
 })(
     ({ handleWebMidiNoteOff, ...deps }) =>
-        function handleWebMidiNoteOn(channel: number, note: number, velocity: number): void {
+        async function handleWebMidiNoteOn(channel: number, note: number, velocity: number): Promise<void> {
             if (velocity === 0) {
-                handleWebMidiNoteOff(channel, note, 0);
+                await handleWebMidiNoteOff(channel, note, 0);
                 return;
+            }
+
+            const noteKey = createWebMidiNoteKey(channel, note);
+            const mpeEnabled = getMpeEnabled();
+            const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
+            const noteToRelease =
+                activeNotes.get(noteKey) ??
+                (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
+            if (noteToRelease) {
+                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0);
+            } else if (channelNoteKey !== undefined) {
+                channelToNote.delete(channel);
             }
 
             deps.stepRecordNoteOn(note, velocity);
@@ -38,11 +50,14 @@ export const handleWebMidiNoteOn = inject({
                 startTime: now,
                 startBeat: transport ? deps.playheadPositionRef.current : 0,
                 channel,
+                note,
+                trackId: targetTrackId,
+                instrumentTrackId: targetTrackId,
             };
-            activeNotes.set(note, noteData);
+            activeNotes.set(noteKey, noteData);
 
-            if (getMpeEnabled() && channel >= 1) {
-                channelToNote.set(channel, note);
+            if (mpeEnabled && channel >= 1) {
+                channelToNote.set(channel, noteKey);
             }
 
             const trackState = deps.getTrackStoreState();
@@ -73,19 +88,23 @@ export const handleWebMidiNoteOn = inject({
                 }
             }
 
+            noteData.instrumentTrackId = instrumentTrackId;
+
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
             const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
             if (hasYeast) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
-                const processedEvents = deps.processRealtimeMidiInput(
+                const processedEvents = await deps.processRealtimeMidiInput({
+                    context: engine.context,
+                    trackId: instrumentTrackId,
                     note,
                     velocity,
                     channel,
-                    true,
+                    isNoteOn: true,
                     sampleTime,
-                    engine.context.sampleRate
-                );
+                    sampleRate: engine.context.sampleRate,
+                });
                 for (const event of processedEvents) {
                     if (event.kind.type === 'noteOn') {
                         const eventNote = event.kind.note;
@@ -186,7 +205,7 @@ export const handleWebMidiNoteOn = inject({
                     }
                     if (pad >= 0 && pad < 16) {
                         deviceNode.toasterControls.noteOn(pad, velocity, pitchNote);
-                        noteData.toasterDeviceId = toasterDevice.id;
+                        noteData.toasterRoute = { deviceId: toasterDevice.id, pad };
                     }
                 }
                 return;

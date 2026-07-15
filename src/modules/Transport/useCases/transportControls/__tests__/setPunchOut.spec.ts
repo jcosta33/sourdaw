@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { defaultTransportState } from '../../../models/TransportState';
+import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { setPunchOut } from '../setPunchOut';
@@ -11,6 +11,24 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
+
+type PunchRegion = Pick<TransportState, 'punchInBeat' | 'punchOutBeat'>;
+
+function get_updated_punch_region(calls: Array<[Partial<TransportState>]>, current: PunchRegion): PunchRegion {
+    const patch = calls[0]?.[0];
+    if (!patch) {
+        throw new Error('Expected a transport update');
+    }
+
+    return { ...current, ...patch };
+}
+
+function expect_valid_punch_region(region: PunchRegion): void {
+    expect(Number.isFinite(region.punchInBeat)).toBe(true);
+    expect(Number.isFinite(region.punchOutBeat)).toBe(true);
+    expect(region.punchInBeat).toBeGreaterThanOrEqual(0);
+    expect(region.punchOutBeat).toBeGreaterThan(region.punchInBeat);
+}
 
 describe('setPunchOut', () => {
     beforeEach(() => {
@@ -37,8 +55,8 @@ describe('setPunchOut', () => {
 
         setPunchOut(-8);
 
-        // Out clamps to 0; since 0 <= in (4), the in-point is pulled back so in < out holds.
-        expect(update).toHaveBeenCalledWith({ punchOutBeat: 0, punchInBeat: 0 });
+        // No non-negative in-point can be below zero, so use the smallest positive beat.
+        expect(update).toHaveBeenCalledWith({ punchOutBeat: Number.MIN_VALUE, punchInBeat: 0 });
     });
 
     it('should pull the in-point back when the out-point would invert the region', () => {
@@ -61,6 +79,47 @@ describe('setPunchOut', () => {
         setPunchOut(8);
 
         expect(update).toHaveBeenCalledWith({ punchOutBeat: 8, punchInBeat: 7 });
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+        'should reject a non-finite out-point without a repository write (%s)',
+        (beat) => {
+            const update = vi.fn<typeof updateTransportState>();
+            const current = { ...defaultTransportState, punchInBeat: 4 };
+            vi.mocked(getTransportState).mockReturnValue(current);
+            vi.mocked(updateTransportState).mockImplementation(update);
+
+            setPunchOut(beat);
+
+            expect(update).not.toHaveBeenCalled();
+        }
+    );
+
+    it('should preserve the largest finite out-point without collapsing the in-point', () => {
+        const update = vi.fn<typeof updateTransportState>();
+        const current = { ...defaultTransportState, punchInBeat: 4 };
+        vi.mocked(getTransportState).mockReturnValue(current);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setPunchOut(Number.MAX_VALUE);
+
+        const next = get_updated_punch_region(update.mock.calls, current);
+        expect_valid_punch_region(next);
+        expect(next.punchOutBeat).toBe(Number.MAX_VALUE);
+    });
+
+    it('should repair a large finite out-point when subtracting one collapses equality', () => {
+        const large_beat = Number.MAX_VALUE / 2;
+        const update = vi.fn<typeof updateTransportState>();
+        const current = { ...defaultTransportState, punchInBeat: large_beat, punchOutBeat: Number.MAX_VALUE };
+        vi.mocked(getTransportState).mockReturnValue(current);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        setPunchOut(large_beat);
+
+        const next = get_updated_punch_region(update.mock.calls, current);
+        expect_valid_punch_region(next);
+        expect(next.punchOutBeat).toBe(large_beat);
     });
 
     it('should not update when transport state is missing', () => {

@@ -1,9 +1,11 @@
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
+import { MAX_CRDT_ROOT_LINEAGE_LENGTH } from '../../models/CrdtRootLineage';
+import { MAIN_BRANCH_DOC_ID, MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
 
 const BRANCH_STORAGE_KEY = 'sourdaw-branches';
+const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
 
 const validMainBranch = {
     branchId: MAIN_BRANCH_ID,
@@ -88,6 +90,15 @@ describe('branchStore', () => {
             await expect(loadBranchStateFromStoredValue(validState)).resolves.toEqual(validState);
         });
 
+        it('should preserve a main branch migrated to its independent backing document', async () => {
+            const migratedState = {
+                branches: [{ ...validMainBranch, rootDocId: MAIN_BRANCH_DOC_ID }, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+
+            await expect(loadBranchStateFromStoredValue(migratedState)).resolves.toEqual(migratedState);
+        });
+
         it('should drop invalid branch records while preserving valid branch metadata', async () => {
             const state = await loadBranchStateFromStoredValue({
                 branches: [
@@ -138,7 +149,33 @@ describe('branchStore', () => {
             });
         });
 
-        it('should reject a main branch record that is not backed by the root slot', async () => {
+        it('should drop malformed and oversized branch lineage tokens', async () => {
+            const invalidCharacters = {
+                ...validFeatureBranch,
+                branchId: 'feature/unsafe',
+            };
+            const oversized = {
+                ...validFeatureBranch,
+                branchId: 'x'.repeat(MAX_CRDT_ROOT_LINEAGE_LENGTH + 1),
+            };
+            const invalidSource = {
+                ...validFeatureBranch,
+                branchId: 'valid-feature',
+                sourceBranchId: 'main/unsafe',
+            };
+
+            await expect(
+                loadBranchStateFromStoredValue({
+                    branches: [validMainBranch, invalidCharacters, oversized, invalidSource, validFeatureBranch],
+                    activeBranchId: validFeatureBranch.branchId,
+                })
+            ).resolves.toEqual({
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            });
+        });
+
+        it('should reject a main branch record with an unknown backing document or source', async () => {
             const nonCanonicalMainBranch = {
                 ...validMainBranch,
                 rootDocId: validFeatureBranch.rootDocId,
@@ -197,6 +234,32 @@ describe('branchStore', () => {
             const state = await loadBranchStateFromRawStoredValue('{not-json');
 
             expectCanonicalSingleMainBranchState(state);
+        });
+
+        it('should recover the durable pre-session branch state during module initialization', async () => {
+            const remoteState = {
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+            const localState = {
+                branches: [validMainBranch],
+                activeBranchId: MAIN_BRANCH_ID,
+            } satisfies BranchStoreState;
+
+            vi.resetModules();
+            window.localStorage.clear();
+            window.localStorage.setItem(BRANCH_STORAGE_KEY, stringify(remoteState));
+            window.localStorage.setItem(BRANCH_SESSION_BACKUP_STORAGE_KEY, stringify(localState));
+
+            const module = await import('../branchStore');
+
+            expect(module.branchStore.value).toEqual(localState);
+            expect(window.localStorage.getItem(BRANCH_SESSION_BACKUP_STORAGE_KEY)).toBeNull();
+            const persistedState = window.localStorage.getItem(BRANCH_STORAGE_KEY);
+            if (persistedState === null) {
+                throw new Error('Expected recovered branch state to persist');
+            }
+            expect(parse(persistedState)).toEqual(localState);
         });
     });
 });

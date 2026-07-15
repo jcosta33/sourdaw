@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AppAction } from '#/modules/Command/useCases';
+
 import { commitDsoEditPlan } from '../commitDsoEditPlan';
+
+type RecordedUndoEntry = {
+    action: AppAction;
+    inverseAction: AppAction | null;
+    label: string;
+    source?: 'manual' | 'prompt' | 'voice' | 'ai';
+    groupId?: string;
+    groupLabel?: string;
+};
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: {
@@ -12,11 +23,15 @@ const mocks = vi.hoisted(() => ({
     transportStoreValue: { value: { isLooping: false } },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     generateGroupId: vi.fn(() => ({ groupId: 'group-1', groupLabel: 'delete drums' })),
-    transactSnapshot: vi.fn(async (callback: () => Promise<void>) => {
-        await callback();
-        return { before: new Map([['before', 'snapshot']]), after: new Map([['after', 'snapshot']]) };
+    snapshotTransaction: {},
+    transactSnapshot: vi.fn(async (callback: (snapshotTransaction: object) => Promise<void>) => {
+        await callback(mocks.snapshotTransaction);
+        return {
+            before: new Map([['before', { state: 'absent' as const }]]),
+            after: new Map([['after', { state: 'absent' as const }]]),
+        };
     }),
-    commitActionUndoEntry: vi.fn(),
+    commitActionUndoEntry: vi.fn<(input: RecordedUndoEntry) => void>(),
     pushAiActionGroup: vi.fn(),
     updateChatMessage: vi.fn(),
     logEdit: vi.fn(),
@@ -80,9 +95,12 @@ describe('commitDsoEditPlan', () => {
         mocks.transportStoreValue.value = { isLooping: false };
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
-        mocks.transactSnapshot.mockImplementation(async (callback: () => Promise<void>) => {
-            await callback();
-            return { before: new Map([['before', 'snapshot']]), after: new Map([['after', 'snapshot']]) };
+        mocks.transactSnapshot.mockImplementation(async (callback: (snapshotTransaction: object) => Promise<void>) => {
+            await callback(mocks.snapshotTransaction);
+            return {
+                before: new Map([['before', { state: 'absent' as const }]]),
+                after: new Map([['after', { state: 'absent' as const }]]),
+            };
         });
     });
 
@@ -103,18 +121,21 @@ describe('commitDsoEditPlan', () => {
         expect(mocks.transactSnapshot).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'removeTrack', payload: { trackId: 'track-1' } },
-            expect.objectContaining({ source: 'ai', skipUndo: true })
-        );
-        expect(mocks.commitActionUndoEntry).toHaveBeenCalledWith(
             expect.objectContaining({
-                label: 'AI: remove drums',
-                action: expect.objectContaining({ type: 'restoreDsoSnapshot' }),
-                inverseAction: expect.objectContaining({ type: 'restoreDsoSnapshot' }),
                 source: 'ai',
-                groupId: 'group-1',
-                groupLabel: 'delete drums',
+                skipUndo: true,
+                snapshotTransaction: mocks.snapshotTransaction,
             })
         );
+        const recordedUndoEntry = mocks.commitActionUndoEntry.mock.calls[0]?.[0];
+        expect(recordedUndoEntry).toMatchObject({
+            label: 'AI: remove drums',
+            source: 'ai',
+            groupId: 'group-1',
+            groupLabel: 'delete drums',
+        });
+        expect(recordedUndoEntry?.action.type).toBe('restoreDsoSnapshot');
+        expect(recordedUndoEntry?.inverseAction?.type).toBe('restoreDsoSnapshot');
         expect(mocks.pushAiActionGroup).toHaveBeenCalledWith(
             expect.objectContaining({
                 prompt: 'delete drums',

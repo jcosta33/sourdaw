@@ -12,6 +12,8 @@ export type MutateCrdtDocInput<DocShape> = {
      * the storage adapter to annotate changes with semantic context.
      */
     message?: string;
+    /** Opaque snapshot owner supplied by the repository transaction boundary. */
+    snapshotTransaction?: object;
 };
 
 /**
@@ -21,5 +23,5 @@ export type MutateCrdtDocInput<DocShape> = {
  * code applies incremental changes to local documents.
  */
 export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateCrdtDocInput<DocShape>): void {
-    automergeRepository.changeDoc<DocShape>(input.id, input.changeFn, input.message);
+    automergeRepository.changeDoc<DocShape>(input.id, input.changeFn, input.message, input.snapshotTransaction);
 }

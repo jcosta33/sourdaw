@@ -16,8 +16,11 @@ import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
+import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
+
 export function resetModuleStoresToDefault(): void {
     resetArrangementStoresForProject();
+    arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });

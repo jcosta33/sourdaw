@@ -5,12 +5,16 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
+import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
-export function stopPlayback(): void {
+export function stopPlayback(): Promise<void> {
+    // Runtime recording can still be flushing after transport state turns false,
+    // and this also cancels a pending count-in.
+    const recordingFlush = stopActiveRecording();
     const state = getTransportState();
     if (!state) {
-        return;
+        return recordingFlush;
     }
 
     // §8.7 / N5 — Spacebar stop used to flip `isRecording: false` directly,
@@ -18,10 +22,7 @@ export function stopPlayback(): void {
     // recorder kept capturing, the audio buffer never flushed, and the clip
     // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
-    if (state.isRecording) {
-        stopActiveRecording();
-    }
-
+    panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();
@@ -38,4 +39,5 @@ export function stopPlayback(): void {
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;
+    return recordingFlush;
 }

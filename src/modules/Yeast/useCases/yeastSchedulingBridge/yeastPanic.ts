@@ -1,7 +1,5 @@
-import { type MidiEvent } from '../../models/MidiEvent';
-import { getYeastRack } from '../../stores/yeastStore';
+import { sendYeastRuntimeAllNotesOff } from '../../engine/yeastRuntime';
 
-export function yeastPanic(sampleTime: number): MidiEvent[] {
-    const rack = getYeastRack();
-    return rack.allNotesOff(sampleTime);
+export function yeastPanic(sampleTime: number): Promise<void> {
+    return sendYeastRuntimeAllNotesOff(sampleTime);
 }

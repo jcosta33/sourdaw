@@ -29,7 +29,7 @@ import { disposeAudioClipScheduling } from './scheduling/disposeAudioClipSchedul
 import { resetMetronomeBeat } from './scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { scheduleMetronome } from './scheduling/scheduleMetronome';
-import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
+import { scheduleMidiNotes, type SchedulerCancellation } from './scheduling/scheduleMidiNotes';
 
 export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
 
@@ -66,7 +66,7 @@ const schedulerSession = {
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
-    // Re-entrancy guard. `tick` is async and awaits the Yeast worklet round-trip
+    // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
     // (`scheduleGrainMs`, default 10ms), the next worker message would start a
     // second `tick` while the first is still suspended, and both would mutate the
@@ -74,6 +74,10 @@ const schedulerSession = {
     // Sets, playheadPositionRef) concurrently. The flag makes overlapping worker
     // ticks no-op until the in-flight tick resolves.
     tickInFlight: false,
+    // Every start/stop/dispose creates a new scheduler generation. A suspended
+    // async tick may still resume after its worker is terminated, so post-await
+    // work must prove it belongs to the live generation before it schedules.
+    generation: 0,
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
@@ -119,6 +123,14 @@ export function startPlayheadScheduler(): void {
         return;
     }
 
+    schedulerSession.generation += 1;
+    const schedulerGeneration = schedulerSession.generation;
+    const cancellation: SchedulerCancellation = {
+        generation: schedulerGeneration,
+        isCurrent: () =>
+            schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+    };
+
     startAutomationRecording();
 
     const ctx = getAudioContext();
@@ -133,7 +145,7 @@ export function startPlayheadScheduler(): void {
     const grainMs = state.scheduleGrainMs;
 
     async function tick(): Promise<void> {
-        // A prior tick is still awaiting its scheduling work (the Yeast worklet
+        // A prior tick is still awaiting its scheduling work (the Yeast Worker
         // round-trip in particular). Starting now would let two ticks mutate the
         // shared session mutables across one another's awaits. Skip this worker
         // tick; the in-flight tick already advances the playhead and the next
@@ -145,11 +157,16 @@ export function startPlayheadScheduler(): void {
         try {
             await runTick();
         } finally {
-            schedulerSession.tickInFlight = false;
+            if (schedulerSession.generation === schedulerGeneration) {
+                schedulerSession.tickInFlight = false;
+            }
         }
     }
 
     async function runTick(): Promise<void> {
+        if (!cancellation.isCurrent()) {
+            return;
+        }
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -314,8 +331,12 @@ export function startPlayheadScheduler(): void {
             schedulerSession.lastScheduledBeat,
             schedulerSession.activeAudioSources,
             current,
-            currentTempo
+            currentTempo,
+            cancellation
         );
+        if (!cancellation.isCurrent()) {
+            return;
+        }
         scheduleAudioClips(
             schedulerSession.lastScheduledBeat,
             scheduleUpTo,
@@ -349,6 +370,7 @@ export function startPlayheadScheduler(): void {
 }
 
 export function stopPlayheadScheduler(): void {
+    schedulerSession.generation += 1;
     stopAutomationRecording();
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });
@@ -384,6 +406,7 @@ export function stopPlayheadScheduler(): void {
  * starts clean.
  */
 export function disposePlayheadScheduler(): void {
+    schedulerSession.generation += 1;
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });
         schedulerSession.worker.terminate();

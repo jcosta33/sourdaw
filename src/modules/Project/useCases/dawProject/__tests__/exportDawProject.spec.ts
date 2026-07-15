@@ -9,6 +9,7 @@ type ExportClip = {
 };
 
 type ExportTrack = {
+    alternatives: [];
     clips: ExportClip[];
 };
 
@@ -83,7 +84,11 @@ type GetCachedAudioBufferInput = {
 };
 
 type SerializeProjectXmlInput = {
-    project: unknown;
+    project: {
+        arrangement: {
+            tracks: Array<{ clips: Array<{ bufferId?: string }> }>;
+        };
+    };
     audioPathByBufferId: Map<string, string>;
 };
 
@@ -201,6 +206,7 @@ function reset_store_values(): void {
         selectedTrackId: null,
         tracks: [
             {
+                alternatives: [],
                 clips: [{ audioBufferId: 'drum loop/1?' }, { audioBufferId: 'missing:buffer' }],
             },
         ],
@@ -237,7 +243,15 @@ function reset_store_values(): void {
     };
     mocks.arrangement_store.value = {
         activeArrangementId: 'arrangement-1',
-        arrangements: [{ id: 'arrangement-1', name: 'Arrangement', trackIds: ['track-1'] }],
+        arrangements: [
+            {
+                id: 'arrangement-1',
+                name: 'Arrangement',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
     };
 }
 
@@ -272,6 +286,9 @@ describe('exportDawProject', () => {
             expect.objectContaining({
                 audioPathByBufferId: new Map([['drum loop/1?', 'audio/drum_loop_1_.wav']]),
             })
+        );
+        expect(mocks.serialize_project_xml.mock.calls[0]?.[0].project.arrangement.tracks[0]?.clips[0]?.bufferId).toBe(
+            'drum loop/1?'
         );
         expect(mocks.build_daw_project_zip).toHaveBeenCalledWith({
             audioFiles: new Map([['audio/drum_loop_1_.wav', new Uint8Array([1, 2, 3])]]),

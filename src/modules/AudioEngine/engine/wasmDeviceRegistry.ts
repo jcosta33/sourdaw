@@ -527,50 +527,64 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 const readyData = await result.ready;
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
-
-                result.onLatencyChanged((latency) => {
-                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
-                });
-                result.onMeterData((data) => {
-                    getAudioDeviceRuntimeSink().updateProofMeters(deviceId, data);
-                });
-                getAudioDeviceRuntimeSink().registerProofDevice({
-                    deviceId,
-                    bridge: {
-                        setParam: result.setParam,
-                        reorderModules: result.reorderModules,
-                        resetIntegrated: result.resetIntegrated,
-                    },
-                });
-                onLoaded({
-                    deviceId,
-                    type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
-                    controller: {
-                        setParam: result.setParam,
-                        setBypass: result.setBypass,
-                        destroy: () => {
-                            result.destroy();
-                            clearReportedLatency(deviceId);
-                            try {
-                                getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
-                            } catch {
-                                // Intentionally empty: the device may already be
-                                // unregistered from the Proof store; teardown proceeds.
-                            }
-                        },
-                    },
-                    nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
-                });
+                const runtimeSink = getAudioDeviceRuntimeSink();
                 try {
-                    getAudioDeviceRuntimeSink().syncProofPatch(deviceId);
-                } finally {
-                    // Queued params are flat project truth or direct param writes; replay them last so they win.
+                    runtimeSink.registerProofDevice({
+                        deviceId,
+                        bridge: {
+                            setParam: result.setParam,
+                            reorderModules: result.reorderModules,
+                            resetIntegrated: result.resetIntegrated,
+                        },
+                    });
                     for (const [name, value] of pendingParams) {
                         result.setParam(name, value);
                     }
+                    // Proof owns restoration and validation. Its complete patch
+                    // sync must be the final writer over raw pre-ready values.
+                    runtimeSink.syncProofPatch(deviceId);
+
+                    result.onLatencyChanged((latency) => {
+                        reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                    });
+                    result.onMeterData((data) => {
+                        runtimeSink.updateProofMeters(deviceId, data);
+                    });
+                    onLoaded({
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        controller: {
+                            setParam: result.setParam,
+                            setBypass: result.setBypass,
+                            destroy: () => {
+                                result.destroy();
+                                clearReportedLatency(deviceId);
+                                try {
+                                    getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
+                                } catch {
+                                    // Intentionally empty: the device may already be
+                                    // unregistered from the Proof store; teardown proceeds.
+                                }
+                            },
+                        },
+                        nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
+                    });
+                } catch (error) {
+                    try {
+                        runtimeSink.unregisterProofDevice(deviceId);
+                    } catch {
+                        // Cleanup is best-effort when registration itself failed.
+                    }
+                    clearReportedLatency(deviceId);
+                    try {
+                        result.destroy();
+                    } catch (cleanupError) {
+                        logger.warn(`[WebAudioEngine] ${deviceType} cleanup failed: ${String(cleanupError)}`);
+                    }
+                    throw error;
                 }
                 return;
             })

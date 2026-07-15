@@ -2,6 +2,9 @@ import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { DEFAULT_CRDT_ROOT_LINEAGE, parseCrdtRootLineage } from '../models/CrdtRootLineage';
+
+import { branchSessionBackupStorage } from './branchSessionBackupStorage';
 
 export type BranchRecord = {
     branchId: string;
@@ -18,7 +21,8 @@ export type BranchStoreState = {
     activeBranchId: string;
 };
 
-export const MAIN_BRANCH_ID = 'main';
+export const MAIN_BRANCH_ID = DEFAULT_CRDT_ROOT_LINEAGE;
+export const MAIN_BRANCH_DOC_ID = `branch_${MAIN_BRANCH_ID}`;
 
 type UnknownRecord = {
     [key: string]: unknown;
@@ -51,7 +55,6 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
     }
 
     if (
-        typeof value.branchId !== 'string' ||
         typeof value.name !== 'string' ||
         typeof value.rootDocId !== 'string' ||
         (value.sourceBranchId !== null && typeof value.sourceBranchId !== 'string') ||
@@ -63,8 +66,17 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
         return null;
     }
 
-    if (value.branchId === MAIN_BRANCH_ID && (value.rootDocId !== DOC_PREFIX_ROOT || value.sourceBranchId !== null)) {
+    const branchId = parseCrdtRootLineage(value.branchId);
+    const sourceBranchId = value.sourceBranchId === null ? null : parseCrdtRootLineage(value.sourceBranchId);
+    if (!branchId || (value.sourceBranchId !== null && !sourceBranchId)) {
         return null;
+    }
+
+    if (branchId === MAIN_BRANCH_ID) {
+        const hasValidMainBacking = value.rootDocId === DOC_PREFIX_ROOT || value.rootDocId === MAIN_BRANCH_DOC_ID;
+        if (!hasValidMainBacking || value.sourceBranchId !== null) {
+            return null;
+        }
     }
 
     const createdFromHeads: string[] = [];
@@ -76,10 +88,10 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
     }
 
     return {
-        branchId: value.branchId,
+        branchId,
         name: value.name,
         rootDocId: value.rootDocId,
-        sourceBranchId: value.sourceBranchId,
+        sourceBranchId,
         createdAt: value.createdAt,
         createdFromHeads,
         note: value.note,
@@ -103,7 +115,7 @@ function validateStoredBranchRecords(values: unknown[]): BranchRecord[] {
     return branches;
 }
 
-function validateStoredBranchStoreState(value: unknown): BranchStoreState {
+export function validateStoredBranchStoreState(value: unknown): BranchStoreState {
     if (!isRecord(value)) {
         return createDefaultBranchStoreState();
     }
@@ -125,8 +137,20 @@ function validateStoredBranchStoreState(value: unknown): BranchStoreState {
     return { branches, activeBranchId };
 }
 
+export function restoreBranchStateFromSessionBackup(): void {
+    const backup = branchSessionBackupStorage.get();
+    if (backup === null) {
+        return;
+    }
+
+    branchStore.set(validateStoredBranchStoreState(backup));
+    branchSessionBackupStorage.clear();
+}
+
 export const branchStore = createStore<BranchStoreState>({
     storage: createLocalStorage<BranchStoreState>('sourdaw-branches'),
     initialData: createDefaultBranchStoreState(),
     sanitize: validateStoredBranchStoreState,
 });
+
+restoreBranchStateFromSessionBackup();

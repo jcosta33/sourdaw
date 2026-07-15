@@ -120,6 +120,9 @@ export type LocalStorageKey =
     // Stores project branch metadata (branch registry)
     | 'sourdaw-branches'
 
+    // Stores the pre-collaboration branch registry until session cleanup completes
+    | 'sourdaw-branch-session-backup'
+
     // Stores AI action history (undo groups, timestamps, prompts)
     | 'sourdaw-ai-history'
 

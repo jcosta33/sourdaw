@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MidiEvent } from '#/modules/Yeast/useCases';
+import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
+const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 
+type TestMidiEvent = {
+    timeSamples: number;
+    kind:
+        | { type: 'noteOn'; channel: number; note: number; velocity: number }
+        | { type: 'noteOff'; channel: number; note: number };
+};
+
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
-    getMpeEnabled: () => false,
+    getMpeEnabled: () => mpe_enabled.value,
 }));
 
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
@@ -34,7 +42,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         getTransportStoreValue: () => ({ isRecording: false }),
         playheadPositionRef: { current: 0 },
         stepRecordNoteOn: () => {},
-        processRealtimeMidiInput: () => [],
+        processRealtimeMidiInput: async () => [],
         getSynthParamsForTrack: () => ({ detune: 0, release: 0.3 }),
         scheduleNote: () => null,
         scheduleKitNote: () => null,
@@ -42,7 +50,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         getDrumKitDefByIndex: () => null,
         scheduleDrumKitNote: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
-        handleWebMidiNoteOff: () => {},
+        handleWebMidiNoteOff: async () => {},
         ...overrides,
     } as unknown as HandleWebMidiNoteOnDependencies;
 }
@@ -53,9 +61,10 @@ describe('handleWebMidiNoteOn', () => {
         channelToNote.clear();
         ensure_track_strip.mockReset();
         target_track_id.value = 'track-1';
+        mpe_enabled.value = false;
     });
 
-    it('should emit Yeast-routed Grand Boule note-on events with the device id', () => {
+    it('should emit Yeast-routed Grand Boule note-on events with the device id', async () => {
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const grand_boule_note_on = vi.fn<void, [number, number]>();
         const fn = handleWebMidiNoteOn._factory(
@@ -72,7 +81,7 @@ describe('handleWebMidiNoteOn', () => {
                     ],
                     selectedTrackId: 'track-1',
                 }),
-                processRealtimeMidiInput: (): MidiEvent[] => [
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
                     { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
                 ],
                 eventBus: {
@@ -91,12 +100,115 @@ describe('handleWebMidiNoteOn', () => {
             ],
         });
 
-        fn(0, 60, 100);
+        await fn(0, 60, 100);
 
         expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127);
         expect(emitted).toContainEqual({
             type: 'midi.noteOn',
             payload: { deviceId: 'gb-1', midiNote: 67, velocity: 100 / 127 },
         });
+    });
+
+    it('should await the Yeast runtime before routing transformed note-ons', async () => {
+        const grand_boule_note_on = vi.fn<void, [number, number]>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: vi.fn(async () => [
+                    { timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 67, velocity: 100 } },
+                ]),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOn: grand_boule_note_on } },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127);
+    });
+
+    it('releases an existing same-channel pitch before retriggering it', async () => {
+        const key = createWebMidiNoteKey(1, 60);
+        activeNotes.set(key, {
+            channel: 1,
+            note: 60,
+            trackId: 'track-old',
+            instrumentTrackId: 'track-old',
+            startTime: 1,
+            startBeat: 0,
+        });
+        const release = vi.fn(async (channel: number, note: number) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, note));
+        });
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                handleWebMidiNoteOff: release,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(1, 60, 100);
+
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(release).toHaveBeenCalledWith(1, 60, 0);
+        expect(activeNotes.get(key)).toEqual(expect.objectContaining({ trackId: 'track-1', startTime: 2 }));
+    });
+
+    it('retains same-pitch notes on separate channels and originating tracks', async () => {
+        const release = vi.fn(async () => {});
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        { id: 'track-1', devices: [] },
+                        { id: 'track-2', devices: [] },
+                    ],
+                    selectedTrackId: target_track_id.value,
+                }),
+                handleWebMidiNoteOff: release,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(1, 60, 100);
+        target_track_id.value = 'track-2';
+        await fn(2, 60, 100);
+
+        expect(activeNotes.size).toBe(2);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.trackId).toBe('track-1');
+        expect(activeNotes.get(createWebMidiNoteKey(2, 60))?.trackId).toBe('track-2');
+        expect(release).not.toHaveBeenCalled();
+    });
+
+    it('releases the prior note before reusing an MPE member channel for another pitch', async () => {
+        mpe_enabled.value = true;
+        const release = vi.fn(async (channel: number, note: number) => {
+            activeNotes.delete(createWebMidiNoteKey(channel, note));
+        });
+        const fn = handleWebMidiNoteOn._factory(make_dependencies({ handleWebMidiNoteOff: release }));
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(3, 60, 100);
+        await fn(3, 62, 100);
+
+        expect(release).toHaveBeenCalledWith(3, 60, 0);
+        expect(activeNotes.has(createWebMidiNoteKey(3, 60))).toBe(false);
+        expect(activeNotes.get(createWebMidiNoteKey(3, 62))?.note).toBe(62);
+        expect(channelToNote.get(3)).toBe(createWebMidiNoteKey(3, 62));
     });
 });

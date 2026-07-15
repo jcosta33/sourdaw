@@ -5,37 +5,90 @@ export const DB_VERSION = 1;
 export const STORE_NAME = 'documents';
 let _db: IDBDatabase | null = null;
 let _dbPromise: Promise<IDBDatabase | null> | null = null;
+let _dbGeneration = 0;
+
+function createDatabaseOpenError(cause: unknown): Error {
+    const normalizedCause = cause ?? new Error('IndexedDB open request failed without an error cause');
+    return new Error('[CrdtPersistence] Failed to open IndexedDB', { cause: normalizedCause });
+}
+
+function invalidateDatabase(generation: number): void {
+    if (_dbGeneration !== generation) {
+        return;
+    }
+
+    _db = null;
+    _dbPromise = null;
+    _dbGeneration++;
+}
 
 export function openDatabase(): Promise<IDBDatabase | null> {
     if (_dbPromise) {
         return _dbPromise;
     }
 
-    _dbPromise = new Promise((resolve) => {
-        if (typeof globalThis.indexedDB === 'undefined') {
-            resolve(null);
+    const generation = ++_dbGeneration;
+    let resolveOpen!: (database: IDBDatabase | null) => void;
+    let rejectOpen!: (reason?: unknown) => void;
+    const promise = new Promise<IDBDatabase | null>((resolve, reject) => {
+        resolveOpen = resolve;
+        rejectOpen = reject;
+    });
+    _dbPromise = promise;
+
+    if (typeof globalThis.indexedDB === 'undefined') {
+        queueMicrotask(() => invalidateDatabase(generation));
+        resolveOpen(null);
+        return promise;
+    }
+
+    let request: IDBOpenDBRequest;
+    try {
+        request = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (error) {
+        const openError = createDatabaseOpenError(error);
+        logger.warn('[CrdtPersistence] Failed to open IndexedDB:', error);
+        queueMicrotask(() => invalidateDatabase(generation));
+        rejectOpen(openError);
+        return promise;
+    }
+
+    request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+            database.createObjectStore(STORE_NAME);
+        }
+    };
+
+    request.onblocked = () => {
+        logger.warn('[CrdtPersistence] IndexedDB open is blocked by another connection.');
+    };
+
+    request.onsuccess = () => {
+        const database = request.result;
+        if (_dbGeneration !== generation) {
+            database.close();
+            resolveOpen(null);
             return;
         }
 
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-        request.onupgradeneeded = () => {
-            const database = request.result;
-            if (!database.objectStoreNames.contains(STORE_NAME)) {
-                database.createObjectStore(STORE_NAME);
+        _db = database;
+        database.onversionchange = () => {
+            const isCurrentDatabase = _db === database && _dbGeneration === generation;
+            database.close();
+            if (isCurrentDatabase) {
+                invalidateDatabase(generation);
             }
         };
+        resolveOpen(database);
+    };
 
-        request.onsuccess = () => {
-            _db = request.result;
-            resolve(_db);
-        };
+    request.onerror = () => {
+        const openError = createDatabaseOpenError(request.error);
+        logger.warn('[CrdtPersistence] Failed to open IndexedDB:', request.error);
+        invalidateDatabase(generation);
+        rejectOpen(openError);
+    };
 
-        request.onerror = () => {
-            logger.warn('[CrdtPersistence] Failed to open IndexedDB:', request.error);
-            resolve(null);
-        };
-    });
-
-    return _dbPromise;
+    return promise;
 }

@@ -35,6 +35,7 @@ import {
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     setWebMidiRuntimeEventBus,
+    stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
@@ -99,6 +100,7 @@ import {
 } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
+import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -130,12 +132,14 @@ setMixAnalysisDisplayLifecycle({
 setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
+configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 window.addEventListener('beforeunload', () => {
+    teardownYeastRuntime();
     // Attempt GC on window close
     cleanupUnusedFreezeFiles().catch(() => {});
 });

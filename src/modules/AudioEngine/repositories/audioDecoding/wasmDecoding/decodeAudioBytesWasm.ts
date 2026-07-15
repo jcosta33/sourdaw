@@ -32,8 +32,9 @@ const WASM_JS_URL = '/wasm/daw-wasm-decoder/daw_wasm_decoder.js';
 let modulePromise: Promise<WasmModule | null> | null = null;
 
 async function loadWasmModule(): Promise<WasmModule | null> {
-    if (!modulePromise) {
-        modulePromise = (async () => {
+    const initialization =
+        modulePromise ??
+        (modulePromise = (async () => {
             try {
                 const mod = (await import(/* @vite-ignore */ WASM_JS_URL)) as WasmModule;
                 await mod.default();
@@ -42,9 +43,12 @@ async function loadWasmModule(): Promise<WasmModule | null> {
                 logger.warn('[wasmDecoding] failed to load WASM decoder module:', error);
                 return null;
             }
-        })();
+        })());
+    const mod = await initialization;
+    if (mod === null && modulePromise === initialization) {
+        modulePromise = null;
     }
-    return modulePromise;
+    return mod;
 }
 
 /**

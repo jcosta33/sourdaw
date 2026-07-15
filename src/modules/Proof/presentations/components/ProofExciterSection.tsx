@@ -6,31 +6,33 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
 type Props = {
     patch: ProofPatch;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
-    const updateBand = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.excBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ excBands: bands });
-        onSendParam(
-            `exc_band${idx}_${key}`,
-            (() => {
-                if (typeof value === 'boolean') {
-                    return value ? 1 : 0;
-                }
-                return value;
-            })()
-        );
+export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onPatchChange }: Props): ReactElement => {
+    const updateBand = <Key extends keyof ProofPatch['excBands'][number]>(
+        idx: number,
+        key: Key,
+        value: ProofPatch['excBands'][number][Key],
+        isTransient = false
+    ) => {
+        const bands = patch.excBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'excBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
     return (
@@ -42,11 +44,16 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                 actions={
                     <DawPluginToggle
                         pressed={!patch.excBypassed}
+                        aria-label="Exciter module"
                         tone="lavender"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ excBypassed: !patch.excBypassed });
-                            onSendParam('exc_bypass', patch.excBypassed ? 0 : 1);
+                            const value = !patch.excBypassed;
+                            onPatchChange({
+                                key: 'excBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.excBypassed ? 'OFF' : 'ON'}
@@ -59,7 +66,7 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                     const band = patch.excBands[i]!;
                     return (
                         <div
-                            key={i}
+                            key={label}
                             className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] text-muted-foreground">{label}</span>
@@ -67,6 +74,7 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                             {/* Enable */}
                             <DawPluginToggle
                                 pressed={band.enabled}
+                                aria-label={`${label} exciter band`}
                                 tone="lavender"
                                 size="xs"
                                 className="w-full"
@@ -81,10 +89,10 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                                 tone="inset"
                                 className="w-full text-[6px]"
                                 value={band.type}
-                                onChange={(e) => updateBand(i, 'type', parseInt(e.target.value))}
+                                onChange={(event) => updateBand(i, 'type', Number.parseInt(event.target.value, 10))}
                             >
                                 {SAT_TYPES.map((t, ti) => (
-                                    <option key={ti} value={ti}>
+                                    <option key={t} value={ti}>
                                         {t}
                                     </option>
                                 ))}
@@ -93,7 +101,10 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                             {/* Drive */}
                             <RotaryKnob
                                 value={band.drive}
-                                onChange={(v) => updateBand(i, 'drive', v)}
+                                aria-label={`Exciter ${label} drive`}
+                                onChange={(value, isTransient) => updateBand(i, 'drive', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -106,7 +117,10 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
                             {/* Blend */}
                             <RotaryKnob
                                 value={band.blend}
-                                onChange={(v) => updateBand(i, 'blend', v)}
+                                aria-label={`Exciter ${label} blend`}
+                                onChange={(value, isTransient) => updateBand(i, 'blend', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={1}
                                 step={0.01}

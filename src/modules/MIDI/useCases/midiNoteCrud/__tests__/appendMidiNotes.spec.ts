@@ -1,0 +1,263 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type MidiStoreState } from '../../../stores/midiStore';
+
+vi.mock('../../../stores/midiStore', () => {
+    const midiStore: {
+        value: MidiStoreState | null;
+        set: ReturnType<typeof vi.fn>;
+    } = {
+        value: {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        },
+        set: vi.fn(),
+    };
+    midiStore.set.mockImplementation((next: MidiStoreState) => {
+        midiStore.value = next;
+    });
+    return { midiStore };
+});
+
+const { appendMidiNotes } = await import('../appendMidiNotes');
+const { midiStore } = await import('../../../stores/midiStore');
+
+type TestAppendNote = {
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    probability?: number;
+    pressure?: number;
+    slide?: number;
+    pitchBend?: number;
+    channel?: number;
+};
+
+type TestStoredMidiNote = TestAppendNote & {
+    id: string;
+};
+
+const NON_FINITE_NUMERIC_FIELDS = [
+    ['pitch', Number.NaN],
+    ['startBeat', Number.POSITIVE_INFINITY],
+    ['duration', Number.NEGATIVE_INFINITY],
+    ['velocity', Number.NaN],
+    ['probability', Number.POSITIVE_INFINITY],
+    ['pressure', Number.NaN],
+    ['slide', Number.NEGATIVE_INFINITY],
+    ['pitchBend', Number.POSITIVE_INFINITY],
+    ['channel', Number.NaN],
+] as const;
+
+function createAppendNote(overrides: Partial<TestAppendNote> = {}): TestAppendNote {
+    return {
+        pitch: 64,
+        startBeat: 1,
+        duration: 0.5,
+        velocity: 100,
+        ...overrides,
+    };
+}
+
+function createStoredNote(id: string, overrides: Partial<TestAppendNote> = {}): TestStoredMidiNote {
+    return {
+        id,
+        ...createAppendNote(overrides),
+    };
+}
+
+function createState(notesByClipId: MidiStoreState['notesByClipId'] = {}): MidiStoreState {
+    return {
+        notesByClipId,
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    };
+}
+
+describe('appendMidiNotes', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        vi.clearAllMocks();
+        midiStore.value = createState();
+    });
+
+    it('retains deliberately non-sorted existing order and appends generated IDs in one write', () => {
+        const existingLater = createStoredNote('note-existing-later', {
+            pitch: 48,
+            startBeat: 12,
+            duration: 2,
+            velocity: 80,
+        });
+        const existingEarlier = createStoredNote('note-existing-earlier', {
+            pitch: 36,
+            startBeat: 2,
+            duration: 1,
+            velocity: 70,
+        });
+        const firstPasted = createAppendNote({
+            pitch: 140.25,
+            startBeat: -1.5,
+            duration: 0,
+            velocity: -2,
+            probability: 75,
+            pressure: 0.25,
+            slide: -0.5,
+            pitchBend: 1024,
+            channel: 13,
+        });
+        const secondPasted = createAppendNote({
+            pitch: 55,
+            startBeat: 3,
+            duration: 0.25,
+            velocity: 64,
+        });
+        midiStore.value = createState({ 'clip-1': [existingLater, existingEarlier] });
+        const randomUuid = vi
+            .spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('12345678-aaaa-bbbb-cccc-dddddddddddd')
+            .mockReturnValueOnce('fedcba98-aaaa-bbbb-cccc-dddddddddddd');
+
+        appendMidiNotes({ clipId: 'clip-1', notes: [firstPasted, secondPasted] });
+
+        expect(randomUuid).toHaveBeenCalledTimes(2);
+        expect(midiStore.set).toHaveBeenCalledTimes(1);
+        expect(midiStore.value).toEqual(
+            createState({
+                'clip-1': [
+                    existingLater,
+                    existingEarlier,
+                    { ...firstPasted, id: 'note-12345678' },
+                    { ...secondPasted, id: 'note-fedcba98' },
+                ],
+            })
+        );
+    });
+
+    it('reads the latest state synchronously when invoked', () => {
+        const latestExisting = createStoredNote('note-latest', { pitch: 45 });
+        midiStore.value = createState({ 'clip-1': [createStoredNote('note-stale')] });
+        midiStore.value = createState({ 'clip-1': [latestExisting] });
+        vi.spyOn(crypto, 'randomUUID').mockReturnValue('abcdef01-aaaa-bbbb-cccc-dddddddddddd');
+
+        appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
+
+        expect(midiStore.set).toHaveBeenCalledWith(
+            createState({
+                'clip-1': [latestExisting, { ...createAppendNote(), id: 'note-abcdef01' }],
+            })
+        );
+    });
+
+    it('treats a missing destination clip list as an empty list', () => {
+        const pasted = createAppendNote();
+        midiStore.value = createState({ 'other-clip': [createStoredNote('note-other')] });
+        vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-aaaa-bbbb-cccc-dddddddddddd');
+
+        appendMidiNotes({ clipId: 'new-clip', notes: [pasted] });
+
+        expect(midiStore.value).toEqual(
+            createState({
+                'other-clip': [createStoredNote('note-other')],
+                'new-clip': [{ ...pasted, id: 'note-cafebabe' }],
+            })
+        );
+    });
+
+    it('does not write or allocate IDs for an empty batch', () => {
+        const stateBefore = midiStore.value;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        appendMidiNotes({ clipId: 'clip-1', notes: [] });
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBe(stateBefore);
+    });
+
+    it('does not write or allocate IDs when MIDI state is unavailable', () => {
+        midiStore.value = null;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBeNull();
+    });
+
+    it.each(NON_FINITE_NUMERIC_FIELDS)(
+        'rejects a complete batch containing a non-finite %s before UUID or state mutation',
+        (field, value) => {
+            const stateBefore = midiStore.value;
+            const randomUuid = vi.spyOn(crypto, 'randomUUID');
+            const invalidNote = { ...createAppendNote(), [field]: value };
+
+            expect(() =>
+                appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
+            ).toThrow('Invalid MIDI note batch');
+
+            expect(randomUuid).not.toHaveBeenCalled();
+            expect(midiStore.set).not.toHaveBeenCalled();
+            expect(midiStore.value).toBe(stateBefore);
+        }
+    );
+
+    it.each([
+        ['an unknown key', { ...createAppendNote(), unsupported: 1 }],
+        ['a source id', { ...createAppendNote(), id: 'clipboard-id' }],
+        ['a numeric-string required field', { ...createAppendNote(), pitch: '64' }],
+        ['a null optional field', { ...createAppendNote(), pressure: null }],
+    ])('rejects a batch with %s before UUID or state mutation', (_case, invalidNote) => {
+        const stateBefore = midiStore.value;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        expect(() =>
+            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
+        ).toThrow('Invalid MIDI note batch');
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBe(stateBefore);
+    });
+
+    it('rejects a batch missing a required note key before UUID or state mutation', () => {
+        const stateBefore = midiStore.value;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+        const invalidNote = {
+            pitch: 64,
+            startBeat: 1,
+            duration: 0.5,
+        };
+
+        expect(() =>
+            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
+        ).toThrow('Invalid MIDI note batch');
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBe(stateBefore);
+    });
+
+    it('leaves state untouched when UUID allocation fails partway through a valid batch', () => {
+        const stateBefore = midiStore.value;
+        const randomUuid = vi
+            .spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('12345678-aaaa-bbbb-cccc-dddddddddddd')
+            .mockImplementationOnce(() => {
+                throw new Error('UUID unavailable');
+            });
+
+        expect(() =>
+            appendMidiNotes({
+                clipId: 'clip-1',
+                notes: [createAppendNote({ pitch: 65 }), createAppendNote({ pitch: 66 })],
+            })
+        ).toThrow('UUID unavailable');
+
+        expect(randomUuid).toHaveBeenCalledTimes(2);
+        expect(midiStore.set).not.toHaveBeenCalled();
+        expect(midiStore.value).toBe(stateBefore);
+    });
+});

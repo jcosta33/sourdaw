@@ -10,7 +10,7 @@ type MockClipboard = {
 
 const mocks = vi.hoisted(() => ({
     mapAllTracks: vi.fn<(updater: (track: MockTrack) => MockTrack) => void>(),
-    midiStore: { value: null as unknown, set: vi.fn() },
+    removeMidiClipData: vi.fn<(clipIds: readonly string[]) => void>(),
     removeEnvelope: vi.fn(),
     removeWarpState: vi.fn(),
     getAutomationLanes: vi.fn(() => [] as { id: string; clipId?: string }[]),
@@ -26,8 +26,8 @@ vi.mock('#/modules/Arrangement/repositories/track/mapAllTracks', () => ({
     mapAllTracks: mocks.mapAllTracks,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: mocks.midiStore,
+vi.mock('#/modules/MIDI/useCases', () => ({
+    removeMidiClipData: mocks.removeMidiClipData,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -58,17 +58,30 @@ vi.mock('../../../stores/activeRecordingRef', () => ({
 describe('removeClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.midiStore.value = null;
         mocks.clipboardStore.value = null;
         mocks.clipDragPreviewRef.current = null;
         mocks.activeRecordingRef.current = [];
         mocks.getAutomationLanes.mockReturnValue([]);
     });
 
-    it('delegates to mapAllTracks with a filter function', () => {
+    it('removes track data before delegating one MIDI cleanup batch ahead of remaining cleanup', () => {
         removeClip('c1');
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(1);
+        expect(mocks.removeMidiClipData).toHaveBeenCalledTimes(1);
+        expect(mocks.removeMidiClipData).toHaveBeenCalledWith(['c1']);
+
+        const mapAllTracksOrder = mocks.mapAllTracks.mock.invocationCallOrder[0] ?? 0;
+        const midiCleanupOrder = mocks.removeMidiClipData.mock.invocationCallOrder[0] ?? 0;
+        const envelopeCleanupOrder = mocks.removeEnvelope.mock.invocationCallOrder[0] ?? 0;
+        const warpCleanupOrder = mocks.removeWarpState.mock.invocationCallOrder[0] ?? 0;
+        const automationCleanupOrder = mocks.getAutomationLanes.mock.invocationCallOrder[0] ?? 0;
+
+        expect(mapAllTracksOrder).toBeLessThan(midiCleanupOrder);
+        expect(midiCleanupOrder).toBeLessThan(envelopeCleanupOrder);
+        expect(envelopeCleanupOrder).toBeLessThan(warpCleanupOrder);
+        expect(warpCleanupOrder).toBeLessThan(automationCleanupOrder);
+
         const updater = mocks.mapAllTracks.mock.calls[0][0];
 
         const mockTrack = { clips: [{ id: 'c1' }, { id: 'c2' }] };

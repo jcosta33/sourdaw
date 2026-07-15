@@ -7,38 +7,48 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 import { ProofEqCurve } from './ProofEqCurve';
 
 const BAND_TYPES = ['Peak', 'Lo Shelf', 'Hi Shelf', 'HP', 'LP'] as const;
 const CHANNEL_MODES = ['L/R', 'Mid', 'Side'] as const;
+const EQ_BAND_KEYS = ['low-cut', 'low-shelf', 'low-mid', 'mid', 'high-mid', 'high', 'high-shelf', 'high-cut'] as const;
+const EQ_BAND_LABELS = [
+    'Low Cut',
+    'Low Shelf',
+    'Low-Mid',
+    'Mid',
+    'High-Mid',
+    'High',
+    'High Shelf',
+    'High Cut',
+] as const;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 
 type Props = {
     patch: ProofPatch;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): ReactElement => {
-    // §8.20 — Previously `updateBand` forwarded `value as number` to `onSendParam`
-    // even when `value` was a boolean (the `enabled` toggle), and every knob's
-    // `onChange` then dispatched `onSendParam` again. Net effect: every numeric
-    // knob fired twice per turn, and the `enabled` toggle sent a boolean cast
-    // to `number` (NaN/1/0 depending on the JS runtime). Split the two concerns:
-    // `updatePatch` only mutates patch state; `updateBandAndSend` is the single
-    // numeric write-through. The boolean toggle uses an explicit 0/1 send.
-    const updatePatch = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ eqBands: bands });
-    };
-
-    const updateBandAndSend = (idx: number, key: string, value: number) => {
-        updatePatch(idx, key, value);
-        onSendParam(`eq_band${idx}_${key}`, value);
+export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchChange }: Props): ReactElement => {
+    const updatePatch = <Key extends keyof ProofPatch['eqBands'][number]>(
+        idx: number,
+        key: Key,
+        value: ProofPatch['eqBands'][number][Key],
+        isTransient = false
+    ) => {
+        const bands = patch.eqBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'eqBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
     return (
@@ -50,11 +60,16 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                 actions={
                     <DawPluginToggle
                         pressed={!patch.eqBypassed}
+                        aria-label="EQ module"
                         tone="cyan"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ eqBypassed: !patch.eqBypassed });
-                            onSendParam('eq_bypass', patch.eqBypassed ? 0 : 1);
+                            const value = !patch.eqBypassed;
+                            onPatchChange({
+                                key: 'eqBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.eqBypassed ? 'OFF' : 'ON'}
@@ -68,33 +83,38 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                     patch={patch}
                     width={500}
                     height={120}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
-                    onSendParam={onSendParam}
                 />
             </div>
 
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>
                 {patch.eqBands.map((band, i) => (
                     <div
-                        key={i}
+                        key={EQ_BAND_KEYS[i]}
                         className="flex flex-col items-center gap-0.5 min-w-[52px] px-0.5 py-1 rounded bg-surface-base/50"
                     >
                         {/* Enable toggle */}
                         <button
                             type="button"
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} band`}
+                            aria-pressed={band.enabled}
                             className={`w-2 h-2 rounded-full cursor-pointer ${band.enabled ? '' : 'opacity-20'}`}
                             style={{ backgroundColor: BAND_COLORS[i] }}
                             onClick={() => {
                                 const next = !band.enabled;
                                 updatePatch(i, 'enabled', next);
-                                onSendParam(`eq_band${i}_enabled`, next ? 1 : 0);
                             }}
                         />
 
                         {/* Frequency */}
                         <RotaryKnob
                             value={band.freq}
-                            onChange={(v) => updateBandAndSend(i, 'freq', v)}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} frequency`}
+                            onChange={(value, isTransient) => updatePatch(i, 'freq', value, isTransient)}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={20}
                             max={20000}
                             step={1}
@@ -109,7 +129,10 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                         {/* Gain */}
                         <RotaryKnob
                             value={band.gain}
-                            onChange={(v) => updateBandAndSend(i, 'gain', v)}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} gain`}
+                            onChange={(value, isTransient) => updatePatch(i, 'gain', value, isTransient)}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={-18}
                             max={18}
                             step={0.5}
@@ -125,7 +148,10 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                         {/* Q */}
                         <RotaryKnob
                             value={band.q}
-                            onChange={(v) => updateBandAndSend(i, 'q', v)}
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} Q`}
+                            onChange={(value, isTransient) => updatePatch(i, 'q', value, isTransient)}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={0.1}
                             max={10}
                             step={0.1}
@@ -141,10 +167,10 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.type}
-                            onChange={(e) => updateBandAndSend(i, 'type', parseInt(e.target.value))}
+                            onChange={(event) => updatePatch(i, 'type', Number.parseInt(event.target.value, 10))}
                         >
                             {BAND_TYPES.map((label, ti) => (
-                                <option key={ti} value={ti}>
+                                <option key={label} value={ti}>
                                     {label}
                                 </option>
                             ))}
@@ -156,10 +182,10 @@ export const ProofEqSection = ({ patch, onPatchChange, onSendParam }: Props): Re
                             tone="inset"
                             className="w-full text-[6px]"
                             value={band.channel}
-                            onChange={(e) => updateBandAndSend(i, 'channel', parseInt(e.target.value))}
+                            onChange={(event) => updatePatch(i, 'channel', Number.parseInt(event.target.value, 10))}
                         >
                             {CHANNEL_MODES.map((label, ci) => (
-                                <option key={ci} value={ci}>
+                                <option key={label} value={ci}>
                                     {label}
                                 </option>
                             ))}

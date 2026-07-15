@@ -31,25 +31,82 @@ function base64ToFloat32(b64: string): Float32Array {
     return new Float32Array(bytes.buffer);
 }
 
-// Main AudioBuffer cache — bounded to prevent OOM on sessions with many takes.
-// When the cap is reached the least-recently-used buffer is evicted; it can be
-// reloaded from IDB on demand. Map insertion order is used as the LRU proxy.
+function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
+    if (
+        !Number.isFinite(data.sampleRate) ||
+        data.sampleRate <= 0 ||
+        !Number.isInteger(data.numberOfChannels) ||
+        data.numberOfChannels <= 0 ||
+        data.channelData.length !== data.numberOfChannels
+    ) {
+        return false;
+    }
+    let byteLength: number | undefined;
+    try {
+        for (const channel of data.channelData) {
+            const length = atob(channel).length;
+            if (length === 0 || length % Float32Array.BYTES_PER_ELEMENT !== 0) {
+                return false;
+            }
+            byteLength ??= length;
+            if (length !== byteLength) {
+                return false;
+            }
+        }
+    } catch {
+        return false;
+    }
+    return true;
+}
+
+// Main AudioBuffer cache. Non-project buffers are LRU bounded; buffers needed by
+// the active arrangement stay pinned because scheduling reads are synchronous.
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
+const pinnedBufferIds = new Set<string>();
 
 function audioCacheSet(id: string, buffer: AudioBuffer): void {
     // Promote existing entry to MRU position
     if (cache.has(id)) {
         cache.delete(id);
-    } else if (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
-        // Evict LRU entry (first key in insertion-order Map)
-        const lruKey = cache.keys().next().value;
-        if (lruKey !== undefined) {
+    } else {
+        while (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
+            let lruKey: string | undefined;
+            for (const key of cache.keys()) {
+                if (!pinnedBufferIds.has(key)) {
+                    lruKey = key;
+                    break;
+                }
+            }
+            if (lruKey === undefined) {
+                break;
+            }
             cache.delete(lruKey);
             clearWaveformCachesForId(lruKey);
         }
     }
     cache.set(id, buffer);
+}
+
+function replacePinnedBufferIds(ids: readonly string[]): void {
+    pinnedBufferIds.clear();
+    for (const id of ids) {
+        pinnedBufferIds.add(id);
+    }
+    while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
+        let lruKey: string | undefined;
+        for (const key of cache.keys()) {
+            if (!pinnedBufferIds.has(key)) {
+                lruKey = key;
+                break;
+            }
+        }
+        if (lruKey === undefined) {
+            break;
+        }
+        cache.delete(lruKey);
+        clearWaveformCachesForId(lruKey);
+    }
 }
 
 function audioCacheGet(id: string): AudioBuffer | undefined {
@@ -105,6 +162,42 @@ type SerializedBuffer = {
     sizeInBytes: number;
 };
 
+let nextPersistenceGeneration = 0;
+const persistenceGenerationById = new Map<string, number>();
+let nextImportCandidateId = 0;
+let activeImportCandidateId = 0;
+let committedImportCandidateId = 0;
+const importPersistenceTransactions = new Map<number, IDBTransaction>();
+
+function cancelPendingImportCandidate(): void {
+    activeImportCandidateId = ++nextImportCandidateId;
+    abortImportPersistenceExcept(activeImportCandidateId);
+}
+
+function abortImportPersistenceExcept(candidateId: number): void {
+    for (const [persistingCandidateId, transaction] of importPersistenceTransactions) {
+        if (persistingCandidateId === candidateId) {
+            continue;
+        }
+        try {
+            transaction.abort();
+        } catch {
+            // The transaction already completed between inspection and abort.
+        }
+    }
+}
+
+function cancelAllImportCandidates(): void {
+    cancelPendingImportCandidate();
+    committedImportCandidateId = 0;
+}
+
+function claimPersistenceGeneration(id: string): number {
+    const generation = ++nextPersistenceGeneration;
+    persistenceGenerationById.set(id, generation);
+    return generation;
+}
+
 function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     const channelData: Float32Array[] = [];
     let sizeInBytes = 0;
@@ -140,27 +233,53 @@ async function updateAccessTimeInIdb(id: string): Promise<void> {
     }
 }
 
-async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
+async function persistSerializedToIdb(id: string, data: SerializedBuffer): Promise<boolean> {
+    const generation = claimPersistenceGeneration(id);
     try {
         const db = await openDb();
+        if (persistenceGenerationById.get(id) !== generation) {
+            return false;
+        }
         const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(serializeBuffer(buffer), id);
+        tx.objectStore(STORE_NAME).put(data, id);
         await new Promise<void>((resolve, reject) => {
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
         });
+        return true;
     } catch {
-        // IndexedDB unavailable
+        return false;
+    } finally {
+        if (persistenceGenerationById.get(id) === generation) {
+            persistenceGenerationById.delete(id);
+        }
     }
 }
 
+async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
+    await persistSerializedToIdb(id, serializeBuffer(buffer));
+}
+
 async function removeFromIdb(id: string): Promise<void> {
+    const generation = claimPersistenceGeneration(id);
     try {
         const db = await openDb();
+        if (persistenceGenerationById.get(id) !== generation) {
+            return;
+        }
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).delete(id);
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
+        });
     } catch {
         // ignore
+    } finally {
+        if (persistenceGenerationById.get(id) === generation) {
+            persistenceGenerationById.delete(id);
+        }
     }
 }
 
@@ -173,6 +292,108 @@ function clearWaveformCachesForId(id: string) {
             waveformCache.delete(key);
         }
     }
+}
+
+type PreparedAudioBuffers = {
+    publish: () => number;
+};
+
+type PreparedImportedAudioBuffers = PreparedAudioBuffers & {
+    persist: () => Promise<boolean>;
+};
+
+type PrepareBuffersFromIdbInput = {
+    context: Pick<BaseAudioContext, 'createBuffer'>;
+    ids?: string[];
+    shouldContinue?: () => boolean;
+};
+
+async function prepareBuffersFromIdb({
+    context,
+    ids,
+    shouldContinue,
+}: PrepareBuffersFromIdbInput): Promise<PreparedAudioBuffers | null> {
+    const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
+    try {
+        if (shouldContinue?.() === false) {
+            return null;
+        }
+        const db = await openDb();
+        if (shouldContinue?.() === false) {
+            return null;
+        }
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const keys: IDBValidKey[] =
+            ids !== undefined
+                ? ids.filter((id) => !cache.has(id))
+                : await new Promise<IDBValidKey[]>((resolve, reject) => {
+                      const request = store.getAllKeys();
+                      request.onsuccess = () => resolve(request.result);
+                      request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
+                  });
+
+        for (const key of keys) {
+            if (shouldContinue?.() === false) {
+                return null;
+            }
+            if (typeof key !== 'string') {
+                continue;
+            }
+            const id = key;
+            if (cache.has(id)) {
+                continue;
+            }
+            const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
+                const request = store.get(key);
+                request.onsuccess = () => resolve(request.result as SerializedBuffer | undefined);
+                request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
+            });
+            if (shouldContinue?.() === false) {
+                return null;
+            }
+            const length = data?.channelData[0]?.length ?? 0;
+            if (
+                !data ||
+                length === 0 ||
+                data.channelData.length !== data.numberOfChannels ||
+                data.channelData.some((channel) => channel.length !== length)
+            ) {
+                continue;
+            }
+            const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
+            for (let channel = 0; channel < data.numberOfChannels; channel++) {
+                buffer.getChannelData(channel).set(data.channelData[channel]!);
+            }
+            staged.push({ id, buffer });
+        }
+    } catch {
+        return {
+            publish: () => {
+                if (ids) {
+                    replacePinnedBufferIds(ids);
+                }
+                return 0;
+            },
+        };
+    }
+
+    let published = false;
+    return {
+        publish: () => {
+            if (published) {
+                return 0;
+            }
+            published = true;
+            if (ids) {
+                replacePinnedBufferIds(ids);
+            }
+            for (const { id, buffer } of staged) {
+                audioCacheSet(id, buffer);
+            }
+            return staged.length;
+        },
+    };
 }
 
 export const audioBufferCache = {
@@ -192,6 +413,7 @@ export const audioBufferCache = {
 
     remove(id: string): void {
         cache.delete(id);
+        pinnedBufferIds.delete(id);
         clearWaveformCachesForId(id);
         void removeFromIdb(id);
     },
@@ -306,61 +528,40 @@ export const audioBufferCache = {
         return peaks;
     },
 
-    async restoreFromIdb(context: BaseAudioContext, ids?: string[]): Promise<number> {
-        try {
-            const db = await openDb();
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-
-            // When the caller supplies a list of IDs (e.g. the buffer IDs referenced
-            // by the current project's clips), load only those — skipping unrelated
-            // takes and imported samples that are not needed for this session.
-            // Without IDs, fall back to loading all keys (legacy / startup path).
-            let keys: IDBValidKey[];
-            if (ids && ids.length > 0) {
-                keys = ids.filter((id) => !cache.has(id));
-            } else {
-                keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-                    const req = store.getAllKeys();
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
-                });
-            }
-
-            let restored = 0;
-            for (const key of keys) {
-                if (cache.has(key as string)) {
-                    continue;
-                }
-                const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
-                    const req = store.get(key);
-                    req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
-                    req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
-                });
-                if (!data) {
-                    continue;
-                }
-                const length = data.channelData[0]?.length ?? 0;
-                if (length === 0) {
-                    continue;
-                }
-                const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
-                for (let ch = 0; ch < data.numberOfChannels; ch++) {
-                    const src = data.channelData[ch]!;
-                    buffer.getChannelData(ch).set(src);
-                }
-                audioCacheSet(key as string, buffer);
-                restored++;
-            }
-            return restored;
-        } catch {
+    async restoreFromIdb({
+        context,
+        ids,
+        shouldContinue,
+    }: {
+        context: Pick<BaseAudioContext, 'createBuffer'>;
+        ids?: string[];
+        shouldContinue?: () => boolean;
+    }): Promise<number> {
+        const prepared = await prepareBuffersFromIdb({ context, ids, shouldContinue });
+        if (!prepared || shouldContinue?.() === false) {
             return 0;
         }
+        return prepared.publish();
+    },
+
+    prepareFromIdb({
+        context,
+        ids,
+        shouldContinue,
+    }: {
+        context: Pick<BaseAudioContext, 'createBuffer'>;
+        ids?: string[];
+        shouldContinue?: () => boolean;
+    }): Promise<PreparedAudioBuffers | null> {
+        return prepareBuffersFromIdb({ context, ids, shouldContinue });
     },
 
     clear(): void {
+        cancelAllImportCandidates();
         cache.clear();
+        pinnedBufferIds.clear();
         waveformCache.clear();
+        persistenceGenerationById.clear();
         openDb()
             .then((db) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -371,6 +572,28 @@ export const audioBufferCache = {
                 /* ignore */
                 return null;
             });
+    },
+
+    cancelPendingImport(): void {
+        cancelPendingImportCandidate();
+    },
+
+    async serializeBuffers(
+        buffers: Array<{ id: string; buffer: AudioBuffer }>
+    ): Promise<Record<string, ExportedAudioBuffer>> {
+        const result: Record<string, ExportedAudioBuffer> = {};
+        for (const { id, buffer } of buffers) {
+            result[id] = {
+                sampleRate: buffer.sampleRate,
+                numberOfChannels: buffer.numberOfChannels,
+                channelData: await Promise.all(
+                    Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
+                        float32ToBase64(new Float32Array(buffer.getChannelData(channel)))
+                    )
+                ),
+            };
+        }
+        return result;
     },
 
     /** Serialize the given buffer IDs to base64-encoded PCM for embedding in a
@@ -431,32 +654,150 @@ export const audioBufferCache = {
         return result;
     },
 
-    /** Reconstruct AudioBuffer objects from base64-encoded data embedded in a
-     * .sourdaw project file, loading them into both the in-memory cache and IDB.
-     * Buffers whose ID already exists in the cache are skipped. */
-    // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; persistToIdb is fire-and-forget; callers await this method
-    async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
-        for (const [id, data] of Object.entries(buffers)) {
-            if (cache.has(id)) {
-                continue;
+    /** Decode authoritative embedded buffers without publishing them. The
+     * caller owns the final synchronous project-transition commit. */
+    importBuffers({
+        buffers,
+        cacheIds,
+        context,
+        shouldContinue,
+    }: {
+        buffers: Record<string, ExportedAudioBuffer>;
+        cacheIds?: string[];
+        context: BaseAudioContext;
+        shouldContinue?: () => boolean;
+    }): PreparedImportedAudioBuffers | null {
+        const candidateId = ++nextImportCandidateId;
+        activeImportCandidateId = candidateId;
+        const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
+        const cacheIdSet = cacheIds ? new Set(cacheIds) : undefined;
+        const entries = Object.entries(buffers);
+
+        for (const [, data] of entries) {
+            if (shouldContinue?.() === false) {
+                return null;
             }
-            try {
-                const channels = data.channelData.map(base64ToFloat32);
-                const length = channels[0]?.length ?? 0;
-                if (length === 0) {
-                    continue;
-                }
-                const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
-                for (let ch = 0; ch < data.numberOfChannels; ch++) {
-                    buffer.getChannelData(ch).set(channels[ch]!);
-                }
-                clearWaveformCachesForId(id);
-                audioCacheSet(id, buffer);
-                void persistToIdb(id, buffer);
-            } catch {
-                // Skip any malformed entry
+            if (!isValidExportedAudioBuffer(data)) {
+                return null;
             }
         }
+
+        if (shouldContinue?.() === false) {
+            return null;
+        }
+
+        for (const [id, data] of entries) {
+            if (!cacheIdSet || cacheIdSet.has(id)) {
+                const channels = data.channelData.map(base64ToFloat32);
+                const buffer = context.createBuffer(data.numberOfChannels, channels[0]!.length, data.sampleRate);
+                for (let channel = 0; channel < data.numberOfChannels; channel++) {
+                    buffer.getChannelData(channel).set(channels[channel]!);
+                }
+                staged.push({ id, buffer });
+            }
+        }
+
+        let persisted = false;
+        let published = false;
+        return {
+            persist: async () => {
+                if (persisted) {
+                    return true;
+                }
+                if (
+                    !published ||
+                    candidateId !== activeImportCandidateId ||
+                    candidateId !== committedImportCandidateId
+                ) {
+                    return false;
+                }
+                if (entries.length === 0) {
+                    persisted = true;
+                    return true;
+                }
+                const generations = new Map<string, number>();
+                for (const [id] of entries) {
+                    generations.set(id, claimPersistenceGeneration(id));
+                }
+                let transaction: IDBTransaction | null = null;
+                try {
+                    let database: IDBDatabase;
+                    try {
+                        database = await openDb();
+                    } catch {
+                        const allBuffersAreResident = entries.every(
+                            ([id]) => cacheIdSet === undefined || cacheIdSet.has(id)
+                        );
+                        persisted = allBuffersAreResident;
+                        return allBuffersAreResident;
+                    }
+                    if (
+                        candidateId !== activeImportCandidateId ||
+                        candidateId !== committedImportCandidateId ||
+                        [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
+                    ) {
+                        return false;
+                    }
+
+                    const activeTransaction = database.transaction(STORE_NAME, 'readwrite');
+                    transaction = activeTransaction;
+                    importPersistenceTransactions.set(candidateId, activeTransaction);
+                    const objectStore = activeTransaction.objectStore(STORE_NAME);
+                    for (const [id, data] of entries) {
+                        const channels = data.channelData.map(base64ToFloat32);
+                        objectStore.put(
+                            {
+                                sampleRate: data.sampleRate,
+                                numberOfChannels: data.numberOfChannels,
+                                channelData: channels,
+                                lastAccessed: Date.now(),
+                                sizeInBytes: channels.reduce((total, channel) => total + channel.byteLength, 0),
+                            } satisfies SerializedBuffer,
+                            id
+                        );
+                    }
+                    await new Promise<void>((resolve, reject) => {
+                        activeTransaction.oncomplete = () => resolve();
+                        activeTransaction.onabort = () =>
+                            reject(activeTransaction.error ?? new Error('IDB transaction aborted'));
+                        activeTransaction.onerror = () =>
+                            reject(activeTransaction.error ?? new Error('IDB transaction failed'));
+                    });
+                    if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
+                        return false;
+                    }
+                    persisted = true;
+                    return true;
+                } catch {
+                    return false;
+                } finally {
+                    for (const [id, generation] of generations) {
+                        if (persistenceGenerationById.get(id) === generation) {
+                            persistenceGenerationById.delete(id);
+                        }
+                    }
+                    if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
+                        importPersistenceTransactions.delete(candidateId);
+                    }
+                }
+            },
+            publish: () => {
+                if (published || candidateId !== activeImportCandidateId || shouldContinue?.() === false) {
+                    return 0;
+                }
+                published = true;
+                committedImportCandidateId = candidateId;
+                abortImportPersistenceExcept(candidateId);
+                if (cacheIds) {
+                    replacePinnedBufferIds(cacheIds);
+                }
+                for (const { id, buffer } of staged) {
+                    clearWaveformCachesForId(id);
+                    audioCacheSet(id, buffer);
+                }
+                return staged.length;
+            },
+        };
     },
 
     async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {
@@ -505,6 +846,9 @@ export const audioBufferCache = {
             for (let index = 0; index < data.length; index++) {
                 const item = data[index]!;
                 const key = keys[index]! as string;
+                if (pinnedBufferIds.has(key)) {
+                    continue;
+                }
                 if ((item.lastAccessed ?? 0) < threshold) {
                     store.delete(key);
                     cache.delete(key);
@@ -546,6 +890,9 @@ export const audioBufferCache = {
             for (const entry of entries) {
                 if (currentTotal <= maxSizeBytes) {
                     break;
+                }
+                if (pinnedBufferIds.has(entry.id)) {
+                    continue;
                 }
                 store.delete(entry.id);
                 cache.delete(entry.id);

@@ -1,11 +1,277 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as subject from '../importMidiFile';
+import { REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
+
+import { type TrackStoreState, trackStore } from '../../stores/trackStore';
+import { importMidiFile } from '../importMidiFile';
+
+type PushUndoEntry = (label: string, undo: () => void, redo: () => unknown) => void;
+
+const mocks = vi.hoisted(() => ({
+    notifyUser: vi.fn(),
+    pushUndoEntry: vi.fn<PushUndoEntry>(),
+    readMidiFile: vi.fn(),
+    setTrackState: vi.fn<(state: TrackStoreState) => void>(),
+}));
+
+let shouldInjectConcurrentTrack = true;
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    pushUndoEntry: mocks.pushUndoEntry,
+}));
+
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    readMidiFile: mocks.readMidiFile,
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
+vi.mock('../setTrackState', () => ({
+    setTrackState: mocks.setTrackState,
+}));
+
+const existingNote = {
+    id: 'note-existing',
+    pitch: 48,
+    startBeat: 0,
+    duration: 1,
+    velocity: 100,
+};
+
+const concurrentNote = {
+    id: 'note-concurrent',
+    pitch: 55,
+    startBeat: 1,
+    duration: 1,
+    velocity: 90,
+};
+
+const importedNote = {
+    id: 'note-imported',
+    pitch: 60,
+    startBeat: 2,
+    duration: 0.5,
+    velocity: 110,
+};
 
 describe('importMidiFile', () => {
-    it('should export importMidiFile', () => {
-        expect(subject.importMidiFile).toBeDefined();
-        const time = typeof subject.importMidiFile;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+        shouldInjectConcurrentTrack = true;
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        setMidiStoreState({
+            notesByClipId: { 'existing-clip': [existingNote] },
+            ccByClipId: {
+                'existing-clip': [{ id: 'cc-existing', controller: 1, value: 64, beat: 0, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                'existing-clip': [{ id: 'pitch-existing', value: 128, beat: 0, channel: 0 }],
+            },
+        });
+        mocks.readMidiFile.mockResolvedValue([{ name: 'Imported', notes: [importedNote], endTick: 960 }]);
+        mocks.setTrackState.mockImplementation((state: TrackStoreState) => {
+            if (!shouldInjectConcurrentTrack) {
+                trackStore.set(state);
+                return;
+            }
+
+            shouldInjectConcurrentTrack = false;
+            const importedTrack = state.tracks.find((track) => track.clips.length > 0);
+            const importedClip = importedTrack?.clips[0];
+            if (!importedTrack || !importedClip) {
+                trackStore.set(state);
+                return;
+            }
+
+            trackStore.set({
+                ...state,
+                tracks: [
+                    ...state.tracks,
+                    {
+                        ...importedTrack,
+                        id: 'concurrent-track',
+                        name: 'Concurrent',
+                        clips: [{ ...importedClip, id: 'concurrent-clip', trackId: 'concurrent-track' }],
+                    },
+                ],
+            });
+            const currentMidiState = getMidiStoreState();
+            if (!currentMidiState) {
+                throw new Error('Expected MIDI state while committing imported tracks');
+            }
+            setMidiStoreState({
+                ...currentMidiState,
+                notesByClipId: {
+                    ...currentMidiState.notesByClipId,
+                    'concurrent-clip': [concurrentNote],
+                },
+            });
+        });
+    });
+
+    it('preserves MIDI state written between parsing and the import write', async () => {
+        await importMidiFile(new File([], 'import.mid'));
+
+        const importedClipId = trackStore.value?.tracks[0]?.clips[0]?.id;
+        if (!importedClipId) {
+            throw new Error('Expected the import to create a MIDI clip');
+        }
+
+        const midiState = getMidiStoreState();
+        expect(trackStore.value?.tracks.some((track) => track.id === 'concurrent-track')).toBe(true);
+        expect(midiState?.notesByClipId['existing-clip']).toEqual([existingNote]);
+        expect(midiState?.notesByClipId['concurrent-clip']).toEqual([concurrentNote]);
+        expect(midiState?.notesByClipId[importedClipId]).toEqual([importedNote]);
+        expect(midiState?.ccByClipId['existing-clip']).toEqual([
+            { id: 'cc-existing', controller: 1, value: 64, beat: 0, channel: 0 },
+        ]);
+        expect(midiState?.pitchBendByClipId['existing-clip']).toEqual([
+            { id: 'pitch-existing', value: 128, beat: 0, channel: 0 },
+        ]);
+    });
+
+    it('restores imported tracks and MIDI through undo and redo', async () => {
+        await importMidiFile(new File([], 'import.mid'));
+
+        const undoEntry = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoEntry) {
+            throw new TypeError('Expected the import to register an undo entry');
+        }
+        const [, undo, redo] = undoEntry;
+
+        undo();
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['concurrent-track']);
+        expect(getMidiStoreState()).toEqual({
+            notesByClipId: {
+                'existing-clip': [existingNote],
+                'concurrent-clip': [concurrentNote],
+            },
+            ccByClipId: {
+                'existing-clip': [{ id: 'cc-existing', controller: 1, value: 64, beat: 0, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                'existing-clip': [{ id: 'pitch-existing', value: 128, beat: 0, channel: 0 }],
+            },
+        });
+
+        redo();
+        const importedClipId = trackStore.value?.tracks.find((track) => track.id !== 'concurrent-track')?.clips[0]?.id;
+        if (!importedClipId) {
+            throw new Error('Expected redo to restore the imported MIDI clip');
+        }
+        expect(getMidiStoreState()?.notesByClipId[importedClipId]).toEqual([importedNote]);
+        expect(getMidiStoreState()?.notesByClipId['concurrent-clip']).toEqual([concurrentNote]);
+        expect(trackStore.value?.tracks.some((track) => track.id === 'concurrent-track')).toBe(true);
+    });
+
+    it('reports parser failures without changing stores or history', async () => {
+        const trackStateBefore = trackStore.value;
+        const midiStateBefore = getMidiStoreState();
+        mocks.readMidiFile.mockRejectedValue(new Error('invalid MIDI'));
+
+        await expect(importMidiFile(new File([], 'broken.mid'))).resolves.toBeUndefined();
+
+        expect(trackStore.value).toBe(trackStateBefore);
+        expect(getMidiStoreState()).toBe(midiStateBefore);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "broken.mid" - invalid or corrupt MIDI file',
+            'error'
+        );
+    });
+
+    it('rolls back MIDI when the track write fails', async () => {
+        shouldInjectConcurrentTrack = false;
+        const midiStateBefore = getMidiStoreState();
+        mocks.setTrackState.mockImplementationOnce(() => {
+            throw new Error('track write failed');
+        });
+
+        await expect(importMidiFile(new File([], 'import.mid'))).resolves.toBeUndefined();
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(getMidiStoreState()).toEqual(midiStateBefore);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "import.mid" - project state could not be updated',
+            'error'
+        );
+    });
+
+    it.each(['track', 'clip', 'alternative', 'ghost'] as const)(
+        'rejects redo when an unrelated %s reuses an imported ID',
+        async (kind) => {
+            await importMidiFile(new File([], 'import.mid'));
+
+            const importedTrack = trackStore.value?.tracks.find((track) => track.id !== 'concurrent-track');
+            const importedClip = importedTrack?.clips[0];
+            const undoEntry = mocks.pushUndoEntry.mock.calls[0];
+            if (!importedTrack || !importedClip || !undoEntry) {
+                throw new Error('Expected an imported track, clip, and undo entry');
+            }
+            const [, undo, redo] = undoEntry;
+            undo();
+
+            const collisionTrackId = kind === 'track' ? importedTrack.id : `${kind}-collision-track`;
+            const collisionTrack = {
+                ...importedTrack,
+                id: collisionTrackId,
+                name: `${kind} ID collision`,
+                clips: kind === 'clip' ? [{ ...importedClip, trackId: collisionTrackId }] : [],
+                alternatives:
+                    kind === 'alternative'
+                        ? [
+                              {
+                                  id: 'collision-alternative',
+                                  name: 'Collision',
+                                  clips: [{ ...importedClip, trackId: collisionTrackId }],
+                              },
+                          ]
+                        : importedTrack.alternatives,
+            };
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [...(trackStore.value?.tracks ?? []), collisionTrack],
+                ghostClips:
+                    kind === 'ghost'
+                        ? [{ ...importedClip, trackId: 'ghost-collision-track', isGhost: true }]
+                        : trackStore.value?.ghostClips,
+            });
+
+            expect(redo()).toBe(REDO_NOT_APPLIED);
+            expect(trackStore.value?.tracks).toContain(collisionTrack);
+            expect(getMidiStoreState()?.notesByClipId[importedClip.id]).toBeUndefined();
+            expect(mocks.notifyUser).toHaveBeenLastCalledWith(
+                'Failed to redo MIDI import for "import.mid" - track or clip IDs now conflict',
+                'error'
+            );
+        }
+    );
+
+    it('rejects duplicate generated identities before changing project state', async () => {
+        const uuid = '00000000-0000-4000-8000-000000000000';
+        const randomUuidSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue(uuid);
+        mocks.readMidiFile.mockResolvedValue([
+            { name: 'First', notes: [importedNote], endTick: 960 },
+            { name: 'Second', notes: [concurrentNote], endTick: 960 },
+        ]);
+        const midiStateBefore = getMidiStoreState();
+
+        await importMidiFile(new File([], 'duplicates.mid'));
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(getMidiStoreState()).toBe(midiStateBefore);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to import "duplicates.mid" - generated track or clip IDs conflict with the project',
+            'error'
+        );
+        randomUuidSpy.mockRestore();
     });
 });

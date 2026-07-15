@@ -15,6 +15,10 @@ export { getAllTracks } from './getAllTracks';
 export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
+export { hydrateTracksForProject } from './hydrateTracksForProject';
+export { restoreTrackSnapshot } from './restoreTrackSnapshot';
+export { restoreMarkerSnapshot } from './restoreMarkerSnapshot';
+export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
@@ -45,7 +49,8 @@ export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 
 // ── Clip Editing ──────────────────────────────────────────────────────────────
 
-export { createAlternativeClips, type VariationNote } from './clipEditing/createAlternativeClips';
+export { createAlternativeClips } from './clipEditing/createAlternativeClips';
+export type { VariationNote } from './clipEditing/createAlternativeClips';
 export { normalizeClip } from './clipEditing/normalizeClip';
 export { renameClip } from './clipEditing/renameClip';
 export { reverseClip } from './clipEditing/reverseClip';
@@ -98,6 +103,7 @@ export { createCompGroup } from './groupComping/compGroupOperations/createCompGr
 // ── Adjustment Layer ──────────────────────────────────────────────────────────
 
 export { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
+export { restoreAdjustmentLayerSnapshot } from './adjustmentLayer/restoreAdjustmentLayerSnapshot';
 export { removeAdjustmentLayer } from './adjustmentLayer/removeAdjustmentLayer';
 export { toggleAdjustmentLayer } from './adjustmentLayer/toggleAdjustmentLayer';
 export { setLayerParameter } from './adjustmentLayer/setLayerParameter';

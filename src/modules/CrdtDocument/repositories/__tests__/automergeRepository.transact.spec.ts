@@ -9,6 +9,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { automergeRepository } from '../automergeRepository';
 
+type TestSnapshotEntry = { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
+
+type TestDocumentSnapshot = Map<string, TestSnapshotEntry>;
+
+function loadPresentSnapshot(snapshot: TestDocumentSnapshot, id: string): Record<string, unknown> {
+    const entry = snapshot.get(id);
+    expect(entry?.state).toBe('present');
+    if (!entry || entry.state !== 'present') {
+        throw new Error(`Expected present snapshot entry for ${id}`);
+    }
+    return load<Record<string, unknown>>(entry.bytes);
+}
+
+function expectAbsentSnapshot(snapshot: TestDocumentSnapshot, id: string): void {
+    expect(snapshot.get(id)).toEqual({ state: 'absent' });
+}
+
 // The worker is unavailable in jsdom; force the synchronous fallback paths by
 // stubbing Worker with one that immediately errors. invokeWorker rejects, and
 // loadAll/mergeBundle fall back to _loadAllSync/_mergeBundleSync.
@@ -23,36 +40,33 @@ beforeEach(() => {
     automergeRepository.reset();
 });
 
-describe('transactSnapshot — rAF-deferred store writes (fix 1) + lazy before-clone (fix 2)', () => {
-    it('captures the before/after bundle for a doc mutated through a requestAnimationFrame-deferred write', async () => {
+describe('transactSnapshot - explicit mutation ownership', () => {
+    it('does not let a retained handle capture a write after its transaction closes', async () => {
         automergeRepository.createProject('p');
-        // Seed a known "before" value on root.
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.count = 1;
         });
 
-        const { before, after } = await automergeRepository.transactSnapshot(() => {
-            // Simulate createAutomergeStorage.set(): defer the actual changeDoc
-            // to the next animation frame. transactSnapshot must drain this
-            // before reading the dirtied set, or the bundle is empty.
-            requestAnimationFrame(() => {
-                automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
-                    doc.count = 2;
-                });
-            });
-            // fn() resolves immediately — the rAF write has NOT landed yet.
+        let runDeferredWrite!: () => void;
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            runDeferredWrite = () => {
+                automergeRepository.changeDoc(
+                    'root',
+                    (doc: Record<string, unknown>) => {
+                        doc.count = 2;
+                    },
+                    undefined,
+                    transaction
+                );
+            };
             return Promise.resolve();
         });
 
-        // dirtied must have captured root despite the deferral.
-        expect(before.has('root')).toBe(true);
-        expect(after.has('root')).toBe(true);
+        runDeferredWrite();
 
-        const beforeDoc = load<Record<string, unknown>>(before.get('root')!);
-        const afterDoc = load<Record<string, unknown>>(after.get('root')!);
-        // Pre-state is the genuine pre-mutation value (1), not the post (2).
-        expect(beforeDoc.count).toBe(1);
-        expect(afterDoc.count).toBe(2);
+        expect(before.size).toBe(0);
+        expect(after.size).toBe(0);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ count: 2 });
     });
 
     it('does not clone undirtied docs into the before bundle', async () => {
@@ -60,19 +74,269 @@ describe('transactSnapshot — rAF-deferred store writes (fix 1) + lazy before-c
         automergeRepository.createChildDoc('child-a');
         automergeRepository.createChildDoc('child-b');
 
-        const { before, after } = await automergeRepository.transactSnapshot(() => {
-            automergeRepository.changeDoc('child-a', (doc: Record<string, unknown>) => {
-                doc.touched = true;
-            });
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.changeDoc(
+                'child-a',
+                (doc: Record<string, unknown>) => {
+                    doc.touched = true;
+                },
+                undefined,
+                transaction
+            );
             return Promise.resolve();
         });
 
         expect([...before.keys()]).toEqual(['child-a']);
         expect([...after.keys()]).toEqual(['child-a']);
     });
+
+    it('excludes an unrelated mutation while an owned transaction is paused', async () => {
+        automergeRepository.createProject('p');
+        automergeRepository.createChildDoc('owned');
+        automergeRepository.createChildDoc('unrelated');
+        automergeRepository.changeDoc('owned', (doc: Record<string, unknown>) => {
+            doc.value = 'before';
+        });
+        automergeRepository.changeDoc('unrelated', (doc: Record<string, unknown>) => {
+            doc.value = 'before';
+        });
+
+        let releaseTransaction!: () => void;
+        let markTransactionStarted!: () => void;
+        const transactionStarted = new Promise<void>((resolve) => {
+            markTransactionStarted = resolve;
+        });
+        const transactionRelease = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+
+        const pending = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.changeDoc(
+                'owned',
+                (doc: Record<string, unknown>) => {
+                    doc.value = 'during';
+                },
+                undefined,
+                transaction
+            );
+            markTransactionStarted();
+            await transactionRelease;
+            automergeRepository.changeDoc(
+                'owned',
+                (doc: Record<string, unknown>) => {
+                    doc.value = 'after';
+                },
+                undefined,
+                transaction
+            );
+        });
+
+        await transactionStarted;
+        automergeRepository.changeDoc('unrelated', (doc: Record<string, unknown>) => {
+            doc.value = 'independent';
+        });
+        releaseTransaction();
+
+        const { before, after } = await pending;
+        expect([...before.keys()]).toEqual(['owned']);
+        expect([...after.keys()]).toEqual(['owned']);
+
+        automergeRepository.restoreSnapshot(before);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('owned')).toMatchObject({ value: 'before' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('unrelated')).toMatchObject({
+            value: 'independent',
+        });
+
+        automergeRepository.restoreSnapshot(after);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('owned')).toMatchObject({ value: 'after' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('unrelated')).toMatchObject({
+            value: 'independent',
+        });
+    });
+
+    it('rejects an unowned write to a document already dirtied by the active transaction', async () => {
+        automergeRepository.createProject('p');
+        let markTransactionStarted!: () => void;
+        let releaseTransaction!: () => void;
+        const transactionStarted = new Promise<void>((resolve) => {
+            markTransactionStarted = resolve;
+        });
+        const transactionRelease = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+
+        const pending = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.changeDoc(
+                'root',
+                (doc: Record<string, unknown>) => {
+                    doc.owned = true;
+                },
+                undefined,
+                transaction
+            );
+            markTransactionStarted();
+            await transactionRelease;
+        });
+
+        await transactionStarted;
+        expect(() => {
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.unowned = true;
+            });
+        }).toThrow(/active snapshot transaction/i);
+        releaseTransaction();
+        await pending;
+
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ owned: true });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('unowned');
+    });
 });
 
-describe('transactSnapshot — serialised transactions (fix 3)', () => {
+describe('transactSnapshot - membership-aware undo and redo', () => {
+    it('captures child creation as absent before and present after', async () => {
+        automergeRepository.createProject('p');
+
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.createChildDoc('created', transaction);
+            automergeRepository.changeDoc(
+                'created',
+                (doc: Record<string, unknown>) => {
+                    doc.value = 'created';
+                },
+                undefined,
+                transaction
+            );
+            return Promise.resolve();
+        });
+
+        expectAbsentSnapshot(before, 'created');
+        expect(loadPresentSnapshot(after, 'created')).toMatchObject({ value: 'created' });
+
+        automergeRepository.restoreSnapshot(before);
+        expect(automergeRepository.hasDoc('created')).toBe(false);
+        automergeRepository.restoreSnapshot(after);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('created')).toMatchObject({ value: 'created' });
+    });
+
+    it('captures insertion into an absent slot and restores both memberships', async () => {
+        automergeRepository.createProject('p');
+        let inserted = init<Record<string, unknown>>('aaaaaaaaaaaaaaaa');
+        inserted = change(inserted, (doc) => {
+            doc.value = 'inserted';
+        });
+
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.insertDoc('inserted', inserted, transaction);
+            return Promise.resolve();
+        });
+
+        expectAbsentSnapshot(before, 'inserted');
+        expect(loadPresentSnapshot(after, 'inserted')).toMatchObject({ value: 'inserted' });
+        automergeRepository.restoreSnapshot(before);
+        expect(automergeRepository.hasDoc('inserted')).toBe(false);
+        automergeRepository.restoreSnapshot(after);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('inserted')).toMatchObject({ value: 'inserted' });
+    });
+
+    it('captures removal as present before and absent after', async () => {
+        automergeRepository.createProject('p');
+        automergeRepository.createChildDoc('removed');
+        automergeRepository.changeDoc('removed', (doc: Record<string, unknown>) => {
+            doc.value = 'kept for undo';
+        });
+
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.removeDoc('removed', transaction);
+            return Promise.resolve();
+        });
+
+        expect(loadPresentSnapshot(before, 'removed')).toMatchObject({ value: 'kept for undo' });
+        expectAbsentSnapshot(after, 'removed');
+        automergeRepository.restoreSnapshot(before);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('removed')).toMatchObject({
+            value: 'kept for undo',
+        });
+        automergeRepository.restoreSnapshot(after);
+        expect(automergeRepository.hasDoc('removed')).toBe(false);
+    });
+
+    it('atomically restores mixed content, creation, and removal snapshots', async () => {
+        automergeRepository.createProject('p');
+        automergeRepository.createChildDoc('changed');
+        automergeRepository.createChildDoc('removed');
+        automergeRepository.createChildDoc('untouched');
+        automergeRepository.changeDoc('changed', (doc: Record<string, unknown>) => {
+            doc.value = 'before';
+        });
+        automergeRepository.changeDoc('removed', (doc: Record<string, unknown>) => {
+            doc.value = 'before';
+        });
+        automergeRepository.changeDoc('untouched', (doc: Record<string, unknown>) => {
+            doc.value = 'independent';
+        });
+
+        const { before, after } = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.changeDoc(
+                'changed',
+                (doc: Record<string, unknown>) => {
+                    doc.value = 'after';
+                },
+                undefined,
+                transaction
+            );
+            automergeRepository.createChildDoc('created', transaction);
+            automergeRepository.changeDoc(
+                'created',
+                (doc: Record<string, unknown>) => {
+                    doc.value = 'after';
+                },
+                undefined,
+                transaction
+            );
+            automergeRepository.removeDoc('removed', transaction);
+            return Promise.resolve();
+        });
+
+        automergeRepository.restoreSnapshot(before);
+        expect(automergeRepository.getDocIds().sort()).toEqual(['changed', 'removed', 'root', 'untouched']);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('changed')).toMatchObject({ value: 'before' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('removed')).toMatchObject({ value: 'before' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('untouched')).toMatchObject({
+            value: 'independent',
+        });
+
+        automergeRepository.restoreSnapshot(after);
+        expect(automergeRepository.getDocIds().sort()).toEqual(['changed', 'created', 'root', 'untouched']);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('changed')).toMatchObject({ value: 'after' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('created')).toMatchObject({ value: 'after' });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('untouched')).toMatchObject({
+            value: 'independent',
+        });
+    });
+
+    it('does not partially restore membership when any present entry is corrupt', () => {
+        automergeRepository.createProject('p');
+        automergeRepository.createChildDoc('changed');
+        automergeRepository.changeDoc('changed', (doc: Record<string, unknown>) => {
+            doc.value = 'before';
+        });
+        let replacement = init<Record<string, unknown>>('aaaaaaaaaaaaaaaa');
+        replacement = change(replacement, (doc) => {
+            doc.value = 'after';
+        });
+        const snapshot: TestDocumentSnapshot = new Map([
+            ['changed', { state: 'present', bytes: save(replacement) }],
+            ['created', { state: 'present', bytes: new Uint8Array([1, 2, 3]) }],
+        ]);
+
+        expect(() => automergeRepository.restoreSnapshot(snapshot)).toThrow();
+
+        expect(automergeRepository.getDoc<Record<string, unknown>>('changed')).toMatchObject({ value: 'before' });
+        expect(automergeRepository.hasDoc('created')).toBe(false);
+    });
+});
+
+describe('transactSnapshot - serialised transactions', () => {
     it('does not interleave dirtied sets between two racing transactions', async () => {
         automergeRepository.createProject('p');
         automergeRepository.createChildDoc('doc-1');
@@ -83,23 +347,43 @@ describe('transactSnapshot — serialised transactions (fix 3)', () => {
         // B-write. Without a serial queue the two share `activeTransaction`, so
         // each call's dirtied set picks up the *other* call's doc. The queue
         // must run them one-at-a-time so each set stays disjoint.
-        const txnA = automergeRepository.transactSnapshot(async () => {
-            automergeRepository.changeDoc('doc-1', (d: Record<string, unknown>) => {
-                d.a1 = 1;
-            });
+        const txnA = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.changeDoc(
+                'doc-1',
+                (d: Record<string, unknown>) => {
+                    d.a1 = 1;
+                },
+                undefined,
+                transaction
+            );
             await Promise.resolve();
-            automergeRepository.changeDoc('doc-1', (d: Record<string, unknown>) => {
-                d.a2 = 1;
-            });
+            automergeRepository.changeDoc(
+                'doc-1',
+                (d: Record<string, unknown>) => {
+                    d.a2 = 1;
+                },
+                undefined,
+                transaction
+            );
         });
-        const txnB = automergeRepository.transactSnapshot(async () => {
-            automergeRepository.changeDoc('doc-2', (d: Record<string, unknown>) => {
-                d.b1 = 1;
-            });
+        const txnB = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.changeDoc(
+                'doc-2',
+                (d: Record<string, unknown>) => {
+                    d.b1 = 1;
+                },
+                undefined,
+                transaction
+            );
             await Promise.resolve();
-            automergeRepository.changeDoc('doc-2', (d: Record<string, unknown>) => {
-                d.b2 = 1;
-            });
+            automergeRepository.changeDoc(
+                'doc-2',
+                (d: Record<string, unknown>) => {
+                    d.b2 = 1;
+                },
+                undefined,
+                transaction
+            );
         });
 
         const [resA, resB] = await Promise.all([txnA, txnB]);
@@ -118,10 +402,15 @@ describe('transactSnapshot — serialised transactions (fix 3)', () => {
         await expect(failing).rejects.toThrow('boom');
 
         // The queue tail must recover so this one still runs.
-        const ok = await automergeRepository.transactSnapshot(() => {
-            automergeRepository.changeDoc('root', (d: Record<string, unknown>) => {
-                d.ok = true;
-            });
+        const ok = await automergeRepository.transactSnapshot((transaction) => {
+            automergeRepository.changeDoc(
+                'root',
+                (d: Record<string, unknown>) => {
+                    d.ok = true;
+                },
+                undefined,
+                transaction
+            );
             return Promise.resolve();
         });
         expect([...ok.after.keys()]).toEqual(['root']);
@@ -202,6 +491,30 @@ describe('mergeBundle sync fallback — byte-equivalence with the worker path (f
         expect(gotCount).toBe(refCount);
         expect(getHeads(mergedDoc)).toEqual(getHeads(referenceMerged));
     });
+
+    it('keeps the current repository intact when merge commit authority is revoked', async () => {
+        let local = init<Record<string, unknown>>('aaaaaaaaaaaaaaaa');
+        local = change(local, (doc) => {
+            doc.localOnly = true;
+        });
+        let remote = init<Record<string, unknown>>('bbbbbbbbbbbbbbbb');
+        remote = change(remote, (doc) => {
+            doc.remoteOnly = true;
+        });
+
+        automergeRepository.createProject('current');
+        automergeRepository.insertDoc('root', local);
+        const currentBytes = automergeRepository.saveDoc('root');
+
+        const result = await automergeRepository.mergeBundle(new Map([['root', save(remote)]]), {
+            shouldCommit: () => false,
+        });
+
+        expect(result).toEqual({ mergedDocIds: [], newDocIds: [] });
+        expect(automergeRepository.saveDoc('root')).toEqual(currentBytes);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ localOnly: true });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('remoteOnly');
+    });
 });
 
 describe('reset clears change listeners (fix 5)', () => {
@@ -221,6 +534,25 @@ describe('reset clears change listeners (fix 5)', () => {
 });
 
 describe('root id inference is exact, not prefix (fix 6)', () => {
+    it('validates a loadable bundle without replacing the current repository', async () => {
+        automergeRepository.createProject('current');
+        automergeRepository.createChildDoc('child');
+        const bundle = automergeRepository.saveAll();
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.value = 'incremental';
+        });
+        const incremental = automergeRepository.saveDocIncremental('root');
+        if (!incremental) {
+            throw new Error('Expected an incremental root chunk');
+        }
+        bundle.set('root:incremental:10-0', incremental);
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(automergeRepository.validateAll({ bundle })).resolves.toBe(true);
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
     it('selects "root" exactly even when sibling ids start with "root" iterate later', async () => {
         // Bundle whose Map iteration order puts a "rootBackup" sibling *after*
         // the real "root". With startsWith, rootBackup would win.
@@ -236,27 +568,158 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
             ['rootBackup', backupBytes],
         ]);
         // Worker stub throws → _loadAllSync runs the inference under test.
-        await automergeRepository.loadAll(bundle);
+        await automergeRepository.loadAll({ bundle });
 
         expect(automergeRepository.getRootId()).toBe('root');
     });
 
-    it('keeps the current repository document when activation ownership is stale', async () => {
-        automergeRepository.createProject('candidate');
-        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
-            document.project = 'candidate';
+    it('keeps the current repository intact when commit authority is revoked', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const bundle = automergeRepository.saveAll();
+
+        const committed = await automergeRepository.loadAll({
+            bundle,
+            shouldCommit: () => false,
         });
-        const candidate_bundle = automergeRepository.saveAll();
+
+        expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('treats only an empty bundle as absence', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(automergeRepository.validateAll({ bundle: new Map() })).resolves.toBe(false);
+        await expect(automergeRepository.loadAll({ bundle: new Map() })).resolves.toBe(false);
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('rejects a non-empty bundle without the exact authoritative root document', async () => {
+        automergeRepository.createProject('source');
+        automergeRepository.createChildDoc('branch-only');
+        const branchBytes = automergeRepository.saveDoc('branch-only')!;
 
         automergeRepository.reset();
         automergeRepository.createProject('current');
-        automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
-            document.project = 'current';
-        });
+        automergeRepository.createChildDoc('current-child');
+        const currentRoot = automergeRepository.getDoc('root');
+        const currentChild = automergeRepository.getDoc('current-child');
+        const bundle = new Map([['branch-only', branchBytes]]);
 
-        const activated = await automergeRepository.loadAll(candidate_bundle, () => false);
+        await expect(automergeRepository.validateAll({ bundle })).rejects.toThrow('missing the exact root document');
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing the exact root document');
 
-        expect(activated).toBe(false);
-        expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.project).toBe('current');
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+        expect(automergeRepository.getDoc('current-child')).toBe(currentChild);
+    });
+
+    it('does not count root-prefixed siblings or root incrementals as the root', async () => {
+        automergeRepository.createProject('source');
+        automergeRepository.createChildDoc('rootBackup');
+        const backupBytes = automergeRepository.saveDoc('rootBackup')!;
+
+        automergeRepository.reset();
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(
+            automergeRepository.loadAll({
+                bundle: new Map([
+                    ['rootBackup', backupBytes],
+                    ['root:incremental:10-0', new Uint8Array([1, 2, 3])],
+                ]),
+            })
+        ).rejects.toThrow('missing base document');
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('returns false instead of classifying corruption when commit authority is revoked', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(
+            automergeRepository.loadAll({
+                bundle: new Map([['root', new Uint8Array([1, 2, 3])]]),
+                shouldCommit: () => false,
+            })
+        ).resolves.toBe(false);
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('propagates corrupt persisted bytes during presence validation', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(
+            automergeRepository.validateAll({
+                bundle: new Map([['root', new Uint8Array([1, 2, 3])]]),
+            })
+        ).rejects.toThrow();
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('rejects orphan incrementals in the synchronous fallback without replacing authority', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected a persisted root document');
+        }
+
+        const bundle = new Map([
+            ['root', rootBytes],
+            ['orphan-child:incremental:1-0', new Uint8Array([1, 2, 3])],
+        ]);
+
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing base document');
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+        expect(automergeRepository.getRootId()).toBe('root');
+    });
+
+    it('does not let a worker integrity error fall back to acceptance', async () => {
+        class IntegrityErrorWorker {
+            private messageListener: EventListener | null = null;
+
+            addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+                if (type === 'message' && typeof listener === 'function') {
+                    this.messageListener = listener;
+                }
+            }
+
+            removeEventListener(): void {
+                this.messageListener = null;
+            }
+
+            postMessage(message: Record<string, unknown>): void {
+                this.messageListener?.(
+                    new MessageEvent('message', {
+                        data: { id: message.id, type: 'error', message: 'orphan incremental integrity failure' },
+                    })
+                );
+            }
+        }
+
+        vi.stubGlobal('Worker', IntegrityErrorWorker);
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected a persisted root document');
+        }
+
+        const bundle = new Map([
+            ['root', rootBytes],
+            ['orphan-child:incremental:1-0', new Uint8Array([1, 2, 3])],
+        ]);
+
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing base document');
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 });

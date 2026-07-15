@@ -21,7 +21,7 @@ describe('listenPitchAnalysisProgress', () => {
     });
 
     it('should listen for native progress events and forward progress values', async () => {
-        type ProgressCallback = Parameters<typeof listen<{ progress: number }>>[1];
+        type ProgressCallback = Parameters<typeof listen<{ analysisId: string; progress: number }>>[1];
 
         const onProgress = vi.fn();
         const unlisten = vi.fn();
@@ -32,16 +32,21 @@ describe('listenPitchAnalysisProgress', () => {
             return Promise.resolve(unlisten);
         });
 
-        const result = await listenPitchAnalysisProgress({ onProgress });
+        const result = await listenPitchAnalysisProgress({ analysisId: 'analysis-1', onProgress });
         progressCallback?.({
             event: 'pitch-analysis-progress',
             id: 1,
-            payload: { progress: 0.42 },
+            payload: { analysisId: 'analysis-2', progress: 0.9 },
+        });
+        progressCallback?.({
+            event: 'pitch-analysis-progress',
+            id: 2,
+            payload: { analysisId: 'analysis-1', progress: 0.42 },
         });
         result();
 
         expect(listen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));
-        expect(onProgress).toHaveBeenCalledWith(0.42);
+        expect(onProgress).toHaveBeenCalledExactlyOnceWith(0.42);
         expect(unlisten).toHaveBeenCalledTimes(1);
     });
 
@@ -49,7 +54,7 @@ describe('listenPitchAnalysisProgress', () => {
         vi.mocked(isTauri).mockReturnValue(false);
         const onProgress = vi.fn();
 
-        const result = await listenPitchAnalysisProgress({ onProgress });
+        const result = await listenPitchAnalysisProgress({ analysisId: 'analysis-1', onProgress });
 
         expect(result).toBeNull();
         expect(listen).not.toHaveBeenCalled();

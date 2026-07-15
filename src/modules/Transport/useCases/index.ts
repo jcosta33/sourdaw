@@ -17,6 +17,8 @@ export { disableLooping } from './setLooping';
 export { setMasterGain } from './setMasterGain';
 export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
+export { restoreTransportSnapshot } from './restoreTransportSnapshot';
+export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 
 export { addSetlistItem } from './setlist/addSetlistItem';
 export { getCurrentItem } from './setlist/getCurrentItem';
@@ -35,6 +37,7 @@ export { updateSetlistItem } from './setlist/updateSetlistItem';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
+export { replaceTempoMap } from './tempoMap/replaceTempoMap';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
 export { updateTempoChange } from './tempoMap/updateTempoChange';
 
@@ -60,6 +63,7 @@ export { toggleRecording } from './transportControls/toggleRecording';
 
 export { addTimeSignatureChange } from './timeSignatureChanges/addTimeSignatureChange';
 export { removeTimeSignatureChange } from './timeSignatureChanges/removeTimeSignatureChange';
+export { replaceTimeSignatureMap } from './timeSignatureChanges/replaceTimeSignatureMap';
 
 export { getTransportHandlers } from './getTransportHandlers';
 

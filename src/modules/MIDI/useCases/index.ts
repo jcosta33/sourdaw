@@ -34,7 +34,12 @@ export { formatChordName } from './formatChordName';
 // ── State Accessors ───────────────────────────────────────────────────────────
 export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
+export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
+export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
+export { glueMidiClipData } from './midiClipData/glueMidiClipData';
+export { removeMidiClipData } from './midiClipData/removeMidiClipData';
+export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
 
 export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
 export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';
@@ -60,6 +65,7 @@ export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';
+export { appendMidiNotes } from './midiNoteCrud/appendMidiNotes';
 export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';

@@ -1,10 +1,118 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+
+import { audioBufferCache } from '../audioBufferCache';
+
+function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate: number }): AudioBuffer {
+    const channels = Array.from({ length: 1 }, () => new Float32Array(length));
+    return {
+        copyFromChannel: (destination, channelNumber, startInChannel = 0) => {
+            destination.set(channels[channelNumber]!.subarray(startInChannel, startInChannel + destination.length));
+        },
+        copyToChannel: (source, channelNumber, startInChannel = 0) => {
+            channels[channelNumber]!.set(source, startInChannel);
+        },
+        duration: length / sampleRate,
+        getChannelData: (channelNumber) => channels[channelNumber]!,
+        length,
+        numberOfChannels: 1,
+        sampleRate,
+    };
+}
+
+function encodeFloat32(values: number[]): string {
+    const bytes = new Uint8Array(new Float32Array(values).buffer);
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+}
+
+type StoredAudioBuffer = {
+    sampleRate: number;
+    numberOfChannels: number;
+    channelData: Float32Array[];
+    lastAccessed: number;
+    sizeInBytes: number;
+};
+
+function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
+    const backing = new Map<string, StoredAudioBuffer>();
+    const objectStore = {
+        clear: () => backing.clear(),
+        delete: (key: string) => backing.delete(key),
+        get: (key: string) => {
+            const request = {
+                result: undefined as StoredAudioBuffer | undefined,
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+            };
+            queueMicrotask(() => {
+                request.result = backing.get(key);
+                request.onsuccess?.();
+            });
+            return request;
+        },
+        getAllKeys: () => {
+            const request = {
+                result: [] as string[],
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+            };
+            queueMicrotask(() => {
+                request.result = [...backing.keys()];
+                request.onsuccess?.();
+            });
+            return request;
+        },
+        put: (value: StoredAudioBuffer, key: string) => {
+            backing.set(key, value);
+        },
+    };
+    const database = {
+        objectStoreNames: { contains: () => true },
+        createObjectStore: () => objectStore,
+        transaction: () => {
+            const transaction = {
+                error: null,
+                onabort: null as (() => void) | null,
+                oncomplete: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+                abort: vi.fn(),
+                objectStore: () => objectStore,
+            };
+            queueMicrotask(() => transaction.oncomplete?.());
+            return transaction;
+        },
+    };
+    vi.stubGlobal('indexedDB', {
+        open: () => {
+            const request = {
+                result: database,
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+                onupgradeneeded: null as (() => void) | null,
+            };
+            queueMicrotask(() => request.onsuccess?.());
+            return request;
+        },
+    });
+    return backing;
+}
 
 // Test the pure conversion functions by importing them indirectly
 // since they're not exported. We test them through the module's
 // public API where possible, or test the pattern directly.
 
 describe('audioBufferCache conversions', () => {
+    afterEach(() => {
+        audioBufferCache.clear();
+        vi.unstubAllGlobals();
+    });
+
     it('Float32Array to base64 round-trip preserves data', async () => {
         const original = new Float32Array([0.5, -0.5, 0.25, -0.25, 0.0]);
         const bytes = new Uint8Array(original.buffer, original.byteOffset, original.byteLength);
@@ -85,5 +193,278 @@ describe('audioBufferCache conversions', () => {
         const decoded = new Float32Array(decoded_bytes.buffer);
 
         expect(decoded[0]).toBeCloseTo(1.0, 5);
+    });
+
+    it('stages valid PCM until publish and rejects malformed or canceled candidates', async () => {
+        const context = {
+            createBuffer: vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
+                expect(numberOfChannels).toBe(1);
+                return createAudioBuffer({ length, sampleRate });
+            }),
+        };
+        const first = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
+        const second = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] };
+
+        const firstCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: first } });
+        expect(audioBufferCache.get('shared')).toBeUndefined();
+        firstCandidate?.publish();
+        await expect(firstCandidate?.persist()).resolves.toBe(true);
+
+        const canceledCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: { shared: second },
+            shouldContinue: () => false,
+        });
+        expect(canceledCandidate).toBeNull();
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+        const malformedCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
+            },
+        });
+        expect(malformedCandidate).toBeNull();
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+        const unavailableNonresidentCandidate = audioBufferCache.importBuffers({
+            context,
+            buffers: { shared: second, archived: first },
+            cacheIds: ['shared'],
+        });
+        unavailableNonresidentCandidate?.publish();
+        await expect(unavailableNonresidentCandidate?.persist()).resolves.toBe(false);
+
+        const secondCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: second } });
+        secondCandidate?.publish();
+        await expect(secondCandidate?.persist()).resolves.toBe(true);
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
+        expect(audioBufferCache.get('archived')).toBeUndefined();
+    });
+
+    it('preserves a colliding durable buffer until the replacement candidate is published', async () => {
+        const backing = installFakeIndexedDb();
+        backing.set('shared', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            lastAccessed: 1,
+            sizeInBytes: Float32Array.BYTES_PER_ELEMENT,
+        });
+        const context = {
+            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            ),
+        };
+        const restored = await audioBufferCache.prepareFromIdb({ context, ids: ['shared'] });
+        restored?.publish();
+        const candidate = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] },
+            },
+            cacheIds: ['shared'],
+        });
+
+        await expect(candidate?.persist()).resolves.toBe(false);
+
+        expect(backing.get('shared')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+        candidate?.publish();
+        await expect(candidate?.persist()).resolves.toBe(true);
+
+        expect(backing.get('shared')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
+    });
+
+    it('aborts and invalidates import persistence when replacement starts', async () => {
+        type ControlledTransaction = {
+            abort: ReturnType<typeof vi.fn>;
+            error: Error | null;
+            objectStore: () => { put: ReturnType<typeof vi.fn> };
+            onabort: (() => void) | null;
+            oncomplete: (() => void) | null;
+            onerror: (() => void) | null;
+        };
+        const transactions: ControlledTransaction[] = [];
+        const put = vi.fn();
+        const database = {
+            objectStoreNames: { contains: () => true },
+            transaction: () => {
+                const transaction: ControlledTransaction = {
+                    abort: vi.fn(() => queueMicrotask(() => transaction.onabort?.())),
+                    error: null,
+                    objectStore: () => ({ put }),
+                    onabort: null,
+                    oncomplete: null,
+                    onerror: null,
+                };
+                transactions.push(transaction);
+                if (transactions.length > 1) {
+                    queueMicrotask(() => transaction.oncomplete?.());
+                }
+                return transaction;
+            },
+        };
+        vi.stubGlobal('indexedDB', {
+            open: () => {
+                const request = {
+                    error: null,
+                    onerror: null as (() => void) | null,
+                    onsuccess: null as (() => void) | null,
+                    onupgradeneeded: null as (() => void) | null,
+                    result: database,
+                };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
+            },
+        });
+        const context = {
+            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            ),
+        };
+        const first = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] },
+            },
+        });
+        first?.publish();
+        const firstPersistence = first?.persist();
+        await vi.waitFor(() => expect(transactions).toHaveLength(1));
+
+        audioBufferCache.cancelPendingImport();
+
+        const firstTransaction = transactions[0]!;
+        if (firstTransaction.abort.mock.calls.length === 0) {
+            firstTransaction.oncomplete?.();
+        }
+        await expect(firstPersistence).resolves.toBe(false);
+
+        expect(firstTransaction.abort).toHaveBeenCalledOnce();
+        await expect(first?.persist()).resolves.toBe(false);
+        expect(transactions).toHaveLength(1);
+    });
+
+    it('validates every embedded buffer before opening a persistence transaction', () => {
+        const open = vi.fn();
+        vi.stubGlobal('indexedDB', { open });
+        const context = {
+            createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(1) })),
+        } as unknown as BaseAudioContext;
+
+        try {
+            expect(
+                audioBufferCache.importBuffers({
+                    context,
+                    buffers: {
+                        valid: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] },
+                        invalid: { sampleRate: 48_000, numberOfChannels: 1, channelData: ['not-base64'] },
+                    },
+                })
+            ).toBeNull();
+            expect(open).not.toHaveBeenCalled();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('does not let a stale remove delete a newer persisted buffer', async () => {
+        const requests: Array<{
+            error: Error | null;
+            onerror: (() => void) | null;
+            onsuccess: (() => void) | null;
+            result: unknown;
+        }> = [];
+        const transactions: Array<{
+            error: Error | null;
+            onabort: (() => void) | null;
+            oncomplete: (() => void) | null;
+            onerror: (() => void) | null;
+        }> = [];
+        const store = {
+            delete: vi.fn(),
+            put: vi.fn(),
+        };
+        const database = {
+            objectStoreNames: { contains: () => true },
+            transaction: vi.fn(() => {
+                const transaction = {
+                    error: null,
+                    objectStore: () => store,
+                    onabort: null,
+                    oncomplete: null,
+                    onerror: null,
+                };
+                transactions.push(transaction);
+                return transaction;
+            }),
+        };
+        const open = vi.fn(() => {
+            const request = {
+                error: null,
+                onerror: null,
+                onsuccess: null,
+                result: database,
+            };
+            requests.push(request);
+            return request;
+        });
+        vi.stubGlobal('indexedDB', { open });
+
+        try {
+            audioBufferCache.remove('race');
+            audioBufferCache.set('race', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+
+            expect(requests).toHaveLength(2);
+
+            requests[1]!.onsuccess?.();
+            await Promise.resolve();
+            expect(store.put).toHaveBeenCalledWith(expect.anything(), 'race');
+            expect(transactions).toHaveLength(1);
+
+            transactions[0]!.oncomplete?.();
+            await Promise.resolve();
+
+            requests[0]!.onsuccess?.();
+            await Promise.resolve();
+
+            expect(store.delete).not.toHaveBeenCalled();
+            expect(transactions).toHaveLength(1);
+        } finally {
+            for (const transaction of transactions) {
+                transaction.oncomplete?.();
+            }
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {
+        const exported = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
+        const ids = Array.from({ length: 65 }, (_, index) => `active-${index}`);
+        const buffers = Object.fromEntries(ids.map((id) => [id, exported]));
+        const context = {
+            createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(1) })),
+        } as unknown as BaseAudioContext;
+
+        const prepared = audioBufferCache.importBuffers({ context, buffers, cacheIds: ids });
+        prepared?.publish();
+        await expect(prepared?.persist()).resolves.toBe(true);
+
+        expect(audioBufferCache.get(ids[0]!)).toBeDefined();
+        expect(audioBufferCache.get(ids[64]!)).toBeDefined();
+        await expect(audioBufferCache.garbageCollectByAge(-1)).resolves.toBe(0);
+        await expect(audioBufferCache.garbageCollectBySize(0)).resolves.toBe(0);
+        expect(audioBufferCache.get(ids[0]!)).toBeDefined();
+        expect(audioBufferCache.get(ids[64]!)).toBeDefined();
+
+        const emptyProject = audioBufferCache.importBuffers({ context, buffers: {}, cacheIds: [] });
+        emptyProject?.publish();
+        await expect(emptyProject?.persist()).resolves.toBe(true);
+
+        expect(audioBufferCache.get(ids[1]!)).toBeUndefined();
+        expect(audioBufferCache.get(ids[64]!)).toBeDefined();
     });
 });

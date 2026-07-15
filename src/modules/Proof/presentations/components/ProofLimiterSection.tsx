@@ -6,9 +6,9 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const DITHER_MODES = ['Off', 'TPDF', 'Noise Shaped'] as const;
 const DITHER_VALUES = ['off', 'tpdf', 'noise_shaped'] as const;
@@ -17,16 +17,18 @@ type Props = {
     patch: ProofPatch;
     limiterGrDb: number;
     truePeakDb: number;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
 export const ProofLimiterSection = ({
     patch,
     limiterGrDb,
     truePeakDb,
+    gestureOwner,
+    gestureAuthority,
     onPatchChange,
-    onSendParam,
 }: Props): ReactElement => {
     return (
         <div className="flex flex-col gap-1.5 px-2">
@@ -37,11 +39,16 @@ export const ProofLimiterSection = ({
                 actions={
                     <DawPluginToggle
                         pressed={!patch.limBypassed}
+                        aria-label="Limiter module"
                         tone="danger"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ limBypassed: !patch.limBypassed });
-                            onSendParam('lim_bypass', patch.limBypassed ? 0 : 1);
+                            const value = !patch.limBypassed;
+                            onPatchChange({
+                                key: 'limBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.limBypassed ? 'OFF' : 'ON'}
@@ -55,10 +62,16 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limCeiling}
-                            onChange={(v) => {
-                                onPatchChange({ limCeiling: v });
-                                onSendParam('lim_ceiling', v);
+                            aria-label="Limiter ceiling"
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limCeiling',
+                                    value,
+                                    isTransient,
+                                });
                             }}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={-12}
                             max={0}
                             step={0.1}
@@ -75,10 +88,16 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limRelease}
-                            onChange={(v) => {
-                                onPatchChange({ limRelease: v });
-                                onSendParam('lim_release', v);
+                            aria-label="Limiter release"
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limRelease',
+                                    value,
+                                    isTransient,
+                                });
                             }}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={10}
                             max={500}
                             step={1}
@@ -95,10 +114,16 @@ export const ProofLimiterSection = ({
                     <div className="flex flex-col items-center gap-0.5">
                         <RotaryKnob
                             value={patch.limLookahead}
-                            onChange={(v) => {
-                                onPatchChange({ limLookahead: v });
-                                onSendParam('lim_lookahead', v);
+                            aria-label="Limiter lookahead"
+                            onChange={(value, isTransient) => {
+                                onPatchChange({
+                                    key: 'limLookahead',
+                                    value,
+                                    isTransient,
+                                });
                             }}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={0.5}
                             max={10}
                             step={0.5}
@@ -144,14 +169,18 @@ export const ProofLimiterSection = ({
                         tone="inset"
                         className="text-[7px]"
                         value={DITHER_VALUES.indexOf(patch.ditherMode as (typeof DITHER_VALUES)[number])}
-                        onChange={(e) => {
-                            const mode = DITHER_VALUES[parseInt(e.target.value)]!;
-                            onPatchChange({ ditherMode: mode });
-                            onSendParam('dither_mode', parseInt(e.target.value));
+                        onChange={(event) => {
+                            const modeIndex = Number.parseInt(event.target.value, 10);
+                            const mode = DITHER_VALUES[modeIndex]!;
+                            onPatchChange({
+                                key: 'ditherMode',
+                                value: mode,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {DITHER_MODES.map((label, i) => (
-                            <option key={i} value={i}>
+                            <option key={label} value={i}>
                                 {label}
                             </option>
                         ))}
@@ -163,10 +192,13 @@ export const ProofLimiterSection = ({
                             tone="inset"
                             className="text-[6px]"
                             value={patch.ditherBits}
-                            onChange={(e) => {
-                                const bits = parseInt(e.target.value);
-                                onPatchChange({ ditherBits: bits });
-                                onSendParam('dither_bits', bits);
+                            onChange={(event) => {
+                                const bits = Number.parseInt(event.target.value, 10);
+                                onPatchChange({
+                                    key: 'ditherBits',
+                                    value: bits,
+                                    isTransient: false,
+                                });
                             }}
                         >
                             <option value={16}>16</option>

@@ -1,62 +1,69 @@
-import { logger } from '#/infra/logger/appLogger';
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { automergeRepository } from '../repositories/automergeRepository';
-import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
-import { replaceAllInIdb } from '../repositories/crdtPersistence/replaceAllInIdb';
+import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
+import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
 import { branchStore } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
+import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
 
 /**
  * Load a CRDT project from persistence (IndexedDB).
  * Returns true if a project was loaded, false if none was found.
  */
 type LoadCrdtProjectInput = {
-    canActivate: () => boolean;
+    shouldCommit?: () => boolean;
 };
 
-type LoadCrdtProjectOutput = Promise<'loaded' | 'empty' | 'stale' | 'sanitization-failed'>;
-
-export async function loadCrdtProject({ canActivate }: LoadCrdtProjectInput): LoadCrdtProjectOutput {
-    const bundle = await loadAllFromIdb();
-    if (!canActivate()) {
-        return 'stale';
-    }
-    if (!bundle) {
-        return 'empty';
-    }
-
-    let sanitized_bundle;
-    try {
-        sanitized_bundle = sanitizePersistedActionHistoryBundle({ bundle });
-        if (!canActivate()) {
-            return 'stale';
+export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
+    return runCrdtPersistenceLoad(async ({ shouldCommit: shouldCommitQueue }) => {
+        function canCommit(): boolean {
+            return shouldCommitQueue() && shouldCommit?.() !== false;
         }
-        await replaceAllInIdb(sanitized_bundle);
-    } catch (error) {
-        logger.error(new Error('Persisted action-history sanitation or durable replacement failed', { cause: error }));
-        return 'sanitization-failed';
-    }
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
 
-    if (!canActivate()) {
-        return 'stale';
-    }
-    const activated = await automergeRepository.loadAll(sanitized_bundle, canActivate);
-    if (activated && canActivate()) {
+        resetActionReplayAuthority();
+        const snapshot = await loadPersistenceSnapshotFromIdb();
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+        if (!snapshot?.bundle) {
+            return { loaded: false, snapshot };
+        }
+
+        const sanitized_bundle = sanitizePersistedActionHistoryBundle({ bundle: snapshot.bundle });
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+
+        const persisted = await saveAllToIdb(sanitized_bundle, { expectedAuthority: snapshot.authority });
+        if (persisted.status === 'conflict') {
+            throw new Error('[loadCrdtProject] Persisted project changed during action-history sanitation');
+        }
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+
+        const committed = await automergeRepository.loadAll({ bundle: sanitized_bundle, shouldCommit: canCommit });
+        if (!committed || !canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
         restoreActiveBranchSlot();
-        return 'loaded';
-    }
-    return 'stale';
+        return {
+            loaded: true,
+            snapshot: {
+                ...snapshot,
+                authority: persisted.authority,
+                bundle: sanitized_bundle,
+            },
+        };
+    });
 }
 
-/**
- * After a fresh load, point the active `DOC_PREFIX_ROOT` slot at the branch the
- * user was last on. `DOC_PREFIX_ROOT` mirrors the active branch's working doc;
- * without this the user lands on whatever doc last occupied the root slot rather
- * than their selected branch. The main branch is backed directly by the root
- * slot (`rootDocId === DOC_PREFIX_ROOT`), so its restore is a no-op.
- */
 function restoreActiveBranchSlot(): void {
     const state = branchStore.value;
     if (!state) {
@@ -70,11 +77,6 @@ function restoreActiveBranchSlot(): void {
 
     const branchDoc = automergeRepository.getDoc(active.rootDocId);
     if (!branchDoc) {
-        // The active branch's doc was not in the loaded bundle (e.g. it was
-        // deleted or never persisted). Leave the root slot as loaded.
-        logger.warn(
-            `[loadCrdtProject] Active branch document not found on load: ${active.rootDocId}; staying on root slot`
-        );
         return;
     }
 

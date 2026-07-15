@@ -1,4 +1,4 @@
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { replaceTempoMap, replaceTimeSignatureMap } from '#/modules/Transport/useCases';
 
 import {
     addDeviceChain,
@@ -26,17 +26,17 @@ export async function createCinematicTemplate(): Promise<void> {
         loopEnd: totalBeats,
     });
 
-    timeSignatureMapStore.set({
+    replaceTimeSignatureMap({
         changes: [
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 0, numerator: 4, denominator: 4 },
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 48, numerator: 6, denominator: 8 },
-            { id: `ts-${crypto.randomUUID().slice(0, 8)}`, beat: 72, numerator: 4, denominator: 4 },
+            { beat: 0, numerator: 4, denominator: 4 },
+            { beat: 48, numerator: 6, denominator: 8 },
+            { beat: 72, numerator: 4, denominator: 4 },
         ],
     });
-    tempoMapStore.set({
+    replaceTempoMap({
         changes: [
-            { id: `tempo-${crypto.randomUUID().slice(0, 8)}`, beat: 0, tempo: 90, curve: 'instant' },
-            { id: `tempo-${crypto.randomUUID().slice(0, 8)}`, beat: 88, tempo: 72, curve: 'linear' },
+            { beat: 0, tempo: 90, curve: 'instant' },
+            { beat: 88, tempo: 72, curve: 'linear' },
         ],
     });
 

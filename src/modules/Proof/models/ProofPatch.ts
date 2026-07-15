@@ -21,7 +21,9 @@ export type ProofPatch = {
      * Identity of the factory preset this patch was loaded from, or `undefined`
      * once the patch has diverged through any granular edit. Used solely for
      * "active preset" detection in the UI — `name` is a display label and is
-     * not a stable preset identity (multiple edits keep the same name).
+     * not a stable preset identity (multiple edits keep the same name). Project
+     * reload reconstructs this identity only when every saved value still
+     * exactly matches a factory preset.
      */
     presetId?: string;
 
@@ -86,6 +88,142 @@ export type ProofPatch = {
     target: ProofTarget;
     targetLufs: number;
 };
+
+// Canonicalize patch values so gesture ownership survives new object/array instances.
+export function getProofPatchSnapshot(patch: ProofPatch): string {
+    return JSON.stringify([
+        patch.name,
+        patch.presetId ?? null,
+        patch.chainOrder,
+        patch.inputGain,
+        patch.outputGain,
+        patch.eqBypassed,
+        patch.eqBands.map((band) => [band.enabled, band.type, band.channel, band.freq, band.gain, band.q]),
+        patch.dynBypassed,
+        patch.dynCrossoverFreqs,
+        patch.dynBands.map((band) => [
+            band.threshold,
+            band.ratio,
+            band.attack,
+            band.release,
+            band.knee,
+            band.makeup,
+            band.autoMakeup,
+            band.bypassed,
+        ]),
+        patch.imgBypassed,
+        patch.imgBandWidth,
+        patch.imgAutoMonoBass,
+        patch.imgMonoBassFreq,
+        patch.excBypassed,
+        patch.excBands.map((band) => [band.type, band.drive, band.blend, band.enabled]),
+        patch.limBypassed,
+        patch.limCeiling,
+        patch.limRelease,
+        patch.limLookahead,
+        patch.ditherMode,
+        patch.ditherBits,
+        patch.target,
+        patch.targetLufs,
+    ]);
+}
+
+type ScalarProofPatchKey = Exclude<
+    keyof ProofPatch,
+    | 'name'
+    | 'presetId'
+    | 'eqBands'
+    | 'dynCrossoverFreqs'
+    | 'dynBands'
+    | 'imgBandWidth'
+    | 'excBands'
+    | 'target'
+    | 'targetLufs'
+>;
+
+type ScalarProofPatchEdit = {
+    [Key in ScalarProofPatchKey]-?: {
+        key: Key;
+        value: ProofPatch[Key];
+        isTransient?: boolean;
+    };
+}[ScalarProofPatchKey];
+
+export type ProofPatchEdit =
+    | ScalarProofPatchEdit
+    | {
+          key: 'eqBands';
+          value: ProofPatch['eqBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['eqBands'][number];
+          }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'dynCrossoverFreqs';
+          value: ProofPatch['dynCrossoverFreqs'];
+          changedParams?: readonly { crossoverIndex: number }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'dynBands';
+          value: ProofPatch['dynBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['dynBands'][number];
+          }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'imgBandWidth';
+          value: ProofPatch['imgBandWidth'];
+          changedParams?: readonly { bandIndex: number }[];
+          isTransient?: boolean;
+      }
+    | {
+          key: 'excBands';
+          value: ProofPatch['excBands'];
+          changedParams?: readonly {
+              bandIndex: number;
+              field: keyof ProofPatch['excBands'][number];
+          }[];
+          isTransient?: boolean;
+      };
+
+export const PROOF_PATCH_RANGES = {
+    inputGain: [-24, 24],
+    outputGain: [-24, 24],
+    eqBand: {
+        freq: [20, 20_000],
+        gain: [-18, 18],
+        q: [0.1, 10],
+        type: [0, 4],
+        channel: [0, 2],
+    },
+    dynCrossoverFreq: [20, 20_000],
+    dynBand: {
+        threshold: [-60, 0],
+        ratio: [1, 20],
+        attack: [1, 200],
+        release: [10, 2_000],
+        knee: [0, 12],
+        makeup: [-12, 24],
+    },
+    imgBandWidth: [0, 2],
+    imgMonoBassFreq: [40, 200],
+    excBand: {
+        type: [0, 3],
+        drive: [0, 1],
+        blend: [0, 1],
+    },
+    limCeiling: [-12, 0],
+    limRelease: [10, 500],
+    limLookahead: [0.5, 10],
+    ditherBits: [16, 24],
+    targetLufs: [-60, 0],
+    chainModuleId: [0, 4],
+} as const;
 
 export const DEFAULT_PATCH: ProofPatch = {
     name: 'Init',

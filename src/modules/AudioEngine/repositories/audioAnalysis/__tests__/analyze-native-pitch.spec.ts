@@ -29,9 +29,10 @@ describe('analyzeNativePitch', () => {
         };
         vi.mocked(invoke).mockResolvedValue(contour);
 
-        const result = await analyzeNativePitch({ audioPath: 'clip-audio.wav' });
+        const result = await analyzeNativePitch({ analysisId: 'analysis-1', audioPath: 'clip-audio.wav' });
 
         expect(invoke).toHaveBeenCalledWith('analyze_pitch', {
+            analysisId: 'analysis-1',
             audioPath: 'clip-audio.wav',
         });
         expect(result).toEqual(contour);
@@ -45,7 +46,7 @@ describe('analyzeNativePitch', () => {
             algorithm: 'pyin',
         });
 
-        await expect(analyzeNativePitch({ audioPath: 'clip-audio.wav' })).rejects.toThrow(
+        await expect(analyzeNativePitch({ analysisId: 'analysis-1', audioPath: 'clip-audio.wav' })).rejects.toThrow(
             'analyze_pitch returned an invalid payload'
         );
     });
@@ -53,7 +54,7 @@ describe('analyzeNativePitch', () => {
     it('should return null without invoking native analysis outside Tauri', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
 
-        const result = await analyzeNativePitch({ audioPath: 'clip-audio.wav' });
+        const result = await analyzeNativePitch({ analysisId: 'analysis-1', audioPath: 'clip-audio.wav' });
 
         expect(result).toBeNull();
         expect(invoke).not.toHaveBeenCalled();

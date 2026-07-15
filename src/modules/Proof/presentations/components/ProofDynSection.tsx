@@ -6,11 +6,12 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { PROOF_PATCH_RANGES, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
+const CROSSOVER_KEYS = ['low', 'mid', 'high'] as const;
 const BAND_COLORS = [
     'var(--color-accent-peach)',
     'var(--color-accent-mint)',
@@ -21,39 +22,42 @@ const BAND_COLORS = [
 type Props = {
     patch: ProofPatch;
     dynGr: [number, number, number, number];
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Props): ReactElement => {
-    const updateBand = (idx: number, key: string, value: number | boolean) => {
-        const bands = patch.dynBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
-        onPatchChange({ dynBands: bands });
-        const paramName = (() => {
-            if (key === 'autoMakeup') {
-                return 'auto_makeup';
-            }
-            if (key === 'bypassed') {
-                return 'bypass';
-            }
-            return key;
-        })();
-        onSendParam(
-            `dyn_band${idx}_${paramName}`,
-            (() => {
-                if (typeof value === 'boolean') {
-                    return value ? 1 : 0;
-                }
-                return value;
-            })()
-        );
+export const ProofDynSection = ({
+    patch,
+    dynGr,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
+    const updateBand = (
+        idx: number,
+        key: 'threshold' | 'ratio' | 'attack' | 'release',
+        value: number,
+        isTransient = false
+    ) => {
+        const bands = patch.dynBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
+        onPatchChange({
+            key: 'dynBands',
+            value: bands,
+            changedParams: [{ bandIndex: idx, field: key }],
+            isTransient,
+        });
     };
 
-    const updateXover = (idx: number, value: number) => {
+    const updateXover = (idx: number, value: number, isTransient = false) => {
         const freqs: [number, number, number] = [...patch.dynCrossoverFreqs];
         freqs[idx] = value;
-        onPatchChange({ dynCrossoverFreqs: freqs });
-        onSendParam(`dyn_xover${idx}`, value);
+        onPatchChange({
+            key: 'dynCrossoverFreqs',
+            value: freqs,
+            changedParams: [{ crossoverIndex: idx }],
+            isTransient,
+        });
     };
 
     return (
@@ -65,11 +69,16 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                 actions={
                     <DawPluginToggle
                         pressed={!patch.dynBypassed}
+                        aria-label="Dynamics module"
                         tone="peach"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ dynBypassed: !patch.dynBypassed });
-                            onSendParam('dyn_bypass', patch.dynBypassed ? 0 : 1);
+                            const value = !patch.dynBypassed;
+                            onPatchChange({
+                                key: 'dynBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.dynBypassed ? 'OFF' : 'ON'}
@@ -80,23 +89,35 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
             {/* Crossover frequencies */}
             <div className="flex items-center gap-2 px-1">
                 <span className="text-[7px] text-muted-foreground">Crossovers:</span>
-                {patch.dynCrossoverFreqs.map((freq, i) => (
-                    <div key={i} className="flex items-center gap-0.5">
-                        <RotaryKnob
-                            value={freq}
-                            onChange={(v) => updateXover(i, v)}
-                            min={20}
-                            max={20000}
-                            step={1}
-                            defaultValue={freq}
-                            size="sm"
-                            tone="cyan"
-                        />
-                        <span className="text-[6px] text-muted-foreground font-mono">
-                            {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
-                        </span>
-                    </div>
-                ))}
+                {patch.dynCrossoverFreqs.map((freq, i) => {
+                    const crossoverKey = CROSSOVER_KEYS[i]!;
+                    const previous = patch.dynCrossoverFreqs[i - 1];
+                    const next = patch.dynCrossoverFreqs[i + 1];
+                    const [rangeMin, rangeMax] = PROOF_PATCH_RANGES.dynCrossoverFreq;
+                    const min = previous === undefined ? rangeMin : Math.min(freq, previous + 1);
+                    const max = next === undefined ? rangeMax : Math.max(freq, next - 1);
+
+                    return (
+                        <div key={crossoverKey} className="flex items-center gap-0.5">
+                            <RotaryKnob
+                                value={freq}
+                                aria-label={`Dynamics ${crossoverKey} crossover frequency`}
+                                onChange={(value, isTransient) => updateXover(i, value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
+                                min={min}
+                                max={max}
+                                step={1}
+                                defaultValue={freq}
+                                size="sm"
+                                tone="cyan"
+                            />
+                            <span className="text-[6px] text-muted-foreground font-mono">
+                                {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
+                            </span>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Per-band controls */}
@@ -106,7 +127,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
                     const gr = dynGr[i] ?? 0;
                     return (
                         <div
-                            key={i}
+                            key={label}
                             className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] font-bold uppercase" style={{ color: BAND_COLORS[i] }}>
@@ -127,7 +148,10 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
 
                             <RotaryKnob
                                 value={band.threshold}
-                                onChange={(v) => updateBand(i, 'threshold', v)}
+                                aria-label={`Dynamics ${label} threshold`}
+                                onChange={(value, isTransient) => updateBand(i, 'threshold', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={-60}
                                 max={0}
                                 step={0.5}
@@ -139,7 +163,10 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
 
                             <RotaryKnob
                                 value={band.ratio}
-                                onChange={(v) => updateBand(i, 'ratio', v)}
+                                aria-label={`Dynamics ${label} ratio`}
+                                onChange={(value, isTransient) => updateBand(i, 'ratio', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={1}
                                 max={20}
                                 step={0.5}
@@ -151,7 +178,10 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
 
                             <RotaryKnob
                                 value={band.attack}
-                                onChange={(v) => updateBand(i, 'attack', v)}
+                                aria-label={`Dynamics ${label} attack`}
+                                onChange={(value, isTransient) => updateBand(i, 'attack', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={1}
                                 max={200}
                                 step={1}
@@ -163,7 +193,10 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
 
                             <RotaryKnob
                                 value={band.release}
-                                onChange={(v) => updateBand(i, 'release', v)}
+                                aria-label={`Dynamics ${label} release`}
+                                onChange={(value, isTransient) => updateBand(i, 'release', value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={10}
                                 max={2000}
                                 step={1}

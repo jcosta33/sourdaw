@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
+import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type ProofNodeResult } from '../ProofNode';
 import { findWasmDescriptor } from '../wasmDeviceRegistry';
@@ -48,11 +49,13 @@ describe('findWasmDescriptor', () => {
         proofNodeMocks.resetIntegrated.mockReset();
         proofNodeMocks.setBypass.mockReset();
         proofNodeMocks.setParam.mockReset();
+        externalLatencyRegistry.clear();
         setAudioDeviceRuntimeSink({});
     });
 
     afterEach(() => {
         setAudioDeviceRuntimeSink({});
+        externalLatencyRegistry.clear();
     });
 
     it('should return the descriptor for each registered WASM device type', () => {
@@ -68,9 +71,9 @@ describe('findWasmDescriptor', () => {
         expect(findWasmDescriptor('')).toBeUndefined();
     });
 
-    it('should replay queued restored flat params after Proof patch sync', async () => {
+    it('should apply the validated Proof patch after queued restored flat params', async () => {
         const syncProofPatch = vi.fn(() => {
-            proofNodeMocks.setParam('lim_ceiling', -0.1);
+            proofNodeMocks.setParam('lim_ceiling', -1);
         });
         const registerProofDevice = vi.fn();
         proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
@@ -92,7 +95,7 @@ describe('findWasmDescriptor', () => {
             throw new Error('Expected proof placeholder to expose loading controller');
         }
         expect(placeholder.nativeDspControls).toBe(placeholder.controller);
-        placeholder.controller.setParam('lim_ceiling', -1.5);
+        placeholder.controller.setParam('lim_ceiling', 0.1);
 
         await loadPromise;
 
@@ -100,48 +103,15 @@ describe('findWasmDescriptor', () => {
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
         expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
         expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(2);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', -0.1);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -1.5);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', 0.1);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -1);
     });
 
-    it('should preserve real Proof patch sync when direct flat params are queued', async () => {
+    it('should apply the complete Proof patch after direct flat params are queued', async () => {
+        const onLoaded = vi.fn();
         const syncProofPatch = vi.fn(() => {
             proofNodeMocks.setParam('input_gain', 3);
             proofNodeMocks.setParam('lim_ceiling', -0.1);
-        });
-        proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
-        setAudioDeviceRuntimeSink({ syncProofPatch });
-
-        const desc = findWasmDescriptor('proof');
-        if (!desc) {
-            throw new Error('Expected proof descriptor to be registered');
-        }
-
-        const { placeholder, loadPromise } = desc.create({
-            context: createRegistryAudioContext(),
-            deviceId: 'proof-1',
-            deviceType: 'proof',
-            onLoaded: vi.fn(),
-        });
-
-        if (!placeholder.controller) {
-            throw new Error('Expected proof placeholder to expose loading controller');
-        }
-        placeholder.controller.setParam('lim_ceiling', -1.5);
-
-        await loadPromise;
-
-        expect(syncProofPatch).toHaveBeenCalledTimes(1);
-        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(3);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'input_gain', 3);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'lim_ceiling', -0.1);
-        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(3, 'lim_ceiling', -1.5);
-    });
-
-    it('should install the ready Proof node even when patch sync throws', async () => {
-        const onLoaded = vi.fn();
-        const syncProofPatch = vi.fn(() => {
-            throw new Error('patch sync failed');
         });
         proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
         setAudioDeviceRuntimeSink({ syncProofPatch });
@@ -166,16 +136,58 @@ describe('findWasmDescriptor', () => {
         await loadPromise;
 
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
+        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(3);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(1, 'lim_ceiling', -1.5);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(2, 'input_gain', 3);
+        expect(proofNodeMocks.setParam).toHaveBeenNthCalledWith(3, 'lim_ceiling', -0.1);
         expect(onLoaded).toHaveBeenCalledTimes(1);
-        expect(onLoaded).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'proof-1', type: 'proof' }));
+        const syncCallOrder = syncProofPatch.mock.invocationCallOrder[0];
+        const loadedCallOrder = onLoaded.mock.invocationCallOrder[0];
+        if (syncCallOrder === undefined || loadedCallOrder === undefined) {
+            throw new Error('Expected sync and load call order to be recorded');
+        }
+        expect(syncCallOrder).toBeLessThan(loadedCallOrder);
+    });
+
+    it('should keep the placeholder when patch sync throws and clean up the ready node', async () => {
+        const onLoaded = vi.fn();
+        const registerProofDevice = vi.fn();
+        const unregisterProofDevice = vi.fn();
+        const syncProofPatch = vi.fn(() => {
+            throw new Error('patch sync failed');
+        });
+        proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
+        setAudioDeviceRuntimeSink({ registerProofDevice, unregisterProofDevice, syncProofPatch });
+
+        const desc = findWasmDescriptor('proof');
+        if (!desc) {
+            throw new Error('Expected proof descriptor to be registered');
+        }
+
+        const { placeholder, loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'proof-1',
+            deviceType: 'proof',
+            onLoaded,
+        });
+
+        if (!placeholder.controller) {
+            throw new Error('Expected proof placeholder to expose loading controller');
+        }
+        placeholder.controller.setParam('lim_ceiling', -1.5);
+
+        await loadPromise;
+
+        expect(syncProofPatch).toHaveBeenCalledTimes(1);
+        expect(registerProofDevice).toHaveBeenCalledTimes(1);
+        expect(unregisterProofDevice).toHaveBeenCalledWith('proof-1');
+        expect(onLoaded).not.toHaveBeenCalled();
+        expect(proofNodeMocks.onLatencyChanged).not.toHaveBeenCalled();
+        expect(proofNodeMocks.onMeterData).not.toHaveBeenCalled();
+        expect(proofNodeMocks.destroy).toHaveBeenCalledTimes(1);
+        expect(externalLatencyRegistry.has('proof-1')).toBe(false);
         expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(1);
         expect(proofNodeMocks.setParam).toHaveBeenCalledWith('lim_ceiling', -1.5);
-        const syncCallOrder = syncProofPatch.mock.invocationCallOrder[0];
-        const replayCallOrder = proofNodeMocks.setParam.mock.invocationCallOrder[0];
-        if (syncCallOrder === undefined || replayCallOrder === undefined) {
-            throw new Error('Expected sync and replay call order to be recorded');
-        }
-        expect(replayCallOrder).toBeGreaterThan(syncCallOrder);
     });
 
     it('should still sync a real in-memory Proof patch when no flat params are queued', async () => {

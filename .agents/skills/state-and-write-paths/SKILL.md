@@ -1,204 +1,131 @@
 ---
 name: state-and-write-paths
-type: agent-guide
 description: >-
-  Classify every state value and route every write through its owning boundary before adding or
-  changing state. ALWAYS apply this skill when adding, editing, or reviewing project truth, stores,
-  selectors/projections, undo/redo, commands, events, async fetch/cache state, UI state, or
-  telemetry — even if it looks like "just one more store field". Do not write business state through
-  a store, mutate another feature's slice directly, or stash a runtime object in a state container.
-  Skip this skill for pure rendering/styling work, build/config changes, and dependency bumps that
-  touch no state.
+  Classify every state value and route every write through its owning boundary
+  before adding or changing state. ALWAYS apply when adding, editing, or reviewing
+  project truth, stores, selectors/projections, undo/redo, commands, events, async
+  fetch/cache state, UI state, or telemetry — even if it looks like "just one more
+  store field". Do not write business state through a store, mutate another
+  feature's slice, or treat query cache as editable truth. Skip pure presentational
+  props with no persistence, and engine-internal RT buffers.
 ---
-
-# Skill: state-and-write-paths
 
 ## Purpose
 
-This skill prevents state confusion, hidden mutation, and fake architecture. Most architectural
-drift starts when code stops distinguishing truth from projection from runtime state from telemetry
-from UI state from async fetch/cache state — and a store quietly becomes the mutation surface for
-business changes that should flow through commands. The primary question is **not** "which store
-should I use?" — it is **"what kind of state is this, and who is allowed to write it?"**
-
-For every state value, decide in order: (1) what kind of state it is, (2) who owns it, (3) who may
-write it, (4) how it should be exposed, (5) what write path should exist.
-
----
+Unclassified state is how DAW truth corrupts: a store field that is half project / half UI, a foreign slice write that breaks undo, or a React handle sitting where serialized truth belongs. Classify first, then place the write.
 
 ## Core rules
 
-### 1. Classify before you place
+### 1. Classify every value into exactly one category before placing it
 
-Every state value must be classified into exactly one of the eight categories (see
-`references/state-categories.md`) before it is added or moved: project state, shared runtime state,
-persistent UI state, ephemeral UI state, local component state, engine/runtime state, telemetry, or
-async fetch/cache state. _Why: unclassified state lands in whatever store is nearest and inherits
-the wrong persistence, undo, and ownership semantics — the root cause of most drift._
+| Category | What it is | Write path |
+|----------|------------|------------|
+| Project state | Authoritative truth (tracks, clips, routing, automation, tempo, markers, device order, saved params) | Owning domain use cases / commands; serializable, undoable |
+| Shared runtime | App-wide runtime visibility (engine ready, device lists, scan results) | Owning subsystem; not project truth |
+| Persistent UI | Local prefs (zoom, layout, sidebar) | Prefs storage — not the project file |
+| Ephemeral UI | Selection, tool, drag, hover | Feature/view; disposable |
+| Local component | Draft input, popover open | `useState` / form in that component |
+| Engine/runtime | Live graph, playhead execution, meters | Engine only — non-serializable |
+| Async fetch/cache | Server/query results | TanStack Query (or equivalent) — not business writes |
+| Telemetry | Logs, metrics | Side channel — never truth |
 
-### 2. Commands/actions are the write boundary for business changes
+**Why:** two categories “fitting” means the design is mixed; split the value or the owner before coding.
 
-All meaningful business writes flow through explicit actions or commands. A command/action should:
-express intent, validate inputs, enforce invariants, update authoritative state, coordinate
-undo/redo, support coalescing for continuous gestures, emit meaningful events when warranted, and
-call adapters when needed. _Why: the write boundary is where invariants and undo live; bypassing it
-spreads validation and history logic into callers where it rots._
+### 2. One owner per authoritative write
 
-### 3. Stores expose state; they are not the write model
+Feature A never mutates feature B’s project slice. Cross-feature intent goes through a command or the owning module’s use case.
 
-A store may expose truth, projections, runtime visibility, or UI state. A store must **not** quietly
-replace commands/actions as the mutation surface for meaningful business changes. _Why: a store that
-is read API + write API + event bus + orchestration is a service in disguise, and every consumer
-becomes a writer with no invariant enforcement._
+**Why:** multi-writer truth makes undo, CRDT, and collaboration undefined.
 
-### 4. Shared stores are allowed; shared mutability is not
+### 3. Stores are a public read contract, not a write API for business truth
 
-Many parts of the app may read a shared store. That does **not** mean many parts may write it
-directly. A store may be globally visible without being globally writable. _Why: global write access
-is unbounded blast radius — any reader can corrupt state with no owning code to hold the line._
+Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers). Outside: use cases or `executeAppAction` (**policy**; foreign-write ESLint is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
 
-### 5. Every authoritative slice has exactly one owner
+**Why:** Sourdaw keeps stores as read contracts; write discipline is what prevents global mutability.
 
-Every slice of project truth has one owning business area, and only its owning write boundary may
-mutate it directly. Other code may read it, request changes through explicit actions, react to
-meaningful events, or derive projections from it — but may **not** mutate it directly. _Why: single
-ownership is what makes a write path auditable; many writers means no one can reason about what
-state can become._
+### 4. Project truth is serializable; engine/runtime state is not
 
-### 6. Cross-feature writes use public write boundaries
+Never put `AudioContext`, `AudioNode`, worklet handles, or other runtime objects in general stores or project state.
 
-If feature A needs to change feature B's truth: call B's explicit action/command, or route through a
-shared command registry, or use a meaningful event if the architecture calls for that. Do not mutate
-another feature's state slice directly. _Why: direct cross-feature mutation couples features through
-their internals, so B can never change its slice shape without silently breaking A._
+**Why:** save/load and collaboration cannot round-trip live native handles; the engine owns runtime objects.
 
-### 7. Map the blast radius before changing a slice's shape or write path
+### 5. Undo/history only for intentional project writes
 
-When you modify the structure of a state slice or its write path, map its blast radius: who reads
-this, who writes this, which upstream commands mutate it, and which downstream selectors/components
-project it. Lean on the TypeScript compiler (`cmdTypecheck`) to verify that all consumers are
-updated to the new shape — do not assume the local change is safe until the compiler proves it.
-_Why: state shape is a contract with every selector and component that touches it; the compiler is
-the only honest census of consumers._
+Ephemeral UI and query-cache churn must not invent undo entries. Continuous gestures coalesce into meaningful writes.
 
-### 8. Projections are derived, read-oriented, and disposable
+**Why:** undo that rewinds hover state or network cache is unusable; missing undo on project edits is data loss.
 
-Use projections/read models/selectors for flattened UI structures, filtered/searchable structures,
-timeline summaries, mixer summaries, derived clip maps, parameter display state, and renderer-ready
-views. A projection may be briefly stale, must be derivable, and must **not** become the hidden
-source of truth. _Why: once a derived value is treated as authoritative, the real truth and the
-projection drift apart and there is no longer a single answer to "what is true"._
+### 6. Commands express intent; events report outcomes
 
-### 9. Selectors stay read-oriented
+Events do not replace commands as the write API. Subscribers react; they do not become a second owner of truth. Event contracts stay pure (`events-are-pure`).
 
-Selectors/projections may shape data. They must **not** emit events, write truth, perform
-side-effectful orchestration, or call runtime APIs to mutate state. _Why: a selector that mutates
-runs on every read/render, turning a read path into an uncontrolled, repeated write._
+**Why:** “notify by event” that mutates foreign state is a hidden write path.
 
-### 10. Events report meaningful occurrences; they do not replace commands
+### 7. Projections and selectors are derived and disposable
 
-Use events when another concern must react independently, when the occurrence has business meaning,
-or when it matters for logging/history/integration/collaboration. Do not emit events for every
-trivial field change just to avoid declaring ownership. Commands/actions express intent, events
-report meaningful occurrences, stores expose state — three distinct roles. _Why: events-as-ownership
-is implicit coupling; nobody owns the write, and the system's behavior becomes an untraceable web of
-reactions._
+Never persist derived-as-truth. Selectors stay read-only — no write side effects on read/render.
 
-### 11. Every meaningful write is representable; continuous interactions coalesce
+**Why:** stored derivatives drift from source truth and become a second model.
 
-Shape writes so they are explicit, reversible where appropriate, groupable for continuous
-interaction, and understandable in history. Continuous interactions — fader drags, knob changes,
-automation editing, clip dragging, scrubbing — must coalesce into meaningful undo units, not floods
-of tiny unrelated history steps. _Why: per-event history steps make undo useless and bury intent;
-coalescing is what keeps history legible and reversible at the gesture level._
+### 8. Async fetch/cache is not editable business state
 
-### 12. Async fetch/cache state is request-oriented, not business truth
+Edit project truth through domain writes; invalidate or refetch the cache. Do not treat the query cache as a mutable document.
 
-Use query-oriented tools for request caching, suspense integration, loading/error state, and
-invalidation; do not stuff all request state into generic app stores. If fetched data becomes part
-of the DAW's authoritative editable state, it must still be incorporated through the correct
-write/truth model. _Why: query caches are evictable and request-shaped; treating a cache entry as
-editable truth means the next invalidation silently discards user edits._
-
----
-
-## Placement heuristics
-
-Resolve the category from rule 1, then place by intent:
-
-- **Project truth** — when it must be saved, undone, collaborated on, or validated as business state.
-- **Shared runtime state** — when it must be visible app-wide but is not project truth.
-- **Persistent UI state** — when it is preference-like.
-- **Ephemeral UI state** — when it is interaction-local.
-- **Runtime state** — only for live runtime resources.
-- **Telemetry** — for read-only feedback.
-- **Async query/cache state** — for request lifecycle management.
-
-Telemetry is not project truth unless explicitly committed through an application action.
-
----
+**Why:** cache-as-truth reimplements a worse store without ownership or undo.
 
 ## What does not belong
 
-- **Runtime objects in state containers.** `AudioContext`, `AudioNode`, plugin instance handles,
-  native windows, DSP buffers, live host/runtime objects, and engine handles belong to the runtime
-  that owns them — never in general shared stores or truth stores.
-- **Derivable values stored as state.** If a value can be computed from truth, it is a projection,
-  not a stored field.
-- **Request state in general app stores.** Loading/error/cache lifecycle lives in query-oriented
-  tooling, not a generic store.
-- **Side effects in selectors.** Orchestration, event emission, and mutation are write-path
-  concerns; selectors are read-path only.
-- Native plugin host/runtime resource lifecycle and RT-safe host communication are owned elsewhere
-  (see `../plugin-hosting/SKILL.md` and `../web-audio-engine/SKILL.md`, if installed); this skill
-  governs how that runtime state is *classified and exposed*, not how the runtime itself is built.
-
----
+- Pure presentational props that never persist or cross features.
+- Engine-internal RT buffers and schedules.
+- Inventing a ninth category instead of fitting or splitting the design.
+- “Just one more field” on a store without classification.
 
 ## Anti-patterns
 
-| # | Temptation (wrong) | Do instead (right) |
-|---|---|---|
-| 1 | Add new state without deciding whether it is truth, projection, runtime, telemetry, or UI state | Classify first (rule 1), then place it |
-| 2 | Treat mutable derived state as authoritative | Own truth separately; keep projections derivable |
-| 3 | Let a store act as read API, write API, event bus, and orchestration layer | Stores expose state; commands/actions own meaningful writes |
-| 4 | Put an `AudioNode`, plugin instance, engine handle, or native window in a general shared store or truth store | Let the runtime own runtime objects |
-| 5 | Let meters or displayed playhead silently mutate truth | Keep telemetry read-oriented unless explicitly committed |
-| 6 | Have feature A mutate feature B's authoritative slice directly | Call the owning action/command |
-| 7 | Mutate nested objects from store snapshots in place | Use the explicit owning write path |
-| 8 | Let a query result become implicit editable truth without explicit adoption | Keep fetch/cache concerns distinct from authoritative editable truth |
-| 9 | Emit events everywhere to avoid declaring owners and actions | Define ownership clearly first, then emit events for meaningful occurrences |
+### CRITICAL — Store as write API for business truth
 
----
+❌ Wrong: any module calls `trackStore.set(…)` to “add a track”.
 
-## Self-review gate
+✅ Correct: Arrangement (or Command) use case owns the write; others call that API.
 
-Before accepting state code, walk every item below and write the answer down. Not complete until
-each of the ten questions has an explicit written answer in the review notes, the blast-radius
-consumer list (rule 7) is enumerated, and the `cmdTypecheck` output appears verbatim showing all
-consumers compile against the new state shape.
+### CRITICAL — Runtime object in a general store
 
-1. What category of state is this? (one of the eight in `references/state-categories.md`)
-2. Who owns it?
-3. Who is allowed to write it?
-4. Is the write path explicit (a command/action, not a raw store write)?
-5. Is a store being used as a hidden write API?
-6. Is any runtime object leaking into state containers?
-7. Is telemetry being mistaken for truth?
-8. Is a derivable value being stored unnecessarily?
-9. Does the change preserve undo/coalescing semantics?
-10. Are commands/actions, events, and stores playing distinct roles?
+❌ Wrong: `audioContextStore` holding the live `AudioContext`.
 
-If any slice shape or write path changed, the `cmdTypecheck` run is mandatory — a green compile is
-the proof that every projecting selector and component was updated. Paste the last lines of that
-output verbatim. A claim that "consumers are fine" without pasted `cmdTypecheck` output reads as
-unverified, not pass.
+✅ Correct: engine-owned runtime; expose summaries/APIs only.
 
----
+### CRITICAL — Feature A mutates feature B’s slice
 
-## Bundled resources
+❌ Wrong: Mixer code directly rewrites Arrangement clip state.
 
-- `references/state-categories.md` — the eight state categories in full: definition, concrete
-  examples, and defining properties for each (project state, shared runtime state, persistent UI
-  state, ephemeral UI state, local component state, engine/runtime state, telemetry, async
-  fetch/cache state).
+✅ Correct: command / Arrangement use case.
+
+### HIGH — Unclassified new field
+
+❌ Wrong: add `foo` to a store “for now”.
+
+✅ Correct: pick a row from the category table, then place the write.
+
+### HIGH — Derived value stored as truth
+
+❌ Wrong: persist `visibleClips` that is just a filter of clips.
+
+✅ Correct: selector/projection over source truth.
+
+### HIGH — Query cache treated as editable truth
+
+❌ Wrong: mutate TanStack Query data as if it were the project document.
+
+✅ Correct: domain write + invalidate/refetch.
+
+### MEDIUM — Events instead of ownership
+
+❌ Wrong: emit an event whose only listener is a known foreign mutator standing in for a use-case call.
+
+✅ Correct: call the owning use case (or command) directly for intentional writes.
+
+## References
+
+- [docs/03-state-management.md](../../../docs/03-state-management.md) — store patterns and client state.
+- [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — stores as contract surfaces.
+- [docs/04-events.md](../../../docs/04-events.md) — event contracts vs commands.

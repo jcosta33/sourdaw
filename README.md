@@ -5,29 +5,22 @@ Rust, and Tauri. The frontend follows module boundary contracts documented in
 `AGENTS.md`; backend/native work is split across the Rust workspace crates under
 `crates/` and the thin Tauri bridge in `src-tauri/`.
 
-## Agent workflow
+## Project governance
 
-Development work uses proportional intent, independent review, and findings
-records around implementation. Implementation is the work itself, not a
-separate record. Checked-in feature specs live under `specs/` as an explicit
-project exception; captured source material lives under `specs/intake/`.
-Transient task and review artifacts live outside this repository beside the
-agent's Codex-native plans, notes, or state. The agent chooses the location and
-carries its exact full path throughout the work. Load relevant global skills,
-follow `AGENTS.md`, and preserve empirical evidence for verification claims.
-No Suspec CLI or MCP service is required.
+Project specifications live under `.agents/specs/`, captured source material
+under `.agents/specs/intake/`, and accepted architecture decisions under
+`.agents/decisions/`.
 
 ## Setup
 
-Install both dependency sets before the first push from a checkout:
+Install both dependency sets for local development:
 
 ```sh
 pnpm install
 npm --prefix server ci --include=dev
 ```
 
-`pnpm install` also configures the checked-in Git hooks. Server dependencies are
-separate setup; the pre-push gate does not run `npm ci`.
+Server dependencies are installed separately from the frontend workspace.
 
 ## Common commands
 
@@ -36,9 +29,3 @@ separate setup; the pre-push gate does not run `npm ci`.
 - `pnpm typecheck` - run TypeScript checks
 - `pnpm deps:validate` - validate frontend dependency boundaries
 - `pnpm build` - create a production build
-
-## Git hooks
-
-The checked-in pre-push hook runs the same web and collaboration-server health
-gates as CI. Use standard Git `--no-verify` only when you intentionally need to
-bypass it.

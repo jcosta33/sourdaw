@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
 
@@ -41,20 +43,35 @@ describe('handleWebMidiPitchBend', () => {
 
     it('should store MPE pitch bend and retune only the note on the matching channel', () => {
         const set_target_at_time = vi.fn<void, [number, number, number]>();
-        activeNotes.set(64, {
+        const matchingKey = createWebMidiNoteKey(2, 64);
+        const otherKey = createWebMidiNoteKey(3, 64);
+        activeNotes.set(matchingKey, {
             channel: 2,
+            note: 64,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
             startTime: 0,
             startBeat: 0,
             osc: {
                 detune: { setTargetAtTime: set_target_at_time },
             } as unknown as OscillatorNode & { _env?: GainNode },
         });
-        channelToNote.set(2, 64);
+        activeNotes.set(otherKey, {
+            channel: 3,
+            note: 64,
+            trackId: 'track-2',
+            instrumentTrackId: 'track-2',
+            startTime: 0,
+            startBeat: 0,
+        });
+        channelToNote.set(2, matchingKey);
+        channelToNote.set(3, otherKey);
         const fn = handleWebMidiPitchBend._factory(make_dependencies());
 
         fn(2, 0, 65);
 
-        expect(activeNotes.get(64)?.pitchBend).toBe(128);
+        expect(activeNotes.get(matchingKey)?.pitchBend).toBe(128);
+        expect(activeNotes.get(otherKey)?.pitchBend).toBeUndefined();
         expect(set_target_at_time).toHaveBeenCalledWith(80, 2, 0.003);
     });
 });

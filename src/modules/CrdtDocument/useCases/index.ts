@@ -3,7 +3,6 @@ export { DOC_PREFIX_ROOT, DOC_BRANCHES } from './crdtDocumentTypes';
 export { compactProject } from './compactProject';
 export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';
-export { hasCrdtProject } from './hasCrdtProject';
 export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 
@@ -22,9 +21,13 @@ export { projectActionHistoryToStore } from './projection/projectActionHistoryTo
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
 export { removeCrdtDoc } from './removeCrdtDoc';
+export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
+export { preserveBranchStateForSession } from './preserveBranchStateForSession';
+export { replaceBranchState } from './replaceBranchState';
+export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';
 
 export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';

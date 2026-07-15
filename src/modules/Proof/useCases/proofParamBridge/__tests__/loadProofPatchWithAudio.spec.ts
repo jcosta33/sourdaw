@@ -1,15 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
+import { getProofPatchParameterValues } from '../../../services/getProofPatchParameterValues';
 import { getProofState, proofStore, setProofAbBypass } from '../../../stores/proofStore';
+import { PROOF_PRESETS } from '../../proofPresets';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { loadProofPatchWithAudio } from '../loadProofPatchWithAudio';
+import { setProofParamWithPatch } from '../setProofParamWithPatch';
 import { syncFullPatch } from '../syncFullPatch';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(() => null),
+    persistDevicePatch: vi.fn(),
 }));
 
 function makeBridge(): ProofAudioBridge & {
@@ -84,6 +88,17 @@ function makeTrackState(parameterValues: Record<string, number>): NonNullable<Re
 
 const DEVICE_ID = 'dev-1';
 
+type FixedAggregateKey = 'chainOrder' | 'eqBands' | 'dynCrossoverFreqs' | 'dynBands' | 'imgBandWidth' | 'excBands';
+
+const SPARSE_AGGREGATES: Array<[name: string, key: FixedAggregateKey, index: number]> = [
+    ['chain order', 'chainOrder', 2],
+    ['EQ bands', 'eqBands', 2],
+    ['dynamics crossovers', 'dynCrossoverFreqs', 1],
+    ['dynamics bands', 'dynBands', 1],
+    ['imager widths', 'imgBandWidth', 1],
+    ['exciter bands', 'excBands', 1],
+];
+
 describe('loadProofPatchWithAudio', () => {
     beforeEach(() => {
         bridges.clear();
@@ -113,6 +128,49 @@ describe('loadProofPatchWithAudio', () => {
         expect(calls.get('lim_ceiling')).toBe(-1.5);
         expect(calls.get('input_gain')).toBe(DEFAULT_PATCH.inputGain);
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
+        expect(persistDevicePatch).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatch).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                input_gain: DEFAULT_PATCH.inputGain,
+                lim_ceiling: -1.5,
+                eq_band1_freq: DEFAULT_PATCH.eqBands[1]!.freq,
+                dyn_band2_ratio: DEFAULT_PATCH.dynBands[2]!.ratio,
+                img_width3: DEFAULT_PATCH.imgBandWidth[3],
+                exc_band3_blend: DEFAULT_PATCH.excBands[3]!.blend,
+                dither_bits: DEFAULT_PATCH.ditherBits,
+                target_mode: 0,
+                target_lufs: DEFAULT_PATCH.targetLufs,
+                chain_order_4: DEFAULT_PATCH.chainOrder[4],
+            })
+        );
+        expect(Object.keys(vi.mocked(persistDevicePatch).mock.calls[0]?.[1] ?? {})).toHaveLength(124);
+    });
+
+    it('rejects an invalid full patch before any write', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+
+        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: { ...DEFAULT_PATCH, limCeiling: 1 } });
+
+        expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
+    });
+
+    it.each(SPARSE_AGGREGATES)('rejects sparse %s before any write', (_name, key, index) => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const patch = structuredClone(DEFAULT_PATCH);
+        Reflect.deleteProperty(patch[key], index);
+
+        loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch });
+
+        expect(getProofState(DEVICE_ID).patch).toEqual(DEFAULT_PATCH);
+        expect(persistDevicePatch).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
     });
 
     it('should rehydrate restored scalar device params before syncing a default Proof patch', () => {
@@ -151,6 +209,136 @@ describe('loadProofPatchWithAudio', () => {
         expect(bridge.reorderModules).toHaveBeenCalledWith(DEFAULT_PATCH.chainOrder);
     });
 
+    it('rehydrates factory preset identity when all saved values still match', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        const preset = PROOF_PRESETS.find((candidate) => candidate.id === 'streaming')!;
+        vi.mocked(getTrackStoreState).mockReturnValue(makeTrackState(getProofPatchParameterValues(preset.patch)));
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.presetId).toBe('streaming');
+        expect(patch.name).toBe('Streaming Master');
+    });
+
+    it('should rehydrate restored Proof sections before syncing a default patch', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                eq_band1_freq: 1200,
+                eq_band1_gain: 3.5,
+                eq_band1_q: 2.25,
+                eq_band1_type: 2,
+                eq_band1_channel: 1,
+                eq_band1_enabled: 0,
+                dyn_xover0: 180,
+                dyn_band2_threshold: -10,
+                dyn_band2_ratio: 4,
+                dyn_band2_attack: 12,
+                dyn_band2_release: 220,
+                dyn_band2_knee: 8,
+                dyn_band2_makeup: 1.5,
+                dyn_band2_auto_makeup: 0,
+                dyn_band2_bypass: 1,
+                img_width2: 1.4,
+                img_auto_mono_bass: 0,
+                img_mono_bass_freq: 110,
+                exc_band3_type: 2,
+                exc_band3_drive: 0.7,
+                exc_band3_blend: 0.6,
+                exc_band3_enabled: 1,
+                chain_order_0: 4,
+                chain_order_1: 1,
+                chain_order_2: 2,
+                chain_order_3: 3,
+                chain_order_4: 0,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.eqBands[1]).toMatchObject({
+            freq: 1200,
+            gain: 3.5,
+            q: 2.25,
+            type: 2,
+            channel: 1,
+            enabled: false,
+        });
+        expect(patch.dynCrossoverFreqs[0]).toBe(180);
+        expect(patch.dynBands[2]).toMatchObject({
+            threshold: -10,
+            ratio: 4,
+            attack: 12,
+            release: 220,
+            knee: 8,
+            makeup: 1.5,
+            autoMakeup: false,
+            bypassed: true,
+        });
+        expect(patch.imgBandWidth[2]).toBe(1.4);
+        expect(patch.imgAutoMonoBass).toBe(false);
+        expect(patch.imgMonoBassFreq).toBe(110);
+        expect(patch.excBands[3]).toMatchObject({ type: 2, drive: 0.7, blend: 0.6, enabled: true });
+        expect(patch.chainOrder[0]).toBe(4);
+
+        const calls = paramCalls(bridge);
+        expect(calls.get('eq_band1_freq')).toBe(1200);
+        expect(calls.get('dyn_xover0')).toBe(180);
+        expect(calls.get('dyn_band2_threshold')).toBe(-10);
+        expect(calls.get('img_width2')).toBe(1.4);
+        expect(calls.get('exc_band3_drive')).toBe(0.7);
+        expect(bridge.reorderModules).toHaveBeenCalledWith([4, 1, 2, 3, 0]);
+    });
+
+    it('rejects persisted numeric values outside the Proof parameter contract', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                input_gain: 24.5,
+                output_gain: -24,
+                eq_band1_freq: 19,
+                eq_band1_gain: 18.5,
+                eq_band1_q: 0.09,
+                dyn_xover0: 20_001,
+                dyn_band2_threshold: -60.5,
+                dyn_band2_ratio: 20.5,
+                dyn_band2_attack: 0.5,
+                dyn_band2_release: 2_001,
+                dyn_band2_knee: 12.5,
+                dyn_band2_makeup: 24.5,
+                img_width2: 2.01,
+                img_mono_bass_freq: 201,
+                exc_band3_drive: -0.01,
+                exc_band3_blend: 1.01,
+                lim_ceiling: 0.1,
+                lim_release: 9,
+                lim_lookahead: 0.4,
+                dither_bits: 8,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(DEFAULT_PATCH.inputGain);
+        expect(patch.outputGain).toBe(-24);
+        expect(patch.eqBands[1]).toMatchObject(DEFAULT_PATCH.eqBands[1]!);
+        expect(patch.dynCrossoverFreqs[0]).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
+        expect(patch.dynBands[2]).toMatchObject(DEFAULT_PATCH.dynBands[2]!);
+        expect(patch.imgBandWidth[2]).toBe(DEFAULT_PATCH.imgBandWidth[2]);
+        expect(patch.imgMonoBassFreq).toBe(DEFAULT_PATCH.imgMonoBassFreq);
+        expect(patch.excBands[3]).toMatchObject(DEFAULT_PATCH.excBands[3]!);
+        expect(patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
+        expect(patch.limRelease).toBe(DEFAULT_PATCH.limRelease);
+        expect(patch.limLookahead).toBe(DEFAULT_PATCH.limLookahead);
+        expect(patch.ditherBits).toBe(DEFAULT_PATCH.ditherBits);
+    });
+
     it.each([
         { restoredValue: 0, expectedMode: 'off' },
         { restoredValue: 1, expectedMode: 'tpdf' },
@@ -164,6 +352,74 @@ describe('loadProofPatchWithAudio', () => {
 
         expect(getProofState(DEVICE_ID).patch.ditherMode).toBe(expectedMode);
         expect(paramCalls(bridge).get('dither_mode')).toBe(restoredValue);
+    });
+
+    it('rehydrates an atomically persisted target and loudness value', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 3,
+                target_lufs: -23,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe('broadcast');
+        expect(patch.targetLufs).toBe(-23);
+    });
+
+    it('rejects a restored non-ascending dynamics crossover tuple', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                dyn_xover0: 10_000,
+                dyn_xover1: 1_000,
+                dyn_xover2: 8_000,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        expect(getProofState(DEVICE_ID).patch.dynCrossoverFreqs).toEqual(DEFAULT_PATCH.dynCrossoverFreqs);
+        expect(paramCalls(bridge).get('dyn_xover0')).toBe(DEFAULT_PATCH.dynCrossoverFreqs[0]);
+    });
+
+    it('rejects a restored target and loudness pair that contradicts the target contract', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 0,
+                target_lufs: -23,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe(DEFAULT_PATCH.target);
+        expect(patch.targetLufs).toBe(DEFAULT_PATCH.targetLufs);
+    });
+
+    it('accepts an in-range custom target loudness value', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                target_mode: 5,
+                target_lufs: -18,
+            })
+        );
+
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.target).toBe('custom');
+        expect(patch.targetLufs).toBe(-18);
     });
 
     it('should rehydrate restored scalars when runtime-only state already created the Proof entry', () => {
@@ -187,6 +443,30 @@ describe('loadProofPatchWithAudio', () => {
         const calls = paramCalls(bridge);
         expect(calls.get('ab_bypass')).toBe(1);
         expect(calls.get('input_gain')).toBe(2.25);
+        expect(calls.get('lim_ceiling')).toBe(-4.5);
+    });
+
+    it('hydrates saved fields before an edit made ahead of bridge registration', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(
+            makeTrackState({
+                eq_band1_freq: 1_200,
+                lim_ceiling: -4.5,
+            })
+        );
+
+        setProofParamWithPatch({ deviceId: DEVICE_ID, key: 'inputGain', value: 3 });
+
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        syncFullPatch(DEVICE_ID);
+
+        const patch = getProofState(DEVICE_ID).patch;
+        expect(patch.inputGain).toBe(3);
+        expect(patch.eqBands[1]?.freq).toBe(1_200);
+        expect(patch.limCeiling).toBe(-4.5);
+        const calls = paramCalls(bridge);
+        expect(calls.get('input_gain')).toBe(3);
+        expect(calls.get('eq_band1_freq')).toBe(1_200);
         expect(calls.get('lim_ceiling')).toBe(-4.5);
     });
 

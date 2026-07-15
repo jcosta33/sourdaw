@@ -7,9 +7,11 @@
  * them and only frequency moves. Each band draws its true magnitude response
  * (peak, shelf, or rolloff). Band type and M/S mode shown as color coding.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type GestureAuthority } from '#/components/daw/RotaryKnob';
+
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -144,13 +146,146 @@ type Props = {
     patch: ProofPatch;
     width: number;
     height: number;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam }: Props): ReactElement => {
+export const ProofEqCurve = ({
+    patch,
+    width,
+    height,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const activePointerIdRef = useRef<number | null>(null);
     const dragBandRef = useRef<number | null>(null);
+    const dragStartBandRef = useRef<ProofPatch['eqBands'][number] | null>(null);
+    const dragValueRef = useRef<{ freq: number; gain: number } | null>(null);
+    const gestureOwnerAtStartRef = useRef<string | number | null>(null);
+    const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
+    const onPatchChangeRef = useRef(onPatchChange);
+    const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+
+    const releasePointerCapture = (pointerId: number | null): void => {
+        if (pointerId === null || !canvasRef.current || typeof canvasRef.current.releasePointerCapture !== 'function') {
+            return;
+        }
+        try {
+            canvasRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this finalizer runs.
+        }
+    };
+
+    const clearDragState = (): void => {
+        const pointerId = activePointerIdRef.current;
+        activePointerIdRef.current = null;
+        dragBandRef.current = null;
+        dragStartBandRef.current = null;
+        dragValueRef.current = null;
+        gestureOwnerAtStartRef.current = null;
+        releasePointerCapture(pointerId);
+    };
+
+    const ownsGesture = (): boolean => {
+        const token = gestureOwnerAtStartRef.current;
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            return token !== null && authority.isCurrent(token);
+        }
+        return token !== null && Object.is(token, gestureOwner);
+    };
+
+    useLayoutEffect(() => {
+        onPatchChangeRef.current = onPatchChange;
+        gestureAuthorityRef.current = gestureAuthority;
+
+        if (
+            activePointerIdRef.current !== null &&
+            gestureOwnerAtStartRef.current !== null &&
+            !Object.is(gestureOwnerAtStartRef.current, gestureOwner)
+        ) {
+            clearDragState();
+        }
+
+        finalizeDragRef.current = (pointerId?: number): boolean => {
+            if (activePointerIdRef.current === null) {
+                return false;
+            }
+            if (pointerId !== undefined && activePointerIdRef.current !== pointerId) {
+                return false;
+            }
+
+            const bandIndex = dragBandRef.current;
+            const startBand = dragStartBandRef.current;
+            const dragValue = dragValueRef.current;
+            const ownsCurrentGesture = ownsGesture();
+            const changed =
+                startBand !== null &&
+                dragValue !== null &&
+                (startBand.freq !== dragValue.freq ||
+                    (bandUsesGain(startBand.type) && startBand.gain !== dragValue.gain));
+
+            clearDragState();
+
+            if (ownsCurrentGesture && bandIndex !== null && startBand !== null && dragValue !== null && changed) {
+                const value = patch.eqBands.map((band, index) => {
+                    if (index !== bandIndex) {
+                        return band;
+                    }
+                    const nextBand = {
+                        ...band,
+                        freq: dragValue.freq,
+                    };
+                    if (bandUsesGain(startBand.type)) {
+                        nextBand.gain = dragValue.gain;
+                    }
+                    return nextBand;
+                });
+                const changedParams: Array<{
+                    bandIndex: number;
+                    field: keyof ProofPatch['eqBands'][number];
+                }> = [{ bandIndex, field: 'freq' }];
+                if (bandUsesGain(startBand.type)) {
+                    changedParams.push({ bandIndex, field: 'gain' });
+                }
+                onPatchChangeRef.current({
+                    key: 'eqBands',
+                    value,
+                    changedParams,
+                    isTransient: false,
+                });
+            }
+            return true;
+        };
+    });
+
+    useEffect(() => {
+        return () => {
+            finalizeDragRef.current();
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -329,6 +464,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
     // Drag handling
     const handlePointerDown = (e: React.PointerEvent) => {
+        if (activePointerIdRef.current !== null || e.button !== 0) {
+            return;
+        }
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -356,18 +494,38 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         }
 
         if (closestIdx >= 0) {
-            dragBandRef.current = closestIdx;
+            const gestureToken = gestureAuthorityRef.current?.acquire(() => finalizeDragRef.current()) ?? gestureOwner;
             canvas.setPointerCapture(e.pointerId);
+            activePointerIdRef.current = e.pointerId;
+            dragBandRef.current = closestIdx;
+            dragStartBandRef.current = patch.eqBands[closestIdx] ?? null;
+            const startBand = dragStartBandRef.current;
+            if (!startBand) {
+                clearDragState();
+                return;
+            }
+            dragValueRef.current = { freq: startBand.freq, gain: startBand.gain };
+            gestureOwnerAtStartRef.current = gestureToken;
         }
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
         const idx = dragBandRef.current;
-        if (idx === null) {
+        if (idx === null || activePointerIdRef.current !== e.pointerId) {
+            return;
+        }
+        if (!ownsGesture()) {
+            clearDragState();
             return;
         }
         const canvas = canvasRef.current;
         if (!canvas) {
+            return;
+        }
+        const startBand = dragStartBandRef.current;
+        const currentBand = patch.eqBands[idx];
+        const dragValue = dragValueRef.current;
+        if (!startBand || !currentBand || !dragValue) {
             return;
         }
         const rect = canvas.getBoundingClientRect();
@@ -378,24 +536,49 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
         // HP/LP cutoff bands have no gain axis: the engine ignores `gain` for them,
         // so vertical drag must not write it. Only frequency changes for those bands.
-        const dragBand = patch.eqBands[idx]!;
-        if (!bandUsesGain(dragBand.type)) {
-            const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq } : b));
-            onPatchChange({ eqBands: bands });
-            onSendParam(`eq_band${idx}_freq`, newFreq);
+        if (!bandUsesGain(startBand.type)) {
+            if (dragValue.freq === newFreq) {
+                return;
+            }
+            const bands = patch.eqBands.map((band, index) => (index === idx ? { ...band, freq: newFreq } : band));
+            const edit: ProofPatchEdit = {
+                key: 'eqBands',
+                value: bands,
+                changedParams: [{ bandIndex: idx, field: 'freq' }],
+                isTransient: true,
+            };
+            dragValueRef.current = { ...dragValue, freq: newFreq };
+            onPatchChangeRef.current(edit);
             return;
         }
 
         const newGain = Math.round(Math.max(-DB_RANGE, Math.min(DB_RANGE, yToGain(my, height))) * 2) / 2;
+        if (dragValue.freq === newFreq && dragValue.gain === newGain) {
+            return;
+        }
 
-        const bands = patch.eqBands.map((b, i) => (i === idx ? { ...b, freq: newFreq, gain: newGain } : b));
-        onPatchChange({ eqBands: bands });
-        onSendParam(`eq_band${idx}_freq`, newFreq);
-        onSendParam(`eq_band${idx}_gain`, newGain);
+        const bands = patch.eqBands.map((band, index) =>
+            index === idx ? { ...band, freq: newFreq, gain: newGain } : band
+        );
+        const edit: ProofPatchEdit = {
+            key: 'eqBands',
+            value: bands,
+            changedParams: [
+                { bandIndex: idx, field: 'freq' },
+                { bandIndex: idx, field: 'gain' },
+            ],
+            isTransient: true,
+        };
+        dragValueRef.current = { freq: newFreq, gain: newGain };
+        onPatchChangeRef.current(edit);
     };
 
-    const handlePointerUp = () => {
-        dragBandRef.current = null;
+    const handlePointerUp = (e: React.PointerEvent) => {
+        finalizeDragRef.current(e.pointerId);
+    };
+
+    const handleFocusLoss = (): void => {
+        finalizeDragRef.current();
     };
 
     return (
@@ -406,6 +589,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
+            onBlur={handleFocusLoss}
             aria-label="8-band parametric EQ frequency response"
         />
     );

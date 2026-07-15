@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect, beforeEach } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type AutomationStoreState } from '../automationStore';
-import { automationStore } from '../automationStore';
+import { automationStore, sanitize_automation_store_state } from '../automationStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -87,6 +87,23 @@ describe('automationStore', () => {
         expect(() => {
             automationStore.hydrate();
         }).not.toThrow();
+
+        expect(automationStore.value).toEqual({ lanes: [] });
+    });
+
+    it('should reject sparse top-level lanes from the exact path and sanitize hydration', () => {
+        const lanes: unknown[] = [];
+        lanes.length = 1;
+        const sparse_state = { lanes };
+
+        const sanitized_state = sanitize_automation_store_state(sparse_state);
+
+        expect(sanitized_state).not.toBe(sparse_state);
+        expect(sanitized_state).toEqual({ lanes: [] });
+
+        fake_doc.automation = sparse_state;
+
+        automationStore.hydrate();
 
         expect(automationStore.value).toEqual({ lanes: [] });
     });

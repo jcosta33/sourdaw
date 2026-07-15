@@ -3,7 +3,7 @@ import { type CallbackUndoEntry, type UndoSource } from './commandQueries';
 type CreateCallbackUndoEntryInput = {
     label: string;
     undo: () => void;
-    redo: () => void;
+    redo: () => unknown;
     source?: UndoSource;
 };
 

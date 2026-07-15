@@ -1,5 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import {
+    runWithAutomergeStorageTransaction,
+    waitForAutomergeSnapshotTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
@@ -19,6 +23,10 @@ export type ExecuteOptions = {
     /** When true, skip pushing an undo entry and action history entry.
      *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
     skipUndo?: boolean;
+    /** Opaque owner for CRDT writes made synchronously by this action. */
+    snapshotTransaction?: object;
+    /** When true, do not capture this execution in an active macro recording. */
+    skipMacroRecording?: boolean;
 };
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
@@ -35,6 +43,8 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
+
+            await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
             // Capture undo info BEFORE executing — this lets describe() snapshot current
             // state for destructive actions like removeTrack / removeClip.
@@ -53,7 +63,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             });
 
             try {
-                await handler.execute(action);
+                const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
+                    handler.execute(action)
+                );
+                await execution;
             } catch (error) {
                 try {
                     clearSemanticContext();
@@ -77,8 +90,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             try {
-                // Record to macro playback
-                recordAction(action);
+                if (!options?.skipMacroRecording) {
+                    // Record to macro playback
+                    recordAction(action);
+                }
 
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)

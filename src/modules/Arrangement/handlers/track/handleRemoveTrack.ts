@@ -3,6 +3,7 @@ import { removeMapping, removeModulator } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { createHandler } from '#/utils/createHandler';
 
+import { collectTrackClipIds } from '../../services/collectTrackClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeTrack } from '../../useCases/removeTrack';
@@ -74,7 +75,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         const automationLaneSnapshots = structuredClone(autoLanes);
 
         const midiState = midiStore.value;
-        const clipIds = track.clips.map((context) => context.id);
+        const clipIds = collectTrackClipIds(track);
         const midiNotesByClipId: Record<string, readonly MidiNoteEntry[]> = {};
         const midiCcByClipId: Record<string, readonly MidiCcEntry[]> = {};
         const midiPitchBendByClipId: Record<string, readonly MidiPitchBendEntry[]> = {};

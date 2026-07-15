@@ -1,0 +1,83 @@
+[
+  {
+    "type": "reachability-causal",
+    "from": "src/components/daw/RotaryKnob.tsx",
+    "to": "src/modules/MIDI/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
+    "to": "src/modules/AiGeneration/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/ConfirmDialog.tsx",
+    "to": "src/modules/Workspace/useCases/onConfirmation.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Arrangement/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/AudioEngine/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Command/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
+    "to": "src/modules/Project/useCases/index.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  },
+  {
+    "type": "reachability-causal",
+    "from": "src/modules/Workspace/presentations/components/NotificationToast.tsx",
+    "to": "src/modules/Workspace/useCases/onNotification.ts",
+    "rule": {
+      "severity": "error",
+      "name": "components-no-usecase-transitively"
+    }
+  }
+]

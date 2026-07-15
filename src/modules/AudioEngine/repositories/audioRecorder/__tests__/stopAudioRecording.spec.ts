@@ -116,6 +116,52 @@ describe('stopAudioRecording', () => {
         expect(audioRecordingStore.value?.isRecording).toBe(false);
     });
 
+    it('resolves stop only after the recording worker finishes delivery', async () => {
+        const { worker } = await startAndArm('track-flush');
+        let settled = false;
+
+        const stopping = Promise.resolve(stopAudioRecording()).then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+
+        expect(settled).toBe(false);
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        await stopping;
+        expect(settled).toBe(true);
+    });
+
+    it('ignores a late ready event after stop has become terminal', async () => {
+        await expect(startAudioRecording('track-late-ready', vi.fn())).resolves.toBe(true);
+        const worker = FakeWorker.last;
+        const worklet = FakeAudioWorkletNode.last;
+        if (!worker || !worklet) {
+            throw new Error('Expected recording test doubles');
+        }
+
+        const stopping = stopAudioRecording();
+        worker.emit({ type: 'ready' });
+
+        expect(worklet.port.postMessage).not.toHaveBeenCalledWith({ type: 'start' });
+        expect(worker.postMessage).not.toHaveBeenCalledWith({ type: 'start' });
+        expect(audioRecordingStore.value?.isRecording).toBe(false);
+
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        await stopping;
+    });
+
+    it('terminates the worker when its recording session fails', async () => {
+        await expect(startAudioRecording('track-worker-error', vi.fn())).resolves.toBe(true);
+        const worker = FakeWorker.last;
+        if (!worker) {
+            throw new Error('Expected recording worker');
+        }
+
+        worker.onerror?.({});
+
+        expect(worker.terminate).toHaveBeenCalledOnce();
+    });
+
     it('should terminate a worker that never flushes and free the track to re-record', async () => {
         const { worker } = await startAndArm('track-stall');
 

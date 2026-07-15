@@ -62,11 +62,11 @@ function is_valid_midi_note(value: unknown): value is MidiNote {
 
 function has_valid_midi_note_optionals(value: MidiNote): boolean {
     return (
-        (!('probability' in value) || is_finite_number(value.probability)) &&
-        (!('pressure' in value) || is_finite_number(value.pressure)) &&
-        (!('slide' in value) || is_finite_number(value.slide)) &&
-        (!('pitchBend' in value) || is_finite_number(value.pitchBend)) &&
-        (!('channel' in value) || is_finite_number(value.channel))
+        (!('probability' in value) || value.probability === undefined || is_finite_number(value.probability)) &&
+        (!('pressure' in value) || value.pressure === undefined || is_finite_number(value.pressure)) &&
+        (!('slide' in value) || value.slide === undefined || is_finite_number(value.slide)) &&
+        (!('pitchBend' in value) || value.pitchBend === undefined || is_finite_number(value.pitchBend)) &&
+        (!('channel' in value) || value.channel === undefined || is_finite_number(value.channel))
     );
 }
 

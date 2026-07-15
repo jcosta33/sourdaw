@@ -1,8 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { restoreCachedAudioBuffersFromIdb, resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
-import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -13,15 +13,6 @@ const projectStoreMock = vi.hoisted(() => ({
     current: null as Record<string, unknown> | null,
     set: vi.fn(),
 }));
-type MockClip = { audioBufferId?: string | null };
-type MockTrack = { clips: MockClip[] };
-type MockTrackStoreValue = { tracks: MockTrack[] };
-
-const track_store_value_holder = vi.hoisted((): { current: MockTrackStoreValue } => ({
-    current: { tracks: [] },
-}));
-const audio_context_mock = vi.hoisted(() => ({ id: 'audio-context' }));
-
 // The hook fans out into the whole app boot sequence; every collaborator is
 // stubbed so the test can isolate the user-gesture effect (the fix-5 seam:
 // resumeEngine() must no longer be fire-and-forget). Async members resolve so
@@ -29,23 +20,14 @@ const audio_context_mock = vi.hoisted(() => ({ id: 'audio-context' }));
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value(): MockTrackStoreValue {
-            return track_store_value_holder.current;
-        },
-    },
-}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
-    getAudioContext: vi.fn(() => audio_context_mock),
+    getAudioContext: vi.fn(() => ({})),
     initWebMidi: vi.fn().mockResolvedValue(undefined),
     setMasterGainValue: vi.fn(),
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ hasCrdtProject: vi.fn().mockResolvedValue(false) }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ registerProModulationEffects: vi.fn() }));
 vi.mock('#/modules/Project/stores', () => ({
@@ -57,7 +39,6 @@ vi.mock('#/modules/Project/stores', () => ({
     },
 }));
 vi.mock('#/modules/Project/useCases', () => ({
-    verifyAudioBufferReferences: vi.fn().mockResolvedValue(undefined),
     loadProject: vi.fn().mockResolvedValue(undefined),
     finishProjectLoading: vi.fn(),
     saveProject: vi.fn(),
@@ -80,10 +61,6 @@ vi.mock('../../../stores/preferencesStore', () => ({
         subscribe: vi.fn(() => () => {}),
     },
 }));
-
-beforeEach(() => {
-    track_store_value_holder.current = { tracks: [] };
-});
 
 describe('useAppInitialization — first-gesture engine resume', () => {
     beforeEach(() => {
@@ -209,64 +186,6 @@ describe('useAppInitialization — autosave governed by preferences', () => {
     });
 });
 
-describe('useAppInitialization — AudioEngine cache restore boundary', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        projectStoreMock.current = null;
-        vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
-        try {
-            localStorage.setItem('wd:first-load-hint-shown', '1');
-        } catch {
-            // ignore: localStorage may be unavailable
-        }
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('restores referenced audio buffers through the AudioEngine use case', async () => {
-        track_store_value_holder.current = {
-            tracks: [
-                {
-                    clips: [{ audioBufferId: 'buffer-1' }, {}, { audioBufferId: '' }, { audioBufferId: 'buffer-2' }],
-                },
-            ],
-        };
-
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        });
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: audio_context_mock,
-            bufferIds: ['buffer-1', 'buffer-2'],
-        });
-    });
-
-    it('passes undefined bufferIds through the AudioEngine use case when no referenced IDs exist', async () => {
-        track_store_value_holder.current = {
-            tracks: [
-                {
-                    clips: [{}, { audioBufferId: '' }, { audioBufferId: null }],
-                },
-            ],
-        };
-
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1);
-        });
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: audio_context_mock,
-            bufferIds: undefined,
-        });
-    });
-});
-
 describe('useAppInitialization — Project loading boundary', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -288,18 +207,8 @@ describe('useAppInitialization — Project loading boundary', () => {
         vi.restoreAllMocks();
     });
 
-    it('clears Project loading through the Project use case when no saved CRDT project exists', async () => {
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(finishProjectLoading).toHaveBeenCalledTimes(1);
-        });
-        expect(projectStoreMock.set).not.toHaveBeenCalled();
-        expect(loadProject).not.toHaveBeenCalled();
-    });
-
-    it('loads a saved CRDT project instead of clearing Project loading directly', async () => {
-        vi.mocked(hasCrdtProject).mockResolvedValueOnce(true);
+    it('uses the project loader as the authoritative read after storage becomes empty', async () => {
+        vi.mocked(loadProject).mockResolvedValueOnce(false);
 
         renderHook(() => useAppInitialization());
 
@@ -308,6 +217,28 @@ describe('useAppInitialization — Project loading boundary', () => {
         });
         expect(finishProjectLoading).not.toHaveBeenCalled();
         expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('uses the same authoritative load path for valid persisted startup', async () => {
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(loadProject).toHaveBeenCalledTimes(1);
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('surfaces corrupt or rootless persistence instead of completing first-run startup', async () => {
+        vi.mocked(loadProject).mockRejectedValueOnce(new Error('persisted root disappeared'));
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(logger.error).toHaveBeenCalled();
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(loadProject).toHaveBeenCalledOnce();
     });
 });
 

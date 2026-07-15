@@ -52,6 +52,8 @@ type PlainObject = {
 
 type TrackTransientState = Pick<TrackStoreState, 'selectedTrackId' | 'ghostClips'>;
 
+type TrackSnapshotState = Pick<TrackStoreState, 'tracks' | 'selectedTrackId'>;
+
 type GetOwnValueInput = {
     value: object;
     key: string;
@@ -609,6 +611,26 @@ function normalize_tracks(value: unknown): Track[] {
     return value.map(normalize_track_row).filter(is_not_null);
 }
 
+export function sanitizeTrackSnapshot(value: unknown): TrackSnapshotState {
+    if (!is_plain_object(value)) {
+        return { tracks: [], selectedTrackId: null };
+    }
+
+    const tracks_property = get_own_value({ value, key: 'tracks' });
+    const tracks = tracks_property.found ? normalize_tracks(tracks_property.value) : [];
+    const selected_track_id = get_own_value({ value, key: 'selectedTrackId' });
+
+    if (
+        !selected_track_id.found ||
+        typeof selected_track_id.value !== 'string' ||
+        !tracks.some((track) => track.id === selected_track_id.value)
+    ) {
+        return { tracks, selectedTrackId: null };
+    }
+
+    return { tracks, selectedTrackId: selected_track_id.value };
+}
+
 function get_valid_transient_state(value: unknown): TrackTransientState | null {
     if (!is_plain_object(value)) {
         return null;
@@ -634,18 +656,10 @@ function get_current_track_transient_state(): TrackTransientState {
 
 function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
     const transient_state = get_current_track_transient_state();
-    if (!is_plain_object(value)) {
-        return {
-            tracks: [],
-            selectedTrackId: transient_state.selectedTrackId,
-            ghostClips: transient_state.ghostClips,
-        };
-    }
-
-    const tracks_property = get_own_value({ value, key: 'tracks' });
+    const snapshot_state = sanitizeTrackSnapshot(value);
 
     return {
-        tracks: tracks_property.found ? normalize_tracks(tracks_property.value) : [],
+        tracks: snapshot_state.tracks,
         selectedTrackId: transient_state.selectedTrackId,
         ghostClips: transient_state.ghostClips,
     };

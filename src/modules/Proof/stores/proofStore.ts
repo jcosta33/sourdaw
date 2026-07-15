@@ -29,6 +29,7 @@ export type ProofMeterData = {
 
 export type ProofState = {
     patch: ProofPatch;
+    projectPatchHydrated: boolean;
     uiLevel: 1 | 2 | 3 | 4 | 5;
 
     // Real-time metering from WASM
@@ -48,6 +49,7 @@ export type ProofState = {
 
 export const DEFAULT_PROOF_STATE: ProofState = {
     patch: { ...DEFAULT_PATCH },
+    projectPatchHydrated: false,
     uiLevel: 1,
     inputLufs: -100,
     outputLufs: -100,
@@ -100,16 +102,42 @@ export function setProofUiLevel({ deviceId, level }: SetProofUiLevelInput): void
 type UpdateProofPatchInput = {
     deviceId: string;
     patch: Partial<ProofPatch>;
+    preservePresetId?: boolean;
 };
 
-export function updateProofPatch({ deviceId, patch }: UpdateProofPatchInput): void {
+export function updateProofPatch({ deviceId, patch, preservePresetId }: UpdateProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
-    // A granular edit diverges the patch from its source preset, so the preset
-    // identity is dropped unless the caller explicitly carries a new one.
+    // A committed granular edit diverges from its source preset. Transient
+    // previews retain the identity until their gesture actually commits.
     proofStore.set({
         ...instances,
-        [deviceId]: { ...state, patch: { ...state.patch, presetId: undefined, ...patch } },
+        [deviceId]: {
+            ...state,
+            patch: {
+                ...state.patch,
+                presetId: preservePresetId ? state.patch.presetId : undefined,
+                ...patch,
+            },
+        },
+    });
+}
+
+type HydrateProofPatchInput = {
+    deviceId: string;
+    patch: Partial<ProofPatch>;
+};
+
+export function hydrateProofPatch({ deviceId, patch }: HydrateProofPatchInput): void {
+    const instances = proofStore.value ?? {};
+    const state = instances[deviceId] ?? createDefaultProofState();
+    proofStore.set({
+        ...instances,
+        [deviceId]: {
+            ...state,
+            projectPatchHydrated: true,
+            patch: { ...state.patch, ...patch },
+        },
     });
 }
 
@@ -137,7 +165,7 @@ type LoadProofPatchInput = {
 export function loadProofPatch({ deviceId, patch }: LoadProofPatchInput): void {
     const instances = proofStore.value ?? {};
     const state = instances[deviceId] ?? createDefaultProofState();
-    proofStore.set({ ...instances, [deviceId]: { ...state, patch } });
+    proofStore.set({ ...instances, [deviceId]: { ...state, patch, projectPatchHydrated: true } });
 }
 
 /**

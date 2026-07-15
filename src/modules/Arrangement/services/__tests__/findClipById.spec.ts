@@ -1,37 +1,47 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { type Clip } from '../../models/Track';
 import { findClipById } from '../findClipById';
 
-vi.mock('../../useCases/getTrackStoreState', () => ({
-    getTrackStoreState: vi.fn(),
-}));
+function createClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
+    return {
+        id: overrides.id,
+        trackId: 'track-1',
+        name: 'Test Clip',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ff0000',
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
+}
 
 describe('findClipById', () => {
-    it('should return null when track store state is not available', () => {
-        vi.mocked(getTrackStoreState).mockReturnValue(null as any);
-        expect(findClipById('clip-1')).toBeNull();
+    it('should return null when no tracks are available', () => {
+        expect(findClipById({ clipId: 'clip-1', tracks: [] })).toBeNull();
     });
 
     it('should return null when the clip is not found in any track', () => {
         const tracks = [
             TrackDummy.create({ id: 'track-1', clips: [] }),
-            TrackDummy.create({ id: 'track-2', clips: [{ id: 'clip-2' } as any] }),
+            TrackDummy.create({ id: 'track-2', clips: [createClip({ id: 'clip-2' })] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-        expect(findClipById('clip-1')).toBeNull();
+        expect(findClipById({ clipId: 'clip-1', tracks })).toBeNull();
     });
 
     it('should return the clip and trackId when the clip is found', () => {
-        const clip = { id: 'clip-1', name: 'Test Clip' };
+        const clip = createClip({ id: 'clip-1' });
         const tracks = [
-            TrackDummy.create({ id: 'track-1', clips: [clip as any] }),
+            TrackDummy.create({ id: 'track-1', clips: [clip] }),
             TrackDummy.create({ id: 'track-2', clips: [] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-        const result = findClipById('clip-1');
+        const result = findClipById({ clipId: 'clip-1', tracks });
         expect(result).toEqual({
             clip,
             trackId: 'track-1',
@@ -39,14 +49,12 @@ describe('findClipById', () => {
     });
 
     it('should find the clip across multiple tracks', () => {
-        const clip = { id: 'clip-search', name: 'Search Me' };
+        const clip = createClip({ id: 'clip-search', name: 'Search Me', trackId: 'track-2' });
         const tracks = [
-            TrackDummy.create({ id: 'track-1', clips: [{ id: 'other' } as any] }),
-            TrackDummy.create({ id: 'track-2', clips: [clip as any] }),
+            TrackDummy.create({ id: 'track-1', clips: [createClip({ id: 'other' })] }),
+            TrackDummy.create({ id: 'track-2', clips: [clip] }),
         ];
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-        const result = findClipById('clip-search');
+        const result = findClipById({ clipId: 'clip-search', tracks });
         expect(result).toEqual({
             clip,
             trackId: 'track-2',

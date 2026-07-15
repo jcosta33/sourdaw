@@ -2,6 +2,14 @@
 /** @type {import('dependency-cruiser').IConfiguration} */
 
 // ----------------------------------------------------------------------------
+// `pnpm deps:validate` runs scripts/check-dependency-boundaries.mjs. The script
+// executes every cruise with --no-cache and compares current error evidence to
+// its exact baseline, rejecting both new and stale rows:
+//   1) this main cruise (value edges; warnings remain visible)
+//   2) .dependency-cruiser.reachability.cjs (causal component → useCases edges)
+//   3) .dependency-cruiser.types.cjs (type-only boundary edges)
+//   4) .dependency-cruiser.tests.cjs (test-inclusive barrel boundaries)
+// ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
 // Module boundary model (contract-folder barrels — migration complete):
@@ -27,7 +35,7 @@
 //   Private folders (never importable cross-module):
 //     models/, repositories/, services/, validators/, transformers/,
 //     presentations/hooks|stores|context|components|renderers/,
-//     engine/, worklets/, runtime/, errors/, handlers/.
+//     engine/, worklets/, workers/, runtime/, errors/, handlers/.
 //
 // Intra-module dependency direction:
 //   presentations/ → useCases → repositories / stores / validators / services
@@ -37,13 +45,14 @@
 // ------------------------------
 // Regex helpers
 // ------------------------------
-const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-
-// Group 1 = prefix ("src/modules/" or Common/Supporting variant)
-// Group 2 = module name
-const MODULE_ROOT = '^(src/modules/|src/modules/Common/|src/modules/Supporting/)([^/]+)/';
+const {
+    MODELS_MUST_BE_TITLE_CASE,
+    MODULE_ROOT,
+    SOURCE_FILE_RE,
+    SPEC_FILE_RE,
+    STORY_FILE_RE,
+    TAURI_IPC_ONLY_IN_REPOSITORIES,
+} = require('./.dependency-cruiser.shared.cjs');
 
 // Private presentation subfolders
 const PRIVATE_PRESENTATION_FOLDERS =
@@ -67,7 +76,7 @@ module.exports = {
         // current flat 34-module tree: the `Common/` / `Supporting/` module
         // subgroups, the `application/` layer, the `presentations/stores/` and
         // `presentations/context/` folders, and the `validators/` / `runtime/` /
-        // `worklets/` private folders. They enforce nothing today (no files
+        // `worklets/` and `workers/` private folders. They enforce nothing today (no files
         // match), but they guard the intended structure the moment it is added,
         // so they are kept in place deliberately — do not delete them.
         // --------------------------------------------------------------------
@@ -142,14 +151,31 @@ module.exports = {
         },
 
         {
+            name: 'external-module-contracts-only',
+            severity: 'error',
+            comment:
+                'Shared UI, app composition, and routes may import modules only through contract-folder barrels. ' +
+                'Private module files remain private outside src/modules/ too.',
+            from: {
+                path: '^src/(app|components|routes)/',
+            },
+            to: {
+                path: '^src/modules/',
+                pathNot:
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+            },
+        },
+
+        {
             name: 'module-index-contract-only',
             severity: 'error',
             comment:
-                'Module root index.ts (legacy, during migration) may only re-export from useCases/, events/, stores/, ' +
-                'and presentations/views/ within the same module. ' +
+                'The architecture checker rejects module-root index.ts files outright. If this config is run ' +
+                'directly, this defense-in-depth rule prevents a reintroduced root barrel from exporting anything ' +
+                'except useCases/, events/, stores/, and presentations/views/ within the same module. ' +
                 'Importing from handlers/, models/, repositories/, services/, validators/, transformers/, ' +
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
-                'engine/, runtime/, or worklets/ is forbidden.',
+                'engine/, runtime/, worklets/, or workers/ is forbidden.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
             },
@@ -211,11 +237,9 @@ module.exports = {
             severity: 'error',
             comment:
                 'Internal module files must not import from their own module barrels (index.ts). ' +
-                'Import implementation files directly using relative paths.',
+                'Import implementation files directly using relative paths. Root barrels are retired; ' +
+                'this also blocks same-module imports of contract-folder index.ts files.',
             from: {
-                // Legacy module-root barrels remain allowed during migration.
-                // This rule targets non-root files (including contract-folder barrels)
-                // importing another index.ts inside the same module.
                 path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
@@ -241,8 +265,9 @@ module.exports = {
             name: 'no-usecase-type-exports-on-index',
             severity: 'error',
             comment:
-                'Module index.ts files (root or contract-folder) must not re-export types from useCases/. ' +
-                'Types from useCases/ are private. Other modules should use ReturnType/Parameters or define local shapes.',
+                'Contract barrels must not re-export types from useCases/. Enforced on the type-edge cruise ' +
+                '(.dependency-cruiser.types.cjs with tsPreCompilationDeps: specify). Kept here so the rule ' +
+                'name is documented with the main contract set; the types cruise is the hard gate.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },
@@ -297,12 +322,14 @@ module.exports = {
             name: 'components-no-usecase-access',
             severity: 'error',
             comment:
-                'Presentational components must not import use cases directly. Route business operations through hooks or views.',
+                'Leaf components (module presentations/components and shared src/components) must not ' +
+                'import any module useCases/ (same-module or foreign). Route business operations through ' +
+                'hooks or views; pass callbacks into leaves as props.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
-                path: '^$1$2/useCases/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/useCases/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -310,12 +337,15 @@ module.exports = {
             name: 'components-no-business-store-access',
             severity: 'error',
             comment:
-                'Presentational components must not import business-layer stores directly. Receive state via hooks or props.',
+                'Leaf components (module presentations/components and shared src/components) must not ' +
+                'import any module business-layer stores/ (same-module or foreign). Views and hooks ' +
+                'retain the public read contract; pass state into leaf components as props.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + 'presentations/components/.+' + SOURCE_FILE_RE,
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
-                path: '^$1$2/stores/.+' + SOURCE_FILE_RE,
+                // Any module's business stores (not presentations/stores)
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/stores/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -328,6 +358,20 @@ module.exports = {
             },
             to: {
                 path: '^$1$2/presentations/stores/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'components-no-view-access',
+            severity: 'error',
+            comment:
+                'Presentational components must not import views (own or foreign). Views compose components; ' +
+                'lift data to the parent view and pass it as props.',
+            from: {
+                path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
+            },
+            to: {
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/views/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -360,18 +404,34 @@ module.exports = {
         {
             name: 'presentation-no-engine-runtime-imports',
             severity: 'error',
-            comment: 'Presentation code cannot import engine/, runtime/, or worklets/ directly.',
+            comment: 'Presentation code cannot import engine/, runtime/, worklets/, or workers/ directly.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(engine|runtime|worklets)/.+' + SOURCE_FILE_RE,
+                path: '^$1$2/(engine|runtime|worklets|workers)/.+' + SOURCE_FILE_RE,
             },
         },
 
         // --------------------------------------------------------------------
         // Business/core boundaries
         // --------------------------------------------------------------------
+        {
+            name: 'business-no-presentations',
+            severity: 'error',
+            comment:
+                'Business and IO layers must not import from any presentations/ (own or foreign) — ' +
+                'dependencies flow UI → business → IO, never back up. Move the shared code down to the ' +
+                'layer that needs it, or keep renderer/UI factories under presentations/ and call them ' +
+                'from views/hooks only.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + '(?!presentations/).*' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/.+' + SOURCE_FILE_RE,
+            },
+        },
+
         {
             name: 'usecases-only-write-boundary-to-repositories',
             severity: 'error',
@@ -385,20 +445,111 @@ module.exports = {
         },
 
         {
+            name: 'repositories-no-business',
+            severity: 'error',
+            comment:
+                'Repositories are the IO / persistence edge: they must not import useCases/, handlers/, ' +
+                'presentations/, events/, or foreign stores. Orchestration and cross-module contracts belong ' +
+                'in use cases. Same-module stores remain allowed for existing thin persistence adapters.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'repositories/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|handlers|presentations|events|stores)/.+' +
+                    SOURCE_FILE_RE,
+                pathNot: '^$1$2/stores/',
+            },
+        },
+
+        {
+            name: 'models-are-pure',
+            severity: 'error',
+            comment:
+                'Domain models are pure module-owned data. They must not import useCases, stores, events, IO, ' +
+                'handlers, services, validators, transformers, presentation, engine, worklets, workers, or runtime ' +
+                'from any module. Existing Command catalog violations are explicit baseline debt.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'models/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|events|handlers|services|validators|transformers|presentations|engine|worklets|workers|runtime)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'events-are-pure',
+            severity: 'error',
+            comment:
+                'Event contracts must stay pure: same-module events/models and shared utils/infra only. ' +
+                'No useCases/, repositories/, stores/, handlers/, presentations/, or engine/ from any ' +
+                'module (including foreign contract barrels).',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'events/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|handlers|presentations|engine|worklets|workers|runtime|services|validators|transformers)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'transformers-must-stay-pure',
             severity: 'error',
             comment:
-                'Transformers must remain pure. They may not import repositories/, useCases/, or presentation-layer stores.',
+                'Transformers must remain pure. They may not import business, IO, event, UI, engine, or runtime layers.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'transformers/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^$1$2/(repositories|useCases|presentations/stores)/.+' + SOURCE_FILE_RE,
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(repositories|useCases|stores|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'services-must-stay-pure',
+            severity: 'error',
+            comment:
+                'Services are stateless domain helpers. They may not import use cases, stores, repositories, ' +
+                'events, handlers, presentation, engine, worklets, or runtime from any module.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'services/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'validators-must-stay-pure',
+            severity: 'error',
+            comment:
+                'Validators are pure domain checks. They may not import use cases, stores, repositories, ' +
+                'events, handlers, presentation, engine, worklets, or runtime from any module.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'validators/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
+                    SOURCE_FILE_RE,
             },
         },
 
         // --------------------------------------------------------------------
-        // Engine / runtime / worklets
+        // Engine / runtime / worklets / workers
         // --------------------------------------------------------------------
         {
             name: 'worklets-no-module-runtime-imports',
@@ -410,8 +561,24 @@ module.exports = {
             },
             to: {
                 path:
-                    '^$1$2/(useCases|repositories|stores|services|validators|events|engine|runtime|presentations)/.+' +
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
                     SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'module-runtime-no-worklet-imports',
+            severity: 'error',
+            comment:
+                'Use cases, repositories, stores, handlers, and presentations must not import module worklet internals. ' +
+                'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
+            from: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -423,7 +590,50 @@ module.exports = {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/|@tauri-apps/)',
+                path: '^(application/|src/helpers/)|/@tauri-apps/',
+            },
+        },
+
+        {
+            name: 'workers-no-module-runtime-imports',
+            severity: 'error',
+            comment:
+                'Dedicated Worker files must remain isolated from business, repository, store, engine, runtime, and presentation code.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path:
+                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'module-runtime-no-worker-imports',
+            severity: 'error',
+            comment:
+                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
+                'The engine-owned Worker client is the only application entrypoint for a Worker module.',
+            from: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/workers/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
+            name: 'workers-no-app-helper-or-tauri',
+            severity: 'error',
+            comment: 'Dedicated Workers must not depend on application/, src/helpers/, or Tauri APIs.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^(application/|src/helpers/)|/@tauri-apps/',
             },
         },
 
@@ -495,31 +705,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // Tauri confinement
         // --------------------------------------------------------------------
-        {
-            name: 'tauri-ipc-only-in-repositories',
-            // WARN pending the IPC→repositories refactor: the resolved-path fix
-            // below (was '^@tauri-apps/', which never matched the pnpm-resolved
-            // path so the rule silently never fired) plus the tauriBridge target
-            // below surface real violations — IPC used directly from useCases/,
-            // presentation hooks, and shared utilities. Landing this at 'error'
-            // would block until that refactor (backlogged)
-            // is done; until then it stays 'warn' so the violations are visible.
-            severity: 'warn',
-            comment:
-                'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
-                'Currently warn pending the backlogged IPC→repositories refactor.',
-            from: {
-                path: '^(src/modules/|src/utils/).*' + SOURCE_FILE_RE,
-                pathNot: ['^src/modules/.*repositories/', '^src/utils/tauriBridge\\.ts$'],
-            },
-            to: {
-                // Resolved-path match: the pnpm store resolves @tauri-apps/* to a
-                // path containing /@tauri-apps/. The old '^@tauri-apps/' bare-
-                // specifier pattern never matched a resolved path. The bridge
-                // path catches callers that launder IPC through src/utils.
-                path: '(/@tauri-apps/|^src/utils/tauriBridge\\.ts$)',
-            },
-        },
+        TAURI_IPC_ONLY_IN_REPOSITORIES,
 
         {
             name: 'application-to-modules-public-surface-only',
@@ -597,15 +783,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
-        {
-            name: 'models-must-be-title-case',
-            severity: 'warn',
-            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
-            from: {},
-            to: {
-                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
-            },
-        },
+        MODELS_MUST_BE_TITLE_CASE,
         {
             name: 'not-to-unresolvable',
             severity: 'error',

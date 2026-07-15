@@ -9,8 +9,8 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
  * action entry with no `inverseAction` cannot be undone — see `undoRedo`'s
  * `executeUndo` for why a non-undoable entry must not be consumed.
  *
- * `skipUndo: true` is load-bearing: the inverse is a replay driven by the undo
- * engine, not a fresh user edit, so it must not commit its own undo entry.
+ * The inverse is an internal replay driven by the undo engine, so it must not
+ * commit its own undo entry or appear in an active macro recording.
  */
 async function revertEntry(entry: UndoEntry): Promise<boolean> {
     if (entry.kind === 'callback') {
@@ -18,7 +18,10 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
         return true;
     }
     if (entry.inverseAction) {
-        await executeAppAction(entry.inverseAction, { skipUndo: true });
+        await executeAppAction(entry.inverseAction, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
         return true;
     }
     return false;

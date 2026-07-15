@@ -326,16 +326,20 @@ function is_exact_clean_transport_state(value: unknown): value is TransportState
     return normalized !== null && has_transport_state_values({ value, state: normalized });
 }
 
-function sanitize_transport_state(value: unknown): TransportState {
-    if (is_exact_clean_transport_state(value)) {
-        return value;
-    }
-
+export function sanitize_transport_snapshot(value: unknown): TransportState {
     if (!is_transport_object(value)) {
         return create_default_transport_state();
     }
 
     return normalize_transport_object(value) ?? create_default_transport_state();
+}
+
+function sanitize_transport_state(value: unknown): TransportState {
+    if (is_exact_clean_transport_state(value)) {
+        return value;
+    }
+
+    return sanitize_transport_snapshot(value);
 }
 
 export const transportStore = createStore<TransportState>({

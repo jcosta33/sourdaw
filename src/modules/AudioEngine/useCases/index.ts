@@ -1,5 +1,7 @@
-export { detectTransients, type TransientHit } from './elasticAudio/detectTransients';
-export { detectTransientsForClip, type DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
+export { detectTransients } from './elasticAudio/detectTransients';
+export type { TransientHit } from './elasticAudio/detectTransients';
+export { detectTransientsForClip } from './elasticAudio/detectTransientsForClip';
+export type { DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
 export { markElasticDetectionComplete } from './elasticAudio/markElasticDetectionComplete';
 export { selectElasticMarkers } from './elasticAudio/selectElasticMarkers';
 export { openElasticEditor } from './elasticAudio/openElasticEditor';
@@ -29,6 +31,7 @@ export { requestMicPermission } from './audioRecorder/requestMicPermission';
 
 export { playAuditionNote } from './audition';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
+export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
 export { exportCachedAudioBuffers } from './exportCachedAudioBuffers';
 export { garbageCollectCachedAudioBuffersByAge } from './garbageCollectCachedAudioBuffersByAge';
@@ -36,10 +39,13 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { importCachedAudioBuffers } from './importCachedAudioBuffers';
+export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
+export { serializeAudioBuffersForProject } from './serializeAudioBuffersForProject';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';

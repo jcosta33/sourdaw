@@ -1,39 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { resetActionReplayAuthority } from '#/modules/Command/useCases';
-import { createCrdtProject, projectActionHistoryToStore } from '#/modules/CrdtDocument/useCases';
+import {
+    getAudioContext,
+    importCachedAudioBuffers,
+    prepareCachedAudioBuffersFromIdb,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
+import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
-import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
+import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
-import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
+import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadRecentProject } from '../loadRecentProject';
+
+const { audioContext } = vi.hoisted(() => ({
+    audioContext: { id: 'audio-context' },
+}));
 
 vi.mock('../../../repositories/project/storageOperations', () => ({
     readNamedProjectJson: vi.fn(),
     writeProjectJson: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(() => ({ id: 'audio-context' })),
-    restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(0),
+    getAudioContext: vi.fn(() => audioContext),
+    importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
+    prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
 }));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    createCrdtProject: vi.fn().mockResolvedValue(true),
-    projectActionHistoryToStore: vi.fn(),
+    compactProject: vi.fn().mockResolvedValue(undefined),
+    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
+    resetCrdtProjectAuthority: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: null } }));
+vi.mock('../../projectPersistence/helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
+vi.mock('../../projectPersistence/helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));
 vi.mock('../../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
     hydrateModuleStoresFromProjectData: vi.fn(),
+}));
+vi.mock('../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData', () => ({
+    hydrateArrangementStoreFromProjectData: vi.fn(),
 }));
 vi.mock('../../projectPersistence/helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
@@ -45,7 +59,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-const validProject = JSON.stringify({
+const validProjectData = {
     version: CURRENT_PROJECT_VERSION,
     meta: {
         name: 'Large Project',
@@ -56,20 +70,29 @@ const validProject = JSON.stringify({
         tuning: { name: '12-TET', frequencies: [] },
     },
     arrangement: { tracks: [] },
-});
+    audioBuffers: {
+        'embedded-buffer': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+    },
+};
+const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
+        vi.mocked(startCrdtAutoSave).mockClear();
+        vi.mocked(ensureTrackStrips).mockClear();
+        vi.mocked(resetAudioGraph).mockReset();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
-        vi.mocked(resetModuleStoresToDefault).mockClear();
+        vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
+        vi.mocked(resetModuleStoresToDefault).mockReset();
         vi.mocked(getAudioContext).mockClear();
-        vi.mocked(restoreCachedAudioBuffersFromIdb).mockClear();
-        vi.mocked(resetActionReplayAuthority).mockClear();
-        vi.mocked(projectActionHistoryToStore).mockClear();
-        projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
-        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        vi.mocked(importCachedAudioBuffers)
+            .mockReset()
+            .mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 });
+        vi.mocked(prepareCachedAudioBuffersFromIdb)
+            .mockReset()
+            .mockResolvedValue({ publish: () => 0 });
     });
 
     it('loads a named project that resolves only from the IndexedDB fallback', async () => {
@@ -82,12 +105,142 @@ describe('loadRecentProject', () => {
         expect(ok).toBe(true);
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
-        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
+        const arrangementHydration = vi.mocked(hydrateArrangementStoreFromProjectData).mock.calls[0]?.[0];
+        expect(arrangementHydration?.data.version).toBe(CURRENT_PROJECT_VERSION);
+        expect(arrangementHydration?.preserveSavedArrangements).toBe(true);
         expect(writeProjectJson).toHaveBeenCalledWith(validProject);
         expect(getAudioContext).toHaveBeenCalledTimes(1);
-        expect(restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
-            audioContext: vi.mocked(getAudioContext).mock.results[0]?.value,
+        const restoreInput = vi.mocked(prepareCachedAudioBuffersFromIdb).mock.calls[0]?.[0];
+        expect(restoreInput?.audioContext).toBe(audioContext);
+        expect(restoreInput?.shouldContinue?.()).toBe(true);
+        const importInput = vi.mocked(importCachedAudioBuffers).mock.calls[0]?.[0];
+        expect(importInput).toMatchObject({
+            audioContext,
+            buffers: validProjectData.audioBuffers,
         });
+        expect(importInput?.shouldContinue?.()).toBe(true);
+    });
+
+    it('keeps the committed project live when post-commit embedded persistence fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        const persistEmbedded = vi.fn().mockResolvedValue(false);
+        const publishEmbedded = vi.fn(() => 0);
+        vi.mocked(importCachedAudioBuffers).mockResolvedValueOnce({
+            persist: persistEmbedded,
+            publish: publishEmbedded,
+        });
+
+        await expect(loadRecentProject('embedded-persist-failure')).resolves.toBe(true);
+
+        expect(persistEmbedded).toHaveBeenCalledOnce();
+        expect(publishEmbedded).toHaveBeenCalledOnce();
+        expect(publishEmbedded.mock.invocationCallOrder[0]).toBeLessThan(persistEmbedded.mock.invocationCallOrder[0]!);
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('starts the committed project durability lifecycle', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe(true);
+
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('does not falsify a committed load when recent-project publication throws', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(writeProjectJson).mockImplementationOnce(() => {
+            throw new Error('recent JSON write failed');
+        });
+
+        await expect(loadRecentProject('recent-write-failure')).resolves.toBe(true);
+
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('aborts and restores the previous graph when reset fails before state publication', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        const order: string[] = [];
+        const persistEmbedded = vi.fn(() => {
+            order.push('persist');
+            return Promise.resolve(true);
+        });
+        const publishEmbedded = vi.fn(() => {
+            order.push('publish');
+            return 1;
+        });
+        vi.mocked(importCachedAudioBuffers).mockResolvedValueOnce({
+            persist: persistEmbedded,
+            publish: publishEmbedded,
+        });
+        vi.mocked(resetAudioGraph).mockImplementationOnce(() => {
+            order.push('reset');
+            throw new Error('graph reset failed');
+        });
+
+        await expect(loadRecentProject('reset-failure')).resolves.toBe(false);
+
+        expect(order).toEqual(['reset']);
+        expect(publishEmbedded).not.toHaveBeenCalled();
+        expect(persistEmbedded).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+    });
+
+    it('continues the committed replacement after a mid-commit store reset failure', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(resetModuleStoresToDefault).mockImplementationOnce(() => {
+            throw new Error('device store reset failed');
+        });
+
+        await expect(loadRecentProject('mid-commit-failure')).resolves.toBe(true);
+
+        expect(hydrateArrangementStoreFromProjectData).toHaveBeenCalledOnce();
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('restores only buffers referenced by the candidate project', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(
+            JSON.stringify({
+                ...validProjectData,
+                arrangement: {
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            name: 'Track 1',
+                            kind: 'audio',
+                            clips: [
+                                {
+                                    id: 'clip-1',
+                                    trackId: 'track-1',
+                                    name: 'Clip 1',
+                                    type: 'audio',
+                                    bufferId: 'candidate-buffer',
+                                    startBeat: 0,
+                                    endBeat: 1,
+                                    fadeInBeats: 0,
+                                    fadeOutBeats: 0,
+                                    gain: 1,
+                                    color: '#fff',
+                                    locked: false,
+                                    muted: false,
+                                },
+                            ],
+                            alternatives: [],
+                            freezeState: { status: 'unfrozen' },
+                            midiFx: [],
+                        },
+                    ],
+                },
+            })
+        );
+
+        await expect(loadRecentProject('candidate')).resolves.toBe(true);
+
+        expect(vi.mocked(prepareCachedAudioBuffersFromIdb).mock.calls[0]?.[0]?.bufferIds).toEqual(['candidate-buffer']);
     });
 
     it('resets the per-device-instance stores (§13.1) before hydrating, to avoid leaking the previous project', async () => {
@@ -104,29 +257,29 @@ describe('loadRecentProject', () => {
         expect(resetOrder).toBeLessThan(hydrateOrder);
     });
 
-    it('should reset replay authority before reading the recent project', async () => {
+    it('restores cached audio buffers before publishing hydrated tracks', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
+                })
+        );
 
-        await loadRecentProject('sourdaw:project:Large Project');
+        const loading = loadRecentProject('sourdaw:project:Large Project');
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
 
-        expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
-        const reset_authority_order = vi.mocked(resetActionReplayAuthority).mock.invocationCallOrder[0];
-        const read_order = vi.mocked(readNamedProjectJson).mock.invocationCallOrder[0];
-        const create_target_order = vi.mocked(createCrdtProject).mock.invocationCallOrder[0];
-        expect(reset_authority_order).toBeLessThan(read_order ?? Number.POSITIVE_INFINITY);
-        expect(create_target_order).toBeLessThan(
-            vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
-        expect(createCrdtProject).toHaveBeenCalledWith({
-            name: 'Large Project',
-            canActivate: expect.any(Function),
-        });
-        expect(create_target_order).toBeLessThan(
-            vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
-        expect(create_target_order).toBeLessThan(
-            vi.mocked(restoreCachedAudioBuffersFromIdb).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY
-        );
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
+        await expect(loading).resolves.toBe(true);
+        expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
 
     it('returns false when neither localStorage nor IndexedDB has the project', async () => {
@@ -138,45 +291,121 @@ describe('loadRecentProject', () => {
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
-        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
     });
 
-    it('should preserve source action-history projection when target creation fails', async () => {
-        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
-        vi.mocked(createCrdtProject).mockResolvedValueOnce(false);
+    it('leaves the live project untouched when recent-project parsing fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue('{invalid-json');
 
-        await expect(loadRecentProject('failed')).resolves.toBe(false);
+        await expect(loadRecentProject('invalid')).resolves.toBe(false);
 
-        expect(projectActionHistoryToStore).not.toHaveBeenCalled();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
     });
 
-    it('should ignore an older recent-project read that resolves after a newer selection', async () => {
-        let resolve_first: ((raw: string) => void) | undefined;
-        let resolve_second: ((raw: string) => void) | undefined;
+    it('supersedes an older overlapping load with the latest request', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeFirstRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb)
+            .mockImplementationOnce(
+                () =>
+                    new Promise<{ publish: () => number }>((resolve) => {
+                        completeFirstRestore = () => resolve({ publish: () => 0 });
+                    })
+            )
+            .mockResolvedValueOnce({ publish: () => 0 });
+
+        const firstLoad = loadRecentProject('first-project');
+        const secondLoad = loadRecentProject('second-project');
+        await vi.waitFor(() => expect(completeFirstRestore).toBeDefined());
+
+        const finishFirstRestore = completeFirstRestore;
+        if (!finishFirstRestore) {
+            throw new Error('Expected first project restoration to be pending');
+        }
+        finishFirstRestore();
+        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual([false, true]);
+
+        expect(readNamedProjectJson).toHaveBeenCalledTimes(2);
+        expect(readNamedProjectJson).toHaveBeenNthCalledWith(1, 'first-project');
+        expect(readNamedProjectJson).toHaveBeenNthCalledWith(2, 'second-project');
+    });
+
+    it('keeps request order authoritative when an older project read resolves last', async () => {
+        let finishFirstRead: (() => void) | undefined;
         vi.mocked(readNamedProjectJson).mockImplementation(
             (key) =>
                 new Promise<string>((resolve) => {
-                    if (key === 'first') {
-                        resolve_first = resolve;
-                    } else {
-                        resolve_second = resolve;
+                    if (key === 'first-project') {
+                        finishFirstRead = () => resolve(validProject);
+                        return;
                     }
+                    resolve(validProject);
                 })
         );
 
-        const first = loadRecentProject('first');
-        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledTimes(1));
-        const second = loadRecentProject('second');
-        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledTimes(2));
-        resolve_second?.(validProject.replace('Large Project', 'Second'));
-        await expect(second).resolves.toBe(true);
-        resolve_first?.(validProject.replace('Large Project', 'First'));
-        await expect(first).resolves.toBe(false);
+        const firstLoad = loadRecentProject('first-project');
+        const secondLoad = loadRecentProject('second-project');
+        await expect(secondLoad).resolves.toBe(true);
 
-        expect(projectStore.value?.name).toBe('Second');
+        const finishRead = finishFirstRead;
+        if (!finishRead) {
+            throw new Error('Expected the first project read to be pending');
+        }
+        finishRead();
+
+        await expect(firstLoad).resolves.toBe(false);
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('does not publish after a newer project transition starts', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
+                })
+        );
+
+        const loading = loadRecentProject('old-project');
+        await vi.waitFor(() => expect(completeRestore).toBeDefined());
+        runProjectLoadTransaction().activate();
+
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
+
+        await expect(loading).resolves.toBe(false);
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        expect(hydrateArrangementStoreFromProjectData).not.toHaveBeenCalled();
+    });
+
+    it('does not let a missing newer request cancel a valid prepared load', async () => {
+        vi.mocked(readNamedProjectJson).mockImplementation((key) =>
+            Promise.resolve(key === 'missing-project' ? null : validProject)
+        );
+        let completeRestore: (() => void) | undefined;
+        vi.mocked(prepareCachedAudioBuffersFromIdb).mockImplementationOnce(
+            () =>
+                new Promise<{ publish: () => number }>((resolve) => {
+                    completeRestore = () => resolve({ publish: () => 0 });
+                })
+        );
+
+        const validLoad = loadRecentProject('valid-project');
+        await vi.waitFor(() => expect(completeRestore).toBeDefined());
+        await expect(loadRecentProject('missing-project')).resolves.toBe(false);
+
+        const finishRestore = completeRestore;
+        if (!finishRestore) {
+            throw new Error('Expected pending audio-buffer restoration');
+        }
+        finishRestore();
+
+        await expect(validLoad).resolves.toBe(true);
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
-        expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
-        expect(writeProjectJson).toHaveBeenCalledTimes(1);
     });
 });

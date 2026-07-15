@@ -47,11 +47,9 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
         if (branchId === state.activeBranchId) {
             return;
         }
-        try {
-            switchBranch(branchId);
-        } catch (error) {
+        switchBranch(branchId).catch((error) => {
             logger.warn('Failed to switch branch:', error);
-        }
+        });
     };
 
     const handleMerge = async (sourceBranchId: string) => {

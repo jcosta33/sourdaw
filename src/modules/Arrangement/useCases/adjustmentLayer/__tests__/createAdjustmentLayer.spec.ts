@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
 
-import type { AdjustmentEffectType } from '../../stores/adjustmentLayer';
+import type { AdjustmentEffectType } from '../../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
     adjustmentLayerStoreValue: { value: { layers: [] } },
@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     getNextLayerId: vi.fn(() => 'layer-123'),
 }));
 
-vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
+vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
         get value() {
             return mocks.adjustmentLayerStoreValue.value;

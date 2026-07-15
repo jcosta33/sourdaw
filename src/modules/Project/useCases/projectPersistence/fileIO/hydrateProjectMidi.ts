@@ -14,7 +14,13 @@ type RuntimeCC = MidiStoreState['ccByClipId'][string][number];
 type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
 
 function hydrateProjectMidiNote(note: ProjectMidiNote): RuntimeNote {
-    return note;
+    return {
+        ...note,
+        probability: note.probability ?? 100,
+        pressure: note.pressure ?? 0,
+        slide: note.slide ?? 0,
+        pitchBend: note.pitchBend ?? 0,
+    };
 }
 
 type HydrateProjectMidiCCInput = {
