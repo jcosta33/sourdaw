@@ -67,7 +67,13 @@ export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): R
 
             {/* Interactive frequency response graph */}
             <div className={patch.eqBypassed ? 'opacity-30' : ''}>
-                <ProofEqCurve patch={patch} width={500} height={120} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={patch}
+                    width={500}
+                    height={120}
+                    gestureOwner={gestureOwner}
+                    onPatchChange={onPatchChange}
+                />
             </div>
 
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>

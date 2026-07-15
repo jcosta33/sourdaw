@@ -255,6 +255,103 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps an EQ curve drag alive across another section transient edit', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const canvas = container.querySelector<HTMLCanvasElement>(
+            'canvas[aria-label="8-band parametric EQ frequency response"]'
+        );
+        if (!canvas) {
+            throw new Error('Expected the Level 3 EQ curve canvas');
+        }
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const dynamicsCrossover = knobs.item(24);
+        if (!dynamicsCrossover) {
+            throw new Error('Expected the first Dynamics crossover knob');
+        }
+        const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 500;
+
+        fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 60, pointerId: 21 });
+        fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 30, pointerId: 21 });
+        const curveBand = getProofState(DEVICE_ID).patch.eqBands[2];
+
+        fireEvent.pointerDown(dynamicsCrossover, { button: 0, pointerId: 22, clientY: 100 });
+        fireEvent.pointerMove(dynamicsCrossover, { pointerId: 22, clientY: 80 });
+        const crossoverValue = getProofState(DEVICE_ID).patch.dynCrossoverFreqs[0];
+
+        try {
+            fireEvent.pointerUp(canvas, { pointerId: 21 });
+
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
+                freq: curveBand?.freq,
+                gain: curveBand?.gain,
+            });
+            expect(getProofState(DEVICE_ID).patch.dynCrossoverFreqs[0]).toBe(crossoverValue);
+            expect(persistDevicePatchMock).toHaveBeenCalledWith(
+                DEVICE_ID,
+                expect.objectContaining({
+                    eq_band2_freq: curveBand?.freq,
+                    eq_band2_gain: curveBand?.gain,
+                })
+            );
+        } finally {
+            unmount();
+        }
+    });
+
+    it('rebases EQ curve finalization onto a concurrent edit on another band', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const canvas = container.querySelector<HTMLCanvasElement>(
+            'canvas[aria-label="8-band parametric EQ frequency response"]'
+        );
+        if (!canvas) {
+            throw new Error('Expected the Level 3 EQ curve canvas');
+        }
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const otherEqGain = knobs.item(10);
+        if (!otherEqGain) {
+            throw new Error('Expected the next EQ band gain knob');
+        }
+        const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 500;
+
+        fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 60, pointerId: 23 });
+        fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 30, pointerId: 23 });
+        const curveBand = getProofState(DEVICE_ID).patch.eqBands[2];
+
+        fireEvent.pointerDown(otherEqGain, { button: 0, pointerId: 24, clientY: 100 });
+        fireEvent.pointerMove(otherEqGain, { pointerId: 24, clientY: 80 });
+        const otherBand = getProofState(DEVICE_ID).patch.eqBands[3];
+
+        try {
+            fireEvent.pointerUp(canvas, { pointerId: 23 });
+
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
+                freq: curveBand?.freq,
+                gain: curveBand?.gain,
+            });
+            expect(getProofState(DEVICE_ID).patch.eqBands[3]?.gain).toBe(otherBand?.gain);
+            expect(persistDevicePatchMock).toHaveBeenCalledWith(
+                DEVICE_ID,
+                expect.objectContaining({
+                    eq_band2_freq: curveBand?.freq,
+                    eq_band2_gain: curveBand?.gain,
+                    eq_band3_gain: otherBand?.gain,
+                })
+            );
+        } finally {
+            unmount();
+        }
+    });
+
     it.each(EQ_ROTARY_REPLACEMENT_CASES)(
         'preserves a replacement preset after a stale EQ %s drag via %s',
         (_field, _end, fieldIndex, endGesture) => {

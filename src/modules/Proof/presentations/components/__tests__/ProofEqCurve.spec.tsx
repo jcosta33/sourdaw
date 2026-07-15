@@ -16,7 +16,7 @@ import {
 describe('ProofEqCurve', () => {
     it('should render', () => {
         const { container } = render(
-            <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={vi.fn()} />
+            <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} gestureOwner={0} onPatchChange={vi.fn()} />
         );
         expect(container.querySelector('canvas')).toBeTruthy();
     });
@@ -96,7 +96,7 @@ describe('ProofEqCurve', () => {
         const renderHp = () => {
             const onPatchChange = vi.fn();
             const { container } = render(
-                <ProofEqCurve patch={hpPatch} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve patch={hpPatch} width={200} height={100} gestureOwner={0} onPatchChange={onPatchChange} />
             );
             const canvas = container.querySelector('canvas')!;
             return { canvas, onPatchChange };
@@ -116,7 +116,13 @@ describe('ProofEqCurve', () => {
             // Band 2 of DEFAULT_PATCH is an enabled peak at 250 Hz — gain must move.
             const onPatchChange = vi.fn();
             const { container } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             expect(DEFAULT_PATCH.eqBands[2]!.type).toBe(EQ_PEAK);
@@ -138,7 +144,13 @@ describe('ProofEqCurve', () => {
         it('emits exact transient domain params during drag and one persistence-only commit', () => {
             const onPatchChange = vi.fn();
             const { container } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -159,14 +171,23 @@ describe('ProofEqCurve', () => {
             expect(onPatchChange.mock.calls[1]?.[0]).toMatchObject({
                 key: 'eqBands',
                 isTransient: false,
-                changedParams: [],
+                changedParams: [
+                    { bandIndex: 2, field: 'freq' },
+                    { bandIndex: 2, field: 'gain' },
+                ],
             });
         });
 
         it('finalizes an accepted transient drag when unmounted', () => {
             const onPatchChange = vi.fn();
             const { container, unmount } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -183,16 +204,25 @@ describe('ProofEqCurve', () => {
             expect(onPatchChange.mock.calls[1]?.[0]).toMatchObject({
                 key: 'eqBands',
                 value: transientEdit.value,
-                changedParams: [],
+                changedParams: [
+                    { bandIndex: 2, field: 'freq' },
+                    { bandIndex: 2, field: 'gain' },
+                ],
                 isTransient: false,
             });
         });
 
         it('uses the latest owner callback and accepted edit during teardown', () => {
-            const initialOnPatchChange = vi.fn();
-            const latestOnPatchChange = vi.fn();
+            const initialOnPatchChange = vi.fn<(edit: ProofPatchEdit) => void>();
+            const latestOnPatchChange = vi.fn<(edit: ProofPatchEdit) => void>();
             const { container, rerender, unmount } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={initialOnPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={initialOnPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -201,7 +231,10 @@ describe('ProofEqCurve', () => {
             fireEvent.pointerMove(canvas, { clientX: peakX + 5, clientY: 30, pointerId: 11 });
             fireEvent.pointerMove(canvas, { clientX: peakX + 15, clientY: 20, pointerId: 11 });
 
-            const latestTransientEdit = initialOnPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
+            const latestTransientEdit = initialOnPatchChange.mock.calls.at(-1)?.[0];
+            if (!latestTransientEdit || latestTransientEdit.key !== 'eqBands') {
+                throw new Error('Expected the latest accepted EQ transient edit');
+            }
             rerender(
                 <ProofEqCurve
                     patch={{
@@ -210,6 +243,7 @@ describe('ProofEqCurve', () => {
                     }}
                     width={200}
                     height={100}
+                    gestureOwner={0}
                     onPatchChange={latestOnPatchChange}
                 />
             );
@@ -220,7 +254,10 @@ describe('ProofEqCurve', () => {
             expect(latestOnPatchChange).toHaveBeenCalledWith({
                 key: 'eqBands',
                 value: latestTransientEdit.value,
-                changedParams: [],
+                changedParams: [
+                    { bandIndex: 2, field: 'freq' },
+                    { bandIndex: 2, field: 'gain' },
+                ],
                 isTransient: false,
             });
         });
@@ -228,7 +265,13 @@ describe('ProofEqCurve', () => {
         it('does not finalize twice when pointerup precedes unmount', () => {
             const onPatchChange = vi.fn();
             const { container, unmount } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -245,7 +288,13 @@ describe('ProofEqCurve', () => {
         it('finalizes on lost pointer capture and ignores a later pointerup', () => {
             const onPatchChange = vi.fn();
             const { container, unmount } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -271,7 +320,13 @@ describe('ProofEqCurve', () => {
         ])('cancels a stale finalizer after authoritative replacement via %s', (_end, endGesture) => {
             const onPatchChange = vi.fn();
             const { container, rerender, unmount } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -288,7 +343,13 @@ describe('ProofEqCurve', () => {
                 ),
             };
             rerender(
-                <ProofEqCurve patch={authoritativePatch} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={authoritativePatch}
+                    width={200}
+                    height={100}
+                    gestureOwner={1}
+                    onPatchChange={onPatchChange}
+                />
             );
 
             endGesture(canvas, unmount);
@@ -300,7 +361,13 @@ describe('ProofEqCurve', () => {
         it('does not commit when a dragged band returns to its starting position', () => {
             const onPatchChange = vi.fn();
             const { container } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
@@ -318,7 +385,13 @@ describe('ProofEqCurve', () => {
         it('keeps the first pointer as drag owner when another pointer cancels', () => {
             const onPatchChange = vi.fn();
             const { container } = render(
-                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
             );
             const canvas = container.querySelector('canvas')!;
             const firstBandX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;

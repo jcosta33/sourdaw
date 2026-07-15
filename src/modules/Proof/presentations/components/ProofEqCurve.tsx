@@ -9,7 +9,7 @@
  */
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
-import { getProofPatchSnapshot, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -144,18 +144,17 @@ type Props = {
     patch: ProofPatch;
     width: number;
     height: number;
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): ReactElement => {
+export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange }: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const activePointerIdRef = useRef<number | null>(null);
     const dragBandRef = useRef<number | null>(null);
     const dragStartBandRef = useRef<ProofPatch['eqBands'][number] | null>(null);
-    const dragBandsRef = useRef<ProofPatch['eqBands'] | null>(null);
-    const pendingEditRef = useRef<ProofPatchEdit | null>(null);
-    const dragStartPatchSnapshotRef = useRef<string | null>(null);
-    const pendingPatchSnapshotRef = useRef<string | null>(null);
+    const dragValueRef = useRef<{ freq: number; gain: number } | null>(null);
+    const gestureOwnerAtStartRef = useRef<number | null>(null);
     const onPatchChangeRef = useRef(onPatchChange);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
@@ -163,23 +162,17 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
         activePointerIdRef.current = null;
         dragBandRef.current = null;
         dragStartBandRef.current = null;
-        dragBandsRef.current = null;
-        pendingEditRef.current = null;
-        dragStartPatchSnapshotRef.current = null;
-        pendingPatchSnapshotRef.current = null;
+        dragValueRef.current = null;
+        gestureOwnerAtStartRef.current = null;
     };
 
     useLayoutEffect(() => {
         onPatchChangeRef.current = onPatchChange;
 
-        const currentPatchSnapshot = getProofPatchSnapshot(patch);
-        const dragStartPatchSnapshot = dragStartPatchSnapshotRef.current;
-        const pendingPatchSnapshot = pendingPatchSnapshotRef.current;
         if (
             activePointerIdRef.current !== null &&
-            dragStartPatchSnapshot !== null &&
-            currentPatchSnapshot !== dragStartPatchSnapshot &&
-            currentPatchSnapshot !== pendingPatchSnapshot
+            gestureOwnerAtStartRef.current !== null &&
+            !Object.is(gestureOwnerAtStartRef.current, gestureOwner)
         ) {
             clearDragState();
         }
@@ -192,30 +185,44 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
                 return false;
             }
 
-            const pendingEdit = pendingEditRef.current;
             const bandIndex = dragBandRef.current;
             const startBand = dragStartBandRef.current;
-            const currentPatchSnapshot = getProofPatchSnapshot(patch);
-            const dragStartPatchSnapshot = dragStartPatchSnapshotRef.current;
-            const pendingPatchSnapshot = pendingPatchSnapshotRef.current;
-            const ownsAcceptedPatch =
-                dragStartPatchSnapshot !== null &&
-                (currentPatchSnapshot === dragStartPatchSnapshot || currentPatchSnapshot === pendingPatchSnapshot);
-            const finalBand =
-                pendingEdit?.key === 'eqBands' && bandIndex !== null ? (pendingEdit.value[bandIndex] ?? null) : null;
+            const dragValue = dragValueRef.current;
+            const ownsGesture =
+                gestureOwnerAtStartRef.current !== null && Object.is(gestureOwnerAtStartRef.current, gestureOwner);
             const changed =
                 startBand !== null &&
-                finalBand !== null &&
-                (startBand.freq !== finalBand.freq ||
-                    (bandUsesGain(startBand.type) && startBand.gain !== finalBand.gain));
+                dragValue !== null &&
+                (startBand.freq !== dragValue.freq ||
+                    (bandUsesGain(startBand.type) && startBand.gain !== dragValue.gain));
 
             clearDragState();
 
-            if (ownsAcceptedPatch && pendingEdit?.key === 'eqBands' && changed) {
+            if (ownsGesture && bandIndex !== null && startBand !== null && dragValue !== null && changed) {
+                const value = patch.eqBands.map((band, index) => {
+                    if (index !== bandIndex) {
+                        return band;
+                    }
+                    const nextBand = {
+                        ...band,
+                        freq: dragValue.freq,
+                    };
+                    if (bandUsesGain(startBand.type)) {
+                        nextBand.gain = dragValue.gain;
+                    }
+                    return nextBand;
+                });
+                const changedParams: Array<{
+                    bandIndex: number;
+                    field: keyof ProofPatch['eqBands'][number];
+                }> = [{ bandIndex, field: 'freq' }];
+                if (bandUsesGain(startBand.type)) {
+                    changedParams.push({ bandIndex, field: 'gain' });
+                }
                 onPatchChangeRef.current({
                     key: 'eqBands',
-                    value: pendingEdit.value,
-                    changedParams: [],
+                    value,
+                    changedParams,
                     isTransient: false,
                 });
             }
@@ -440,10 +447,13 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
             activePointerIdRef.current = e.pointerId;
             dragBandRef.current = closestIdx;
             dragStartBandRef.current = patch.eqBands[closestIdx] ?? null;
-            dragBandsRef.current = patch.eqBands;
-            pendingEditRef.current = null;
-            dragStartPatchSnapshotRef.current = getProofPatchSnapshot(patch);
-            pendingPatchSnapshotRef.current = null;
+            const startBand = dragStartBandRef.current;
+            if (!startBand) {
+                clearDragState();
+                return;
+            }
+            dragValueRef.current = { freq: startBand.freq, gain: startBand.gain };
+            gestureOwnerAtStartRef.current = gestureOwner;
         }
     };
 
@@ -456,6 +466,12 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
         if (!canvas) {
             return;
         }
+        const startBand = dragStartBandRef.current;
+        const currentBand = patch.eqBands[idx];
+        const dragValue = dragValueRef.current;
+        if (!startBand || !currentBand || !dragValue) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -464,32 +480,28 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
 
         // HP/LP cutoff bands have no gain axis: the engine ignores `gain` for them,
         // so vertical drag must not write it. Only frequency changes for those bands.
-        const currentBands = dragBandsRef.current ?? patch.eqBands;
-        const dragBand = currentBands[idx]!;
-        if (!bandUsesGain(dragBand.type)) {
-            if (dragBand.freq === newFreq) {
+        if (!bandUsesGain(startBand.type)) {
+            if (dragValue.freq === newFreq) {
                 return;
             }
-            const bands = currentBands.map((band, index) => (index === idx ? { ...band, freq: newFreq } : band));
+            const bands = patch.eqBands.map((band, index) => (index === idx ? { ...band, freq: newFreq } : band));
             const edit: ProofPatchEdit = {
                 key: 'eqBands',
                 value: bands,
                 changedParams: [{ bandIndex: idx, field: 'freq' }],
                 isTransient: true,
             };
-            dragBandsRef.current = bands;
-            pendingEditRef.current = edit;
-            pendingPatchSnapshotRef.current = getProofPatchSnapshot({ ...patch, eqBands: bands });
+            dragValueRef.current = { ...dragValue, freq: newFreq };
             onPatchChange(edit);
             return;
         }
 
         const newGain = Math.round(Math.max(-DB_RANGE, Math.min(DB_RANGE, yToGain(my, height))) * 2) / 2;
-        if (dragBand.freq === newFreq && dragBand.gain === newGain) {
+        if (dragValue.freq === newFreq && dragValue.gain === newGain) {
             return;
         }
 
-        const bands = currentBands.map((band, index) =>
+        const bands = patch.eqBands.map((band, index) =>
             index === idx ? { ...band, freq: newFreq, gain: newGain } : band
         );
         const edit: ProofPatchEdit = {
@@ -501,9 +513,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
             ],
             isTransient: true,
         };
-        dragBandsRef.current = bands;
-        pendingEditRef.current = edit;
-        pendingPatchSnapshotRef.current = getProofPatchSnapshot({ ...patch, eqBands: bands });
+        dragValueRef.current = { freq: newFreq, gain: newGain };
         onPatchChange(edit);
     };
 
