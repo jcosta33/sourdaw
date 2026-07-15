@@ -1,4 +1,4 @@
-import { change, init, save } from '@automerge/automerge';
+import { change, init, save, saveIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -71,6 +71,22 @@ function create_persisted_bundle({ legacy = false, project = 'B' } = {}): Map<st
     return new Map([['root', save(document)]]);
 }
 
+function create_incremental_bundle(): Map<string, Uint8Array> {
+    let document = init<PersistedRootDocument>();
+    document = change(document, (draft) => {
+        draft.project = 'B';
+        draft.actionHistory = { entries: [] };
+    });
+    const base = save(document);
+    document = change(document, (draft) => {
+        draft.project = 'C';
+    });
+    return new Map([
+        ['root', base],
+        ['root:incremental:1-0', saveIncremental(document)],
+    ]);
+}
+
 describe('loadCrdtProject persisted action-history sanitization', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -105,6 +121,18 @@ describe('loadCrdtProject persisted action-history sanitization', () => {
 
         expect(mocks.saveAllToIdb).not.toHaveBeenCalled();
         expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('B');
+    });
+
+    it('should preserve valid incremental persistence without rewriting it', async () => {
+        mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
+            authority: authority(4),
+            bundle: create_incremental_bundle(),
+        });
+
+        await expect(loadCrdtProject()).resolves.toBe(true);
+
+        expect(mocks.saveAllToIdb).not.toHaveBeenCalled();
+        expect(automergeRepository.getDoc<PersistedRootDocument>('root')?.project).toBe('C');
     });
 
     it('should persist a sanitized bundle once when executable legacy fields exist', async () => {

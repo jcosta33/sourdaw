@@ -43,7 +43,7 @@ export function sanitizePersistedActionHistoryBundle({
             }
         }
 
-        let document_changed = incremental_keys.length > 0;
+        let document_changed = false;
         if (document.actionHistory !== undefined) {
             const sanitized_history = sanitize_action_history_state(document.actionHistory);
             if (sanitized_history !== document.actionHistory) {
