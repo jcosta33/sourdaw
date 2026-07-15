@@ -121,7 +121,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioBufferToFlac: vi.fn(),
+    audioBufferToMp3: vi.fn(),
+    audioBufferToWav: mocks.encodeWav,
+    cancelExport: vi.fn(),
+    exportStems: vi.fn(),
     getAudioContext: mocks.getAudioContext,
+    getAutoDetectedTailSeconds: vi.fn(() => 2),
+    isExportActive: mocks.isExportActive,
+    renderOffline: mocks.renderOffline,
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
 }));
 
@@ -155,15 +163,7 @@ vi.mock('../../../useCases/audioExport/writeNativeAudioStemFile', () => ({
     writeNativeAudioStemFile: vi.fn(),
 }));
 
-vi.mock('../../../useCases/exportActions', () => ({
-    cancelExport: vi.fn(),
-    encodeFlac: vi.fn(),
-    encodeMp3: vi.fn(),
-    encodeWav: mocks.encodeWav,
-    exportStems: vi.fn(),
-    getAutoDetectedTailSeconds: vi.fn(() => 2),
-    isExportActive: mocks.isExportActive,
-    renderOffline: mocks.renderOffline,
+vi.mock('../../../useCases/renderToClip', () => ({
     renderToClip: vi.fn(),
 }));
 

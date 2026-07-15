@@ -12,7 +12,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/u
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore, defaultTrackState } from '#/modules/Arrangement/stores';
-import { getAudioContext, restoreCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
+import {
+    audioBufferToFlac as encodeFlac,
+    audioBufferToMp3 as encodeMp3,
+    audioBufferToWav as encodeWav,
+    cancelExport,
+    exportStems,
+    getAudioContext,
+    getAutoDetectedTailSeconds,
+    isExportActive,
+    renderOffline,
+    restoreCachedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -21,18 +32,8 @@ import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/sel
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
 import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNativeAudioMixdownFile';
 import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
-import {
-    renderOffline,
-    exportStems,
-    cancelExport,
-    isExportActive,
-    encodeWav,
-    encodeMp3,
-    encodeFlac,
-    getAutoDetectedTailSeconds,
-    renderToClip,
-} from '../../useCases/exportActions';
 import { isNativeProjectRuntimeAvailable } from '../../useCases/isNativeProjectRuntimeAvailable';
+import { renderToClip } from '../../useCases/renderToClip';
 
 import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';
 
