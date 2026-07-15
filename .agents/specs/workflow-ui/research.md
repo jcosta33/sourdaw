@@ -55,7 +55,10 @@ architecture for each (visualization, automation, sample intelligence, MPE, cont
   that are accept/dismiss/cycle (Tab / Escape / Alt+]/[) and ephemeral until committed — extended
   to MIDI clips, audio clips (with provenance/audition), and automation overlays.
 - **Evidence:** GitHub Copilot's ghost-text pattern; the requirement for reversible, auditionable,
-  non-destructive previews.
+  non-destructive previews; the current DSO path exposes `confirmPreview`/`cancelPreview` in
+  `src/modules/Workspace/presentations/views/PromptBar.tsx` and `drawGhostNotes` in
+  `src/modules/Workspace/presentations/hooks/usePianoRollRenderer.ts`. Audio and automation
+  surfaces remain planned extensions, while routing previews stay explicitly deferred.
 - **Confidence:** high
 - **Bears on:** the ai-ghost-surfaces spec.
 
@@ -71,11 +74,13 @@ architecture for each (visualization, automation, sample intelligence, MPE, cont
 ### R-006 — Sample intelligence = analysis (Workers) + pluggable embeddings + HNSW + UMAP
 
 - **Claim:** Musical analysis (BPM via onset/autocorrelation, key via chroma, spectral descriptors)
-  must run in Web Workers; semantic search needs a pluggable `EmbeddingModel` (CLAP/OpenL3), an HNSW
-  index stored separately from full-precision vectors (OPFS/desktop), and a UMAP 2D map with
-  precomputed GPU-rendered coordinates.
+  must run in Web Workers for interactive use; heavy or quality-focused analysis may use the Rust
+  tier. Semantic search needs a pluggable `EmbeddingModel` (CLAP/OpenL3), an HNSW index stored
+  separately from full-precision vectors (OPFS/desktop), and a UMAP 2D map with precomputed
+  GPU-rendered coordinates.
 - **Evidence:** recommended index/embedding families; OPFS storage strategy; UMAP as default
-  reduction with stored coordinates for instant render.
+  reduction with stored coordinates for instant render; the hybrid Web/Rust tier decision keeps
+  interactive analysis responsive without ruling out heavier offline analysis.
 - **Confidence:** high
 - **Bears on:** the sample-library-intelligence spec.
 
@@ -114,6 +119,10 @@ architecture for each (visualization, automation, sample intelligence, MPE, cont
 - [ ] Q-001 — Default embedding checkpoint (CLAP vs OpenL3)? Benchmark during implementation.
 - [ ] Q-002 — Should AI suggestions eventually carry a trust/confidence score? Research-only until
   usage data exists.
+- [ ] Q-003 — Analysis provider and tier details: validate Essentia.js (or an MIT-compatible
+  alternative) for browser analysis and `bpm-analyzer`, `stratum-dsp`, CREPE tiny ONNX, or
+  `pitch-detection` for heavier BPM/key/pitch fallbacks. License, accuracy, and platform fit must
+  be confirmed before any candidate becomes a dependency.
 
 ## Recommendation
 
@@ -179,4 +188,4 @@ research-grade context that informs the downstream specs.
 
 **Considered and rejected:** (a) Browser-only — rejected because current neural singing / full-song generation models exceed browser WASM/ONNX practical limits for quality, and would either degrade output or push model size past what OPFS can realistically cache per user. (b) Rust-only — rejected because interactive features (ghost UI, modulation halos, spectrum, WebGPU automation, drag-out, MPE editing) require sub-16ms latency that a Tauri IPC round-trip cannot consistently deliver for every UI event. (c) Dynamic runtime tier selection — rejected because it hides a significant performance/behavior cliff from the developer and complicates testing. Explicit per-feature tier assignment is auditable and predictable.
 
-This decision is grounded in `intake/research-ai.md` § 1 (Rust-tier analysis for BPM/Key/Pitch) and the co-located `../audio-generation/research.md` (Rust-tier singing synthesis via ONNX Runtime + Python sidecar for heavy models). The consolidated tier assignments for this spec's AI features are listed in User-visible behavior § E5.
+This decision is grounded in R-006 and Q-003 above (interactive Web Workers with a Rust fallback for heavier analysis) and the co-located `../audio-generation/research.md` (Rust-tier singing synthesis via ONNX Runtime + Python sidecar for heavy models). Feature-specific tier assignments remain in their owning specs.
