@@ -157,9 +157,6 @@ export async function replaceProjectData({
         );
     }
 
-    runCommittedStep('CRDT durability lifecycle start', () => {
-        setAutoSaveHandle(startCrdtAutoSave());
-    });
     if (afterCommit) {
         runCommittedStep('post-commit persistence', afterCommit);
     }
@@ -175,6 +172,10 @@ export async function replaceProjectData({
             logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
         }
     }
+
+    runCommittedStep('CRDT durability lifecycle start', () => {
+        setAutoSaveHandle(startCrdtAutoSave());
+    });
 
     return { status: 'committed', degraded };
 }

@@ -401,6 +401,37 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(resetCrdtProjectAuthority).toHaveBeenCalledOnce();
     });
 
+    it('starts CRDT autosave only after embedded buffers are durable', async () => {
+        let finishPersistence: ((persisted: boolean) => void) | undefined;
+        const persistEmbedded = vi.fn(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    finishPersistence = resolve;
+                })
+        );
+        importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistEmbedded, publish: () => 0 });
+        const project = makeProject();
+        project.audioBuffers = {
+            'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+        };
+
+        const applying = applyImportedProjectData({ data: project });
+        await vi.waitFor(() => expect(persistEmbedded).toHaveBeenCalledOnce());
+
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        const completePersistence = finishPersistence;
+        if (!completePersistence) {
+            throw new Error('Expected embedded audio-buffer persistence to be pending');
+        }
+        completePersistence(true);
+        await expect(applying).resolves.toBe(true);
+
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(persistEmbedded.mock.invocationCallOrder[0]).toBeLessThan(
+            startCrdtAutoSave.mock.invocationCallOrder[0]!
+        );
+    });
+
     it('starts the committed project durability lifecycle', async () => {
         await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
 
