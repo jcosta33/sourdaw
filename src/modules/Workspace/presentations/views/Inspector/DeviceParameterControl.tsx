@@ -186,6 +186,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
         return (
             <RotaryKnob
+                paramId={param.id}
+                targetType="deviceParam"
+                trackId={trackId}
+                deviceId={device.id}
                 value={mappedValue}
                 onChange={onChange}
                 min={min}

@@ -23,6 +23,7 @@ vi.mock('#/modules/Automation/useCases/automation/removeAutomationLane', () => (
 }));
 
 const mockUseStore = vi.fn((store: any, defaultState: any) => defaultState);
+const mockMidiLearnRotaryKnob = vi.hoisted(() => vi.fn());
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
@@ -49,22 +50,6 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
     ),
 }));
 
-vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({
-        value,
-        onChange,
-        'aria-label': ariaLabel,
-    }: {
-        value: number;
-        onChange: (v: number) => void;
-        'aria-label'?: string;
-    }) => (
-        <button data-testid="rotary-knob" data-value={value} aria-label={ariaLabel} onClick={() => onChange(value + 1)}>
-            Knob
-        </button>
-    ),
-}));
-
 vi.mock('#/components/ui/bipolar-slider', () => ({
     BipolarSlider: ({
         value,
@@ -87,6 +72,19 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
 
 vi.mock('#/modules/MIDI/presentations/views', () => ({
     MidiLearnButton: () => <button data-testid="midi-learn-btn">Learn</button>,
+    MidiLearnRotaryKnob: (props: { value: number; onChange: (value: number) => void; 'aria-label'?: string }) => {
+        mockMidiLearnRotaryKnob(props);
+        return (
+            <button
+                data-testid="rotary-knob"
+                data-value={props.value}
+                aria-label={props['aria-label']}
+                onClick={() => props.onChange(props.value + 1)}
+            >
+                Knob
+            </button>
+        );
+    },
 }));
 
 describe('DeviceParameterControl', () => {
@@ -140,6 +138,19 @@ describe('DeviceParameterControl', () => {
     it('gives the rotary knob the parameter name as its accessible name', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         expect(screen.getByTestId('rotary-knob')).toHaveAttribute('aria-label', 'Gain');
+    });
+
+    it('scopes the rotary MIDI target to the parameter owner', () => {
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+
+        expect(mockMidiLearnRotaryKnob).toHaveBeenCalledWith(
+            expect.objectContaining({
+                paramId: 'gain',
+                targetType: 'deviceParam',
+                trackId: 'track-1',
+                deviceId: 'device-1',
+            })
+        );
     });
 
     it('should call setDeviceParameter when knob value changes', () => {

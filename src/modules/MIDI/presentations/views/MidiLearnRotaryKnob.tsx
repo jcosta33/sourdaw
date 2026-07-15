@@ -3,7 +3,13 @@ import { type MouseEvent, type ReactElement } from 'react';
 import { RotaryKnob, type RotaryKnobProps } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 
-import { midiLearnStore, type MidiLearnState, type MidiMappingTargetType } from '../../stores/midiLearnStore';
+import {
+    midiLearnStore,
+    type LearningTarget,
+    type MidiLearnState,
+    type MidiMappingTargetType,
+} from '../../stores/midiLearnStore';
+import { findMappingForTarget } from '../../useCases/midiLearn/findMappingForTarget';
 import { startMidiLearn } from '../../useCases/midiLearn/startMidiLearn';
 
 type MidiLearnRotaryKnobProps = RotaryKnobProps & {
@@ -18,6 +24,15 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
+function isSameTarget(left: LearningTarget | null, right: LearningTarget): boolean {
+    return (
+        left?.targetType === right.targetType &&
+        left.trackId === right.trackId &&
+        left.deviceId === right.deviceId &&
+        left.paramId === right.paramId
+    );
+}
+
 export const MidiLearnRotaryKnob = ({
     paramId,
     targetType = 'fermenterGlobalParam',
@@ -26,13 +41,16 @@ export const MidiLearnRotaryKnob = ({
     ...props
 }: MidiLearnRotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
+    const target = {
+        targetType,
+        trackId: trackId ?? 'global',
+        deviceId,
+        paramId,
+    } satisfies LearningTarget;
     const isLearning = Boolean(
-        midiLearnState.isLearning &&
-        midiLearnState.learningTarget &&
-        midiLearnState.learningTarget.paramId === paramId &&
-        paramId !== undefined
+        paramId && midiLearnState.isLearning && isSameTarget(midiLearnState.learningTarget, target)
     );
-    const isMapped = Boolean(midiLearnState.mappings.some((message) => message.paramId === paramId));
+    const isMapped = Boolean(paramId && findMappingForTarget(target));
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
         if (!paramId) {
@@ -43,8 +61,8 @@ export const MidiLearnRotaryKnob = ({
         startMidiLearn({
             targetType,
             paramId,
-            trackId: trackId ?? 'global',
-            deviceId,
+            trackId: target.trackId,
+            deviceId: target.deviceId,
         });
     };
 
