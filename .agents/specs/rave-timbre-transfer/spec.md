@@ -236,10 +236,12 @@ exact helper path and change its owning acceptance criterion.
 
 - **Model-path resolution under Vite** — the `modelPath` strings in `FACTORY_MODELS` are
   relative (e.g. `models/rave/strings.onnx`) and must be resolved against
-  `import.meta.env.BASE_URL` by the future model-download implementation so model fetches
-  work under a non-root deploy base; `downloadModel.ts` does not exist at promotion SHA
-  `078dfc3383760a01d219a04d735c7e8f74a0f820`, so this is an unimplemented requirement, not
-  a completed fix.
+  `import.meta.env.BASE_URL` by a future RAVE-owned download implementation so model fetches
+  work under a non-root deploy base; no RAVE-owned download implementation exists under
+  `src/modules/AudioEngine/useCases/rave` at promotion SHA
+  `078dfc3383760a01d219a04d735c7e8f74a0f820`. The existing BrowserAi owner at
+  `src/modules/BrowserAi/useCases/downloadModel.ts` is unrelated and does not implement
+  RAVE model-path resolution, so this is an unimplemented requirement, not a completed fix.
 - **Model buffer memory management** — decoded audio buffers (≈5.3 MB per 30 s stereo at
   44.1 kHz) are the large objects in this pipeline and must be managed through the existing
   `audioBufferCache` LRU rather than retained unboundedly.
