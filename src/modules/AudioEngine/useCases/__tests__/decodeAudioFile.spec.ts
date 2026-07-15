@@ -153,4 +153,24 @@ describe('decodeAudioFile — native decode path', () => {
         );
         expect(warnedNoSamples).toBe(true);
     });
+
+    it('falls back when the native decoder returns an empty decoded buffer', async () => {
+        mocks.nativeDecode.mockResolvedValue({
+            samples: [],
+            sampleRate: 48_000,
+            channels: 2,
+            durationMs: 0,
+            totalFrames: 0,
+        });
+
+        const result = await subject.decodeAudioFile(makeFile('song.flac'));
+
+        expect(result).toBeDefined();
+        expect(mocks.samplesToAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
+        const warnedNoSamples = mocks.logger.warn.mock.calls.some(
+            ([msg]) => typeof msg === 'string' && msg.includes('returned no samples')
+        );
+        expect(warnedNoSamples).toBe(true);
+    });
 });

@@ -32,7 +32,7 @@ export async function decodeAudioFile(file: File): Promise<{ id: string; buffer:
 
         if (cachedFile.kind === 'ready') {
             const decoded = await nativeDecodeAudioFile(cachedFile.path);
-            if (decoded) {
+            if (decoded && decoded.channels > 0 && decoded.totalFrames > 0 && decoded.samples.length > 0) {
                 const ctx = audioEngine.context;
                 const buffer = samplesToAudioBuffer(decoded, ctx);
                 const id = `audio-${crypto.randomUUID()}`;
