@@ -12,7 +12,12 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
-import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
+import {
+    type DdspInstrument,
+    type KokoroModel,
+    type ModelDownloadStatus,
+    type VocoderModel,
+} from '../models/BrowserModel';
 import {
     DDSP_INSTRUMENT_CATALOG,
     KOKORO_VOICE_CATALOG,
@@ -22,7 +27,7 @@ import {
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/DdspInstrumentCatalog';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { checkModelCached } from '../repositories/storageManager';
+import { checkModelCached } from '../repositories/checkModelCached';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
@@ -93,24 +98,36 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             }));
 
             // ── 3. Check Kokoro model cache status ─────────────────────────
-            const kokoroCached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id }).catch(
-                () => false
-            );
+            let kokoroStatus: ModelDownloadStatus;
+            try {
+                const cached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id });
+                kokoroStatus = cached ? 'ready' : 'not-downloaded';
+            } catch (error) {
+                kokoroStatus = 'error';
+                logger.warn(`[BrowserAi] Kokoro cache probe failed: ${String(error)}`);
+            }
             const kokoroModel: KokoroModel = {
                 ...KOKORO_MODEL_ENTRY,
-                status: kokoroCached ? 'ready' : 'not-downloaded',
-                downloadProgress: kokoroCached ? 1 : 0,
+                status: kokoroStatus,
+                downloadProgress: kokoroStatus === 'ready' ? 1 : 0,
             };
 
             // ── 4. Check vocoder cache status ──────────────────────────────
-            const vocoderCached = await checkModelCached({
-                family: 'diffsinger/vocoder',
-                modelId: NSF_HIFIGAN_VOCODER.id,
-            }).catch(() => false);
+            let vocoderStatus: ModelDownloadStatus;
+            try {
+                const cached = await checkModelCached({
+                    family: 'diffsinger/vocoder',
+                    modelId: NSF_HIFIGAN_VOCODER.id,
+                });
+                vocoderStatus = cached ? 'ready' : 'not-downloaded';
+            } catch (error) {
+                vocoderStatus = 'error';
+                logger.warn(`[BrowserAi] Vocoder cache probe failed: ${String(error)}`);
+            }
             const vocoder: VocoderModel = {
                 ...NSF_HIFIGAN_VOCODER,
-                status: vocoderCached ? 'ready' : 'not-downloaded',
-                downloadProgress: vocoderCached ? 1 : 0,
+                status: vocoderStatus,
+                downloadProgress: vocoderStatus === 'ready' ? 1 : 0,
             };
 
             // ── 5. Populate model registry store ───────────────────────────
