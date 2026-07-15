@@ -415,33 +415,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/adjustmentLayer/__tests__/createAdjustmentLayer.spec.ts",
-    "to": "../../stores/adjustmentLayer",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerMix.spec.ts",
-    "to": "../../stores/adjustmentLayer",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts",
-    "to": "../../../models/Device",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts",
     "to": "src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts",
     "rule": {
@@ -492,33 +465,6 @@
     "rule": {
       "severity": "error",
       "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
-    "to": "../../../stores/timelineViewStore",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
-    "to": "../../buildTimelineRenderModel",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts",
-    "to": "../getTrackAtY",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
     }
   },
   {
