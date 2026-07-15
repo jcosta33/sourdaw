@@ -8,6 +8,7 @@ sources:
     - ../audio-generation/research.md
     - ../audio-generation/spec.md
     - ../dependency-boundary-validation/spec.md
+    - ../../decisions/README.md
     - ../../../src/modules/AudioEngine/stores/rave.ts
     - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
     - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
@@ -52,9 +53,9 @@ Verify with: `pnpm test:run -- rave`
 ### AC-002 — Loaded-model transfer inserts a clip
 
 A future `transferTimbreToClip` invocation carrying the verified AC-028 session capability, matched
-to the host-owned transfer selection under AC-029, MUST render output from only AC-030/AC-031-valid
-worker responses and insert a new clip on the source track through the existing clip-insertion
-path, honouring the `placement` mode.
+to the host-owned transfer selection under AC-029, MUST render output from only
+AC-030/AC-031/AC-034/AC-036-valid worker responses and insert a new clip on the source track through
+the existing clip-insertion path, honouring the `placement` mode.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -77,26 +78,29 @@ Verify with: `pnpm test:run -- rave`
 The future `transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this
 contract:
 
-| Input condition                                                                                                                                     | Result                      | Required effect boundary                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
-| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED`          | No pure-helper invocation and no worker/session request                         |
-| Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                       |
-| Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                       |
-| Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                       |
-| Worker response has no outstanding request                                                                                                          | `WORKER_RESPONSE_STALE`     | No response acceptance, render, cache write, or clip insertion                  |
-| Worker response reuses a consumed request                                                                                                           | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion       |
-| Worker response fields do not match the outstanding request's session, phase, model identity, or digest                                             | `WORKER_RESPONSE_MISMATCH`  | No response acceptance, render, cache write, or clip insertion                  |
-| Worker response violates an AC-031 shape, type, literal, or finite-number rule                                                                      | `WORKER_RESPONSE_INVALID`   | No response acceptance, render, cache write, or clip insertion                  |
-| Worker response exceeds an AC-031 UTF-8 string, typed-array backing, or frame-count bound                                                           | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, payload logging, render, cache write, or clip insertion |
-| A valid, correlated `terminal-error` worker response reports an operation failure                                                                   | `WORKER_OPERATION_FAILED`   | No render, cache write, or clip insertion                                       |
+| Input condition                                                                                                                                     | Result                      | Required effect boundary                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED`          | No pure-helper invocation and no worker/session request                           |
+| Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                         |
+| Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                         |
+| Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                         |
+| AC-035 session already has 32 unexpired pending requests before registration                                                                        | `WORKER_REQUEST_OVERLOADED` | No request id, correlation record, worker post, render, cache write, or insertion |
+| AC-035 pending request reaches its 30,000 ms monotonic deadline                                                                                     | `WORKER_REQUEST_TIMEOUT`    | Correlation removed before settlement; no render, cache write, or clip insertion  |
+| AC-035 pending request is cancelled or its session is torn down                                                                                     | `WORKER_REQUEST_CANCELLED`  | Correlation removed before settlement; no render, cache write, or clip insertion  |
+| Worker response has no outstanding request                                                                                                          | `WORKER_RESPONSE_STALE`     | No response acceptance, render, cache write, or clip insertion                    |
+| Worker response reuses a consumed request                                                                                                           | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion         |
+| Worker response fields do not match the outstanding request's session, phase, model identity, or digest                                             | `WORKER_RESPONSE_MISMATCH`  | No response acceptance, render, cache write, or clip insertion                    |
+| Worker response violates an AC-031 envelope, AC-034 result shape, or AC-036 view/finite-number rule                                                 | `WORKER_RESPONSE_INVALID`   | No response acceptance, render, cache write, or clip insertion                    |
+| Worker response exceeds an AC-031 UTF-8 string, AC-034 frame-count, or AC-036 backing-buffer limit                                                  | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, payload logging, render, cache write, or clip insertion   |
+| A valid, correlated `terminal-error` worker response reports an operation failure                                                                   | `WORKER_OPERATION_FAILED`   | No render, cache write, or clip insertion                                         |
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 covering every table row. No-model execution invokes neither a pure helper nor a worker/session;
 flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability cases each
-return `MODEL_NOT_LOADED`. Oversized AC-031 identifiers and terminal diagnostics return
-`WORKER_RESPONSE_TOO_LARGE`. Every selection or response rejection occurs before the listed
-effects.
+return `MODEL_NOT_LOADED`. Pending-capacity, timeout, and cancellation fixtures return the three
+named request outcomes. Oversized AC-031 identifiers and terminal diagnostics return
+`WORKER_RESPONSE_TOO_LARGE`. Every selection or response rejection occurs before the listed effects.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -277,12 +281,13 @@ path searches and `pnpm deps:validate`
 
 A future `transferTimbreToClip` invocation with the verified AC-028 session capability matched to
 the AC-029 host-owned selection MUST derive its rendered audio, cache entry, and inserted clip bytes
-from AC-030-correlated, AC-031-validated `encode-success` and `decode-success` result payloads
-produced by that capability's named worker and worker-owned `onnxruntime-web` session. A correlated
-`terminal-error` is a terminal failure and supplies no render, cache, or insertion bytes. The owning
-test observes the verified session receive both encode and decode, makes its result intentionally
-different from every pure-helper result, and proves the rendered, cached, and inserted bytes equal
-the accepted session result; pure-helper output cannot satisfy model-backed transfer.
+from AC-030-correlated, AC-031-envelope-valid, AC-034-shape-valid, and AC-036-buffer-valid
+`encode-success` and `decode-success` result payloads produced by that capability's named worker and
+worker-owned `onnxruntime-web` session. A correlated `terminal-error` is a terminal failure and
+supplies no render, cache, or insertion bytes. The owning test observes the verified session receive
+both encode and decode, makes its result intentionally different from every pure-helper result, and
+proves the rendered, cached, and inserted bytes equal the accepted session result; pure-helper
+output cannot satisfy model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
@@ -306,11 +311,31 @@ today.
 A capability verified for one registry session does not select a transfer model or authorize a
 different host-owned selection; AC-029 owns that separate operation match.
 
+Before accepting a RAVE worker-host implementation, an ADR listed as accepted in
+`.agents/decisions/README.md` selects exactly one trust and availability branch:
+
+- `resource-isolated-runner`: a runner and transport outside the receiving JavaScript realm enforce
+  ADR-pinned positive-safe-integer `MAX_PREDELIVERY_RAVE_RESPONSE_BYTES` and
+  `MAX_PREDELIVERY_RAVE_QUEUED_RESPONSES` values before structured clone or host-queue insertion.
+  The ADR names the enforcing component and overload outcome; only this branch keeps availability
+  under a compromised Worker in scope.
+- `integrity-verified-worker`: the host verifies the exact Worker, bootstrap, `onnxruntime-web`, and
+  model-session artifacts before issuing the capability, and the ADR explicitly excludes a
+  compromised Worker from the threat model. AC-031/AC-034/AC-036 host validation after structured
+  clone still protects integrity, fail-closed effects, and work performed after delivery, but
+  cannot prevent clone allocation or host-queue exhaustion and provides no availability
+  confinement.
+
+No accepted RAVE worker-host ADR or implementation exists today; any availability claim is
+contingent on the selected branch.
+
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 obtaining a capability only through successful worker/session initialization for selected bytes,
 then proving flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability
-inputs return `MODEL_NOT_LOADED` while the verified capability reaches its bound session.
+inputs return `MODEL_NOT_LOADED` while the verified capability reaches its bound session. The
+selected ADR branch additionally proves either pre-delivery byte/queue enforcement at each pinned
+value and one unit above or exact artifact-integrity rejection before capability issuance.
 
 ### AC-029 — Capability matches the host-owned selection
 
@@ -329,19 +354,16 @@ or insertion effects.
 
 ### AC-030 — Worker responses are correlated once
 
-Before posting each encode or decode request, the trusted RAVE host MUST register one outstanding
-correlation record containing a host-generated `requestId`, a non-authority
-`sessionCorrelationId` bound by the host-private registry to the verified AC-028 session, the
-AC-029 `{ modelId, modelDigest }`, and the request phase. After AC-031 boundary validation, a worker
-response is accepted only through one atomic single-consumption transition on the session's
-host-private request state. The incoming correlation tuple
-`[requestId, sessionCorrelationId, modelId, modelDigest, phase]` is required to equal the pending record's
-five named fields as one validation result; `type` and every result, audio, channel, metadata, or
-error field are validated or consumed under AC-031 and are excluded from this tuple. When the tuple
-matches, the host transitions that record from `pending` to `consumed` before any result use or
-render/cache/insertion effect. The transition is serialized so concurrent delivery cannot accept
-the same pending record twice; each valid request therefore produces at most one accepted terminal
-response and at most one corresponding effect.
+After AC-035 has registered a pending request and AC-031, AC-034, and AC-036 boundary validation has
+finished, the trusted RAVE host MUST accept a worker response only through one atomic
+single-consumption transition on the session's host-private request state.
+The incoming correlation tuple `[requestId, sessionCorrelationId, modelId, modelDigest, phase]`
+equals the pending record's five named fields as one validation result; `type` and every result,
+audio, channel, metadata, or error field are validated under AC-031/AC-034/AC-036 and are excluded
+from this tuple. When the tuple matches, the host transitions that record from `pending` to
+`consumed` before any result use or render/cache/insertion effect. The transition is serialized so
+concurrent delivery cannot accept the same pending record twice; each valid request therefore
+produces at most one accepted terminal response and at most one corresponding effect.
 
 Consumed replay state is scoped to one host-private verified RAVE session. The session uses
 `MAX_CONSUMED_REQUESTS_PER_SESSION = 256`, `CONSUMED_REQUEST_TTL_MS = 300_000`, a monotonic host
@@ -352,8 +374,9 @@ entry is inserted, capacity overflow evicts the entry with the lowest
 the same five-field tuple returns `WORKER_RESPONSE_DUPLICATE`; the same `requestId` with any of the
 other four tuple fields changed returns `WORKER_RESPONSE_MISMATCH`. A different never-issued,
 cancelled, expired, or evicted `requestId` returns `WORKER_RESPONSE_STALE`, with no correlation
-acceptance or effect. Session teardown
-clears both pending and consumed maps; a response after teardown is `WORKER_RESPONSE_STALE`.
+acceptance or effect. This consumed map and its 256-entry/300-second retention are distinct from the
+AC-035 pending map and request deadline. Session teardown also clears the consumed map; a response
+after teardown is `WORKER_RESPONSE_STALE`.
 
 A valid correlated `terminal-error` is consumed by the same transition, returns
 `WORKER_OPERATION_FAILED`, and has no render, cache, or insertion effect. Rejected responses never
@@ -367,12 +390,11 @@ matching `terminal-error` response, then injecting never-issued, cancelled, wron
 wrong-phase, wrong-model, and wrong-digest responses. It replays a matching consumed request within
 the 300-second/256-entry window and expects `WORKER_RESPONSE_DUPLICATE`, accepts 257 requests to
 force the named oldest-entry eviction and expects `WORKER_RESPONSE_STALE` for that replay, advances
-the monotonic clock by 300_000 ms and expects `WORKER_RESPONSE_STALE` after expiry, and sends a
-response after teardown with the same result. The test proves structurally invalid or unknown-field
-envelopes are rejected by AC-031 before correlation, while each tuple mismatch leaves render,
-cache-write, and clip-insertion call counts unchanged; the matching terminal error returns
-`WORKER_OPERATION_FAILED` with the same effect counts, and concurrent duplicate delivery accepts at
-most one terminal response/effect.
+the monotonic clock by 300,000 ms and expects `WORKER_RESPONSE_STALE` after expiry, and sends a
+response after teardown with the same result. AC-031/AC-034/AC-036-invalid responses fail before
+correlation; each tuple mismatch leaves render, cache-write, and clip-insertion call counts
+unchanged; the matching terminal error returns `WORKER_OPERATION_FAILED` with the same effect
+counts; and concurrent duplicate delivery accepts at most one terminal response/effect.
 
 ### AC-031 — Worker response payloads are bounded data
 
@@ -439,81 +461,47 @@ whose `message` is diagnostic text only. The terminal error object has no result
 contract defines no other terminal error codes. Every response string is therefore an exact literal,
 `WorkerProtocolId`, `WorkerDiagnostic`, or `Sha256Hex`; no unbounded string is admitted.
 
-For `encode-success`, `latentDim` equals both the host-private session's `latentDim` and the
-selected model descriptor's `latentDim`; a disagreement between those two host-owned values rejects
-the session as `MODEL_SESSION_MISMATCH` before a worker request. The host's pinned model descriptor
-also supplies `sampleRate`, `frameSizeSamples`, and `hopSizeSamples`; the host frame planner derives
-the expected `frameCount` from the resampled input and those descriptor values, so the response
-contains no timing or hop fields. A current helper-compatible descriptor uses
-`frameSizeSamples = hopSizeSamples = floor(sampleRate * 0.02)`. If a selected descriptor cannot
-provide those host-owned values, the host rejects the session as `MODEL_SESSION_MISMATCH` rather
-than widening this response union. The response `frameCount` equals that host-owned expected
-count.
-
 The trusted Worker response constructor rejects an over-limit identifier or malformed digest and
 does not post that envelope. It truncates a terminal diagnostic to the longest UTF-8 code-point
 prefix within `MAX_WORKER_DIAGNOSTIC_UTF8_BYTES` before `postMessage`. The host independently checks
 the same string limits after structured clone and before correlation, payload logging, or result use.
 Over-limit `requestId`, `sessionCorrelationId`, `modelId`, or `error.message` returns
 `WORKER_RESPONSE_TOO_LARGE`; an invalid `modelDigest` returns `WORKER_RESPONSE_INVALID`. Receiver
-validation cannot prevent memory already consumed while cloning a message from a compromised
-Worker; it bounds all subsequent processing and effects.
+validation cannot prevent structured-clone allocation or host-queue exhaustion caused by a
+compromised Worker and is not availability confinement. It protects envelope integrity and
+fail-closed effects and limits subsequent string/result handling to the named AC-031/AC-034/AC-036
+predicates. Availability under a compromised Worker exists only under AC-028's
+`resource-isolated-runner` branch; the `integrity-verified-worker` branch excludes that threat.
 
-Each `Float32Array` is non-empty, contains only finite elements, and has an ordinary, host-owned
-`ArrayBuffer` backing; a `SharedArrayBuffer` or any other backing type is invalid. Full validation
-includes every root and nested key, exact `type`/`phase` pairing, exact variant payload, UTF-8 string
-bound, typed-array shape, terminal error shape, and all scalar types before AC-030 reads any
-correlation field or any consumer reads or logs a result. Unknown or missing fields,
-wrong types, invalid discriminants, invalid `type`/`phase` pairings, malformed payloads, and
-non-finite values return `WORKER_RESPONSE_INVALID`.
-
-For `encode-success`, after checking the host-owned latent-dimension and frame-count matches, the
-host checks the flat matrix shape before reading any latent value. It first rejects as
-`WORKER_RESPONSE_TOO_LARGE` when `latentDim > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / 4)` or
-`frameCount > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / (4 * latentDim))`; only after those checked
-integer divisions may it compute `elementCount = frameCount * latentDim` and
-`expectedByteLength = elementCount * 4`. It then requires `latents.length === elementCount` and
-`latents.byteLength === expectedByteLength`; a metadata mismatch, length mismatch, or any added
-timing/hop field returns `WORKER_RESPONSE_INVALID`. This is the complete encode result shape:
-`{ latents, frameCount, latentDim }`.
-
-Before iterating any typed-array values, the host sums the `byteLength` of each distinct backing
-`ArrayBuffer` used by every `Float32Array` in the envelope, counting a shared backing buffer once,
-not the typed-array view lengths. A sum greater than
-`MAX_RAVE_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024` bytes returns
-`WORKER_RESPONSE_TOO_LARGE`. For decoded audio, the host-owned expected output sample rate equals
-`audio.sampleRate`; `audio.frameCount` equals the length of every channel and does not exceed the
-host-owned expected frame count. A valid numeric shape with a sample-rate mismatch,
-zero or unequal channels, or non-finite values returns `WORKER_RESPONSE_INVALID`; a frame count
-greater than the host-owned expected frame count returns `WORKER_RESPONSE_TOO_LARGE`.
-
-Boundary-invalid envelopes map only to `WORKER_RESPONSE_INVALID` or
-`WORKER_RESPONSE_TOO_LARGE` as specified above, before correlation or result use. A valid,
-AC-030-correlated `terminal-error` is instead a typed `WORKER_OPERATION_FAILED` outcome with no
-render, cache-write, or clip-insertion effect. Rejected payloads never reach render, cache, or clip
-insertion.
+Envelope validation covers every root and nested own key, exact `type`/`phase` pairing, the variant's
+exact payload keys, terminal-error shape, all scalar types, and every fixed or variable string before
+AC-030 reads a correlation field or any consumer reads or logs a result. Unknown or missing fields,
+wrong types, invalid discriminants, invalid `type`/`phase` pairings, malformed terminal errors, and
+invalid fixed-format strings return `WORKER_RESPONSE_INVALID`; an over-limit variable string returns
+`WORKER_RESPONSE_TOO_LARGE`. AC-034 separately owns host metadata and result-shape validation;
+AC-036 owns typed-array backing, aggregate backing bytes, and numeric finiteness. Both run before
+correlation or result use. A valid, AC-030-correlated `terminal-error` is instead
+`WORKER_OPERATION_FAILED` with no render, cache-write, or clip-insertion effect. Rejected envelopes
+never reach those effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
 one exact `encode-success` with only `latents`, `frameCount`, and `latentDim`, one exact
 `decode-success` with its sample-rate and frame-count metadata, and one exact `terminal-error`, plus
 unknown fields at the root and nested result/error objects, missing fields, wrong discriminants,
-wrong typed-array shapes, encode latent-dimension/frame-count/length mismatches, added timing/hop
-metadata, checked multiplication overflow, shared backing, zero or unequal channels, wrong sample
-rate, `NaN`, `Infinity`, malformed terminal errors, a frame-count overflow, and a small view over a
-backing buffer larger than 64 MiB. It also covers exact-limit and one-byte-
-over-limit ASCII and multibyte values for `requestId`, `sessionCorrelationId`, `modelId`, and
-`error.message`, plus a 65-character or non-hex `modelDigest`, Worker-side identifier rejection and
-diagnostic truncation, and host-side rejection of a compromised Worker's oversized response. The
-test proves wrong-type, empty, or invalid fixed-format strings return `WORKER_RESPONSE_INVALID`;
-variable-string, backing-buffer, and frame overflow returns `WORKER_RESPONSE_TOO_LARGE`; and
-rejection occurs with zero correlation, payload logging, render, cache-write, and clip-insertion
-calls. A valid correlated terminal error still returns `WORKER_OPERATION_FAILED` with the same zero
-effects.
+wrong `type`/`phase` pairs, and malformed terminal errors. It also covers exact-limit and
+one-byte-over-limit ASCII and multibyte values for `requestId`, `sessionCorrelationId`, `modelId`,
+and `error.message`; a 65-character or non-hex `modelDigest`; Worker-side identifier rejection and
+diagnostic truncation; and host-side post-clone rejection from a compromised-Worker fixture. The
+test proves wrong-type, empty, or invalid fixed-format strings return `WORKER_RESPONSE_INVALID`,
+over-limit variable strings return `WORKER_RESPONSE_TOO_LARGE`, and every rejection occurs with zero
+correlation, payload logging, render, cache-write, and clip-insertion calls. The compromised-Worker
+fixture proves only post-clone integrity and fail-closed effects. A valid correlated terminal error
+still returns `WORKER_OPERATION_FAILED` with the same zero effects.
 
-AC-029 through AC-031 are unimplemented today; no current worker/session transfer path emits the
-closed response union or can satisfy their selection, response-correlation, or payload-validation
-contracts.
+AC-029 through AC-031 and AC-034 through AC-036 are unimplemented today; no current worker/session
+transfer path emits the closed response union or can satisfy their selection, request-lifetime,
+response-correlation, envelope-validation, result-shape, or result-buffer contracts.
 
 ### AC-032 — Direct decode helper remains test-only
 
@@ -547,14 +535,110 @@ Verify with: the strengthened
 named behavior and deep-equality snapshots of both inputs, followed by exact path searches and
 `pnpm deps:validate`
 
+### AC-034 — Worker results match host-owned shapes
+
+After AC-031 envelope validation and before AC-030 correlation or result use, the RAVE host MUST
+validate every success payload against the expected shape retained by the receiving transport's
+host-private verified session; no response field selects that session or expected shape.
+
+For `encode-success`, `latentDim` equals both the host-private session's `latentDim` and the selected
+model descriptor's `latentDim`; disagreement between those host-owned values returns
+`MODEL_SESSION_MISMATCH` before a Worker request. The pinned descriptor also supplies `sampleRate`,
+`frameSizeSamples`, and `hopSizeSamples`; the host frame planner derives and records the expected
+`frameCount` from the resampled input and those values before posting. A current helper-compatible
+descriptor uses `frameSizeSamples = hopSizeSamples = floor(sampleRate * 0.02)`. If the descriptor
+lacks any of those values, the host returns `MODEL_SESSION_MISMATCH` before posting rather than
+adding response timing or hop metadata. The response's `latentDim` and `frameCount` equal those two
+host-owned expected values.
+
+For `encode-success`, the host next applies AC-036's `MAX_RAVE_WORKER_RESPONSE_BYTES` and rejects
+`WORKER_RESPONSE_TOO_LARGE` when
+`latentDim > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / 4)` or
+`frameCount > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / (4 * latentDim))`. Only after those divisions
+does it compute `elementCount = frameCount * latentDim` and
+`expectedByteLength = elementCount * 4`; neither multiplication occurs earlier. A valid encode result has
+`latents.length === elementCount` and `latents.byteLength === expectedByteLength`. For
+`decode-success`, the host-private decode render plan records expected `sampleRate` and maximum
+`frameCount` before posting; a valid decode result has that sample rate, has
+`audio.frameCount === channel.length` for every channel, and does not exceed that maximum. Metadata,
+view-length, sample-rate, or unequal-channel failures return `WORKER_RESPONSE_INVALID`; an encode
+multiplication guard or decoded frame count above its host-owned maximum returns
+`WORKER_RESPONSE_TOO_LARGE`. Each rejection precedes AC-030 correlation, payload logging, render,
+cache write, and clip insertion.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
+encode latent-dimension/frame-count/length matches and mismatches, absent descriptor metadata,
+checked multiplication overflow, one and two decoded channels, unequal channel lengths, expected
+and wrong sample rates, and exact and excessive decoded frame counts. It proves host-owned expected
+values are selected from the receiving session rather than response fields; invalid shapes return
+the specified `WORKER_RESPONSE_INVALID` or `WORKER_RESPONSE_TOO_LARGE` before correlation, payload
+logging, or any render/cache/insertion effect.
+
+### AC-035 — Pending Worker requests have fixed admission and lifetime
+
+Each verified session MUST own a host-private pending-request map with
+`MAX_PENDING_REQUESTS_PER_SESSION = 32` and `PENDING_REQUEST_TIMEOUT_MS = 30_000`. Before assigning a
+`requestId` or posting each encode/decode request, the host runs the timeout sweep below and counts
+the remaining records. If 32 remain, it returns `WORKER_REQUEST_OVERLOADED` before generating a
+request id, mutating the pending or consumed map, or calling Worker `postMessage`; saturation creates
+no correlation and posts no message. Otherwise, it generates an id absent from both maps and
+atomically registers `{ requestId, sessionCorrelationId, modelId, modelDigest, phase,
+registeredAtMonotonicMs, deadlineMonotonicMs }`. The non-authority `sessionCorrelationId` is bound by
+the host-private registry to the verified AC-028 session; model identity/digest come from AC-029;
+`deadlineMonotonicMs = registeredAtMonotonicMs + PENDING_REQUEST_TIMEOUT_MS`. The Worker post occurs
+only after registration.
+
+The host runs the timeout sweep before capacity checks, before AC-030 response lookup, and when a
+deadline timer fires. A record expires when `nowMonotonicMs >= deadlineMonotonicMs`; the host
+atomically removes it before settling `WORKER_REQUEST_TIMEOUT`, and any later response for that id
+is `WORKER_RESPONSE_STALE`. Explicit cancellation atomically removes its record before settling
+`WORKER_REQUEST_CANCELLED`. Session teardown removes every pending record, settles each pending
+operation as `WORKER_REQUEST_CANCELLED`, clears the map, and posts no new message. Timeout,
+cancellation, and teardown restore capacity immediately and cause no render, cache-write, or
+clip-insertion effect. AC-030's consumed replay map has its own 256-entry/300-second policy and does
+not count toward this 32-record cap.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, leaving
+32 requests unexpired, expecting the 33rd to return `WORKER_REQUEST_OVERLOADED`, and proving that
+rejection adds no request id, map entry, or Worker post. Advance the monotonic clock to exactly
+30,000 ms and prove timeout removal/settlement before lookup, a stale late response, and restored
+capacity. Explicit cancellation has the same removal, stale-response, and restored-capacity
+observations. Teardown settles and clears all remaining pending records, leaves no correlation,
+posts no message, and makes every later response stale while AC-030 consumed-replay tests remain
+independent.
+
+### AC-036 — Worker result buffers have fixed storage limits
+
+After AC-031 envelope validation and before AC-034 shape validation, AC-030 correlation, payload
+logging, or element iteration, the RAVE host MUST validate each success-result view with
+`Object.getPrototypeOf(view) === Float32Array.prototype`, `view.length > 0`, and
+`Object.getPrototypeOf(view.buffer) === ArrayBuffer.prototype`; `SharedArrayBuffer` and every other
+backing type are invalid. It sums `byteLength` for each distinct backing `ArrayBuffer` in the
+envelope, counting one buffer once even when multiple views share it. A total above
+`MAX_RAVE_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024` returns `WORKER_RESPONSE_TOO_LARGE` before any
+element is read. At or below that total, every element passes `Number.isFinite(value)`; an invalid
+view/backing, empty view, `NaN`, or infinity returns `WORKER_RESPONSE_INVALID`. Neither outcome
+reaches AC-030 correlation, payload logging, render, cache write, or clip insertion.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
+ordinary `Float32Array` views, a subclass/prototype mismatch, empty views, shared ordinary backing,
+`SharedArrayBuffer`, exact 64 MiB and one-byte-over backing totals, a small view over a backing buffer
+larger than 64 MiB, `NaN`, `Infinity`, and `-Infinity`. It proves distinct backing buffers are each
+counted once, the byte cap is checked before element iteration, and every rejection returns the
+specified typed outcome with zero correlation, payload logging, render, cache-write, and insertion
+calls.
+
 ## Current-state ownership
 
 The four current `no-orphans` paths are direct deterministic CI/test helpers only. The focused
 command is green. The encode/decode tests make the direct calls described in AC-024/AC-032; the
 timbre test is export-only; and the interpolation test calls only midpoint/missing-dimension cases,
 without the required endpoint `timeSec` or immutability evidence. None proves the model-backed
-product contracts in AC-001 through AC-005 or AC-027 through AC-031, and none retires a warning by
-passing:
+product contracts in AC-001 through AC-005, AC-027 through AC-031, or AC-034 through AC-036, and
+none retires a warning by passing:
 
 | Current warning path                                         | Current disposition                                                             | Required future helper path                                                    | Warning closes only when                                                                                                                                                           |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -569,8 +653,10 @@ conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-02
 [AC-008](../dependency-boundary-validation/spec.md#ac-008--accepted-exact-path-retirement) owns the
 only ADR retirement condition; `AC-027` owns model-result provenance; and
 `AC-028` owns loaded-session authenticity. `AC-029` owns the host-selection/session match; `AC-030`
-owns response correlation and replay rejection; and `AC-031` owns response schema and payload
-bounds. This spec retains all four current files and does not authorize a silent product fallback.
+owns response correlation and replay rejection; `AC-031` owns the closed response envelope and
+string limits; `AC-034` owns host-derived result shapes; `AC-035` owns pending-request admission and
+lifetime; and `AC-036` owns result-view backing, bytes, and numeric finiteness. This spec retains all
+four current files and does not authorize a silent product fallback.
 
 ## Constraints
 

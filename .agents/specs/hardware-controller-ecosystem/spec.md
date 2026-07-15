@@ -51,7 +51,22 @@ a checked-in, reproducible proof against that exact runtime/version that the boo
 frozen allowlisted language intrinsics and the frozen `ControllerScriptApi`; AC-010 host requests
 and that endowment are the script's only authority. A plain Web Worker, `new Function`, native
 `eval`/module loading, dynamic `import()`, or CSP alone is not a runtime decision or confinement
-proof. No such accepted ADR or runtime implementation exists today.
+proof.
+
+The ADR also selects exactly one Worker trust and availability branch:
+
+- `resource-isolated-runner`: a runner and transport outside the receiving JavaScript realm enforce
+  positive-safe-integer `MAX_PREDELIVERY_MESSAGE_BYTES` and
+  `MAX_PREDELIVERY_QUEUED_MESSAGES` values before structured clone or insertion into the host
+  message queue, plus the ADR's CPU, memory, and execution-time budgets. The ADR names the enforcing
+  component and maps either pre-delivery limit to `SCRIPT_SANDBOX_UNAVAILABLE` with no host message
+  delivery or script effect. Only this branch keeps compromised-Worker availability in scope.
+- `integrity-verified-worker`: the host verifies the exact Worker, bootstrap, selected runtime, and
+  emitted-script digests before session start and treats a compromised Worker as outside the threat
+  model. Host validation after structured clone still protects message integrity, effect gating,
+  and subsequent host work, but does not protect clone allocation, queue capacity, or availability.
+
+No such accepted ADR or runtime implementation exists today.
 
 Verify with: the accepted ADR and ledger entry, its pinned dependency/integrity evidence, and the
 exact runtime bootstrap proof command recorded by that ADR
@@ -65,16 +80,21 @@ Verify with: `pnpm test:run -- HardwareController mappingImportExport`
 ### AC-004 — Script grants are trusted and finite
 
 For each connected script worker/session, a trusted host component MUST create and retain a
-host-private `ControllerScriptGrant` carrying exactly the trusted script identity, a finite set of
-exact `{ deviceId, paramId }` targets with no wildcard, and zero or one bound `midiOutputId`. The
-grant is associated with the trusted connection/session out of band and is never serialized into
-the script bundle or accepted from a worker message. A bundle or worker attempt to supply, replace,
-or widen any grant field returns `SCRIPT_GRANT_UNTRUSTED` before an `AppAction` is created or MIDI
-bytes are sent.
+host-private `ControllerScriptGrant` carrying exactly the trusted script identity, at most
+`MAX_CONTROLLER_TARGETS_PER_SESSION = 256` unique `{ deviceId, paramId }` targets with no wildcard,
+and zero or one bound `midiOutputId`. Before creating the grant or starting the session, the trusted
+issuer rejects more than 256 targets or any duplicate exact tuple as `SCRIPT_GRANT_INVALID`. It then
+builds a `ReadonlyMap<WorkerProtocolId, ReadonlySet<WorkerProtocolId>>` whose total set-entry count is
+at most 256; target checks use only that host-owned lookup. The grant is associated with the trusted
+connection/session out of band and is never serialized into the script bundle or accepted from a
+worker message. A bundle or worker attempt to supply, replace, or widen the host-private grant handle
+or object returns `SCRIPT_GRANT_UNTRUSTED` before an `AppAction` is created or MIDI bytes are sent.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptHost.spec.ts`,
-using host-issued grants and proving forged, self-issued, cross-session, and widened grants return
+using host-issued grants with 0, 1, and 256 unique targets; rejecting 257 targets and duplicate
+tuples as `SCRIPT_GRANT_INVALID` before session start; inspecting the resulting lookup's 256-entry
+ceiling; and proving forged, self-issued, cross-session, and widened host-private grants return
 `SCRIPT_GRANT_UNTRUSTED` with zero Command dispatches and zero MIDI writes.
 
 ### AC-005 — Script effect intents have exact schemas
@@ -92,12 +112,16 @@ identifier limit, and `WorkerDiagnostic` is a non-empty string within the diagno
 
 Unknown kinds, missing or additional fields, non-finite values, and invalid byte arrays return
 `SCRIPT_MESSAGE_INVALID`; over-limit `deviceId` or `paramId` returns the same code, and grant-bearing
-fields are rejected under AC-004. The trusted bootstrap rejects an over-limit intent identifier
-while buffering intents and posts one AC-010 `SCRIPT_EXECUTION_LIMIT` result with no `intents`.
-The host independently validates a received intent after structured clone and before correlation,
-payload logging, owner lookup, `AppAction` creation, or MIDI output access. Receiver validation
-cannot prevent memory already consumed while cloning a compromised Worker's message; it bounds all
-subsequent processing and effects.
+fields are rejected under AC-004. No parameter descriptor, range, member set, integer rule, or step
+is part of either intent; any worker-supplied descriptor field is an additional field and returns
+`SCRIPT_MESSAGE_INVALID` before owner lookup. The trusted bootstrap rejects an over-limit intent
+identifier while buffering intents and posts one AC-010 `SCRIPT_EXECUTION_LIMIT` result with no
+`intents`. The host independently validates a received intent after structured clone and before
+correlation, payload logging, owner lookup, `AppAction` creation, or MIDI output access. Receiver
+validation cannot prevent structured-clone allocation or host-queue exhaustion caused by a
+compromised Worker and is not availability confinement. It protects integrity and effect gating
+and limits post-delivery handling to the 256-byte identifier, 1024-entry MIDI-array, and AC-010
+256-intent predicates; availability is contingent on AC-002's selected ADR branch.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptHost.spec.ts`,
@@ -110,18 +134,47 @@ dispatches, MIDI writes, and store writes.
 ### AC-006 — Script parameter intents use Command
 
 After AC-004 and AC-005 validation, a `setDeviceParameter` intent MUST match one exact granted
-`{ deviceId, paramId }` target, resolve that target's owner, and dispatch only the typed
+`{ deviceId, paramId }` target, resolve that target's owner and current owner-authoritative value
+descriptor, validate `value` by the predicate below, and only then dispatch the typed
 `setDeviceParameter` `AppAction` through Command's public `executeAppAction` export from
-`#/modules/Command/useCases`. A missing grant returns `SCRIPT_TARGET_DENIED`; failed owner lookup
-returns `SCRIPT_TARGET_UNRESOLVED`. The script host never calls the Command handler registry or a
-registered handler directly, invokes an owning module's use case directly, or writes any store.
+`#/modules/Command/useCases`.
+
+The owner lookup returns one closed status: `{ status: "resolved", descriptor }`,
+`{ status: "missing" }`, or `{ status: "stale" }`. `stale` means the granted tuple is absent from
+the owner's current parameter registry at lookup time; only `resolved` carries the descriptor below.
+The resolved descriptor is one member of this closed union:
+
+```text
+OwnerParameterValueDescriptor =
+  | { kind: "continuous", min: finite number, max: finite number, step: positive finite number | null }
+  | { kind: "integer", min: safe integer, max: safe integer, step: positive safe integer | null }
+  | { kind: "discrete", members: non-empty readonly array of unique finite numbers }
+```
+
+Here, `finite` means `Number.isFinite(value)`, `safe integer` means
+`Number.isSafeInteger(value)`, and `positive` means `value > 0`. For either ranged member, the owner
+validates `min <= max`. A continuous value passes when it is finite and inclusively within
+`[min, max]`; an integer value additionally passes
+`Number.isSafeInteger(value)`. When `step` is not `null`, either ranged value also passes only when
+`Number.isSafeInteger((value - min) / step)`. A discrete value passes only when one descriptor
+member satisfies `value === member`; boolean and enum parameters use discrete member sets. The
+script, intent, and grant cannot supply or override this descriptor. A missing grant returns
+`SCRIPT_TARGET_DENIED`; a failed owner lookup or missing, malformed, or owner-reported-stale
+descriptor returns `SCRIPT_TARGET_UNRESOLVED`; a value that fails the current valid descriptor
+returns the shared typed outcome `PARAMETER_VALUE_INVALID`. Each rejection occurs before
+`executeAppAction`, engine access, MIDI access, or a store write. The script host never calls the
+Command handler registry or a registered handler directly, invokes an owning module's use case
+directly, or writes any store.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptHost.spec.ts`,
-observing one exact public `executeAppAction` call for a granted target and no call for denied or
-unresolved targets. Denied and unresolved cases produce zero Command dispatches, zero MIDI writes,
-and zero store writes; direct handler and owner-use-case paths remain untouched. Also run
-`pnpm deps:validate`.
+observing one public `executeAppAction` call for granted continuous minimum/maximum, integer/step,
+and discrete-member values. It rejects `Number.MAX_VALUE`, `-Number.MAX_VALUE`, out-of-range,
+non-integer, non-step, and non-member values as `PARAMETER_VALUE_INVALID`; missing and stale
+descriptors return `SCRIPT_TARGET_UNRESOLVED`. Descriptor-injection fixtures return
+`SCRIPT_MESSAGE_INVALID` before owner lookup. Every rejected value or descriptor produces zero
+Command dispatches, engine/MIDI calls, and store writes; direct handler and owner-use-case paths
+remain untouched. Also run `pnpm deps:validate`.
 
 ### AC-007 — Script MIDI intents use one bound output
 
@@ -246,8 +299,11 @@ before correlation, payload logging, or AC-004 through AC-007 intent processing.
 unknown/extra field, wrong correlation, unrecognized outcome, over-limit intent list, duplicate
 terminal result, or script-originated message returns `SCRIPT_PROTOCOL_INVALID` and terminates the
 session. An AC-005-invalid intent returns `SCRIPT_MESSAGE_INVALID`. Receiver validation cannot
-prevent clone allocation by a compromised Worker. Every rejection and non-success outcome causes
-zero Command, MIDI, or store effects.
+prevent structured-clone allocation or host-queue exhaustion by a compromised Worker and is not an
+availability guarantee. It protects protocol integrity, effect gating, and subsequent host work;
+that work remains under AC-005's string/array predicates and this AC's 256-intent limit.
+Availability is provided only by AC-002's `resource-isolated-runner` branch. Every rejection and
+non-success outcome causes zero Command, MIDI, or store effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptProtocol.spec.ts`,
@@ -324,12 +380,21 @@ and no host message except the single AC-010 result. Bootstrap absence, integrit
 lockdown failure also returns `SCRIPT_SANDBOX_UNAVAILABLE`. The same proof runs with Worker CSP
 relaxed or absent; CSP remains defense in depth.
 
+Under AC-002's `resource-isolated-runner` branch, the harness also exercises the ADR-pinned
+pre-delivery byte and queue limits at their values and one unit above, before the receiving realm
+can clone or queue the message. Under `integrity-verified-worker`, it instead verifies every pinned
+artifact digest before session start and records that compromised-Worker availability is excluded.
+Compromised-Worker message fixtures in AC-005 and AC-010 prove only post-clone integrity,
+enforcement of those ACs' named string/array limits, and fail-closed effects; they are not
+availability-confinement evidence.
+
 Verify with: the future owning integration test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSandbox.spec.ts`,
 using the ADR-selected production runtime/bootstrap and asserting the exact matrix-row match,
 machine-readable manifest schema, own/inherited/prototype and symbol enumeration, deterministic
 sorted-entry comparison, every named traversal limit, drift-to-one-outcome mapping, Worker-side
-observation log, exact outcomes, and zero effects
+observation log, the selected branch's pre-delivery-limit or artifact-integrity evidence, exact
+outcomes, and zero effects
 
 AC-002 and AC-004 through AC-011 are unimplemented today. The dormant current worker accepts raw
 source through `new Function` and posts unvalidated `setParam`/`sendMidi` messages, but no current

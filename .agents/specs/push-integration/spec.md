@@ -225,47 +225,59 @@ identifiers, and every other binding or authority field are forbidden at both le
 `kind`, wrong variant payload, malformed identifier, non-finite value, and every missing, extra,
 symbol, or grant-bearing field maps deterministically to `INVALID_MESSAGE` before binding lookup,
 owner lookup, `executeAppAction`, MIDI-port access, logging, or any other host effect. A valid
-request is the only input accepted by AC-024 through AC-027; attempts to provide binding authority
-are rejected under AC-024.
+request is the only input accepted by AC-024 through AC-027. A request, profile-data object,
+controller-input object, or worker message carrying `profileId`, `allowedTargets`, or
+`midiOutputId` therefore returns `INVALID_MESSAGE` before any host-private binding handle or object
+is looked up. No parameter descriptor, range, member set, integer rule, or step is part of the
+`setDeviceParameter` payload; any caller-supplied descriptor field is likewise `INVALID_MESSAGE`
+before binding or owner lookup.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
 both valid union variants, every malformed/unknown/extra-key case, symbols and grant-bearing
 fields, the 256-byte identifier boundary, non-finite values, and byte arrays of lengths 0, 1,
-1024, and 1025. For each invalid fixture, assert `INVALID_MESSAGE` with zero binding/owner
-lookups, Command calls, MIDI writes, and logs; also run `pnpm deps:validate`.
+1024, and 1025. Authority-field fixtures enter through request, profile data, controller input, and
+worker-message channels. For each invalid fixture, assert `INVALID_MESSAGE` with zero
+binding/owner lookups, Command calls, MIDI writes, and logs; also run `pnpm deps:validate`.
 
 ### AC-024 — Future controller-profile host binding
 
 The future host contract MUST obtain each `ControllerProfileBinding` exclusively from a trusted
 connection/session-owned host component, then validate declarative controller-profile data and
-capability requests against that binding, which has exactly these host-private fields:
+capability requests against that binding. Its target list uses the same
+`MAX_CONTROLLER_TARGETS_PER_SESSION = 256` ceiling defined by
+[hardware-controller-ecosystem AC-004](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite),
+and the binding has exactly these host-private fields:
 
-| Field            | Contract                                                                                                                                   |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `profileId`      | One `ControllerProtocolId` issued for the bound profile.                                                                                   |
-| `allowedTargets` | An array of 0..256 unique `{ deviceId: ControllerProtocolId, paramId: ControllerProtocolId }` tuples; no wildcard or self-selected target. |
-| `midiOutputId`   | One host-issued `ControllerProtocolId`, or `null` when this session has no bound output; never a caller-selected value.                    |
+| Field            | Contract                                                                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profileId`      | One `ControllerProtocolId` issued for the bound profile.                                                                                                                    |
+| `allowedTargets` | An array of 0..`MAX_CONTROLLER_TARGETS_PER_SESSION` unique `{ deviceId: ControllerProtocolId, paramId: ControllerProtocolId }` tuples; no wildcard or self-selected target. |
+| `midiOutputId`   | One host-issued `ControllerProtocolId`, or `null` when this session has no bound output; never a caller-selected value.                                                     |
 
 The binding is host-private, opaque runtime authority associated with the trusted connection or
 session out of band. It is never deserialized from or exposed as profile data, controller input,
 or a worker message; none of those untrusted channels can supply, replace, or expand its
-`profileId`, `allowedTargets`, or `midiOutputId`. Host-side binding-authenticity and message-schema
-validation finish before an `AppAction` is created or bytes are sent. The initial capability union
-is exactly the two AC-023 variants, and the request supplies neither profile identity nor output
-identity: `profileId`, `allowedTargets`, and `midiOutputId` always come from this trusted binding.
-Typed rejections are
-`INVALID_MESSAGE`, `BINDING_UNTRUSTED`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`, and
-`OUTPUT_UNBOUND`. This binding issuer, private authority registry, schema validator, owner lookup,
-typed action mapping, and MIDI-owned typed output port are unimplemented today; this is a future
-host contract.
+`profileId`, `allowedTargets`, or `midiOutputId`. AC-023 schema validation runs before binding
+lookup, so those fields on any untrusted payload/profile/controller/worker object return
+`INVALID_MESSAGE`. `BINDING_UNTRUSTED` has one narrower meaning: the out-of-band host-private
+binding handle or object is forged, replaced, or not the identical entry retained by the trusted
+connection/session registry. The initial capability union is exactly the two AC-023 variants, and
+the request supplies neither profile identity nor output identity: `profileId`, `allowedTargets`,
+and `midiOutputId` always come from the registry-authenticated binding. Typed rejections are
+`INVALID_MESSAGE`, `BINDING_UNTRUSTED`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`,
+`PARAMETER_VALUE_INVALID`, and `OUTPUT_UNBOUND`. This binding issuer, private authority registry,
+schema validator, owner lookup, typed action mapping, and MIDI-owned typed output port are
+unimplemented today; this is a future host contract.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
-host-issued binding setup, exact-target matching, one-output binding, and all five typed rejection
-outcomes. Forged/self-issued bindings and binding fields supplied through profile JSON,
-controller input, or worker messages are rejected as `BINDING_UNTRUSTED` before `AppAction`
-creation or MIDI send; inspect the current profile surface and run `pnpm deps:validate`.
+host-issued binding setup, exact-target matching, one-output binding, and all six typed rejection
+outcomes. Binding fields supplied through request, profile JSON, controller input, or worker
+messages return `INVALID_MESSAGE` with zero registry lookups. Forged, replaced, and non-registry
+host-private handles or objects return `BINDING_UNTRUSTED` after schema validation but before
+`AppAction` creation or MIDI send; inspect the current profile surface and run
+`pnpm deps:validate`.
 
 ### AC-025 — Declarative profiles are source-free data
 
@@ -306,22 +318,31 @@ after the surface exists, plus `pnpm deps:validate`.
 After AC-023 schema validation and AC-024 binding-authenticity validation, the host MUST consume
 only the `kind: "setDeviceParameter"` member, require its exact
 `payload.{ deviceId, paramId }` tuple in the trusted binding's `allowedTargets`, perform one
-successful owner lookup for that tuple, and dispatch only the typed `setDeviceParameter`
-`AppAction` through Command's public `executeAppAction` export from
-`#/modules/Command/useCases`. The request's `deviceId`, `paramId`, and `value` are the only
-operation data; binding identity still comes from the trusted binding. The host never calls
-Command's handler registry or a registered handler directly, invokes Arrangement's owning
+successful owner lookup for that tuple, retrieve the current owner-authoritative
+`OwnerParameterValueDescriptor`, and apply the value-validity predicate defined by
+[hardware-controller-ecosystem AC-006](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command).
+Only then does it dispatch the typed `setDeviceParameter` `AppAction` through Command's public
+`executeAppAction` export from `#/modules/Command/useCases`. The request's `deviceId`, `paramId`,
+and `value` are operation data; binding identity comes only from the trusted binding, and neither
+the request nor binding can supply or override the owner descriptor. The host never calls Command's
+handler registry or a registered handler directly, invokes Arrangement's owning
 `setDeviceParameter` use case directly, or writes any store. A missing grant returns
-`CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup returns `TARGET_UNRESOLVED`; an
-untrusted binding returns `BINDING_UNTRUSTED`; none dispatches an action.
+`CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup or missing, malformed, or
+owner-reported-stale descriptor returns `TARGET_UNRESOLVED`; a value that fails the current valid
+descriptor returns `PARAMETER_VALUE_INVALID`; an untrusted host-private binding returns
+`BINDING_UNTRUSTED`. None dispatches an action or reaches engine, MIDI, or store effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
-the exact `setDeviceParameter` variant for granted, denied, unresolved, unknown-target,
-non-finite, extra-key, wrong-variant, and forged-binding cases. The granted case observes one
-exact call to the public `executeAppAction` contract with the validated payload; every rejected
-case observes no binding/owner side effect, no Command call, and no store write, while the handler
-registry and owner use case are never invoked directly. Also run `pnpm deps:validate`.
+the `setDeviceParameter` variant for granted continuous minimum/maximum, integer/step, and exact
+discrete-member values; `Number.MAX_VALUE`, `-Number.MAX_VALUE`, out-of-range, non-integer,
+non-step, and non-member values; missing and stale descriptors; denied and unknown targets;
+non-finite and extra-field messages; wrong variants; and forged host-private bindings. Descriptor
+fields in the request return `INVALID_MESSAGE` before binding lookup. Descriptor-validity failures
+are `TARGET_UNRESOLVED`; value-predicate failures return `PARAMETER_VALUE_INVALID` after one owner
+lookup and with zero `executeAppAction`, engine, MIDI, or store calls. Missing or stale descriptors
+also return `TARGET_UNRESOLVED` with the same zero effects. The handler registry and owner use case
+are never invoked directly. Also run `pnpm deps:validate`.
 
 ### AC-027 — Bound sendMidi output
 
@@ -329,16 +350,20 @@ After AC-023 schema validation and AC-024 binding-authenticity validation, the h
 only the `kind: "sendMidi"` member, take its exact `payload.bytes` array, and route it only through
 the MIDI-owned typed output port selected by the trusted binding's `midiOutputId`. The request has
 no output-identity field. A `null` bound output returns `OUTPUT_UNBOUND`; invalid bytes return
-`INVALID_MESSAGE` before binding/output access; a forged, self-issued, replaced, or expanded
-binding returns `BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
+`INVALID_MESSAGE` before binding/output access; `midiOutputId` or either other AC-024 authority
+field on a request/profile/controller/worker object also returns `INVALID_MESSAGE` before binding
+lookup. Only a forged, replaced, or non-registry host-private binding handle or object returns
+`BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
 the exact `sendMidi` variant with lengths 1 and 1024, empty/oversized/non-integer/out-of-range
 bytes, extra keys, a wrong variant, a `null` output, and attempts to supply or replace
-`midiOutputId` through each untrusted channel. Every invalid, forged, or unbound case is rejected
-before the MIDI-owned port receives bytes; a valid case sends the same validated bytes exactly
-once; also run `pnpm deps:validate`.
+`midiOutputId` through each untrusted channel. Each authority-field fixture expects
+`INVALID_MESSAGE` and zero binding lookups; forged/replaced/non-registry host-private binding
+fixtures expect `BINDING_UNTRUSTED`. Every invalid, forged, or unbound case is rejected before the
+MIDI-owned port receives bytes; a valid case sends the same validated bytes exactly once; also run
+`pnpm deps:validate`.
 
 ### AC-028 — Separate capability-secure script artifact
 
