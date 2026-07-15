@@ -164,18 +164,32 @@ type SerializedBuffer = {
 
 let nextPersistenceGeneration = 0;
 const persistenceGenerationById = new Map<string, number>();
-let activeImportTransaction: IDBTransaction | null = null;
+let nextImportCandidateId = 0;
+let activeImportCandidateId = 0;
+let committedImportCandidateId = 0;
+const importPersistenceTransactions = new Map<number, IDBTransaction>();
 
-function cancelPendingImportTransaction(): void {
-    const transaction = activeImportTransaction;
-    activeImportTransaction = null;
-    if (transaction) {
+function cancelPendingImportCandidate(): void {
+    activeImportCandidateId = ++nextImportCandidateId;
+    abortImportPersistenceExcept(activeImportCandidateId);
+}
+
+function abortImportPersistenceExcept(candidateId: number): void {
+    for (const [persistingCandidateId, transaction] of importPersistenceTransactions) {
+        if (persistingCandidateId === candidateId) {
+            continue;
+        }
         try {
             transaction.abort();
         } catch {
-            // Transaction already completed.
+            // The transaction already completed between inspection and abort.
         }
     }
+}
+
+function cancelAllImportCandidates(): void {
+    cancelPendingImportCandidate();
+    committedImportCandidateId = 0;
 }
 
 function claimPersistenceGeneration(id: string): number {
@@ -543,7 +557,7 @@ export const audioBufferCache = {
     },
 
     clear(): void {
-        cancelPendingImportTransaction();
+        cancelAllImportCandidates();
         cache.clear();
         pinnedBufferIds.clear();
         waveformCache.clear();
@@ -561,7 +575,7 @@ export const audioBufferCache = {
     },
 
     cancelPendingImport(): void {
-        cancelPendingImportTransaction();
+        cancelPendingImportCandidate();
     },
 
     async serializeBuffers(
@@ -653,7 +667,8 @@ export const audioBufferCache = {
         context: BaseAudioContext;
         shouldContinue?: () => boolean;
     }): PreparedImportedAudioBuffers | null {
-        cancelPendingImportTransaction();
+        const candidateId = ++nextImportCandidateId;
+        activeImportCandidateId = candidateId;
         const staged: Array<{ id: string; buffer: AudioBuffer }> = [];
         const cacheIdSet = cacheIds ? new Set(cacheIds) : undefined;
         const entries = Object.entries(buffers);
@@ -689,29 +704,47 @@ export const audioBufferCache = {
                 if (persisted) {
                     return true;
                 }
-                cancelPendingImportTransaction();
-                let database: IDBDatabase;
-                try {
-                    database = await openDb();
-                } catch {
-                    const allBuffersAreResident = entries.every(
-                        ([id]) => cacheIdSet === undefined || cacheIdSet.has(id)
-                    );
-                    persisted = allBuffersAreResident;
-                    return allBuffersAreResident;
-                }
-                if (shouldContinue?.() === false) {
+                if (
+                    !published ||
+                    candidateId !== activeImportCandidateId ||
+                    candidateId !== committedImportCandidateId
+                ) {
                     return false;
                 }
-
+                if (entries.length === 0) {
+                    persisted = true;
+                    return true;
+                }
                 const generations = new Map<string, number>();
-                const transaction = database.transaction(STORE_NAME, 'readwrite');
-                activeImportTransaction = transaction;
+                for (const [id] of entries) {
+                    generations.set(id, claimPersistenceGeneration(id));
+                }
+                let transaction: IDBTransaction | null = null;
                 try {
-                    const objectStore = transaction.objectStore(STORE_NAME);
+                    let database: IDBDatabase;
+                    try {
+                        database = await openDb();
+                    } catch {
+                        const allBuffersAreResident = entries.every(
+                            ([id]) => cacheIdSet === undefined || cacheIdSet.has(id)
+                        );
+                        persisted = allBuffersAreResident;
+                        return allBuffersAreResident;
+                    }
+                    if (
+                        candidateId !== activeImportCandidateId ||
+                        candidateId !== committedImportCandidateId ||
+                        [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
+                    ) {
+                        return false;
+                    }
+
+                    const activeTransaction = database.transaction(STORE_NAME, 'readwrite');
+                    transaction = activeTransaction;
+                    importPersistenceTransactions.set(candidateId, activeTransaction);
+                    const objectStore = activeTransaction.objectStore(STORE_NAME);
                     for (const [id, data] of entries) {
                         const channels = data.channelData.map(base64ToFloat32);
-                        generations.set(id, claimPersistenceGeneration(id));
                         objectStore.put(
                             {
                                 sampleRate: data.sampleRate,
@@ -724,30 +757,37 @@ export const audioBufferCache = {
                         );
                     }
                     await new Promise<void>((resolve, reject) => {
-                        transaction.oncomplete = () => resolve();
-                        transaction.onabort = () => reject(transaction.error ?? new Error('IDB transaction aborted'));
-                        transaction.onerror = () => reject(transaction.error ?? new Error('IDB transaction failed'));
+                        activeTransaction.oncomplete = () => resolve();
+                        activeTransaction.onabort = () =>
+                            reject(activeTransaction.error ?? new Error('IDB transaction aborted'));
+                        activeTransaction.onerror = () =>
+                            reject(activeTransaction.error ?? new Error('IDB transaction failed'));
                     });
-                    persisted = shouldContinue?.() !== false;
-                    return persisted;
+                    if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
+                        return false;
+                    }
+                    persisted = true;
+                    return true;
                 } catch {
                     return false;
                 } finally {
-                    if (activeImportTransaction === transaction) {
-                        activeImportTransaction = null;
-                    }
                     for (const [id, generation] of generations) {
                         if (persistenceGenerationById.get(id) === generation) {
                             persistenceGenerationById.delete(id);
                         }
                     }
+                    if (transaction && importPersistenceTransactions.get(candidateId) === transaction) {
+                        importPersistenceTransactions.delete(candidateId);
+                    }
                 }
             },
             publish: () => {
-                if (!persisted || published) {
+                if (published || candidateId !== activeImportCandidateId || shouldContinue?.() === false) {
                     return 0;
                 }
                 published = true;
+                committedImportCandidateId = candidateId;
+                abortImportPersistenceExcept(candidateId);
                 if (cacheIds) {
                     replacePinnedBufferIds(cacheIds);
                 }

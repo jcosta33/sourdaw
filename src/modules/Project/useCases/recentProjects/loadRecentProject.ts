@@ -1,140 +1,46 @@
 import { logger } from '#/infra/logger/appLogger';
-import { batchStoreUpdates } from '#/infra/store/createStore';
-import {
-    getAudioContext,
-    importCachedAudioBuffers,
-    prepareCachedAudioBuffersFromIdb,
-    resetAudioGraph,
-} from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
-import { projectStore } from '../../stores/projectStore';
-import { setAutoSaveHandle } from '../projectPersistence/helpers/autoSaveHandle';
-import { collectProjectAudioBufferIds } from '../projectPersistence/helpers/collectProjectAudioBufferIds';
-import { hydrateArrangementStoreFromProjectData } from '../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
-import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
-import { resetModuleStoresToDefault } from '../projectPersistence/helpers/resetModuleStoresToDefault';
-import {
-    type ProjectLoadTransaction,
-    runProjectLoadTransaction,
-} from '../projectPersistence/helpers/runProjectLoadTransaction';
-import { stopActiveAutoSave } from '../projectPersistence/helpers/stopActiveAutoSave';
-import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
+import { replaceProjectData } from '../projectPersistence/helpers/replaceProjectData';
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
-type PerformRecentProjectLoadInput = {
-    key: string;
-    transaction: ProjectLoadTransaction;
-};
-
-async function performRecentProjectLoad({ key, transaction }: PerformRecentProjectLoadInput): Promise<boolean> {
+export async function loadRecentProject(key: string): Promise<boolean> {
+    const transaction = runProjectLoadTransaction();
+    let raw: string | null;
     try {
         // Reads localStorage first, then falls back to IndexedDB so projects
         // whose localStorage dual-write was dropped on quota stay loadable.
-        const raw = await readNamedProjectJson(key);
-        if (!raw) {
-            logger.warn(`No project data found for key: ${key}`);
-            return false;
-        }
-
-        const parsed: unknown = JSON.parse(raw);
-        const normalizedData = normalizeLegacyProjectData(parsed);
-        if (!isHydratableProjectData(normalizedData)) {
-            logger.warn(`Unsupported project version for key: ${key}`);
-            return false;
-        }
-        const data = normalizedData;
-
-        if (!transaction.activate()) {
-            return false;
-        }
-
-        const audioContext = getAudioContext();
-        const referencedIds = collectProjectAudioBufferIds({ data });
-        const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
-        const preparedEmbeddedBuffers = data.audioBuffers
-            ? await importCachedAudioBuffers({
-                  audioContext,
-                  buffers: data.audioBuffers,
-                  cacheIds: referencedIds,
-                  shouldContinue: transaction.isCurrent,
-              })
-            : undefined;
-        if (data.audioBuffers && !preparedEmbeddedBuffers) {
-            return false;
-        }
-
-        // Restore runtime buffers before publishing the loaded track graph so
-        // waveform consumers are ready on the first real track update.
-        const preparedStoredBuffers = await prepareCachedAudioBuffersFromIdb({
-            audioContext,
-            bufferIds: referencedIds.filter((id) => !embeddedBufferIds.has(id)),
-            shouldContinue: transaction.isCurrent,
-        });
-
-        if (!preparedStoredBuffers) {
-            return false;
-        }
-        try {
-            stopPlayback();
-            resetAudioGraph();
-        } catch (error) {
-            logger.warn('[loadRecentProject] Failed to prepare the audio runtime for project commit:', error);
-            return false;
-        }
-        if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
-            return false;
-        }
-        if (!transaction.isCurrent()) {
-            return false;
-        }
-
-        batchStoreUpdates(() => {
-            resetCrdtProjectAuthority(data.meta.name);
-            preparedStoredBuffers.publish();
-            preparedEmbeddedBuffers?.publish();
-            resetModuleStoresToDefault();
-
-            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-            hydrateModuleStoresFromProjectData(data);
-
-            projectStore.set({
-                name: data.meta.name,
-                createdAt: data.meta.createdAt,
-                updatedAt: data.meta.updatedAt,
-                keyRoot: data.meta.keyRoot,
-                scaleName: data.meta.scaleName,
-                tuning: data.meta.tuning,
-                dirty: false,
-                loading: false,
-                initialized: true,
-            });
-
-            writeProjectJson(JSON.stringify(data));
-            verifyAudioBufferReferences();
-            clearUndoHistory();
-        });
-        await compactProject();
-        if (!transaction.isCurrent()) {
-            return false;
-        }
-        stopActiveAutoSave();
-        setAutoSaveHandle(startCrdtAutoSave());
-
-        return true;
+        raw = await readNamedProjectJson(key);
     } catch (error) {
-        logger.error(new Error('Failed to load recent project', { cause: error }));
+        logger.error(new Error('Failed to read recent project', { cause: error }));
         return false;
     }
-}
 
-export function loadRecentProject(key: string): Promise<boolean> {
-    return performRecentProjectLoad({
-        key,
-        transaction: runProjectLoadTransaction(),
+    if (!raw) {
+        logger.warn(`No project data found for key: ${key}`);
+        return false;
+    }
+
+    let data: unknown;
+    try {
+        data = normalizeLegacyProjectData(JSON.parse(raw));
+    } catch (error) {
+        logger.error(new Error('Failed to parse or normalize recent project', { cause: error }));
+        return false;
+    }
+
+    if (!isHydratableProjectData(data)) {
+        logger.warn(`Unsupported project version for key: ${key}`);
+        return false;
+    }
+
+    const result = await replaceProjectData({
+        afterCommit: () => writeProjectJson(JSON.stringify(data)),
+        context: 'loadRecentProject',
+        data,
+        transaction,
     });
+    return result.status === 'committed';
 }

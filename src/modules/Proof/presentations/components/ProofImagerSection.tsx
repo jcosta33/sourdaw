@@ -5,25 +5,36 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 
 type Props = {
     patch: ProofPatch;
     correlation: number;
-    onPatchChange: (partial: Partial<ProofPatch>) => void;
-    onSendParam: (name: string, value: number) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendParam }: Props): ReactElement => {
-    const updateWidth = (idx: number, value: number) => {
+export const ProofImagerSection = ({
+    patch,
+    correlation,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
+    const updateWidth = (idx: number, value: number, isTransient = false) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
-        onPatchChange({ imgBandWidth: widths });
-        onSendParam(`img_width${idx}`, value);
+        onPatchChange({
+            key: 'imgBandWidth',
+            value: widths,
+            changedParams: [{ bandIndex: idx }],
+            isTransient,
+        });
     };
 
     // Correlation bar color
@@ -45,11 +56,16 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                 actions={
                     <DawPluginToggle
                         pressed={!patch.imgBypassed}
+                        aria-label="Imager module"
                         tone="mint"
                         size="xs"
                         onClick={() => {
-                            onPatchChange({ imgBypassed: !patch.imgBypassed });
-                            onSendParam('img_bypass', patch.imgBypassed ? 0 : 1);
+                            const value = !patch.imgBypassed;
+                            onPatchChange({
+                                key: 'imgBypassed',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         {patch.imgBypassed ? 'OFF' : 'ON'}
@@ -61,11 +77,14 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                 {/* Per-band width knobs */}
                 <div className="flex justify-around">
                     {BAND_LABELS.map((label, i) => (
-                        <div key={i} className="flex flex-col items-center gap-0.5">
+                        <div key={label} className="flex flex-col items-center gap-0.5">
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}
-                                onChange={(v) => updateWidth(i, v)}
+                                aria-label={`Imager ${label} width`}
+                                onChange={(value, isTransient) => updateWidth(i, value, isTransient)}
+                                gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={2}
                                 step={0.01}
@@ -86,22 +105,33 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
                 <div className="flex items-center gap-2 px-1">
                     <DawPluginToggle
                         pressed={patch.imgAutoMonoBass}
+                        aria-label="Imager auto mono bass"
                         tone="mint"
                         size="xs"
                         caps={false}
                         onClick={() => {
-                            onPatchChange({ imgAutoMonoBass: !patch.imgAutoMonoBass });
-                            onSendParam('img_auto_mono_bass', patch.imgAutoMonoBass ? 0 : 1);
+                            const value = !patch.imgAutoMonoBass;
+                            onPatchChange({
+                                key: 'imgAutoMonoBass',
+                                value,
+                                isTransient: false,
+                            });
                         }}
                     >
                         Auto Mono Bass
                     </DawPluginToggle>
                     <RotaryKnob
                         value={patch.imgMonoBassFreq}
-                        onChange={(v) => {
-                            onPatchChange({ imgMonoBassFreq: v });
-                            onSendParam('img_mono_bass_freq', v);
+                        aria-label="Imager auto mono bass frequency"
+                        onChange={(value, isTransient) => {
+                            onPatchChange({
+                                key: 'imgMonoBassFreq',
+                                value,
+                                isTransient,
+                            });
                         }}
+                        gestureOwner={gestureOwner}
+                        gestureAuthority={gestureAuthority}
                         min={40}
                         max={200}
                         step={1}

@@ -15,8 +15,14 @@ export type RecordingSession = {
     sourceNode: MediaStreamAudioSourceNode | null;
     recordingNode: AudioWorkletNode | null;
     recordingWorker: Worker | null;
+    status: 'starting' | 'recording' | 'stopping';
     onRecordingComplete: ((buffer: AudioBuffer) => void) | null;
     stopFlushTimer: ReturnType<typeof setTimeout> | null;
+};
+
+export type RecordingStopWaiter = {
+    resolve: () => void;
+    trackIds: ReadonlySet<string>;
 };
 
 export const activeSessions = createHmrPersistentState<Map<string, RecordingSession>>(
@@ -30,4 +36,12 @@ export const sharedStreamState = createHmrPersistentState<{
 }>('audioRecorder.sharedStreamState', () => ({
     stream: null,
     usageCount: 0,
+}));
+
+export const recordingLifecycleState = createHmrPersistentState<{
+    startGeneration: number;
+    stopWaiters: Set<RecordingStopWaiter>;
+}>('audioRecorder.lifecycle', () => ({
+    startGeneration: 0,
+    stopWaiters: new Set(),
 }));

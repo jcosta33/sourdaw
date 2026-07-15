@@ -4,7 +4,10 @@ import {
     getAudioContext,
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
+    resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
+import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
 import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
@@ -23,7 +26,7 @@ vi.mock('../../../repositories/project/storageOperations', () => ({
     writeProjectJson: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -34,6 +37,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
+    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProjectAuthority: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
@@ -76,9 +80,12 @@ describe('loadRecentProject', () => {
     beforeEach(() => {
         vi.mocked(readNamedProjectJson).mockReset();
         vi.mocked(writeProjectJson).mockClear();
+        vi.mocked(startCrdtAutoSave).mockClear();
+        vi.mocked(ensureTrackStrips).mockClear();
+        vi.mocked(resetAudioGraph).mockReset();
         vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
         vi.mocked(hydrateArrangementStoreFromProjectData).mockClear();
-        vi.mocked(resetModuleStoresToDefault).mockClear();
+        vi.mocked(resetModuleStoresToDefault).mockReset();
         vi.mocked(getAudioContext).mockClear();
         vi.mocked(importCachedAudioBuffers)
             .mockReset()
@@ -112,6 +119,87 @@ describe('loadRecentProject', () => {
             buffers: validProjectData.audioBuffers,
         });
         expect(importInput?.shouldContinue?.()).toBe(true);
+    });
+
+    it('keeps the committed project live when post-commit embedded persistence fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        const persistEmbedded = vi.fn().mockResolvedValue(false);
+        const publishEmbedded = vi.fn(() => 0);
+        vi.mocked(importCachedAudioBuffers).mockResolvedValueOnce({
+            persist: persistEmbedded,
+            publish: publishEmbedded,
+        });
+
+        await expect(loadRecentProject('embedded-persist-failure')).resolves.toBe(true);
+
+        expect(persistEmbedded).toHaveBeenCalledOnce();
+        expect(publishEmbedded).toHaveBeenCalledOnce();
+        expect(publishEmbedded.mock.invocationCallOrder[0]).toBeLessThan(persistEmbedded.mock.invocationCallOrder[0]!);
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('starts the committed project durability lifecycle', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+
+        await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe(true);
+
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('does not falsify a committed load when recent-project publication throws', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(writeProjectJson).mockImplementationOnce(() => {
+            throw new Error('recent JSON write failed');
+        });
+
+        await expect(loadRecentProject('recent-write-failure')).resolves.toBe(true);
+
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('aborts and restores the previous graph when reset fails before state publication', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        const order: string[] = [];
+        const persistEmbedded = vi.fn(() => {
+            order.push('persist');
+            return Promise.resolve(true);
+        });
+        const publishEmbedded = vi.fn(() => {
+            order.push('publish');
+            return 1;
+        });
+        vi.mocked(importCachedAudioBuffers).mockResolvedValueOnce({
+            persist: persistEmbedded,
+            publish: publishEmbedded,
+        });
+        vi.mocked(resetAudioGraph).mockImplementationOnce(() => {
+            order.push('reset');
+            throw new Error('graph reset failed');
+        });
+
+        await expect(loadRecentProject('reset-failure')).resolves.toBe(false);
+
+        expect(order).toEqual(['reset']);
+        expect(publishEmbedded).not.toHaveBeenCalled();
+        expect(persistEmbedded).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+    });
+
+    it('continues the committed replacement after a mid-commit store reset failure', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(resetModuleStoresToDefault).mockImplementationOnce(() => {
+            throw new Error('device store reset failed');
+        });
+
+        await expect(loadRecentProject('mid-commit-failure')).resolves.toBe(true);
+
+        expect(hydrateArrangementStoreFromProjectData).toHaveBeenCalledOnce();
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('restores only buffers referenced by the candidate project', async () => {
@@ -205,6 +293,16 @@ describe('loadRecentProject', () => {
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
     });
 
+    it('leaves the live project untouched when recent-project parsing fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue('{invalid-json');
+
+        await expect(loadRecentProject('invalid')).resolves.toBe(false);
+
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
     it('supersedes an older overlapping load with the latest request', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         let completeFirstRestore: (() => void) | undefined;
@@ -231,6 +329,33 @@ describe('loadRecentProject', () => {
         expect(readNamedProjectJson).toHaveBeenCalledTimes(2);
         expect(readNamedProjectJson).toHaveBeenNthCalledWith(1, 'first-project');
         expect(readNamedProjectJson).toHaveBeenNthCalledWith(2, 'second-project');
+    });
+
+    it('keeps request order authoritative when an older project read resolves last', async () => {
+        let finishFirstRead: (() => void) | undefined;
+        vi.mocked(readNamedProjectJson).mockImplementation(
+            (key) =>
+                new Promise<string>((resolve) => {
+                    if (key === 'first-project') {
+                        finishFirstRead = () => resolve(validProject);
+                        return;
+                    }
+                    resolve(validProject);
+                })
+        );
+
+        const firstLoad = loadRecentProject('first-project');
+        const secondLoad = loadRecentProject('second-project');
+        await expect(secondLoad).resolves.toBe(true);
+
+        const finishRead = finishFirstRead;
+        if (!finishRead) {
+            throw new Error('Expected the first project read to be pending');
+        }
+        finishRead();
+
+        await expect(firstLoad).resolves.toBe(false);
+        expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
     });
 
     it('does not publish after a newer project transition starts', async () => {

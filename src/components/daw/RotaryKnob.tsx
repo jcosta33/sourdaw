@@ -1,4 +1,12 @@
-import { type MouseEvent, type ReactElement, type PointerEvent, useRef } from 'react';
+import {
+    type KeyboardEvent,
+    type MouseEvent,
+    type ReactElement,
+    type PointerEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+} from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores';
@@ -41,10 +49,17 @@ const TONE_COLORS: Record<Tone, string> = {
 };
 
 type ModulationHalo = {
+    id: string;
     /** Fraction of full sweep (-1 to +1) representing modulation depth */
     amount: number;
     /** CSS color string for this modulation source */
     color: string;
+};
+
+export type GestureAuthority = {
+    /** Finalize the current owner synchronously before installing the new owner. */
+    acquire: (finalize: () => void) => string | number;
+    isCurrent: (token: string | number) => boolean;
 };
 
 type RotaryKnobProps = {
@@ -61,12 +76,18 @@ type RotaryKnobProps = {
     className?: string;
     /** Label rendered below the knob. When set, the component expands its min-width to prevent label overlap. */
     label?: string;
+    /** Explicit accessible name for contexts where the visible label is owned by surrounding markup. */
+    'aria-label'?: string;
     paramId?: string;
     targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
     trackId?: string;
     deviceId?: string;
     /** Color tone for the value arc */
     tone?: Tone;
+    /** Stable semantic owner token; changing it cancels an active drag without committing it. */
+    gestureOwner?: string | number;
+    /** Optional synchronous authority for controls that serialize competing gestures. */
+    gestureAuthority?: GestureAuthority;
     /**
      * R-C1: Active modulation sources displayed as colored conic-gradient halo arcs.
      * Each entry represents one modulator connected to this parameter.
@@ -103,6 +124,9 @@ export const RotaryKnob = ({
     tone = 'cyan',
     modulations,
     scale = 'linear',
+    gestureOwner,
+    gestureAuthority,
+    'aria-label': ariaLabel,
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -116,11 +140,100 @@ export const RotaryKnob = ({
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
     const draggingRef = useRef(false);
+    const activePointerIdRef = useRef<number | null>(null);
     const startY = useRef(0);
     const startValue = useRef(value);
     const currentValue = useRef(value);
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
+    const onChangeRef = useRef(onChange);
+    const gestureOwnerAtStartRef = useRef<string | number | undefined>(gestureOwner);
+    const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
+    const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+
+    const releasePointerCapture = (pointerId: number | null): void => {
+        if (pointerId === null || !rootRef.current || typeof rootRef.current.releasePointerCapture !== 'function') {
+            return;
+        }
+        try {
+            rootRef.current.releasePointerCapture(pointerId);
+        } catch {
+            // The browser may have already released capture before this finalizer runs.
+        }
+    };
+
+    const clearDragState = (): void => {
+        const pointerId = activePointerIdRef.current;
+        draggingRef.current = false;
+        activePointerIdRef.current = null;
+        gestureOwnerAtStartRef.current = undefined;
+        rootRef.current?.removeAttribute('data-dragging');
+        releasePointerCapture(pointerId);
+    };
+
+    const ownsGesture = (): boolean => {
+        const token = gestureOwnerAtStartRef.current;
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            return token !== undefined && authority.isCurrent(token);
+        }
+        return Object.is(token, gestureOwner);
+    };
+
+    useLayoutEffect(() => {
+        onChangeRef.current = onChange;
+        gestureAuthorityRef.current = gestureAuthority;
+
+        if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
+            clearDragState();
+        }
+
+        finalizeDragRef.current = (pointerId?: number): boolean => {
+            if (!draggingRef.current) {
+                return false;
+            }
+            if (pointerId !== undefined && activePointerIdRef.current !== pointerId) {
+                return false;
+            }
+
+            const ownsCurrentGesture = ownsGesture();
+            clearDragState();
+            if (ownsCurrentGesture && !Object.is(currentValue.current, startValue.current)) {
+                onChangeRef.current(currentValue.current, false);
+            }
+            return true;
+        };
+    });
+
+    useLayoutEffect(() => {
+        if (!draggingRef.current) {
+            currentValue.current = value;
+        }
+    }, [value]);
+
+    useEffect(() => {
+        return () => {
+            finalizeDragRef.current();
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleWindowBlur = (): void => {
+            finalizeDragRef.current();
+        };
+        const handleVisibilityChange = (): void => {
+            if (document.visibilityState === 'hidden') {
+                finalizeDragRef.current();
+            }
+        };
+
+        window.addEventListener('blur', handleWindowBlur);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     const clamp = (value1: number): number => {
         let clamped = Math.max(min, Math.min(max, value1));
@@ -130,18 +243,35 @@ export const RotaryKnob = ({
         return clamped;
     };
 
+    const quantize = (raw: number, currentStep: number): number => {
+        const safeStep = Math.max(Number.EPSILON, currentStep);
+        const stepFromMin = Math.round((raw - min) / safeStep);
+        const quantized = min + stepFromMin * safeStep;
+        return clamp(Number(quantized.toPrecision(15)));
+    };
+
+    const resetToDefault = () => {
+        if (Object.is(value, defaultValue)) {
+            return;
+        }
+        onChange(defaultValue, false);
+    };
+
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-        if (event.button !== 0) {
+        if (activePointerIdRef.current !== null || event.button !== 0) {
             return;
         }
         if (event.altKey) {
-            onChange(defaultValue, false);
+            resetToDefault();
             return;
         }
+        const gestureToken = gestureAuthorityRef.current?.acquire(() => finalizeDragRef.current()) ?? gestureOwner;
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
+        activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
+        gestureOwnerAtStartRef.current = gestureToken;
         startY.current = event.clientY;
         startValue.current = value;
         currentValue.current = value;
@@ -154,7 +284,11 @@ export const RotaryKnob = ({
             : Math.max(0, Math.min(1, (value - min) / (max - min)));
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (!draggingRef.current) {
+        if (!draggingRef.current || activePointerIdRef.current !== event.pointerId) {
+            return;
+        }
+        if (!ownsGesture()) {
+            clearDragState();
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -178,23 +312,60 @@ export const RotaryKnob = ({
         }
 
         const currentStep = event.shiftKey ? fineStep : step;
-        const quantized = Math.round(raw / currentStep) * currentStep;
-        const clamped = clamp(quantized);
+        const clamped = quantize(raw, currentStep);
+        if (Object.is(clamped, currentValue.current)) {
+            return;
+        }
         currentValue.current = clamped;
-        onChange(clamped, true);
+        onChangeRef.current(clamped, true);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (draggingRef.current) {
+            return;
+        }
+
+        const isIncrement = event.key === 'ArrowUp' || event.key === 'ArrowRight';
+        const isDecrement = event.key === 'ArrowDown' || event.key === 'ArrowLeft';
+        const isHome = event.key === 'Home';
+        const isEnd = event.key === 'End';
+        if (!isIncrement && !isDecrement && !isHome && !isEnd) {
+            return;
+        }
+
+        event.preventDefault();
+        const currentStep = Math.max(Number.EPSILON, event.shiftKey ? fineStep : step);
+        const liveValue = currentValue.current;
+        let nextValue: number;
+        if (isHome) {
+            nextValue = clamp(min);
+        } else if (isEnd) {
+            nextValue = clamp(max);
+        } else {
+            const direction = isIncrement ? 1 : -1;
+            nextValue = quantize(liveValue + direction * currentStep, currentStep);
+        }
+        if (Object.is(nextValue, liveValue)) {
+            return;
+        }
+
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            const token = authority.acquire(() => finalizeDragRef.current());
+            if (!authority.isCurrent(token)) {
+                return;
+            }
+        }
+        currentValue.current = nextValue;
+        onChangeRef.current(nextValue, false);
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-        draggingRef.current = false;
-        if (typeof event.currentTarget.releasePointerCapture === 'function') {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }
-        rootRef.current?.removeAttribute('data-dragging');
-        onChange(currentValue.current, false);
+        finalizeDragRef.current(event.pointerId);
     };
 
     const handleDoubleClick = () => {
-        onChange(defaultValue, false);
+        resetToDefault();
     };
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
@@ -217,10 +388,21 @@ export const RotaryKnob = ({
     const arcBg = bipolar
         ? buildBipolarArc(normalized, arcColor)
         : `conic-gradient(from 225deg, ${arcColor} 0deg, ${arcColor} ${arcAngleDeg}deg, transparent ${arcAngleDeg}deg, transparent 270deg, transparent 270deg)`;
+    const accessibleName = ariaLabel ?? label ?? paramId ?? 'Parameter control';
+    const ariaValue = Math.max(min, Math.min(max, value));
+    const handleFocusLoss = (): void => {
+        finalizeDragRef.current();
+    };
 
     return (
         <div
             ref={rootRef}
+            role="slider"
+            tabIndex={0}
+            aria-label={accessibleName}
+            aria-valuemin={min}
+            aria-valuemax={max}
+            aria-valuenow={ariaValue}
             className={cn(
                 'group/knob relative flex flex-col items-center select-none touch-none cursor-ns-resize',
                 label && 'min-w-fit',
@@ -229,6 +411,10 @@ export const RotaryKnob = ({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
+            onKeyDown={handleKeyDown}
+            onBlur={handleFocusLoss}
             onDoubleClick={handleDoubleClick}
             onContextMenu={handleContextMenu}
         >
@@ -256,7 +442,7 @@ export const RotaryKnob = ({
                 />
 
                 {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
-                {modulations?.map((mod, idx) => {
+                {modulations?.map((mod) => {
                     const amountDeg = mod.amount * 270;
                     let haloBg: string;
                     if (amountDeg >= 0) {
@@ -270,7 +456,7 @@ export const RotaryKnob = ({
                     }
                     return (
                         <div
-                            key={idx}
+                            key={mod.id}
                             className="absolute inset-0 rounded-full pointer-events-none"
                             style={{
                                 background: haloBg,

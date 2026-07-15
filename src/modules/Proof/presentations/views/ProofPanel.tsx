@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useLayoutEffect, useReducer, useRef } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -9,24 +9,17 @@ import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
-import {
-    proofStore,
-    setProofUiLevel,
-    setProofAbBypass,
-    getProofState,
-    updateProofPatch,
-    type ProofState,
-} from '../../stores/proofStore';
+import { getProofPatchSnapshot, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
+import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
-import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
+import { setProofTarget } from '../../useCases/proofParamBridge/setProofTarget';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { LoudnessHistory } from '../components/LoudnessHistory';
 import { ProofDynSection } from '../components/ProofDynSection';
@@ -63,6 +56,8 @@ const LEVEL_OPTIONS = [
     { level: 4 as const, label: 'Route', detail: 'Chain' },
     { level: 5 as const, label: 'Lab', detail: 'Check' },
 ];
+
+type ProofPatchChange = (edit: ProofPatchEdit) => void;
 
 function formatLufs(v: number): string {
     if (v <= -100) {
@@ -135,25 +130,71 @@ const SideCard = ({
     </DawPluginSectionCard>
 );
 
-function renderLevel(state: ProofState, deviceId: string): ReactElement {
+type ProofLevelContentProps = {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+    onTargetSelection: (target: ProofTarget) => void;
+};
+
+const ProofLevelContent = ({
+    state,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+    onTargetSelection,
+}: ProofLevelContentProps): ReactElement => {
     if (state.uiLevel === 1) {
-        return <Level1Play state={state} deviceId={deviceId} />;
+        return (
+            <Level1Play
+                state={state}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+                onTargetSelection={onTargetSelection}
+            />
+        );
     }
 
     if (state.uiLevel === 2) {
-        return <Level2Shape state={state} deviceId={deviceId} />;
+        return (
+            <Level2Shape
+                state={state}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
+        );
     }
 
     if (state.uiLevel === 3) {
-        return <Level3Build state={state} deviceId={deviceId} />;
+        return (
+            <Level3Build
+                state={state}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
+        );
     }
 
     if (state.uiLevel === 4) {
-        return <Level4Route state={state} deviceId={deviceId} />;
+        return (
+            <Level4Route
+                state={state}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
+        );
     }
 
     return <Level5Lab state={state} deviceId={deviceId} />;
-}
+};
 
 function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
     if (moduleIndex === 0) {
@@ -182,6 +223,88 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const state: ProofState = allInstances?.[deviceId] ?? getProofState(deviceId);
 
     const { patch, uiLevel } = state;
+    const patchSnapshot = getProofPatchSnapshot(patch);
+    const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
+    const activeGestureTokenRef = useRef(0);
+    const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
+    const gestureDeviceIdRef = useRef(deviceId);
+    const patchSnapshotRef = useRef(patchSnapshot);
+    const acceptedPatchSnapshotRef = useRef<string | null>(null);
+
+    const advanceGestureOwner = (): number => {
+        const nextOwner = activeGestureTokenRef.current + 1;
+        activeGestureTokenRef.current = nextOwner;
+        setGestureOwner(nextOwner);
+        return nextOwner;
+    };
+
+    const invalidateGesture = (): void => {
+        acceptedPatchSnapshotRef.current = null;
+        activeGestureFinalizerRef.current = null;
+        advanceGestureOwner();
+    };
+
+    const finalizeActiveGesture = (): void => {
+        const finalizer = activeGestureFinalizerRef.current;
+        // Finalizers commit through handlePatchChange, so release ownership before invoking one.
+        activeGestureFinalizerRef.current = null;
+        finalizer?.();
+    };
+
+    const acquireGesture = (finalize: () => void): number => {
+        const previousFinalizer = activeGestureFinalizerRef.current;
+        activeGestureFinalizerRef.current = null;
+        if (previousFinalizer) {
+            previousFinalizer();
+            // Accept A's committed snapshot before advancing ownership to B.
+            acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+        }
+        const nextOwner = advanceGestureOwner();
+        activeGestureFinalizerRef.current = finalize;
+        return nextOwner;
+    };
+
+    const gestureAuthority: GestureAuthority = {
+        acquire: acquireGesture,
+        isCurrent: (token) => Object.is(activeGestureTokenRef.current, token),
+    };
+
+    useLayoutEffect(() => {
+        const previousDeviceId = gestureDeviceIdRef.current;
+        gestureDeviceIdRef.current = deviceId;
+        const previousPatchSnapshot = patchSnapshotRef.current;
+        patchSnapshotRef.current = patchSnapshot;
+        if (previousDeviceId !== deviceId) {
+            acceptedPatchSnapshotRef.current = null;
+            activeGestureFinalizerRef.current = null;
+            advanceGestureOwner();
+            return;
+        }
+        const acceptedPatch = acceptedPatchSnapshotRef.current === patchSnapshot;
+        acceptedPatchSnapshotRef.current = null;
+        if (previousPatchSnapshot !== patchSnapshot && !acceptedPatch) {
+            activeGestureFinalizerRef.current = null;
+            advanceGestureOwner();
+        }
+    }, [deviceId, patchSnapshot]);
+
+    const handlePatchChange: ProofPatchChange = (edit) => {
+        if (edit.isTransient !== true) {
+            finalizeActiveGesture();
+        }
+        setProofParamWithPatch({ deviceId, ...edit });
+        if (edit.isTransient === true) {
+            acceptedPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+            return;
+        }
+        acceptedPatchSnapshotRef.current = null;
+    };
+
+    const handleTargetSelection = (target: ProofTarget): void => {
+        finalizeActiveGesture();
+        setProofTarget({ deviceId, target });
+    };
+
     const levelMeta = getLevelMeta(uiLevel);
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
@@ -206,9 +329,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 title={preset.name}
                                                 subtitle={`${preset.patch.target} · ${formatLufs(preset.patch.targetLufs)} LUFS`}
-                                                onPress={() =>
-                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch })
-                                                }
+                                                onPress={() => {
+                                                    invalidateGesture();
+                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch });
+                                                }}
                                             />
                                         );
                                     })}
@@ -226,18 +350,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 tone="mint"
                                                 size="sm"
-                                                onClick={() => {
-                                                    setProofParamWithPatch({
-                                                        deviceId,
-                                                        key: 'target',
-                                                        value: option.value,
-                                                    });
-                                                    setProofParamWithPatch({
-                                                        deviceId,
-                                                        key: 'targetLufs',
-                                                        value: option.lufs,
-                                                    });
-                                                }}
+                                                onClick={() => handleTargetSelection(option.value)}
                                             >
                                                 {option.label}
                                             </DawPluginChip>
@@ -306,7 +419,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         </DawPluginMetricStrip>
                     </div>
 
-                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state, deviceId)}</div>
+                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">
+                        <ProofLevelContent
+                            state={state}
+                            deviceId={deviceId}
+                            gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
+                            onPatchChange={handlePatchChange}
+                            onTargetSelection={handleTargetSelection}
+                        />
+                    </div>
                 </section>
 
                 <DawPluginRail>
@@ -342,7 +464,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 const bypassed = isModuleBypassed(state, moduleIndex);
                                 return (
                                     <DawPluginChoiceRow
-                                        key={`${moduleIndex}-${slot}`}
+                                        key={moduleIndex}
                                         className="proof-window"
                                         title={label}
                                         startSlot={
@@ -365,6 +487,8 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <div className="flex flex-col gap-2">
                             <DawPluginChip
                                 active={state.abBypass}
+                                aria-label="A/B compare"
+                                aria-pressed={state.abBypass}
                                 tone="mint"
                                 size="sm"
                                 onClick={() => {
@@ -386,7 +510,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             <div className="flex flex-col items-center gap-1 pt-1">
                                 <RotaryKnob
                                     value={patch.limCeiling}
-                                    onChange={(value) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value })}
+                                    aria-label="Master limiter ceiling"
+                                    onChange={(value, isTransient) =>
+                                        handlePatchChange({
+                                            key: 'limCeiling',
+                                            value,
+                                            isTransient,
+                                        })
+                                    }
+                                    gestureOwner={gestureOwner}
+                                    gestureAuthority={gestureAuthority}
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -411,7 +544,19 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
-const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level1Play = ({
+    state,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+    onTargetSelection,
+}: {
+    state: ProofState;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+    onTargetSelection: (target: ProofTarget) => void;
+}): ReactElement => {
     const { patch } = state;
 
     return (
@@ -430,8 +575,7 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofParamWithPatch({ deviceId, key: 'target', value: opt.value });
-                                setProofParamWithPatch({ deviceId, key: 'targetLufs', value: opt.lufs });
+                                onTargetSelection(opt.value);
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)
@@ -466,15 +610,14 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 </div>
 
                 {/* Streaming warning */}
-                {state.integratedLufs > -100 && state.integratedLufs > (TARGET_LUFS[patch.target] ?? -14) + 1 ? (
+                {state.integratedLufs > -100 && state.integratedLufs > patch.targetLufs + 1 ? (
                     <div
                         role="alert"
                         aria-live="polite"
                         className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
                     >
                         Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by{' '}
-                        {(state.integratedLufs - (TARGET_LUFS[patch.target] ?? -14)).toFixed(1)} dB on streaming
-                        platforms.
+                        {(state.integratedLufs - patch.targetLufs).toFixed(1)} dB on streaming platforms.
                     </div>
                 ) : null}
             </div>
@@ -484,13 +627,16 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
+                    aria-label="Mission limiter ceiling"
+                    onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
+                    gestureOwner={gestureOwner}
                     min={-12}
                     max={0}
                     step={0.1}
                     defaultValue={-1}
                     size="lg"
                     tone="cyan"
+                    gestureAuthority={gestureAuthority}
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">{patch.limCeiling.toFixed(1)} dBTP</span>
             </div>
@@ -500,7 +646,17 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
 
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
-const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level2Shape = ({
+    state,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: {
+    state: ProofState;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
     const bypasses = [patch.eqBypassed, patch.dynBypassed, patch.imgBypassed, patch.excBypassed, patch.limBypassed];
     const bypassKeys = ['eqBypassed', 'dynBypassed', 'imgBypassed', 'excBypassed', 'limBypassed'] as const;
@@ -523,19 +679,19 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     const tapIdx = slot + 1;
 
                     return (
-                        <div key={`${moduleIdx}-${slot}`} className="flex items-center gap-1">
+                        <div key={moduleIdx} className="flex items-center gap-1">
                             <div className="w-4 h-px bg-border/30" />
                             <button
                                 type="button"
+                                aria-label={`${label} module`}
+                                aria-pressed={!bypassed}
                                 className={`px-2 py-1 rounded text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                                     bypassed
                                         ? 'opacity-30 text-muted-foreground border border-border/20'
                                         : `border border-current/20`
                                 }`}
                                 style={{ color: bypassed ? undefined : color }}
-                                onClick={() =>
-                                    setProofParamWithPatch({ deviceId, key: bypassKeys[moduleIdx]!, value: !bypassed })
-                                }
+                                onClick={() => onPatchChange({ key: bypassKeys[moduleIdx]!, value: !bypassed })}
                             >
                                 {label}
                             </button>
@@ -556,9 +712,20 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Threshold"
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
-                    onChange={(v) => {
-                        const bands = patch.dynBands.map((b) => ({ ...b, threshold: v }));
-                        setProofParamWithPatch({ deviceId, key: 'dynBands', value: bands });
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onChange={(value, isTransient) => {
+                        const bands = patch.dynBands.map((band) => ({ ...band, threshold: value }));
+                        onPatchChange({
+                            key: 'dynBands',
+                            value: bands,
+                            changedParams: bands.flatMap((band, bandIndex) =>
+                                patch.dynBands[bandIndex]?.threshold === band.threshold
+                                    ? []
+                                    : [{ bandIndex, field: 'threshold' as const }]
+                            ),
+                            isTransient,
+                        });
                     }}
                     min={-60}
                     max={0}
@@ -571,11 +738,20 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Width"
                     bypassed={patch.imgBypassed}
                     value={patch.imgBandWidth[2] ?? 1}
-                    onChange={(v) => {
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onChange={(value, isTransient) => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
-                        widths[2] = v;
-                        widths[3] = v;
-                        setProofParamWithPatch({ deviceId, key: 'imgBandWidth', value: widths });
+                        widths[2] = value;
+                        widths[3] = value;
+                        onPatchChange({
+                            key: 'imgBandWidth',
+                            value: widths,
+                            changedParams: [2, 3].flatMap((bandIndex) =>
+                                patch.imgBandWidth[bandIndex] === widths[bandIndex] ? [] : [{ bandIndex }]
+                            ),
+                            isTransient,
+                        });
                     }}
                     min={0}
                     max={2}
@@ -588,13 +764,33 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Drive"
                     bypassed={patch.excBypassed}
                     value={patch.excBands[1]?.drive ?? 0.2}
-                    onChange={(v) => {
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onChange={(value, isTransient) => {
                         const bands = patch.excBands.map((b) => ({
                             ...b,
-                            drive: v,
-                            enabled: v > 0.01,
+                            drive: value,
+                            enabled: value > 0.01,
                         }));
-                        setProofParamWithPatch({ deviceId, key: 'excBands', value: bands });
+                        onPatchChange({
+                            key: 'excBands',
+                            value: bands,
+                            changedParams: bands.flatMap((band, bandIndex) => {
+                                const previousBand = patch.excBands[bandIndex];
+                                const changedParams: Array<{
+                                    bandIndex: number;
+                                    field: 'drive' | 'enabled';
+                                }> = [];
+                                if (previousBand?.drive !== band.drive) {
+                                    changedParams.push({ bandIndex, field: 'drive' as const });
+                                }
+                                if (previousBand?.enabled !== band.enabled) {
+                                    changedParams.push({ bandIndex, field: 'enabled' as const });
+                                }
+                                return changedParams;
+                            }),
+                            isTransient,
+                        });
                     }}
                     min={0}
                     max={1}
@@ -607,7 +803,9 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Ceiling"
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
-                    onChange={(v) => setProofParamWithPatch({ deviceId, key: 'limCeiling', value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
                     min={-12}
                     max={0}
                     unit="dBTP"
@@ -621,7 +819,17 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
-const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level3Build = ({
+    state,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: {
+    state: ProofState;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
 
     return (
@@ -630,36 +838,41 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
                 <ProofEqSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofDynSection
                     patch={patch}
                     dynGr={state.dynGr}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofImagerSection
                     patch={patch}
                     correlation={state.correlation}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofExciterSection
                     patch={patch}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofLimiterSection
                     patch={patch}
                     limiterGrDb={state.limiterGrDb}
                     truePeakDb={state.truePeakDb}
-                    onPatchChange={(p) => updateProofPatch({ deviceId, patch: p })}
-                    onSendParam={(n, v) => setProofParam({ deviceId, name: n, value: v })}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
                 />
             </div>
 
@@ -667,7 +880,7 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
             <div className="w-[200px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2">
                 <LoudnessHistory
                     momentaryLufs={state.outputLufs}
-                    targetLufs={TARGET_LUFS[patch.target] ?? -14}
+                    targetLufs={patch.targetLufs}
                     integratedLufs={state.integratedLufs}
                     width={184}
                     height={120}
@@ -709,7 +922,19 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 4: Route ───────────────────────────────────────────────────────────
 
-const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level4Route = ({
+    state,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
 
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
@@ -721,7 +946,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
         newOrder[toIdx] = temp;
-        reorderChain({ deviceId, order: newOrder });
+        onPatchChange({ key: 'chainOrder', value: newOrder });
     };
 
     return (
@@ -740,7 +965,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     {patch.chainOrder.map((moduleIdx, slot) => {
                         const moduleLabel = MODULE_LABELS[moduleIdx] ?? 'module';
                         return (
-                            <div key={slot} className="flex items-center gap-1">
+                            <div key={moduleIdx} className="flex items-center gap-1">
                                 <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded bg-surface-base/80 border border-border/30">
                                     <span className="text-[9px] font-bold" style={{ color: MODULE_COLORS[moduleIdx] }}>
                                         {moduleLabel}
@@ -794,13 +1019,16 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
-                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'inputGain', value: v })}
+                        aria-label="Input gain"
+                        onChange={(value, isTransient) => onPatchChange({ key: 'inputGain', value, isTransient })}
+                        gestureOwner={gestureOwner}
                         min={-24}
                         max={24}
                         step={0.5}
                         defaultValue={0}
                         size="md"
                         tone="cyan"
+                        gestureAuthority={gestureAuthority}
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.inputGain > 0 ? '+' : ''}
@@ -811,13 +1039,16 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
-                        onChange={(v) => setProofParamWithPatch({ deviceId, key: 'outputGain', value: v })}
+                        aria-label="Output gain"
+                        onChange={(value, isTransient) => onPatchChange({ key: 'outputGain', value, isTransient })}
+                        gestureOwner={gestureOwner}
                         min={-24}
                         max={24}
                         step={0.5}
                         defaultValue={0}
                         size="md"
                         tone="cyan"
+                        gestureAuthority={gestureAuthority}
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.outputGain > 0 ? '+' : ''}
@@ -833,7 +1064,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
     const { patch } = state;
-    const targetLufs = TARGET_LUFS[patch.target] ?? -14;
+    const targetLufs = patch.targetLufs;
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
     const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
@@ -1034,6 +1265,8 @@ const KnobColumn = ({
     bypassed,
     value,
     onChange,
+    gestureOwner,
+    gestureAuthority,
     min,
     max,
     unit,
@@ -1044,7 +1277,9 @@ const KnobColumn = ({
     sublabel: string;
     bypassed: boolean;
     value: number;
-    onChange: (v: number) => void;
+    onChange: (value: number, isTransient?: boolean) => void;
+    gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     min: number;
     max: number;
     unit: string;
@@ -1057,7 +1292,10 @@ const KnobColumn = ({
         </span>
         <RotaryKnob
             value={value}
+            aria-label={`${label} ${sublabel}`}
             onChange={onChange}
+            gestureOwner={gestureOwner}
+            gestureAuthority={gestureAuthority}
             min={min}
             max={max}
             step={0.1}

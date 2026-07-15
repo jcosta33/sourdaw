@@ -4,6 +4,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { BipolarSlider } from '../bipolar-slider';
 
 describe('BipolarSlider', () => {
+    it('uses an explicit accessible name when no visual label is provided', () => {
+        render(
+            <BipolarSlider value={0.5} onValueChange={vi.fn()} min={0} max={1} step={0.01} aria-label="Output gain" />
+        );
+
+        expect(screen.getByRole('slider', { name: 'Output gain' })).toBeInTheDocument();
+    });
+
     it('should show label and formatted value when label is set', () => {
         const onValueChange = vi.fn();
         render(

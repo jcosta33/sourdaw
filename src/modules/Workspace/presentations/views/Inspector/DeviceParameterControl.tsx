@@ -178,6 +178,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     max={max}
                     step={mappedStep}
                     defaultValue={mappedDefaultValue}
+                    aria-label={param.name}
                     formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
                     className="w-full"
                 />
@@ -193,8 +194,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 step={mappedStep}
                 fineStep={mappedFineStep}
                 defaultValue={mappedDefaultValue}
+                aria-label={param.name}
                 bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
-                modulations={modulation !== 0 ? [{ amount: modulation, color: 'var(--color-accent-cyan)' }] : undefined}
+                modulations={
+                    modulation !== 0
+                        ? [{ id: param.name, amount: modulation, color: 'var(--color-accent-cyan)' }]
+                        : undefined
+                }
                 size={
                     param.name.toLowerCase().includes('mix') ||
                     param.name.toLowerCase().includes('dry/wet') ||

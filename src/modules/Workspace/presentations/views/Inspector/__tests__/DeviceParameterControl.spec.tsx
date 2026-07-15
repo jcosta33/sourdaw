@@ -50,18 +50,35 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
 }));
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-        <button data-testid="rotary-knob" data-value={value} onClick={() => onChange(value + 1)}>
+    RotaryKnob: ({
+        value,
+        onChange,
+        'aria-label': ariaLabel,
+    }: {
+        value: number;
+        onChange: (v: number) => void;
+        'aria-label'?: string;
+    }) => (
+        <button data-testid="rotary-knob" data-value={value} aria-label={ariaLabel} onClick={() => onChange(value + 1)}>
             Knob
         </button>
     ),
 }));
 
 vi.mock('#/components/ui/bipolar-slider', () => ({
-    BipolarSlider: ({ value, onValueChange }: { value: number; onValueChange: (v: number) => void }) => (
+    BipolarSlider: ({
+        value,
+        onValueChange,
+        'aria-label': ariaLabel,
+    }: {
+        value: number;
+        onValueChange: (v: number) => void;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
             data-testid="bipolar-slider"
+            aria-label={ariaLabel}
             value={value}
             onChange={(event) => onValueChange(Number(event.target.value))}
         />
@@ -120,6 +137,11 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
     });
 
+    it('gives the rotary knob the parameter name as its accessible name', () => {
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+        expect(screen.getByTestId('rotary-knob')).toHaveAttribute('aria-label', 'Gain');
+    });
+
     it('should call setDeviceParameter when knob value changes', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByTestId('rotary-knob'));
@@ -153,7 +175,7 @@ describe('DeviceParameterControl', () => {
             unit: 'dB',
         };
         render(<DeviceParameterControl param={dbParam} device={mockDevice} trackId="track-1" />);
-        expect(screen.getByTestId('bipolar-slider')).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
     });
 
     it('should render MIDI learn button', () => {

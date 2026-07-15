@@ -1,138 +1,23 @@
-import { logger } from '#/infra/logger/appLogger';
-import { batchStoreUpdates } from '#/infra/store/createStore';
-import {
-    getAudioContext,
-    importCachedAudioBuffers,
-    prepareCachedAudioBuffersFromIdb,
-    resetAudioGraph,
-} from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
-
-import { projectStore } from '../../../stores/projectStore';
-import { setAutoSaveHandle } from '../helpers/autoSaveHandle';
-import { collectProjectAudioBufferIds } from '../helpers/collectProjectAudioBufferIds';
-import { hydrateArrangementStoreFromProjectData } from '../helpers/hydrateArrangementStoreFromProjectData';
-import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
-import { type HydratableProjectData, isHydratableProjectData } from '../helpers/isHydratableProjectData';
+import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
-import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
+import { replaceProjectData } from '../helpers/replaceProjectData';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
-import { stopActiveAutoSave } from '../helpers/stopActiveAutoSave';
-import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
-
-type PerformImportedProjectDataApplicationInput = {
-    data: HydratableProjectData;
-    transaction: ProjectLoadTransaction;
-};
-
-async function performImportedProjectDataApplication({
-    data,
-    transaction,
-}: PerformImportedProjectDataApplicationInput): Promise<boolean> {
-    if (!transaction.activate()) {
-        return false;
-    }
-
-    // Restore referenced runtime buffers before publishing the imported track
-    // graph. Track subscribers can render waveforms from their first update,
-    // without a synthetic track-store write after hydration.
-    const audioContext = getAudioContext();
-    const referencedIds = collectProjectAudioBufferIds({ data });
-    const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
-    const preparedEmbeddedBuffers = data.audioBuffers
-        ? await importCachedAudioBuffers({
-              audioContext,
-              buffers: data.audioBuffers,
-              cacheIds: referencedIds,
-              shouldContinue: transaction.isCurrent,
-          })
-        : undefined;
-    if (data.audioBuffers && !preparedEmbeddedBuffers) {
-        return false;
-    }
-    const preparedStoredBuffers = await prepareCachedAudioBuffersFromIdb({
-        audioContext,
-        bufferIds: referencedIds.filter((id) => !embeddedBufferIds.has(id)),
-        shouldContinue: transaction.isCurrent,
-    });
-
-    if (!preparedStoredBuffers) {
-        return false;
-    }
-    try {
-        stopPlayback();
-        resetAudioGraph();
-    } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to prepare the audio runtime for project commit:', error);
-        return false;
-    }
-    if (preparedEmbeddedBuffers && !(await preparedEmbeddedBuffers.persist())) {
-        return false;
-    }
-    if (!transaction.isCurrent()) {
-        return false;
-    }
-
-    // Preparation is complete and this transition still owns commit authority.
-    // Replace the live project synchronously so no partial reset is observable.
-    try {
-        batchStoreUpdates(() => {
-            resetCrdtProjectAuthority(data.meta.name);
-            preparedStoredBuffers.publish();
-            preparedEmbeddedBuffers?.publish();
-            resetModuleStoresToDefault();
-
-            // Publish the saved arrangement catalog and its active live snapshot.
-            hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true });
-            hydrateModuleStoresFromProjectData(data);
-
-            projectStore.set({
-                name: data.meta.name,
-                createdAt: data.meta.createdAt,
-                updatedAt: data.meta.updatedAt,
-                keyRoot: data.meta.keyRoot,
-                scaleName: data.meta.scaleName,
-                tuning: data.meta.tuning,
-                dirty: false,
-                loading: false,
-                initialized: true,
-            });
-
-            verifyAudioBufferReferences();
-            clearUndoHistory();
-        });
-    } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to reset imported CRDT authority:', error);
-        return false;
-    }
-    try {
-        await compactProject();
-    } catch (error) {
-        logger.warn('[applyImportedProjectData] Failed to persist imported CRDT authority:', error);
-        return false;
-    }
-    if (!transaction.isCurrent()) {
-        return false;
-    }
-    stopActiveAutoSave();
-    setAutoSaveHandle(startCrdtAutoSave());
-    return true;
-}
 
 type ApplyImportedProjectDataInput = {
     data: unknown;
     transaction?: ProjectLoadTransaction;
 };
 
-export function applyImportedProjectData({ data, transaction }: ApplyImportedProjectDataInput): Promise<boolean> {
+export async function applyImportedProjectData({ data, transaction }: ApplyImportedProjectDataInput): Promise<boolean> {
     const normalizedData = normalizeLegacyProjectData(data);
     if (!isHydratableProjectData(normalizedData)) {
-        return Promise.resolve(false);
+        return false;
     }
-    return performImportedProjectDataApplication({
+
+    const result = await replaceProjectData({
+        context: 'applyImportedProjectData',
         data: normalizedData,
         transaction: transaction ?? runProjectLoadTransaction(),
     });
+    return result.status === 'committed';
 }

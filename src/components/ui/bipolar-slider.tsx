@@ -11,6 +11,7 @@ type BipolarSliderProps = {
     step?: number;
     defaultValue?: number;
     label?: string;
+    'aria-label'?: string;
     formatValue?: (val: number) => string;
     className?: string;
 };
@@ -23,6 +24,7 @@ export const BipolarSlider = ({
     step = 0.1,
     defaultValue = 0,
     label,
+    'aria-label': ariaLabel,
     formatValue = (v) => v.toFixed(1),
     className,
 }: BipolarSliderProps): ReactElement => {
@@ -66,7 +68,7 @@ export const BipolarSlider = ({
                 />
 
                 <Slider
-                    aria-label={label ?? 'Bipolar value'}
+                    aria-label={ariaLabel ?? label ?? 'Bipolar value'}
                     value={[normalized]}
                     onValueChange={handleChange}
                     max={100}

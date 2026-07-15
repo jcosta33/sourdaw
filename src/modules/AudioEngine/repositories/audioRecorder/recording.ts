@@ -26,9 +26,10 @@ import { acquireSharedMediaStream } from './acquireSharedMediaStream';
 import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
-import { activeSessions, SAB_BYTES, type RecordingSession } from './recordingSession';
+import { activeSessions, recordingLifecycleState, SAB_BYTES, type RecordingSession } from './recordingSession';
 import { releaseSharedMediaStream } from './releaseSharedMediaStream';
 import { terminateRecordingWorker } from './terminateRecordingWorker';
+import { waitForRecordingSessions } from './waitForRecordingSessions';
 
 export { audioRecordingStore };
 export type { AudioRecordingState } from '../../stores/audioRecordingStore';
@@ -40,11 +41,20 @@ export const startAudioRecording = inject({ logger })(
             onComplete: (buffer: AudioBuffer) => void,
             inputId: string | null = null
         ): Promise<boolean> {
+            const startGeneration = recordingLifecycleState.startGeneration;
             let mediaStream: MediaStream | null = null;
             let sourceNode: MediaStreamAudioSourceNode | null = null;
             let recordingNode: AudioWorkletNode | null = null;
             let recordingWorker: Worker | null = null;
+            let registeredSession: RecordingSession | null = null;
             try {
+                const currentSession = activeSessions.get(trackId);
+                if (currentSession?.status === 'stopping') {
+                    await waitForRecordingSessions(new Set([trackId]));
+                    if (startGeneration !== recordingLifecycleState.startGeneration) {
+                        return false;
+                    }
+                }
                 if (activeSessions.has(trackId)) {
                     logger.warn(`[startAudioRecording] Track ${trackId} is already recording.`);
                     return false;
@@ -60,6 +70,11 @@ export const startAudioRecording = inject({ logger })(
                 }
 
                 mediaStream = await acquireSharedMediaStream(audioConstraints);
+                if (startGeneration !== recordingLifecycleState.startGeneration || activeSessions.has(trackId)) {
+                    releaseSharedMediaStream();
+                    mediaStream = null;
+                    return false;
+                }
                 const ctx = audioEngine.context;
                 sourceNode = ctx.createMediaStreamSource(mediaStream);
 
@@ -94,9 +109,11 @@ export const startAudioRecording = inject({ logger })(
                     sourceNode,
                     recordingNode: readyRecordingNode,
                     recordingWorker: readyRecordingWorker,
+                    status: 'starting',
                     onRecordingComplete: onComplete,
                     stopFlushTimer: null,
                 };
+                registeredSession = session;
                 activeSessions.set(trackId, session);
 
                 // Wire up the PCM-complete handler before sending 'start'.
@@ -107,24 +124,26 @@ export const startAudioRecording = inject({ logger })(
                         | { type: 'error'; message: string };
 
                     if (msg.type === 'ready') {
+                        if (activeSessions.get(trackId) !== session || session.status !== 'starting') {
+                            return;
+                        }
                         // Both sides are initialised — begin capture.
+                        session.status = 'recording';
                         readyRecordingNode.port.postMessage({ type: 'start' });
                         readyRecordingWorker.postMessage({ type: 'start' });
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
-                        void decodeAndDeliver(trackId, msg.buffer, ctx);
+                        void decodeAndDeliver(session, msg.buffer, ctx);
                     } else {
                         logger.error(new Error(`Recording worker error on track ${trackId}: ${msg.message}`));
-                        cleanupRecordingNode(trackId);
-                        checkAllRecordingsStopped();
+                        cleanupRecordingNode({ expectedSession: session, trackId });
                     }
                 };
 
                 recordingWorker.onerror = (event): void => {
                     logger.error(new Error(`Recording worker crashed on track ${trackId}`, { cause: event }));
-                    cleanupRecordingNode(trackId);
-                    checkAllRecordingsStopped();
+                    cleanupRecordingNode({ expectedSession: session, trackId });
                 };
 
                 recordingWorker.postMessage({ type: 'init', sab, sampleRate: ctx.sampleRate });
@@ -132,8 +151,11 @@ export const startAudioRecording = inject({ logger })(
                 return true;
             } catch (error) {
                 logger.error(new Error(`Failed to start recording on track ${trackId}`, { cause: error }));
-                const sessionWasRegistered = activeSessions.has(trackId);
-                cleanupRecordingNode(trackId);
+                const sessionWasRegistered =
+                    registeredSession !== null && activeSessions.get(trackId) === registeredSession;
+                if (registeredSession) {
+                    cleanupRecordingNode({ expectedSession: registeredSession, trackId });
+                }
                 if (!sessionWasRegistered && mediaStream) {
                     recordingWorker?.terminate();
                     recordingNode?.disconnect();
@@ -147,9 +169,9 @@ export const startAudioRecording = inject({ logger })(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function decodeAndDeliver(trackId: string, wavBuffer: ArrayBuffer, ctx: AudioContext): Promise<void> {
-    const session = activeSessions.get(trackId);
-    if (!session) {
+async function decodeAndDeliver(session: RecordingSession, wavBuffer: ArrayBuffer, ctx: AudioContext): Promise<void> {
+    const { trackId } = session;
+    if (activeSessions.get(trackId) !== session) {
         return;
     }
 
