@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
-import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../../models/MidiPatternLibrary';
+import { PATTERN_TEMPLATES as patternTemplates } from '../../../services/MidiPatternLibrary';
 import { PATTERN_TEMPLATES } from '../PATTERN_TEMPLATES';
 
 describe('PATTERN_TEMPLATES', () => {
     it('exports mapped templates matching the length of the underlying model templates', () => {
-        expect(PATTERN_TEMPLATES.length).toBe(modelPatternTemplates.length);
+        expect(PATTERN_TEMPLATES.length).toBe(patternTemplates.length);
         expect(PATTERN_TEMPLATES.length).toBeGreaterThan(0);
     });
 

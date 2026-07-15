@@ -140,15 +140,6 @@ export type PatternTemplate = {
     generate: (params: GenerationParams) => PatternNote[];
 };
 
-/**
- * Resolve the scale a template should actually be generated with. Call sites
- * should pass `{ ...params, scale: resolveTemplateScale(template, params) }`
- * into `template.generate`.
- */
-export function resolveTemplateScale(template: PatternTemplate, params: GenerationParams): ScaleType {
-    return template.scaleOverride ?? params.scale;
-}
-
 export type PatternFilters = {
     category?: PatternCategory;
     genres?: PatternGenre[];

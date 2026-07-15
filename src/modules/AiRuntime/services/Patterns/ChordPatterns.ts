@@ -1,5 +1,5 @@
-import { getScalePitches, snapToScale, chordFromDegrees } from '../../services/scaleTheory';
-import { type PatternTemplate, type PatternNote } from '../MidiPatternType';
+import { type PatternTemplate, type PatternNote } from '../../models/MidiPatternType';
+import { getScalePitches, snapToScale, chordFromDegrees } from '../scaleTheory';
 
 /** Chord pattern templates — triad and extended chord progressions across multiple genres. */
 export const chordPatterns: PatternTemplate[] = [

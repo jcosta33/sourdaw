@@ -1,4 +1,4 @@
-import { resolveTemplateScale } from '../../models/MidiPatternLibrary';
+import { resolveTemplateScale } from '../../services/scaleTheory';
 
 type ToPublicPatternTemplateInput = {
     id: string;
