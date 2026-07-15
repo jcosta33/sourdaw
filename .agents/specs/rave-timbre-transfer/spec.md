@@ -129,7 +129,8 @@ Verify with: `pnpm deps:validate`
 
 A referenced model missing from the user cache must download on demand only after an explicit
 user-consent prompt, reporting progress through `downloadModel(modelId, onProgress)` as
-`raveDownloadModel` runs.
+`raveDownloadModel` runs. Factory downloads and custom imports pass AC-038 and AC-039 before
+session initialization.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -188,7 +189,8 @@ Verify with: `pnpm test:run -- RavePanel`
 
 The panel's model-browser column MUST list the 5 factory models, each with a size badge, separate
 download/cache and verified AC-028 session states, plus an "Import custom .onnx" control for
-caching a user-supplied model. A store flag alone is never presented as a loaded session.
+caching a user-supplied model through AC-038 and AC-039. A store flag alone is never presented as
+a loaded session.
 
 Verify with: `pnpm test:run -- RavePanel`
 
@@ -301,8 +303,9 @@ model-distinguishable bytes at render, cache, and insertion boundaries.
 A future model-backed transfer MUST accept a model as genuinely loaded only through an opaque,
 unforgeable, non-serializable `RaveSessionCapability` issued by the trusted RAVE worker host after
 the named worker successfully initializes an `onnxruntime-web` session from the exact selected
-model bytes and binds that session to `{ modelId, modelDigest, latentDim }`, where `modelDigest` is
-the SHA-256 digest of those bytes and `latentDim` is the host-owned pinned model descriptor value.
+model bytes accepted by AC-038 and binds that session to `{ modelId, modelDigest, latentDim }`, where
+`modelDigest` is the SHA-256 digest of those bytes and `latentDim` is the host-owned pinned model
+descriptor value.
 Capability authenticity plus the model identity, digest, and latent-dimension bindings are
 verified against the host-private session registry before transfer; the capability and session
 never enter `raveStore`, project data, or caller-supplied worker messages. A `loaded` store flag,
@@ -507,7 +510,7 @@ correlation, payload logging, render, cache-write, and clip-insertion calls. The
 fixture proves only post-clone integrity and fail-closed effects. A valid correlated terminal error
 still returns `WORKER_OPERATION_FAILED` with the same zero effects.
 
-AC-029 through AC-031 and AC-034 through AC-037 are unimplemented today; no current worker/session
+AC-029 through AC-031 and AC-034 through AC-039 are unimplemented today; no current worker/session
 transfer path emits the closed response union or can satisfy their selection, request-lifetime,
 request-resource, response-correlation, envelope-validation, result-shape, or result-buffer
 contracts.
@@ -698,13 +701,42 @@ returns `WORKER_REQUEST_TOO_LARGE`. Every over-limit fixture returns that code b
 operations with zero effects, while terminal, timeout, cancellation, and teardown fixtures prove
 the exact charge is released.
 
+### AC-038 — Model ingress bytes are bounded
+
+Every factory download and custom `.onnx` import MUST enter through one host-owned bounded stream
+before a full model buffer, cache entry, worker message, or ONNX session is created, with
+`MAX_RAVE_MODEL_BYTES = 256 * 1024 * 1024`. A known `Content-Length` or `File.size` above the limit is
+rejected before reading. An unknown or smaller declared size does not bypass enforcement: before
+accepting each nonempty chunk, the host requires
+`chunk.byteLength <= MAX_RAVE_MODEL_BYTES - receivedBytes`, then adds it. Empty input returns
+`MODEL_ARTIFACT_INVALID`; declared or actual overflow returns `MODEL_ARTIFACT_TOO_LARGE`. An
+unbounded `arrayBuffer()` read before this check is forbidden. Only a nonempty accepted stream
+produces the exact SHA-256 `modelDigest` and a tight host-owned model buffer.
+
+Verify with: future model-ingress tests covering known, unknown, and false declared sizes; empty,
+exactly 256 MiB, and one-byte-over streams; custom `File` preflight plus actual-stream overflow; and
+zero downstream effects for each named rejection.
+
+### AC-039 — Model cache bytes are bounded
+
+The model cache MUST serialize admission, cap `MAX_CACHED_RAVE_MODEL_BYTES` at
+`512 * 1024 * 1024`, evict least-recently-used entries that have no live AC-028 session, and require
+`modelBytes <= MAX_CACHED_RAVE_MODEL_BYTES - cachedModelBytes` before insertion. Failure returns
+`MODEL_CACHE_FULL` and creates no cache record, worker post, session, capability, or store `loaded`
+flag. These byte limits do not claim to confine ONNX execution memory; AC-028's accepted ADR selects
+that runtime boundary before custom models can initialize a session.
+
+Verify with: future cache tests covering admission exactly 512 MiB and one byte over, LRU eviction
+that excludes live sessions, serialized concurrent admission, and zero downstream effects on
+`MODEL_CACHE_FULL`.
+
 ## Current-state ownership
 
 The four current `no-orphans` paths are direct deterministic CI/test helpers only. The focused
 command is green. The encode/decode tests make the direct calls described in AC-024/AC-032; the
 timbre test is export-only; and the interpolation test calls only midpoint/missing-dimension cases,
 without the required endpoint `timeSec` or immutability evidence. None proves the model-backed
-product contracts in AC-001 through AC-005, AC-027 through AC-031, or AC-034 through AC-037, and
+product contracts in AC-001 through AC-005, AC-027 through AC-031, or AC-034 through AC-039, and
 none retires a warning by passing:
 
 | Current warning path                                         | Current disposition                                                             | Required future helper path                                                    | Warning closes only when                                                                                                                                                           |
@@ -722,9 +754,9 @@ only ADR retirement condition; `AC-027` owns model-result provenance; and
 `AC-028` owns loaded-session authenticity. `AC-029` owns the host-selection/session match; `AC-030`
 owns response correlation and replay rejection; `AC-031` owns the closed response envelope and
 string limits; `AC-034` owns host-derived result shapes; `AC-035` owns pending-request admission and
-lifetime; `AC-036` owns result-view backing, bytes, and numeric finiteness; and `AC-037` owns request
-PCM and byte budgets. This spec retains all four current files and does not authorize a silent
-product fallback.
+lifetime; `AC-036` owns result-view backing, bytes, and numeric finiteness; `AC-037` owns request
+PCM and byte budgets; `AC-038` owns model-ingress byte limits; and `AC-039` owns model-cache byte
+limits. This spec retains all four current files and does not authorize a silent product fallback.
 
 ## Constraints
 
@@ -735,9 +767,9 @@ product fallback.
   current `src/modules/AudioEngine/useCases/rave` surface. The existing BrowserAi owner at
   `src/modules/BrowserAi/useCases/downloadModel.ts` is unrelated and does not implement
   RAVE model-path resolution, so this is an unimplemented requirement, not a completed fix.
-- **Model buffer memory management** — decoded audio buffers (≈5.3 MB per 30 s stereo at
-  44.1 kHz) are the large objects in this pipeline and must be managed through the existing
-  `audioBufferCache` LRU rather than retained unboundedly.
+- **Buffer memory management** — decoded audio buffers (≈5.3 MB per 30 s stereo at 44.1 kHz) must
+  use the existing `audioBufferCache` LRU. Model artifacts use AC-039's separate bounded cache and
+  must not be retained as unaccounted process memory.
 
 ## Open questions
 
@@ -745,7 +777,6 @@ product fallback.
       require self-serve hosting for all five?
 - [ ] Q-002 — Real-time block size vs latency trade-off (8192 frames ≈ 185 ms) — is the
       monitor-only positioning acceptable, or is a smaller block worth pursuing?
-- [ ] Q-003 — Custom `.onnx` import: validation/limits before caching a user-supplied model.
 
 ## Affected areas
 
