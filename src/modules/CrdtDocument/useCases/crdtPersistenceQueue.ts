@@ -1,4 +1,5 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
@@ -20,11 +21,44 @@ type PendingFullSnapshot = {
     bundle: DocumentBundle;
 };
 
-let persistenceGeneration = 0;
-let operationTail: Promise<void> = Promise.resolve();
-let pendingChunks: PendingIncrementalChunk[] = [];
-let pendingFullSnapshot: PendingFullSnapshot | null = null;
-let persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
+const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 1;
+
+type CrdtPersistenceQueueState = {
+    version: number;
+    persistenceGeneration: number;
+    operationTail: Promise<void>;
+    pendingChunks: PendingIncrementalChunk[];
+    pendingFullSnapshot: PendingFullSnapshot | null;
+    persistedBaseDocIds: Set<DocId>;
+};
+
+function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
+    return {
+        version: CRDT_PERSISTENCE_QUEUE_STATE_VERSION,
+        persistenceGeneration: 0,
+        operationTail: Promise.resolve(),
+        pendingChunks: [],
+        pendingFullSnapshot: null,
+        persistedBaseDocIds: new Set<DocId>([DOC_PREFIX_ROOT]),
+    };
+}
+
+const persistenceState = createHmrPersistentState<CrdtPersistenceQueueState>(
+    CRDT_PERSISTENCE_QUEUE_STATE_KEY,
+    createInitialPersistenceQueueState
+);
+
+if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
+    const previousGeneration =
+        typeof persistenceState.persistenceGeneration === 'number' ? persistenceState.persistenceGeneration : 0;
+    persistenceState.version = CRDT_PERSISTENCE_QUEUE_STATE_VERSION;
+    persistenceState.persistenceGeneration = previousGeneration + 1;
+    persistenceState.operationTail = Promise.resolve();
+    persistenceState.pendingChunks = [];
+    persistenceState.pendingFullSnapshot = null;
+    persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
+}
 
 type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset';
 
@@ -35,9 +69,9 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
         return Promise.resolve();
     }
 
-    const generation = persistenceGeneration;
-    const run = operationTail.then(() => {
-        if (generation !== persistenceGeneration) {
+    const generation = persistenceState.persistenceGeneration;
+    const run = persistenceState.operationTail.then(() => {
+        if (generation !== persistenceState.persistenceGeneration) {
             return noOpPersistenceOperation();
         }
         if (operation === 'compact') {
@@ -45,7 +79,7 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
         }
         return persistIncrementalCrdtProject(generation);
     });
-    operationTail = run.then(
+    persistenceState.operationTail = run.then(
         () => undefined,
         () => undefined
     );
@@ -53,10 +87,16 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
 }
 
 function resetQueueState(): void {
-    persistenceGeneration++;
-    pendingChunks = pendingChunks.filter((pending) => pending.inFlight);
-    pendingFullSnapshot = null;
-    persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
+    persistenceState.persistenceGeneration++;
+    for (let index = persistenceState.pendingChunks.length - 1; index >= 0; index--) {
+        const pending = persistenceState.pendingChunks[index];
+        if (pending && !pending.inFlight) {
+            persistenceState.pendingChunks.splice(index, 1);
+        }
+    }
+    persistenceState.pendingFullSnapshot = null;
+    persistenceState.persistedBaseDocIds.clear();
+    persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
     crdtProjectCompactionState.incrementalSaveCount = 0;
 }
 
@@ -67,13 +107,13 @@ function noOpPersistenceOperation(): Promise<void> {
 async function persistIncrementalCrdtProject(generation: number): Promise<void> {
     await flushPendingFullSnapshot(generation);
     await flushPendingChunks(generation);
-    if (generation !== persistenceGeneration) {
+    if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
     const activeDocIds = getActiveDocIds();
     if (activeDocIds.length === 0) {
-        if (persistedBaseDocIds.size > 0) {
+        if (persistenceState.persistedBaseDocIds.size > 0) {
             await compactCrdtProject(generation);
         }
         return;
@@ -93,7 +133,7 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
             continue;
         }
 
-        pendingChunks.push({
+        persistenceState.pendingChunks.push({
             generation,
             id,
             chunk: new Uint8Array(chunk),
@@ -102,7 +142,7 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
     }
 
     await flushPendingChunks(generation);
-    if (generation !== persistenceGeneration) {
+    if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
@@ -114,15 +154,16 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
 async function compactCrdtProject(generation: number): Promise<void> {
     flushAutomergeStorageWrites();
     await flushPendingChunks(generation);
-    if (generation !== persistenceGeneration) {
+    if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
     // A failed full save may have advanced Automerge's incremental cursor, so
     // retry its captured bytes before any later incremental serialization.
-    const failedSnapshot = pendingFullSnapshot?.generation === generation ? pendingFullSnapshot : null;
+    const failedSnapshot =
+        persistenceState.pendingFullSnapshot?.generation === generation ? persistenceState.pendingFullSnapshot : null;
     await flushPendingFullSnapshot(generation);
-    if (generation !== persistenceGeneration) {
+    if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
@@ -146,7 +187,7 @@ async function compactCrdtProject(generation: number): Promise<void> {
 }
 
 async function flushPendingFullSnapshot(generation: number): Promise<void> {
-    const pending = pendingFullSnapshot;
+    const pending = persistenceState.pendingFullSnapshot;
     if (!pending || pending.generation !== generation) {
         return;
     }
@@ -155,7 +196,7 @@ async function flushPendingFullSnapshot(generation: number): Promise<void> {
         // An obsolete full bundle can contain a document removed since the
         // failed attempt. Supersede it before retrying so a crash cannot leave
         // the deleted document as the latest durable state.
-        pendingFullSnapshot = null;
+        persistenceState.pendingFullSnapshot = null;
         return;
     }
 
@@ -164,23 +205,29 @@ async function flushPendingFullSnapshot(generation: number): Promise<void> {
 
 /** Keep a serialized full bundle pending until its replace transaction commits. */
 async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> {
-    if (pending.generation !== persistenceGeneration) {
+    if (pending.generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
-    pendingFullSnapshot = pending;
+    persistenceState.pendingFullSnapshot = pending;
     try {
         await saveAllToIdb(pending.bundle);
     } catch (error: unknown) {
-        if (pending.generation === persistenceGeneration) {
-            pendingFullSnapshot = pending;
+        if (pending.generation === persistenceState.persistenceGeneration) {
+            persistenceState.pendingFullSnapshot = pending;
         }
         throw error;
     }
 
-    if (pending.generation === persistenceGeneration && pendingFullSnapshot === pending) {
-        pendingFullSnapshot = null;
-        persistedBaseDocIds = new Set<DocId>(pending.bundle.keys());
+    if (
+        pending.generation === persistenceState.persistenceGeneration &&
+        persistenceState.pendingFullSnapshot === pending
+    ) {
+        persistenceState.pendingFullSnapshot = null;
+        persistenceState.persistedBaseDocIds.clear();
+        for (const id of pending.bundle.keys()) {
+            persistenceState.persistedBaseDocIds.add(id);
+        }
         crdtProjectCompactionState.incrementalSaveCount = 0;
     }
 }
@@ -207,7 +254,9 @@ function areDocumentBundlesEqual(left: DocumentBundle, right: DocumentBundle): b
 
 async function flushPendingChunks(generation: number): Promise<void> {
     prunePendingChunks(generation);
-    const chunks = pendingChunks.filter((pending) => pending.generation === generation && !pending.inFlight);
+    const chunks = persistenceState.pendingChunks.filter(
+        (pending) => pending.generation === generation && !pending.inFlight
+    );
     if (chunks.length === 0) {
         return;
     }
@@ -226,13 +275,13 @@ async function flushPendingChunks(generation: number): Promise<void> {
     } finally {
         for (const pending of chunks) {
             pending.inFlight = false;
-            if (pending.generation !== persistenceGeneration) {
+            if (pending.generation !== persistenceState.persistenceGeneration) {
                 removePendingChunk(pending);
             }
         }
     }
 
-    if (generation !== persistenceGeneration) {
+    if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
 
@@ -245,9 +294,12 @@ async function flushPendingChunks(generation: number): Promise<void> {
 
 function prunePendingChunks(generation: number): void {
     const activeDocIds = new Set(automergeRepository.getDocIds());
-    pendingChunks = pendingChunks.filter(
-        (pending) => pending.generation !== generation || pending.inFlight || activeDocIds.has(pending.id)
-    );
+    for (let index = persistenceState.pendingChunks.length - 1; index >= 0; index--) {
+        const pending = persistenceState.pendingChunks[index];
+        if (pending && pending.generation === generation && !pending.inFlight && !activeDocIds.has(pending.id)) {
+            persistenceState.pendingChunks.splice(index, 1);
+        }
+    }
 }
 
 function getActiveDocIds(): DocId[] {
@@ -263,11 +315,11 @@ function getActiveDocIds(): DocId[] {
 }
 
 function hasPersistedDocumentShapeChanged(activeDocIds: DocId[]): boolean {
-    if (activeDocIds.length !== persistedBaseDocIds.size) {
+    if (activeDocIds.length !== persistenceState.persistedBaseDocIds.size) {
         return true;
     }
 
-    return activeDocIds.some((id) => !persistedBaseDocIds.has(id));
+    return activeDocIds.some((id) => !persistenceState.persistedBaseDocIds.has(id));
 }
 
 function hasSameDocumentIds(bundle: DocumentBundle, docIds: DocId[]): boolean {
@@ -279,5 +331,8 @@ function hasSameDocumentIds(bundle: DocumentBundle, docIds: DocId[]): boolean {
 }
 
 function removePendingChunk(pending: PendingIncrementalChunk): void {
-    pendingChunks = pendingChunks.filter((candidate) => candidate !== pending);
+    const index = persistenceState.pendingChunks.indexOf(pending);
+    if (index >= 0) {
+        persistenceState.pendingChunks.splice(index, 1);
+    }
 }

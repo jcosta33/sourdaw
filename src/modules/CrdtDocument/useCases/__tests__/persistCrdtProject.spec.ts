@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
+
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import { compactProject } from '../compactProject';
@@ -9,6 +11,35 @@ import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
 
 import { TransactionalPersistence } from './helpers/transactionalPersistence';
+
+type VersionedQueueState = {
+    version: number;
+    persistenceGeneration: number;
+    pendingChunks: unknown[];
+    pendingFullSnapshot: unknown;
+    persistedBaseDocIds: Set<unknown>;
+};
+
+function isVersionedQueueState(value: unknown): value is VersionedQueueState {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    if (
+        !('version' in value) ||
+        !('persistenceGeneration' in value) ||
+        !('pendingChunks' in value) ||
+        !('pendingFullSnapshot' in value) ||
+        !('persistedBaseDocIds' in value)
+    ) {
+        return false;
+    }
+    return (
+        typeof value.version === 'number' &&
+        typeof value.persistenceGeneration === 'number' &&
+        Array.isArray(value.pendingChunks) &&
+        value.persistedBaseDocIds instanceof Set
+    );
+}
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
@@ -468,5 +499,207 @@ describe('persistCrdtProject', () => {
         );
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ newEdit: true });
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('oldEdit');
+    });
+
+    it('survives queue module replacement after an aborted incremental transaction', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.beforeHmr = true;
+        });
+
+        const failedPersist = persistCrdtProject();
+        const failedIncremental = await persistence.waitForTransaction('readwrite', 2);
+        const failedChunk = failedIncremental.writes.find((write) => write.kind === 'add');
+        expect(failedChunk).toBeDefined();
+        failedIncremental.abort();
+        await expect(failedPersist).rejects.toThrow('IDB transaction aborted');
+
+        try {
+            vi.resetModules();
+            vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({ createHmrPersistentState }));
+            vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+            const { persistCrdtProject: persistAfterHmr } = await import('../persistCrdtProject');
+
+            const retry = persistAfterHmr();
+            const retryTransaction = await Promise.race([
+                persistence.waitForTransaction('readwrite', 3),
+                retry.then(() => {
+                    throw new Error('HMR queue replacement lost the pending incremental bytes');
+                }),
+            ]);
+            const retryChunk = retryTransaction.writes.find((write) => write.kind === 'add');
+            expect(retryChunk?.value).toEqual(failedChunk?.value);
+            retryTransaction.complete();
+            await retry;
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+
+        const bundle = await readBundle(persistence, 1);
+        if (!bundle) {
+            throw new Error('Expected the pending incremental bytes to survive queue HMR');
+        }
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle, shouldCommit: () => true })).resolves.toBe(true);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ beforeHmr: true });
+    });
+
+    it('survives queue module replacement after an aborted full snapshot transaction', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.beforeFullHmr = true;
+        });
+        const failedCompaction = compactProject();
+        const failedFullSave = await persistence.waitForTransaction('readwrite', 2);
+        const failedRoot = failedFullSave.writes.find((write) => write.kind === 'put' && write.key === 'root');
+        expect(failedRoot).toBeDefined();
+        failedFullSave.abort();
+        await expect(failedCompaction).rejects.toThrow('IDB transaction aborted');
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.afterFullHmr = true;
+        });
+
+        try {
+            vi.resetModules();
+            vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({ createHmrPersistentState }));
+            vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+            const { compactProject: compactAfterHmr } = await import('../compactProject');
+
+            const retry = compactAfterHmr();
+            const retrySave = await Promise.race([
+                persistence.waitForTransaction('readwrite', 3),
+                retry.then(() => {
+                    throw new Error('HMR queue replacement lost the pending full snapshot bytes');
+                }),
+            ]);
+            const retryRoot = retrySave.writes.find((write) => write.kind === 'put' && write.key === 'root');
+            expect(retryRoot?.value).toEqual(failedRoot?.value);
+            retrySave.complete();
+
+            const currentSave = await persistence.waitForTransaction('readwrite', 4);
+            expect(currentSave.writes.some((write) => write.kind === 'put' && write.key === 'root')).toBe(true);
+            currentSave.complete();
+            await retry;
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+
+        const bundle = await readBundle(persistence, 1);
+        if (!bundle) {
+            throw new Error('Expected the pending full snapshot bytes to survive queue HMR');
+        }
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle, shouldCommit: () => true })).resolves.toBe(true);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            beforeFullHmr: true,
+            afterFullHmr: true,
+        });
+    });
+
+    it('shares an in-flight incremental completion with the replacement queue module', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.inFlightHmr = true;
+        });
+        const firstPersist = persistCrdtProject();
+        const firstIncremental = await persistence.waitForTransaction('readwrite', 2);
+        const firstChunk = firstIncremental.writes.find((write) => write.kind === 'add');
+        expect(firstChunk).toBeDefined();
+
+        try {
+            vi.resetModules();
+            vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({ createHmrPersistentState }));
+            vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+            const { persistCrdtProject: persistAfterHmr } = await import('../persistCrdtProject');
+
+            firstIncremental.abort();
+            await expect(firstPersist).rejects.toThrow('IDB transaction aborted');
+
+            const retry = persistAfterHmr();
+            const retryTransaction = await Promise.race([
+                persistence.waitForTransaction('readwrite', 3),
+                retry.then(() => {
+                    throw new Error('HMR queue replacement lost bytes when the old transaction settled');
+                }),
+            ]);
+            const retryChunk = retryTransaction.writes.find((write) => write.kind === 'add');
+            expect(retryChunk?.value).toEqual(firstChunk?.value);
+            retryTransaction.complete();
+            await retry;
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+
+        const bundle = await readBundle(persistence, 1);
+        if (!bundle) {
+            throw new Error('Expected the in-flight incremental bytes to survive queue HMR');
+        }
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle, shouldCommit: () => true })).resolves.toBe(true);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ inFlightHmr: true });
+    });
+
+    it('resets an incompatible HMR queue holder without reusing stale lifecycle state', async () => {
+        const capturedStates: unknown[] = [];
+
+        try {
+            vi.resetModules();
+            vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({
+                createHmrPersistentState: <State>(key: string, factory: () => State): State => {
+                    const state = createHmrPersistentState(key, factory);
+                    capturedStates.push(state);
+                    return state;
+                },
+            }));
+            vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+            await import('../persistCrdtProject');
+
+            const state = capturedStates[0];
+            if (!isVersionedQueueState(state)) {
+                throw new Error('Expected the queue HMR state holder');
+            }
+            state.pendingChunks.push({ stale: true });
+            state.pendingFullSnapshot = { stale: true };
+            const previousGeneration = state.persistenceGeneration;
+            state.version = 0;
+
+            vi.resetModules();
+            await import('../persistCrdtProject');
+
+            expect(state.version).toBe(1);
+            expect(state.persistenceGeneration).toBe(previousGeneration + 1);
+            expect(state.pendingChunks).toEqual([]);
+            expect(state.pendingFullSnapshot).toBeNull();
+            expect(state.persistedBaseDocIds).toEqual(new Set(['root']));
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
     });
 });
