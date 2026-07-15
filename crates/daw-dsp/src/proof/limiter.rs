@@ -61,8 +61,7 @@ impl MonotonicPeakWindow {
     fn ensure_capacity(&mut self, lookahead_samples: usize) {
         let required_capacity = lookahead_samples.saturating_add(1);
         if self.peaks.capacity() < required_capacity {
-            self.peaks
-                .reserve(required_capacity - self.peaks.capacity());
+            self.peaks.reserve(required_capacity - self.peaks.len());
         }
     }
 
@@ -226,7 +225,14 @@ impl LookaheadLimiter {
 #[cfg(test)]
 mod tests {
     use super::LookaheadLimiter;
+    use assert_no_alloc::assert_no_alloc;
+    #[cfg(debug_assertions)]
+    use assert_no_alloc::AllocDisabler;
     use std::collections::VecDeque;
+
+    #[cfg(debug_assertions)]
+    #[global_allocator]
+    static ALLOCATOR: AllocDisabler = AllocDisabler;
 
     fn reference_process(
         sample_rate: f32,
@@ -346,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn process_does_not_grow_preallocated_buffers() {
+    fn resized_lookahead_processes_decreasing_peaks_without_allocation() {
         let mut limiter = LookaheadLimiter::new(48_000.0);
         limiter.set_param("lim_lookahead", 10.0);
         let initial_capacities = (
@@ -354,11 +360,14 @@ mod tests {
             limiter.delay_r.capacity(),
             limiter.max_peaks.peaks.capacity(),
         );
-        let samples = limiter.latency_samples() * 3 + 1;
-        let mut left = vec![0.75; samples];
-        let mut right = vec![-0.65; samples];
+        let samples = limiter.latency_samples();
+        let denominator = samples as f32 + 1.0;
+        let mut left = (0..samples)
+            .map(|index| 1.0 - index as f32 / denominator)
+            .collect::<Vec<_>>();
+        let mut right = vec![0.0; samples];
 
-        limiter.process(&mut left, &mut right);
+        assert_no_alloc(|| limiter.process(&mut left, &mut right));
 
         let final_capacities = (
             limiter.delay_l.capacity(),
