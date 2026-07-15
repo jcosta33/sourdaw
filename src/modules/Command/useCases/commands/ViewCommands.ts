@@ -1,5 +1,4 @@
-import { zoomTimeline } from '#/modules/Arrangement/stores';
-import { addMarker } from '#/modules/Arrangement/useCases';
+import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
@@ -44,7 +43,7 @@ export const viewCommands: CallableCommandEntry[] = [
         category: 'View',
         shortcut: '+',
         action: () => {
-            zoomTimeline(4);
+            zoomTimelineBy(4);
         },
     },
     {
@@ -54,7 +53,7 @@ export const viewCommands: CallableCommandEntry[] = [
         category: 'View',
         shortcut: '-',
         action: () => {
-            zoomTimeline(-4);
+            zoomTimelineBy(-4);
         },
     },
     {
