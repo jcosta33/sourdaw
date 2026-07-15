@@ -187,7 +187,12 @@ function toPosixPath(filePath) {
 }
 
 export function isModuleRootIndex(filePath) {
-    return /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/index\.ts$/.test(toPosixPath(filePath));
+    const match = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/([^/]+)$/.exec(toPosixPath(filePath));
+    if (!match) {
+        return false;
+    }
+
+    return /^index(?:\.(?:js|mjs|cjs|jsx|tsx)|\.(?:d\.)?(?:ts|mts|cts))$/i.test(match[1]);
 }
 
 export function isUseCaseBarrel(filePath) {
@@ -265,7 +270,7 @@ export function findStaticGuardFindings(repositoryRoot = root) {
     const rootIndexes = files
         .map(({ repoPath }) => repoPath)
         .filter(isModuleRootIndex)
-        .map((file) => ({ file, line: 1, reason: 'module-root index.ts is retired' }));
+        .map((file) => ({ file, line: 1, reason: 'module-root index entry is retired' }));
     const mixedExports = files
         .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
         .flatMap(({ absolutePath, repoPath }) =>

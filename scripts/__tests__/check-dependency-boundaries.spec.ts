@@ -104,11 +104,40 @@ describe('check-dependency-boundaries', () => {
         ).toEqual([]);
     });
 
-    it('should recognize only module-root index files', () => {
-        expect(isModuleRootIndex('src/modules/Foo/index.ts')).toBe(true);
-        expect(isModuleRootIndex('src/modules/Common/Foo/index.ts')).toBe(true);
-        expect(isModuleRootIndex('src\\modules\\Foo\\index.ts')).toBe(true);
-        expect(isModuleRootIndex('src/modules/Foo/useCases/index.ts')).toBe(false);
+    it('should recognize module-root index files across supported extensions and casing', () => {
+        const moduleRootEntries = [
+            'src/modules/Foo/index.ts',
+            'src/modules/Foo/Index.ts',
+            'src/modules/Foo/index.tsx',
+            'src/modules/Foo/index.js',
+            'src/modules/Foo/Index.JSX',
+            'src/modules/Foo/index.mjs',
+            'src/modules/Foo/index.cjs',
+            'src/modules/Foo/index.mts',
+            'src/modules/Foo/index.cts',
+            'src/modules/Foo/index.d.ts',
+            'src/modules/Foo/Index.D.MTS',
+            'src/modules/Common/Foo/Index.tsx',
+            'src/modules/Supporting/Foo/INDEX.JS',
+            'src\\modules\\Foo\\Index.TSX',
+        ];
+
+        for (const filePath of moduleRootEntries) {
+            expect(isModuleRootIndex(filePath), filePath).toBe(true);
+        }
+
+        const contractEntries = [
+            'src/modules/Foo/useCases/index.ts',
+            'src/modules/Foo/useCases/Index.tsx',
+            'src/modules/Foo/events/index.js',
+            'src/modules/Foo/stores/Index.d.ts',
+            'src/modules/Foo/presentations/views/index.mts',
+        ];
+
+        for (const filePath of contractEntries) {
+            expect(isModuleRootIndex(filePath), filePath).toBe(false);
+        }
+
         expect(isUseCaseBarrel('src\\modules\\Foo\\useCases\\index.ts')).toBe(true);
     });
 
@@ -233,6 +262,47 @@ describe('check-dependency-boundaries', () => {
         expect(violates(testTauriRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])).toBe(
             true
         );
+    });
+
+    it('should apply Tauri IPC confinement to type-only edges', () => {
+        const tauriRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+        );
+        const typeTauriRule = typeConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories-type-only'
+        );
+        const matches = (patterns: string | string[] | undefined, filePath: string): boolean => {
+            let patternList: string[];
+            if (Array.isArray(patterns)) {
+                patternList = patterns;
+            } else if (patterns) {
+                patternList = [patterns];
+            } else {
+                patternList = [];
+            }
+            return patternList.some((pattern) => new RegExp(pattern).test(filePath));
+        };
+        const violates = (from: string, to: string): boolean =>
+            matches(typeTauriRule.from.path, from) &&
+            !matches(typeTauriRule.from.pathNot, from) &&
+            matches(typeTauriRule.to.path, to) &&
+            typeTauriRule.to.dependencyTypes.includes('type-only');
+
+        expect(typeTauriRule).toBeDefined();
+        expect(typeTauriRule.to.dependencyTypes).toEqual(['type-only']);
+        expect(typeTauriRule.from).toEqual(tauriRule.from);
+        expect(typeTauriRule.to.path).toBe(tauriRule.to.path);
+        expect(typeTauriRule.to.pathNot).toEqual(tauriRule.to.pathNot);
+
+        const resolvedTauriPath = '/node_modules/.pnpm/@tauri-apps+api@2.5.0/node_modules/@tauri-apps/api/index.d.ts';
+        expect(violates('src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
+        expect(violates('src/infra/tauriTypes.ts', resolvedTauriPath)).toBe(true);
+        expect(violates('src/modules/Foo/repositories/read.ts', resolvedTauriPath)).toBe(false);
+        expect(violates('src/utils/tauriBridge.ts', resolvedTauriPath)).toBe(false);
+        expect(violates('src/utils/__tests__/tauriBridge.spec.ts', resolvedTauriPath)).toBe(false);
+        expect(violates('src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPath)).toBe(true);
+        expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
+        expect(violates('src/modules/Foo/repositories/read.ts', 'src/utils/tauriBridge.ts')).toBe(false);
     });
 
     it('should enforce TitleCase model targets from the configured rule', () => {
