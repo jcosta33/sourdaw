@@ -5,15 +5,15 @@ title: RAVE AI timbre transfer
 status: draft
 owner: The Sourdaw team
 sources:
-  - ../audio-generation/research.md
-  - ../audio-generation/spec.md
-  - ../dependency-boundary-validation/spec.md
-  - ../../../src/modules/AudioEngine/stores/rave.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
+    - ../audio-generation/research.md
+    - ../audio-generation/spec.md
+    - ../dependency-boundary-validation/spec.md
+    - ../../../src/modules/AudioEngine/stores/rave.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
 ---
 
 # RAVE AI timbre transfer
@@ -77,17 +77,18 @@ Verify with: `pnpm test:run -- rave`
 The future `transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this
 contract:
 
-| Input condition | Result | Required effect boundary |
-| --- | --- | --- |
-| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED` | No pure-helper invocation and no worker/session request |
-| Verified capability/session does not match the AC-029 host-owned transfer selection | `MODEL_SESSION_MISMATCH` | No worker request, render, cache write, or clip insertion |
-| Verified matched session; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | No worker request, render, cache write, or clip insertion |
-| Verified matched session; invalid clip-type input | `CLIP_NOT_AUDIO` | No worker request, render, cache write, or clip insertion |
-| Worker response has no outstanding request | `WORKER_RESPONSE_STALE` | No response acceptance, render, cache write, or clip insertion |
-| Worker response reuses a consumed request | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion |
-| Worker response fields do not match the outstanding request's session, phase, model identity, or digest | `WORKER_RESPONSE_MISMATCH` | No response acceptance, render, cache write, or clip insertion |
-| Worker response is malformed or contains a non-finite numeric value | `WORKER_RESPONSE_INVALID` | No response acceptance, render, cache write, or clip insertion |
-| Worker response exceeds an AC-031 host-owned payload bound | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, render, cache write, or clip insertion |
+| Input condition                                                                                                                                     | Result                      | Required effect boundary                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------- |
+| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED`          | No pure-helper invocation and no worker/session request                   |
+| Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                 |
+| Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                 |
+| Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                 |
+| Worker response has no outstanding request                                                                                                          | `WORKER_RESPONSE_STALE`     | No response acceptance, render, cache write, or clip insertion            |
+| Worker response reuses a consumed request                                                                                                           | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion |
+| Worker response fields do not match the outstanding request's session, phase, model identity, or digest                                             | `WORKER_RESPONSE_MISMATCH`  | No response acceptance, render, cache write, or clip insertion            |
+| Worker response is malformed or contains a non-finite numeric value                                                                                 | `WORKER_RESPONSE_INVALID`   | No response acceptance, render, cache write, or clip insertion            |
+| Worker response exceeds an AC-031 host-owned payload bound                                                                                          | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, render, cache write, or clip insertion            |
+| A valid, correlated `terminal-error` worker response reports an operation failure                                                                   | `WORKER_OPERATION_FAILED`   | No render, cache write, or clip insertion                                 |
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
@@ -135,6 +136,9 @@ Verify with: `pnpm test:run -- rave`
 
 A crashed worker must surface as `WORKER_CRASHED` and a failed model download as
 `MODEL_DOWNLOAD_FAILED`, each as its `RaveError` variant rather than throwing.
+`WORKER_CRASHED` covers worker or transport failure and is distinct from a correlated
+AC-031 `terminal-error`, which returns `WORKER_OPERATION_FAILED`; the worker response contract
+defines no additional terminal error codes.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -271,11 +275,12 @@ path searches and `pnpm deps:validate`
 
 A future `transferTimbreToClip` invocation with the verified AC-028 session capability matched to
 the AC-029 host-owned selection MUST derive its rendered audio, cache entry, and inserted clip bytes
-from AC-030-correlated, AC-031-validated encode/decode responses produced by that capability's named
-worker and worker-owned `onnxruntime-web` session. The owning test observes the verified session
-receive both encode and decode, makes its result intentionally different from every pure-helper
-result, and proves the rendered, cached, and inserted bytes equal the accepted session result;
-pure-helper output cannot satisfy model-backed transfer.
+from AC-030-correlated, AC-031-validated `encode-success` and `decode-success` result payloads
+produced by that capability's named worker and worker-owned `onnxruntime-web` session. A correlated
+`terminal-error` is a terminal failure and supplies no render, cache, or insertion bytes. The owning
+test observes the verified session receive both encode and decode, makes its result intentionally
+different from every pure-helper result, and proves the rendered, cached, and inserted bytes equal
+the accepted session result; pure-helper output cannot satisfy model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
@@ -325,43 +330,124 @@ Before posting each encode or decode request, the trusted RAVE host MUST registe
 correlation record containing a host-generated `requestId`, a non-authority
 `sessionCorrelationId` bound by the host-private registry to the verified AC-028 session, the
 AC-029 `{ modelId, modelDigest }`, and the request phase. After AC-031 boundary validation, a worker
-response is accepted exactly once only when every field matches that record. A never-issued,
-expired, or cancelled `requestId` returns `WORKER_RESPONSE_STALE`; a retained consumed request
-returns `WORKER_RESPONSE_DUPLICATE`. A wrong session, phase, model identity, or digest returns
-`WORKER_RESPONSE_MISMATCH`. Rejected responses never reach render, cache, or clip insertion, and a
-duplicate causes no additional write.
+response is accepted exactly once only when each of the following named correlation fields is
+compared exactly once, and all five comparisons match the record: `requestId`,
+`sessionCorrelationId`, `modelId`, `modelDigest`, and `phase`. These are the only correlation
+comparisons; the `type` discriminant and every result, audio, channel, metadata, or error field are
+validated or consumed under AC-031 and are excluded from correlation comparison. A
+never-issued, expired, or cancelled `requestId` returns `WORKER_RESPONSE_STALE`; a retained
+consumed request returns `WORKER_RESPONSE_DUPLICATE`. A wrong session, phase, model identity, or
+digest returns `WORKER_RESPONSE_MISMATCH`. A valid correlated `terminal-error` returns
+`WORKER_OPERATION_FAILED` and has no render, cache, or insertion effect. Rejected responses never
+reach render, cache, or clip insertion, and a duplicate causes no additional write.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
-accepting one matching encode and decode response, then injecting never-issued, expired, cancelled,
-replayed, wrong-session, wrong-phase, wrong-model, and wrong-digest responses. Each rejection
-returns its exact typed error and leaves render, cache-write, and clip-insertion call counts
-unchanged.
+accepting one exact matching `encode-success`, one exact matching `decode-success`, and one exact
+matching `terminal-error` response, then injecting never-issued, expired, cancelled, replayed,
+wrong-session, wrong-phase, wrong-model, and wrong-digest responses. The test proves structurally
+invalid or unknown-field envelopes are rejected by AC-031 before correlation, while each valid
+correlation mismatch returns its exact typed error and leaves render, cache-write, and clip-insertion
+call counts unchanged; the matching terminal error returns `WORKER_OPERATION_FAILED` with the same
+effect counts.
 
 ### AC-031 — Worker response payloads are bounded data
 
 At the worker-message boundary and before AC-030 correlation or response acceptance, the RAVE host
-MUST parse the exact phase-specific response schema with no unknown fields and validate all
-latent/audio numeric vectors as non-empty `Float32Array` values with finite elements and host-owned,
-non-shared `ArrayBuffer` backing; `SharedArrayBuffer` is rejected. The host checks the sum of
-distinct backing `ArrayBuffer.byteLength` values, not only typed-array view lengths, against
-`MAX_RAVE_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024` bytes before iterating values.
-Decoded audio contains one or two equal-length channels; its declared frame count equals those
-channel lengths and does not exceed the host-owned expected frame count, while its declared sample
-rate equals the host-owned expected output sample rate. Malformed shapes, wrong types, zero-length
-or unequal channels, sample-rate mismatch, `NaN`, or `Infinity` return
-`WORKER_RESPONSE_INVALID`; a byte or frame-count overflow returns `WORKER_RESPONSE_TOO_LARGE`.
-Rejected payloads never reach render, cache, or clip insertion.
+MUST validate the following single closed discriminated `RaveWorkerResponse` union. `NonEmptyString`
+means a string with at least one character; `Sha256Hex` means exactly 64 lowercase hexadecimal
+characters; and `PositiveSafeInteger` means a finite integer greater than zero that is safe in
+JavaScript. Every object below has exactly the shown keys, with no aliases, omitted keys, or
+unknown keys:
+
+```text
+RaveWorkerResponse =
+  | {
+      type: "encode-success",
+      requestId: NonEmptyString,
+      sessionCorrelationId: NonEmptyString,
+      modelId: NonEmptyString,
+      modelDigest: Sha256Hex,
+      phase: "encode",
+      result: {
+        latents: Float32Array
+      }
+    }
+  | {
+      type: "decode-success",
+      requestId: NonEmptyString,
+      sessionCorrelationId: NonEmptyString,
+      modelId: NonEmptyString,
+      modelDigest: Sha256Hex,
+      phase: "decode",
+      result: {
+        audio: {
+          channels: [Float32Array] | [Float32Array, Float32Array],
+          sampleRate: PositiveSafeInteger,
+          frameCount: PositiveSafeInteger
+        }
+      }
+    }
+  | {
+      type: "terminal-error",
+      requestId: NonEmptyString,
+      sessionCorrelationId: NonEmptyString,
+      modelId: NonEmptyString,
+      modelDigest: Sha256Hex,
+      phase: "encode" | "decode",
+      error: {
+        code: "WORKER_OPERATION_FAILED",
+        message: NonEmptyString
+      }
+    }
+```
+
+The five common correlation fields are exactly `requestId`, `sessionCorrelationId`, `modelId`,
+`modelDigest`, and `phase`; `type` is the only discriminant and is not an additional correlation
+field. An `encode-success` result has only `latents`, and a `decode-success` result has only
+`audio`; `audio` has only `channels`, `sampleRate`, and `frameCount`. A `terminal-error` has only
+`error`, whose `code` has the one literal value shown and whose `message` is diagnostic text only.
+The terminal error object has no result payload and this contract defines no other terminal error
+codes.
+
+Each `Float32Array` is non-empty, contains only finite elements, and has an ordinary, host-owned
+`ArrayBuffer` backing; a `SharedArrayBuffer` or any other backing type is invalid. Full validation
+includes every root and nested key, exact `type`/`phase` pairing, exact variant payload, typed-array
+shape, terminal error shape, and all scalar types before AC-030 reads any correlation field or any
+consumer reads a result. Unknown or missing fields,
+wrong types, invalid discriminants, invalid `type`/`phase` pairings, malformed payloads, and
+non-finite values return `WORKER_RESPONSE_INVALID`.
+
+Before iterating any typed-array values, the host sums the `byteLength` of each distinct backing
+`ArrayBuffer` used by every `Float32Array` in the envelope, counting a shared backing buffer once,
+not the typed-array view lengths. A sum greater than
+`MAX_RAVE_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024` bytes returns
+`WORKER_RESPONSE_TOO_LARGE`. For decoded audio, the host-owned expected output sample rate equals
+`audio.sampleRate`; `audio.frameCount` equals the length of every channel and does not exceed the
+host-owned expected frame count. A valid numeric shape with a sample-rate mismatch,
+zero or unequal channels, or non-finite values returns `WORKER_RESPONSE_INVALID`; a frame count
+greater than the host-owned expected frame count returns `WORKER_RESPONSE_TOO_LARGE`.
+
+Boundary-invalid envelopes map only to `WORKER_RESPONSE_INVALID` or
+`WORKER_RESPONSE_TOO_LARGE` as specified above, before correlation or result use. A valid,
+AC-030-correlated `terminal-error` is instead a typed `WORKER_OPERATION_FAILED` outcome with no
+render, cache-write, or clip-insertion effect. Rejected payloads never reach render, cache, or clip
+insertion.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
-malformed and unknown fields, wrong typed-array shapes, shared backing, zero/unequal channels, wrong
-sample rate, `NaN`, `Infinity`, a frame-count overflow, and a small view over a backing buffer larger
-than 64 MiB. Every case returns the exact typed error with zero render, cache-write, or
-clip-insertion calls.
+one exact `encode-success`, one exact `decode-success` with its sample-rate and frame-count metadata,
+and one exact `terminal-error`, plus unknown fields at the root and nested result/error objects,
+missing fields, wrong discriminants, wrong typed-array shapes, shared backing, zero or unequal
+channels, wrong sample rate, `NaN`, `Infinity`, malformed terminal errors, a frame-count overflow,
+and a small view over a backing buffer larger than 64 MiB. The test proves invalid envelopes return
+`WORKER_RESPONSE_INVALID` before correlation or result use, byte or frame overflow returns
+`WORKER_RESPONSE_TOO_LARGE`, a valid correlated terminal error returns `WORKER_OPERATION_FAILED`,
+and every case has zero render, cache-write, and clip-insertion calls.
 
-AC-029 through AC-031 are unimplemented today; no current worker/session transfer path can satisfy
-their selection, response-correlation, or payload-validation contracts.
+AC-029 through AC-031 are unimplemented today; no current worker/session transfer path emits the
+closed response union or can satisfy their selection, response-correlation, or payload-validation
+contracts.
 
 ### AC-032 — Direct decode helper remains test-only
 
@@ -404,12 +490,12 @@ without the required endpoint `timeSec` or immutability evidence. None proves th
 product contracts in AC-001 through AC-005 or AC-027 through AC-031, and none retires a warning by
 passing:
 
-| Current warning path | Current disposition | Required future helper path | Warning closes only when |
-| --- | --- | --- | --- |
-| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | Direct deterministic test helper; current direct test exists. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts` | AC-024's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008. |
-| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | Direct deterministic test helper; current direct test exists. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts` | AC-032's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008. |
-| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | Direct deterministic test helper; current test is export-only and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts` | AC-033's missing direct test is green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
-| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; current test is partial and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | AC-026's missing endpoint/immutability assertions are green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
+| Current warning path                                         | Current disposition                                                             | Required future helper path                                                    | Warning closes only when                                                                                                                                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`       | Direct deterministic test helper; current direct test exists.                   | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts`       | AC-024's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008.                                              |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`      | Direct deterministic test helper; current direct test exists.                   | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts`      | AC-032's direct test is preserved and green in the same relocation/removal change, or that tested change satisfies dependency AC-008.                                              |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`    | Direct deterministic test helper; current test is export-only and insufficient. | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`    | AC-033's missing direct test is green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008.                       |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | Direct deterministic test helper; current test is partial and insufficient.     | `src/modules/AudioEngine/useCases/rave/__tests__/helpers/interpolateLatent.ts` | AC-026's missing endpoint/immutability assertions are green before the exact path is removed in the same relocation change, or the same tested change satisfies dependency AC-008. |
 
 Direct helper availability, passing CI tests, and product reachability are not warning retirement
 conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024`, `AC-026`,
@@ -436,9 +522,9 @@ bounds. This spec retains all four current files and does not authorize a silent
 ## Open questions
 
 - [ ] Q-001 — Model hosting: bundle the default model and download-on-demand the rest, or
-  require self-serve hosting for all five?
+      require self-serve hosting for all five?
 - [ ] Q-002 — Real-time block size vs latency trade-off (8192 frames ≈ 185 ms) — is the
-  monitor-only positioning acceptable, or is a smaller block worth pursuing?
+      monitor-only positioning acceptable, or is a smaller block worth pursuing?
 - [ ] Q-003 — Custom `.onnx` import: validation/limits before caching a user-supplied model.
 
 ## Affected areas
