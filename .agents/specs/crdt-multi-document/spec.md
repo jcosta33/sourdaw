@@ -146,11 +146,12 @@ existing surface a multi-document change can lean on.
   unrelated-project all return `null`, so `MergeResultDialog` cannot show a specific message even
   though it has distinct `success: false` rendering. (audit #21/#26)
 - **Persistence-internal observations**: `hasCrdtDocsInIdb` uses `store.count()`, which counts
-  `:incremental:` chunks as well as base docs (Findings #51); `loadIncrementalsFromIdb` /
-  `clearIncrementalsFromIdb` are O(n) full-store cursor scans, the latter run on every compaction
-  (#52); `saveDocToIdb` / `loadDocFromIdb` / `loadIncrementalsFromIdb` are dead code with no
-  production importer (#29/#53); `getPersistenceBackend` returns `'native' | 'browser'` but the
-  lifecycle always uses the IDB path, so the native (Tauri) backend dispatch is a stub (#42/#55).
+  `:incremental:` chunks as well as base docs (Findings #51); `loadIncrementalsFromIdb` is an O(n)
+  full-store cursor scan, while compaction uses `saveAllToIdb`'s atomic clear-and-put transaction
+  rather than a separate cleanup scan (#52); `saveDocToIdb` / `loadDocFromIdb` /
+  `loadIncrementalsFromIdb` are dead code with no production importer (#29/#53);
+  `getPersistenceBackend` returns `'native' | 'browser'` but the lifecycle always uses the IDB path,
+  so the native (Tauri) backend dispatch is a stub (#42/#55).
 - **Incremental-key delimiter is unvalidated against a DocId containing `:`.** Ordering parses
   `parseInt(key.split(':').pop())` and classification keys off the `:incremental:` substring
   (`automergeRepository.ts:352-356`, `crdtWorker.ts:52-56`); a `DocId` that itself contains `:`

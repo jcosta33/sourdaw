@@ -188,6 +188,76 @@ describe('audioBufferCache conversions', () => {
         }
     });
 
+    it('does not let a stale remove delete a newer persisted buffer', async () => {
+        const requests: Array<{
+            error: Error | null;
+            onerror: (() => void) | null;
+            onsuccess: (() => void) | null;
+            result: unknown;
+        }> = [];
+        const transactions: Array<{
+            error: Error | null;
+            onabort: (() => void) | null;
+            oncomplete: (() => void) | null;
+            onerror: (() => void) | null;
+        }> = [];
+        const store = {
+            delete: vi.fn(),
+            put: vi.fn(),
+        };
+        const database = {
+            objectStoreNames: { contains: () => true },
+            transaction: vi.fn(() => {
+                const transaction = {
+                    error: null,
+                    objectStore: () => store,
+                    onabort: null,
+                    oncomplete: null,
+                    onerror: null,
+                };
+                transactions.push(transaction);
+                return transaction;
+            }),
+        };
+        const open = vi.fn(() => {
+            const request = {
+                error: null,
+                onerror: null,
+                onsuccess: null,
+                result: database,
+            };
+            requests.push(request);
+            return request;
+        });
+        vi.stubGlobal('indexedDB', { open });
+
+        try {
+            audioBufferCache.remove('race');
+            audioBufferCache.set('race', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+
+            expect(requests).toHaveLength(2);
+
+            requests[1]!.onsuccess?.();
+            await Promise.resolve();
+            expect(store.put).toHaveBeenCalledWith(expect.anything(), 'race');
+            expect(transactions).toHaveLength(1);
+
+            transactions[0]!.oncomplete?.();
+            await Promise.resolve();
+
+            requests[0]!.onsuccess?.();
+            await Promise.resolve();
+
+            expect(store.delete).not.toHaveBeenCalled();
+            expect(transactions).toHaveLength(1);
+        } finally {
+            for (const transaction of transactions) {
+                transaction.oncomplete?.();
+            }
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('keeps every active-project buffer resident when the project exceeds the LRU cap', async () => {
         const exported = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const ids = Array.from({ length: 65 }, (_, index) => `active-${index}`);
