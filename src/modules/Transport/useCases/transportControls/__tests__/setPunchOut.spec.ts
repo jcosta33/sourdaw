@@ -82,7 +82,7 @@ describe('setPunchOut', () => {
     });
 
     it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
-        'should keep a non-finite out-point out of transport state (%s)',
+        'should reject a non-finite out-point without a repository write (%s)',
         (beat) => {
             const update = vi.fn<typeof updateTransportState>();
             const current = { ...defaultTransportState, punchInBeat: 4 };
@@ -91,7 +91,7 @@ describe('setPunchOut', () => {
 
             setPunchOut(beat);
 
-            expect_valid_punch_region(get_updated_punch_region(update.mock.calls, current));
+            expect(update).not.toHaveBeenCalled();
         }
     );
 

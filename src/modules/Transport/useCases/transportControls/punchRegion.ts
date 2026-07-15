@@ -5,6 +5,7 @@ const MIN_POSITIVE_PUNCH_BEAT = Number.MIN_VALUE;
 const FLOATING_POINT_EPSILON = Number.EPSILON;
 
 type PunchRegion = Pick<TransportState, 'punchInBeat' | 'punchOutBeat'>;
+type PunchRegionPatch = Partial<PunchRegion>;
 
 type CreatePunchRegionPatchInput = {
     current: PunchRegion;
@@ -12,9 +13,9 @@ type CreatePunchRegionPatchInput = {
     edge: 'in' | 'out';
 };
 
-function normalize_punch_beat(beat: number): number {
+function normalize_punch_beat(beat: number): number | null {
     if (!Number.isFinite(beat)) {
-        return beat === Number.POSITIVE_INFINITY ? MAX_FINITE_PUNCH_BEAT : 0;
+        return null;
     }
 
     return Math.max(0, beat);
@@ -42,7 +43,7 @@ function get_previous_finite_punch_beat(beat: number): number {
     return previous_beat >= 0 && previous_beat < beat ? previous_beat : 0;
 }
 
-function create_punch_in_patch(input: { beat: number; current: PunchRegion }): Partial<PunchRegion> {
+function create_punch_in_patch(input: { beat: number; current: PunchRegion }): PunchRegionPatch {
     if (input.beat < input.current.punchOutBeat) {
         return { punchInBeat: input.beat };
     }
@@ -63,7 +64,7 @@ function create_punch_in_patch(input: { beat: number; current: PunchRegion }): P
     };
 }
 
-function create_punch_out_patch(input: { beat: number; current: PunchRegion }): Partial<PunchRegion> {
+function create_punch_out_patch(input: { beat: number; current: PunchRegion }): PunchRegionPatch {
     if (input.beat > input.current.punchInBeat) {
         return { punchOutBeat: input.beat };
     }
@@ -78,8 +79,11 @@ function create_punch_out_patch(input: { beat: number; current: PunchRegion }): 
     };
 }
 
-export function create_punch_region_patch(input: CreatePunchRegionPatchInput): Partial<PunchRegion> {
+export function create_punch_region_patch(input: CreatePunchRegionPatchInput): PunchRegionPatch | null {
     const beat = normalize_punch_beat(input.beat);
+    if (beat === null) {
+        return null;
+    }
 
     if (input.edge === 'in') {
         return create_punch_in_patch({ beat, current: input.current });

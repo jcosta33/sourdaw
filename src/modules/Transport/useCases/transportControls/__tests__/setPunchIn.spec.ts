@@ -80,7 +80,7 @@ describe('setPunchIn', () => {
     });
 
     it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
-        'should keep a non-finite in-point out of transport state (%s)',
+        'should reject a non-finite in-point without a repository write (%s)',
         (beat) => {
             const update = vi.fn<typeof updateTransportState>();
             const current = { ...defaultTransportState, punchOutBeat: 16 };
@@ -89,7 +89,7 @@ describe('setPunchIn', () => {
 
             setPunchIn(beat);
 
-            expect_valid_punch_region(get_updated_punch_region(update.mock.calls, current));
+            expect(update).not.toHaveBeenCalled();
         }
     );
 

@@ -133,6 +133,39 @@ describe('punch region numerical state machine', () => {
         }
     });
 
+    it('rejects non-finite edits in both directions without changing evolving Transport state', () => {
+        const edits = [
+            { edge: 'in', rejectedBeat: Number.NaN, nextFiniteBeat: 4 },
+            { edge: 'out', rejectedBeat: Number.NaN, nextFiniteBeat: 12 },
+            { edge: 'in', rejectedBeat: Number.POSITIVE_INFINITY, nextFiniteBeat: 6 },
+            { edge: 'out', rejectedBeat: Number.POSITIVE_INFINITY, nextFiniteBeat: 10 },
+            { edge: 'in', rejectedBeat: Number.NEGATIVE_INFINITY, nextFiniteBeat: 8 },
+            { edge: 'out', rejectedBeat: Number.NEGATIVE_INFINITY, nextFiniteBeat: 9 },
+        ] as const;
+
+        for (const edit of edits) {
+            const before_rejected_edit = get_punch_region();
+
+            if (edit.edge === 'in') {
+                setPunchIn(edit.rejectedBeat);
+            } else {
+                setPunchOut(edit.rejectedBeat);
+            }
+
+            expect(get_punch_region()).toEqual(before_rejected_edit);
+
+            if (edit.edge === 'in') {
+                setPunchIn(edit.nextFiniteBeat);
+            } else {
+                setPunchOut(edit.nextFiniteBeat);
+            }
+
+            const after_finite_edit = get_punch_region();
+            expect(after_finite_edit).not.toEqual(before_rejected_edit);
+            expect_valid_punch_region(after_finite_edit);
+        }
+    });
+
     it('shares the same invariant with atomic punch-region restoration', () => {
         const valid_regions = [
             { punchInBeat: -0, punchOutBeat: Number.MIN_VALUE },

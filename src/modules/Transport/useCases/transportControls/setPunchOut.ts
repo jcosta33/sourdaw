@@ -9,5 +9,10 @@ export function setPunchOut(beat: number): void {
         return;
     }
 
-    updateTransportState(create_punch_region_patch({ current: state, beat, edge: 'out' }));
+    const patch = create_punch_region_patch({ current: state, beat, edge: 'out' });
+    if (patch === null) {
+        return;
+    }
+
+    updateTransportState(patch);
 }
