@@ -1,5 +1,7 @@
-import { appendLog, createDawApi } from '../../services/scripting';
 import { extensionStore } from '../../stores/extension';
+
+import { appendLog } from './appendLog';
+import { createDawApi } from './createDawApi';
 
 // SECURITY: this evaluator uses `new Function(code)` which runs the script in
 // the global scope. It is NOT sandboxed — the script can access `window`,

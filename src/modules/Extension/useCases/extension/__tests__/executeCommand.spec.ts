@@ -16,7 +16,7 @@ vi.mock('../../../stores/extension', async (importOriginal) => {
     return { ...actual, extensionStore: mocks.extensionStore };
 });
 
-vi.mock('../../../services/scripting', () => ({
+vi.mock('../appendLog', () => ({
     appendLog: mocks.appendLog,
 }));
 
@@ -50,5 +50,17 @@ describe('executeCommand', () => {
 
         executeCommand('missing');
         expect(mocks.appendLog).toHaveBeenCalledWith('error', 'Command not found: missing');
+    });
+
+    it('logs synchronous handler errors', () => {
+        const handler = vi.fn<() => void>(() => {
+            throw new Error('boom');
+        });
+        const cmds: ScriptCommand[] = [{ id: 'ext.cmd', extensionId: 'ext', label: 'C', description: '', handler }];
+        mocks.extensionStore.value = baseState({ commands: cmds });
+
+        executeCommand('ext.cmd');
+
+        expect(mocks.appendLog).toHaveBeenCalledWith('error', 'Command error: Error: boom');
     });
 });

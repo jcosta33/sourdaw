@@ -93,6 +93,9 @@ Verify with: `pnpm test:run -- AI ghostAutomationOverlay`
 ## Open questions
 
 - [ ] (non-blocking) Revisit ghost routing previews after these surfaces ship and demand surfaces.
+- [ ] (non-blocking) Define future staged mixer previews (gain, pan, and plugin-parameter changes):
+  decide whether they reuse the automation diff surface or need a mixer-specific preview. Routing,
+  send, and bus previews remain excluded by AC-007.
 
 ## Affected areas
 

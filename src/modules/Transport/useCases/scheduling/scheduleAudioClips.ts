@@ -19,7 +19,7 @@ import { type SourceWithFade } from '../playheadScheduler';
 
 import { gainNodePool, sessionState } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
-import { scheduleFrozenTrack } from './scheduleMidiNotes';
+import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 
 const MICRO_FADE_SECONDS = 0.003;
 

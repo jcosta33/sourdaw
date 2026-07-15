@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ExtensionManifest, type ExtensionMarketplaceState } from '../../stores/extension';
-import { appendLog, createDawApi } from '../scripting';
+import { type ExtensionManifest, type ExtensionMarketplaceState } from '../../../stores/extension';
+import { appendLog } from '../appendLog';
 
 const mocks = vi.hoisted(() => {
-    type State = import('../../stores/extension').ExtensionMarketplaceState;
+    type State = import('../../../stores/extension').ExtensionMarketplaceState;
     let currentState: State | null = null;
     let valueSnapshot: State | null = null;
 
@@ -35,8 +35,8 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../stores/extension', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../../stores/extension')>();
+vi.mock('../../../stores/extension', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../../stores/extension')>();
     return { ...actual, extensionStore: mocks.extensionStore };
 });
 
@@ -163,14 +163,5 @@ describe('appendLog', () => {
         mocks.setCurrentState(null);
         appendLog('info', 'x');
         expect(mocks.getCurrentState()).toBeNull();
-    });
-});
-
-describe('createDawApi', () => {
-    it('should expose version, notify, and executeAction', () => {
-        const api = createDawApi();
-        expect(api.version).toBe('0.1.0');
-        expect(typeof api.notify).toBe('function');
-        expect(typeof api.executeAction).toBe('function');
     });
 });
