@@ -133,8 +133,10 @@ is not a complete secure sandbox. It is neither the sandboxed script artifact re
 nor a declarative-profile host. [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact)
 keeps those APIs separate; Push AC-023 through AC-027 own the future declarative host contract.
 
-The four RAVE files are imported only by their sibling specs and have no production,
-UI, or runtime transform pipeline. `encodeAudio` is a deterministic spectral
+The four RAVE files are imported only by the focused `encodeAudio.spec.ts`,
+`decodeLatent.spec.ts`, `timbreTransfer.spec.ts`, and `interpolateLatent.spec.ts` tests under
+`src/modules/AudioEngine/useCases/rave/__tests__/`; they have no production, UI, or runtime
+transform pipeline. `encodeAudio` is a deterministic spectral
 transform, `decodeLatent` is a synthetic sine-based decoder, and the interpolation
 and transfer helpers blend arrays in memory. Current `loadModel.ts` only changes model state in
 `raveStore`; it does not load ONNX or create a transfer path. These files are direct deterministic
