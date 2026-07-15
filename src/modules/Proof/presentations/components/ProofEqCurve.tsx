@@ -7,7 +7,7 @@
  * them and only frequency moves. Each band draws its true magnitude response
  * (peak, shelf, or rolloff). Band type and M/S mode shown as color coding.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -154,6 +154,53 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
     const dragStartBandRef = useRef<ProofPatch['eqBands'][number] | null>(null);
     const dragBandsRef = useRef<ProofPatch['eqBands'] | null>(null);
     const pendingEditRef = useRef<ProofPatchEdit | null>(null);
+    const onPatchChangeRef = useRef(onPatchChange);
+    const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+
+    useLayoutEffect(() => {
+        onPatchChangeRef.current = onPatchChange;
+        finalizeDragRef.current = (pointerId?: number): boolean => {
+            if (activePointerIdRef.current === null) {
+                return false;
+            }
+            if (pointerId !== undefined && activePointerIdRef.current !== pointerId) {
+                return false;
+            }
+
+            const pendingEdit = pendingEditRef.current;
+            const bandIndex = dragBandRef.current;
+            const startBand = dragStartBandRef.current;
+            const finalBand =
+                pendingEdit?.key === 'eqBands' && bandIndex !== null ? (pendingEdit.value[bandIndex] ?? null) : null;
+            const changed =
+                startBand !== null &&
+                finalBand !== null &&
+                (startBand.freq !== finalBand.freq ||
+                    (bandUsesGain(startBand.type) && startBand.gain !== finalBand.gain));
+
+            activePointerIdRef.current = null;
+            dragBandRef.current = null;
+            dragStartBandRef.current = null;
+            dragBandsRef.current = null;
+            pendingEditRef.current = null;
+
+            if (pendingEdit?.key === 'eqBands' && changed) {
+                onPatchChangeRef.current({
+                    key: 'eqBands',
+                    value: pendingEdit.value,
+                    changedParams: [],
+                    isTransient: false,
+                });
+            }
+            return true;
+        };
+    });
+
+    useEffect(() => {
+        return () => {
+            finalizeDragRef.current();
+        };
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -430,30 +477,11 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange }: Props): Re
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
-        if (activePointerIdRef.current !== e.pointerId) {
+        if (!finalizeDragRef.current(e.pointerId)) {
             return;
         }
-        const pendingEdit = pendingEditRef.current;
-        const bandIndex = dragBandRef.current;
-        const startBand = dragStartBandRef.current;
-        const finalBand =
-            pendingEdit?.key === 'eqBands' && bandIndex !== null ? (pendingEdit.value[bandIndex] ?? null) : null;
-        const changed =
-            startBand !== null &&
-            finalBand !== null &&
-            (startBand.freq !== finalBand.freq || (bandUsesGain(startBand.type) && startBand.gain !== finalBand.gain));
-        activePointerIdRef.current = null;
-        dragBandRef.current = null;
-        dragStartBandRef.current = null;
-        dragBandsRef.current = null;
-        pendingEditRef.current = null;
-        if (pendingEdit?.key === 'eqBands' && changed) {
-            onPatchChange({
-                key: 'eqBands',
-                value: pendingEdit.value,
-                changedParams: [],
-                isTransient: false,
-            });
+        if (typeof e.currentTarget.releasePointerCapture === 'function') {
+            e.currentTarget.releasePointerCapture(e.pointerId);
         }
     };
 

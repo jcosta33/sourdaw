@@ -163,6 +163,100 @@ describe('ProofEqCurve', () => {
             });
         });
 
+        it('finalizes an accepted transient drag when unmounted', () => {
+            const onPatchChange = vi.fn();
+            const { container, unmount } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 10 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 10 });
+
+            const transientEdit = onPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
+            expect(transientEdit.isTransient).toBe(true);
+
+            unmount();
+
+            expect(onPatchChange.mock.calls).toHaveLength(2);
+            expect(onPatchChange.mock.calls[1]?.[0]).toMatchObject({
+                key: 'eqBands',
+                value: transientEdit.value,
+                changedParams: [],
+                isTransient: false,
+            });
+        });
+
+        it('uses the latest owner callback and accepted edit during teardown', () => {
+            const initialOnPatchChange = vi.fn();
+            const latestOnPatchChange = vi.fn();
+            const { container, rerender, unmount } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={initialOnPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 11 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 5, clientY: 30, pointerId: 11 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 15, clientY: 20, pointerId: 11 });
+
+            const latestTransientEdit = initialOnPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
+            rerender(
+                <ProofEqCurve
+                    patch={{ ...DEFAULT_PATCH, eqBands: latestTransientEdit.value }}
+                    width={200}
+                    height={100}
+                    onPatchChange={latestOnPatchChange}
+                />
+            );
+
+            unmount();
+
+            expect(initialOnPatchChange).toHaveBeenCalledTimes(2);
+            expect(latestOnPatchChange).toHaveBeenCalledWith({
+                key: 'eqBands',
+                value: latestTransientEdit.value,
+                changedParams: [],
+                isTransient: false,
+            });
+        });
+
+        it('does not finalize twice when pointerup precedes unmount', () => {
+            const onPatchChange = vi.fn();
+            const { container, unmount } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 12 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 12 });
+            fireEvent.pointerUp(canvas, { pointerId: 12 });
+            unmount();
+
+            const edits = onPatchChange.mock.calls.map(([edit]) => edit as ProofPatchEdit);
+            expect(edits.map((edit) => edit.isTransient)).toEqual([true, false]);
+        });
+
+        it('finalizes on lost pointer capture and ignores a later pointerup', () => {
+            const onPatchChange = vi.fn();
+            const { container, unmount } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 13 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 13 });
+            fireEvent.lostPointerCapture(canvas, { pointerId: 13 });
+            fireEvent.pointerUp(canvas, { pointerId: 13 });
+            unmount();
+
+            const edits = onPatchChange.mock.calls.map(([edit]) => edit as ProofPatchEdit);
+            expect(edits.map((edit) => edit.isTransient)).toEqual([true, false]);
+        });
+
         it('does not commit when a dragged band returns to its starting position', () => {
             const onPatchChange = vi.fn();
             const { container } = render(

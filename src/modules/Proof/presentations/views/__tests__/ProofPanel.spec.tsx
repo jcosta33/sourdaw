@@ -148,6 +148,41 @@ describe('ProofPanel', () => {
         );
     });
 
+    it('persists an accepted EQ drag when the active level tears down', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const canvas = container.querySelector<HTMLCanvasElement>(
+            'canvas[aria-label="8-band parametric EQ frequency response"]'
+        );
+        if (!canvas) {
+            throw new Error('Expected the Level 3 EQ curve canvas');
+        }
+        const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 500;
+
+        fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 60, pointerId: 14 });
+        fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 30, pointerId: 14 });
+        const transientBand = getProofState(DEVICE_ID).patch.eqBands[2];
+
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /Shape/ }));
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                eq_band2_freq: transientBand?.freq,
+                eq_band2_gain: transientBand?.gain,
+            })
+        );
+
+        unmount();
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('toggles A/B compare through the bridge and the store (no inline view-code store write)', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
