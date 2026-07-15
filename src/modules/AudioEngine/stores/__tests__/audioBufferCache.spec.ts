@@ -279,6 +279,72 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
     });
 
+    it('aborts an older import transaction when a newer candidate is published', async () => {
+        type ControlledTransaction = {
+            abort: ReturnType<typeof vi.fn>;
+            error: Error | null;
+            objectStore: () => { put: ReturnType<typeof vi.fn> };
+            onabort: (() => void) | null;
+            oncomplete: (() => void) | null;
+            onerror: (() => void) | null;
+        };
+        const transactions: ControlledTransaction[] = [];
+        const put = vi.fn();
+        const database = {
+            objectStoreNames: { contains: () => true },
+            transaction: () => {
+                const transaction: ControlledTransaction = {
+                    abort: vi.fn(() => queueMicrotask(() => transaction.onabort?.())),
+                    error: null,
+                    objectStore: () => ({ put }),
+                    onabort: null,
+                    oncomplete: null,
+                    onerror: null,
+                };
+                transactions.push(transaction);
+                return transaction;
+            },
+        };
+        vi.stubGlobal('indexedDB', {
+            open: () => {
+                const request = {
+                    error: null,
+                    onerror: null as (() => void) | null,
+                    onsuccess: null as (() => void) | null,
+                    onupgradeneeded: null as (() => void) | null,
+                    result: database,
+                };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
+            },
+        });
+        const context = {
+            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            ),
+        };
+        const first = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] },
+            },
+        });
+        first?.publish();
+        const firstPersistence = first?.persist();
+        await vi.waitFor(() => expect(transactions).toHaveLength(1));
+
+        const second = audioBufferCache.importBuffers({ context, buffers: {} });
+        second?.publish();
+
+        const firstTransaction = transactions[0]!;
+        if (firstTransaction.abort.mock.calls.length === 0) {
+            firstTransaction.oncomplete?.();
+        }
+        await firstPersistence;
+
+        expect(firstTransaction.abort).toHaveBeenCalledOnce();
+    });
+
     it('validates every embedded buffer before opening a persistence transaction', () => {
         const open = vi.fn();
         vi.stubGlobal('indexedDB', { open });

@@ -9,6 +9,7 @@ import {
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectStore } from '../../../stores/projectStore';
 
@@ -59,23 +60,22 @@ export async function replaceProjectData({
         return { status: 'aborted' };
     }
 
-    let preparedEmbeddedBuffers: Awaited<ReturnType<typeof importCachedAudioBuffers>> | undefined;
+    let preparedEmbeddedBuffers: NonNullable<Awaited<ReturnType<typeof importCachedAudioBuffers>>>;
     let preparedStoredBuffers: Awaited<ReturnType<typeof prepareCachedAudioBuffersFromIdb>>;
     try {
         const audioContext = getAudioContext();
         const referencedIds = collectProjectAudioBufferIds({ data });
         const embeddedBufferIds = new Set(Object.keys(data.audioBuffers ?? {}));
-        preparedEmbeddedBuffers = data.audioBuffers
-            ? await importCachedAudioBuffers({
-                  audioContext,
-                  buffers: data.audioBuffers,
-                  cacheIds: referencedIds,
-                  shouldContinue: transaction.isCurrent,
-              })
-            : undefined;
-        if (data.audioBuffers && !preparedEmbeddedBuffers) {
+        const embeddedCandidate = await importCachedAudioBuffers({
+            audioContext,
+            buffers: data.audioBuffers ?? {},
+            cacheIds: referencedIds,
+            shouldContinue: transaction.isCurrent,
+        });
+        if (!embeddedCandidate) {
             return { status: 'aborted' };
         }
+        preparedEmbeddedBuffers = embeddedCandidate;
 
         preparedStoredBuffers = await prepareCachedAudioBuffersFromIdb({
             audioContext,
@@ -145,9 +145,7 @@ export async function replaceProjectData({
         // and is guarded so one owner failure cannot prevent later owner steps.
         batchStoreUpdates(() => {
             runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
-            if (preparedEmbeddedBuffers) {
-                runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
-            }
+            runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
             runCommittedStep('module store reset', resetModuleStoresToDefault);
             runCommittedStep('arrangement hydration', () =>
                 hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true })
@@ -180,16 +178,14 @@ export async function replaceProjectData({
         runCommittedStep('post-commit persistence', afterCommit);
     }
 
-    if (preparedEmbeddedBuffers) {
-        try {
-            if (!(await preparedEmbeddedBuffers.persist())) {
-                degraded = true;
-                logger.error(new Error(`[${context}] Committed embedded audio buffer persistence failed`));
-            }
-        } catch (error) {
+    try {
+        if (!(await preparedEmbeddedBuffers.persist())) {
             degraded = true;
-            logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
+            logger.error(new Error(`[${context}] Committed embedded audio buffer persistence failed`));
         }
+    } catch (error) {
+        degraded = true;
+        logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
     }
 
     if (transaction.isCurrent()) {
@@ -204,6 +200,12 @@ export async function replaceProjectData({
     if (transaction.isCurrent()) {
         runCommittedStep('CRDT durability lifecycle start', () => {
             setAutoSaveHandle(startCrdtAutoSave());
+        });
+    }
+
+    if (degraded && transaction.isCurrent()) {
+        runCommittedStep('recovery warning', () => {
+            notifyUser('Project loaded with recovery errors. Save a new copy before closing.', 'warning');
         });
     }
 

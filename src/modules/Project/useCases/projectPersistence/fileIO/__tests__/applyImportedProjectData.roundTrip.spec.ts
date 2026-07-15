@@ -35,6 +35,7 @@ const {
     crdtAuthority,
     engineGraph,
     importCachedAudioBuffers,
+    notifyUser,
     prepareCachedAudioBuffersFromIdb,
     persistCrdtProject,
     resetAudioGraph,
@@ -69,6 +70,7 @@ const {
         importCachedAudioBuffers: vi
             .fn<(input: ImportCachedAudioBuffersInput) => Promise<PreparedImportedAudioBuffers | null>>()
             .mockResolvedValue(prepared()),
+        notifyUser: vi.fn(),
         prepareCachedAudioBuffersFromIdb: vi
             .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
             .mockResolvedValue(prepared()),
@@ -116,7 +118,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
         restoreTimelineMapSnapshot: vi.fn(),
     };
 });
-vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser }));
 // The §13.1 device-store reset runs before hydration; its per-device resets are
 // not what this round-trip asserts (it checks the hydrated track/transport/midi/
 // arrangement values), so stub it out to avoid pulling in every device store.
@@ -256,6 +258,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
         importCachedAudioBuffers.mockClear();
+        notifyUser.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();
         setSidechainRoutes.mockClear();
         compactProject.mockClear();
@@ -400,6 +403,10 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(crdtAuthority.value).toBe('Round Trip');
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(resetCrdtProjectAuthority).toHaveBeenCalledOnce();
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Project loaded with recovery errors. Save a new copy before closing.',
+            'warning'
+        );
     });
 
     it('starts CRDT autosave only after embedded buffers are durable', async () => {
