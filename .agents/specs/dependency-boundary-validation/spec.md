@@ -33,10 +33,20 @@ and is not a recognized entrypoint. The current five warnings remain visible:
 - `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`
 - `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`
 
-The MIDI warning is owned by [Push integration Q-004](../push-integration/spec.md),
-and the four RAVE warnings are owned by [RAVE timbre transfer](../rave-timbre-transfer/spec.md).
-They stay visible until the owning product work is implemented or the exact paths
-are explicitly retired.
+The warning ownership and disposition map is intentionally a cross-reference; the
+linked owning requirement remains authoritative.
+
+| Warning path | Owning requirement and disposition |
+| --- | --- |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration Q-004](../push-integration/spec.md): retain behind its trust, capability, sandbox, and typed-action boundary; no launcher or action wiring is authorized by this map. |
+| `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
+| `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
+| `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md): retain as a model-free fallback helper. |
+| `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts` | [RAVE AC-026](../rave-timbre-transfer/spec.md): retain as the pure latent-interpolation fallback primitive. |
+
+Each warning remains visible until real product wiring/reachability satisfies its
+linked owning requirement, or that owning spec records an explicit exact-path
+retirement; this map does not itself clear a warning.
 
 ## Requirements
 
@@ -94,11 +104,12 @@ Verify with: focused reference search, owning-spec review, and `pnpm deps:valida
 
 ### AC-007 — Durable warning ownership
 
-The five current warning paths MUST have a durable product owner before source
-remediation: Push Q-004 owns the controller-profile scripting worker, and the RAVE
-spec owns all four prototype transforms.
+The five current warning paths MUST remain covered by the path-specific ownership and
+disposition map above before source remediation; each path MUST point to an exact
+owning requirement or an explicit exact-path retirement condition.
 
-Verify with: the cross-links in this spec and `rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`
+Verify with: the table and cross-links in this spec, the linked Push/RAVE requirements,
+and `rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`
 
 ## Open questions
 

@@ -204,6 +204,17 @@ merely round-trip the assignment data.
 
 Verify with: `pnpm test:run -- rave`
 
+### AC-026 — Latent interpolation fallback
+
+The model-free RAVE fallback MUST retain `interpolateLatent` as a pure latent-space morph
+primitive. For `time` in `[0, 1]`, `interpolateLatent(alpha, b, time)` MUST return a vector
+with `alpha.values.length` values in source order, linearly blending each source value with
+the corresponding `b.values` value (using `0` when that target dimension is absent), and
+linearly blending `timeSec`; with equal-shaped vectors, `time = 0` and `time = 1` MUST return
+the source and target vectors respectively. The function MUST NOT mutate either input.
+
+Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts`
+
 ## Current-state ownership
 
 The four current `no-orphans` helpers are heuristic/test-only today and do not prove
@@ -216,10 +227,10 @@ model-backed AC-001 through AC-003:
 
 Their sibling tests cover deterministic heuristics only. AC-024 intentionally owns the
 future model-free fallback use of its named `encodeAudio`, `decodeLatent`, and
-`timbreTransfer` helpers; this promotion preserves that durable decision and neither
-reverses nor narrows it. It does not silently authorize deleting any of these four helpers
-or forbid the specified fallback. `interpolateLatent` remains a current heuristic/test-only
-helper owned by this spec, but is not named in AC-024's fallback contract.
+`timbreTransfer` helpers, while AC-026 owns `interpolateLatent` as the pure latent-space
+interpolation primitive. This promotion retains all four helpers; it does not silently
+authorize deletion or narrow either fallback contract. Any future retirement MUST name the
+exact helper path and change its owning acceptance criterion.
 
 ## Constraints
 
