@@ -97,6 +97,32 @@ describe('executeAppAction', () => {
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
     });
 
+    it('suppresses macro recording independently of undo-history recording', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipMacroRecording: true });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).toHaveBeenCalled();
+        expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+    });
+
+    it('keeps macro recording enabled when only undo-history recording is suppressed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipUndo: true });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).toHaveBeenCalledWith(action);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.pushActionHistoryEntry).not.toHaveBeenCalled();
+    });
+
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
         const cause = new Error('handler failed');

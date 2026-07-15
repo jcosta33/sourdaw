@@ -25,7 +25,10 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
         return true;
     }
     if (entry.inverseAction) {
-        await runExecuteAppAction(entry.inverseAction, { skipUndo: true });
+        await runExecuteAppAction(entry.inverseAction, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
         return true;
     }
     return false;

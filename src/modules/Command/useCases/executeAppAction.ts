@@ -16,6 +16,8 @@ export type ExecuteOptions = {
     /** When true, skip pushing an undo entry and action history entry.
      *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
     skipUndo?: boolean;
+    /** When true, do not capture this execution in an active macro recording. */
+    skipMacroRecording?: boolean;
 };
 
 export const executeAppAction = inject({ logger })(
@@ -55,8 +57,9 @@ export const executeAppAction = inject({ logger })(
                 clearSemanticContext();
             }
 
-            // Record to macro playback
-            recordAction(action);
+            if (!options?.skipMacroRecording) {
+                recordAction(action);
+            }
 
             if (!options?.skipUndo) {
                 // Record undoable actions to global history (skip UI-only actions like panel toggles)

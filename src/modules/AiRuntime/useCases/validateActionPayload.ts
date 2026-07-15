@@ -62,6 +62,14 @@ function isOptional<Value>(value: unknown, check: (value: unknown) => value is V
     return value === undefined || check(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    return Reflect.ownKeys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function hasFinitePunchBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
+    return isObj(param) && hasExactKeys(param, ['beat']) && isNumber(param.beat);
+}
+
 function hasNoPayload(value: unknown): value is undefined {
     return value === undefined;
 }
@@ -223,8 +231,8 @@ const validators = {
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setLoopRegion: 'unchecked',
-    setPunchIn: 'unchecked',
-    setPunchOut: 'unchecked',
+    setPunchIn: hasFinitePunchBeat,
+    setPunchOut: hasFinitePunchBeat,
     setCountInBars: 'unchecked',
     setPreRollBars: 'unchecked',
     seekPlayhead: 'unchecked',

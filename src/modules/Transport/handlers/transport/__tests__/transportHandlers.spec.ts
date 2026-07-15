@@ -4,6 +4,7 @@ import { handleAddTimeSignatureChange } from '../handleAddTimeSignatureChange';
 import { handleNextSetlistItem } from '../handleNextSetlistItem';
 import { handlePreviousSetlistItem } from '../handlePreviousSetlistItem';
 import { handleRemoveTimeSignatureChange } from '../handleRemoveTimeSignatureChange';
+import { handleRestorePunchRegion } from '../handleRestorePunchRegion';
 import { handleSeekPlayhead } from '../handleSeekPlayhead';
 import { handleSetCountInBars } from '../handleSetCountInBars';
 import { handleSetLoopRegion } from '../handleSetLoopRegion';
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => ({
     setLoopRegion: vi.fn(),
     addTimeSignatureChange: vi.fn(),
     removeTimeSignatureChange: vi.fn(),
+    restorePunchRegion: vi.fn(),
     setCountInBars: vi.fn(),
     setMetronomeVolume: vi.fn(),
     setPreRollBars: vi.fn(),
@@ -67,6 +69,9 @@ vi.mock('../../../useCases/timeSignatureChanges/addTimeSignatureChange', () => (
 }));
 vi.mock('../../../useCases/timeSignatureChanges/removeTimeSignatureChange', () => ({
     removeTimeSignatureChange: mocks.removeTimeSignatureChange,
+}));
+vi.mock('../../../useCases/transportControls/restorePunchRegion', () => ({
+    restorePunchRegion: mocks.restorePunchRegion,
 }));
 vi.mock('../../../useCases/transportControls/setCountInBars', () => ({ setCountInBars: mocks.setCountInBars }));
 vi.mock('../../../useCases/transportControls/setMetronomeVolume', () => ({
@@ -147,6 +152,14 @@ describe('Transport Handlers', () => {
     it('handleSetPunchOut delegates to use case', () => {
         void handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } });
         expect(mocks.setPunchOut).toHaveBeenCalledWith(16);
+    });
+
+    it('handleRestorePunchRegion delegates the complete pair to the atomic use case', () => {
+        const region = { punchInBeat: 4, punchOutBeat: 12 };
+
+        void handleRestorePunchRegion.execute({ type: 'restorePunchRegion', payload: region });
+
+        expect(mocks.restorePunchRegion).toHaveBeenCalledWith(region);
     });
 
     it('handleToggleCountIn delegates to use case', () => {

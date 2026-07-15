@@ -126,6 +126,46 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe.each(['setPunchIn', 'setPunchOut'] as const)('%s', (actionType) => {
+        it('should accept an exact payload with any finite numeric beat', () => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ beat: -4 })).toBe(true);
+            expect(guard({ beat: -0 })).toBe(true);
+            expect(guard({ beat: 0.25 })).toBe(true);
+            expect(guard({ beat: Number.MAX_VALUE })).toBe(true);
+        });
+
+        it.each([
+            ['string payload', '4'],
+            ['missing payload', undefined],
+            ['null payload', null],
+            ['missing beat', {}],
+            ['string beat', { beat: '4' }],
+            ['null beat', { beat: null }],
+            ['NaN beat', { beat: Number.NaN }],
+            ['positive infinity beat', { beat: Number.POSITIVE_INFINITY }],
+            ['negative infinity beat', { beat: Number.NEGATIVE_INFINITY }],
+            ['extra property', { beat: 4, extra: true }],
+        ] as const)('should reject %s', (_label, payload) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(false);
+        });
+    });
+
+    it('should not expose the internal punch-region inverse to model payload validation', () => {
+        expect(PAYLOAD_VALIDATORS).not.toHaveProperty('restorePunchRegion');
+    });
+
     describe('joinCollabSession', () => {
         it('should require inviteString and peerName strings (the fields the handler reads)', () => {
             const guard = PAYLOAD_VALIDATORS.joinCollabSession;
