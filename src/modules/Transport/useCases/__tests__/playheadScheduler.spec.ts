@@ -145,7 +145,6 @@ vi.mock('#/modules/AudioEngine/useCases/adjustmentLayer/scheduleAdjustmentLayers
 }));
 vi.mock('../scheduling/scheduleMidiNotes', () => ({
     scheduleMidiNotes: vi.fn(() => Promise.resolve()),
-    scheduleFrozenTrack: vi.fn(() => false),
 }));
 
 // Stub the Worker the scheduler creates so we can capture its message handler
