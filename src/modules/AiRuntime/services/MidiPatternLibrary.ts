@@ -11,10 +11,10 @@
  */
 
 import { type PatternTemplate, type PatternFilters } from '../models/MidiPatternType';
-import { drumPatterns } from '../models/Patterns/DrumPatterns';
 
 import { bassPatterns } from './Patterns/BassPatterns';
 import { chordPatterns } from './Patterns/ChordPatterns';
+import { drumPatterns } from './Patterns/DrumPatterns';
 import { melodyPatterns } from './Patterns/MelodyPatterns';
 import { filterTemplates as filterTemplatesImpl } from './scaleTheory';
 
