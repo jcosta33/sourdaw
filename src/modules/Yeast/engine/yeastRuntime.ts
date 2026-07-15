@@ -40,6 +40,7 @@ type PendingAllNotesOff = {
 };
 
 const YEAST_RUNTIME_SESSION_VERSION = 2;
+const MIDI_PANIC_NOTES = Array.from({ length: 128 }, (_, note) => note);
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -91,6 +92,33 @@ function invalidateCurrentRuntime(node: YeastWorkletNodeResult): void {
     session.nodePromise = null;
     session.processTail = Promise.resolve();
     session.pendingAllNotesOff = null;
+}
+
+function invokeNotesOffFallback(): void {
+    const handler = session.onNotesOff;
+    if (!handler) {
+        return;
+    }
+
+    try {
+        handler([...MIDI_PANIC_NOTES]);
+    } catch (error: unknown) {
+        logger.warn('[Yeast] Panic Note Off fallback failed:', error);
+    }
+}
+
+function trySendAllNotesOff(node: YeastWorkletNodeResult, nowSamples: number): boolean {
+    try {
+        node.allNotesOff(nowSamples);
+        return true;
+    } catch (error: unknown) {
+        if (session.node === node) {
+            invalidateCurrentRuntime(node);
+            setRuntimeUnavailable(error);
+            invokeNotesOffFallback();
+        }
+        return false;
+    }
 }
 
 export function setYeastRuntimeProjection(projection: readonly YeastProcessorProjectionItem[]): void {
@@ -183,7 +211,9 @@ export async function ensureYeastRuntime(input: {
                 pendingAllNotesOff.context === input.context &&
                 pendingAllNotesOff.generation === generation
             ) {
-                node.allNotesOff(pendingAllNotesOff.nowSamples);
+                if (!trySendAllNotesOff(node, pendingAllNotesOff.nowSamples)) {
+                    return null;
+                }
             }
             session.status = 'ready';
             session.error = undefined;
@@ -255,12 +285,7 @@ export function sendYeastRuntimeAllNotesOff(nowSamples: number): void {
         return;
     }
 
-    try {
-        node.allNotesOff(nowSamples);
-    } catch (error: unknown) {
-        invalidateCurrentRuntime(node);
-        setRuntimeUnavailable(error);
-    }
+    trySendAllNotesOff(node, nowSamples);
 }
 
 export function setYeastRuntimeNotesOffHandler(handler: (notes: number[]) => void): void {

@@ -136,6 +136,82 @@ describe('yeastRuntime', () => {
         expect(node.allNotesOff).toHaveBeenCalledWith(1024);
     });
 
+    it('falls back to valid MIDI panic notes when a ready panic cannot be delivered', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const error = new Error('panic post failed');
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        node.allNotesOff.mockImplementationOnce(() => {
+            throw error;
+        });
+
+        runtime.sendYeastRuntimeAllNotesOff(512);
+
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(node.destroy).toHaveBeenCalledTimes(1);
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        expect(runtime.getYeastRuntimeError()).toBe(error.message);
+    });
+
+    it('settles lazy initialization as unavailable and does not replay an uncertain queued panic', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const pending = deferred<YeastWorkletNodeResult>();
+        const node = makeNode(context);
+        const replacement = makeNode(context);
+        const onNotesOff = vi.fn();
+        const error = new Error('queued panic post failed');
+        node.allNotesOff.mockImplementationOnce(() => {
+            throw error;
+        });
+        createNode.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(replacement);
+
+        const initialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.sendYeastRuntimeAllNotesOff(512);
+        pending.resolve(node);
+
+        await expect(initialization).resolves.toBeNull();
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(node.destroy).toHaveBeenCalledTimes(1);
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        expect(runtime.getYeastRuntimeError()).toBe(error.message);
+
+        await expect(runtime.ensureYeastRuntime({ context, projection: projectionA })).resolves.toBe(replacement);
+        expect(replacement.allNotesOff).not.toHaveBeenCalled();
+    });
+
+    it('keeps panic cleanup when the owner fallback handler throws', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const panicError = new Error('panic post failed');
+        const fallbackError = new Error('fallback failed');
+        const onNotesOff = vi.fn(() => {
+            throw fallbackError;
+        });
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        node.allNotesOff.mockImplementationOnce(() => {
+            throw panicError;
+        });
+
+        expect(() => runtime.sendYeastRuntimeAllNotesOff(512)).not.toThrow();
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(node.destroy).toHaveBeenCalledTimes(1);
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        expect(runtime.getYeastRuntimeError()).toBe(panicError.message);
+    });
+
     it('retains one same-generation panic for an initialization retry after failure', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
