@@ -1,6 +1,8 @@
 import { type ReactElement } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
+import { voiceStatusStore } from '#/modules/AiRuntime/stores';
+import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/Transport/presentations/views';
@@ -49,6 +51,8 @@ export const TransportBar = (): ReactElement => {
     const project = useProjectState();
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
+    const voice = useStore(voiceStatusStore, { isListening: false, transcribing: false });
+    const voiceInputAvailable = isVoiceInputAvailable();
     const anyTrackArmed = tracks.some((time) => time.armed);
     const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
@@ -82,7 +86,12 @@ export const TransportBar = (): ReactElement => {
                 {/* Center stage */}
                 <div className="flex shrink-0 justify-center items-center gap-1 w-[40vw] max-w-[800px] min-w-[300px]">
                     <PromptBar />
-                    <VoiceButton />
+                    <VoiceButton
+                        isAvailable={voiceInputAvailable}
+                        isListening={voice.isListening}
+                        isTranscribing={voice.transcribing}
+                        onToggle={toggleVoiceInput}
+                    />
                 </div>
 
                 {/* Right wing */}

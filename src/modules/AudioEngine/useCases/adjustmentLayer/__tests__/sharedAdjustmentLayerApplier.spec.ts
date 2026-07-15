@@ -61,8 +61,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 import { adjustmentApplicationStore } from '../../../stores/adjustmentApplicationStore';
-import { resetSharedAdjustmentLayerApplierForTest } from '../resetSharedAdjustmentLayerApplierForTest';
 import { getSharedAdjustmentLayerApplier } from '../sharedAdjustmentLayerApplier';
+
+import { resetSharedAdjustmentLayerApplierForTest } from './resetSharedAdjustmentLayerApplierForTest';
 
 describe('sharedAdjustmentLayerApplier engine wiring', () => {
     beforeEach(() => {
