@@ -112,38 +112,3 @@ fn decode_from_stream(mss: MediaSourceStream) -> Result<DecodedAudio, String> {
         codec: codec_name,
     })
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AudioStreamMeta {
-    pub sample_rate: u32,
-    pub channels: u32,
-    pub total_frames: u64,
-    pub codec: String,
-}
-
-/// Read metadata from an audio file on disk without fully decoding it.
-pub fn get_audio_file_metadata(file_path: &str) -> Result<AudioStreamMeta, String> {
-    let file = std::fs::File::open(file_path).map_err(|e| format!("Failed to open file: {e}"))?;
-
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let hint = Hint::new();
-    let format_opts = FormatOptions::default();
-    let metadata_opts = MetadataOptions::default();
-
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
-        .map_err(|e| format!("Failed to probe: {e}"))?;
-
-    let track = probed.format.default_track().ok_or("No audio track")?;
-
-    Ok(AudioStreamMeta {
-        sample_rate: track.codec_params.sample_rate.unwrap_or(44100),
-        channels: track
-            .codec_params
-            .channels
-            .map(|c| c.count() as u32)
-            .unwrap_or(2),
-        total_frames: track.codec_params.n_frames.unwrap_or(0),
-        codec: track.codec_params.codec.to_string(),
-    })
-}
