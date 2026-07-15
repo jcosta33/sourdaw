@@ -48,6 +48,11 @@ type ModulationHalo = {
     color: string;
 };
 
+export type GestureAuthority = {
+    acquire: () => string | number;
+    isCurrent: (token: string | number) => boolean;
+};
+
 type RotaryKnobProps = {
     value: number;
     onChange: (val: number, isTransient?: boolean) => void;
@@ -70,6 +75,8 @@ type RotaryKnobProps = {
     tone?: Tone;
     /** Stable semantic owner token; changing it cancels an active drag without committing it. */
     gestureOwner?: string | number;
+    /** Optional synchronous authority for controls that serialize competing gestures. */
+    gestureAuthority?: GestureAuthority;
     /**
      * R-C1: Active modulation sources displayed as colored conic-gradient halo arcs.
      * Each entry represents one modulator connected to this parameter.
@@ -107,6 +114,7 @@ export const RotaryKnob = ({
     modulations,
     scale = 'linear',
     gestureOwner,
+    gestureAuthority,
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -128,6 +136,7 @@ export const RotaryKnob = ({
     const px = SIZES[size];
     const onChangeRef = useRef(onChange);
     const gestureOwnerAtStartRef = useRef<string | number | undefined>(gestureOwner);
+    const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
     const clearDragState = (): void => {
@@ -136,8 +145,18 @@ export const RotaryKnob = ({
         rootRef.current?.removeAttribute('data-dragging');
     };
 
+    const ownsGesture = (): boolean => {
+        const token = gestureOwnerAtStartRef.current;
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            return token !== undefined && authority.isCurrent(token);
+        }
+        return Object.is(token, gestureOwner);
+    };
+
     useLayoutEffect(() => {
         onChangeRef.current = onChange;
+        gestureAuthorityRef.current = gestureAuthority;
 
         if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
             clearDragState();
@@ -151,9 +170,9 @@ export const RotaryKnob = ({
                 return false;
             }
 
-            const ownsGesture = Object.is(gestureOwnerAtStartRef.current, gestureOwner);
+            const ownsCurrentGesture = ownsGesture();
             clearDragState();
-            if (ownsGesture && !Object.is(currentValue.current, startValue.current)) {
+            if (ownsCurrentGesture && !Object.is(currentValue.current, startValue.current)) {
                 onChangeRef.current(currentValue.current, false);
             }
             return true;
@@ -189,12 +208,13 @@ export const RotaryKnob = ({
             resetToDefault();
             return;
         }
+        const gestureToken = gestureAuthorityRef.current?.acquire() ?? gestureOwner;
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
-        gestureOwnerAtStartRef.current = gestureOwner;
+        gestureOwnerAtStartRef.current = gestureToken;
         startY.current = event.clientY;
         startValue.current = value;
         currentValue.current = value;
@@ -208,6 +228,10 @@ export const RotaryKnob = ({
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!draggingRef.current || activePointerIdRef.current !== event.pointerId) {
+            return;
+        }
+        if (!ownsGesture()) {
+            clearDragState();
             return;
         }
         const deltaY = startY.current - event.clientY;
@@ -237,7 +261,7 @@ export const RotaryKnob = ({
             return;
         }
         currentValue.current = clamped;
-        onChange(clamped, true);
+        onChangeRef.current(clamped, true);
     };
 
     const commitDrag = (event: PointerEvent<HTMLDivElement>): boolean => finalizeDragRef.current(event.pointerId);

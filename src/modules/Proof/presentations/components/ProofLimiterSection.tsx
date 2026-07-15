@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -18,6 +18,7 @@ type Props = {
     limiterGrDb: number;
     truePeakDb: number;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
@@ -26,6 +27,7 @@ export const ProofLimiterSection = ({
     limiterGrDb,
     truePeakDb,
     gestureOwner,
+    gestureAuthority,
     onPatchChange,
 }: Props): ReactElement => {
     return (
@@ -67,6 +69,7 @@ export const ProofLimiterSection = ({
                                 });
                             }}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={-12}
                             max={0}
                             step={0.1}
@@ -91,6 +94,7 @@ export const ProofLimiterSection = ({
                                 });
                             }}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={10}
                             max={500}
                             step={1}
@@ -115,6 +119,7 @@ export const ProofLimiterSection = ({
                                 });
                             }}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={0.5}
                             max={10}
                             step={0.5}

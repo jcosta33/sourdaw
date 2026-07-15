@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
 import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
 
-import { RotaryKnob } from '../RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '../RotaryKnob';
 
 const baseMidiState: MidiLearnState = {
     mappings: [],
@@ -121,6 +121,44 @@ describe('RotaryKnob', () => {
 
         expect(initialOnChange).toHaveBeenCalledTimes(1);
         expect(latestOnChange).toHaveBeenCalledWith(transientValue, false);
+    });
+
+    it('rejects stale moves and finalization synchronously after authority takeover', () => {
+        let currentToken = 0;
+        const authority: GestureAuthority = {
+            acquire: () => {
+                currentToken += 1;
+                return currentToken;
+            },
+            isCurrent: (token) => token === currentToken,
+        };
+        const firstOnChange = vi.fn();
+        const secondOnChange = vi.fn();
+        const { container } = render(
+            <>
+                <RotaryKnob value={50} onChange={firstOnChange} min={0} max={100} gestureAuthority={authority} />
+                <RotaryKnob value={50} onChange={secondOnChange} min={0} max={100} gestureAuthority={authority} />
+            </>
+        );
+        const [firstRoot, secondRoot] = Array.from(container.querySelectorAll<HTMLElement>('.cursor-ns-resize'));
+        if (!firstRoot || !secondRoot) {
+            throw new Error('Expected both rotary controls');
+        }
+
+        fireEvent.pointerDown(firstRoot, { button: 0, pointerId: 10, clientY: 100 });
+        fireEvent.pointerMove(firstRoot, { pointerId: 10, clientY: 80 });
+        const firstTransientCount = firstOnChange.mock.calls.length;
+
+        fireEvent.pointerDown(secondRoot, { button: 0, pointerId: 11, clientY: 100 });
+        fireEvent.pointerMove(secondRoot, { pointerId: 11, clientY: 70 });
+        fireEvent.pointerMove(firstRoot, { pointerId: 10, clientY: 40 });
+        fireEvent.pointerUp(firstRoot, { pointerId: 10 });
+        fireEvent.pointerUp(secondRoot, { pointerId: 11 });
+
+        expect(firstOnChange).toHaveBeenCalledTimes(firstTransientCount);
+        expect(firstOnChange).not.toHaveBeenLastCalledWith(expect.any(Number), false);
+        expect(secondOnChange).toHaveBeenCalledTimes(2);
+        expect(secondOnChange).toHaveBeenLastCalledWith(expect.any(Number), false);
     });
 
     it('does not commit again after lost pointer capture has finalized the drag', () => {

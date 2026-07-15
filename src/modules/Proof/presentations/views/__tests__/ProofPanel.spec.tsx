@@ -48,6 +48,21 @@ const EQ_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGesture]
     ['Q', end, 2, endGesture] as const,
 ]);
 
+type GestureEnding = (element: HTMLElement, pointerId: number, unmount: () => void) => void;
+
+const CURVE_KNOB_ENDINGS: Array<readonly [string, GestureEnding]> = [
+    ['pointerup', (element, pointerId) => fireEvent.pointerUp(element, { pointerId })],
+    ['pointercancel', (element, pointerId) => fireEvent.pointerCancel(element, { pointerId })],
+    ['lost pointer capture', (element, pointerId) => fireEvent.lostPointerCapture(element, { pointerId })],
+    ['unmount', (_element, _pointerId, unmount) => unmount()],
+];
+
+const CURVE_KNOB_OVERLAP_CASES = CURVE_KNOB_ENDINGS.flatMap(([end, endGesture]) =>
+    (['frequency', 'gain'] as const).flatMap((field) =>
+        (['curve', 'knob'] as const).map((winner) => [field, winner, end, endGesture] as const)
+    )
+);
+
 type ProofRotaryShape = readonly [
     label: string,
     uiLevel: ProofState['uiLevel'],
@@ -255,7 +270,7 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps an EQ curve drag alive across another section transient edit', () => {
+    it('lets a newer section gesture supersede an EQ curve without a stale finalization', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         seedState({ uiLevel: 3 });
@@ -285,6 +300,10 @@ describe('ProofPanel', () => {
         try {
             fireEvent.pointerUp(canvas, { pointerId: 21 });
 
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+            fireEvent.pointerUp(dynamicsCrossover, { pointerId: 22 });
+
             expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
             expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
                 freq: curveBand?.freq,
@@ -294,8 +313,7 @@ describe('ProofPanel', () => {
             expect(persistDevicePatchMock).toHaveBeenCalledWith(
                 DEVICE_ID,
                 expect.objectContaining({
-                    eq_band2_freq: curveBand?.freq,
-                    eq_band2_gain: curveBand?.gain,
+                    dyn_xover0: crossoverValue,
                 })
             );
         } finally {
@@ -303,7 +321,7 @@ describe('ProofPanel', () => {
         }
     });
 
-    it('rebases EQ curve finalization onto a concurrent edit on another band', () => {
+    it('keeps a superseded curve preview while the newer other-band knob commits', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
         seedState({ uiLevel: 3 });
@@ -333,6 +351,10 @@ describe('ProofPanel', () => {
         try {
             fireEvent.pointerUp(canvas, { pointerId: 23 });
 
+            expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+            fireEvent.pointerUp(otherEqGain, { pointerId: 24 });
+
             expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
             expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
                 freq: curveBand?.freq,
@@ -351,6 +373,119 @@ describe('ProofPanel', () => {
             unmount();
         }
     });
+
+    it.each(CURVE_KNOB_OVERLAP_CASES)(
+        'serializes curve and same-band %s knob gestures when %s wins and the loser ends via %s',
+        (field, winner, _end, endGesture) => {
+            const bridge = makeBridge();
+            bridges.set(DEVICE_ID, bridge);
+            seedState({ uiLevel: 3 });
+
+            const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+            const canvas = container.querySelector<HTMLCanvasElement>(
+                'canvas[aria-label="8-band parametric EQ frequency response"]'
+            );
+            if (!canvas) {
+                throw new Error('Expected the Level 3 EQ curve canvas');
+            }
+            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+            const knob = knobs.item(field === 'frequency' ? 6 : 7);
+            if (!knob) {
+                throw new Error(`Expected the EQ band 2 ${field} knob`);
+            }
+
+            const curvePointerId = 31;
+            const knobPointerId = 32;
+            const getBand2Point = (): { x: number; y: number } => {
+                const band = getProofState(DEVICE_ID).patch.eqBands[2];
+                if (!band) {
+                    throw new Error('Expected EQ band 2');
+                }
+                return {
+                    x: (Math.log10(band.freq / 20) / Math.log10(20000 / 20)) * 500,
+                    y: 60 - (band.gain / 18) * 60,
+                };
+            };
+
+            const startCurveGesture = (): void => {
+                const point = getBand2Point();
+                fireEvent.pointerDown(canvas, {
+                    button: 0,
+                    clientX: point.x,
+                    clientY: point.y,
+                    pointerId: curvePointerId,
+                });
+                fireEvent.pointerMove(canvas, {
+                    clientX: point.x + 10,
+                    clientY: point.y - 30,
+                    pointerId: curvePointerId,
+                });
+            };
+
+            const startKnobGesture = (): void => {
+                fireEvent.pointerDown(knob, { button: 0, pointerId: knobPointerId, clientY: 100 });
+                fireEvent.pointerMove(knob, { pointerId: knobPointerId, clientY: 80 });
+            };
+
+            if (winner === 'curve') {
+                startKnobGesture();
+                startCurveGesture();
+            } else {
+                startCurveGesture();
+                startKnobGesture();
+            }
+
+            const expectedBand = getProofState(DEVICE_ID).patch.eqBands[2];
+            if (!expectedBand) {
+                throw new Error('Expected the winning EQ band 2 edit');
+            }
+            const transientEngineWriteCount = bridge.setParam.mock.calls.length;
+            const loser = winner === 'curve' ? knob : canvas;
+            const loserPointerId = winner === 'curve' ? knobPointerId : curvePointerId;
+            const winningElement = winner === 'curve' ? canvas : knob;
+            const winningPointerId = winner === 'curve' ? curvePointerId : knobPointerId;
+            if (winner === 'curve') {
+                fireEvent.pointerMove(loser, { pointerId: loserPointerId, clientY: 40 });
+            } else {
+                const point = getBand2Point();
+                fireEvent.pointerMove(loser, {
+                    pointerId: loserPointerId,
+                    clientX: point.x + 20,
+                    clientY: point.y - 20,
+                });
+            }
+
+            expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
+                freq: expectedBand.freq,
+                gain: expectedBand.gain,
+            });
+            expect(bridge.setParam).toHaveBeenCalledTimes(transientEngineWriteCount);
+
+            endGesture(loser, loserPointerId, unmount);
+
+            if (_end !== 'unmount') {
+                fireEvent.pointerUp(winningElement, { pointerId: winningPointerId });
+            }
+
+            expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
+                freq: expectedBand.freq,
+                gain: expectedBand.gain,
+            });
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).toHaveBeenCalledWith(
+                DEVICE_ID,
+                expect.objectContaining({
+                    eq_band2_freq: expectedBand.freq,
+                    eq_band2_gain: expectedBand.gain,
+                })
+            );
+            expect(bridge.setParam).toHaveBeenCalledTimes(transientEngineWriteCount);
+
+            if (_end !== 'unmount') {
+                unmount();
+            }
+        }
+    );
 
     it.each(EQ_ROTARY_REPLACEMENT_CASES)(
         'preserves a replacement preset after a stale EQ %s drag via %s',

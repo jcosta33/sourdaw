@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -15,10 +15,11 @@ const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
 type Props = {
     patch: ProofPatch;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofExciterSection = ({ patch, gestureOwner, onPatchChange }: Props): ReactElement => {
+export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onPatchChange }: Props): ReactElement => {
     const updateBand = <Key extends keyof ProofPatch['excBands'][number]>(
         idx: number,
         key: Key,
@@ -100,6 +101,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, onPatchChange }: Prop
                                 value={band.drive}
                                 onChange={(value, isTransient) => updateBand(i, 'drive', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -114,6 +116,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, onPatchChange }: Prop
                                 value={band.blend}
                                 onChange={(value, isTransient) => updateBand(i, 'blend', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={1}
                                 step={0.01}

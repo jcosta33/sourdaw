@@ -9,7 +9,7 @@ import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
@@ -135,29 +135,61 @@ type ProofLevelContentProps = {
     state: ProofState;
     deviceId: string;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 };
 
-const ProofLevelContent = ({ state, deviceId, gestureOwner, onPatchChange }: ProofLevelContentProps): ReactElement => {
+const ProofLevelContent = ({
+    state,
+    deviceId,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: ProofLevelContentProps): ReactElement => {
     if (state.uiLevel === 1) {
         return (
-            <Level1Play state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+            <Level1Play
+                state={state}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
         );
     }
 
     if (state.uiLevel === 2) {
         return (
-            <Level2Shape state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+            <Level2Shape
+                state={state}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
         );
     }
 
     if (state.uiLevel === 3) {
-        return <Level3Build state={state} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />;
+        return (
+            <Level3Build
+                state={state}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
+        );
     }
 
     if (state.uiLevel === 4) {
         return (
-            <Level4Route state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+            <Level4Route
+                state={state}
+                deviceId={deviceId}
+                gestureOwner={gestureOwner}
+                gestureAuthority={gestureAuthority}
+                onPatchChange={onPatchChange}
+            />
         );
     }
 
@@ -192,9 +224,27 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
     const { patch, uiLevel } = state;
     const patchSnapshot = getProofPatchSnapshot(patch);
-    const [gestureOwner, incrementGestureOwner] = useReducer((owner: number) => owner + 1, 0);
+    const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
+    const activeGestureTokenRef = useRef(0);
     const patchSnapshotRef = useRef(patchSnapshot);
     const acceptedTransientPatchSnapshotRef = useRef<string | null>(null);
+
+    const advanceGestureOwner = (): number => {
+        const nextOwner = activeGestureTokenRef.current + 1;
+        activeGestureTokenRef.current = nextOwner;
+        setGestureOwner(nextOwner);
+        return nextOwner;
+    };
+
+    const invalidateGesture = (): void => {
+        acceptedTransientPatchSnapshotRef.current = null;
+        advanceGestureOwner();
+    };
+
+    const gestureAuthority: GestureAuthority = {
+        acquire: advanceGestureOwner,
+        isCurrent: (token) => Object.is(activeGestureTokenRef.current, token),
+    };
 
     useLayoutEffect(() => {
         const previousPatchSnapshot = patchSnapshotRef.current;
@@ -202,7 +252,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         const acceptedTransient = acceptedTransientPatchSnapshotRef.current === patchSnapshot;
         acceptedTransientPatchSnapshotRef.current = null;
         if (previousPatchSnapshot !== patchSnapshot && !acceptedTransient) {
-            incrementGestureOwner();
+            advanceGestureOwner();
         }
     }, [patchSnapshot]);
 
@@ -239,9 +289,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 title={preset.name}
                                                 subtitle={`${preset.patch.target} · ${formatLufs(preset.patch.targetLufs)} LUFS`}
-                                                onPress={() =>
-                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch })
-                                                }
+                                                onPress={() => {
+                                                    invalidateGesture();
+                                                    loadProofPatchWithAudio({ deviceId, patch: preset.patch });
+                                                }}
                                             />
                                         );
                                     })}
@@ -338,6 +389,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             state={state}
                             deviceId={deviceId}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             onPatchChange={handlePatchChange}
                         />
                     </div>
@@ -428,6 +480,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                         })
                                     }
                                     gestureOwner={gestureOwner}
+                                    gestureAuthority={gestureAuthority}
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -456,11 +509,13 @@ const Level1Play = ({
     state,
     deviceId,
     gestureOwner,
+    gestureAuthority,
     onPatchChange,
 }: {
     state: ProofState;
     deviceId: string;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
     const { patch } = state;
@@ -541,6 +596,7 @@ const Level1Play = ({
                     defaultValue={-1}
                     size="lg"
                     tone="cyan"
+                    gestureAuthority={gestureAuthority}
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">{patch.limCeiling.toFixed(1)} dBTP</span>
             </div>
@@ -554,11 +610,13 @@ const Level2Shape = ({
     state,
     deviceId,
     gestureOwner,
+    gestureAuthority,
     onPatchChange,
 }: {
     state: ProofState;
     deviceId: string;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
     const { patch } = state;
@@ -617,6 +675,7 @@ const Level2Shape = ({
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
                         const bands = patch.dynBands.map((band) => ({ ...band, threshold: value }));
                         onPatchChange({
@@ -642,6 +701,7 @@ const Level2Shape = ({
                     bypassed={patch.imgBypassed}
                     value={patch.imgBandWidth[2] ?? 1}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
                         widths[2] = value;
@@ -667,6 +727,7 @@ const Level2Shape = ({
                     bypassed={patch.excBypassed}
                     value={patch.excBands[1]?.drive ?? 0.2}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => {
                         const bands = patch.excBands.map((b) => ({
                             ...b,
@@ -705,6 +766,7 @@ const Level2Shape = ({
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
                     min={-12}
                     max={0}
@@ -722,10 +784,12 @@ const Level2Shape = ({
 const Level3Build = ({
     state,
     gestureOwner,
+    gestureAuthority,
     onPatchChange,
 }: {
     state: ProofState;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
     const { patch } = state;
@@ -734,12 +798,18 @@ const Level3Build = ({
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
-                <ProofEqSection patch={patch} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+                <ProofEqSection
+                    patch={patch}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofDynSection
                     patch={patch}
                     dynGr={state.dynGr}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
@@ -747,16 +817,23 @@ const Level3Build = ({
                     patch={patch}
                     correlation={state.correlation}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofExciterSection patch={patch} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+                <ProofExciterSection
+                    patch={patch}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofLimiterSection
                     patch={patch}
                     limiterGrDb={state.limiterGrDb}
                     truePeakDb={state.truePeakDb}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
             </div>
@@ -811,11 +888,13 @@ const Level4Route = ({
     state,
     deviceId,
     gestureOwner,
+    gestureAuthority,
     onPatchChange,
 }: {
     state: ProofState;
     deviceId: string;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
     const { patch } = state;
@@ -910,6 +989,7 @@ const Level4Route = ({
                         defaultValue={0}
                         size="md"
                         tone="cyan"
+                        gestureAuthority={gestureAuthority}
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.inputGain > 0 ? '+' : ''}
@@ -928,6 +1008,7 @@ const Level4Route = ({
                         defaultValue={0}
                         size="md"
                         tone="cyan"
+                        gestureAuthority={gestureAuthority}
                     />
                     <span className="text-[7px] text-muted-foreground font-mono">
                         {patch.outputGain > 0 ? '+' : ''}
@@ -1145,6 +1226,7 @@ const KnobColumn = ({
     value,
     onChange,
     gestureOwner,
+    gestureAuthority,
     min,
     max,
     unit,
@@ -1157,6 +1239,7 @@ const KnobColumn = ({
     value: number;
     onChange: (value: number, isTransient?: boolean) => void;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     min: number;
     max: number;
     unit: string;
@@ -1171,6 +1254,7 @@ const KnobColumn = ({
             value={value}
             onChange={onChange}
             gestureOwner={gestureOwner}
+            gestureAuthority={gestureAuthority}
             min={min}
             max={max}
             step={0.1}

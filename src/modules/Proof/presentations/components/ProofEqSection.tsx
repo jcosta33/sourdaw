@@ -7,7 +7,7 @@ import { type ReactElement } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -21,10 +21,11 @@ const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#95
 type Props = {
     patch: ProofPatch;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): ReactElement => {
+export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchChange }: Props): ReactElement => {
     const updatePatch = <Key extends keyof ProofPatch['eqBands'][number]>(
         idx: number,
         key: Key,
@@ -72,6 +73,7 @@ export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): R
                     width={500}
                     height={120}
                     gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
                     onPatchChange={onPatchChange}
                 />
             </div>
@@ -98,6 +100,7 @@ export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): R
                             value={band.freq}
                             onChange={(value, isTransient) => updatePatch(i, 'freq', value, isTransient)}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={20}
                             max={20000}
                             step={1}
@@ -114,6 +117,7 @@ export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): R
                             value={band.gain}
                             onChange={(value, isTransient) => updatePatch(i, 'gain', value, isTransient)}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={-18}
                             max={18}
                             step={0.5}
@@ -131,6 +135,7 @@ export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): R
                             value={band.q}
                             onChange={(value, isTransient) => updatePatch(i, 'q', value, isTransient)}
                             gestureOwner={gestureOwner}
+                            gestureAuthority={gestureAuthority}
                             min={0.1}
                             max={10}
                             step={0.1}

@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
 import { PROOF_PATCH_RANGES, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -23,10 +23,17 @@ type Props = {
     patch: ProofPatch;
     dynGr: [number, number, number, number];
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: Props): ReactElement => {
+export const ProofDynSection = ({
+    patch,
+    dynGr,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
     const updateBand = (
         idx: number,
         key: 'threshold' | 'ratio' | 'attack' | 'release',
@@ -95,6 +102,7 @@ export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: P
                                 value={freq}
                                 onChange={(value, isTransient) => updateXover(i, value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={min}
                                 max={max}
                                 step={1}
@@ -140,6 +148,7 @@ export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: P
                                 value={band.threshold}
                                 onChange={(value, isTransient) => updateBand(i, 'threshold', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={-60}
                                 max={0}
                                 step={0.5}
@@ -153,6 +162,7 @@ export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: P
                                 value={band.ratio}
                                 onChange={(value, isTransient) => updateBand(i, 'ratio', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={1}
                                 max={20}
                                 step={0.5}
@@ -166,6 +176,7 @@ export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: P
                                 value={band.attack}
                                 onChange={(value, isTransient) => updateBand(i, 'attack', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={1}
                                 max={200}
                                 step={1}
@@ -179,6 +190,7 @@ export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: P
                                 value={band.release}
                                 onChange={(value, isTransient) => updateBand(i, 'release', value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={10}
                                 max={2000}
                                 step={1}

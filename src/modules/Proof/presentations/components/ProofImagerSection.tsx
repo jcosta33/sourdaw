@@ -5,7 +5,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
@@ -15,10 +15,17 @@ type Props = {
     patch: ProofPatch;
     correlation: number;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofImagerSection = ({ patch, correlation, gestureOwner, onPatchChange }: Props): ReactElement => {
+export const ProofImagerSection = ({
+    patch,
+    correlation,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
     const updateWidth = (idx: number, value: number, isTransient = false) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
@@ -75,6 +82,7 @@ export const ProofImagerSection = ({ patch, correlation, gestureOwner, onPatchCh
                                 value={patch.imgBandWidth[i]!}
                                 onChange={(value, isTransient) => updateWidth(i, value, isTransient)}
                                 gestureOwner={gestureOwner}
+                                gestureAuthority={gestureAuthority}
                                 min={0}
                                 max={2}
                                 step={0.01}
@@ -119,6 +127,7 @@ export const ProofImagerSection = ({ patch, correlation, gestureOwner, onPatchCh
                             });
                         }}
                         gestureOwner={gestureOwner}
+                        gestureAuthority={gestureAuthority}
                         min={40}
                         max={200}
                         step={1}

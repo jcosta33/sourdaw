@@ -9,6 +9,8 @@
  */
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
+import { type GestureAuthority } from '#/components/daw/RotaryKnob';
+
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
@@ -145,16 +147,25 @@ type Props = {
     width: number;
     height: number;
     gestureOwner: number;
+    gestureAuthority?: GestureAuthority;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange }: Props): ReactElement => {
+export const ProofEqCurve = ({
+    patch,
+    width,
+    height,
+    gestureOwner,
+    gestureAuthority,
+    onPatchChange,
+}: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const activePointerIdRef = useRef<number | null>(null);
     const dragBandRef = useRef<number | null>(null);
     const dragStartBandRef = useRef<ProofPatch['eqBands'][number] | null>(null);
     const dragValueRef = useRef<{ freq: number; gain: number } | null>(null);
-    const gestureOwnerAtStartRef = useRef<number | null>(null);
+    const gestureOwnerAtStartRef = useRef<string | number | null>(null);
+    const gestureAuthorityRef = useRef<GestureAuthority | undefined>(gestureAuthority);
     const onPatchChangeRef = useRef(onPatchChange);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
 
@@ -166,8 +177,18 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
         gestureOwnerAtStartRef.current = null;
     };
 
+    const ownsGesture = (): boolean => {
+        const token = gestureOwnerAtStartRef.current;
+        const authority = gestureAuthorityRef.current;
+        if (authority) {
+            return token !== null && authority.isCurrent(token);
+        }
+        return token !== null && Object.is(token, gestureOwner);
+    };
+
     useLayoutEffect(() => {
         onPatchChangeRef.current = onPatchChange;
+        gestureAuthorityRef.current = gestureAuthority;
 
         if (
             activePointerIdRef.current !== null &&
@@ -188,8 +209,7 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
             const bandIndex = dragBandRef.current;
             const startBand = dragStartBandRef.current;
             const dragValue = dragValueRef.current;
-            const ownsGesture =
-                gestureOwnerAtStartRef.current !== null && Object.is(gestureOwnerAtStartRef.current, gestureOwner);
+            const ownsCurrentGesture = ownsGesture();
             const changed =
                 startBand !== null &&
                 dragValue !== null &&
@@ -198,7 +218,7 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
 
             clearDragState();
 
-            if (ownsGesture && bandIndex !== null && startBand !== null && dragValue !== null && changed) {
+            if (ownsCurrentGesture && bandIndex !== null && startBand !== null && dragValue !== null && changed) {
                 const value = patch.eqBands.map((band, index) => {
                     if (index !== bandIndex) {
                         return band;
@@ -443,6 +463,7 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
         }
 
         if (closestIdx >= 0) {
+            const gestureToken = gestureAuthorityRef.current?.acquire() ?? gestureOwner;
             canvas.setPointerCapture(e.pointerId);
             activePointerIdRef.current = e.pointerId;
             dragBandRef.current = closestIdx;
@@ -453,13 +474,17 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
                 return;
             }
             dragValueRef.current = { freq: startBand.freq, gain: startBand.gain };
-            gestureOwnerAtStartRef.current = gestureOwner;
+            gestureOwnerAtStartRef.current = gestureToken;
         }
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
         const idx = dragBandRef.current;
         if (idx === null || activePointerIdRef.current !== e.pointerId) {
+            return;
+        }
+        if (!ownsGesture()) {
+            clearDragState();
             return;
         }
         const canvas = canvasRef.current;
@@ -492,7 +517,7 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
                 isTransient: true,
             };
             dragValueRef.current = { ...dragValue, freq: newFreq };
-            onPatchChange(edit);
+            onPatchChangeRef.current(edit);
             return;
         }
 
@@ -514,7 +539,7 @@ export const ProofEqCurve = ({ patch, width, height, gestureOwner, onPatchChange
             isTransient: true,
         };
         dragValueRef.current = { freq: newFreq, gain: newGain };
-        onPatchChange(edit);
+        onPatchChangeRef.current(edit);
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
