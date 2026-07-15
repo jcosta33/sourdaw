@@ -1,13 +1,13 @@
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 
+import { decodePersistenceAuthority } from './decodePersistenceAuthority';
 import { STORE_NAME, openDatabase } from './helpers';
 import {
-    decodePersistenceAuthority,
     EMPTY_PERSISTENCE_AUTHORITY,
     PERSISTENCE_AUTHORITY_KEY,
-    toPersistenceBytes,
     type CrdtPersistenceAuthority,
-} from './persistenceAuthority';
+} from './persistenceAuthorityModel';
+import { toPersistenceBytes } from './toPersistenceBytes';
 
 export type CrdtPersistenceSnapshot = {
     readonly authority: CrdtPersistenceAuthority;

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { clearCrdtIdb } from '../clearCrdtIdb';
+import { encodePersistenceAuthority } from '../encodePersistenceAuthority';
 import { openDatabase } from '../helpers';
 import { loadAllFromIdb } from '../loadAllFromIdb';
-import { encodePersistenceAuthority } from '../persistenceAuthority';
 import { saveAllToIdb } from '../saveAllToIdb';
 import { saveIncrementalToIdb } from '../saveIncrementalToIdb';
 

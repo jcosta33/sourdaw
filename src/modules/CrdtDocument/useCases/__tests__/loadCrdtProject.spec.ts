@@ -21,7 +21,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
     loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
 }));
-vi.mock('../crdtPersistenceQueue', () => ({
+vi.mock('../runCrdtPersistenceLoad', () => ({
     runCrdtPersistenceLoad: vi.fn(
         async (
             operation: (input: {

@@ -5,14 +5,14 @@ import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
-import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../compactProject';
-import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
+import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 type VersionedQueueState = {
     version: number;
@@ -964,7 +964,7 @@ describe('persistCrdtProject', () => {
 
         try {
             await importPersistenceAfterQueueVersionMismatch();
-            const queueAfterMigration = await import('../crdtPersistenceQueue');
+            const queueAfterMigration = await import('../runCrdtPersistenceOperation');
             await mergeStarted;
 
             await queueAfterMigration.runCrdtPersistenceOperation('reset');

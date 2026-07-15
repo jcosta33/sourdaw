@@ -1,4 +1,4 @@
-import { runCrdtPersistenceOperation } from './crdtPersistenceQueue';
+import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
 
 /**
  * Persist the current project incrementally.

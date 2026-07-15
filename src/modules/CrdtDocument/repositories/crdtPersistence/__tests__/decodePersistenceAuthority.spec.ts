@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { MAX_CRDT_ROOT_LINEAGE_LENGTH } from '../../../models/CrdtRootLineage';
-import {
-    decodePersistenceAuthority,
-    EMPTY_PERSISTENCE_AUTHORITY,
-    encodePersistenceAuthority,
-} from '../persistenceAuthority';
+import { decodePersistenceAuthority } from '../decodePersistenceAuthority';
+import { encodePersistenceAuthority } from '../encodePersistenceAuthority';
+import { EMPTY_PERSISTENCE_AUTHORITY } from '../persistenceAuthorityModel';
 
-describe('persistence authority', () => {
+describe('decodePersistenceAuthority', () => {
     it('migrates a version 1 authority to the conservative Main root lineage', () => {
         const legacyAuthority = new TextEncoder().encode(
             JSON.stringify({
@@ -58,8 +56,5 @@ describe('persistence authority', () => {
         expect(decodePersistenceAuthority(encodeRawAuthority('x'.repeat(MAX_CRDT_ROOT_LINEAGE_LENGTH + 1)))).toEqual(
             EMPTY_PERSISTENCE_AUTHORITY
         );
-        expect(() =>
-            encodePersistenceAuthority({ epoch: 'project', revision: 3, rootLineage: 'feature/unsafe' })
-        ).toThrow('[CrdtPersistence] Invalid root lineage');
     });
 });

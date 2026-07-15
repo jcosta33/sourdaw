@@ -75,7 +75,7 @@ async function transitionLineage(page: Page, from: string, to: string, marker: s
             const [{ automergeRepository }, { compactProject }, { runCrdtPersistenceOperation }] = await Promise.all([
                 import('/src/modules/CrdtDocument/repositories/automergeRepository.ts'),
                 import('/src/modules/CrdtDocument/useCases/compactProject.ts'),
-                import('/src/modules/CrdtDocument/useCases/crdtPersistenceQueue.ts'),
+                import('/src/modules/CrdtDocument/useCases/runCrdtPersistenceOperation.ts'),
             ]);
             await runCrdtPersistenceOperation({ type: 'root-lineage-transition', from: source, to: target });
             automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {

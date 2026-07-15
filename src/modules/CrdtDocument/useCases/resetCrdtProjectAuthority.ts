@@ -4,7 +4,7 @@ import { automergeRepository } from '../repositories/automergeRepository';
 import { branchStore, MAIN_BRANCH_ID } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
-import { runCrdtPersistenceOperation } from './crdtPersistenceQueue';
+import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
 
 export function resetCrdtProjectAuthority(name: string): void {
     // Drain writes owned by the outgoing repository before replacing its root.

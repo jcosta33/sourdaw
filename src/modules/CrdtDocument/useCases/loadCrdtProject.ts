@@ -1,7 +1,7 @@
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 
-import { runCrdtPersistenceLoad } from './crdtPersistenceQueue';
+import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
 
 /**
  * Load a CRDT project from persistence (IndexedDB).

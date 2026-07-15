@@ -1,7 +1,7 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +20,10 @@ vi.mock('#/utils/HMR/createHmrPersistentState', () => ({
 }));
 
 type PersistenceContext = {
-    queue: typeof import('../crdtPersistenceQueue');
+    queue: {
+        runCrdtPersistenceOperation: typeof import('../runCrdtPersistenceOperation').runCrdtPersistenceOperation;
+        runCrdtPersistenceLoad: typeof import('../runCrdtPersistenceLoad').runCrdtPersistenceLoad;
+    };
     repository: typeof import('../../repositories/automergeRepository');
     snapshot: typeof import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb');
 };
@@ -39,12 +42,20 @@ type LoadedPersistenceSnapshot = {
 
 async function importContext(): Promise<PersistenceContext> {
     vi.resetModules();
-    const [queue, repository, snapshot] = await Promise.all([
-        import('../crdtPersistenceQueue'),
+    const [operationQueue, loadQueue, repository, snapshot] = await Promise.all([
+        import('../runCrdtPersistenceOperation'),
+        import('../runCrdtPersistenceLoad'),
         import('../../repositories/automergeRepository'),
         import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb'),
     ]);
-    return { queue, repository, snapshot };
+    return {
+        queue: {
+            runCrdtPersistenceOperation: operationQueue.runCrdtPersistenceOperation,
+            runCrdtPersistenceLoad: loadQueue.runCrdtPersistenceLoad,
+        },
+        repository,
+        snapshot,
+    };
 }
 
 async function loadContextSnapshot({

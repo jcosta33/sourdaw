@@ -19,7 +19,7 @@ import {
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
     type CrdtPersistenceAuthority,
-} from '../repositories/crdtPersistence/persistenceAuthority';
+} from '../repositories/crdtPersistence/persistenceAuthorityModel';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
 import {
     saveIncrementalsToIdb,
@@ -125,19 +125,19 @@ type RootLineageTransitionOperation = {
     to: string;
 };
 
-type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset' | RootLineageTransitionOperation;
+export type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset' | RootLineageTransitionOperation;
 
 type LoadCrdtPersistenceOperationResult = {
     loaded: boolean;
     snapshot: CrdtPersistenceSnapshot | null;
 };
 
-type LoadCrdtPersistenceOperation = (input: {
+export type LoadCrdtPersistenceOperation = (input: {
     shouldCommit: () => boolean;
 }) => Promise<LoadCrdtPersistenceOperationResult>;
 
 /** Serialize persistence operations and reset private lifecycle state. */
-export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
+function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
     if (typeof operation === 'object') {
         beginRootLineageTransition(operation);
         return Promise.resolve();
@@ -165,7 +165,7 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
 }
 
 /** Revoke old writes, then load and adopt one persistence snapshot behind their settled tail. */
-export function runCrdtPersistenceLoad(operation: LoadCrdtPersistenceOperation): Promise<boolean> {
+function runCrdtPersistenceLoad(operation: LoadCrdtPersistenceOperation): Promise<boolean> {
     const previousOperationTail = persistenceState.operationTail;
     const generation = beginLoadQueueState();
     function shouldCommit(): boolean {
@@ -827,3 +827,8 @@ function removePendingChunk(pending: PendingIncrementalChunk): void {
         persistenceState.pendingChunks.splice(index, 1);
     }
 }
+
+export const crdtPersistenceQueueCoordinator = Object.freeze({
+    runOperation: runCrdtPersistenceOperation,
+    runLoad: runCrdtPersistenceLoad,
+});

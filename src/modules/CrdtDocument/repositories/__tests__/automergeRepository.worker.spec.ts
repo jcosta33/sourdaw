@@ -373,7 +373,7 @@ describe('AutomergeRepository worker lifecycle', () => {
 
         const { automergeRepository } = await import('../automergeRepository');
         const { compactProject } = await import('../../useCases/compactProject');
-        const { runCrdtPersistenceOperation } = await import('../../useCases/crdtPersistenceQueue');
+        const { runCrdtPersistenceOperation } = await import('../../useCases/runCrdtPersistenceOperation');
         const { loadCrdtProject } = await import('../../useCases/loadCrdtProject');
         const { persistCrdtProject } = await import('../../useCases/persistCrdtProject');
         const { loadAllFromIdb } = await import('../crdtPersistence/loadAllFromIdb');

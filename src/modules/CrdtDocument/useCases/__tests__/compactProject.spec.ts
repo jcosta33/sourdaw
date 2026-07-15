@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
-import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../compactProject';
-import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { persistCrdtProject } from '../persistCrdtProject';
+import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),

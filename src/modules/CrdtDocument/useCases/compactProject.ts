@@ -1,4 +1,4 @@
-import { runCrdtPersistenceOperation } from './crdtPersistenceQueue';
+import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
 
 /**
  * Atomically replace persisted CRDT state with a full snapshot.

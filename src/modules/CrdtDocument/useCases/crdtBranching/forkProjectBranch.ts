@@ -7,8 +7,8 @@ import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
-import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { projectCrdtToStores } from '../projection/projectProjection';
+import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
 

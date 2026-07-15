@@ -1,17 +1,17 @@
 import { type DocumentBundle, type DocId } from '../../models/CrdtDocumentTypes';
 
+import { advancePersistenceAuthority } from './advancePersistenceAuthority';
+import { arePersistenceAuthoritiesEqual } from './arePersistenceAuthoritiesEqual';
 import { bindTransactionAbortSignal } from './bindTransactionAbortSignal';
+import { decodePersistenceAuthority } from './decodePersistenceAuthority';
+import { decodePersistenceBundle } from './decodePersistenceBundle';
+import { encodePersistenceAuthority } from './encodePersistenceAuthority';
 import { STORE_NAME, openDatabase } from './helpers';
 import {
-    advancePersistenceAuthority,
-    arePersistenceAuthoritiesEqual,
-    decodePersistenceAuthority,
     EMPTY_PERSISTENCE_AUTHORITY,
-    encodePersistenceAuthority,
     PERSISTENCE_AUTHORITY_KEY,
-    toPersistenceBytes,
     type CrdtPersistenceAuthority,
-} from './persistenceAuthority';
+} from './persistenceAuthorityModel';
 
 export type IncrementalChunk = {
     id: DocId;
@@ -33,26 +33,6 @@ export type SaveIncrementalsToIdbResult =
           authority: CrdtPersistenceAuthority;
           bundle: DocumentBundle;
       };
-
-function readBundle(keys: IDBValidKey[], values: unknown[]): DocumentBundle {
-    const bundle: DocumentBundle = new Map();
-    for (let index = 0; index < keys.length; index++) {
-        const key = keys[index];
-        const value = values[index];
-        if (typeof key !== 'string') {
-            throw new TypeError(`[CrdtPersistence] Invalid persisted key at index ${index}`);
-        }
-        if (key === PERSISTENCE_AUTHORITY_KEY) {
-            continue;
-        }
-        const bytes = toPersistenceBytes(value);
-        if (!bytes) {
-            throw new TypeError(`[CrdtPersistence] Invalid persisted record at index ${index}`);
-        }
-        bundle.set(key, bytes);
-    }
-    return bundle;
-}
 
 /** Append incremental chunks under the same durable authority transaction. */
 export async function saveIncrementalsToIdb(
@@ -132,7 +112,7 @@ export async function saveIncrementalsToIdb(
                 if (transactionResult?.status === 'conflict' && conflictKeysRequest && conflictValuesRequest) {
                     transactionResult = {
                         ...transactionResult,
-                        bundle: readBundle(conflictKeysRequest.result, conflictValuesRequest.result),
+                        bundle: decodePersistenceBundle(conflictKeysRequest.result, conflictValuesRequest.result),
                     };
                 }
                 if (!transactionResult) {

@@ -8,9 +8,9 @@ import {
     type TransactionalPersistenceTransaction,
 } from '../../../testing/transactionalPersistence';
 import { compactProject } from '../../compactProject';
-import { runCrdtPersistenceOperation } from '../../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../../crdtProjectCompactionState';
 import { persistCrdtProject } from '../../persistCrdtProject';
+import { runCrdtPersistenceOperation } from '../../runCrdtPersistenceOperation';
 import { mergeBranch } from '../mergeBranch';
 
 const mocks = vi.hoisted(() => ({
