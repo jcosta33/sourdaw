@@ -31,7 +31,7 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
-        return { value: mocks.branchState };
+        return { value: mocks.branchState, set: vi.fn() };
     },
 }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
@@ -101,6 +101,7 @@ describe('mergeBranch persistence', () => {
             throw new Error('Expected the active branch document');
         }
         automergeRepository.replaceDoc('root', cloneDoc(branchDoc));
+        await runCrdtPersistenceOperation({ type: 'root-lineage-transition', from: 'main', to: 'feat' });
 
         const baseCompaction = compactProject();
         const baseSave = await persistence.waitForTransaction('readwrite', 1);

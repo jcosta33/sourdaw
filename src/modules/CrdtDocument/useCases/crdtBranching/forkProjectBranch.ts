@@ -6,10 +6,8 @@ import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
-import { compactProject } from '../compactProject';
-import { projectCrdtToStores } from '../projection/projectProjection';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
 
+import { runBranchLineageTransition } from './runBranchLineageTransition';
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
 
 /**
@@ -31,40 +29,41 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     const branchId = crypto.randomUUID();
     const branchDocId = `branch_${branchId}`;
     const heads = getHeads(sourceDoc).map(String);
+    const activeBranch = state.branches.find(({ branchId: candidateId }) => candidateId === state.activeBranchId);
+    if (!activeBranch) {
+        throw createBranchError(`Active branch not found: ${state.activeBranchId}`);
+    }
+    const sourceBackingDocId =
+        activeBranch.rootDocId === DOC_PREFIX_ROOT ? `branch_${activeBranch.branchId}` : activeBranch.rootDocId;
 
-    // The root slot is only the active working document. Snapshot the source
-    // into its own backing slot before root is repointed at the fork.
     const forkedDoc = cloneDoc(sourceDoc);
-    flushAutomergeStorageWrites();
-    void runCrdtPersistenceOperation({
-        type: 'root-lineage-transition',
+    return runBranchLineageTransition({
+        affectedDocIds: [DOC_PREFIX_ROOT, sourceBackingDocId, branchDocId],
         from: state.activeBranchId,
+        previousState: state,
         to: branchId,
+        apply: () => {
+            const stateWithSourceSnapshot = saveActiveBranchSnapshot({ state, liveRoot: sourceDoc });
+            automergeRepository.insertDoc(branchDocId, forkedDoc);
+            automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(forkedDoc));
+
+            const record: BranchRecord = {
+                branchId,
+                name,
+                rootDocId: branchDocId,
+                sourceBranchId: state.activeBranchId,
+                createdAt: Date.now(),
+                createdFromHeads: heads,
+                note,
+            };
+
+            return {
+                nextState: {
+                    branches: [...stateWithSourceSnapshot.branches, record],
+                    activeBranchId: branchId,
+                },
+                result: branchId,
+            };
+        },
     });
-    const stateWithSourceSnapshot = saveActiveBranchSnapshot({ state, liveRoot: sourceDoc });
-    automergeRepository.insertDoc(branchDocId, forkedDoc);
-    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(forkedDoc));
-
-    const record: BranchRecord = {
-        branchId,
-        name,
-        rootDocId: branchDocId,
-        sourceBranchId: state.activeBranchId,
-        createdAt: Date.now(),
-        createdFromHeads: heads,
-        note,
-    };
-
-    branchStore.set({
-        branches: [...stateWithSourceSnapshot.branches, record],
-        activeBranchId: branchId,
-    });
-
-    // Queue the full snapshot behind any retained or in-flight persistence.
-    await compactProject();
-
-    // Hydrate stores from the forked branch
-    projectCrdtToStores();
-
-    return branchId;
 }

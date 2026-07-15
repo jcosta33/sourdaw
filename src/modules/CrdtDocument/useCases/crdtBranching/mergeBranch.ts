@@ -1,11 +1,13 @@
 import { merge, clone as cloneDoc } from '@automerge/automerge';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
-import { compactProject } from '../compactProject';
-import { projectCrdtToStores } from '../projection/projectProjection';
+
+import { runBranchLineageTransition } from './runBranchLineageTransition';
 
 /**
  * Merge a source branch into the current (target) branch.
@@ -35,6 +37,7 @@ export async function mergeBranch(sourceBranchId: string): Promise<void> {
         throw createBranchError('Cannot merge a branch into itself');
     }
 
+    flushAutomergeStorageWrites();
     const sourceDoc = automergeRepository.getDoc(sourceBranch.rootDocId);
     // The active branch's live document is the root slot, which mirrors it.
     const targetDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
@@ -43,17 +46,18 @@ export async function mergeBranch(sourceBranchId: string): Promise<void> {
         throw createBranchError('Cannot merge: missing documents');
     }
 
-    const merged = merge(targetDoc, sourceDoc);
-    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, merged);
-    // Keep the active branch's own snapshot in sync with its merged working doc
-    // so the merge survives a later switch away (unless the active branch is
-    // backed directly by the root slot, i.e. main).
-    if (activeBranch.rootDocId !== DOC_PREFIX_ROOT) {
-        automergeRepository.replaceDoc(activeBranch.rootDocId, cloneDoc(merged));
-    }
-
-    // Queue the full snapshot behind any retained or in-flight persistence.
-    await compactProject();
-
-    projectCrdtToStores();
+    await runBranchLineageTransition({
+        affectedDocIds: [DOC_PREFIX_ROOT, activeBranch.rootDocId],
+        from: state.activeBranchId,
+        previousState: state,
+        to: state.activeBranchId,
+        apply: () => {
+            const merged = merge(targetDoc, sourceDoc);
+            automergeRepository.replaceDoc(DOC_PREFIX_ROOT, merged);
+            if (activeBranch.rootDocId !== DOC_PREFIX_ROOT) {
+                automergeRepository.replaceDoc(activeBranch.rootDocId, cloneDoc(merged));
+            }
+            return { result: undefined };
+        },
+    });
 }

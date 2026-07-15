@@ -5,7 +5,7 @@ title: CRDT multi-document architecture and lazy loading
 status: draft
 owner: The Sourdaw team
 sources:
-  - self
+    - self
 ---
 
 # CRDT multi-document architecture and lazy loading
@@ -81,7 +81,12 @@ consumers continue to address the same root key rather than being retargeted to
 per-branch document IDs. Auto-save and merge-lineage detection must still
 address the real per-document IDs, not the fixed alias.
 
-Verify with: `pnpm test:run src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranchWriteIsolation.spec.ts`, using the real repository and storage adapter to queue an outgoing-root write, race the branch switch, and assert both branch documents and their persisted IDs.
+Branch creation, switching, and merging must reject when their full persistence
+step fails. Before rejecting, they must restore every document and branch-store
+value changed by the operation, reload durable persistence authority, and
+re-project the recovered state.
+
+Verify with: `pnpm test:run src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchingPersistenceAdapter.spec.ts src/modules/CrdtDocument/useCases/crdtBranching/__tests__/forkProjectBranch.spec.ts src/modules/CrdtDocument/useCases/crdtBranching/__tests__/mergeBranch.spec.ts src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts`.
 
 ## Open questions
 
@@ -106,8 +111,8 @@ observations (file:line) of what is true today, not requirements; they bound how
 existing surface a multi-document change can lean on.
 
 - **Stale-doc-id mutation notifies before it throws.** `changeDoc` throws `Document not found:
-  ${id}` on a stale id (`automergeRepository.ts:175`); the use-case caller (`mutateCrdtDoc`)
-  does not catch, and the projection bridge fires listeners *before* the error returns — so a
+${id}` on a stale id (`automergeRepository.ts:175`); the use-case caller (`mutateCrdtDoc`)
+  does not catch, and the projection bridge fires listeners _before_ the error returns — so a
   listener can observe a mutation that never actually applied. No stale-id test exists. (audit
   #12/#33)
 - **`createCrdtProject` leaves stale `branchStore` records.** It clears the in-memory docs and
@@ -179,12 +184,12 @@ existing surface a multi-document change can lean on.
   (Clone-all #14 and concurrency #15 are recovered elsewhere; the ~2× allocation is restored here.)
   (audit #35/#5/#11)
 - **`revertAction` is compensating, not rewinding** (`revertAction.ts:6-12`): it re-issues the
-  inverse via `executeAppAction`, which pushes a *fresh* history entry, so the journal momentarily
+  inverse via `executeAppAction`, which pushes a _fresh_ history entry, so the journal momentarily
   shows both the original (`reverted=true`) and the inverse. The source documents this as
   intentional, but it is unverified because `revertAction` has no real test (#61). (audit #63)
 - **Repository docs are type-erased.** Docs are stored as `AnyDoc = Record<string, unknown>` with
   `as Doc<TDoc>` / `as Doc<AnyDoc>` casts at seven sites (`automergeRepository.ts:119,162,173,179,
-  188,202,206`); the repository has no type-aware handle on the docs it stores, so projection and
+188,202,206`); the repository has no type-aware handle on the docs it stores, so projection and
   `mutateCrdtDoc<DocShape>` callers each cast independently and shape drift is uncaught. (audit
   #11/#66)
 

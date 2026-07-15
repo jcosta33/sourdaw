@@ -1,26 +1,14 @@
-import { clone as cloneDoc, type Doc } from '@automerge/automerge';
+import { clone as cloneDoc } from '@automerge/automerge';
 
-import { isAppError } from '#/infra/errors/isAppError';
-import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 
 import { createBranchError } from '../../errors/BranchError';
-import { DOC_PREFIX_ROOT, type DocId } from '../../models/CrdtDocumentTypes';
+import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { branchStore, type BranchStoreState } from '../../stores/branchStore';
-import { compactProject } from '../compactProject';
-import { loadCrdtProject } from '../loadCrdtProject';
-import { projectCrdtToStores } from '../projection/projectProjection';
-import { runCrdtPersistenceOperation } from '../runCrdtPersistenceOperation';
+import { branchStore } from '../../stores/branchStore';
 
+import { runBranchLineageTransition } from './runBranchLineageTransition';
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
-
-type DocumentSnapshot = {
-    id: DocId;
-    doc: Doc<unknown> | null;
-};
-
-let branchSwitchInProgress = false;
 
 /**
  * Switch to a different branch.
@@ -45,10 +33,6 @@ export async function switchBranch(branchId: string): Promise<void> {
     if (branchId === state.activeBranchId) {
         return;
     }
-    if (branchSwitchInProgress) {
-        throw createBranchError('A branch switch is already in progress');
-    }
-
     const branch = state.branches.find((b) => b.branchId === branchId);
     if (!branch) {
         throw createBranchError(`Branch not found: ${branchId}`);
@@ -74,88 +58,18 @@ export async function switchBranch(branchId: string): Promise<void> {
 
     const outgoingDocId =
         activeBranch.rootDocId === DOC_PREFIX_ROOT ? `branch_${activeBranch.branchId}` : activeBranch.rootDocId;
-    const previousDocuments = [createDocumentSnapshot(DOC_PREFIX_ROOT), createDocumentSnapshot(outgoingDocId)];
-
-    branchSwitchInProgress = true;
-    try {
-        flushAutomergeStorageWrites();
-        const lineageTransition = runCrdtPersistenceOperation({
-            type: 'root-lineage-transition',
-            from: state.activeBranchId,
-            to: branchId,
-        });
-        const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
-
-        automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(branchDoc));
-        branchStore.set({ ...stateWithOutgoingSnapshot, activeBranchId: branchId });
-        projectCrdtToStores();
-
-        await lineageTransition;
-        await compactProject();
-    } catch (error) {
-        await recoverFailedBranchSwitch({ error, previousDocuments, previousState: state });
-        throw error;
-    } finally {
-        branchSwitchInProgress = false;
-    }
-}
-
-function createDocumentSnapshot(id: DocId): DocumentSnapshot {
-    const doc = automergeRepository.getDoc(id);
-    return { id, doc: doc ? cloneDoc(doc) : null };
-}
-
-function restoreDocumentSnapshot({ id, doc }: DocumentSnapshot): void {
-    if (!doc) {
-        automergeRepository.removeDoc(id);
-        return;
-    }
-    if (automergeRepository.hasDoc(id)) {
-        automergeRepository.replaceDoc(id, cloneDoc(doc));
-        return;
-    }
-    automergeRepository.insertDoc(id, cloneDoc(doc));
-}
-
-type RecoverFailedBranchSwitchInput = {
-    error: unknown;
-    previousDocuments: DocumentSnapshot[];
-    previousState: BranchStoreState;
-};
-
-async function recoverFailedBranchSwitch({
-    error,
-    previousDocuments,
-    previousState,
-}: RecoverFailedBranchSwitchInput): Promise<void> {
-    for (const snapshot of previousDocuments) {
-        restoreDocumentSnapshot(snapshot);
-    }
-
-    let recoveredState = previousState;
-    try {
-        const loaded = await loadCrdtProject();
-        if (loaded) {
-            recoveredState = getDurableBranchState(error, previousState);
-        }
-    } catch (recoveryError) {
-        logger.warn('[switchBranch] Failed to reload persistence after rollback:', recoveryError);
-    }
-
-    branchStore.set(recoveredState);
-    projectCrdtToStores();
-}
-
-function getDurableBranchState(error: unknown, previousState: BranchStoreState): BranchStoreState {
-    if (!isAppError(error) || error._tag !== 'CrdtPersistenceRootLineageConflict') {
-        return previousState;
-    }
-    const durableRootLineage = error.durableRootLineage;
-    if (
-        typeof durableRootLineage !== 'string' ||
-        !previousState.branches.some(({ branchId }) => branchId === durableRootLineage)
-    ) {
-        return previousState;
-    }
-    return { ...previousState, activeBranchId: durableRootLineage };
+    await runBranchLineageTransition({
+        affectedDocIds: [DOC_PREFIX_ROOT, outgoingDocId],
+        from: state.activeBranchId,
+        previousState: state,
+        to: branchId,
+        apply: () => {
+            const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
+            automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(branchDoc));
+            return {
+                nextState: { ...stateWithOutgoingSnapshot, activeBranchId: branchId },
+                result: undefined,
+            };
+        },
+    });
 }

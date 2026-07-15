@@ -11,9 +11,11 @@ const mocks = vi.hoisted(() => ({
     hasDoc: vi.fn(() => false),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
+    removeDoc: vi.fn(),
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
     storeSet: vi.fn(),
     compactProject: vi.fn(),
+    loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
     projectCrdtToStores: vi.fn(),
     clone: vi.fn(() => CLONED_DOC),
@@ -33,6 +35,7 @@ vi.mock('../../../repositories/automergeRepository', () => ({
         hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
+        removeDoc: mocks.removeDoc,
     },
 }));
 vi.mock('../../../stores/branchStore', () => ({
@@ -41,6 +44,7 @@ vi.mock('../../../stores/branchStore', () => ({
     },
 }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
 }));
@@ -54,6 +58,7 @@ describe('forkProjectBranch', () => {
         mocks.getHeads.mockReturnValue(['h1']);
         mocks.getDoc.mockImplementation((id: string) => (id === 'root' ? SOURCE_DOC : undefined));
         mocks.compactProject.mockResolvedValue(undefined);
+        mocks.loadCrdtProject.mockResolvedValue(true);
     });
 
     it('repoints the root slot at the forked doc so post-fork edits route to the new branch', async () => {
@@ -106,12 +111,14 @@ describe('forkProjectBranch', () => {
         expect(mocks.projectCrdtToStores).toHaveBeenCalled();
     });
 
-    it('propagates queued persistence errors before projecting the fork', async () => {
+    it('rejects and restores the source branch when persistence fails', async () => {
         const error = new Error('persist failed');
         mocks.compactProject.mockRejectedValueOnce(error);
 
         await expect(forkProjectBranch('feature')).rejects.toBe(error);
-        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(mocks.storeValue);
+        expect(mocks.removeDoc).toHaveBeenCalledTimes(2);
     });
 
     it('throws when there is no root document to fork', async () => {
