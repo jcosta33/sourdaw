@@ -171,6 +171,7 @@ const importPersistenceTransactions = new Map<number, IDBTransaction>();
 
 function cancelPendingImportCandidate(): void {
     activeImportCandidateId = ++nextImportCandidateId;
+    abortImportPersistenceExcept(activeImportCandidateId);
 }
 
 function abortImportPersistenceExcept(candidateId: number): void {
@@ -189,7 +190,6 @@ function abortImportPersistenceExcept(candidateId: number): void {
 function cancelAllImportCandidates(): void {
     cancelPendingImportCandidate();
     committedImportCandidateId = 0;
-    abortImportPersistenceExcept(0);
 }
 
 function claimPersistenceGeneration(id: string): number {
@@ -704,7 +704,11 @@ export const audioBufferCache = {
                 if (persisted) {
                     return true;
                 }
-                if (!published || candidateId !== committedImportCandidateId) {
+                if (
+                    !published ||
+                    candidateId !== activeImportCandidateId ||
+                    candidateId !== committedImportCandidateId
+                ) {
                     return false;
                 }
                 if (entries.length === 0) {
@@ -728,6 +732,7 @@ export const audioBufferCache = {
                         return allBuffersAreResident;
                     }
                     if (
+                        candidateId !== activeImportCandidateId ||
                         candidateId !== committedImportCandidateId ||
                         [...generations].some(([id, generation]) => persistenceGenerationById.get(id) !== generation)
                     ) {
@@ -758,7 +763,7 @@ export const audioBufferCache = {
                         activeTransaction.onerror = () =>
                             reject(activeTransaction.error ?? new Error('IDB transaction failed'));
                     });
-                    if (candidateId !== committedImportCandidateId) {
+                    if (candidateId !== activeImportCandidateId || candidateId !== committedImportCandidateId) {
                         return false;
                     }
                     persisted = true;

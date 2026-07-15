@@ -272,14 +272,13 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
 
         candidate?.publish();
-        audioBufferCache.cancelPendingImport();
         await expect(candidate?.persist()).resolves.toBe(true);
 
         expect(backing.get('shared')?.channelData[0]?.[0]).toBeCloseTo(0.75);
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
     });
 
-    it('aborts an older import transaction when a newer candidate is published', async () => {
+    it('aborts and invalidates import persistence when replacement starts', async () => {
         type ControlledTransaction = {
             abort: ReturnType<typeof vi.fn>;
             error: Error | null;
@@ -302,6 +301,9 @@ describe('audioBufferCache conversions', () => {
                     onerror: null,
                 };
                 transactions.push(transaction);
+                if (transactions.length > 1) {
+                    queueMicrotask(() => transaction.oncomplete?.());
+                }
                 return transaction;
             },
         };
@@ -333,16 +335,17 @@ describe('audioBufferCache conversions', () => {
         const firstPersistence = first?.persist();
         await vi.waitFor(() => expect(transactions).toHaveLength(1));
 
-        const second = audioBufferCache.importBuffers({ context, buffers: {} });
-        second?.publish();
+        audioBufferCache.cancelPendingImport();
 
         const firstTransaction = transactions[0]!;
         if (firstTransaction.abort.mock.calls.length === 0) {
             firstTransaction.oncomplete?.();
         }
-        await firstPersistence;
+        await expect(firstPersistence).resolves.toBe(false);
 
         expect(firstTransaction.abort).toHaveBeenCalledOnce();
+        await expect(first?.persist()).resolves.toBe(false);
+        expect(transactions).toHaveLength(1);
     });
 
     it('validates every embedded buffer before opening a persistence transaction', () => {
