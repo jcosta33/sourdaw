@@ -152,7 +152,11 @@ setFermenterDependencies({
     updateDevicePatch,
 });
 
-setStopPlaybackCallback(stopPlayback);
+setStopPlaybackCallback(() => {
+    stopPlayback().catch((error: unknown) => {
+        logger.error(new Error('Scheduler stop request failed', { cause: error }));
+    });
+});
 
 setAutomationRecordingDependencies({
     getAudioContext,
