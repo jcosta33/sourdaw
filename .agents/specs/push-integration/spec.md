@@ -5,17 +5,17 @@ title: Ableton Push 2 hardware integration
 status: draft
 owner: The Sourdaw team
 sources:
-  - ../hardware-controller-ecosystem/spec.md
-  - ../dependency-boundary-validation/spec.md
-  - ../../decisions/README.md
-  - ../../../src/modules/Command/useCases/index.ts
-  - ../../../src/modules/Command/useCases/executeAppAction.ts
-  - ../../../src/modules/Command/useCases/commandQueries.ts
-  - ../../../src/modules/MIDI/models/ControllerProfile.ts
-  - ../../../src/modules/MIDI/useCases/hardware/importHardwareMappings.ts
-  - ../../../src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts
-  - ../../../src/modules/MIDI/stores/hardwareControllerStore.ts
-  - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
+    - ../hardware-controller-ecosystem/spec.md
+    - ../dependency-boundary-validation/spec.md
+    - ../../decisions/README.md
+    - ../../../src/modules/Command/useCases/index.ts
+    - ../../../src/modules/Command/useCases/executeAppAction.ts
+    - ../../../src/modules/Command/useCases/commandQueries.ts
+    - ../../../src/modules/MIDI/models/ControllerProfile.ts
+    - ../../../src/modules/MIDI/useCases/hardware/importHardwareMappings.ts
+    - ../../../src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts
+    - ../../../src/modules/MIDI/stores/hardwareControllerStore.ts
+    - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
 ---
 
 # Ableton Push 2 hardware integration
@@ -193,33 +193,68 @@ Verify with: `pnpm test:run -- PushHardware`
 
 ### AC-023 — Schema-validated declarative-profile messages
 
-Every declarative controller-profile host boundary MUST accept only a schema-validated typed
-message union. Malformed messages and unknown kinds return the typed `INVALID_MESSAGE`
-rejection without dispatching an `AppAction` or writing to a MIDI output; attempts to provide
-binding authority are rejected under AC-024.
+Every declarative controller-profile host boundary MUST accept only this one closed
+`ControllerProfileHostRequest` union:
+
+```text
+MAX_CONTROLLER_PROTOCOL_ID_UTF8_BYTES = 256
+ControllerProtocolId = non-empty string whose TextEncoder UTF-8 byte length is 1..256
+FiniteNumber = number for which Number.isFinite(value) is true
+ControllerProfileHostRequest =
+  | {
+      kind: "setDeviceParameter",
+      payload: {
+        deviceId: ControllerProtocolId,
+        paramId: ControllerProtocolId,
+        value: FiniteNumber
+      }
+    }
+  | {
+      kind: "sendMidi",
+      payload: {
+        bytes: Array of 1..1024 integer numbers, each in 0..255
+      }
+    }
+```
+
+The root and `payload` objects require ordinary-object prototypes and exactly the shown own string
+keys; they have no symbols, aliases, omitted keys, inherited-only fields, or additional own keys.
+The `bytes` value is an ordinary array with only its indexed elements and built-in `length`;
+it is not a typed array. `profileId`, `allowedTargets`, `midiOutputId`, connection/session
+identifiers, and every other binding or authority field are forbidden at both levels. Unknown
+`kind`, wrong variant payload, malformed identifier, non-finite value, and every missing, extra,
+symbol, or grant-bearing field maps deterministically to `INVALID_MESSAGE` before binding lookup,
+owner lookup, `executeAppAction`, MIDI-port access, logging, or any other host effect. A valid
+request is the only input accepted by AC-024 through AC-027; attempts to provide binding authority
+are rejected under AC-024.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
-valid, malformed, and unknown message kinds, plus `pnpm deps:validate`.
+both valid union variants, every malformed/unknown/extra-key case, symbols and grant-bearing
+fields, the 256-byte identifier boundary, non-finite values, and byte arrays of lengths 0, 1,
+1024, and 1025. For each invalid fixture, assert `INVALID_MESSAGE` with zero binding/owner
+lookups, Command calls, MIDI writes, and logs; also run `pnpm deps:validate`.
 
 ### AC-024 — Future controller-profile host binding
 
 The future host contract MUST obtain each `ControllerProfileBinding` exclusively from a trusted
 connection/session-owned host component, then validate declarative controller-profile data and
-capability requests against that binding, which carries exactly:
+capability requests against that binding, which has exactly these host-private fields:
 
-| Field | Contract |
-| --- | --- |
-| `profileId` | The bound profile identifier. |
-| `allowedTargets` | The exact finite `{ deviceId, paramId }` tuples granted to this profile; no wildcard or self-selected target. |
-| `midiOutputId` | Exactly one bound MIDI output identifier. |
+| Field            | Contract                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `profileId`      | One `ControllerProtocolId` issued for the bound profile.                                                                                   |
+| `allowedTargets` | An array of 0..256 unique `{ deviceId: ControllerProtocolId, paramId: ControllerProtocolId }` tuples; no wildcard or self-selected target. |
+| `midiOutputId`   | One host-issued `ControllerProtocolId`, or `null` when this session has no bound output; never a caller-selected value.                    |
 
 The binding is host-private, opaque runtime authority associated with the trusted connection or
 session out of band. It is never deserialized from or exposed as profile data, controller input,
 or a worker message; none of those untrusted channels can supply, replace, or expand its
 `profileId`, `allowedTargets`, or `midiOutputId`. Host-side binding-authenticity and message-schema
-validation finish before an `AppAction` is created or bytes are sent. The finite initial
-capability union contains only `setDeviceParameter` and `sendMidi`. Typed rejections are
+validation finish before an `AppAction` is created or bytes are sent. The initial capability union
+is exactly the two AC-023 variants, and the request supplies neither profile identity nor output
+identity: `profileId`, `allowedTargets`, and `midiOutputId` always come from this trusted binding.
+Typed rejections are
 `INVALID_MESSAGE`, `BINDING_UNTRUSTED`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOLVED`, and
 `OUTPUT_UNBOUND`. This binding issuer, private authority registry, schema validator, owner lookup,
 typed action mapping, and MIDI-owned typed output port are unimplemented today; this is a future
@@ -268,35 +303,42 @@ after the surface exists, plus `pnpm deps:validate`.
 
 ### AC-026 — Exact setDeviceParameter grant
 
-After AC-024 host-authority and message validation, `setDeviceParameter` MUST require an exact
-`{ deviceId, paramId }` tuple in `allowedTargets`, a successful owner lookup for that tuple, and a
-finite `value`, then dispatch only the typed `setDeviceParameter` `AppAction` through Command's
-public `executeAppAction` export from `#/modules/Command/useCases`. The host never calls Command's
-handler registry or a registered handler directly, invokes Arrangement's owning
+After AC-023 schema validation and AC-024 binding-authenticity validation, the host MUST consume
+only the `kind: "setDeviceParameter"` member, require its exact
+`payload.{ deviceId, paramId }` tuple in the trusted binding's `allowedTargets`, perform one
+successful owner lookup for that tuple, and dispatch only the typed `setDeviceParameter`
+`AppAction` through Command's public `executeAppAction` export from
+`#/modules/Command/useCases`. The request's `deviceId`, `paramId`, and `value` are the only
+operation data; binding identity still comes from the trusted binding. The host never calls
+Command's handler registry or a registered handler directly, invokes Arrangement's owning
 `setDeviceParameter` use case directly, or writes any store. A missing grant returns
 `CAPABILITY_OR_TARGET_DENIED`; an unsuccessful owner lookup returns `TARGET_UNRESOLVED`; an
 untrusted binding returns `BINDING_UNTRUSTED`; none dispatches an action.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
-granted, denied, unresolved, non-finite, unknown-target, and forged-binding cases. The granted case
-observes one exact call to the public `executeAppAction` contract; rejected cases observe no call,
-and the handler registry, owner use case, and stores are never invoked directly. Also run
-`pnpm deps:validate`.
+the exact `setDeviceParameter` variant for granted, denied, unresolved, unknown-target,
+non-finite, extra-key, wrong-variant, and forged-binding cases. The granted case observes one
+exact call to the public `executeAppAction` contract with the validated payload; every rejected
+case observes no binding/owner side effect, no Command call, and no store write, while the handler
+registry and owner use case are never invoked directly. Also run `pnpm deps:validate`.
 
 ### AC-027 — Bound sendMidi output
 
-After AC-024 host-authority and message validation, `sendMidi` MUST require the host-private
-binding's single `midiOutputId` and an array of 1-1024 integer bytes, each in `0..255`, then route
-only through a MIDI-owned typed output port. An absent bound output returns `OUTPUT_UNBOUND`;
-invalid bytes return `INVALID_MESSAGE`; a forged, self-issued, replaced, or expanded binding
-returns `BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
+After AC-023 schema validation and AC-024 binding-authenticity validation, the host MUST consume
+only the `kind: "sendMidi"` member, take its exact `payload.bytes` array, and route it only through
+the MIDI-owned typed output port selected by the trusted binding's `midiOutputId`. The request has
+no output-identity field. A `null` bound output returns `OUTPUT_UNBOUND`; invalid bytes return
+`INVALID_MESSAGE` before binding/output access; a forged, self-issued, replaced, or expanded
+binding returns `BINDING_UNTRUSTED`; none sends bytes or creates a generic DAW command.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
-valid bounds, empty/oversized/non-integer/out-of-range bytes, unbound output, and attempts to
-supply or replace `midiOutputId` through each untrusted channel. Every forged/self-issued case is
-rejected before the MIDI-owned port receives bytes; also run `pnpm deps:validate`.
+the exact `sendMidi` variant with lengths 1 and 1024, empty/oversized/non-integer/out-of-range
+bytes, extra keys, a wrong variant, a `null` output, and attempts to supply or replace
+`midiOutputId` through each untrusted channel. Every invalid, forged, or unbound case is rejected
+before the MIDI-owned port receives bytes; a valid case sends the same validated bytes exactly
+once; also run `pnpm deps:validate`.
 
 ### AC-028 — Separate capability-secure script artifact
 
@@ -346,58 +388,58 @@ source, protocol, confinement, and host tests under
 
 - [ ] Q-001 — Default encoder target: selected-device parameters or selected-track volumes?
 - [ ] Q-002 — Tauri-desktop transport bindings (native USB/MIDI plugins) vs browser APIs —
-  which is the primary target for v1?
+      which is the primary target for v1?
 - [ ] Q-003 — Which function buttons get explicit maps in v1 vs a generic `button-press`?
 - [ ] Q-004 — Auto-mapped controller-profile scripting API (deferred-gap from
-  intake/implementation-gaps.md §5.5 "Deep MPE Editing & Hardware Scripting").
-  Non-blocking. The Push 2 driver in this spec is one hardcoded profile; the larger gap is
-  to expand the scripting API so hardware controller profiles auto-map for multiple devices
-  (named examples: Push, Launchpad), with community sharing of those profiles. Decide whether
-  the `PushHardware` driver should be authored against a generic controller-profile/scripting
-  abstraction now (so Launchpad and others can be added without a bespoke module each) or
-  shipped as a standalone Push module first and generalised later. Note: the per-note
-  expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
-  not part of this Push-integration spec.
-  Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
-  replace AC-023 through AC-028. Declarative profiles remain data-only under AC-025; executable
-  script bundles use only the separate ecosystem-owned restricted-runtime path in AC-028 and
-  hardware-controller-ecosystem AC-002, AC-004 through AC-011. The dependency-boundary map
-  points to those requirements for the current worker warning.
+      intake/implementation-gaps.md §5.5 "Deep MPE Editing & Hardware Scripting").
+      Non-blocking. The Push 2 driver in this spec is one hardcoded profile; the larger gap is
+      to expand the scripting API so hardware controller profiles auto-map for multiple devices
+      (named examples: Push, Launchpad), with community sharing of those profiles. Decide whether
+      the `PushHardware` driver should be authored against a generic controller-profile/scripting
+      abstraction now (so Launchpad and others can be added without a bespoke module each) or
+      shipped as a standalone Push module first and generalised later. Note: the per-note
+      expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
+      not part of this Push-integration spec.
+      Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
+      replace AC-023 through AC-028. Declarative profiles remain data-only under AC-025; executable
+      script bundles use only the separate ecosystem-owned restricted-runtime path in AC-028 and
+      hardware-controller-ecosystem AC-002, AC-004 through AC-011. The dependency-boundary map
+      points to those requirements for the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
-  intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
-  Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap
-  is a global MIDI-learn registry that maps any hardware MIDI CC (and MPE per-note) to any
-  automatable parameter surfaced by the parameter registry — UI: right-click "MIDI Learn" on
-  any control, then move a hardware controller; the mapping is persisted both per-project and
-  per-user template. Stated acceptance targets to honour if this registry lands: learning
-  CC 74 to a filter cutoff makes the cutoff track the hardware knob within ≤ 1 audio block at
-  48 kHz / 128-sample buffer; clearing a learned mapping removes it from both the project save
-  and the user template (verified by JSON diff). Decide whether Push encoder mappings
-  (AC-009, AC-012) should flow through this shared registry or stay in the Push settings
-  block. Note: the routing-visualization half of §7.8d (force-directed track→bus→device node
-  graph, read-only in v1) is unrelated to Push integration and out of scope here.
+      intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
+      Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap
+      is a global MIDI-learn registry that maps any hardware MIDI CC (and MPE per-note) to any
+      automatable parameter surfaced by the parameter registry — UI: right-click "MIDI Learn" on
+      any control, then move a hardware controller; the mapping is persisted both per-project and
+      per-user template. Stated acceptance targets to honour if this registry lands: learning
+      CC 74 to a filter cutoff makes the cutoff track the hardware knob within ≤ 1 audio block at
+      48 kHz / 128-sample buffer; clearing a learned mapping removes it from both the project save
+      and the user template (verified by JSON diff). Decide whether Push encoder mappings
+      (AC-009, AC-012) should flow through this shared registry or stay in the Push settings
+      block. Note: the routing-visualization half of §7.8d (force-directed track→bus→device node
+      graph, read-only in v1) is unrelated to Push integration and out of scope here.
 - [ ] Q-006 — Push 2 byte-level protocol reference (restored detail). The concrete wire-format
-  constants behind AC-001/AC-002/AC-004 are not yet pinned in this spec; capture them before the
-  codec/framebuffer tasks are cut: pad RGB SysEx `F0 47 7F 15 04 00 08 <pad index 0–63> <R> <G>
-  <B> F7` (7-bit colour components); pad notes (channel 1) note-on/off in range 36–99; top
-  encoders relative CC 71–78; tempo encoder relative CC 14; function buttons CC 3–87 (on/off LED
-  state); touch strip as pitch bend; USB filter `vendorId 0x2982 / productId 0x1967`; MIDI on
-  endpoints 0x02/0x82, LCD framebuffer on bulk endpoint 0x01; framebuffer = 20 lines × 160 px ×
-  16-bit RGB565 (20 480 bytes) XORed with the Push 2 fixed mask. Decide whether these belong in a
-  `Push2Protocol` model constant set or an appendix, but they must not be lost.
+      constants behind AC-001/AC-002/AC-004 are not yet pinned in this spec; capture them before the
+      codec/framebuffer tasks are cut: pad RGB SysEx `F0 47 7F 15 04 00 08 <pad index 0–63> <R> <G>
+<B> F7` (7-bit colour components); pad notes (channel 1) note-on/off in range 36–99; top
+      encoders relative CC 71–78; tempo encoder relative CC 14; function buttons CC 3–87 (on/off LED
+      state); touch strip as pitch bend; USB filter `vendorId 0x2982 / productId 0x1967`; MIDI on
+      endpoints 0x02/0x82, LCD framebuffer on bulk endpoint 0x01; framebuffer = 20 lines × 160 px ×
+      16-bit RGB565 (20 480 bytes) XORed with the Push 2 fixed mask. Decide whether these belong in a
+      `Push2Protocol` model constant set or an appendix, but they must not be lost.
 - [ ] Q-007 — Function signature shape for the Push use-cases (restored detail). The existing
-  `pushIntegration` use-cases take positional args against the AGENTS.md single-object-param
-  rule: `setEncoderValue(encoderIndex, value)`, `handlePadPress(padIndex, velocity)`,
-  `setPadColor(padIndex, color)`. Decide whether the new `PushHardware` driver use-cases adopt
-  the single-object-param convention from the start (and whether the existing three are
-  realigned) so the driver layer is consistent.
+      `pushIntegration` use-cases take positional args against the AGENTS.md single-object-param
+      rule: `setEncoderValue(encoderIndex, value)`, `handlePadPress(padIndex, velocity)`,
+      `setPadColor(padIndex, color)`. Decide whether the new `PushHardware` driver use-cases adopt
+      the single-object-param convention from the start (and whether the existing three are
+      realigned) so the driver layer is consistent.
 - [ ] Q-008 — Unload-failure recovery for hardware/plugin teardown (restored detail). Device
-  removal fire-and-forgets unload (`Arrangement/useCases/device/removeDevice.ts:18`
-  `void unloadPlugin(externalInstanceId)`): if the unload rejects, the JS-side device is gone but
-  the Rust host still tracks the instance — a permanent leak with no retry, notification, or
-  force-unload path. AC-018 (`detachDriver` closes both transports) shares this exposure on the
-  Push side. Decide whether driver detach (and the device-removal path it depends on) must
-  surface and retry/force a failed unload rather than swallow it.
+      removal fire-and-forgets unload (`Arrangement/useCases/device/removeDevice.ts:18`
+      `void unloadPlugin(externalInstanceId)`): if the unload rejects, the JS-side device is gone but
+      the Rust host still tracks the instance — a permanent leak with no retry, notification, or
+      force-unload path. AC-018 (`detachDriver` closes both transports) shares this exposure on the
+      Push side. Decide whether driver detach (and the device-removal path it depends on) must
+      surface and retry/force a failed unload rather than swallow it.
 
 ## Known risks
 

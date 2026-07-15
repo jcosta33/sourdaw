@@ -294,8 +294,9 @@ model-distinguishable bytes at render, cache, and insertion boundaries.
 A future model-backed transfer MUST accept a model as genuinely loaded only through an opaque,
 unforgeable, non-serializable `RaveSessionCapability` issued by the trusted RAVE worker host after
 the named worker successfully initializes an `onnxruntime-web` session from the exact selected
-model bytes and binds that session to `{ modelId, modelDigest }`, where `modelDigest` is the SHA-256
-digest of those bytes. Capability authenticity plus the model identity and digest bindings are
+model bytes and binds that session to `{ modelId, modelDigest, latentDim }`, where `modelDigest` is
+the SHA-256 digest of those bytes and `latentDim` is the host-owned pinned model descriptor value.
+Capability authenticity plus the model identity, digest, and latent-dimension bindings are
 verified against the host-private session registry before transfer; the capability and session
 never enter `raveStore`, project data, or caller-supplied worker messages. A `loaded` store flag,
 deterministic helper or shim, worker-like object, missing registry entry, tampered capability
@@ -332,26 +333,46 @@ Before posting each encode or decode request, the trusted RAVE host MUST registe
 correlation record containing a host-generated `requestId`, a non-authority
 `sessionCorrelationId` bound by the host-private registry to the verified AC-028 session, the
 AC-029 `{ modelId, modelDigest }`, and the request phase. After AC-031 boundary validation, a worker
-response is accepted exactly once only when each of the following named correlation fields is
-compared exactly once, and all five comparisons match the record: `requestId`,
-`sessionCorrelationId`, `modelId`, `modelDigest`, and `phase`. These are the only correlation
-comparisons; the `type` discriminant and every result, audio, channel, metadata, or error field are
-validated or consumed under AC-031 and are excluded from correlation comparison. A
-never-issued, expired, or cancelled `requestId` returns `WORKER_RESPONSE_STALE`; a retained
-consumed request returns `WORKER_RESPONSE_DUPLICATE`. A wrong session, phase, model identity, or
-digest returns `WORKER_RESPONSE_MISMATCH`. A valid correlated `terminal-error` returns
-`WORKER_OPERATION_FAILED` and has no render, cache, or insertion effect. Rejected responses never
-reach render, cache, or clip insertion, and a duplicate causes no additional write.
+response is accepted only through one atomic single-consumption transition on the session's
+host-private request state. The incoming correlation tuple
+`[requestId, sessionCorrelationId, modelId, modelDigest, phase]` is required to equal the pending record's
+five named fields as one validation result; `type` and every result, audio, channel, metadata, or
+error field are validated or consumed under AC-031 and are excluded from this tuple. When the tuple
+matches, the host transitions that record from `pending` to `consumed` before any result use or
+render/cache/insertion effect. The transition is serialized so concurrent delivery cannot accept
+the same pending record twice; each valid request therefore produces at most one accepted terminal
+response and at most one corresponding effect.
+
+Consumed replay state is scoped to one host-private verified RAVE session. The session uses
+`MAX_CONSUMED_REQUESTS_PER_SESSION = 256`, `CONSUMED_REQUEST_TTL_MS = 300_000`, a monotonic host
+clock, and a strictly increasing per-session `consumptionSequence`. Before every response lookup,
+entries with `now - consumedAtMonotonicMs >= CONSUMED_REQUEST_TTL_MS` are removed. After a consumed
+entry is inserted, capacity overflow evicts the entry with the lowest
+`(consumedAtMonotonicMs, consumptionSequence, requestId)` tuple. A retained consumed request with
+the same five-field tuple returns `WORKER_RESPONSE_DUPLICATE`; the same `requestId` with any of the
+other four tuple fields changed returns `WORKER_RESPONSE_MISMATCH`. A different never-issued,
+cancelled, expired, or evicted `requestId` returns `WORKER_RESPONSE_STALE`, with no correlation
+acceptance or effect. Session teardown
+clears both pending and consumed maps; a response after teardown is `WORKER_RESPONSE_STALE`.
+
+A valid correlated `terminal-error` is consumed by the same transition, returns
+`WORKER_OPERATION_FAILED`, and has no render, cache, or insertion effect. Rejected responses never
+reach render, cache, or clip insertion, and a duplicate, expired, or evicted replay causes no
+additional write.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 accepting one exact matching `encode-success`, one exact matching `decode-success`, and one exact
-matching `terminal-error` response, then injecting never-issued, expired, cancelled, replayed,
-wrong-session, wrong-phase, wrong-model, and wrong-digest responses. The test proves structurally
-invalid or unknown-field envelopes are rejected by AC-031 before correlation, while each valid
-correlation mismatch returns its exact typed error and leaves render, cache-write, and clip-insertion
-call counts unchanged; the matching terminal error returns `WORKER_OPERATION_FAILED` with the same
-effect counts.
+matching `terminal-error` response, then injecting never-issued, cancelled, wrong-session,
+wrong-phase, wrong-model, and wrong-digest responses. It replays a matching consumed request within
+the 300-second/256-entry window and expects `WORKER_RESPONSE_DUPLICATE`, accepts 257 requests to
+force the named oldest-entry eviction and expects `WORKER_RESPONSE_STALE` for that replay, advances
+the monotonic clock by 300_000 ms and expects `WORKER_RESPONSE_STALE` after expiry, and sends a
+response after teardown with the same result. The test proves structurally invalid or unknown-field
+envelopes are rejected by AC-031 before correlation, while each tuple mismatch leaves render,
+cache-write, and clip-insertion call counts unchanged; the matching terminal error returns
+`WORKER_OPERATION_FAILED` with the same effect counts, and concurrent duplicate delivery accepts at
+most one terminal response/effect.
 
 ### AC-031 — Worker response payloads are bounded data
 
@@ -375,7 +396,9 @@ RaveWorkerResponse =
       modelDigest: Sha256Hex,
       phase: "encode",
       result: {
-        latents: Float32Array
+        latents: Float32Array,
+        frameCount: PositiveSafeInteger,
+        latentDim: PositiveSafeInteger
       }
     }
   | {
@@ -409,12 +432,23 @@ RaveWorkerResponse =
 
 The five common correlation fields are exactly `requestId`, `sessionCorrelationId`, `modelId`,
 `modelDigest`, and `phase`; `type` is the only discriminant and is not an additional correlation
-field. An `encode-success` result has only `latents`, and a `decode-success` result has only
-`audio`; `audio` has only `channels`, `sampleRate`, and `frameCount`. A `terminal-error` has only
-`error`, whose `code` has the one literal value shown and whose `message` is diagnostic text only.
-The terminal error object has no result payload and this contract defines no other terminal error
-codes. Every response string is therefore an exact literal, `WorkerProtocolId`, `WorkerDiagnostic`,
-or `Sha256Hex`; no unbounded string is admitted.
+field. An `encode-success` result has only `latents`, `frameCount`, and `latentDim`; a
+`decode-success` result has only `audio`; `audio` has only `channels`, `sampleRate`, and
+`frameCount`. A `terminal-error` has only `error`, whose `code` has the one literal value shown and
+whose `message` is diagnostic text only. The terminal error object has no result payload and this
+contract defines no other terminal error codes. Every response string is therefore an exact literal,
+`WorkerProtocolId`, `WorkerDiagnostic`, or `Sha256Hex`; no unbounded string is admitted.
+
+For `encode-success`, `latentDim` equals both the host-private session's `latentDim` and the
+selected model descriptor's `latentDim`; a disagreement between those two host-owned values rejects
+the session as `MODEL_SESSION_MISMATCH` before a worker request. The host's pinned model descriptor
+also supplies `sampleRate`, `frameSizeSamples`, and `hopSizeSamples`; the host frame planner derives
+the expected `frameCount` from the resampled input and those descriptor values, so the response
+contains no timing or hop fields. A current helper-compatible descriptor uses
+`frameSizeSamples = hopSizeSamples = floor(sampleRate * 0.02)`. If a selected descriptor cannot
+provide those host-owned values, the host rejects the session as `MODEL_SESSION_MISMATCH` rather
+than widening this response union. The response `frameCount` equals that host-owned expected
+count.
 
 The trusted Worker response constructor rejects an over-limit identifier or malformed digest and
 does not post that envelope. It truncates a terminal diagnostic to the longest UTF-8 code-point
@@ -432,6 +466,16 @@ bound, typed-array shape, terminal error shape, and all scalar types before AC-0
 correlation field or any consumer reads or logs a result. Unknown or missing fields,
 wrong types, invalid discriminants, invalid `type`/`phase` pairings, malformed payloads, and
 non-finite values return `WORKER_RESPONSE_INVALID`.
+
+For `encode-success`, after checking the host-owned latent-dimension and frame-count matches, the
+host checks the flat matrix shape before reading any latent value. It first rejects as
+`WORKER_RESPONSE_TOO_LARGE` when `latentDim > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / 4)` or
+`frameCount > floor(MAX_RAVE_WORKER_RESPONSE_BYTES / (4 * latentDim))`; only after those checked
+integer divisions may it compute `elementCount = frameCount * latentDim` and
+`expectedByteLength = elementCount * 4`. It then requires `latents.length === elementCount` and
+`latents.byteLength === expectedByteLength`; a metadata mismatch, length mismatch, or any added
+timing/hop field returns `WORKER_RESPONSE_INVALID`. This is the complete encode result shape:
+`{ latents, frameCount, latentDim }`.
 
 Before iterating any typed-array values, the host sums the `byteLength` of each distinct backing
 `ArrayBuffer` used by every `Float32Array` in the envelope, counting a shared backing buffer once,
@@ -451,11 +495,13 @@ insertion.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
-one exact `encode-success`, one exact `decode-success` with its sample-rate and frame-count metadata,
-and one exact `terminal-error`, plus unknown fields at the root and nested result/error objects,
-missing fields, wrong discriminants, wrong typed-array shapes, shared backing, zero or unequal
-channels, wrong sample rate, `NaN`, `Infinity`, malformed terminal errors, a frame-count overflow,
-and a small view over a backing buffer larger than 64 MiB. It also covers exact-limit and one-byte-
+one exact `encode-success` with only `latents`, `frameCount`, and `latentDim`, one exact
+`decode-success` with its sample-rate and frame-count metadata, and one exact `terminal-error`, plus
+unknown fields at the root and nested result/error objects, missing fields, wrong discriminants,
+wrong typed-array shapes, encode latent-dimension/frame-count/length mismatches, added timing/hop
+metadata, checked multiplication overflow, shared backing, zero or unequal channels, wrong sample
+rate, `NaN`, `Infinity`, malformed terminal errors, a frame-count overflow, and a small view over a
+backing buffer larger than 64 MiB. It also covers exact-limit and one-byte-
 over-limit ASCII and multibyte values for `requestId`, `sessionCorrelationId`, `modelId`, and
 `error.message`, plus a 65-character or non-hex `modelDigest`, Worker-side identifier rejection and
 diagnostic truncation, and host-side rejection of a compromised Worker's oversized response. The

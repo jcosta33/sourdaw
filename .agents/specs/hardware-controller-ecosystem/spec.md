@@ -163,30 +163,46 @@ through AC-011 evidence, `rg -n "controllerScriptingWorker" src .agents/specs`, 
 ### AC-009 — Script source loading is closed
 
 The trusted host script-bundle loader MUST accept only the exact data object
-`{ scriptId: WorkerProtocolId, apiVersion: supported literal, language: 'javascript' | 'typescript', source: UTF-8 text }`
+`{ scriptId: WorkerProtocolId, apiVersion: supported literal, language: 'javascript' | 'typescript', sourceBytes: Uint8Array }`
 with no unknown fields, source URL, blob URL, package/module graph, compiler options, plugin, or
-loader hook supplied by the bundle. It rejects static imports/exports, `require`, `importScripts`,
-dynamic `import()`, source-loading directives, malformed UTF-8, and unsupported API/language values
-as `SCRIPT_SOURCE_INVALID`. JavaScript is parsed as one script. TypeScript is compiled without
-executing it by the trusted host using the compiler version and fixed no-module, no-resolution,
-no-plugin, no-source-map options selected in AC-002's ADR; any diagnostic returns
-`SCRIPT_COMPILE_REJECTED` with no emit. The host computes `sourceDigest` as SHA-256 over the RFC 8785
-canonical JSON encoding of the exact input, computes `scriptDigest` as SHA-256 over the emitted
-JavaScript UTF-8 bytes, and retains `{ sourceDigest, scriptDigest, compiler identity/options }` in
-the host-private session record. The Worker bootstrap accepts only that emitted JavaScript,
-recomputes `scriptDigest`, and rejects a mismatch as `SCRIPT_SOURCE_INVALID`. Only the
-digest-matched emitted JavaScript enters the ADR-selected runtime, never a native Worker evaluator.
-Source or emitted JavaScript above the ADR's finite byte limit returns
-`SCRIPT_SOURCE_TOO_LARGE` before runtime load.
-That source/emitted-code cap remains separate from the AC-005/AC-010 identifier and diagnostic
-limits.
-Every rejection creates no runtime session, grant, intent, or effect.
+loader hook supplied by the bundle. `sourceBytes` is an ordinary `Uint8Array` backed by an
+`ArrayBuffer` rather than a `SharedArrayBuffer`, and its view `byteLength` is at most the
+ADR-pinned `MAX_SCRIPT_SOURCE_BYTES = 1_048_576`; only the view's bytes are decoded and hashed.
+The bundle record and every JSON-like nested object have only their shown own string keys and no
+symbols; the `sourceBytes` indexed storage is the sole typed-byte payload and has no authority
+fields.
+
+The host decodes `sourceBytes` first with `new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })`.
+A decoder failure returns `SCRIPT_SOURCE_INVALID` before parsing, canonicalization, digesting, or
+runtime creation; the malformed-byte fixture therefore supplies a `Uint8Array` such as
+`[0xC3, 0x28]`, not a JavaScript string. After successful decoding, the host preserves the decoded
+code points without normalization and constructs the exact canonical source record
+`{ scriptId, apiVersion, language, source: decodedSource }`. `sourceDigest` is SHA-256 over the
+UTF-8 bytes of that record's RFC 8785 canonical JSON encoding, before parser normalization or
+TypeScript compilation; `sourceBytes` is not separately serialized into that record. JavaScript is
+parsed as one script. TypeScript is compiled without executing it by the trusted host using the
+compiler version and fixed no-module, no-resolution, no-plugin, no-source-map options selected in
+AC-002's ADR; any diagnostic returns `SCRIPT_COMPILE_REJECTED` with no emit. The source digest is
+therefore compatible with the former string-boundary contract for the same decoded input.
+
+The loader rejects static imports/exports, `require`, `importScripts`, dynamic `import()`, source-
+loading directives, and unsupported API/language values as `SCRIPT_SOURCE_INVALID`. It computes
+`scriptDigest` as SHA-256 over the emitted JavaScript UTF-8 bytes, retains
+`{ sourceDigest, scriptDigest, compiler identity/options }` in the host-private session record, and
+uses the accepted ADR's numeric `MAX_SCRIPT_EMITTED_BYTES = 1_048_576` for the emitted-code cap.
+Source or emitted JavaScript above its named cap returns `SCRIPT_SOURCE_TOO_LARGE` before runtime
+load. These two caps remain separate from the AC-005/AC-010 identifier and diagnostic limits. The
+Worker bootstrap accepts only that emitted JavaScript, recomputes `scriptDigest`, and rejects a
+mismatch as `SCRIPT_SOURCE_INVALID`. Only the digest-matched emitted JavaScript enters the
+ADR-selected runtime, never a native Worker evaluator. Every rejection creates no runtime session,
+grant, intent, or effect.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSource.spec.ts`,
-covering exact JavaScript and TypeScript inputs, digest binding, malformed/unknown fields, URL and
-module-loading forms, bundle-supplied compiler configuration, compile diagnostics, source/emitted
-byte limits, and proof that rejected source never reaches the selected runtime
+covering exact JavaScript and TypeScript byte inputs, the `[0xC3, 0x28]` fatal-decoder case,
+decoded-record RFC 8785/source-digest fixtures, malformed/unknown fields, URL and module-loading
+forms, bundle-supplied compiler configuration, compile diagnostics, the 1 MiB source/emitted byte
+limits, and proof that rejected source never reaches the selected runtime
 
 ### AC-010 — Script results use one closed protocol
 
@@ -248,9 +264,55 @@ writes, and store writes.
 
 The confinement integration harness MUST launch the production Worker bootstrap with the exact
 runtime/version accepted under AC-002, not a fake Worker, deterministic shim, or API-name stub. The
-ADR supplies a complete manifest of ambient capabilities for every supported Worker environment;
-the harness fails if the live Worker global exposes an unclassified callable or authority-bearing
-object. Before bootstrap, the harness instruments the Worker realm and canary endpoints to observe
+accepted runtime ADR includes a machine-readable `supportedWorkerMatrix` whose rows have exactly
+`{ runtime, runtimeVersion, browser, browserVersion, os, workerKind, bootstrapDigest }`; every
+version is an exact value, not `*`, `latest`, or a range, and the live `{ runtime, runtimeVersion,
+browser, browserVersion, os, workerKind }` tuple matches one row byte-for-byte before bootstrap.
+The ADR also pins a machine-readable `ambientManifest` with exactly these entry fields:
+
+```text
+AmbientKey =
+  | { kind: "string", value: string }
+  | { kind: "symbol", registryKey: string | null, description: string | null, localOrdinal: non-negative safe integer }
+AmbientManifestEntry = {
+  path: AmbientKey[],
+  owner: "own" | "prototype",
+  prototypeDepth: non-negative safe integer,
+  descriptor: "data" | "getter" | "setter" | "getter-setter",
+  valueKind: "undefined" | "null" | "primitive" | "object" | "callable" | "accessor",
+  classification: "language-intrinsic" | "script-api" | "data" | "denied"
+}
+AmbientManifest = {
+  roots: ["globalThis"],
+  maxDepth: 4,
+  maxObjects: 4096,
+  maxEntries: 16384,
+  entries: AmbientManifestEntry[]
+}
+```
+
+The harness computes the live manifest with one deterministic predicate: at depth 0 it starts at
+`globalThis`; for each data-property object or function at depth 0 through 4 it calls
+`Reflect.ownKeys` without invoking getters, records every own key as `owner: "own"` and
+`prototypeDepth: 0`, then follows `Object.getPrototypeOf` through `null` and records each prototype
+key as `owner: "prototype"` with its 1-based depth. String keys sort by UTF-16 code units; symbol
+keys sort by `Symbol.keyFor` (empty when absent), then description (empty when absent), then
+`localOrdinal` among symbols on that owner. Data-property object/function values are enqueued once
+per object identity; an accessor is never invoked. `localOrdinal`, object count, entry count, and
+depth are checked against the named limits, and a limit hit before traversal completes is drift.
+The canonical path includes the root and every string or symbol key, so own, inherited,
+constructor, prototype, and symbol paths cannot collapse into one entry.
+
+The harness compares the sorted live entries with the ADR entries by all six entry fields. A missing
+or extra path, own/prototype change, symbol change, descriptor/value-kind change, classification
+change, incomplete traversal, matrix mismatch, bootstrap digest mismatch, or unclassified callable
+or authority-bearing object is one manifest drift. A callable is authority-bearing when its
+manifest classification is `script-api` or `denied`, or when its object path is one of the ADR's
+authority paths; no name-based exception is allowed. Any drift returns the one public outcome
+`SCRIPT_SANDBOX_UNAVAILABLE`, emits exactly one AC-010 terminal result, terminates the session, and
+never falls back to plain Worker execution.
+
+Before bootstrap, the harness instruments the Worker realm and canary endpoints to observe
 constructor calls, network attempts, storage/filesystem access, navigation, child-worker creation,
 and every Worker-to-host message. It then executes scripts that probe every manifest entry and, at
 minimum, direct and `globalThis`/`self`/constructor/prototype paths to `postMessage`, `fetch`,
@@ -258,15 +320,16 @@ minimum, direct and `globalThis`/`self`/constructor/prototype paths to `postMess
 IndexedDB, Cache, storage/filesystem APIs, dynamic import, location/navigation, and Worker creation.
 Forbidden source forms return the AC-009 source/compile outcome; runtime access and escape attempts
 return `SCRIPT_SANDBOX_VIOLATION`. All probes observe zero outbound I/O, zero ambient side effects,
-and no host message except the single AC-010 result. Bootstrap absence, integrity failure, lockdown
-failure, manifest drift, or tampering returns `SCRIPT_SANDBOX_UNAVAILABLE`, terminates the session,
-and never falls back to plain Worker execution. The same proof runs with Worker CSP relaxed or
-absent; CSP remains defense in depth.
+and no host message except the single AC-010 result. Bootstrap absence, integrity failure, or
+lockdown failure also returns `SCRIPT_SANDBOX_UNAVAILABLE`. The same proof runs with Worker CSP
+relaxed or absent; CSP remains defense in depth.
 
 Verify with: the future owning integration test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptSandbox.spec.ts`,
-using the ADR-selected production runtime/bootstrap and asserting the Worker-side observation log,
-complete ambient-capability manifest, exact outcomes, and zero effects
+using the ADR-selected production runtime/bootstrap and asserting the exact matrix-row match,
+machine-readable manifest schema, own/inherited/prototype and symbol enumeration, deterministic
+sorted-entry comparison, every named traversal limit, drift-to-one-outcome mapping, Worker-side
+observation log, exact outcomes, and zero effects
 
 AC-002 and AC-004 through AC-011 are unimplemented today. The dormant current worker accepts raw
 source through `new Function` and posts unvalidated `setParam`/`sendMidi` messages, but no current
