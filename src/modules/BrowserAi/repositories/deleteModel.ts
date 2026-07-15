@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { isNotFoundError } from './isNotFoundError';
 import { MODELS_DIRECTORY } from './storageConstants';
 
 type DeleteModelInput = { family: string; modelId: string };
@@ -19,7 +20,11 @@ export const deleteModel = inject({ logger })(
                 await familyDir.removeEntry(modelId);
                 logger.info(`[StorageManager] Deleted model ${family}/${modelId}`);
             } catch (error) {
+                if (isNotFoundError(error)) {
+                    return;
+                }
                 logger.warn(`[StorageManager] Failed to delete model ${family}/${modelId}: ${String(error)}`);
+                throw error;
             }
         }
 );

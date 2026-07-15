@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { isNotFoundError } from './isNotFoundError';
 import { resolveFileHandle } from './resolveFileHandle';
 import { MODELS_DIRECTORY } from './storageConstants';
 import { toOpfsPath } from './toOpfsPath';
@@ -22,8 +23,11 @@ export const readModel = inject({ logger })(
                 const file = await fileHandle.getFile();
                 return file.arrayBuffer();
             } catch (error) {
+                if (isNotFoundError(error)) {
+                    return null;
+                }
                 logger.warn(`[StorageManager] Failed to read model ${family}/${modelId}: ${String(error)}`);
-                return null;
+                throw error;
             }
         }
 );
