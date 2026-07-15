@@ -8,10 +8,10 @@ import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
-import { getHandlerMap } from '../stores/handlerRegistry';
+import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
-import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
+import { type AppAction, createUndoEntry } from './commandQueries';
 import { commitUndoEntry } from './commitUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
@@ -36,8 +36,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
         async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const handler = getHandlerMap()[action.type] as ActionHandler<any> | undefined;
+            const handler = getHandler(action);
             if (!handler) {
                 const error = new AppActionNotDispatchedError(action.type);
                 logger.error(error);
