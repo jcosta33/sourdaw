@@ -75,6 +75,21 @@ what product behaviours must it inherit?
 - **Bears on:** migration sequencing, bundle/licensing tradeoffs, and the boundary between the
   current prompt path and the local inference contract; it adds no v1 dependency.
 
+### R-008 — Keep the LLM path as the baseline until local inference proves its value
+
+- **Claim:** Structured LLM generation remains the maintainable, bundle-light default. Do not add
+  Magenta.js or Transformers.js merely to duplicate capabilities already served by the LLM path.
+  A dedicated local pipeline is justified only when it delivers a measured offline,
+  deterministic, latency, or musical-quality advantage; its models must be optional rather than a
+  second always-loaded generation stack.
+- **Evidence:** the current structured-prompt implementation already covers generation without a
+  dedicated framework dependency, while the proposed local architecture introduces model weights,
+  tokenizers, runtime integration, and memory costs.
+- **Confidence:** high for the dependency decision; medium until local quality and latency
+  benchmarks establish whether the planned pipeline should replace or extend the LLM path.
+- **Bears on:** migration gates, bundle size, model-download policy, and the go/no-go decision for
+  the neural tier.
+
 ## Open questions
 
 - [ ] Q-001 — Are MLC-quantized AMT weights legally shippable under Apache-2.0 for a commercial DAW (Lakh provenance)? Blocks the neural tier.
