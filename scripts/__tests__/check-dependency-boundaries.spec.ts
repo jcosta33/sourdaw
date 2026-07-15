@@ -138,7 +138,7 @@ describe('check-dependency-boundaries', () => {
         expect(new RegExp(tauriRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
     });
 
-    it('should block reverse imports into worklets while allowing the engine worker entrypoint', () => {
+    it('should block reverse imports into AudioEngine worklets while keeping the Yeast Worker client separate', () => {
         const reverseRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worklet-imports'
         );
@@ -151,8 +151,8 @@ describe('check-dependency-boundaries', () => {
         expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/presentations/views/YeastPanel.tsx')).toBe(
             true
         );
-        expect(new RegExp(reverseRule.to.path).test('src/modules/Yeast/worklets/MidiRack.ts')).toBe(true);
-        expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/engine/YeastWorkletNode.ts')).toBe(false);
+        expect(new RegExp(reverseRule.to.path).test('src/modules/AudioEngine/worklets/MidiRack.ts')).toBe(true);
+        expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/engine/YeastWorkerClient.ts')).toBe(false);
 
         const testReverseRule = testConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worklet-imports'
@@ -165,7 +165,33 @@ describe('check-dependency-boundaries', () => {
         expect(testFromMatches('src/modules/Yeast/stores/__tests__/yeastStore.spec.ts')).toBe(true);
         expect(testFromMatches('src/modules/Yeast/handlers/__tests__/run.spec.ts')).toBe(true);
         expect(testFromMatches('src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx')).toBe(true);
-        expect(new RegExp(testReverseRule.to.path).test('src/modules/Yeast/worklets/MidiRack.ts')).toBe(true);
+        expect(new RegExp(testReverseRule.to.path).test('src/modules/AudioEngine/worklets/MidiRack.ts')).toBe(true);
+    });
+
+    it('should isolate dedicated Workers and block reverse Worker imports', () => {
+        const workerRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'workers-no-module-runtime-imports'
+        );
+        const reverseRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports'
+        );
+        const tauriRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'workers-no-app-helper-or-tauri'
+        );
+        const testReverseRule = testConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports'
+        );
+
+        expect(workerRule).toBeDefined();
+        expect(reverseRule).toBeDefined();
+        expect(tauriRule).toBeDefined();
+        expect(testReverseRule).toBeDefined();
+        expect(new RegExp(workerRule.to.path).test('src/modules/Yeast/useCases/run.ts')).toBe(true);
+        expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/useCases/run.ts')).toBe(true);
+        expect(new RegExp(reverseRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
+        expect(new RegExp(reverseRule.from.path).test('src/modules/Yeast/engine/YeastWorkerClient.ts')).toBe(false);
+        expect(new RegExp(tauriRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+        expect(new RegExp(testReverseRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
     });
 
     it('should keep changed zero-debt rules behaviorally exercised', () => {
@@ -191,6 +217,8 @@ describe('check-dependency-boundaries', () => {
                 'models-are-pure-type-only',
                 'no-relative-cross-module-imports-type-only',
                 'module-runtime-no-worklet-imports-type-only',
+                'workers-no-module-runtime-imports-type-only',
+                'module-runtime-no-worker-imports-type-only',
                 'react-only-in-presentation-type-only',
             ])
         );
@@ -199,6 +227,11 @@ describe('check-dependency-boundaries', () => {
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worklet-imports-type-only'
         );
         expect(new RegExp(reverseTypeRule.from.path).test('src/modules/Yeast/useCases/types.ts')).toBe(true);
-        expect(new RegExp(reverseTypeRule.to.path).test('src/modules/Yeast/worklets/MidiRack.ts')).toBe(true);
+        expect(new RegExp(reverseTypeRule.to.path).test('src/modules/AudioEngine/worklets/MidiRack.ts')).toBe(true);
+
+        const reverseWorkerTypeRule = typeConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports-type-only'
+        );
+        expect(new RegExp(reverseWorkerTypeRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
     });
 });

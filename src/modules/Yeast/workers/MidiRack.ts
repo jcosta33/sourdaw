@@ -79,7 +79,7 @@ export class MidiRack {
         return output;
     }
 
-    /** Reconcile the worklet-owned chain to the latest serializable projection. */
+    /** Reconcile the Worker-owned chain to the latest serializable projection. */
     replaceProjection(
         projection: readonly YeastProcessorProjectionItem[],
         createProcessor: (type: ProcessorType, id: string) => MidiProcessor,
@@ -223,7 +223,7 @@ export class MidiRack {
         // 6. Separate: events in this block go to output, future events go to
         // the scheduled queue. `separateOutput` is a persistent scratch buffer;
         // the caller consumes it synchronously before the next processBlock
-        // call (yeastWorkletProcessor posts it via structuredClone, and the
+        // call (the Yeast Worker posts it via structuredClone, and the
         // main-thread fallback iterates it before returning).
         const finalOutput = this.separateOutput;
         finalOutput.length = 0;
@@ -293,7 +293,7 @@ export class MidiRack {
         proc?.setParam(name, value);
     }
 
-    /** Execute one typed command on the worklet-owned processor instance. */
+    /** Execute one typed command on the Worker-owned processor instance. */
     executeCommand(command: YeastProcessorCommand): boolean {
         const processor = this.processors.find((entry) => entry.id === command.processorId);
         if (!processor || this.processorTypes.get(command.processorId) !== 'chordMemory') {

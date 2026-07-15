@@ -36,7 +36,7 @@ describe('yeastStore', () => {
             runtimeStatus: 'ready',
         });
         expect(yeastStore.value).not.toHaveProperty('rackInstance');
-        expect(yeastStore.value).not.toHaveProperty('_workletNode');
+        expect(yeastStore.value).not.toHaveProperty('_worker');
     });
 
     it('continues to accept serialized projections without optional parameter state', () => {

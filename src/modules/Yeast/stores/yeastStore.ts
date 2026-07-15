@@ -1,7 +1,7 @@
 /**
  * Yeast store — the serializable projection used by the UI and use cases.
  *
- * AudioWorklet nodes, racks, and processor instances live in the engine
+ * Worker handles, racks, and processor instances live in the engine
  * runtime. This store never holds those handles or executes MIDI processing.
  */
 

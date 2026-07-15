@@ -50,7 +50,7 @@ const transport = {
     loopEndPpq: 0,
 };
 
-describe('processYeastMidi — worklet-only runtime', () => {
+describe('processYeastMidi — Worker-only runtime', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         processRuntimeTransaction.mockResolvedValue([
@@ -90,7 +90,7 @@ describe('processYeastMidi — worklet-only runtime', () => {
         });
     });
 
-    it('returns authored events when the worklet runtime is unavailable', async () => {
+    it('returns authored events when the Worker runtime is unavailable', async () => {
         processRuntimeTransaction.mockResolvedValue(null);
         const events = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 96 } }];
 

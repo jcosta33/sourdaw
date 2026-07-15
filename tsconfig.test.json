@@ -6,11 +6,11 @@
     // re-includes spec files so they are type-checked.
     //
     // Scope: the Yeast MIDI processors and their specs. The repo-wide spec set and
-    // some sibling Yeast files (worklet ambient types, jest-dom matchers) carry a
+    // some sibling Yeast files (Worker ambient types, jest-dom matchers) carry a
     // pre-existing type-error backlog; widening this `include` to all specs is its
     // own remediation campaign. Run with:
     //   node_modules/.bin/tsgo --noEmit -p tsconfig.test.json
     "extends": "./tsconfig.json",
-    "include": ["src/modules/Yeast/worklets/processors", "vite-env.d.ts"],
+    "include": ["src/modules/Yeast/workers/processors", "vite-env.d.ts"],
     "exclude": ["dist", "build", "coverage", "storybook-static"]
 }

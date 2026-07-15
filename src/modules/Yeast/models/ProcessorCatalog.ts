@@ -2,7 +2,7 @@
  * Yeast processor kinds and the UI catalog for the available MIDI effects.
  *
  * This is pure domain metadata shared by the presentation and runtime
- * boundaries. Worklet execution stays in worklets/ and does not depend on the
+ * boundaries. Worker execution stays in workers/ and does not depend on the
  * presentation catalog.
  */
 

@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
-import type { YeastWorkletNodeResult } from '../YeastWorkletNode';
+import type { YeastWorkerResult } from '../YeastWorkerClient';
 
 const createNode = vi.hoisted(() => vi.fn());
 
-vi.mock('../YeastWorkletNode', () => ({
-    createYeastWorkletNode: createNode,
+vi.mock('../YeastWorkerClient', () => ({
+    createYeastWorker: createNode,
 }));
 
 type Deferred<T> = {
@@ -79,10 +79,10 @@ describe('yeastRuntime', () => {
         vi.clearAllMocks();
     });
 
-    it('replays the latest projection when lazy worklet initialization resolves', async () => {
+    it('replays the latest projection when lazy worker initialization resolves', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
-        const pending = deferred<YeastWorkletNodeResult>();
+        const pending = deferred<YeastWorkerResult>();
         const node = makeNode(context);
         createNode.mockReturnValueOnce(pending.promise);
 
@@ -178,7 +178,7 @@ describe('yeastRuntime', () => {
         const runtime = await loadRuntime();
         const contextA = {} as BaseAudioContext;
         const contextB = {} as BaseAudioContext;
-        const pendingA = deferred<YeastWorkletNodeResult>();
+        const pendingA = deferred<YeastWorkerResult>();
         const nodeA = makeNode(contextA);
         const nodeB = makeNode(contextB);
         createNode.mockReturnValueOnce(pendingA.promise).mockResolvedValueOnce(nodeB);
@@ -200,7 +200,7 @@ describe('yeastRuntime', () => {
         const runtime = await loadRuntime();
         const contextA = {} as BaseAudioContext;
         const contextB = {} as BaseAudioContext;
-        const pendingA = deferred<YeastWorkletNodeResult>();
+        const pendingA = deferred<YeastWorkerResult>();
         const nodeA = makeNode(contextA);
         const nodeB = makeNode(contextB);
         createNode.mockReturnValueOnce(pendingA.promise).mockResolvedValueOnce(nodeB);
@@ -220,7 +220,7 @@ describe('yeastRuntime', () => {
     it('replays a panic queued during lazy initialization', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
-        const pending = deferred<YeastWorkletNodeResult>();
+        const pending = deferred<YeastWorkerResult>();
         const node = makeNode(context);
         createNode.mockReturnValueOnce(pending.promise);
 
@@ -326,7 +326,7 @@ describe('yeastRuntime', () => {
     it('settles lazy initialization without replaying an uncertain queued panic', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
-        const pending = deferred<YeastWorkletNodeResult>();
+        const pending = deferred<YeastWorkerResult>();
         const node = makeNode(context);
         const replacement = makeNode(context);
         const onNotesOff = vi.fn();
@@ -545,7 +545,7 @@ describe('yeastRuntime', () => {
     it('does not resolve initialization before a queued panic acknowledgement', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
-        const pending = deferred<YeastWorkletNodeResult>();
+        const pending = deferred<YeastWorkerResult>();
         const node = makeNode(context);
         const pendingAck = deferred<void>();
         node.allNotesOff.mockReturnValueOnce(pendingAck.promise);
@@ -580,7 +580,7 @@ describe('yeastRuntime', () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
-        createNode.mockRejectedValueOnce(new Error('worklet unavailable')).mockResolvedValueOnce(node);
+        createNode.mockRejectedValueOnce(new Error('worker unavailable')).mockResolvedValueOnce(node);
 
         const failedInitialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
         void runtime.sendYeastRuntimeAllNotesOff(512);
@@ -595,7 +595,7 @@ describe('yeastRuntime', () => {
     it('returns a truthful unavailable result instead of queueing a command during initialization', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
-        const pending = deferred<YeastWorkletNodeResult>();
+        const pending = deferred<YeastWorkerResult>();
         const node = makeNode(context);
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
         createNode.mockReturnValueOnce(pending.promise);

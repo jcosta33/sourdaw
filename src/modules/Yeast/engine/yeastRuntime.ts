@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
-import { createYeastWorkletNode, type YeastWorkletNodeResult } from './YeastWorkletNode';
+import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
 import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
@@ -28,8 +28,8 @@ type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
 type YeastRuntimeSession = {
     version: number;
     context: BaseAudioContext | null;
-    node: YeastWorkletNodeResult | null;
-    nodePromise: Promise<YeastWorkletNodeResult | null> | null;
+    node: YeastWorkerResult | null;
+    nodePromise: Promise<YeastWorkerResult | null> | null;
     projection: YeastProcessorProjection;
     processTail: Promise<void>;
     generation: number;
@@ -132,7 +132,7 @@ function recordProjection(projection: readonly YeastProcessorProjectionItem[]): 
     return { projection: nextProjection, revision: session.projectionRevision };
 }
 
-function isLiveRuntime(node: YeastWorkletNodeResult, generation: number): boolean {
+function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
     return session.node === node && session.generation === generation;
 }
 
@@ -177,12 +177,12 @@ function destroyCurrentNode(): void {
         try {
             node.destroy();
         } catch (error: unknown) {
-            logger.warn('[Yeast] AudioWorklet runtime destroy failed:', error);
+            logger.warn('[Yeast] Worker runtime destroy failed:', error);
         }
     }
 }
 
-function invalidateCurrentRuntime(node: YeastWorkletNodeResult): boolean {
+function invalidateCurrentRuntime(node: YeastWorkerResult): boolean {
     if (session.node !== node) {
         return false;
     }
@@ -195,7 +195,7 @@ function invalidateCurrentRuntime(node: YeastWorkletNodeResult): boolean {
     return true;
 }
 
-function failCurrentRuntime(node: YeastWorkletNodeResult, error: unknown): void {
+function failCurrentRuntime(node: YeastWorkerResult, error: unknown): void {
     if (session.node !== node) {
         return;
     }
@@ -203,11 +203,7 @@ function failCurrentRuntime(node: YeastWorkletNodeResult, error: unknown): void 
     setRuntimeUnavailable(error);
 }
 
-async function trySendAllNotesOff(
-    node: YeastWorkletNodeResult,
-    nowSamples: number,
-    generation: number
-): Promise<boolean> {
+async function trySendAllNotesOff(node: YeastWorkerResult, nowSamples: number, generation: number): Promise<boolean> {
     try {
         await node.allNotesOff(nowSamples);
         if (!isLiveRuntime(node, generation)) {
@@ -229,14 +225,14 @@ export async function applyYeastRuntimeProjection(projection: readonly YeastProc
     const initialization = session.nodePromise;
     await enqueueRuntimeOperation(async () => {
         if (session.generation !== initialGeneration) {
-            throw new Error('Yeast AudioWorklet projection generation changed');
+            throw new Error('Yeast Worker projection generation changed');
         }
 
         let node = initialNode;
         if (initialization) {
             await initialization;
             if (session.generation !== initialGeneration) {
-                throw new Error('Yeast AudioWorklet projection generation changed');
+                throw new Error('Yeast Worker projection generation changed');
             }
             node = initialNode ?? session.node;
         }
@@ -256,7 +252,7 @@ export async function applyYeastRuntimeProjection(projection: readonly YeastProc
             throw error;
         }
         if (!isLiveRuntime(node, initialGeneration)) {
-            throw new Error('Yeast AudioWorklet projection generation changed');
+            throw new Error('Yeast Worker projection generation changed');
         }
         session.appliedProjectionRevision = record.revision;
     });
@@ -291,7 +287,7 @@ export async function sendYeastRuntimeCommand(command: YeastProcessorCommand): P
     try {
         const ack = await enqueueRuntimeOperation(async () => {
             if (!isLiveRuntime(node, generation)) {
-                throw new Error('Yeast AudioWorklet runtime generation changed');
+                throw new Error('Yeast Worker runtime generation changed');
             }
             return node.sendCommand(command);
         });
@@ -313,7 +309,7 @@ async function ensureYeastRuntimeInternal(
         projection: readonly YeastProcessorProjectionItem[];
     },
     initializationProjection?: ProjectionRecord
-): Promise<YeastWorkletNodeResult | null> {
+): Promise<YeastWorkerResult | null> {
     prepareRuntimeContext(input.context);
     if (session.nodePromise) {
         return session.nodePromise;
@@ -326,13 +322,13 @@ async function ensureYeastRuntimeInternal(
     session.status = 'initializing';
     session.error = undefined;
 
-    const nodePromise = createYeastWorkletNode(input.context)
+    const nodePromise = createYeastWorker(input.context)
         .then(async (node) => {
             if (session.generation !== generation || session.context !== input.context) {
                 try {
                     node.destroy();
                 } catch (error: unknown) {
-                    logger.warn('[Yeast] Stale AudioWorklet runtime destroy failed:', error);
+                    logger.warn('[Yeast] Stale Worker runtime destroy failed:', error);
                 }
                 return null;
             }
@@ -357,7 +353,7 @@ async function ensureYeastRuntimeInternal(
                 try {
                     node.destroy();
                 } catch (error: unknown) {
-                    logger.warn('[Yeast] Stale AudioWorklet runtime destroy failed:', error);
+                    logger.warn('[Yeast] Stale Worker runtime destroy failed:', error);
                 }
                 return null;
             }
@@ -391,7 +387,7 @@ async function ensureYeastRuntimeInternal(
                     session.nodePromise = null;
                 }
                 setRuntimeUnavailable(error);
-                logger.warn('[Yeast] AudioWorklet runtime unavailable:', error);
+                logger.warn('[Yeast] Worker runtime unavailable:', error);
             }
             return null;
         });
@@ -403,7 +399,7 @@ async function ensureYeastRuntimeInternal(
 export async function ensureYeastRuntime(input: {
     context: BaseAudioContext;
     projection: readonly YeastProcessorProjectionItem[];
-}): Promise<YeastWorkletNodeResult | null> {
+}): Promise<YeastWorkerResult | null> {
     recordProjection(input.projection);
     return ensureYeastRuntimeInternal(input);
 }
@@ -418,7 +414,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
     try {
         return await enqueueRuntimeOperation(async () => {
             if (!isLiveRuntime(node, generation)) {
-                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+                throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
             const processedEvents = await node.processBlock(
                 input.events,
@@ -428,7 +424,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.trackId
             );
             if (!isLiveRuntime(node, generation)) {
-                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+                throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
             return processedEvents;
         });
@@ -461,14 +457,14 @@ export async function processYeastRuntimeTransaction(
 
         const generation = session.generation;
         if (!isLiveRuntime(node, generation)) {
-            throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+            throw new Error('Yeast Worker runtime changed during MIDI processing');
         }
 
         try {
             if (session.appliedProjectionRevision !== record.revision) {
                 await node.setProjection(record.projection);
                 if (!isLiveRuntime(node, generation)) {
-                    throw new Error('Yeast AudioWorklet projection generation changed');
+                    throw new Error('Yeast Worker projection generation changed');
                 }
                 session.appliedProjectionRevision = record.revision;
             }
@@ -481,7 +477,7 @@ export async function processYeastRuntimeTransaction(
                 input.trackId
             );
             if (!isLiveRuntime(node, generation)) {
-                throw new Error('Yeast AudioWorklet runtime changed during MIDI processing');
+                throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
             return processedEvents;
         } catch (error: unknown) {
@@ -513,7 +509,7 @@ export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<v
     try {
         await enqueueRuntimeOperation(async () => {
             if (!isLiveRuntime(node, generation)) {
-                throw new Error('Yeast AudioWorklet runtime generation changed');
+                throw new Error('Yeast Worker runtime generation changed');
             }
             await trySendAllNotesOff(node, nowSamples, generation);
         });

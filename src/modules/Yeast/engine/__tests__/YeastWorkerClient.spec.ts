@@ -1,26 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createYeastWorkletNode, type YeastWorkletNodeResult, YEAST_WORKLET_DEADLINE_MS } from '../YeastWorkletNode';
+import { createYeastWorker, type YeastWorkerResult, YEAST_WORKER_DEADLINE_MS } from '../YeastWorkerClient';
 
 import type { TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
 /**
- * A controllable AudioWorkletNode stand-in. Captures posted messages and lets a
+ * A controllable Worker stand-in. Captures posted messages and lets a
  * test drive the `onmessage` reply channel, so we can exercise the
- * processBlock correlation, timeout, and destroy paths without a real worklet.
+ * processBlock correlation, timeout, and destroy paths without a real Worker.
  */
-type FakePort = {
+type FakeWorker = {
     postMessage: ReturnType<typeof vi.fn>;
     onmessage: ((event: MessageEvent) => void) | null;
-    close: ReturnType<typeof vi.fn>;
+    terminate: ReturnType<typeof vi.fn>;
 };
 
-function makeContextWithAddModule(addModule: () => Promise<void>): BaseAudioContext {
-    return {
-        audioWorklet: { addModule },
-    } as unknown as BaseAudioContext;
+function makeContext(): BaseAudioContext {
+    return {} as BaseAudioContext;
 }
 
 const transport: TransportInfo = {
@@ -31,24 +29,20 @@ const transport: TransportInfo = {
     positionSamples: 0,
 } as unknown as TransportInfo;
 
-let installedPorts: FakePort[] = [];
+let installedWorkers: FakeWorker[] = [];
 
 beforeEach(() => {
     vi.useFakeTimers();
-    installedPorts = [];
-    // Replace the global AudioWorkletNode stub with one whose port we can drive.
-    globalThis.AudioWorkletNode = class FakeAudioWorkletNode {
-        port: FakePort;
+    installedWorkers = [];
+    globalThis.Worker = class FakeWorker {
+        postMessage = vi.fn();
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        terminate = vi.fn();
+
         constructor() {
-            this.port = {
-                postMessage: vi.fn(),
-                onmessage: null,
-                close: vi.fn(),
-            };
-            installedPorts.push(this.port);
+            installedWorkers.push(this as unknown as FakeWorker);
         }
-        disconnect(): void {}
-    } as unknown as typeof AudioWorkletNode;
+    } as unknown as typeof Worker;
 });
 
 afterEach(() => {
@@ -56,39 +50,43 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-function lastPort(): FakePort {
-    const port = installedPorts.at(-1);
-    if (!port) {
-        throw new Error('no AudioWorkletNode port was created');
+function lastWorker(): FakeWorker {
+    const worker = installedWorkers.at(-1);
+    if (!worker) {
+        throw new Error('no Worker was created');
     }
-    return port;
+    return worker;
 }
 
-/** Simulate the worklet replying 'processed' for a given requestId. */
-function replyProcessed(port: FakePort, requestId: number, events: unknown[] = []): void {
-    port.onmessage?.({ data: { type: 'processed', requestId, events } } as MessageEvent);
+/** Simulate the Worker replying 'processed' for a given requestId. */
+function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[] = []): void {
+    worker.onmessage?.({ data: { type: 'processed', requestId, events } } as MessageEvent);
 }
 
-function replyRawProcessed(port: FakePort, data: unknown): void {
-    port.onmessage?.({ data } as MessageEvent);
+function replyProcessedError(worker: FakeWorker, requestId: number, error: string): void {
+    worker.onmessage?.({ data: { type: 'processedError', requestId, error } } as MessageEvent);
 }
 
-function replyCommandAck(port: FakePort, commandId: number, accepted: boolean, error?: string): void {
-    port.onmessage?.({ data: { type: 'commandAck', commandId, accepted, error } } as MessageEvent);
+function replyRawProcessed(worker: FakeWorker, data: unknown): void {
+    worker.onmessage?.({ data } as MessageEvent);
 }
 
-function replyRawCommandAck(port: FakePort, data: unknown): void {
-    port.onmessage?.({ data } as MessageEvent);
+function replyCommandAck(worker: FakeWorker, commandId: number, accepted: boolean, error?: string): void {
+    worker.onmessage?.({ data: { type: 'commandAck', commandId, accepted, error } } as MessageEvent);
+}
+
+function replyRawCommandAck(worker: FakeWorker, data: unknown): void {
+    worker.onmessage?.({ data } as MessageEvent);
 }
 
 function replyAllNotesOffAck(
-    port: FakePort,
+    worker: FakeWorker,
     panicId: number,
     completed: boolean,
     error?: string,
     events: unknown[] = []
 ): void {
-    port.onmessage?.({
+    worker.onmessage?.({
         data: {
             type: 'allNotesOffAck',
             panicId,
@@ -99,38 +97,50 @@ function replyAllNotesOffAck(
     } as MessageEvent);
 }
 
-function replyRawAllNotesOffAck(port: FakePort, data: unknown): void {
-    port.onmessage?.({ data } as MessageEvent);
+function replyRawAllNotesOffAck(worker: FakeWorker, data: unknown): void {
+    worker.onmessage?.({ data } as MessageEvent);
 }
 
-function replyProjectionAck(port: FakePort, projectionId: number, events: unknown[] = []): void {
-    port.onmessage?.({
+function replyProjectionAck(worker: FakeWorker, projectionId: number, events: unknown[] = []): void {
+    worker.onmessage?.({
         data: { type: 'projectionAck', projectionId, events },
     } as MessageEvent);
 }
 
-function replyProjectionError(port: FakePort, projectionId: number, error: string): void {
-    port.onmessage?.({ data: { type: 'projectionError', projectionId, error } } as MessageEvent);
+function replyProjectionError(worker: FakeWorker, projectionId: number, error: string): void {
+    worker.onmessage?.({ data: { type: 'projectionError', projectionId, error } } as MessageEvent);
 }
 
-describe('createYeastWorkletNode — processBlock lifecycle', () => {
-    it('resolves processBlock when the worklet replies with a matching requestId', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        const port = lastPort();
+describe('createYeastWorker — processBlock lifecycle', () => {
+    it('resolves processBlock when the worker replies with a matching requestId', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
 
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
         // requestId starts at 0 for the first call.
-        replyProcessed(port, 0, []);
+        replyProcessed(worker, 0, []);
 
         await expect(promise).resolves.toEqual([]);
     });
 
+    it('rejects processBlock immediately on a correlated worker error', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const promise = node.processBlock([], 0, 128, transport, 'track-a');
+        const assertion = expect(promise).rejects.toThrow('rack process failed');
+
+        replyProcessedError(worker, 0, 'rack process failed');
+
+        await assertion;
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('includes the originating track in every block request', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        const port = lastPort();
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
 
-        expect(port.postMessage).toHaveBeenCalledWith({
+        expect(worker.postMessage).toHaveBeenCalledWith({
             type: 'processBlock',
             requestId: 0,
             events: [],
@@ -140,24 +150,24 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
             trackId: 'track-a',
         });
 
-        replyProcessed(port, 0, []);
+        replyProcessed(worker, 0, []);
         await expect(promise).resolves.toEqual([]);
     });
 
     it('ignores wrong, duplicate, and late processed replies', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        const port = lastPort();
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
         const event = { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } };
 
         const first = node.processBlock([], 0, 128, transport, 'track-a');
-        replyProcessed(port, 99, [event]);
-        replyProcessed(port, 0, [event]);
-        replyProcessed(port, 0, [event]);
+        replyProcessed(worker, 99, [event]);
+        replyProcessed(worker, 0, [event]);
+        replyProcessed(worker, 0, [event]);
         await expect(first).resolves.toEqual([event]);
 
         const second = node.processBlock([], 128, 256, transport, 'track-a');
-        replyProcessed(port, 0, [event]);
-        replyProcessed(port, 1, []);
+        replyProcessed(worker, 0, [event]);
+        replyProcessed(worker, 1, []);
         await expect(second).resolves.toEqual([]);
     });
 
@@ -165,51 +175,51 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
         ['missing events', { type: 'processed', requestId: 0 }],
         ['malformed events', { type: 'processed', requestId: 0, events: [{ nope: true }] }],
     ] as const)('times out instead of accepting %s as silence', async (_label, message) => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
         const assertion = expect(promise).rejects.toThrow(/timed out/);
 
-        replyRawProcessed(lastPort(), message);
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        replyRawProcessed(lastWorker(), message);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
 
         await assertion;
     });
 
-    it('rejects processBlock when the worklet never replies (no leaked Promise)', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+    it('rejects processBlock when the worker never replies (no leaked Promise)', async () => {
+        const node = await createYeastWorker(makeContext());
 
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
         // Attach the rejection expectation before advancing timers so the
         // rejection is always observed (no unhandled-rejection noise).
         const assertion = expect(promise).rejects.toThrow(/timed out/);
 
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
 
         await assertion;
     });
 
     it('rejects processBlock within the scheduler-safe deadline', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
         let rejection: unknown;
         void promise.catch((error: unknown) => {
             rejection = error;
         });
 
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
 
         expect(rejection).toBeInstanceOf(Error);
         expect(String((rejection as Error).message)).toMatch(/timed out/);
     });
 
     it('clears the timeout on a normal reply so it does not reject afterwards', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        const port = lastPort();
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
 
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
         const onReject = vi.fn();
         promise.catch(onReject);
-        replyProcessed(port, 0, [{ timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }]);
+        replyProcessed(worker, 0, [{ timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }]);
         await expect(promise).resolves.toHaveLength(1);
 
         // Advancing past the timeout must not reject the already-resolved
@@ -219,9 +229,7 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
     });
 
     it('rejects all in-flight processBlock Promises when destroyed', async () => {
-        const node: YeastWorkletNodeResult = await createYeastWorkletNode(
-            makeContextWithAddModule(() => Promise.resolve())
-        );
+        const node: YeastWorkerResult = await createYeastWorker(makeContext());
 
         const a = node.processBlock([], 0, 128, transport, 'track-a');
         const b = node.processBlock([], 128, 256, transport, 'track-a');
@@ -230,14 +238,14 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
 
         await expect(a).rejects.toThrow(/destroyed/);
         await expect(b).rejects.toThrow(/destroyed/);
-        expect(lastPort().close).toHaveBeenCalled();
+        expect(lastWorker().terminate).toHaveBeenCalled();
         expect(vi.getTimerCount()).toBe(0);
     });
 });
 
-describe('createYeastWorkletNode — projection protocol', () => {
+describe('createYeastWorker — projection protocol', () => {
     it('posts one complete serializable projection snapshot', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const projection: YeastProcessorProjection = [
             {
                 id: 'arp-1',
@@ -255,48 +263,49 @@ describe('createYeastWorkletNode — projection protocol', () => {
 
         const result = Promise.resolve(node.setProjection(projection));
 
-        replyProjectionAck(lastPort(), 0);
+        replyProjectionAck(lastWorker(), 0);
         await expect(result).resolves.toBeUndefined();
 
-        expect(lastPort().postMessage).toHaveBeenCalledWith({
+        expect(lastWorker().postMessage).toHaveBeenCalledWith({
             type: 'setProjection',
             projectionId: 0,
+            nowSamples: 0,
             processors: projection,
         });
     });
 
     it('validates projection identity and ignores duplicate and late acknowledgements', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
 
         const first = Promise.resolve(node.setProjection([]));
-        replyProjectionAck(lastPort(), 99);
-        replyProjectionAck(lastPort(), 0);
-        replyProjectionError(lastPort(), 0, 'late error');
+        replyProjectionAck(lastWorker(), 99);
+        replyProjectionAck(lastWorker(), 0);
+        replyProjectionError(lastWorker(), 0, 'late error');
         await expect(first).resolves.toBeUndefined();
 
         const second = Promise.resolve(node.setProjection([]));
-        replyProjectionAck(lastPort(), 0);
-        replyProjectionAck(lastPort(), 1);
+        replyProjectionAck(lastWorker(), 0);
+        replyProjectionAck(lastWorker(), 1);
         await expect(second).resolves.toBeUndefined();
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it('rejects a projection when execution acknowledgement times out', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const result = Promise.resolve(node.setProjection([]));
         let rejection: unknown;
         void result.catch((error: unknown) => {
             rejection = error;
         });
 
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
 
         expect(rejection).toBeInstanceOf(Error);
         expect(String((rejection as Error).message)).toMatch(/projection acknowledgement timed out/);
     });
 
     it('rejects a pending projection when destroyed and clears its timer', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const result = Promise.resolve(node.setProjection([]));
 
         node.destroy();
@@ -305,12 +314,12 @@ describe('createYeastWorkletNode — projection protocol', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('ignores uncorrelated worklet note-offs', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+    it('ignores uncorrelated worker note-offs', async () => {
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
 
-        lastPort().onmessage?.({
+        lastWorker().onmessage?.({
             data: {
                 type: 'notesOff',
                 events: [
@@ -324,14 +333,14 @@ describe('createYeastWorkletNode — projection protocol', () => {
     });
 
     it('dispatches projection note-offs only once from the matching acknowledgement', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
         const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.setProjection([]);
-        replyProjectionAck(lastPort(), 0, events);
-        replyProjectionAck(lastPort(), 0, events);
+        replyProjectionAck(lastWorker(), 0, events);
+        replyProjectionAck(lastWorker(), 0, events);
 
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
@@ -339,7 +348,7 @@ describe('createYeastWorkletNode — projection protocol', () => {
     });
 
     it('dispatches projection note-offs grouped by their originating track', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
         const events = [
@@ -348,7 +357,7 @@ describe('createYeastWorkletNode — projection protocol', () => {
         ];
 
         const result = node.setProjection([]);
-        replyProjectionAck(lastPort(), 0, events);
+        replyProjectionAck(lastWorker(), 0, events);
 
         await expect(result).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
@@ -359,30 +368,30 @@ describe('createYeastWorkletNode — projection protocol', () => {
     });
 
     it('falls silent on wrong, late, or lost projection acknowledgements', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
         const events = [{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.setProjection([]);
-        replyProjectionAck(lastPort(), 99, events);
+        replyProjectionAck(lastWorker(), 99, events);
         const assertion = expect(result).rejects.toThrow(/projection acknowledgement timed out/);
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKER_DEADLINE_MS);
         await assertion;
 
-        replyProjectionAck(lastPort(), 0, events);
+        replyProjectionAck(lastWorker(), 0, events);
         expect(onNotesOff).not.toHaveBeenCalled();
     });
 });
 
-describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () => {
+describe('createYeastWorker — allNotesOff acknowledgement lifecycle', () => {
     it('posts a correlated panic id and resolves after execution acknowledgement', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
 
         const result = node.allNotesOff(512);
 
-        expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'allNotesOff', panicId: 0, nowSamples: 512 });
-        replyAllNotesOffAck(lastPort(), 0, true, undefined, [
+        expect(lastWorker().postMessage).toHaveBeenCalledWith({ type: 'allNotesOff', panicId: 0, nowSamples: 512 });
+        replyAllNotesOffAck(lastWorker(), 0, true, undefined, [
             { timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
         ]);
 
@@ -391,56 +400,56 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
     });
 
     it('rejects a negative execution acknowledgement', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
 
         const result = node.allNotesOff(512);
-        replyAllNotesOffAck(lastPort(), 0, false, 'rack panic failed');
+        replyAllNotesOffAck(lastWorker(), 0, false, 'rack panic failed');
 
         await expect(result).rejects.toThrow('rack panic failed');
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it('ignores wrong, duplicate, and late acknowledgements', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
 
         const first = node.allNotesOff(512);
-        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true });
-        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
+        replyRawAllNotesOffAck(lastWorker(), { type: 'allNotesOffAck', panicId: 99, completed: true });
+        replyRawAllNotesOffAck(lastWorker(), { type: 'allNotesOffAck', panicId: 0, completed: 'yes' });
         const events = [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
-        replyAllNotesOffAck(lastPort(), 0, true, undefined, events);
-        replyAllNotesOffAck(lastPort(), 0, false, 'late duplicate', events);
+        replyAllNotesOffAck(lastWorker(), 0, true, undefined, events);
+        replyAllNotesOffAck(lastWorker(), 0, false, 'late duplicate', events);
         await expect(first).resolves.toBeUndefined();
         expect(onNotesOff).toHaveBeenCalledTimes(1);
         expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
 
         const second = node.allNotesOff(1024);
-        replyAllNotesOffAck(lastPort(), 0, false, 'late acknowledgement');
-        replyAllNotesOffAck(lastPort(), 1, true);
+        replyAllNotesOffAck(lastWorker(), 0, false, 'late acknowledgement');
+        replyAllNotesOffAck(lastWorker(), 1, true);
 
         await expect(second).resolves.toBeUndefined();
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it('falls silent on wrong, late, or lost panic acknowledgements', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const onNotesOff = vi.fn();
         node.onNotesOff(onNotesOff);
         const events = [{ timeSamples: 512, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }];
 
         const result = node.allNotesOff(512);
-        replyRawAllNotesOffAck(lastPort(), { type: 'allNotesOffAck', panicId: 99, completed: true, events });
+        replyRawAllNotesOffAck(lastWorker(), { type: 'allNotesOffAck', panicId: 99, completed: true, events });
         const assertion = expect(result).rejects.toThrow(/allNotesOff acknowledgement timed out/);
         await vi.advanceTimersByTimeAsync(1000);
         await assertion;
 
-        replyAllNotesOffAck(lastPort(), 0, true, undefined, events);
+        replyAllNotesOffAck(lastWorker(), 0, true, undefined, events);
         expect(onNotesOff).not.toHaveBeenCalled();
     });
 
-    it('rejects on a silent worklet acknowledgement timeout', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+    it('rejects on a silent worker acknowledgement timeout', async () => {
+        const node = await createYeastWorker(makeContext());
 
         const result = node.allNotesOff(512);
         const assertion = expect(result).rejects.toThrow(/allNotesOff acknowledgement timed out/);
@@ -452,7 +461,7 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
     });
 
     it('rejects a pending panic when destroyed and clears its timer', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
 
         const result = node.allNotesOff(512);
         node.destroy();
@@ -462,9 +471,9 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
     });
 
     it('converts a synchronous post failure into a rejected panic promise', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const error = new Error('panic post failed');
-        lastPort().postMessage.mockImplementationOnce(() => {
+        lastWorker().postMessage.mockImplementationOnce(() => {
             throw error;
         });
 
@@ -475,45 +484,45 @@ describe('createYeastWorkletNode — allNotesOff acknowledgement lifecycle', () 
     });
 });
 
-describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
+describe('createYeastWorker — command acknowledgement lifecycle', () => {
     it('resolves one accepted acknowledgement and clears its timer', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
 
         const result = node.sendCommand(command);
 
-        expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'executeCommand', commandId: 0, command });
-        replyCommandAck(lastPort(), 0, true);
+        expect(lastWorker().postMessage).toHaveBeenCalledWith({ type: 'executeCommand', commandId: 0, command });
+        replyCommandAck(lastWorker(), 0, true);
 
         await expect(result).resolves.toEqual({ accepted: true });
         expect(vi.getTimerCount()).toBe(0);
-        replyCommandAck(lastPort(), 0, false, 'late duplicate');
+        replyCommandAck(lastWorker(), 0, false, 'late duplicate');
         await vi.advanceTimersByTimeAsync(1000);
-        expect(lastPort().postMessage).toHaveBeenCalledTimes(1);
+        expect(lastWorker().postMessage).toHaveBeenCalledTimes(1);
     });
 
     it('ignores duplicate and late acknowledgements without settling another command', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
 
         const first = node.sendCommand(command);
-        replyCommandAck(lastPort(), 0, true);
+        replyCommandAck(lastWorker(), 0, true);
         await expect(first).resolves.toEqual({ accepted: true });
 
         const second = node.sendCommand(command);
-        replyCommandAck(lastPort(), 0, false, 'late duplicate');
-        replyCommandAck(lastPort(), 1, true);
+        replyCommandAck(lastWorker(), 0, false, 'late duplicate');
+        replyCommandAck(lastWorker(), 1, true);
 
         await expect(second).resolves.toEqual({ accepted: true });
         expect(vi.getTimerCount()).toBe(0);
     });
 
     it('resolves a negative acknowledgement without reporting acceptance', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
 
         const result = node.sendCommand(command);
-        replyCommandAck(lastPort(), 0, false, 'processor rejected command');
+        replyCommandAck(lastWorker(), 0, false, 'processor rejected command');
 
         await expect(result).resolves.toEqual({ accepted: false, error: 'processor rejected command' });
     });
@@ -524,11 +533,11 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
         ['non-string rejection error', { accepted: false, error: 42 }],
         ['missing accepted', { error: undefined }],
     ] as const)('normalizes a malformed %s acknowledgement to failure', async (_label, malformed) => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
 
         const result = node.sendCommand(command);
-        replyRawCommandAck(lastPort(), { type: 'commandAck', commandId: 0, ...malformed });
+        replyRawCommandAck(lastWorker(), { type: 'commandAck', commandId: 0, ...malformed });
 
         const ack = await result;
         expect(ack.accepted).toBe(false);
@@ -537,11 +546,11 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
     });
 
     it('does not settle a pending command on a wrong valid command id', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
 
         const result = node.sendCommand(command);
-        replyRawCommandAck(lastPort(), { type: 'commandAck', commandId: 99, accepted: true });
+        replyRawCommandAck(lastWorker(), { type: 'commandAck', commandId: 99, accepted: true });
         expect(vi.getTimerCount()).toBe(1);
 
         const assertion = expect(result).rejects.toThrow(/command acknowledgement timed out/);
@@ -561,11 +570,11 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
     ] as const)(
         'does not settle a pending command on malformed acknowledgement data (%s)',
         async (_label, malformedId) => {
-            const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+            const node = await createYeastWorker(makeContext());
             const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
 
             const result = node.sendCommand(command);
-            replyRawCommandAck(lastPort(), { type: 'commandAck', accepted: true, ...malformedId });
+            replyRawCommandAck(lastWorker(), { type: 'commandAck', accepted: true, ...malformedId });
 
             const assertion = expect(result).rejects.toThrow(/command acknowledgement timed out/);
             await vi.advanceTimersByTimeAsync(1000);
@@ -574,8 +583,8 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
         }
     );
 
-    it('rejects a command when the worklet acknowledgement is dropped', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+    it('rejects a command when the worker acknowledgement is dropped', async () => {
+        const node = await createYeastWorker(makeContext());
         const command = { processorId: 'cm-1', type: 'chordMemory.learn' } as const;
 
         const result = node.sendCommand(command);
@@ -587,7 +596,7 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
     });
 
     it('rejects an in-flight command when the node is destroyed and clears its timer', async () => {
-        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const node = await createYeastWorker(makeContext());
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
 
         const result = node.sendCommand(command);
@@ -598,31 +607,15 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
     });
 });
 
-describe('ensureWorkletRegistered — failed addModule is retried', () => {
-    it('rejects a hung addModule within the scheduler-safe deadline', async () => {
-        const pending = new Promise<void>(() => {});
-        let rejection: unknown;
-        void createYeastWorkletNode(makeContextWithAddModule(() => pending)).catch((error: unknown) => {
-            rejection = error;
-        });
+describe('createYeastWorker constructor lifecycle', () => {
+    it('rejects when Worker construction fails', async () => {
+        const error = new Error('Worker construction failed');
+        globalThis.Worker = class {
+            constructor() {
+                throw error;
+            }
+        } as unknown as typeof Worker;
 
-        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
-
-        expect(rejection).toBeInstanceOf(Error);
-        expect(String((rejection as Error).message)).toMatch(/addModule timed out/);
-        expect(installedPorts).toHaveLength(0);
-    });
-
-    it('does not cache a rejected addModule; a later call retries', async () => {
-        const spy = vi.fn<() => Promise<void>>();
-        // First call rejects (e.g. CSP), second resolves.
-        spy.mockRejectedValueOnce(new Error('CSP blocked')).mockResolvedValueOnce(undefined);
-        const ctx = makeContextWithAddModule(spy);
-
-        await expect(createYeastWorkletNode(ctx)).rejects.toThrow('CSP blocked');
-        // The rejection must not be cached for this context — a retry calls
-        // addModule again and succeeds.
-        await expect(createYeastWorkletNode(ctx)).resolves.toBeDefined();
-        expect(spy).toHaveBeenCalledTimes(2);
+        await expect(createYeastWorker(makeContext())).rejects.toThrow(error.message);
     });
 });

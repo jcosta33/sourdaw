@@ -1,26 +1,22 @@
 /**
- * YeastWorkletNode — AudioWorkletNode wrapper for the Yeast MIDI rack.
+ * YeastWorkerClient — dedicated Worker wrapper for the Yeast MIDI rack.
  *
- * Creates an AudioWorkletNode that hosts MidiRack + all processors in the
- * audio thread. Provides an async `processBlock()` that returns transformed
+ * Creates a dedicated Worker that hosts MidiRack + all processors away from
+ * the audio render thread. Provides an async `processBlock()` that returns transformed
  * MIDI events; caller supplies `requestId` correlation internally.
  *
- * Sends the serializable processor projection to the worklet. The worklet owns
+ * Sends the serializable processor projection to the Worker. The Worker owns
  * the rack and processor instances; this wrapper owns only the port protocol.
  */
-
-import yeastWorkletProcessorUrl from '../worklets/yeastWorkletProcessor.ts?worker&url';
 
 import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
-const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
-
 /**
  * Upper bound on how long a `processBlock` round-trip may wait for the
- * worklet's `processed` reply before the pending Promise is rejected. Without
+ * Worker's `processed` reply before the pending Promise is rejected. Without
  * a bound, a single dropped reply (crashed processor, lost message) leaks an
  * unresolved Promise — and any caller awaiting it — for the lifetime of the
  * page.
@@ -30,10 +26,9 @@ const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 // past the current look-ahead window.
 const SCHEDULER_LOOKAHEAD_MS = 100;
 const SCHEDULER_GRAIN_MS = 10;
-export const YEAST_WORKLET_DEADLINE_MS = SCHEDULER_LOOKAHEAD_MS - SCHEDULER_GRAIN_MS;
-const ADD_MODULE_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
-const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
-const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
+export const YEAST_WORKER_DEADLINE_MS = SCHEDULER_LOOKAHEAD_MS - SCHEDULER_GRAIN_MS;
+const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
+const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const COMMAND_ACK_TIMEOUT_MS = 1000;
 const ALL_NOTES_OFF_ACK_TIMEOUT_MS = 1000;
 
@@ -63,9 +58,9 @@ type ParsedProjectionAck = {
     events: MidiEvent[];
 };
 
-const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorkletNode command acknowledgement';
-const INVALID_ALL_NOTES_OFF_ACK_ERROR = 'Invalid YeastWorkletNode allNotesOff acknowledgement';
-const INVALID_PROJECTION_ACK_ERROR = 'Invalid YeastWorkletNode projection acknowledgement';
+const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorker command acknowledgement';
+const INVALID_ALL_NOTES_OFF_ACK_ERROR = 'Invalid YeastWorker allNotesOff acknowledgement';
+const INVALID_PROJECTION_ACK_ERROR = 'Invalid YeastWorker projection acknowledgement';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -91,6 +86,10 @@ function isMidiNote(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 127;
 }
 
+function isMidiController(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 127;
+}
+
 function isTrackId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0;
 }
@@ -111,7 +110,7 @@ function isMidiEvent(value: unknown): value is MidiEvent {
         return isMidiChannel(kind.channel) && isMidiNote(kind.note);
     }
     if (kind.type === 'cc') {
-        return isMidiChannel(kind.channel) && Number.isInteger(kind.cc) && isFiniteNumber(kind.value);
+        return isMidiChannel(kind.channel) && isMidiController(kind.cc) && isFiniteNumber(kind.value);
     }
     if (kind.type === 'pitchBend' || kind.type === 'channelPressure') {
         return isMidiChannel(kind.channel) && isFiniteNumber(kind.value);
@@ -151,6 +150,13 @@ function parseProcessedMessage(value: Record<string, unknown>): { requestId: num
         return undefined;
     }
     return { requestId: value.requestId, events };
+}
+
+function parseProcessedError(value: Record<string, unknown>): { requestId: number; error: string } | undefined {
+    if (value.type !== 'processedError' || !isCommandId(value.requestId) || typeof value.error !== 'string') {
+        return undefined;
+    }
+    return { requestId: value.requestId, error: value.error };
 }
 
 function parseProjectionAck(value: unknown): ParsedProjectionAck | undefined {
@@ -223,69 +229,7 @@ function toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error));
 }
 
-function withDeadline<TValue>(promise: Promise<TValue>, timeoutMs: number, message: string): Promise<TValue> {
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            reject(new Error(message));
-        }, timeoutMs);
-
-        void promise.then(
-            (value) => {
-                if (settled) {
-                    return undefined;
-                }
-                settled = true;
-                clearTimeout(timer);
-                resolve(value);
-                return undefined;
-            },
-            (error: unknown) => {
-                if (settled) {
-                    return undefined;
-                }
-                settled = true;
-                clearTimeout(timer);
-                reject(toError(error));
-                return undefined;
-            }
-        );
-    });
-}
-
-async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let param = workletRegistrations.get(ctx);
-    if (!param) {
-        // Evict the cached promise if addModule rejects (CSP/network/syntax)
-        // so a later call retries instead of replaying the same rejection.
-        // Without this, a single transient failure leaves the worklet path
-        // dead until a full page reload.
-        let registration: Promise<void>;
-        try {
-            registration = withDeadline(
-                ctx.audioWorklet.addModule(yeastWorkletProcessorUrl),
-                ADD_MODULE_TIMEOUT_MS,
-                `YeastWorkletNode.addModule timed out after ${ADD_MODULE_TIMEOUT_MS}ms`
-            );
-        } catch (error: unknown) {
-            registration = Promise.reject(toError(error));
-        }
-        param = registration.catch((error: unknown) => {
-            if (workletRegistrations.get(ctx) === param) {
-                workletRegistrations.delete(ctx);
-            }
-            throw error;
-        });
-        workletRegistrations.set(ctx, param);
-    }
-    return param;
-}
-
-export type YeastWorkletNodeResult = {
+export type YeastWorkerResult = {
     context: BaseAudioContext;
     processBlock: (
         events: readonly MidiEvent[],
@@ -299,7 +243,7 @@ export type YeastWorkletNodeResult = {
     allNotesOff: (nowSamples: number) => Promise<void>;
     /**
      * Register a listener for Note Offs a projection change left hanging in the
-     * worklet rack. The worklet computes them and posts them back here; without
+     * Worker rack. The Worker computes them and posts them back here; without
      * routing them to the live instrument, the note hangs. Returns an
      * unsubscribe function. Multiple listeners are supported.
      */
@@ -307,19 +251,15 @@ export type YeastWorkletNodeResult = {
     destroy: () => void;
 };
 
-export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<YeastWorkletNodeResult> {
-    await ensureWorkletRegistered(ctx);
-
-    const node = new AudioWorkletNode(ctx, 'yeast-worklet-processor', {
-        numberOfInputs: 0,
-        numberOfOutputs: 0,
-    });
+export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWorkerResult> {
+    const worker = new Worker(new URL('../workers/yeastWorker.ts', import.meta.url), { type: 'module' });
 
     let nextRequestId = 0;
     let nextCommandId = 0;
     let nextPanicId = 0;
     let nextProjectionId = 0;
     let destroyed = false;
+    let latestSample = 0;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
@@ -404,13 +344,21 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         }
     };
 
-    node.port.onmessage = (event: MessageEvent): void => {
+    worker.onmessage = (event: MessageEvent): void => {
         if (!isPlainObject(event.data)) {
             return;
         }
         const processed = parseProcessedMessage(event.data);
         if (processed) {
             settle(processed.requestId)?.resolve(processed.events);
+            return;
+        }
+        if (event.data.type === 'processedError') {
+            const parsed = parseProcessedError(event.data);
+            if (!parsed) {
+                return;
+            }
+            settle(parsed.requestId)?.reject(new Error(parsed.error));
             return;
         }
         if (event.data.type === 'commandAck') {
@@ -477,20 +425,21 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (destroyed) {
-                reject(new Error('YeastWorkletNode is destroyed'));
+                reject(new Error('YeastWorker is destroyed'));
                 return;
             }
             const requestId = nextRequestId++;
-            // Reject if the worklet never replies (dropped 'processed' message,
+            latestSample = Math.max(latestSample, blockEnd);
+            // Reject if the Worker never replies (dropped 'processed' message,
             // crashed processor) so the Promise can't leak forever.
             const timer = setTimeout(() => {
                 if (settle(requestId)) {
-                    reject(new Error(`YeastWorkletNode.processBlock timed out (requestId ${requestId})`));
+                    reject(new Error(`YeastWorker.processBlock timed out (requestId ${requestId})`));
                 }
             }, PROCESS_BLOCK_TIMEOUT_MS);
             pending.set(requestId, { resolve, reject, timer });
             try {
-                node.port.postMessage({
+                worker.postMessage({
                     type: 'processBlock',
                     requestId,
                     events,
@@ -507,19 +456,19 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     const sendCommand = (command: YeastProcessorCommand): Promise<YeastCommandAck> =>
         new Promise((resolve, reject) => {
             if (destroyed) {
-                reject(new Error('YeastWorkletNode is destroyed'));
+                reject(new Error('YeastWorker is destroyed'));
                 return;
             }
 
             const commandId = nextCommandId++;
             const timer = setTimeout(() => {
                 if (settleCommand(commandId)) {
-                    reject(new Error(`YeastWorkletNode command acknowledgement timed out (commandId ${commandId})`));
+                    reject(new Error(`YeastWorker command acknowledgement timed out (commandId ${commandId})`));
                 }
             }, COMMAND_ACK_TIMEOUT_MS);
             pendingCommands.set(commandId, { resolve, reject, timer });
             try {
-                node.port.postMessage({ type: 'executeCommand', commandId, command });
+                worker.postMessage({ type: 'executeCommand', commandId, command });
             } catch (error: unknown) {
                 settleCommand(commandId)?.reject(toError(error));
             }
@@ -528,19 +477,20 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     const allNotesOff = (nowSamples: number): Promise<void> =>
         new Promise((resolve, reject) => {
             if (destroyed) {
-                reject(new Error('YeastWorkletNode is destroyed'));
+                reject(new Error('YeastWorker is destroyed'));
                 return;
             }
 
             const panicId = nextPanicId++;
+            latestSample = Math.max(latestSample, nowSamples);
             const timer = setTimeout(() => {
                 if (settlePanic(panicId)) {
-                    reject(new Error(`YeastWorkletNode allNotesOff acknowledgement timed out (panicId ${panicId})`));
+                    reject(new Error(`YeastWorker allNotesOff acknowledgement timed out (panicId ${panicId})`));
                 }
             }, ALL_NOTES_OFF_ACK_TIMEOUT_MS);
             pendingPanics.set(panicId, { resolve, reject, timer });
             try {
-                node.port.postMessage({ type: 'allNotesOff', panicId, nowSamples });
+                worker.postMessage({ type: 'allNotesOff', panicId, nowSamples });
             } catch (error: unknown) {
                 settlePanic(panicId)?.reject(toError(error));
             }
@@ -549,7 +499,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     const setProjection = (projection: readonly YeastProcessorProjectionItem[]): Promise<void> =>
         new Promise((resolve, reject) => {
             if (destroyed) {
-                reject(new Error('YeastWorkletNode is destroyed'));
+                reject(new Error('YeastWorker is destroyed'));
                 return;
             }
 
@@ -557,17 +507,16 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             const timer = setTimeout(() => {
                 if (settleProjection(projectionId)) {
                     reject(
-                        new Error(
-                            `YeastWorkletNode projection acknowledgement timed out (projectionId ${projectionId})`
-                        )
+                        new Error(`YeastWorker projection acknowledgement timed out (projectionId ${projectionId})`)
                     );
                 }
             }, PROJECTION_ACK_TIMEOUT_MS);
             pendingProjections.set(projectionId, { resolve, reject, timer });
             try {
-                node.port.postMessage({
+                worker.postMessage({
                     type: 'setProjection',
                     projectionId,
+                    nowSamples: latestSample,
                     processors: projection.map((processor) => ({
                         ...processor,
                         params: { ...processor.params },
@@ -595,25 +544,21 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                 return;
             }
             destroyed = true;
-            // The port is closed; no 'processed' reply can ever arrive. Reject
+            // The Worker is terminated; no reply can ever arrive. Reject
             // and clear every in-flight request and command so awaiting callers
             // fail fast instead of hanging on Promises that can never settle.
             for (const requestId of [...pending.keys()]) {
-                settle(requestId)?.reject(new Error('YeastWorkletNode destroyed before processBlock completed'));
+                settle(requestId)?.reject(new Error('YeastWorker destroyed before processBlock completed'));
             }
             for (const commandId of [...pendingCommands.keys()]) {
-                settleCommand(commandId)?.reject(
-                    new Error('YeastWorkletNode destroyed before command acknowledgement')
-                );
+                settleCommand(commandId)?.reject(new Error('YeastWorker destroyed before command acknowledgement'));
             }
             for (const panicId of [...pendingPanics.keys()]) {
-                settlePanic(panicId)?.reject(
-                    new Error('YeastWorkletNode destroyed before allNotesOff acknowledgement')
-                );
+                settlePanic(panicId)?.reject(new Error('YeastWorker destroyed before allNotesOff acknowledgement'));
             }
             for (const projectionId of [...pendingProjections.keys()]) {
                 settleProjection(projectionId)?.reject(
-                    new Error('YeastWorkletNode destroyed before projection acknowledgement')
+                    new Error('YeastWorker destroyed before projection acknowledgement')
                 );
             }
             pending.clear();
@@ -621,16 +566,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             pendingPanics.clear();
             pendingProjections.clear();
             notesOffHandlers.clear();
-            try {
-                node.port.close();
-            } catch {
-                /* already closed */
-            }
-            try {
-                node.disconnect();
-            } catch {
-                /* already disconnected */
-            }
+            worker.terminate();
         },
     };
 }
