@@ -164,6 +164,10 @@ export function collectCausalEdges(cruise) {
 
 export function findMixedTypeValueExports(sourceText, fileName = 'index.ts') {
     const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    return findMixedTypeValueExportsInSourceFile(sourceFile, fileName);
+}
+
+function findMixedTypeValueExportsInSourceFile(sourceFile, fileName) {
     const findings = [];
 
     for (const statement of sourceFile.statements) {
@@ -299,7 +303,8 @@ function isNamedDeclaration(node) {
             ts.isEnumDeclaration(node) ||
             ts.isFunctionDeclaration(node) ||
             ts.isInterfaceDeclaration(node) ||
-            ts.isTypeAliasDeclaration(node)) &&
+            ts.isTypeAliasDeclaration(node) ||
+            ts.isModuleDeclaration(node)) &&
         Boolean(node.name)
     );
 }
@@ -431,16 +436,6 @@ function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, optio
     return existingPath ? normalizeFileName(existingPath) : null;
 }
 
-function parseRepositorySourceFile(filePath) {
-    return ts.createSourceFile(
-        filePath,
-        readFileSync(filePath, 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.getScriptKindFromFileName(filePath)
-    );
-}
-
 function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
     const targets = [];
     const addTarget = (moduleSpecifier, exportedName, all = false) => {
@@ -450,6 +445,18 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
         }
     };
     const visit = (node) => {
+        if (ts.isImportTypeNode(node)) {
+            const moduleSpecifier = moduleSpecifierText(node.argument.literal);
+            const memberName = node.qualifier ? entityNameRoot(node.qualifier)?.text : null;
+            addTarget(moduleSpecifier, memberName ?? '*', !memberName);
+        }
+        if (
+            ts.isCallExpression(node) &&
+            node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+            node.arguments.length === 1
+        ) {
+            addTarget(moduleSpecifierText(node.arguments[0]), '*', true);
+        }
         if (ts.isCallExpression(node) && isIdentifierNamed(node.expression, 'require') && node.arguments.length === 1) {
             const moduleSpecifier = moduleSpecifierText(node.arguments[0]);
             const parent = node.parent;
@@ -511,14 +518,31 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
     return targets;
 }
 
-function findRepositoryConsumerPaths(repositoryRoot, sourcePaths, options, compilerHost, targetsByFile) {
+function findRepositoryConsumerPaths(
+    repositoryRoot,
+    sourcePaths,
+    sourceFilesByPath,
+    options,
+    compilerHost,
+    targetsByFile
+) {
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
         resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, options, compilerHost);
     return sourcePaths.filter((filePath) => {
         if (isRepositorySourceFile(repositoryRoot, filePath)) {
             return false;
         }
-        const sourceFile = parseRepositorySourceFile(filePath);
+        const sourceFile = sourceFilesByPath.get(normalizeFileName(filePath));
+        if (!sourceFile) {
+            return false;
+        }
+        const hasRepositoryImport = (sourceFile.imports ?? []).some((moduleReference) => {
+            const targetFile = resolveModuleSpecifier(moduleReference.text, sourceFile.fileName);
+            return targetFile && isRepositorySourceFile(repositoryRoot, targetFile);
+        });
+        if (!hasRepositoryImport && !/\b(?:import|require)\s*\(/.test(sourceFile.text)) {
+            return false;
+        }
         const targets = collectConsumerTargets(sourceFile, resolveModuleSpecifier);
         const consumesRepository = targets.some(({ targetFile }) => isRepositorySourceFile(repositoryRoot, targetFile));
         if (consumesRepository) {
@@ -528,202 +552,267 @@ function findRepositoryConsumerPaths(repositoryRoot, sourcePaths, options, compi
     });
 }
 
-function collectRepositoryTauriTypeFindings(repositoryRoot, repositorySourcePaths, consumerTargetsByFile, environment) {
-    const { checker, program } = createRepositoryTypeProgram(
-        [...repositorySourcePaths, ...consumerTargetsByFile.keys()],
-        environment
-    );
-    const programSourceFiles = new Map(
-        program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
-    );
-    const sourceFiles = repositorySourcePaths
-        .map((filePath) => programSourceFiles.get(normalizeFileName(filePath)))
-        .filter(Boolean);
-    const options = environment.options;
-    const moduleResolutionHost = environment.compilerHost;
-    const directVendorFiles = new Set();
-    const vendorModulesByFile = new Map();
-    const vendorBindingsByFile = new Map();
-    const declarationsByFile = new Map();
-    const recordsByFile = new Map();
+function addToSetMap(map, key, value) {
+    if (!value) {
+        return;
+    }
+    const values = map.get(key) ?? new Set();
+    values.add(value);
+    map.set(key, values);
+}
 
-    const addToSetMap = (map, key, value) => {
-        if (!value) {
-            return;
-        }
-        const values = map.get(key) ?? new Set();
-        values.add(value);
-        map.set(key, values);
+function createRepositoryTypeContext(repositoryRoot, program, environment) {
+    return {
+        checker: program.getTypeChecker(),
+        compilerHost: environment.compilerHost,
+        declarationsByFile: new Map(),
+        directVendorFiles: new Set(),
+        moduleExportsByFile: new Map(),
+        options: environment.options,
+        programSourceFiles: new Map(
+            program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+        ),
+        recordsByFile: new Map(),
+        repositoryRoot,
+        vendorBindingsByFile: new Map(),
+        vendorModulesByFile: new Map(),
     };
+}
 
-    const addBinding = (sourceFileName, bindingName, moduleSpecifier) => {
-        if (!bindingName || !moduleSpecifier) {
-            return;
-        }
-        addToSetMap(vendorBindingsByFile, `${normalizeFileName(sourceFileName)}:${bindingName}`, moduleSpecifier);
-    };
+function addVendorBinding(context, sourceFileName, bindingName, moduleSpecifier) {
+    if (!bindingName || !moduleSpecifier) {
+        return;
+    }
+    addToSetMap(context.vendorBindingsByFile, `${normalizeFileName(sourceFileName)}:${bindingName}`, moduleSpecifier);
+}
 
-    const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
-        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, options, moduleResolutionHost);
+function vendorBindingsFor(context, sourceFileName, bindingName) {
+    return context.vendorBindingsByFile.get(`${normalizeFileName(sourceFileName)}:${bindingName}`) ?? [];
+}
 
-    const registerVendorModule = (moduleSpecifier, containingFile) => {
-        const vendorModule = tauriVendorModule(moduleSpecifier);
-        if (!vendorModule) {
-            return null;
-        }
-        directVendorFiles.add(normalizeFileName(containingFile));
-        const resolvedFile = resolveModuleSpecifier(moduleSpecifier, containingFile);
+function registerVendorModule(context, moduleSpecifier, containingFile) {
+    const vendorModule = tauriVendorModule(moduleSpecifier);
+    if (vendorModule) {
+        context.directVendorFiles.add(normalizeFileName(containingFile));
+        const resolvedFile = resolveRepositoryModuleSpecifier(
+            moduleSpecifier,
+            containingFile,
+            context.options,
+            context.compilerHost
+        );
         if (resolvedFile) {
-            addToSetMap(vendorModulesByFile, resolvedFile, vendorModule);
+            addToSetMap(context.vendorModulesByFile, resolvedFile, vendorModule);
         }
-        return vendorModule;
+    }
+    return vendorModule;
+}
+
+function collectSyntaxVendorModules(context, node, sourceFile, { includeImplementation = false } = {}) {
+    const modules = new Set();
+    const seenNodes = new Set();
+    const sourceFileName = sourceFile.fileName;
+    const addSyntaxModule = (moduleSpecifier) => {
+        const vendorModule = registerVendorModule(context, moduleSpecifier, sourceFileName);
+        if (vendorModule) {
+            modules.add(vendorModule);
+        }
     };
+    const visitJSDoc = (current) => {
+        for (const tag of ts.getJSDocTags(current)) {
+            if (tag.typeExpression?.type) {
+                visit(tag.typeExpression.type);
+            }
+        }
+    };
+    const visitParameter = (parameter) => {
+        visitJSDoc(parameter);
+        visit(parameter.type);
+    };
+    const visitSignature = (current) => {
+        for (const typeParameter of current.typeParameters ?? []) {
+            visit(typeParameter.constraint);
+            visit(typeParameter.default);
+        }
+        for (const parameter of current.parameters ?? []) {
+            visitParameter(parameter);
+        }
+        visit(current.type);
+    };
+    const visitPublicMember = (member) => {
+        if (isPrivateMember(member)) {
+            return;
+        }
+        if (ts.isPropertyDeclaration(member) || ts.isPropertySignature(member)) {
+            visitJSDoc(member);
+            visit(member.type);
+            return;
+        }
+        visit(member);
+    };
+    const visit = (current) => {
+        if (!current || seenNodes.has(current)) {
+            return;
+        }
+        seenNodes.add(current);
+        visitJSDoc(current);
 
-    const collectSyntaxVendorModules = (node, sourceFile, seenNodes = new Set()) => {
-        const modules = new Set();
-        const sourceFileName = sourceFile.fileName;
-        const addSyntaxModule = (moduleSpecifier) => {
-            const vendorModule = registerVendorModule(moduleSpecifier, sourceFileName);
-            if (vendorModule) {
-                modules.add(vendorModule);
+        if (ts.isImportTypeNode(current)) {
+            const moduleSpecifier = moduleSpecifierText(current.argument.literal);
+            if (moduleSpecifier) {
+                addSyntaxModule(moduleSpecifier);
             }
-        };
-        const visit = (current) => {
-            if (!current || seenNodes.has(current)) {
-                return;
-            }
-            seenNodes.add(current);
-
-            if (ts.isImportTypeNode(current)) {
-                const moduleSpecifier = moduleSpecifierText(current.argument.literal);
-                if (moduleSpecifier) {
-                    addSyntaxModule(moduleSpecifier);
-                }
-            }
-            if (ts.isTypeReferenceNode(current)) {
-                const rootName = entityNameRoot(current.typeName);
-                if (rootName) {
-                    for (const moduleSpecifier of vendorBindingsByFile.get(
-                        `${normalizeFileName(sourceFileName)}:${rootName.text}`
-                    ) ?? []) {
-                        modules.add(moduleSpecifier);
-                    }
-                    const localDeclaration = declarationsByFile
-                        .get(normalizeFileName(sourceFileName))
-                        ?.get(rootName.text);
-                    if (localDeclaration) {
-                        for (const moduleSpecifier of collectSyntaxVendorModules(
-                            localDeclaration,
-                            sourceFile,
-                            seenNodes
-                        )) {
-                            modules.add(moduleSpecifier);
-                        }
-                    }
-                }
-            }
-            if (ts.isIdentifier(current)) {
-                for (const moduleSpecifier of vendorBindingsByFile.get(
-                    `${normalizeFileName(sourceFileName)}:${current.text}`
-                ) ?? []) {
+        }
+        if (ts.isTypeReferenceNode(current)) {
+            const rootName = entityNameRoot(current.typeName);
+            if (rootName) {
+                for (const moduleSpecifier of vendorBindingsFor(context, sourceFileName, rootName.text)) {
                     modules.add(moduleSpecifier);
                 }
-            }
-            if (
-                ts.isCallExpression(current) &&
-                isIdentifierNamed(current.expression, 'require') &&
-                current.arguments.length === 1
-            ) {
-                const moduleSpecifier = moduleSpecifierText(current.arguments[0]);
-                if (moduleSpecifier) {
-                    addSyntaxModule(moduleSpecifier);
+                const declaration = context.declarationsByFile
+                    .get(normalizeFileName(sourceFileName))
+                    ?.get(rootName.text);
+                if (declaration) {
+                    visit(declaration);
                 }
             }
-            for (const tag of ts.getJSDocTags(current)) {
-                if (tag.typeExpression?.type) {
-                    for (const moduleSpecifier of collectSyntaxVendorModules(
-                        tag.typeExpression.type,
-                        sourceFile,
-                        seenNodes
-                    )) {
-                        modules.add(moduleSpecifier);
-                    }
-                }
+        }
+        if (ts.isIdentifier(current)) {
+            for (const moduleSpecifier of vendorBindingsFor(context, sourceFileName, current.text)) {
+                modules.add(moduleSpecifier);
             }
-            if (ts.isFunctionLike(current)) {
-                for (const typeParameter of current.typeParameters ?? []) {
-                    visit(typeParameter);
-                }
-                for (const parameter of current.parameters ?? []) {
-                    visit(parameter);
-                }
-                visit(current.type);
-                return;
+        }
+        if (
+            ts.isCallExpression(current) &&
+            isIdentifierNamed(current.expression, 'require') &&
+            current.arguments.length === 1
+        ) {
+            const moduleSpecifier = moduleSpecifierText(current.arguments[0]);
+            if (moduleSpecifier) {
+                addSyntaxModule(moduleSpecifier);
             }
-            if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
-                for (const typeParameter of current.typeParameters ?? []) {
-                    visit(typeParameter);
+        }
+
+        if (includeImplementation) {
+            if (ts.isIdentifier(current)) {
+                const declaration = context.declarationsByFile
+                    .get(normalizeFileName(sourceFileName))
+                    ?.get(current.text);
+                if (declaration && declaration !== current) {
+                    visit(declaration);
                 }
-                for (const heritageClause of current.heritageClauses ?? []) {
-                    visit(heritageClause);
-                }
-                for (const member of current.members) {
-                    if (!isPrivateMember(member)) {
-                        visit(member);
-                    }
-                }
-                return;
             }
             ts.forEachChild(current, visit);
-        };
-        visit(node);
-        return modules;
+            return;
+        }
+        if (ts.isVariableDeclaration(current)) {
+            visit(current.type);
+            const initializer = current.initializer;
+            if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))) {
+                visit(initializer);
+            } else if (
+                initializer &&
+                (ts.isAsExpression(initializer) ||
+                    ts.isTypeAssertionExpression(initializer) ||
+                    ts.isSatisfiesExpression(initializer))
+            ) {
+                visit(initializer.type);
+                if (ts.isArrowFunction(initializer.expression) || ts.isFunctionExpression(initializer.expression)) {
+                    visit(initializer.expression);
+                }
+            }
+            return;
+        }
+        if (ts.isFunctionLike(current)) {
+            visitSignature(current);
+            return;
+        }
+        if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+            for (const typeParameter of current.typeParameters ?? []) {
+                visit(typeParameter.constraint);
+                visit(typeParameter.default);
+            }
+            for (const heritageClause of current.heritageClauses ?? []) {
+                visit(heritageClause);
+            }
+            for (const member of current.members) {
+                visitPublicMember(member);
+            }
+            return;
+        }
+        ts.forEachChild(current, visit);
     };
+    visit(node);
+    return modules;
+}
 
-    const scanVendorMetadata = (sourceFile) => {
-        const sourceFileName = sourceFile.fileName;
+function registerImportMetadata(context, sourceFile, statement) {
+    const sourceFileName = sourceFile.fileName;
+    const moduleSpecifier = ts.isImportDeclaration(statement)
+        ? moduleSpecifierText(statement.moduleSpecifier)
+        : ts.isImportEqualsDeclaration(statement) &&
+            ts.isExternalModuleReference(statement.moduleReference) &&
+            statement.moduleReference.expression
+          ? moduleSpecifierText(statement.moduleReference.expression)
+          : null;
+    const vendorModule = moduleSpecifier ? registerVendorModule(context, moduleSpecifier, sourceFileName) : null;
+    if (!vendorModule) {
+        return;
+    }
+    if (ts.isImportDeclaration(statement)) {
+        const clause = statement.importClause;
+        if (!clause) {
+            return;
+        }
+        const namedBindings = clause.namedBindings;
+        const bindingNames = [
+            clause.name?.text,
+            namedBindings && ts.isNamespaceImport(namedBindings) ? namedBindings.name.text : null,
+            ...(namedBindings && ts.isNamedImports(namedBindings)
+                ? namedBindings.elements.map((element) => element.name.text)
+                : []),
+        ].filter(Boolean);
+        for (const bindingName of bindingNames) {
+            addVendorBinding(context, sourceFileName, bindingName, vendorModule);
+        }
+        return;
+    }
+    addVendorBinding(context, sourceFileName, statement.name.text, vendorModule);
+}
+
+function collectVendorMetadata(context, sourceFiles) {
+    for (const sourceFile of sourceFiles) {
+        const declarations = new Map();
+        for (const statement of sourceFile.statements) {
+            if (ts.isVariableStatement(statement)) {
+                for (const declaration of statement.declarationList.declarations) {
+                    for (const identifier of bindingIdentifiers(declaration.name)) {
+                        declarations.set(identifier.text, declaration);
+                    }
+                }
+            } else if (isNamedDeclaration(statement)) {
+                declarations.set(statement.name.text, statement);
+            }
+            registerImportMetadata(context, sourceFile, statement);
+        }
+        context.declarationsByFile.set(normalizeFileName(sourceFile.fileName), declarations);
+    }
+
+    for (const sourceFile of sourceFiles) {
         const visit = (node) => {
             for (const tag of ts.getJSDocTags(node)) {
                 if (tag.typeExpression?.type) {
-                    collectSyntaxVendorModules(tag.typeExpression.type, sourceFile);
+                    collectSyntaxVendorModules(context, tag.typeExpression.type, sourceFile);
                 }
             }
-            if (ts.isImportDeclaration(node)) {
-                const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
-                const vendorModule = moduleSpecifier ? registerVendorModule(moduleSpecifier, sourceFileName) : null;
-                if (vendorModule && node.importClause) {
-                    if (node.importClause.name) {
-                        addBinding(sourceFileName, node.importClause.name.text, vendorModule);
-                    }
-                    const namedBindings = node.importClause.namedBindings;
-                    if (namedBindings && ts.isNamespaceImport(namedBindings)) {
-                        addBinding(sourceFileName, namedBindings.name.text, vendorModule);
-                    }
-                    if (namedBindings && ts.isNamedImports(namedBindings)) {
-                        for (const element of namedBindings.elements) {
-                            addBinding(sourceFileName, element.name.text, vendorModule);
-                        }
-                    }
-                }
-            } else if (ts.isImportEqualsDeclaration(node)) {
-                const moduleReference = node.moduleReference;
-                const moduleSpecifier =
-                    ts.isExternalModuleReference(moduleReference) && moduleReference.expression
-                        ? moduleSpecifierText(moduleReference.expression)
-                        : null;
-                const vendorModule = moduleSpecifier ? registerVendorModule(moduleSpecifier, sourceFileName) : null;
-                if (vendorModule) {
-                    addBinding(sourceFileName, node.name.text, vendorModule);
-                }
-            } else if (ts.isExportDeclaration(node)) {
+            if (ts.isExportDeclaration(node)) {
                 const moduleSpecifier = moduleSpecifierText(node.moduleSpecifier);
                 if (moduleSpecifier) {
-                    registerVendorModule(moduleSpecifier, sourceFileName);
+                    registerVendorModule(context, moduleSpecifier, sourceFile.fileName);
                 }
             } else if (ts.isImportTypeNode(node)) {
                 const moduleSpecifier = moduleSpecifierText(node.argument.literal);
                 if (moduleSpecifier) {
-                    registerVendorModule(moduleSpecifier, sourceFileName);
+                    registerVendorModule(context, moduleSpecifier, sourceFile.fileName);
                 }
             } else if (
                 ts.isCallExpression(node) &&
@@ -732,40 +821,567 @@ function collectRepositoryTauriTypeFindings(repositoryRoot, repositorySourcePath
             ) {
                 const moduleSpecifier = moduleSpecifierText(node.arguments[0]);
                 if (moduleSpecifier) {
-                    registerVendorModule(moduleSpecifier, sourceFileName);
+                    registerVendorModule(context, moduleSpecifier, sourceFile.fileName);
                 }
             }
-
             if (ts.isVariableDeclaration(node)) {
-                const moduleSpecifiers = collectSyntaxVendorModules(node, sourceFile);
+                const modules = collectSyntaxVendorModules(context, node.initializer ?? node, sourceFile, {
+                    includeImplementation: true,
+                });
                 for (const identifier of bindingIdentifiers(node.name)) {
-                    for (const moduleSpecifier of moduleSpecifiers) {
-                        addBinding(sourceFileName, identifier.text, moduleSpecifier);
+                    for (const moduleSpecifier of modules) {
+                        addVendorBinding(context, sourceFile.fileName, identifier.text, moduleSpecifier);
                     }
                 }
             }
-
             ts.forEachChild(node, visit);
         };
         visit(sourceFile);
-    };
+    }
+}
 
-    for (const sourceFile of sourceFiles) {
-        scanVendorMetadata(sourceFile);
+function vendorModulesForFile(context, fileName) {
+    const normalizedFileName = normalizeFileName(fileName);
+    const modules = new Set(context.vendorModulesByFile.get(normalizedFileName) ?? []);
+    const relativePath = repositoryRelativePath(context.repositoryRoot, normalizedFileName);
+    if (relativePath && tauriBridgeModulePath.test(relativePath)) {
+        modules.add('#/utils/tauriBridge');
+    }
+    if (modules.size === 0) {
+        const packageMatch = /(?:^|\/)node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@tauri-apps\/[^/]+)/.exec(
+            normalizedFileName
+        );
+        if (packageMatch) {
+            modules.add(packageMatch[1]);
+        }
+    }
+    return modules;
+}
+
+function addRepositoryRecord(context, sourceFile, record) {
+    const fileName = normalizeFileName(sourceFile.fileName);
+    const records = context.recordsByFile.get(fileName) ?? [];
+    const completeRecord = { ...record, fileName, sourceFile };
+    records.push(completeRecord);
+    context.recordsByFile.set(fileName, records);
+    return completeRecord;
+}
+
+function addDeclarationRecord(context, sourceFile, statement, declaration, exportedName) {
+    return addRepositoryRecord(context, sourceFile, {
+        diagnosticNode: statement,
+        exportedName,
+        symbolNode: declaration.name ?? declaration,
+        valueNode: declaration,
+    });
+}
+
+function enumerateCommonJsProperties(context, sourceFile, statement, valueNode) {
+    let properties;
+    try {
+        const type = context.checker.getTypeAtLocation(valueNode);
+        if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
+            return false;
+        }
+        properties = type.getProperties?.() ?? null;
+    } catch {
+        return false;
+    }
+    if (!properties) {
+        return false;
+    }
+    for (const symbol of properties) {
+        const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0] ?? null;
+        addRepositoryRecord(context, sourceFile, {
+            diagnosticNode: statement,
+            exportedName: symbol.name,
+            isCommonJs: true,
+            symbol,
+            symbolNode: declaration?.name ?? declaration,
+            valueNode: declaration ?? valueNode,
+        });
+    }
+    return true;
+}
+
+function collectExportRecords(context, sourceFile) {
+    const declarations = context.declarationsByFile.get(normalizeFileName(sourceFile.fileName)) ?? new Map();
+    const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
+        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
+
+    for (const statement of sourceFile.statements) {
+        if (ts.isExportDeclaration(statement)) {
+            const moduleSpecifier = moduleSpecifierText(statement.moduleSpecifier);
+            const targetFile = moduleSpecifier ? resolveModuleSpecifier(moduleSpecifier, sourceFile.fileName) : null;
+            if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+                for (const specifier of statement.exportClause.elements) {
+                    const localName = (specifier.propertyName ?? specifier.name).text;
+                    addRepositoryRecord(context, sourceFile, {
+                        diagnosticNode: statement,
+                        exportedName: specifier.name.text,
+                        moduleSpecifier: moduleSpecifier && tauriVendorModule(moduleSpecifier),
+                        symbolNode: specifier.name,
+                        targetFile,
+                        targetName: moduleSpecifier ? localName : null,
+                        valueNode: moduleSpecifier ? specifier : (declarations.get(localName) ?? specifier),
+                    });
+                }
+            } else if (statement.exportClause && ts.isNamespaceExport(statement.exportClause)) {
+                addRepositoryRecord(context, sourceFile, {
+                    diagnosticNode: statement,
+                    exportedName: statement.exportClause.name.text,
+                    moduleSpecifier: moduleSpecifier && tauriVendorModule(moduleSpecifier),
+                    symbolNode: statement.exportClause.name,
+                    targetFile,
+                    targetName: '*',
+                    valueNode: statement.exportClause,
+                });
+            } else if (moduleSpecifier) {
+                addRepositoryRecord(context, sourceFile, {
+                    diagnosticNode: statement,
+                    exportedName: '*',
+                    isStarExport: true,
+                    moduleSpecifier: tauriVendorModule(moduleSpecifier),
+                    targetFile,
+                    targetName: '*',
+                    valueNode: statement,
+                });
+            }
+            continue;
+        }
+        if (ts.isExportAssignment(statement)) {
+            addRepositoryRecord(context, sourceFile, {
+                diagnosticNode: statement,
+                exportedName: statement.isExportEquals ? 'export=' : 'default',
+                symbolNode: statement.expression,
+                valueNode: statement.expression,
+            });
+            continue;
+        }
+        if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
+            continue;
+        }
+        const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
+        if (ts.isVariableStatement(statement)) {
+            for (const declaration of statement.declarationList.declarations) {
+                for (const identifier of bindingIdentifiers(declaration.name)) {
+                    addDeclarationRecord(
+                        context,
+                        sourceFile,
+                        statement,
+                        declaration,
+                        isDefault ? 'default' : identifier.text
+                    );
+                }
+            }
+        } else if (isNamedDeclaration(statement)) {
+            addDeclarationRecord(
+                context,
+                sourceFile,
+                statement,
+                statement,
+                isDefault ? 'default' : statement.name.text
+            );
+        }
     }
 
-    const repositoryDependencies = new Map();
-    for (const sourceFile of sourceFiles) {
-        const dependencies = new Set();
-        for (const moduleReference of sourceFile.imports ?? []) {
-            const targetFile = resolveModuleSpecifier(moduleReference.text, sourceFile.fileName);
-            if (targetFile && isRepositorySourceFile(repositoryRoot, targetFile)) {
-                dependencies.add(normalizeFileName(targetFile));
+    const visitCommonJs = (node) => {
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+            const propertyName = commonJsExportName(node.left);
+            const isWholeModuleAssignment =
+                ts.isPropertyAccessExpression(node.left) &&
+                isIdentifierNamed(node.left.expression, 'module') &&
+                isIdentifierNamed(node.left.name, 'exports');
+            const statement = node.parent && ts.isExpressionStatement(node.parent) ? node.parent : node;
+            if (isWholeModuleAssignment) {
+                addRepositoryRecord(context, sourceFile, {
+                    diagnosticNode: statement,
+                    exportedName: 'default',
+                    isCommonJs: true,
+                    symbolNode: node.right,
+                    valueNode: node.right,
+                });
+                enumerateCommonJsProperties(context, sourceFile, statement, node.right);
+            } else if (propertyName) {
+                addRepositoryRecord(context, sourceFile, {
+                    diagnosticNode: statement,
+                    exportedName: propertyName,
+                    isCommonJs: true,
+                    symbolNode: node.right,
+                    valueNode: node.right,
+                });
             }
         }
-        repositoryDependencies.set(normalizeFileName(sourceFile.fileName), dependencies);
+        ts.forEachChild(node, visitCommonJs);
+    };
+    visitCommonJs(sourceFile);
+}
+
+function moduleExportSymbols(context, fileName) {
+    const normalizedFileName = normalizeFileName(fileName);
+    if (context.moduleExportsByFile.has(normalizedFileName)) {
+        return context.moduleExportsByFile.get(normalizedFileName);
     }
-    const vendorRelevantFiles = new Set(directVendorFiles);
+    const sourceFile = context.programSourceFiles.get(normalizedFileName);
+    let symbols = [];
+    if (sourceFile?.symbol) {
+        try {
+            symbols = context.checker.getExportsOfModule(sourceFile.symbol);
+        } catch {
+            symbols = [];
+        }
+    }
+    context.moduleExportsByFile.set(normalizedFileName, symbols);
+    return symbols;
+}
+
+function recordsForName(context, fileName, exportedName) {
+    return (context.recordsByFile.get(normalizeFileName(fileName)) ?? []).filter(
+        (record) => record.exportedName === exportedName
+    );
+}
+
+function addStarProxyRecords(context) {
+    for (const records of context.recordsByFile.values()) {
+        for (const record of records.filter((candidate) => candidate.isStarExport && candidate.targetFile)) {
+            const targetRecords = context.recordsByFile.get(record.targetFile) ?? [];
+            const targetNames = new Set(
+                targetRecords
+                    .map((targetRecord) => targetRecord.exportedName)
+                    .filter((name) => name && name !== '*' && name !== 'default')
+            );
+            for (const symbol of moduleExportSymbols(context, record.targetFile)) {
+                if (symbol.name !== 'default') {
+                    targetNames.add(symbol.name);
+                }
+            }
+            for (const targetName of targetNames) {
+                const targetSymbols = moduleExportSymbols(context, record.targetFile);
+                records.push({
+                    ...record,
+                    exportedName: targetName,
+                    targetName,
+                    targetRecord: recordsForName(context, record.targetFile, targetName)[0] ?? {
+                        fileName: record.targetFile,
+                        sourceFile: context.programSourceFiles.get(record.targetFile),
+                        exportedName: targetName,
+                        symbol: targetSymbols.find((symbol) => symbol.name === targetName),
+                    },
+                });
+            }
+        }
+    }
+}
+
+function symbolForRecord(context, record, seenRecords = new Set()) {
+    if (!record || seenRecords.has(record)) {
+        return null;
+    }
+    seenRecords.add(record);
+    if (record.symbol) {
+        return record.symbol;
+    }
+    if (record.targetRecord) {
+        const targetSymbol = symbolForRecord(context, record.targetRecord, seenRecords);
+        if (targetSymbol) {
+            return targetSymbol;
+        }
+    }
+    if (record.targetFile && record.targetName && record.targetName !== '*') {
+        const targetSymbol = moduleExportSymbols(context, record.targetFile).find(
+            (symbol) => symbol.name === record.targetName
+        );
+        if (targetSymbol) {
+            return targetSymbol;
+        }
+    }
+    const sourceFile = context.programSourceFiles.get(record.fileName);
+    if (sourceFile?.symbol && record.exportedName !== '*' && record.exportedName !== 'export=') {
+        const moduleSymbol = moduleExportSymbols(context, record.fileName).find(
+            (symbol) => symbol.name === record.exportedName
+        );
+        if (moduleSymbol) {
+            return moduleSymbol;
+        }
+    }
+    if (record.symbolNode) {
+        try {
+            return context.checker.getSymbolAtLocation(record.symbolNode) ?? null;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+function collectVendorModulesFromSymbol(context, symbol, sourceFileName, modules, seenSymbols, seenTypes) {
+    if (!symbol || seenSymbols.has(symbol)) {
+        return Boolean(symbol);
+    }
+    seenSymbols.add(symbol);
+    let resolved = true;
+    if (symbol.flags & ts.SymbolFlags.Alias) {
+        try {
+            const aliasedSymbol = context.checker.getAliasedSymbol(symbol);
+            resolved = collectVendorModulesFromSymbol(
+                context,
+                aliasedSymbol,
+                sourceFileName,
+                modules,
+                seenSymbols,
+                seenTypes
+            );
+        } catch {
+            resolved = false;
+        }
+    }
+    const symbolSourceFile = symbol.declarations?.[0]?.getSourceFile?.();
+    if (isTypeScriptLibraryFile(symbolSourceFile?.fileName ?? '')) {
+        return resolved;
+    }
+    for (const declaration of symbol.declarations ?? []) {
+        const declarationSourceFile = declaration.getSourceFile?.() ?? context.programSourceFiles.get(sourceFileName);
+        for (const moduleSpecifier of collectSyntaxVendorModules(context, declaration, declarationSourceFile)) {
+            modules.add(moduleSpecifier);
+        }
+        for (const moduleSpecifier of vendorModulesForFile(context, declarationSourceFile.fileName)) {
+            modules.add(moduleSpecifier);
+        }
+    }
+    const location =
+        symbol.valueDeclaration ?? symbol.declarations?.[0] ?? context.programSourceFiles.get(sourceFileName);
+    if (!location) {
+        return false;
+    }
+    const typeResolved = collectTypeSafely(
+        context,
+        () => context.checker.getTypeOfSymbolAtLocation(symbol, location),
+        location,
+        modules,
+        seenTypes,
+        seenSymbols
+    );
+    let declaredTypeResolved = true;
+    if (
+        symbol.flags &
+        (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class | ts.SymbolFlags.TypeParameter)
+    ) {
+        declaredTypeResolved = collectTypeSafely(
+            context,
+            () => context.checker.getDeclaredTypeOfSymbol(symbol),
+            location,
+            modules,
+            seenTypes,
+            seenSymbols
+        );
+    }
+    return resolved && typeResolved && declaredTypeResolved;
+}
+
+function collectTypeSafely(context, getType, location, modules, seenTypes, seenSymbols) {
+    try {
+        const type = getType();
+        if (!type) {
+            return false;
+        }
+        collectVendorModulesFromType(context, type, location, modules, seenTypes, seenSymbols);
+        return !(type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown));
+    } catch {
+        return false;
+    }
+}
+
+function collectFactoryPublicType(context, record, modules, seenTypes, seenSymbols) {
+    if (!record.valueNode || !ts.isVariableDeclaration(record.valueNode)) {
+        return false;
+    }
+    const initializer = record.valueNode.initializer;
+    if (!ts.isCallExpression(initializer) || initializer.arguments.length !== 1) {
+        return false;
+    }
+    const [factoryArgument] = initializer.arguments;
+    if (!ts.isFunctionLike(factoryArgument)) {
+        return false;
+    }
+    return collectTypeSafely(
+        context,
+        () => context.checker.getTypeAtLocation(factoryArgument),
+        factoryArgument,
+        modules,
+        seenTypes,
+        seenSymbols
+    );
+}
+
+function collectVendorModulesFromType(context, type, location, modules, seenTypes, seenSymbols) {
+    if (!type || seenTypes.has(type)) {
+        return;
+    }
+    seenTypes.add(type);
+    const typeSourceFile = type.symbol?.declarations?.[0]?.getSourceFile?.();
+    const isLibraryType = isTypeScriptLibraryFile(typeSourceFile?.fileName ?? '');
+    const isExternalType = isExternalDeclarationFile(typeSourceFile?.fileName ?? '');
+    const locationSourceFile = location.getSourceFile?.() ?? context.programSourceFiles.get(location.fileName);
+    const locationFileName = locationSourceFile?.fileName ?? location.fileName;
+    collectVendorModulesFromSymbol(context, type.symbol, locationFileName, modules, seenSymbols, seenTypes);
+    collectVendorModulesFromSymbol(context, type.aliasSymbol, locationFileName, modules, seenSymbols, seenTypes);
+    for (const nestedType of [
+        ...(type.types ?? []),
+        ...(type.typeArguments ?? []),
+        ...(type.aliasTypeArguments ?? []),
+        type.constraint,
+        type.default,
+    ].filter(Boolean)) {
+        collectVendorModulesFromType(context, nestedType, location, modules, seenTypes, seenSymbols);
+    }
+    for (const signature of [...(type.getCallSignatures?.() ?? []), ...(type.getConstructSignatures?.() ?? [])]) {
+        for (const parameter of signature.parameters) {
+            const parameterLocation = parameter.valueDeclaration ?? location;
+            collectTypeSafely(
+                context,
+                () => context.checker.getTypeOfSymbolAtLocation(parameter, parameterLocation),
+                parameterLocation,
+                modules,
+                seenTypes,
+                seenSymbols
+            );
+        }
+        collectVendorModulesFromType(context, signature.getReturnType(), location, modules, seenTypes, seenSymbols);
+        for (const typeParameter of signature.typeParameters ?? []) {
+            collectVendorModulesFromSymbol(context, typeParameter, locationFileName, modules, seenSymbols, seenTypes);
+        }
+    }
+    if (!isLibraryType && !isExternalType) {
+        for (const property of type.getProperties?.() ?? []) {
+            const propertyLocation = property.valueDeclaration ?? property.declarations?.[0] ?? location;
+            if (isPrivateMember(propertyLocation)) {
+                continue;
+            }
+            collectTypeSafely(
+                context,
+                () => context.checker.getTypeOfSymbolAtLocation(property, propertyLocation),
+                propertyLocation,
+                modules,
+                seenTypes,
+                seenSymbols
+            );
+        }
+    }
+    if (!isLibraryType && !isExternalType && type.symbol?.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
+        try {
+            for (const baseType of context.checker.getBaseTypes(type) ?? []) {
+                collectVendorModulesFromType(context, baseType, location, modules, seenTypes, seenSymbols);
+            }
+        } catch {
+            // Not every class-like type has a base-type query.
+        }
+    }
+}
+
+function collectRecordVendorModules(context, record, seenRecords = new Set()) {
+    if (!record || seenRecords.has(record)) {
+        return new Set();
+    }
+    seenRecords.add(record);
+    const modules = new Set(record.moduleSpecifier ? [record.moduleSpecifier] : []);
+    const symbol = symbolForRecord(context, record);
+    const seenSymbols = new Set();
+    const seenTypes = new Set();
+    let publicTypeResolved = false;
+    if (symbol) {
+        publicTypeResolved = collectVendorModulesFromSymbol(
+            context,
+            symbol,
+            record.fileName,
+            modules,
+            seenSymbols,
+            seenTypes
+        );
+    }
+    if (!publicTypeResolved) {
+        publicTypeResolved = collectFactoryPublicType(context, record, modules, seenTypes, seenSymbols);
+    }
+    for (const node of [record.valueNode, record.symbolNode]) {
+        if (!node || (publicTypeResolved && ts.isIdentifier(node))) {
+            continue;
+        }
+        if (!publicTypeResolved || record.isCommonJs || ts.isExportAssignment(record.diagnosticNode)) {
+            publicTypeResolved =
+                collectTypeSafely(
+                    context,
+                    () => context.checker.getTypeAtLocation(node),
+                    node,
+                    modules,
+                    seenTypes,
+                    seenSymbols
+                ) || publicTypeResolved;
+        }
+        const sourceFile = node.getSourceFile?.() ?? record.sourceFile;
+        for (const moduleSpecifier of collectSyntaxVendorModules(context, node, sourceFile, {
+            includeImplementation: !publicTypeResolved,
+        })) {
+            modules.add(moduleSpecifier);
+        }
+    }
+    if (record.targetRecord) {
+        for (const moduleSpecifier of collectRecordVendorModules(context, record.targetRecord, seenRecords)) {
+            modules.add(moduleSpecifier);
+        }
+    }
+    if (record.targetFile && record.targetName && record.targetName !== '*') {
+        for (const targetRecord of recordsForName(context, record.targetFile, record.targetName)) {
+            for (const moduleSpecifier of collectRecordVendorModules(context, targetRecord, seenRecords)) {
+                modules.add(moduleSpecifier);
+            }
+        }
+        for (const targetSymbol of moduleExportSymbols(context, record.targetFile).filter(
+            (candidate) => candidate.name === record.targetName
+        )) {
+            collectVendorModulesFromSymbol(context, targetSymbol, record.targetFile, modules, seenSymbols, seenTypes);
+        }
+    }
+    return modules;
+}
+
+function recordsForExport(context, fileName, exportedName, all = false) {
+    const records = context.recordsByFile.get(normalizeFileName(fileName)) ?? [];
+    if (all) {
+        return records;
+    }
+    const exact = records.filter((record) => record.exportedName === exportedName);
+    if (exact.length > 0) {
+        return exact;
+    }
+    const fallback = records.filter((record) => record.isCommonJs && record.exportedName === 'default');
+    return [...records.filter((record) => record.exportedName === '*'), ...fallback];
+}
+
+function collectRepositoryTauriTypeFindings(
+    repositoryRoot,
+    repositorySourcePaths,
+    consumerTargetsByFile,
+    program,
+    environment
+) {
+    const context = createRepositoryTypeContext(repositoryRoot, program, environment);
+    const sourceFiles = repositorySourcePaths
+        .map((filePath) => context.programSourceFiles.get(normalizeFileName(filePath)))
+        .filter(Boolean);
+    collectVendorMetadata(context, sourceFiles);
+    const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
+        resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
+    const repositoryDependencies = new Map(
+        sourceFiles.map((sourceFile) => [
+            normalizeFileName(sourceFile.fileName),
+            new Set(
+                [...(sourceFile.imports ?? [])]
+                    .map((moduleReference) => resolveModuleSpecifier(moduleReference.text, sourceFile.fileName))
+                    .filter((targetFile) => targetFile && isRepositorySourceFile(repositoryRoot, targetFile))
+                    .map(normalizeFileName)
+            ),
+        ])
+    );
+    const vendorRelevantFiles = new Set(context.directVendorFiles);
     let expandedRelevantFiles = true;
     while (expandedRelevantFiles) {
         expandedRelevantFiles = false;
@@ -779,513 +1395,32 @@ function collectRepositoryTauriTypeFindings(repositoryRoot, repositorySourcePath
             }
         }
     }
-
-    const vendorModulesForFile = (fileName) => {
-        const normalizedFileName = normalizeFileName(fileName);
-        const modules = new Set(vendorModulesByFile.get(normalizedFileName) ?? []);
-        const relativePath = repositoryRelativePath(repositoryRoot, normalizedFileName);
-        if (relativePath && tauriBridgeModulePath.test(relativePath)) {
-            modules.add('#/utils/tauriBridge');
-        }
-        if (modules.size === 0) {
-            const packageMatch = /(?:^|\/)node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@tauri-apps\/[^/]+)/.exec(
-                normalizedFileName
-            );
-            if (packageMatch) {
-                modules.add(packageMatch[1]);
-            }
-        }
-        return modules;
-    };
-
-    const addRecord = (sourceFile, record) => {
-        const fileName = normalizeFileName(sourceFile.fileName);
-        const records = recordsByFile.get(fileName) ?? [];
-        records.push({ ...record, fileName, sourceFile });
-        recordsByFile.set(fileName, records);
-    };
-
-    const addDeclarationRecord = (sourceFile, statement, declaration, exportedName) => {
-        addRecord(sourceFile, {
-            diagnosticNode: statement,
-            exportedName,
-            symbolNode: declaration.name ?? declaration,
-            valueNode: declaration,
-        });
-    };
-
-    const collectExportRecords = (sourceFile) => {
-        const declarations = new Map();
-        for (const statement of sourceFile.statements) {
-            if (ts.isVariableStatement(statement)) {
-                for (const declaration of statement.declarationList.declarations) {
-                    for (const identifier of bindingIdentifiers(declaration.name)) {
-                        declarations.set(identifier.text, declaration);
-                    }
-                }
-                continue;
-            }
-            if (isNamedDeclaration(statement)) {
-                declarations.set(statement.name.text, statement);
-            }
-        }
-        declarationsByFile.set(normalizeFileName(sourceFile.fileName), declarations);
-
-        for (const statement of sourceFile.statements) {
-            if (ts.isExportDeclaration(statement)) {
-                const moduleSpecifier = moduleSpecifierText(statement.moduleSpecifier);
-                const targetFile = moduleSpecifier
-                    ? resolveModuleSpecifier(moduleSpecifier, sourceFile.fileName)
-                    : null;
-                if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-                    for (const specifier of statement.exportClause.elements) {
-                        const localName = (specifier.propertyName ?? specifier.name).text;
-                        addRecord(sourceFile, {
-                            diagnosticNode: statement,
-                            exportedName: specifier.name.text,
-                            moduleSpecifier: moduleSpecifier && tauriVendorModule(moduleSpecifier),
-                            symbolNode: specifier.name,
-                            targetFile,
-                            targetName: moduleSpecifier ? localName : null,
-                            valueNode: moduleSpecifier ? specifier : (declarations.get(localName) ?? specifier),
-                        });
-                    }
-                } else if (statement.exportClause && ts.isNamespaceExport(statement.exportClause)) {
-                    addRecord(sourceFile, {
-                        diagnosticNode: statement,
-                        exportedName: statement.exportClause.name.text,
-                        moduleSpecifier: moduleSpecifier && tauriVendorModule(moduleSpecifier),
-                        symbolNode: statement.exportClause.name,
-                        targetFile,
-                        targetName: '*',
-                        valueNode: statement.exportClause,
-                    });
-                } else if (moduleSpecifier) {
-                    addRecord(sourceFile, {
-                        diagnosticNode: statement,
-                        exportedName: '*',
-                        isStarExport: true,
-                        moduleSpecifier: tauriVendorModule(moduleSpecifier),
-                        targetFile,
-                        targetName: '*',
-                        valueNode: statement,
-                    });
-                }
-                continue;
-            }
-
-            if (ts.isExportAssignment(statement)) {
-                addRecord(sourceFile, {
-                    diagnosticNode: statement,
-                    exportedName: statement.isExportEquals ? 'export=' : 'default',
-                    symbolNode: statement.expression,
-                    valueNode: statement.expression,
-                });
-                continue;
-            }
-
-            if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
-                continue;
-            }
-            const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
-            if (ts.isVariableStatement(statement)) {
-                for (const declaration of statement.declarationList.declarations) {
-                    for (const identifier of bindingIdentifiers(declaration.name)) {
-                        addDeclarationRecord(
-                            sourceFile,
-                            statement,
-                            declaration,
-                            isDefault ? 'default' : identifier.text
-                        );
-                    }
-                }
-            } else if (isNamedDeclaration(statement)) {
-                addDeclarationRecord(sourceFile, statement, statement, isDefault ? 'default' : statement.name.text);
-            }
-        }
-
-        const visitCommonJs = (node) => {
-            if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
-                ts.forEachChild(node, visitCommonJs);
-                return;
-            }
-            const propertyName = commonJsExportName(node.left);
-            const isWholeModuleAssignment =
-                ts.isPropertyAccessExpression(node.left) &&
-                isIdentifierNamed(node.left.expression, 'module') &&
-                isIdentifierNamed(node.left.name, 'exports');
-            if (!propertyName && !isWholeModuleAssignment) {
-                ts.forEachChild(node, visitCommonJs);
-                return;
-            }
-
-            const statement = node.parent && ts.isExpressionStatement(node.parent) ? node.parent : node;
-            if (isWholeModuleAssignment) {
-                addRecord(sourceFile, {
-                    diagnosticNode: statement,
-                    exportedName: 'default',
-                    isCommonJs: true,
-                    symbolNode: node.right,
-                    valueNode: node.right,
-                });
-                if (ts.isObjectLiteralExpression(node.right)) {
-                    for (const property of node.right.properties) {
-                        if (ts.isPropertyAssignment(property)) {
-                            const exportedName = propertyNameText(property.name);
-                            if (exportedName) {
-                                addRecord(sourceFile, {
-                                    diagnosticNode: statement,
-                                    exportedName,
-                                    isCommonJs: true,
-                                    symbolNode: property.initializer,
-                                    valueNode: property.initializer,
-                                });
-                            }
-                        } else if (ts.isShorthandPropertyAssignment(property)) {
-                            addRecord(sourceFile, {
-                                diagnosticNode: statement,
-                                exportedName: property.name.text,
-                                isCommonJs: true,
-                                symbolNode: property.name,
-                                valueNode: property.name,
-                            });
-                        }
-                    }
-                }
-            } else {
-                addRecord(sourceFile, {
-                    diagnosticNode: statement,
-                    exportedName: propertyName,
-                    isCommonJs: true,
-                    symbolNode: node.right,
-                    valueNode: node.right,
-                });
-            }
-            ts.forEachChild(node, visitCommonJs);
-        };
-        visitCommonJs(sourceFile);
-    };
-
     for (const sourceFile of sourceFiles) {
         if (isRepositorySourceFile(repositoryRoot, sourceFile.fileName)) {
-            collectExportRecords(sourceFile);
+            collectExportRecords(context, sourceFile);
         }
     }
-
-    const moduleExportSymbols = (fileName) => {
-        const sourceFile = programSourceFiles.get(normalizeFileName(fileName));
-        if (!sourceFile?.symbol) {
-            return [];
-        }
-        try {
-            return checker.getExportsOfModule(sourceFile.symbol);
-        } catch {
-            return [];
-        }
-    };
-
-    const recordsForName = (fileName, exportedName) =>
-        (recordsByFile.get(normalizeFileName(fileName)) ?? []).filter((record) => record.exportedName === exportedName);
-
-    const addStarProxyRecords = () => {
-        for (const records of recordsByFile.values()) {
-            for (const record of records.filter((candidate) => candidate.isStarExport && candidate.targetFile)) {
-                const targetRecords = recordsByFile.get(record.targetFile) ?? [];
-                const targetNames = new Set(
-                    targetRecords
-                        .map((targetRecord) => targetRecord.exportedName)
-                        .filter((name) => name && name !== '*' && name !== 'default')
-                );
-                for (const symbol of moduleExportSymbols(record.targetFile)) {
-                    if (symbol.name !== 'default') {
-                        targetNames.add(symbol.name);
-                    }
-                }
-                for (const targetName of targetNames) {
-                    const proxy = {
-                        ...record,
-                        exportedName: targetName,
-                        targetName,
-                        targetRecord: recordsForName(record.targetFile, targetName)[0] ?? {
-                            fileName: record.targetFile,
-                            sourceFile: programSourceFiles.get(record.targetFile),
-                            exportedName: targetName,
-                            symbol: moduleExportSymbols(record.targetFile).find((symbol) => symbol.name === targetName),
-                        },
-                    };
-                    records.push(proxy);
-                }
-            }
-        }
-    };
-    addStarProxyRecords();
-
-    const symbolForRecord = (record, seenRecords = new Set()) => {
-        if (!record || seenRecords.has(record)) {
-            return null;
-        }
-        seenRecords.add(record);
-        if (record.symbol) {
-            return record.symbol;
-        }
-        if (record.targetRecord) {
-            const targetSymbol = symbolForRecord(record.targetRecord, seenRecords);
-            if (targetSymbol) {
-                return targetSymbol;
-            }
-        }
-        if (record.targetFile && record.targetName && record.targetName !== '*') {
-            const targetSymbol = moduleExportSymbols(record.targetFile).find(
-                (symbol) => symbol.name === record.targetName
-            );
-            if (targetSymbol) {
-                return targetSymbol;
-            }
-        }
-        const sourceFile = programSourceFiles.get(record.fileName);
-        if (sourceFile?.symbol && record.exportedName !== '*' && record.exportedName !== 'export=') {
-            const moduleSymbol = moduleExportSymbols(record.fileName).find(
-                (symbol) => symbol.name === record.exportedName
-            );
-            if (moduleSymbol) {
-                return moduleSymbol;
-            }
-        }
-        if (record.symbolNode) {
-            try {
-                return checker.getSymbolAtLocation(record.symbolNode) ?? null;
-            } catch {
-                return null;
-            }
-        }
-        return null;
-    };
-
-    const symbolDeclarationsModule = (symbol, sourceFileName) => {
-        const modules = new Set();
-        for (const declaration of symbol?.declarations ?? []) {
-            for (const moduleSpecifier of collectSyntaxVendorModules(
-                declaration,
-                declaration.getSourceFile() ?? programSourceFiles.get(sourceFileName)
-            )) {
-                modules.add(moduleSpecifier);
-            }
-            for (const moduleSpecifier of vendorModulesForFile(declaration.getSourceFile().fileName)) {
-                modules.add(moduleSpecifier);
-            }
-        }
-        return modules;
-    };
-
-    function collectTypeSafely(getType, location, modules, seenTypes, seenSymbols) {
-        try {
-            collectVendorModulesFromType(getType(), location, modules, seenTypes, seenSymbols);
-        } catch {
-            // An unresolved declaration must not abort the boundary scan.
-        }
-    }
-
-    const collectVendorModulesFromSymbol = (symbol, sourceFileName, modules, seenSymbols, seenTypes) => {
-        if (!symbol || seenSymbols.has(symbol)) {
-            return;
-        }
-        seenSymbols.add(symbol);
-        if (symbol.flags & ts.SymbolFlags.Alias) {
-            try {
-                const aliasedSymbol = checker.getAliasedSymbol(symbol);
-                collectVendorModulesFromSymbol(aliasedSymbol, sourceFileName, modules, seenSymbols, seenTypes);
-            } catch {
-                // Unresolved aliases are covered by the syntax metadata fallback.
-            }
-        }
-        const symbolSourceFile = symbol.declarations?.[0]?.getSourceFile?.();
-        if (isTypeScriptLibraryFile(symbolSourceFile?.fileName ?? '')) {
-            return;
-        }
-        for (const moduleSpecifier of symbolDeclarationsModule(symbol, sourceFileName)) {
-            modules.add(moduleSpecifier);
-        }
-        const location = symbol.valueDeclaration ?? symbol.declarations?.[0] ?? programSourceFiles.get(sourceFileName);
-        if (!location) {
-            return;
-        }
-        collectTypeSafely(
-            () => checker.getTypeOfSymbolAtLocation(symbol, location),
-            location,
-            modules,
-            seenTypes,
-            seenSymbols
-        );
-        if (
-            symbol.flags &
-            (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class | ts.SymbolFlags.TypeParameter)
-        ) {
-            collectTypeSafely(() => checker.getDeclaredTypeOfSymbol(symbol), location, modules, seenTypes, seenSymbols);
-        }
-    };
-
-    const collectVendorModulesFromType = (type, location, modules, seenTypes, seenSymbols) => {
-        if (!type || seenTypes.has(type)) {
-            return;
-        }
-        seenTypes.add(type);
-        const typeSourceFile = type.symbol?.declarations?.[0]?.getSourceFile?.();
-        const isLibraryType = isTypeScriptLibraryFile(typeSourceFile?.fileName ?? '');
-        const isExternalType = isExternalDeclarationFile(typeSourceFile?.fileName ?? '');
-        collectVendorModulesFromSymbol(type.symbol, location.getSourceFile().fileName, modules, seenSymbols, seenTypes);
-        collectVendorModulesFromSymbol(
-            type.aliasSymbol,
-            location.getSourceFile().fileName,
-            modules,
-            seenSymbols,
-            seenTypes
-        );
-        for (const nestedType of [
-            ...(type.types ?? []),
-            ...(type.typeArguments ?? []),
-            ...(type.aliasTypeArguments ?? []),
-            type.constraint,
-            type.default,
-        ].filter(Boolean)) {
-            collectVendorModulesFromType(nestedType, location, modules, seenTypes, seenSymbols);
-        }
-        for (const signature of [...type.getCallSignatures(), ...type.getConstructSignatures()]) {
-            for (const parameter of signature.parameters) {
-                const parameterLocation = parameter.valueDeclaration ?? location;
-                collectTypeSafely(
-                    () => checker.getTypeOfSymbolAtLocation(parameter, parameterLocation),
-                    parameterLocation,
-                    modules,
-                    seenTypes,
-                    seenSymbols
-                );
-            }
-            collectVendorModulesFromType(signature.getReturnType(), location, modules, seenTypes, seenSymbols);
-            for (const typeParameter of signature.typeParameters ?? []) {
-                collectVendorModulesFromSymbol(
-                    typeParameter,
-                    location.getSourceFile().fileName,
-                    modules,
-                    seenSymbols,
-                    seenTypes
-                );
-            }
-        }
-        if (!isLibraryType && !isExternalType) {
-            for (const property of type.getProperties?.() ?? []) {
-                const propertyLocation = property.valueDeclaration ?? property.declarations?.[0] ?? location;
-                if (isPrivateMember(propertyLocation)) {
-                    continue;
-                }
-                collectTypeSafely(
-                    () => checker.getTypeOfSymbolAtLocation(property, propertyLocation),
-                    propertyLocation,
-                    modules,
-                    seenTypes,
-                    seenSymbols
-                );
-            }
-        }
-        if (
-            !isLibraryType &&
-            !isExternalType &&
-            type.symbol?.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)
-        ) {
-            try {
-                const baseTypes = checker.getBaseTypes(type) ?? [];
-                for (const baseType of baseTypes) {
-                    collectVendorModulesFromType(baseType, location, modules, seenTypes, seenSymbols);
-                }
-            } catch {
-                // Not every class-like type has a base-type query.
-            }
-        }
-    };
-
-    const collectRecordVendorModules = (record, seenRecords = new Set()) => {
-        if (!record || seenRecords.has(record)) {
-            return new Set();
-        }
-        seenRecords.add(record);
-        const modules = new Set(record.moduleSpecifier ? [record.moduleSpecifier] : []);
-        const symbol = symbolForRecord(record);
-        const seenSymbols = new Set();
-        const seenTypes = new Set();
-        if (symbol) {
-            collectVendorModulesFromSymbol(symbol, record.fileName, modules, seenSymbols, seenTypes);
-        }
-        for (const node of [record.valueNode, record.symbolNode]) {
-            if (!node) {
-                continue;
-            }
-            if (!symbol || record.isCommonJs || ts.isExportAssignment(record.diagnosticNode)) {
-                collectTypeSafely(() => checker.getTypeAtLocation(node), node, modules, seenTypes, seenSymbols);
-            }
-            for (const moduleSpecifier of collectSyntaxVendorModules(
-                node,
-                node.getSourceFile?.() ?? record.sourceFile
-            )) {
-                modules.add(moduleSpecifier);
-            }
-        }
-        if (record.targetRecord) {
-            for (const moduleSpecifier of collectRecordVendorModules(record.targetRecord, seenRecords)) {
-                modules.add(moduleSpecifier);
-            }
-        }
-        if (record.targetFile && record.targetName && record.targetName !== '*') {
-            for (const targetRecord of recordsForName(record.targetFile, record.targetName)) {
-                for (const moduleSpecifier of collectRecordVendorModules(targetRecord, seenRecords)) {
-                    modules.add(moduleSpecifier);
-                }
-            }
-            if (programSourceFiles.has(record.targetFile)) {
-                for (const symbol of moduleExportSymbols(record.targetFile).filter(
-                    (candidate) => candidate.name === record.targetName
-                )) {
-                    collectVendorModulesFromSymbol(symbol, record.targetFile, modules, seenSymbols, seenTypes);
-                }
-            }
-        }
-        return modules;
-    };
-
-    const recordsForExport = (fileName, exportedName, all = false) => {
-        const records = recordsByFile.get(normalizeFileName(fileName)) ?? [];
-        if (all) {
-            return records;
-        }
-        const exact = records.filter((record) => record.exportedName === exportedName);
-        if (exact.length > 0) {
-            return exact;
-        }
-        return records.filter((record) => record.exportedName === '*');
-    };
+    addStarProxyRecords(context);
 
     const crossingRecords = new Set();
-    const markConsumerTarget = (targetFile, exportedName, all = false) => {
-        if (!targetFile || !isRepositorySourceFile(repositoryRoot, targetFile)) {
-            return;
-        }
-        if (!vendorRelevantFiles.has(normalizeFileName(targetFile))) {
-            return;
-        }
-        for (const record of recordsForExport(targetFile, exportedName, all)) {
-            crossingRecords.add(record);
-        }
-    };
-
     for (const targets of consumerTargetsByFile.values()) {
         for (const { all, exportedName, targetFile } of targets) {
-            if (isRepositorySourceFile(repositoryRoot, targetFile)) {
-                markConsumerTarget(targetFile, exportedName, all);
+            if (!targetFile || !isRepositorySourceFile(repositoryRoot, targetFile)) {
+                continue;
+            }
+            const normalizedTargetFile = normalizeFileName(targetFile);
+            if (!vendorRelevantFiles.has(normalizedTargetFile)) {
+                continue;
+            }
+            for (const record of recordsForExport(context, normalizedTargetFile, exportedName, all)) {
+                crossingRecords.add(record);
             }
         }
     }
 
     const findings = new Map();
     for (const record of crossingRecords) {
-        for (const moduleSpecifier of collectRecordVendorModules(record)) {
+        for (const moduleSpecifier of collectRecordVendorModules(context, record)) {
             const { line } = record.sourceFile.getLineAndCharacterOfPosition(
                 record.diagnosticNode.getStart(record.sourceFile)
             );
@@ -1322,36 +1457,49 @@ function walkFiles(directory, symlinkPaths = []) {
 
 export function findStaticGuardFindings(repositoryRoot = root) {
     const symlinkPaths = [];
-    const files = walkFiles(resolve(repositoryRoot, 'src/modules'), symlinkPaths).map((absolutePath) => ({
-        absolutePath,
-        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
-    }));
-    const symlinkFindings = symlinkPaths.map((absolutePath) => ({
-        file: toPosixPath(relative(repositoryRoot, absolutePath)),
-        line: 1,
-        reason: 'symbolic links are not permitted under src/modules',
-    }));
+    const allSourcePaths = walkFiles(resolve(repositoryRoot, 'src'), symlinkPaths);
+    const files = allSourcePaths
+        .filter((absolutePath) => /^src\/modules(?:\/|$)/.test(toPosixPath(relative(repositoryRoot, absolutePath))))
+        .map((absolutePath) => ({
+            absolutePath,
+            repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+        }));
+    const symlinkFindings = symlinkPaths
+        .filter((absolutePath) => /^src\/modules(?:\/|$)/.test(toPosixPath(relative(repositoryRoot, absolutePath))))
+        .map((absolutePath) => ({
+            file: toPosixPath(relative(repositoryRoot, absolutePath)),
+            line: 1,
+            reason: 'symbolic links are not permitted under src/modules',
+        }));
     const rootIndexes = files
         .map(({ repoPath }) => repoPath)
         .filter(isModuleRootIndex)
         .map((file) => ({ file, line: 1, reason: 'module-root index entry is retired' }));
-    const mixedExports = files
-        .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
-        .flatMap(({ absolutePath, repoPath }) =>
-            findMixedTypeValueExports(readFileSync(absolutePath, 'utf8'), repoPath).map((finding) => ({
-                ...finding,
-                reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
-            }))
-        );
-    const sourcePaths = walkFiles(resolve(repositoryRoot, 'src')).filter((absolutePath) =>
+    const sourcePaths = allSourcePaths.filter((absolutePath) =>
         sourceFilePath.test(toPosixPath(relative(repositoryRoot, absolutePath)))
     );
     const environment = createRepositoryTypeEnvironment(repositoryRoot);
+    const { program } = createRepositoryTypeProgram(sourcePaths, environment);
+    const sourceFilesByPath = new Map(
+        program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
+    );
+    const mixedExports = files
+        .filter(({ repoPath }) => isUseCaseBarrel(repoPath))
+        .flatMap(({ absolutePath, repoPath }) => {
+            const sourceFile = sourceFilesByPath.get(normalizeFileName(absolutePath));
+            return sourceFile
+                ? findMixedTypeValueExportsInSourceFile(sourceFile, repoPath).map((finding) => ({
+                      ...finding,
+                      reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
+                  }))
+                : [];
+        });
     const repositorySourcePaths = sourcePaths.filter((filePath) => isRepositorySourceFile(repositoryRoot, filePath));
     const consumerTargetsByFile = new Map();
     findRepositoryConsumerPaths(
         repositoryRoot,
         sourcePaths,
+        sourceFilesByPath,
         environment.options,
         environment.compilerHost,
         consumerTargetsByFile
@@ -1360,6 +1508,7 @@ export function findStaticGuardFindings(repositoryRoot = root) {
         repositoryRoot,
         repositorySourcePaths,
         consumerTargetsByFile,
+        program,
         environment
     );
     // Dependency-cruiser only reports nodes reachable from imports. Walk every

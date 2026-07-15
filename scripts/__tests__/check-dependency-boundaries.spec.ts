@@ -26,6 +26,7 @@ const rule = {
 };
 
 type FixtureContents = string | readonly string[];
+type StaticGuardFindingsFunction = (repositoryRoot: string) => unknown;
 
 function writeFixtureFiles(directory: string, fixtures: Record<string, FixtureContents>): void {
     for (const [fileName, contents] of Object.entries(fixtures)) {
@@ -39,6 +40,18 @@ function vendorFinding(file: string, line: number, moduleSpecifier = '@tauri-app
         line,
         reason: `repository public type surface exposes Tauri vendor type from ${moduleSpecifier}`,
     };
+}
+
+function isStaticGuardFindingsFunction(value: unknown): value is StaticGuardFindingsFunction {
+    return typeof value === 'function';
+}
+
+function invokeStaticGuardFindings(repositoryRoot: string): unknown {
+    const candidate: unknown = findStaticGuardFindings;
+    if (!isStaticGuardFindingsFunction(candidate)) {
+        throw new TypeError('findStaticGuardFindings is not callable');
+    }
+    return candidate(repositoryRoot);
 }
 
 function isUnsupportedSymlinkError(error: unknown): boolean {
@@ -457,6 +470,7 @@ describe('check-dependency-boundaries', () => {
                     'declare const module: { exports: unknown };',
                     'declare const exports: Record<string, unknown>;',
                     'declare function require(moduleName: string): any;',
+                    'declare const dynamicName: string;',
                 ],
                 'src/utils/tauriBridge.ts': 'export type BridgeChannel<T> = { value: T };\n',
             });
@@ -616,6 +630,155 @@ describe('check-dependency-boundaries', () => {
                 expect.arrayContaining([
                     vendorFinding('src/modules/Foo/repositories/repo-only-helper.ts', 2),
                     vendorFinding('src/modules/Foo/repositories/chain-private.ts', 3),
+                ])
+            );
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should keep clean runtime values, enumerate CJS exports, and consume import types', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-adversarial-types-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare const module: { exports: unknown };',
+                    'declare const exports: Record<string, unknown>;',
+                    'declare function require(moduleName: string): any;',
+                ],
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': [
+                    'export type InvokeArgs = { command: string };',
+                    'export declare function invoke<T>(command: string): Promise<T>;',
+                ],
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'runtime-only.ts': [
+                    "import { invoke } from '@tauri-apps/api/core';",
+                    '',
+                    "export const runtimeString: string = invoke<string>('runtime-string') as unknown as string;",
+                    "export const runtimePromise: Promise<string> = invoke<string>('runtime-promise');",
+                    "export function runtimeFunction(): Promise<string> { return invoke<string>('runtime-function'); }",
+                ],
+                'factory-runtime.ts': [
+                    "import { invoke } from '@tauri-apps/api/core';",
+                    'declare function inject<T extends (...args: any[]) => any>(factory: () => T): T & ((...args: any[]) => any);',
+                    'export const runtimeFactory = inject(() => async function runtimeFactory(): Promise<string> {',
+                    "    return invoke<string>('factory-runtime');",
+                    '});',
+                ],
+                'commonjs-surface.cjs': [
+                    'const spread = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    spreadMethod(args) { return args; },',
+                    '};',
+                    'module.exports = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    directMethod(args) { return args; },',
+                    "    /** @returns {import('@tauri-apps/api/core').InvokeArgs} */",
+                    '    get directGetter() { return null; },',
+                    '    ...spread,',
+                    '};',
+                ],
+                'commonjs-fallback.cjs': [
+                    'const hidden = /** @type {any} */ ({',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    hiddenMethod(args) { return args; },',
+                    '});',
+                    'module.exports = hidden;',
+                ],
+                'commonjs-partial.cjs': [
+                    'module.exports = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    [dynamicName](args) { return args; },',
+                    '};',
+                ],
+                'commonjs-clean-runtime.cjs': [
+                    "const { invoke } = require('@tauri-apps/api/core');",
+                    '/** @returns {Promise<string>} */',
+                    "function cleanRuntime() { return invoke('clean-runtime'); }",
+                    'module.exports = cleanRuntime;',
+                ],
+                'import-type-source.ts': [
+                    "export type Leaked = import('@tauri-apps/api/core').InvokeArgs;",
+                    'export type Clean = string;',
+                    'export namespace Api {',
+                    "    export type Leaked = import('@tauri-apps/api/core').InvokeArgs;",
+                    '}',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-adversarial-types.ts': [
+                    "import { runtimeString, runtimePromise, runtimeFunction } from '../repositories/runtime-only';",
+                    "import { runtimeFactory } from '../repositories/factory-runtime';",
+                    '',
+                    "const { directMethod, directGetter, spreadMethod } = require('../repositories/commonjs-surface');",
+                    "const { hiddenMethod } = require('../repositories/commonjs-fallback');",
+                    "const { unknownMethod } = require('../repositories/commonjs-partial');",
+                    "const { unknownClean } = require('../repositories/commonjs-clean-runtime');",
+                    '',
+                    "export type ExternalMember = import('../repositories/import-type-source').Leaked;",
+                    "export type ExternalQualified = import('../repositories/import-type-source').Api.Leaked;",
+                    "export type ExternalWhole = typeof import('../repositories/import-type-source');",
+                    "export const load = () => import('../repositories/import-type-source');",
+                    '',
+                    'void runtimeString;',
+                    'void runtimePromise;',
+                    'void runtimeFunction;',
+                    'void runtimeFactory;',
+                    'void directMethod;',
+                    'void directGetter;',
+                    'void spreadMethod;',
+                    'void hiddenMethod;',
+                    'void unknownMethod;',
+                    'void unknownClean;',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot);
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/commonjs-surface.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-fallback.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-partial.cjs', 1),
+                    vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 1),
+                    vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 3),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(5);
+            expect(vendorFindings).not.toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 3),
+                    vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 4),
+                    vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 5),
+                    vendorFinding('src/modules/Foo/repositories/factory-runtime.ts', 3),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-clean-runtime.cjs', 4),
                 ])
             );
         } finally {
