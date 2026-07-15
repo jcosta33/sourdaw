@@ -153,6 +153,43 @@ describe('transactSnapshot - explicit mutation ownership', () => {
             value: 'independent',
         });
     });
+
+    it('rejects an unowned write to a document already dirtied by the active transaction', async () => {
+        automergeRepository.createProject('p');
+        let markTransactionStarted!: () => void;
+        let releaseTransaction!: () => void;
+        const transactionStarted = new Promise<void>((resolve) => {
+            markTransactionStarted = resolve;
+        });
+        const transactionRelease = new Promise<void>((resolve) => {
+            releaseTransaction = resolve;
+        });
+
+        const pending = automergeRepository.transactSnapshot(async (transaction) => {
+            automergeRepository.changeDoc(
+                'root',
+                (doc: Record<string, unknown>) => {
+                    doc.owned = true;
+                },
+                undefined,
+                transaction
+            );
+            markTransactionStarted();
+            await transactionRelease;
+        });
+
+        await transactionStarted;
+        expect(() => {
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.unowned = true;
+            });
+        }).toThrow(/active snapshot transaction/i);
+        releaseTransaction();
+        await pending;
+
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ owned: true });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('unowned');
+    });
 });
 
 describe('transactSnapshot - membership-aware undo and redo', () => {

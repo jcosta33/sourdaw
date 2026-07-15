@@ -1,6 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { runWithAutomergeStorageTransaction } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    runWithAutomergeStorageTransaction,
+    waitForAutomergeSnapshotTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { pushActionHistoryEntry, setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
 import { getHandlerMap } from '../stores/handlerRegistry';
@@ -34,6 +37,8 @@ export const executeAppAction = inject({ logger })(
                 logger.error(new Error(`No handler registered for action: ${action.type}`));
                 return;
             }
+
+            await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
             // Capture undo info BEFORE executing — this lets describe() snapshot current
             // state for destructive actions like removeTrack / removeClip.

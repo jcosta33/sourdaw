@@ -108,6 +108,36 @@ describe('executeAppAction', () => {
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
     });
 
+    it('waits for snapshot ownership before describing or executing an action', async () => {
+        let releaseWait!: () => void;
+        const wait = new Promise<void>((resolve) => {
+            releaseWait = resolve;
+        });
+        const waitForSnapshotTransaction = vi.fn(() => wait);
+        configureAutomergeStoragePort({
+            getDoc: () => undefined,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => false,
+            mutateDoc: () => undefined,
+            waitForSnapshotTransaction,
+        });
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>();
+        registerHandlerMap({ [action.type]: handler });
+
+        const execution = executeAppAction(action);
+        await Promise.resolve();
+
+        expect(waitForSnapshotTransaction).toHaveBeenCalledWith(undefined);
+        expect(handler.describe).not.toHaveBeenCalled();
+        expect(handler.execute).not.toHaveBeenCalled();
+
+        releaseWait();
+        await execution;
+        expect(handler.describe).toHaveBeenCalledOnce();
+        expect(handler.execute).toHaveBeenCalledWith(action);
+    });
+
     it('scopes the snapshot transaction to storage writes made by the action', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const snapshotTransaction = {};

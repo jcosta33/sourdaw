@@ -361,6 +361,37 @@ describe('AutomergeRepository worker lifecycle', () => {
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('remoteOldProject');
     });
 
+    it('rejects a delayed load after a same-document local mutation', async () => {
+        let resolveLoad!: (value: { worker: ControlledWorker; request: LoadBundleRequest }) => void;
+        const deferredLoad = new Promise<{ worker: ControlledWorker; request: LoadBundleRequest }>((resolve) => {
+            resolveLoad = resolve;
+        });
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (request.type === 'loadBundle') {
+                resolveLoad({ worker, request });
+            }
+        };
+
+        const { automergeRepository } = await import('../automergeRepository');
+        automergeRepository.createProject('current');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.current = true;
+        });
+
+        const loadOperation = automergeRepository.loadAll({ bundle: createRootBundle() });
+        const delayedRequest = await deferredLoad;
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.localDuringLoad = true;
+        });
+        respondToLoad(delayedRequest.worker, delayedRequest.request);
+
+        await expect(loadOperation).rejects.toThrow(/changed during load/i);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            current: true,
+            localDuringLoad: true,
+        });
+    });
+
     it('aborts an old incremental before a delayed replacement load can adopt authority', async () => {
         const persistence = new TransactionalPersistence();
         vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({

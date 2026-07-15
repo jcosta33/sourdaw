@@ -24,6 +24,7 @@ type AutomergeStoragePort = {
     hasDoc(docId: AutomergeStorageDocId): boolean;
     getDoc(docId: AutomergeStorageDocId): AutomergeStorageReadableDoc | undefined;
     mutateDoc(input: AutomergeStorageMutationInput): void;
+    waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
 type AutomergeStorageOptions<TData> = {
@@ -82,6 +83,10 @@ export function configureAutomergeStoragePort(port: AutomergeStoragePort | null)
 const getAutomergeStoragePort = (): AutomergeStoragePort | null => {
     return automergeStoragePort;
 };
+
+export function waitForAutomergeSnapshotTransaction(snapshotTransaction?: object): Promise<void> {
+    return getAutomergeStoragePort()?.waitForSnapshotTransaction?.(snapshotTransaction) ?? Promise.resolve();
+}
 
 /**
  * A storage adapter that persists store state in an Automerge CRDT document.

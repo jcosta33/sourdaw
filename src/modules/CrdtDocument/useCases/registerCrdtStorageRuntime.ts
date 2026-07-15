@@ -1,5 +1,6 @@
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
+import { automergeRepository } from '../repositories/automergeRepository';
 import { getSemanticContext } from '../stores/semanticChangeContext';
 
 import { getCrdtDoc } from './getCrdtDoc';
@@ -23,5 +24,7 @@ export function registerCrdtStorageRuntime(): void {
                 snapshotTransaction,
             });
         },
+        waitForSnapshotTransaction: (snapshotTransaction) =>
+            automergeRepository.waitForSnapshotTransaction(snapshotTransaction),
     });
 }

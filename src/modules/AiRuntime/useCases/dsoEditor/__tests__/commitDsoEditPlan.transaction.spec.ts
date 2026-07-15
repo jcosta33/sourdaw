@@ -80,8 +80,14 @@ describe('commitDsoEditPlan snapshot ownership', () => {
             execute: (action) => {
                 ownedStorage.set({ value: String(action.payload.bpm) });
             },
-            describe: () => ({ label: 'Set owned value' }),
-            undoable: false,
+            describe: () => {
+                const current = ownedStorage.get();
+                return {
+                    label: 'Set owned value',
+                    inverseAction: current ? { type: 'setTempo', payload: { bpm: Number(current.value) } } : null,
+                };
+            },
+            undoable: true,
         };
         registerHandlerMap({
             setTempo: setTempoHandler,
@@ -129,9 +135,26 @@ describe('commitDsoEditPlan snapshot ownership', () => {
                 doc.value = 'independent';
             },
         });
+        let userActionSettled = false;
+        const userAction = (async () => {
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 130 } });
+            userActionSettled = true;
+        })();
+        await Promise.resolve();
+        expect(userActionSettled).toBe(false);
         releaseDso();
         await commit;
+        await userAction;
+        flushAutomergeStorageWrites();
 
+        expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({
+            value: 'before',
+            dsoState: { value: '130' },
+        });
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ value: 'independent' });
+
+        await undo();
+        flushAutomergeStorageWrites();
         expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({
             value: 'before',
             dsoState: { value: '122' },
@@ -149,5 +172,12 @@ describe('commitDsoEditPlan snapshot ownership', () => {
             dsoState: { value: '122' },
         });
         expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ value: 'independent' });
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({
+            value: 'before',
+            dsoState: { value: '130' },
+        });
     });
 });

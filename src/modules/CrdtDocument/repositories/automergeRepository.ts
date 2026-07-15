@@ -41,6 +41,14 @@ function createDocumentIdentityChangedError(): Error {
     return new Error('[AutomergeRepository] Document identity changed during merge; retry from fresh state');
 }
 
+function createRepositoryChangedDuringLoadError(): Error {
+    return new Error('[AutomergeRepository] Repository changed during load; retry from fresh state');
+}
+
+function createSnapshotTransactionOverlapError(id: DocId): Error {
+    return new Error(`[AutomergeRepository] Unowned write to ${id} overlaps the active snapshot transaction`);
+}
+
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
@@ -368,7 +376,13 @@ class AutomergeRepository {
     /** Capture one exact pre-mutation content/membership entry for an owned write. */
     private captureBeforeMutation(id: DocId, snapshotTransaction?: object): void {
         const txn = this.activeTransaction;
-        if (!txn || snapshotTransaction !== txn.handle) {
+        if (!txn) {
+            return;
+        }
+        if (snapshotTransaction !== txn.handle) {
+            if (txn.dirtied.has(id)) {
+                throw createSnapshotTransactionOverlapError(id);
+            }
             return;
         }
         txn.dirtied.add(id);
@@ -400,6 +414,13 @@ class AutomergeRepository {
         // failed transaction does not wedge every later one.
         this.transactionQueue = run.catch(() => undefined);
         return run;
+    }
+
+    waitForSnapshotTransaction(snapshotTransaction?: object): Promise<void> {
+        if (snapshotTransaction !== undefined && snapshotTransaction === this.activeTransaction?.handle) {
+            return Promise.resolve();
+        }
+        return this.transactionQueue.then(() => undefined);
     }
 
     private async runTransaction(
@@ -495,6 +516,8 @@ class AutomergeRepository {
             return false;
         }
 
+        const initialMutationEpoch = this.mutationEpoch;
+        const initialDocumentIdentityEpoch = this.documentIdentityEpoch;
         let decoded: DecodedBundle;
         try {
             decoded = await this.decodeAll(bundle);
@@ -509,6 +532,12 @@ class AutomergeRepository {
 
         if (shouldCommit?.() === false) {
             return false;
+        }
+        if (
+            this.mutationEpoch !== initialMutationEpoch ||
+            this.documentIdentityEpoch !== initialDocumentIdentityEpoch
+        ) {
+            throw createRepositoryChangedDuringLoadError();
         }
 
         const { documents, rootId } = decoded;
