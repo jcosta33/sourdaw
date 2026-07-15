@@ -303,7 +303,7 @@ export async function scheduleMidiNotes(
                                     type: 'noteOn',
                                     channel: 0,
                                     note: node.pitch,
-                                    velocity: node.velocity ?? 100,
+                                    velocity: node.velocity,
                                 },
                             });
                             midiEvents.push({

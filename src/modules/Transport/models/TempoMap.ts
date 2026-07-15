@@ -96,11 +96,14 @@ function secondsAcrossSortedTempoRange(
         }
 
         const endTempo = getTempoAtBeatFromSorted(sortedChanges, segmentEnd, defaultTempo);
-        const tempoSlope = (endTempo - startTempo) / (segmentEnd - segmentStart);
-        if (Math.abs(tempoSlope) < Number.EPSILON) {
+        const tempoDelta = endTempo - startTempo;
+        if (tempoDelta === 0) {
             seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
         } else {
-            seconds += (60 / tempoSlope) * Math.log(endTempo / startTempo);
+            const relativeTempoDelta = tempoDelta / startTempo;
+            seconds +=
+                (((segmentEnd - segmentStart) * 60) / startTempo) *
+                (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
         }
     }
     return seconds;
