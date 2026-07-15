@@ -4,11 +4,75 @@ import { clearCrdtIdb } from '../clearCrdtIdb';
 import { openDatabase } from '../helpers';
 import { loadAllFromIdb } from '../loadAllFromIdb';
 import { saveAllToIdb } from '../saveAllToIdb';
+import { saveIncrementalToIdb } from '../saveIncrementalToIdb';
 
 vi.mock('../helpers', () => ({
     STORE_NAME: 'documents',
     openDatabase: vi.fn(),
 }));
+
+type MockStore = {
+    clear: ReturnType<typeof vi.fn>;
+    put: ReturnType<typeof vi.fn>;
+    add: ReturnType<typeof vi.fn>;
+};
+
+type MockTransaction = {
+    objectStore: ReturnType<typeof vi.fn>;
+    oncomplete: (() => void) | null;
+    onerror: (() => void) | null;
+    onabort: (() => void) | null;
+    error: Error | null;
+    abort: ReturnType<typeof vi.fn>;
+    complete: ReturnType<typeof vi.fn>;
+};
+
+function createMockStore(): MockStore {
+    return {
+        clear: vi.fn(),
+        put: vi.fn(),
+        add: vi.fn(),
+    };
+}
+
+function createMockTransaction(store: MockStore, error: Error | null = new Error('tx error')): MockTransaction {
+    const transaction: MockTransaction = {
+        objectStore: vi.fn().mockReturnValue(store),
+        oncomplete: null,
+        onerror: null,
+        onabort: null,
+        error,
+        abort: vi.fn(),
+        complete: vi.fn(),
+    };
+    transaction.abort.mockImplementation(() => transaction.onabort?.());
+    transaction.complete.mockImplementation(() => transaction.oncomplete?.());
+    return transaction;
+}
+
+async function waitForRejection(promise: Promise<void>): Promise<unknown> {
+    const timeoutError = new Error('transaction promise did not reject');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+        await Promise.race([
+            promise,
+            new Promise<never>((_resolve, reject) => {
+                timeout = setTimeout(() => reject(timeoutError), 100);
+            }),
+        ]);
+    } catch (error: unknown) {
+        if (error === timeoutError) {
+            throw error;
+        }
+        return error;
+    } finally {
+        if (timeout !== undefined) {
+            clearTimeout(timeout);
+        }
+    }
+
+    throw new Error('transaction promise resolved unexpectedly');
+}
 
 describe('crdtPersistence repository', () => {
     let mockTx: any;
@@ -128,6 +192,68 @@ describe('crdtPersistence repository', () => {
             expect(mockStore.clear).toHaveBeenCalled();
             expect(mockStore.put).toHaveBeenCalledWith(new Uint8Array([1]), 'doc1');
             expect(mockStore.put).toHaveBeenCalledWith(new Uint8Array([2]), 'doc2');
+        });
+
+        it('rejects an abort-only transaction and allows a later retry to write once', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            const firstStore = createMockStore();
+            const retryStore = createMockStore();
+            const transactionError = new Error('save-all aborted');
+            const firstTx = createMockTransaction(firstStore, transactionError);
+            const retryTx = createMockTransaction(retryStore);
+            mockDb.transaction.mockReturnValueOnce(firstTx).mockReturnValueOnce(retryTx);
+            const bundle = new Map([['doc1', new Uint8Array([1])]]);
+
+            const firstAttempt = saveAllToIdb(bundle);
+            await Promise.resolve();
+            firstTx.abort();
+
+            await expect(waitForRejection(firstAttempt)).resolves.toBe(transactionError);
+
+            const retry = saveAllToIdb(bundle);
+            await Promise.resolve();
+            retryTx.complete();
+            await retry;
+
+            expect(firstStore.clear).toHaveBeenCalledOnce();
+            expect(retryStore.clear).toHaveBeenCalledOnce();
+            expect(firstStore.put).toHaveBeenCalledOnce();
+            expect(retryStore.put).toHaveBeenCalledOnce();
+            expect(retryStore.put).toHaveBeenCalledWith(new Uint8Array([1]), 'doc1');
+        });
+    });
+
+    describe('saveIncrementalToIdb', () => {
+        it('rejects an abort-only transaction with a fallback error and preserves later sequence/count semantics', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            const firstStore = createMockStore();
+            const retryStore = createMockStore();
+            const firstTx = createMockTransaction(firstStore, null);
+            const retryTx = createMockTransaction(retryStore);
+            mockDb.transaction.mockReturnValueOnce(firstTx).mockReturnValueOnce(retryTx);
+
+            const firstAttempt = saveIncrementalToIdb('doc1', new Uint8Array([1]));
+            await Promise.resolve();
+            firstTx.abort();
+
+            const abortError = await waitForRejection(firstAttempt);
+            expect(abortError).toMatchObject({ message: 'IDB transaction aborted' });
+
+            const retry = saveIncrementalToIdb('doc1', new Uint8Array([2]));
+            await Promise.resolve();
+            retryTx.complete();
+            await retry;
+
+            expect(firstStore.add).toHaveBeenCalledOnce();
+            expect(retryStore.add).toHaveBeenCalledOnce();
+            const firstKey = firstStore.add.mock.calls[0]?.[1];
+            const retryKey = retryStore.add.mock.calls[0]?.[1];
+            expect(firstKey).toMatch(/^doc1:incremental:\d+-[0-9a-z]+$/);
+            expect(retryKey).toMatch(/^doc1:incremental:\d+-[0-9a-z]+$/);
+            const firstSequence = Number.parseInt(String(firstKey).split('-').at(-1) ?? '', 36);
+            const retrySequence = Number.parseInt(String(retryKey).split('-').at(-1) ?? '', 36);
+            expect(retrySequence).toBe(firstSequence + 1);
+            expect(retryStore.add).toHaveBeenCalledWith(new Uint8Array([2]), retryKey);
         });
     });
 

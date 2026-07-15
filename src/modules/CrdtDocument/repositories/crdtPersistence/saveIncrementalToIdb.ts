@@ -32,5 +32,6 @@ export async function saveIncrementalToIdb(id: DocId, chunk: Uint8Array): Promis
         store.add(chunk, key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
+        tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
     });
 }
