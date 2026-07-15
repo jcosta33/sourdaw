@@ -25,6 +25,21 @@ const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
  * page.
  */
 const PROCESS_BLOCK_TIMEOUT_MS = 5000;
+const COMMAND_ACK_TIMEOUT_MS = 1000;
+
+type YeastCommandAck = {
+    accepted: boolean;
+    error?: string;
+};
+
+type YeastPortMessage =
+    | { type: 'processed'; requestId: number; events?: MidiEvent[] }
+    | { type: 'commandAck'; commandId: number; accepted: boolean; error?: string }
+    | { type: 'notesOff'; events?: MidiEvent[] };
+
+function toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+}
 
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
     let param = workletRegistrations.get(ctx);
@@ -52,7 +67,7 @@ export type YeastWorkletNodeResult = {
         blockEnd: number,
         transport: TransportInfo
     ) => Promise<MidiEvent[]>;
-    sendCommand: (command: YeastProcessorCommand) => void;
+    sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => void;
     allNotesOff: (nowSamples: number) => void;
     /**
@@ -74,12 +89,20 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     });
 
     let nextRequestId = 0;
+    let nextCommandId = 0;
+    let destroyed = false;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
         timer: ReturnType<typeof setTimeout>;
     };
     const pending = new Map<number, PendingEntry>();
+    type PendingCommandEntry = {
+        resolve: (ack: YeastCommandAck) => void;
+        reject: (err: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+    };
+    const pendingCommands = new Map<number, PendingCommandEntry>();
 
     const settle = (requestId: number): PendingEntry | undefined => {
         const entry = pending.get(requestId);
@@ -90,25 +113,38 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         return entry;
     };
 
+    const settleCommand = (commandId: number): PendingCommandEntry | undefined => {
+        const entry = pendingCommands.get(commandId);
+        if (entry) {
+            pendingCommands.delete(commandId);
+            clearTimeout(entry.timer);
+        }
+        return entry;
+    };
+
     const notesOffHandlers = new Set<(notes: number[]) => void>();
 
     node.port.onmessage = (event: MessageEvent): void => {
-        const msg = event.data as { type: string; requestId?: number; events?: MidiEvent[] };
-        if (msg.type === 'processed' && msg.requestId !== undefined) {
+        const msg = event.data as YeastPortMessage;
+        if (msg.type === 'processed') {
             settle(msg.requestId)?.resolve(msg.events ?? []);
             return;
         }
-        if (msg.type === 'notesOff') {
-            const notes: number[] = [];
-            for (const evt of msg.events ?? []) {
-                if (evt.kind.type === 'noteOff') {
-                    notes.push(evt.kind.note);
-                }
+        if (msg.type === 'commandAck') {
+            const ack: YeastCommandAck =
+                msg.error === undefined ? { accepted: msg.accepted } : { accepted: msg.accepted, error: msg.error };
+            settleCommand(msg.commandId)?.resolve(ack);
+            return;
+        }
+        const notes: number[] = [];
+        for (const evt of msg.events ?? []) {
+            if (evt.kind.type === 'noteOff') {
+                notes.push(evt.kind.note);
             }
-            if (notes.length > 0) {
-                for (const handler of notesOffHandlers) {
-                    handler(notes);
-                }
+        }
+        if (notes.length > 0) {
+            for (const handler of notesOffHandlers) {
+                handler(notes);
             }
         }
     };
@@ -120,6 +156,10 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         transport: TransportInfo
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
+            if (destroyed) {
+                reject(new Error('YeastWorkletNode is destroyed'));
+                return;
+            }
             const requestId = nextRequestId++;
             // Reject if the worklet never replies (dropped 'processed' message,
             // crashed processor) so the Promise can't leak forever.
@@ -129,13 +169,38 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                 }
             }, PROCESS_BLOCK_TIMEOUT_MS);
             pending.set(requestId, { resolve, reject, timer });
-            node.port.postMessage({ type: 'processBlock', requestId, events, blockStart, blockEnd, transport });
+            try {
+                node.port.postMessage({ type: 'processBlock', requestId, events, blockStart, blockEnd, transport });
+            } catch (error: unknown) {
+                settle(requestId)?.reject(toError(error));
+            }
+        });
+
+    const sendCommand = (command: YeastProcessorCommand): Promise<YeastCommandAck> =>
+        new Promise((resolve, reject) => {
+            if (destroyed) {
+                reject(new Error('YeastWorkletNode is destroyed'));
+                return;
+            }
+
+            const commandId = nextCommandId++;
+            const timer = setTimeout(() => {
+                if (settleCommand(commandId)) {
+                    reject(new Error(`YeastWorkletNode command acknowledgement timed out (commandId ${commandId})`));
+                }
+            }, COMMAND_ACK_TIMEOUT_MS);
+            pendingCommands.set(commandId, { resolve, reject, timer });
+            try {
+                node.port.postMessage({ type: 'executeCommand', commandId, command });
+            } catch (error: unknown) {
+                settleCommand(commandId)?.reject(toError(error));
+            }
         });
 
     return {
         context: ctx,
         processBlock,
-        sendCommand: (command) => node.port.postMessage({ type: 'executeCommand', command }),
+        sendCommand,
         setProjection: (projection) =>
             node.port.postMessage({
                 type: 'setProjection',
@@ -152,12 +217,28 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             };
         },
         destroy: () => {
-            node.port.close();
+            if (destroyed) {
+                return;
+            }
+            destroyed = true;
             // The port is closed; no 'processed' reply can ever arrive. Reject
-            // and clear every in-flight request so awaiting callers fail fast
-            // instead of hanging on a Promise that can never settle.
+            // and clear every in-flight request and command so awaiting callers
+            // fail fast instead of hanging on Promises that can never settle.
             for (const requestId of [...pending.keys()]) {
                 settle(requestId)?.reject(new Error('YeastWorkletNode destroyed before processBlock completed'));
+            }
+            for (const commandId of [...pendingCommands.keys()]) {
+                settleCommand(commandId)?.reject(
+                    new Error('YeastWorkletNode destroyed before command acknowledgement')
+                );
+            }
+            pending.clear();
+            pendingCommands.clear();
+            notesOffHandlers.clear();
+            try {
+                node.port.close();
+            } catch {
+                /* already closed */
             }
             try {
                 node.disconnect();

@@ -20,6 +20,7 @@ type ProcessYeastRuntimeBlockInput = {
 };
 
 type YeastRuntimeSession = {
+    version: number;
     context: BaseAudioContext | null;
     node: YeastWorkletNodeResult | null;
     nodePromise: Promise<YeastWorkletNodeResult | null> | null;
@@ -29,10 +30,19 @@ type YeastRuntimeSession = {
     status: YeastRuntimeStatus;
     error: string | undefined;
     onNotesOff: ((notes: number[]) => void) | null;
-    pendingAllNotesOff?: number[];
+    pendingAllNotesOff: PendingAllNotesOff | null;
 };
 
+type PendingAllNotesOff = {
+    context: BaseAudioContext;
+    generation: number;
+    nowSamples: number;
+};
+
+const YEAST_RUNTIME_SESSION_VERSION = 2;
+
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
+    version: YEAST_RUNTIME_SESSION_VERSION,
     context: null,
     node: null,
     nodePromise: null,
@@ -42,8 +52,15 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     status: 'uninitialized',
     error: undefined,
     onNotesOff: null,
-    pendingAllNotesOff: [],
+    pendingAllNotesOff: null,
 }));
+
+// HMR retains the live node/session, but an older module may have left an
+// unscoped panic array behind. Drop only that incompatible transient state.
+if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
+    session.version = YEAST_RUNTIME_SESSION_VERSION;
+    session.pendingAllNotesOff = null;
+}
 
 function cloneProjection(projection: readonly YeastProcessorProjectionItem[]): YeastProcessorProjection {
     return projection.map((processor) => ({
@@ -65,6 +82,17 @@ function destroyCurrentNode(): void {
     }
 }
 
+function invalidateCurrentRuntime(node: YeastWorkletNodeResult): void {
+    if (session.node !== node) {
+        return;
+    }
+    session.generation += 1;
+    destroyCurrentNode();
+    session.nodePromise = null;
+    session.processTail = Promise.resolve();
+    session.pendingAllNotesOff = null;
+}
+
 export function setYeastRuntimeProjection(projection: readonly YeastProcessorProjectionItem[]): void {
     session.projection = cloneProjection(projection);
     if (!session.node) {
@@ -74,7 +102,7 @@ export function setYeastRuntimeProjection(projection: readonly YeastProcessorPro
     try {
         session.node.setProjection(session.projection);
     } catch (error: unknown) {
-        destroyCurrentNode();
+        invalidateCurrentRuntime(session.node);
         setRuntimeUnavailable(error);
     }
 }
@@ -85,22 +113,24 @@ type YeastRuntimeCommandResult =
 
 /**
  * Commands are delivered only to the ready node; they are never retained for
- * projection replay or retried after a successful port send.
+ * projection replay or retried after an uncertain delivery.
  */
-export function sendYeastRuntimeCommand(command: YeastProcessorCommand): YeastRuntimeCommandResult {
+export async function sendYeastRuntimeCommand(command: YeastProcessorCommand): Promise<YeastRuntimeCommandResult> {
     const node = session.node;
     if (!node) {
         return { delivered: false, reason: 'runtime-unavailable' };
     }
+    const generation = session.generation;
 
     try {
-        node.sendCommand(command);
+        const ack = await node.sendCommand(command);
+        if (session.node !== node || session.generation !== generation || !ack.accepted) {
+            return { delivered: false, reason: 'delivery-failed' };
+        }
         return { delivered: true };
     } catch (error: unknown) {
-        if (session.node === node) {
-            session.generation += 1;
-            destroyCurrentNode();
-            session.nodePromise = null;
+        if (session.node === node && session.generation === generation) {
+            invalidateCurrentRuntime(node);
             setRuntimeUnavailable(error);
         }
         return { delivered: false, reason: 'delivery-failed' };
@@ -115,6 +145,7 @@ export async function ensureYeastRuntime(input: {
 
     if (session.context !== null && session.context !== input.context) {
         session.generation += 1;
+        session.pendingAllNotesOff = null;
         destroyCurrentNode();
         session.nodePromise = null;
         session.processTail = Promise.resolve();
@@ -145,10 +176,14 @@ export async function ensureYeastRuntime(input: {
                 session.onNotesOff?.(notes);
             });
             node.setProjection(session.projection);
-            const pendingAllNotesOff = session.pendingAllNotesOff ?? [];
-            session.pendingAllNotesOff = [];
-            for (const nowSamples of pendingAllNotesOff) {
-                node.allNotesOff(nowSamples);
+            const pendingAllNotesOff = session.pendingAllNotesOff;
+            session.pendingAllNotesOff = null;
+            if (
+                pendingAllNotesOff &&
+                pendingAllNotesOff.context === input.context &&
+                pendingAllNotesOff.generation === generation
+            ) {
+                node.allNotesOff(pendingAllNotesOff.nowSamples);
             }
             session.status = 'ready';
             session.error = undefined;
@@ -159,6 +194,9 @@ export async function ensureYeastRuntime(input: {
         })
         .catch((error: unknown) => {
             if (session.generation === generation && session.context === input.context) {
+                if (session.node) {
+                    invalidateCurrentRuntime(session.node);
+                }
                 destroyCurrentNode();
                 if (session.nodePromise === nodePromise) {
                     session.nodePromise = null;
@@ -194,9 +232,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
         return await operation;
     } catch (error: unknown) {
         if (session.node === node) {
-            session.generation += 1;
-            destroyCurrentNode();
-            session.nodePromise = null;
+            invalidateCurrentRuntime(node);
             setRuntimeUnavailable(error);
         }
         throw error;
@@ -204,14 +240,25 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
 }
 
 export function sendYeastRuntimeAllNotesOff(nowSamples: number): void {
-    if (!session.node) {
-        (session.pendingAllNotesOff ??= []).push(nowSamples);
+    const node = session.node;
+    if (!node) {
+        if (session.context === null) {
+            // There is no context to scope this panic to yet, so do not retain it.
+            return;
+        }
+        // Panic is idempotent; keep only the latest request during initialization.
+        session.pendingAllNotesOff = {
+            context: session.context,
+            generation: session.generation,
+            nowSamples,
+        };
         return;
     }
 
     try {
-        session.node.allNotesOff(nowSamples);
+        node.allNotesOff(nowSamples);
     } catch (error: unknown) {
+        invalidateCurrentRuntime(node);
         setRuntimeUnavailable(error);
     }
 }

@@ -11,7 +11,7 @@ import { type ProcessorType } from '../../models/ProcessorCatalog';
 import type { ChordMemoryCommand } from '../../models/YeastProcessorCommand';
 
 type OnSetParam = (id: string, name: string, value: number) => void;
-type OnCommand = (id: string, command: ChordMemoryCommand) => void;
+type OnCommand = (id: string, command: ChordMemoryCommand) => Promise<unknown> | void;
 
 type Props = {
     processorId: string;
@@ -99,6 +99,13 @@ export const ProcessorParams = ({
     onSetParam,
     onCommand,
 }: Props): ReactElement | null => {
+    const handleCommand = (command: ChordMemoryCommand): void => {
+        const result = onCommand(pid, command);
+        if (result) {
+            void result.catch(() => undefined);
+        }
+    };
+
     switch (processorType) {
         case 'arpeggiator':
             return (
@@ -249,7 +256,7 @@ export const ProcessorParams = ({
                     <button
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-border/30 cursor-pointer hover:text-foreground text-muted-foreground"
-                        onClick={() => onCommand(pid, 'learn')}
+                        onClick={() => handleCommand('learn')}
                     >
                         Learn
                     </button>
@@ -264,7 +271,7 @@ export const ProcessorParams = ({
                     <button
                         type="button"
                         className="px-2 py-1 text-[7px] rounded border border-[var(--color-state-danger)]/30 cursor-pointer text-muted-foreground hover:text-[var(--color-state-danger)]"
-                        onClick={() => onCommand(pid, 'clear')}
+                        onClick={() => handleCommand('clear')}
                     >
                         Clear All
                     </button>

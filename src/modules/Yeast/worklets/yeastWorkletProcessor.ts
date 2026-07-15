@@ -6,8 +6,9 @@
  *
  * Port protocol (this.port.onmessage):
  *   ← { type: 'setProjection', processors }
- *   ← { type: 'executeCommand', command }
+ *   ← { type: 'executeCommand', commandId, command }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
+ *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
  *   → { type: 'notesOff',     events }   // hung-note offs from projection changes
  *   ← { type: 'allNotesOff',  nowSamples }
@@ -22,7 +23,7 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 
 type YeastMsg =
     | { type: 'setProjection'; processors: YeastProcessorProjectionItem[] }
-    | { type: 'executeCommand'; command: YeastProcessorCommand }
+    | { type: 'executeCommand'; commandId: number; command: YeastProcessorCommand }
     | {
           type: 'processBlock';
           requestId: number;
@@ -41,7 +42,17 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
         this.port.onmessage = ({ data }: MessageEvent<YeastMsg>) => {
             switch (data.type) {
                 case 'executeCommand': {
-                    this._rack.executeCommand(data.command);
+                    try {
+                        const accepted = this._rack.executeCommand(data.command);
+                        this.port.postMessage({ type: 'commandAck', commandId: data.commandId, accepted });
+                    } catch (error: unknown) {
+                        this.port.postMessage({
+                            type: 'commandAck',
+                            commandId: data.commandId,
+                            accepted: false,
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                    }
                     break;
                 }
                 case 'setProjection': {

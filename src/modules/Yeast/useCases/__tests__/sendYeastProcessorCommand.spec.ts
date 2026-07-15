@@ -15,7 +15,7 @@ const store = vi.hoisted(() => ({
     },
 }));
 
-const sendRuntimeCommand = vi.hoisted(() => vi.fn(() => ({ delivered: true as const })));
+const sendRuntimeCommand = vi.hoisted(() => vi.fn(() => Promise.resolve({ delivered: true as const })));
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../../engine/yeastRuntime', () => ({ sendYeastRuntimeCommand: sendRuntimeCommand }));
@@ -30,22 +30,22 @@ describe('sendYeastProcessorCommand', () => {
     it.each([
         ['learn', 'chordMemory.learn'],
         ['clear', 'chordMemory.clear'],
-    ] as const)('routes %s as a typed one-shot runtime command', (command, type) => {
-        expect(sendYeastProcessorCommand('cm-1', command)).toEqual({ delivered: true });
+    ] as const)('routes %s as a typed one-shot runtime command', async (command, type) => {
+        await expect(sendYeastProcessorCommand('cm-1', command)).resolves.toEqual({ delivered: true });
 
         expect(sendRuntimeCommand).toHaveBeenCalledWith({ processorId: 'cm-1', type });
     });
 
-    it('does not touch the serializable processor projection', () => {
-        sendYeastProcessorCommand('cm-1', 'learn');
+    it('does not touch the serializable processor projection', async () => {
+        await sendYeastProcessorCommand('cm-1', 'learn');
 
         expect(store.value.processors[0]?.params).toEqual({ transpose_mode: 1 });
     });
 
-    it('surfaces runtime delivery failure to the caller', () => {
-        sendRuntimeCommand.mockReturnValueOnce({ delivered: false, reason: 'runtime-unavailable' });
+    it('surfaces runtime delivery failure to the caller', async () => {
+        sendRuntimeCommand.mockResolvedValueOnce({ delivered: false, reason: 'runtime-unavailable' });
 
-        expect(sendYeastProcessorCommand('cm-1', 'clear')).toEqual({
+        await expect(sendYeastProcessorCommand('cm-1', 'clear')).resolves.toEqual({
             delivered: false,
             reason: 'runtime-unavailable',
         });

@@ -59,13 +59,50 @@ describe('YeastWorkletProcessor', () => {
         });
     });
 
-    it('forwards each typed one-shot command to the rack exactly once', () => {
+    it('acknowledges a typed one-shot command only after the rack accepts it', () => {
         const processor = new Processor();
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
+        rackMocks.executeCommand.mockReturnValueOnce(true);
 
-        processor.port.onmessage?.({ data: { type: 'executeCommand', command } } as MessageEvent);
+        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 7, command } } as MessageEvent);
 
         expect(rackMocks.executeCommand).toHaveBeenCalledTimes(1);
         expect(rackMocks.executeCommand).toHaveBeenCalledWith(command);
+        expect(processor.port.postMessage).toHaveBeenCalledWith({
+            type: 'commandAck',
+            commandId: 7,
+            accepted: true,
+        });
+    });
+
+    it('propagates executeCommand false as a negative acknowledgement', () => {
+        const processor = new Processor();
+        const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
+        rackMocks.executeCommand.mockReturnValueOnce(false);
+
+        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 8, command } } as MessageEvent);
+
+        expect(processor.port.postMessage).toHaveBeenCalledWith({
+            type: 'commandAck',
+            commandId: 8,
+            accepted: false,
+        });
+    });
+
+    it('catches command execution failures and acknowledges them as rejected', () => {
+        const processor = new Processor();
+        const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
+        rackMocks.executeCommand.mockImplementationOnce(() => {
+            throw new Error('processor failed');
+        });
+
+        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 9, command } } as MessageEvent);
+
+        expect(processor.port.postMessage).toHaveBeenCalledWith({
+            type: 'commandAck',
+            commandId: 9,
+            accepted: false,
+            error: 'processor failed',
+        });
     });
 });

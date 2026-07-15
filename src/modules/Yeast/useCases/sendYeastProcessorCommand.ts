@@ -3,15 +3,16 @@ import { yeastStore } from '../stores/yeastStore';
 
 import type { ChordMemoryCommand, YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
-export function sendYeastProcessorCommand(
+export async function sendYeastProcessorCommand(
     id: string,
     command: ChordMemoryCommand
-):
+): Promise<
     | { delivered: true }
     | {
           delivered: false;
           reason: 'processor-not-found' | 'unsupported-processor' | 'runtime-unavailable' | 'delivery-failed';
-      } {
+      }
+> {
     const state = yeastStore.value;
     const processor = state?.processors.find((entry) => entry.id === id);
     if (!processor) {

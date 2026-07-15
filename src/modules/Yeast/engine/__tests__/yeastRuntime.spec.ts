@@ -24,7 +24,7 @@ function deferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-function makeNode(context: BaseAudioContext): YeastWorkletNodeResult {
+function makeNode(context: BaseAudioContext) {
     return {
         context,
         processBlock: async (
@@ -34,7 +34,7 @@ function makeNode(context: BaseAudioContext): YeastWorkletNodeResult {
             _transport: TransportInfo
         ) => [],
         setProjection: vi.fn(),
-        sendCommand: vi.fn(),
+        sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         allNotesOff: vi.fn(),
         onNotesOff: vi.fn(() => () => {}),
         destroy: vi.fn(),
@@ -97,6 +97,27 @@ describe('yeastRuntime', () => {
         expect(nodeB.setProjection).toHaveBeenCalledWith(projectionB);
     });
 
+    it('discards a panic queued for context A when context B replaces its generation', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const pendingA = deferred<YeastWorkletNodeResult>();
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        createNode.mockReturnValueOnce(pendingA.promise).mockResolvedValueOnce(nodeB);
+
+        const initializationA = runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        runtime.sendYeastRuntimeAllNotesOff(512);
+        const initializationB = runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+
+        pendingA.resolve(nodeA);
+
+        await expect(initializationB).resolves.toBe(nodeB);
+        await expect(initializationA).resolves.toBeNull();
+        expect(nodeA.allNotesOff).not.toHaveBeenCalled();
+        expect(nodeB.allNotesOff).not.toHaveBeenCalled();
+    });
+
     it('replays a panic queued during lazy initialization', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
@@ -106,9 +127,28 @@ describe('yeastRuntime', () => {
 
         const initialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
         runtime.sendYeastRuntimeAllNotesOff(512);
+        runtime.sendYeastRuntimeAllNotesOff(1024);
         pending.resolve(node);
 
         await expect(initialization).resolves.toBe(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        expect(node.allNotesOff).toHaveBeenCalledTimes(1);
+        expect(node.allNotesOff).toHaveBeenCalledWith(1024);
+    });
+
+    it('retains one same-generation panic for an initialization retry after failure', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        createNode.mockRejectedValueOnce(new Error('worklet unavailable')).mockResolvedValueOnce(node);
+
+        const failedInitialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.sendYeastRuntimeAllNotesOff(512);
+
+        await expect(failedInitialization).resolves.toBeNull();
+        await expect(runtime.ensureYeastRuntime({ context, projection: projectionA })).resolves.toBe(node);
+
+        expect(node.allNotesOff).toHaveBeenCalledTimes(1);
         expect(node.allNotesOff).toHaveBeenCalledWith(512);
     });
 
@@ -122,7 +162,7 @@ describe('yeastRuntime', () => {
 
         const initialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
 
-        expect(runtime.sendYeastRuntimeCommand(command)).toEqual({
+        await expect(runtime.sendYeastRuntimeCommand(command)).resolves.toEqual({
             delivered: false,
             reason: 'runtime-unavailable',
         });
@@ -142,12 +182,52 @@ describe('yeastRuntime', () => {
         createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
 
         await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
-        expect(runtime.sendYeastRuntimeCommand(command)).toEqual({ delivered: true });
+        await expect(runtime.sendYeastRuntimeCommand(command)).resolves.toEqual({ delivered: true });
         runtime.setYeastRuntimeProjection(projectionB);
         await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
 
         expect(nodeA.sendCommand).toHaveBeenCalledTimes(1);
         expect(nodeA.sendCommand).toHaveBeenCalledWith(command);
+        expect(nodeB.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('returns delivery-failed when the current node rejects a command acknowledgement', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+        createNode.mockResolvedValueOnce(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        node.sendCommand.mockResolvedValueOnce({ accepted: false, error: 'not accepted' });
+
+        await expect(runtime.sendYeastRuntimeCommand(command)).resolves.toEqual({
+            delivered: false,
+            reason: 'delivery-failed',
+        });
+    });
+
+    it('returns delivery-failed when the runtime generation changes before acknowledgement', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const pendingAck = deferred<{ accepted: boolean }>();
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        nodeA.sendCommand.mockReturnValueOnce(pendingAck.promise);
+        const delivery = runtime.sendYeastRuntimeCommand(command);
+
+        await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+        pendingAck.resolve({ accepted: true });
+
+        await expect(delivery).resolves.toEqual({
+            delivered: false,
+            reason: 'delivery-failed',
+        });
+        expect(nodeA.sendCommand).toHaveBeenCalledTimes(1);
         expect(nodeB.sendCommand).not.toHaveBeenCalled();
     });
 });
