@@ -254,4 +254,51 @@ describe('createAutomergeStorage', () => {
         ]);
         expect(doc.state).toEqual({ count: 2 });
     });
+
+    it('commits same-document keys in one Automerge mutation', () => {
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+        arrangementStorage.set({ imported: true });
+        midiStorage.set({ imported: true });
+
+        frameCallback?.(100);
+
+        expect(mutations).toHaveLength(1);
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
+    });
+
+    it('does not persist one key when a same-document multi-key commit fails', () => {
+        const doc: TestDoc = {};
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const candidate = { ...doc };
+                changeFn(candidate);
+                if (Object.hasOwn(candidate, 'midi')) {
+                    throw new Error('MIDI write failed');
+                }
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+            },
+        };
+        configureAutomergeStoragePort(port);
+
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+        arrangementStorage.set({ imported: true });
+        midiStorage.set({ imported: true });
+
+        expect(() => flushAutomergeStorageWrites()).toThrow('MIDI write failed');
+        expect(doc).toEqual({});
+    });
 });
