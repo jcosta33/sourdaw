@@ -17,8 +17,11 @@ vi.mock('../../../stores/extension', async (importOriginal) => {
     return { ...actual, extensionStore: mocks.extensionStore };
 });
 
-vi.mock('../../../services/scripting', () => ({
+vi.mock('../appendLog', () => ({
     appendLog: mocks.appendLog,
+}));
+
+vi.mock('../createDawApi', () => ({
     createDawApi: mocks.createDawApi,
 }));
 
@@ -46,5 +49,16 @@ describe('runEditorScript', () => {
         expect(mocks.appendLog).toHaveBeenCalledWith('info', '▶ Running script...');
         expect(mocks.appendLog).toHaveBeenCalledWith('info', '✓ Script completed');
         expect(mocks.createDawApi).toHaveBeenCalled();
+    });
+
+    it('logs script console output and runtime errors', () => {
+        mocks.extensionStore.value = baseState({ editorContent: 'console.log("hello"); throw new Error("boom");' });
+
+        runEditorScript();
+
+        expect(mocks.appendLog).toHaveBeenNthCalledWith(1, 'info', '▶ Running script...');
+        expect(mocks.appendLog).toHaveBeenNthCalledWith(2, 'info', 'hello');
+        expect(mocks.appendLog).toHaveBeenNthCalledWith(3, 'error', 'Script error: Error: boom');
+        expect(mocks.appendLog).not.toHaveBeenCalledWith('info', '✓ Script completed');
     });
 });
