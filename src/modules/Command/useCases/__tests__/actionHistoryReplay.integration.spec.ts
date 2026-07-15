@@ -158,6 +158,9 @@ describe('Command action-history replay integration', () => {
         registerHandlerMap({ togglePlayback: pending_toggle_handler });
 
         const replay = revertAction(entry.id);
+        await vi.waitFor(() => {
+            expect(resolve_inverse).toBeDefined();
+        });
         mutateCrdtDoc<IntegrationDocument>({
             id: 'root',
             changeFn: (document) => {
