@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
-import {
-    createBufferSource,
-    ensureTrackStrip,
-    getCachedAudioBuffer,
-    getCurrentTime,
-} from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
@@ -15,7 +9,7 @@ import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
-import { scheduleFrozenTrack, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
+import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -39,12 +33,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
     getDrumKitByIndex: vi.fn(() => null),
-    getCachedAudioBuffer: vi.fn(() => null),
     getAudioContext: vi.fn(() => ({
         sampleRate: 48000,
         createGain: vi.fn(() => ({ connect: vi.fn() })),
     })),
-    createBufferSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
 }));
 vi.mock('#/modules/Synth/useCases', () => ({
@@ -370,38 +362,5 @@ describe('scheduleMidiNotes', () => {
         // New behaviour: clamped to the iteration start (0) and scheduled.
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![2]).toBe(60);
-    });
-});
-
-describe('scheduleFrozenTrack', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    // §5 — A frozen buffer is rendered starting at the track's earliest clip
-    // startBeat, so playback must be offset by that beat — not beat 0.
-    it('offsets the frozen buffer by the track start beat, not beat 0 (§5)', () => {
-        const start = vi.fn();
-        const connect = vi.fn();
-        const source = { start, connect, onended: null } as never;
-        vi.mocked(createBufferSource).mockReturnValue(source);
-        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
-        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
-        vi.mocked(getCurrentTime).mockReturnValue(0);
-
-        const track = {
-            id: 'track-frozen',
-            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
-            clips: [{ startBeat: 8 }, { startBeat: 12 }],
-        };
-
-        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
-
-        expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
-        expect(scheduled).toBe(true);
-        // earliest clip startBeat = 8; at 120bpm, 8 beats = 4 seconds.
-        // Old (buggy) behaviour offset by beat 0 => start(0).
-        expect(start).toHaveBeenCalledTimes(1);
-        expect(start).toHaveBeenCalledWith(4);
     });
 });

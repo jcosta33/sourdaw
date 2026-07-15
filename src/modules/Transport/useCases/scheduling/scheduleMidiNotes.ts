@@ -1,18 +1,15 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
 import {
-    createBufferSource,
     ensureTrackStrip,
     getAudioContext,
-    getCachedAudioBuffer,
     getCompensationDelay,
     getCurrentTime,
-    getDrumKitByIndex,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
-import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
+import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { beatToSamples, getTempoAtBeat, samplesToBeat, splitRangeAtTempoChanges } from '../../models/TempoMap';
@@ -20,9 +17,10 @@ import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../../models/TimeS
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
-import { type SourceWithFade } from '../playheadScheduler';
 
-import type { SynthParams } from '#/modules/AudioEngine/useCases';
+import { resolveDrumKit } from './resolveDrumKit';
+import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
 // Each entry maps a device type to the controls property name on the device node
@@ -39,14 +37,6 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
         velocityTransform: (value: number) => value / 127,
     },
     levain: { controlsKey: 'levainControls' },
-};
-
-// Transport-local shape (AGENTS.md §95 — model isolation). Structurally compatible
-// with the drum kit shape scheduleKitNote / getDrumKitByIndex operate on.
-type DrumKit = {
-    id: string;
-    name: string;
-    voices: Array<{ name: string; pitchRange: [number, number]; params: SynthParams }>;
 };
 
 // Transport-local shapes (AGENTS.md model isolation). Structurally compatible
@@ -83,9 +73,6 @@ export type SchedulerCancellation = {
     isCurrent: () => boolean;
 };
 
-// Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
-type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
-
 /**
  * Deterministic pseudo-random number from a clip id + position seed.
  * Mirrors evaluateFollowActions' seededRandom so per-note probability gates
@@ -103,91 +90,10 @@ function seededRandom(clipId: string, position: number): number {
     return ((h >>> 0) % 1_000_000) / 1_000_000;
 }
 
-function isDrumDevice(deviceType: string): boolean {
-    return (
-        deviceType === 'builtin-drum-kit' || deviceType === 'drum-kit' || deviceType.startsWith('builtin-drum-machine')
-    );
-}
-
-export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((d) => isDrumDevice(d.type));
-    if (!kitDevice) {
-        return null;
-    }
-    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
-    return getDrumKitByIndex(kitIndex);
-}
-
-export function resolveDrumKitDef(
-    devices: { type: string; parameterValues: Record<string, number> }[]
-): DrumKitDef | null {
-    const kitDevice = devices.find((d) => isDrumDevice(d.type));
-    if (!kitDevice) {
-        return null;
-    }
-    const kitIndex = kitDevice.parameterValues.kit ?? kitDevice.parameterValues.kitId ?? 0;
-    return getDrumKitDefByIndex(kitIndex);
-}
-
 /** Toaster parent-device note controls shape (local — cross-module model isolation). */
 type ToasterControls = {
     noteOn: (pad: number, velocity: number, pitchNote: number, sampleFrame?: number) => void;
 };
-
-export function scheduleFrozenTrack(
-    track: { id: string; freezeState: { status: string; frozenBufferId?: string }; clips: { startBeat: number }[] },
-    accumulatedPosition: number,
-    activeAudioSources: AudioBufferSourceNode[],
-    currentTempo: number
-): boolean {
-    if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
-        return false;
-    }
-
-    const buffer = getCachedAudioBuffer({ bufferId: track.freezeState.frozenBufferId });
-    if (!buffer) {
-        return false;
-    }
-
-    const strip = ensureTrackStrip(track.id);
-    const source = createBufferSource();
-    source.buffer = buffer;
-
-    const fadeGain = getAudioContext().createGain();
-    (source as SourceWithFade).fadeGainNode = fadeGain;
-    fadeGain.connect(strip.preFaderTap);
-    source.connect(fadeGain);
-
-    // The frozen buffer was rendered starting at the track's earliest clip
-    // startBeat (see renderTrackOffline), not at beat 0. Offset playback by that
-    // start beat so frozen tracks line up with the playhead instead of firing at
-    // the project origin.
-    const trackStartBeat = track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
-    const beatOffset = trackStartBeat - accumulatedPosition;
-    const startTime = getCurrentTime() + beatOffset / (currentTempo / 60);
-    const now = getCurrentTime();
-
-    if (startTime >= now) {
-        source.start(startTime);
-    } else {
-        const elapsed = now - startTime;
-        if (elapsed < buffer.duration) {
-            source.start(now, elapsed);
-        } else {
-            return true;
-        }
-    }
-
-    activeAudioSources.push(source);
-    source.onended = () => {
-        const idx = activeAudioSources.indexOf(source);
-        if (idx >= 0) {
-            activeAudioSources.splice(idx, 1);
-        }
-    };
-
-    return true;
-}
 
 export async function scheduleMidiNotes(
     fromBeat: number,
