@@ -1,7 +1,13 @@
 {
     "$schema": "https://unpkg.com/knip@latest/schema.json",
     "entry": ["src/routes/**/*.tsx!", "scripts/*.ts", "codemods/*.ts"],
-    "project": ["src/**/*.{ts,tsx}!", "!src/routeTree.gen.ts!"],
+    "project": [
+        "src/**/*.{ts,tsx}!",
+        "!src/setupTests.ts!",
+        "!src/**/__tests__/**!",
+        "!src/**/testing/**!",
+        "!src/routeTree.gen.ts!"
+    ],
     "ignore": [],
     "ignoreExportsUsedInFile": true,
     "ignoreDependencies": ["tailwindcss"],
