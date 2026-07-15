@@ -4,7 +4,7 @@ import { stopRecording } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { setCountInTimerId } from '../recordingLifecycle';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -21,11 +21,13 @@ describe('stopActiveRecording', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
-        setCountInTimerId(null);
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
     });
 
     afterEach(() => {
-        setCountInTimerId(null);
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
         vi.useRealTimers();
         vi.restoreAllMocks();
     });
@@ -34,10 +36,10 @@ describe('stopActiveRecording', () => {
         const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
         const countInCallback = vi.fn();
         const timerId = setTimeout(countInCallback, 1000);
-        setCountInTimerId(timerId);
+        recordingLifecycle.setCountInTimerId(timerId);
 
-        stopActiveRecording();
-        stopActiveRecording();
+        void stopActiveRecording();
+        void stopActiveRecording();
         vi.advanceTimersByTime(1000);
 
         expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
@@ -50,11 +52,19 @@ describe('stopActiveRecording', () => {
     it('should stop recording without clearing a timer when no count-in is pending', () => {
         const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
-        stopActiveRecording();
+        void stopActiveRecording();
 
         expect(clearTimeoutSpy).not.toHaveBeenCalled();
         expect(stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(stopRecording).toHaveBeenCalledTimes(1);
         expect(updateTransportState).toHaveBeenCalledWith({ isRecording: false });
+    });
+
+    it('invalidates a recorder start that is still pending', () => {
+        const token = recordingLifecycle.beginPendingRecordingStart();
+
+        void stopActiveRecording();
+
+        expect(recordingLifecycle.ownsPendingRecordingStart(token)).toBe(false);
     });
 });

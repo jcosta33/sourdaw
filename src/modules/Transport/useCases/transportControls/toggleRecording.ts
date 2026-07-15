@@ -17,11 +17,11 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
-import { setCountInTimerId } from './recordingLifecycle';
+import { recordingLifecycle } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
-async function beginActualRecording(): Promise<boolean> {
+async function beginActualRecording(startToken: number): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
@@ -60,20 +60,29 @@ async function beginActualRecording(): Promise<boolean> {
 
     if (recordingStarts.length > 0) {
         const started = await Promise.all(recordingStarts);
+        if (!recordingLifecycle.ownsPendingRecordingStart(startToken)) {
+            return false;
+        }
         if (started.some((didStart) => !didStart)) {
+            recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
             notifyUser('Unable to start recording. Check the selected audio input.', 'error');
             return false;
         }
     }
 
+    if (!recordingLifecycle.completePendingRecordingStart(startToken)) {
+        await stopAudioRecording();
+        return false;
+    }
     clips = startRecording();
     updateTransportState({ isRecording: true });
     return true;
 }
 
 function beginRecordingAndMaybePlayback(): void {
-    void beginActualRecording().then((started) => {
+    const startToken = recordingLifecycle.beginPendingRecordingStart();
+    void beginActualRecording(startToken).then((started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
             startPlayback();
@@ -85,6 +94,11 @@ function beginRecordingAndMaybePlayback(): void {
 export function toggleRecording(): void {
     const state = getTransportState();
     if (!state) {
+        return;
+    }
+
+    if (recordingLifecycle.hasPendingRecordingStart()) {
+        void stopActiveRecording();
         return;
     }
 
@@ -132,10 +146,10 @@ export function toggleRecording(): void {
         }
 
         const timerId = setTimeout(() => {
-            setCountInTimerId(null);
+            recordingLifecycle.setCountInTimerId(null);
             beginRecordingAndMaybePlayback();
         }, countInDurationSec * 1000);
-        setCountInTimerId(timerId);
+        recordingLifecycle.setCountInTimerId(timerId);
         return;
     }
 

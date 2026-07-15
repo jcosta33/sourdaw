@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
 
 type TestRecordingBuffer = {
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
     startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
     startPlayback: vi.fn<() => void>(),
+    stopActiveRecording: vi.fn<() => Promise<void>>(),
     cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
     stopAudioRecording: vi.fn<() => Promise<void>>(),
@@ -59,11 +61,8 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
 // Side-effecting collaborators of the count-in / recording paths.
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
-vi.mock('../recordingLifecycle', () => ({
-    setCountInTimerId: vi.fn(),
-}));
 vi.mock('../stopActiveRecording', () => ({
-    stopActiveRecording: vi.fn(),
+    stopActiveRecording: mocks.stopActiveRecording,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
@@ -90,11 +89,20 @@ describe('toggleRecording', () => {
         mocks.resumeEngine.mockResolvedValue(undefined);
         mocks.startAudioRecording.mockResolvedValue(true);
         mocks.stopAudioRecording.mockResolvedValue(undefined);
+        mocks.stopActiveRecording.mockImplementation(() => {
+            recordingLifecycle.cancelPendingRecordingStart();
+            recordingLifecycle.setCountInTimerId(null);
+            return Promise.resolve();
+        });
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
         mocks.getAudioContext.mockReturnValue({ currentTime: 0, baseLatency: 0, outputLatency: 0 });
         mocks.timeSignatureMapStore.value = { changes: [] };
     });
 
     afterEach(() => {
+        recordingLifecycle.cancelPendingRecordingStart();
+        recordingLifecycle.setCountInTimerId(null);
         vi.useRealTimers();
     });
 
@@ -254,5 +262,41 @@ describe('toggleRecording', () => {
         expect(mocks.startRecording).not.toHaveBeenCalled();
         expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
+    it('cancels a pending recorder start when recording is toggled again', async () => {
+        let finishStart: ((started: boolean) => void) | undefined;
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockReturnValueOnce(
+            new Promise<boolean>((resolve) => {
+                finishStart = resolve;
+            })
+        );
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+        toggleRecording();
+
+        expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+        expect(mocks.startAudioRecording).toHaveBeenCalledOnce();
+
+        const finish = finishStart;
+        if (!finish) {
+            throw new Error('Expected recording start to be pending');
+        }
+        finish(true);
+        await Promise.resolve();
+
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Unable to start'), 'error');
     });
 });

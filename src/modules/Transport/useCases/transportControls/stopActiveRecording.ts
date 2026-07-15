@@ -3,16 +3,17 @@ import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-import { countInTimerId, setCountInTimerId } from './recordingLifecycle';
+import { recordingLifecycle } from './recordingLifecycle';
 
 export function stopActiveRecording(): Promise<void> {
+    recordingLifecycle.cancelPendingRecordingStart();
     const recordingFlush = stopAudioRecording();
     stopRecording();
 
-    const timerId = countInTimerId;
+    const timerId = recordingLifecycle.countInTimerId;
     if (timerId !== null) {
         clearTimeout(timerId);
-        setCountInTimerId(null);
+        recordingLifecycle.setCountInTimerId(null);
     }
 
     updateTransportState({ isRecording: false });
