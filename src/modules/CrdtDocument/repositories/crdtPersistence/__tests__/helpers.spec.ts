@@ -70,6 +70,22 @@ describe('crdt persistence database helper', () => {
         await expect(secondOpen).resolves.toBe(secondDatabase);
     });
 
+    it('creates the document store during the initial upgrade', async () => {
+        const database = createMockDatabase();
+        database.objectStoreNames.contains = () => false;
+        const request = createMockRequest(database);
+        open.mockReturnValue(request);
+        const { openDatabase } = await import('../helpers');
+
+        const openPromise = openDatabase();
+        request.onupgradeneeded?.();
+
+        expect(database.createObjectStore).toHaveBeenCalledWith('documents');
+        request.onsuccess?.();
+
+        await expect(openPromise).resolves.toBe(database);
+    });
+
     it('closes and invalidates the cached connection during a version change', async () => {
         const firstDatabase = createMockDatabase();
         const firstRequest = createMockRequest(firstDatabase);
