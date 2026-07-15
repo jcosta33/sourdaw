@@ -137,6 +137,7 @@ type ProofLevelContentProps = {
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
+    onTargetSelection: (target: ProofTarget) => void;
 };
 
 const ProofLevelContent = ({
@@ -145,15 +146,16 @@ const ProofLevelContent = ({
     gestureOwner,
     gestureAuthority,
     onPatchChange,
+    onTargetSelection,
 }: ProofLevelContentProps): ReactElement => {
     if (state.uiLevel === 1) {
         return (
             <Level1Play
                 state={state}
-                deviceId={deviceId}
                 gestureOwner={gestureOwner}
                 gestureAuthority={gestureAuthority}
                 onPatchChange={onPatchChange}
+                onTargetSelection={onTargetSelection}
             />
         );
     }
@@ -243,6 +245,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         advanceGestureOwner();
     };
 
+    const finalizeActiveGesture = (): void => {
+        const finalizer = activeGestureFinalizerRef.current;
+        activeGestureFinalizerRef.current = null;
+        finalizer?.();
+    };
+
     const acquireGesture = (finalize: () => void): number => {
         const previousFinalizer = activeGestureFinalizerRef.current;
         activeGestureFinalizerRef.current = null;
@@ -279,6 +287,11 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
             return;
         }
         acceptedPatchSnapshotRef.current = null;
+    };
+
+    const handleTargetSelection = (target: ProofTarget): void => {
+        finalizeActiveGesture();
+        setProofTarget({ deviceId, target });
     };
 
     const levelMeta = getLevelMeta(uiLevel);
@@ -326,12 +339,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                                 active={active}
                                                 tone="mint"
                                                 size="sm"
-                                                onClick={() => {
-                                                    setProofTarget({
-                                                        deviceId,
-                                                        target: option.value,
-                                                    });
-                                                }}
+                                                onClick={() => handleTargetSelection(option.value)}
                                             >
                                                 {option.label}
                                             </DawPluginChip>
@@ -407,6 +415,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                             gestureOwner={gestureOwner}
                             gestureAuthority={gestureAuthority}
                             onPatchChange={handlePatchChange}
+                            onTargetSelection={handleTargetSelection}
                         />
                     </div>
                 </section>
@@ -526,16 +535,16 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
 const Level1Play = ({
     state,
-    deviceId,
     gestureOwner,
     gestureAuthority,
     onPatchChange,
+    onTargetSelection,
 }: {
     state: ProofState;
-    deviceId: string;
     gestureOwner: number;
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
+    onTargetSelection: (target: ProofTarget) => void;
 }): ReactElement => {
     const { patch } = state;
 
@@ -555,7 +564,7 @@ const Level1Play = ({
                                     : 'text-muted-foreground hover:text-foreground border border-transparent hover:border-border/30'
                             }`}
                             onClick={() => {
-                                setProofTarget({ deviceId, target: opt.value });
+                                onTargetSelection(opt.value);
                             }}
                         >
                             {opt.label} ({opt.lufs} LUFS)

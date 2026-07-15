@@ -217,6 +217,109 @@ describe('ProofPanel', () => {
         expect(bridge.setParam).not.toHaveBeenCalled();
     });
 
+    it('finalizes a rotary preview before persisting an interrupted target selection', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const knob = screen.getByRole('slider', { name: 'EQ Low Cut frequency' });
+        const initialFrequency = getProofState(DEVICE_ID).patch.eqBands[0]?.freq;
+
+        fireEvent.pointerDown(knob, { button: 0, pointerId: 61, clientY: 100 });
+        fireEvent.pointerMove(knob, { pointerId: 61, clientY: 70 });
+
+        const previewFrequency = getProofState(DEVICE_ID).patch.eqBands[0]?.freq;
+        expect(previewFrequency).not.toBe(initialFrequency);
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
+            1,
+            DEVICE_ID,
+            expect.objectContaining({ eq_band0_freq: previewFrequency })
+        );
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
+            target_mode: 3,
+            target_lufs: -23,
+        });
+        const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
+
+        fireEvent.pointerUp(knob, { pointerId: 61 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(getProofState(DEVICE_ID).patch.eqBands[0]?.freq).toBe(previewFrequency);
+        expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
+    });
+
+    it('finalizes an EQ curve preview before persisting an interrupted target selection', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const canvas = container.querySelector<HTMLCanvasElement>(
+            'canvas[aria-label="8-band parametric EQ frequency response"]'
+        );
+        if (!canvas) {
+            throw new Error('Expected the Level 3 EQ curve canvas');
+        }
+        const initialBand = getProofState(DEVICE_ID).patch.eqBands[2];
+        if (!initialBand) {
+            throw new Error('Expected EQ band 2');
+        }
+        const point = {
+            x: (Math.log10(initialBand.freq / 20) / Math.log10(20000 / 20)) * 500,
+            y: 60 - (initialBand.gain / 18) * 60,
+        };
+
+        fireEvent.pointerDown(canvas, {
+            button: 0,
+            clientX: point.x,
+            clientY: point.y,
+            pointerId: 62,
+        });
+        fireEvent.pointerMove(canvas, {
+            clientX: point.x + 15,
+            clientY: point.y - 20,
+            pointerId: 62,
+        });
+
+        const previewBand = getProofState(DEVICE_ID).patch.eqBands[2];
+        expect(previewBand?.freq).not.toBe(initialBand.freq);
+        expect(previewBand?.gain).not.toBe(initialBand.gain);
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Broadcast' }));
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
+            1,
+            DEVICE_ID,
+            expect.objectContaining({
+                eq_band2_freq: previewBand?.freq,
+                eq_band2_gain: previewBand?.gain,
+            })
+        );
+        expect(persistDevicePatchMock).toHaveBeenNthCalledWith(2, DEVICE_ID, {
+            target_mode: 3,
+            target_lufs: -23,
+        });
+        const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
+
+        fireEvent.pointerUp(canvas, { pointerId: 62 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
+        expect(getProofState(DEVICE_ID).patch.eqBands[2]?.freq).toBe(previewBand?.freq);
+        expect(getProofState(DEVICE_ID).patch.eqBands[2]?.gain).toBe(previewBand?.gain);
+        expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
+    });
+
     it('sends only fields that changed during repeated Level 2 Exciter moves', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
