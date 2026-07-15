@@ -9,7 +9,7 @@
  */
 import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
-import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
+import { getProofPatchSnapshot, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
 const MAX_FREQ = 20000;
@@ -36,44 +36,6 @@ export const EQ_LOW_PASS = 4;
 /** Gain is meaningful only for peak/shelf bands; HP/LP cutoff filters ignore it. */
 export const bandUsesGain = (type: number): boolean =>
     type === EQ_PEAK || type === EQ_LOW_SHELF || type === EQ_HIGH_SHELF;
-
-// Canonicalize patch values so gesture ownership survives new object/array instances.
-const getProofPatchSnapshot = (patch: ProofPatch): string =>
-    JSON.stringify([
-        patch.name,
-        patch.presetId ?? null,
-        patch.chainOrder,
-        patch.inputGain,
-        patch.outputGain,
-        patch.eqBypassed,
-        patch.eqBands.map((band) => [band.enabled, band.type, band.channel, band.freq, band.gain, band.q]),
-        patch.dynBypassed,
-        patch.dynCrossoverFreqs,
-        patch.dynBands.map((band) => [
-            band.threshold,
-            band.ratio,
-            band.attack,
-            band.release,
-            band.knee,
-            band.makeup,
-            band.autoMakeup,
-            band.bypassed,
-        ]),
-        patch.imgBypassed,
-        patch.imgBandWidth,
-        patch.imgAutoMonoBass,
-        patch.imgMonoBassFreq,
-        patch.excBypassed,
-        patch.excBands.map((band) => [band.type, band.drive, band.blend, band.enabled]),
-        patch.limBypassed,
-        patch.limCeiling,
-        patch.limRelease,
-        patch.limLookahead,
-        patch.ditherMode,
-        patch.ditherBits,
-        patch.target,
-        patch.targetLufs,
-    ]);
 
 /**
  * Reference sample rate for coefficient design. The curve is drawn over

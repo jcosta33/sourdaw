@@ -68,6 +68,8 @@ type RotaryKnobProps = {
     deviceId?: string;
     /** Color tone for the value arc */
     tone?: Tone;
+    /** Stable semantic owner token; changing it cancels an active drag without committing it. */
+    gestureOwner?: string | number;
     /**
      * R-C1: Active modulation sources displayed as colored conic-gradient halo arcs.
      * Each entry represents one modulator connected to this parameter.
@@ -104,6 +106,7 @@ export const RotaryKnob = ({
     tone = 'cyan',
     modulations,
     scale = 'linear',
+    gestureOwner,
 }: RotaryKnobProps): ReactElement => {
     const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
     const isLearningThis = Boolean(
@@ -124,10 +127,22 @@ export const RotaryKnob = ({
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
     const onChangeRef = useRef(onChange);
+    const gestureOwnerAtStartRef = useRef<string | number | undefined>(gestureOwner);
     const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+
+    const clearDragState = (): void => {
+        draggingRef.current = false;
+        activePointerIdRef.current = null;
+        rootRef.current?.removeAttribute('data-dragging');
+    };
 
     useLayoutEffect(() => {
         onChangeRef.current = onChange;
+
+        if (draggingRef.current && !Object.is(gestureOwnerAtStartRef.current, gestureOwner)) {
+            clearDragState();
+        }
+
         finalizeDragRef.current = (pointerId?: number): boolean => {
             if (!draggingRef.current) {
                 return false;
@@ -136,10 +151,9 @@ export const RotaryKnob = ({
                 return false;
             }
 
-            draggingRef.current = false;
-            activePointerIdRef.current = null;
-            rootRef.current?.removeAttribute('data-dragging');
-            if (!Object.is(currentValue.current, startValue.current)) {
+            const ownsGesture = Object.is(gestureOwnerAtStartRef.current, gestureOwner);
+            clearDragState();
+            if (ownsGesture && !Object.is(currentValue.current, startValue.current)) {
                 onChangeRef.current(currentValue.current, false);
             }
             return true;
@@ -180,6 +194,7 @@ export const RotaryKnob = ({
         }
         activePointerIdRef.current = event.pointerId;
         draggingRef.current = true;
+        gestureOwnerAtStartRef.current = gestureOwner;
         startY.current = event.clientY;
         startValue.current = value;
         currentValue.current = value;

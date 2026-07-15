@@ -106,7 +106,7 @@ describe('RotaryKnob', () => {
         const initialOnChange = vi.fn();
         const latestOnChange = vi.fn();
         const { container, rerender, unmount } = render(
-            <RotaryKnob value={50} onChange={initialOnChange} min={0} max={100} />
+            <RotaryKnob value={50} onChange={initialOnChange} min={0} max={100} gestureOwner="stable" />
         );
         const root = container.firstChild as HTMLElement;
 
@@ -114,7 +114,9 @@ describe('RotaryKnob', () => {
         fireEvent.pointerMove(root, { pointerId: 9, clientY: 80 });
         const transientValue = initialOnChange.mock.calls.at(-1)?.[0] as number;
 
-        rerender(<RotaryKnob value={transientValue} onChange={latestOnChange} min={0} max={100} />);
+        rerender(
+            <RotaryKnob value={transientValue} onChange={latestOnChange} min={0} max={100} gestureOwner="stable" />
+        );
         unmount();
 
         expect(initialOnChange).toHaveBeenCalledTimes(1);
@@ -138,6 +140,34 @@ describe('RotaryKnob', () => {
             [transientValue, true],
             [transientValue, false],
         ]);
+    });
+
+    it.each([
+        ['pointerup', (root: HTMLElement, _unmount: () => void) => fireEvent.pointerUp(root, { pointerId: 16 })],
+        [
+            'pointercancel',
+            (root: HTMLElement, _unmount: () => void) => fireEvent.pointerCancel(root, { pointerId: 16 }),
+        ],
+        [
+            'lost pointer capture',
+            (root: HTMLElement, _unmount: () => void) => fireEvent.lostPointerCapture(root, { pointerId: 16 }),
+        ],
+        ['unmount', (_root: HTMLElement, unmount: () => void) => unmount()],
+    ])('does not finalize a stale drag after an authoritative replacement via %s', (_end, endGesture) => {
+        const onChange = vi.fn();
+        const { container, rerender, unmount } = render(
+            <RotaryKnob value={50} onChange={onChange} min={0} max={100} gestureOwner="initial" />
+        );
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 16, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 16, clientY: 80 });
+        const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
+
+        rerender(<RotaryKnob value={20} onChange={onChange} min={0} max={100} gestureOwner="replacement" />);
+        endGesture(root, unmount);
+
+        expect(onChange.mock.calls).toEqual([[transientValue, true]]);
     });
 
     it('keeps the first pointer as drag owner when another pointer cancels', () => {

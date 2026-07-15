@@ -29,6 +29,24 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 
 const DEVICE_ID = 'proof-test-device';
 
+type RotaryEndGesture = (knob: HTMLElement, unmount: () => void) => void;
+
+const EQ_ROTARY_ENDINGS: Array<readonly [string, RotaryEndGesture]> = [
+    ['pointerup', (knob: HTMLElement, _unmount: () => void) => fireEvent.pointerUp(knob, { pointerId: 16 })],
+    ['pointercancel', (knob: HTMLElement, _unmount: () => void) => fireEvent.pointerCancel(knob, { pointerId: 16 })],
+    [
+        'lost pointer capture',
+        (knob: HTMLElement, _unmount: () => void) => fireEvent.lostPointerCapture(knob, { pointerId: 16 }),
+    ],
+    ['unmount', (_knob: HTMLElement, unmount: () => void) => unmount()],
+];
+
+const EQ_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGesture]) => [
+    ['frequency', end, 0, endGesture] as const,
+    ['gain', end, 1, endGesture] as const,
+    ['Q', end, 2, endGesture] as const,
+]);
+
 function makeBridge(): ProofAudioBridge & {
     setParam: ReturnType<typeof vi.fn>;
     reorderModules: ReturnType<typeof vi.fn>;
@@ -208,6 +226,66 @@ describe('ProofPanel', () => {
 
         expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(EQ_ROTARY_REPLACEMENT_CASES)(
+        'preserves a replacement preset after a stale EQ %s drag via %s',
+        (_field, _end, fieldIndex, endGesture) => {
+            const bridge = makeBridge();
+            bridges.set(DEVICE_ID, bridge);
+            seedState({ uiLevel: 3 });
+
+            const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+            const knob = knobs.item(6 + fieldIndex);
+            if (!knob) {
+                throw new Error(`Expected the EQ ${_field} knob`);
+            }
+
+            fireEvent.pointerDown(knob, { button: 0, pointerId: 16, clientY: 100 });
+            fireEvent.pointerMove(knob, { pointerId: 16, clientY: 80 });
+            expect(getProofState(DEVICE_ID).patch.presetId).toBeUndefined();
+
+            fireEvent.click(screen.getByRole('button', { name: /Streaming Master/ }));
+
+            expect(getProofState(DEVICE_ID).patch).toEqual(
+                PROOF_PRESETS.find((preset) => preset.id === 'streaming')?.patch
+            );
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+
+            endGesture(knob, unmount);
+
+            expect(getProofState(DEVICE_ID).patch).toEqual(
+                PROOF_PRESETS.find((preset) => preset.id === 'streaming')?.patch
+            );
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it.each([
+        ['frequency', 0],
+        ['gain', 1],
+        ['Q', 2],
+    ] as const)('finalizes an accepted EQ %s rotary drag exactly once', (_field, fieldIndex) => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const knob = knobs.item(6 + fieldIndex);
+        if (!knob) {
+            throw new Error(`Expected the EQ ${_field} knob`);
+        }
+
+        fireEvent.pointerDown(knob, { button: 0, pointerId: 17, clientY: 100 });
+        fireEvent.pointerMove(knob, { pointerId: 17, clientY: 80 });
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        fireEvent.pointerUp(knob, { pointerId: 17 });
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(getProofState(DEVICE_ID).patch.presetId).toBeUndefined();
     });
 
     it('toggles A/B compare through the bridge and the store (no inline view-code store write)', () => {
