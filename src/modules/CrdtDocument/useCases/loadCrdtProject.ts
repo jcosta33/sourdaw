@@ -1,5 +1,7 @@
 import { automergeRepository } from '../repositories/automergeRepository';
-import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
+import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
+
+import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
 
 /**
  * Load a CRDT project from persistence (IndexedDB).
@@ -9,17 +11,27 @@ type LoadCrdtProjectInput = {
     shouldCommit?: () => boolean;
 };
 
-export async function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
-    const bundle = await loadAllFromIdb();
-    if (bundle) {
-        const committed = await automergeRepository.loadAll({ bundle, shouldCommit });
-        if (!committed) {
-            return false;
+export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
+    return runCrdtPersistenceLoad(async ({ shouldCommit: shouldCommitQueue }) => {
+        function canCommit(): boolean {
+            return shouldCommitQueue() && shouldCommit?.() !== false;
         }
-        if (shouldCommit?.() === false) {
-            return false;
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
         }
-        return true;
-    }
-    return false;
+
+        const snapshot = await loadPersistenceSnapshotFromIdb();
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+        if (!snapshot?.bundle) {
+            return { loaded: false, snapshot };
+        }
+
+        const committed = await automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit: canCommit });
+        if (!committed || !canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+        return { loaded: true, snapshot };
+    });
 }

@@ -73,7 +73,10 @@ describe('undo', () => {
 
         await undo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'toggleRecording' }, { skipUndo: true });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [],
             future: [entry],
@@ -117,8 +120,16 @@ describe('undo', () => {
 
         await undo();
 
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(1, { type: 'stopPlayback' }, { skipUndo: true });
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(2, { type: 'toggleRecording' }, { skipUndo: true });
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            1,
+            { type: 'stopPlayback' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
+            2,
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [previous],
             future: [first, second, future],

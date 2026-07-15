@@ -1,11 +1,14 @@
 import { getHeads, clone as cloneDoc } from '@automerge/automerge';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
-import { projectCrdtToStores } from '../projection/projectProjection';
+
+import { runBranchLineageTransition } from './runBranchLineageTransition';
+import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
 
 /**
  * Fork the current project into a new branch.
@@ -17,6 +20,7 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
         throw createBranchError('Branch store not initialized');
     }
 
+    flushAutomergeStorageWrites();
     const sourceDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
     if (!sourceDoc) {
         throw createBranchError('No root document to fork');
@@ -25,41 +29,41 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     const branchId = crypto.randomUUID();
     const branchDocId = `branch_${branchId}`;
     const heads = getHeads(sourceDoc).map(String);
+    const activeBranch = state.branches.find(({ branchId: candidateId }) => candidateId === state.activeBranchId);
+    if (!activeBranch) {
+        throw createBranchError(`Active branch not found: ${state.activeBranchId}`);
+    }
+    const sourceBackingDocId =
+        activeBranch.rootDocId === DOC_PREFIX_ROOT ? `branch_${activeBranch.branchId}` : activeBranch.rootDocId;
 
-    // Clone the document — shares full history with source.
-    // The clone is stored under the branch's own slot AND becomes the active
-    // working document. The `DOC_PREFIX_ROOT` slot always mirrors the active
-    // branch (it is the doc all edits, persistence, and projection target), so
-    // we must repoint it at the fork; otherwise post-fork edits keep landing in
-    // the source branch's working copy while the UI shows the new branch active.
-    // Automerge docs are immutable: a later `changeDoc(DOC_PREFIX_ROOT, ...)`
-    // produces a new handle stored only under the root slot, so the branch
-    // snapshot does not drift when the two start from the same handle.
     const forkedDoc = cloneDoc(sourceDoc);
-    automergeRepository.insertDoc(branchDocId, forkedDoc);
-    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, forkedDoc);
+    return runBranchLineageTransition({
+        affectedDocIds: [DOC_PREFIX_ROOT, sourceBackingDocId, branchDocId],
+        from: state.activeBranchId,
+        previousState: state,
+        to: branchId,
+        apply: () => {
+            const stateWithSourceSnapshot = saveActiveBranchSnapshot({ state, liveRoot: sourceDoc });
+            automergeRepository.insertDoc(branchDocId, forkedDoc);
+            automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(forkedDoc));
 
-    const record: BranchRecord = {
-        branchId,
-        name,
-        rootDocId: branchDocId,
-        sourceBranchId: state.activeBranchId,
-        createdAt: Date.now(),
-        createdFromHeads: heads,
-        note,
-    };
+            const record: BranchRecord = {
+                branchId,
+                name,
+                rootDocId: branchDocId,
+                sourceBranchId: state.activeBranchId,
+                createdAt: Date.now(),
+                createdFromHeads: heads,
+                note,
+            };
 
-    branchStore.set({
-        branches: [...state.branches, record],
-        activeBranchId: branchId,
+            return {
+                nextState: {
+                    branches: [...stateWithSourceSnapshot.branches, record],
+                    activeBranchId: branchId,
+                },
+                result: branchId,
+            };
+        },
     });
-
-    // Persist the new branch document
-    const bundle = automergeRepository.saveAll();
-    await saveAllToIdb(bundle);
-
-    // Hydrate stores from the forked branch
-    projectCrdtToStores();
-
-    return branchId;
 }

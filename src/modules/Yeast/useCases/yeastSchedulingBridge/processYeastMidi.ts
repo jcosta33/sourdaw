@@ -1,39 +1,54 @@
-import { transportStore } from '#/modules/Transport/stores';
+import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
+import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
+import { yeastStore } from '../../stores/yeastStore';
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { getYeastRack } from '../../stores/yeastStore';
+import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
-export function processYeastMidi(
-    events: MidiEvent[],
-    blockStartSamples: number,
-    blockEndSamples: number,
-    sampleRate: number
-): MidiEvent[] {
-    const rack = getYeastRack();
-    const processorIds = rack.getProcessorIds();
+type ProcessYeastMidiInput = {
+    context: BaseAudioContext;
+    trackId: string;
+    events: readonly MidiEvent[];
+    blockStartSamples: number;
+    blockEndSamples: number;
+    transport: TransportInfo;
+};
 
-    if (processorIds.length === 0) {
-        return events;
+function publishRuntimeStatus(): void {
+    const state = yeastStore.value;
+    if (!state) {
+        return;
     }
 
-    const transport = transportStore.value;
-    if (!transport) {
-        return events;
+    const status = getYeastRuntimeStatus();
+    const error = getYeastRuntimeError();
+    const nextState = { ...state, runtimeStatus: status };
+    if (error) {
+        nextState.runtimeError = error;
+    } else {
+        delete nextState.runtimeError;
+    }
+    if (state.runtimeStatus !== nextState.runtimeStatus || state.runtimeError !== nextState.runtimeError) {
+        yeastStore.set(nextState);
+    }
+}
+
+export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<MidiEvent[]> {
+    const state = yeastStore.value;
+    if (!state) {
+        return [...input.events];
     }
 
-    const transportInfo: TransportInfo = {
-        sampleRate,
-        bpm: transport.tempo,
-        ppqPosition: 0,
-        isPlaying: transport.isPlaying,
-        barIndex: 0,
-        beatInBar: 0,
-        timeSigNum: transport.timeSignatureNumerator,
-        timeSigDen: transport.timeSignatureDenominator,
-        loopEnabled: transport.loopStart < transport.loopEnd,
-        loopStartPpq: transport.loopStart,
-        loopEndPpq: transport.loopEnd,
-    };
+    const projection = createYeastProcessorProjection(state.processors);
+    if (projection.length === 0) {
+        return [...input.events];
+    }
 
-    return rack.processBlock(events, blockStartSamples, blockEndSamples, transportInfo);
+    try {
+        const processed = await processYeastRuntimeTransaction({ ...input, projection });
+        publishRuntimeStatus();
+        return processed ?? [...input.events];
+    } catch {
+        publishRuntimeStatus();
+        return [...input.events];
+    }
 }

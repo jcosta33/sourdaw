@@ -109,6 +109,16 @@ describe('transportStore', () => {
             { label: 'high metronome volume', payload: { metronomeVolume: 1.1 } },
             { label: 'non-boolean metronome toggle', payload: { metronomeEnabled: 'yes' } },
             { label: 'negative punch in', payload: { punchInBeat: -1 } },
+            { label: 'negative punch out', payload: { punchInBeat: 0, punchOutBeat: -1 } },
+            { label: 'NaN punch in', payload: { punchInBeat: Number.NaN, punchOutBeat: 16 } },
+            {
+                label: 'positive infinity punch out',
+                payload: { punchInBeat: 0, punchOutBeat: Number.POSITIVE_INFINITY },
+            },
+            {
+                label: 'negative infinity punch in',
+                payload: { punchInBeat: Number.NEGATIVE_INFINITY, punchOutBeat: 16 },
+            },
             { label: 'inverted punch bounds', payload: { punchInBeat: 4, punchOutBeat: 4 } },
             { label: 'non-boolean punch toggle', payload: { punchInEnabled: 'yes' } },
             { label: 'zero count-in bars', payload: { countInBars: 0 } },

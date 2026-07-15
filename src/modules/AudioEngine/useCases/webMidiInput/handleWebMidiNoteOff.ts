@@ -1,8 +1,9 @@
 import { inject } from '#/infra/di/inject';
 
+import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
-import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
+import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -50,64 +51,62 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         return midiClips[midiClips.length - 1]!.id;
     }
 
-    return function handleWebMidiNoteOff(channel: number, note: number, releaseVelocity: number = 0): void {
+    return async function handleWebMidiNoteOff(
+        channel: number,
+        note: number,
+        releaseVelocity: number = 0
+    ): Promise<void> {
         deps.stepRecordNoteOff(note);
-        const noteData = activeNotes.get(note);
+        const noteKey = createWebMidiNoteKey(channel, note);
+        const noteData = activeNotes.get(noteKey);
         if (!noteData) {
             return;
         }
 
-        activeNotes.delete(note);
+        activeNotes.delete(noteKey);
 
-        if (getMpeEnabled()) {
+        if (channelToNote.get(noteData.channel) === noteKey) {
             channelToNote.delete(noteData.channel);
         }
 
-        const targetTrackId = getTargetTrackId();
-        if (targetTrackId) {
-            const trackState = deps.getTrackStoreState();
-            const targetTrack = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
+        const targetTrackId = noteData.trackId;
+        const instrumentTrackId = noteData.instrumentTrackId;
+        const instrumentTrackState = deps.getTrackStoreState();
+        const instrumentTrack = instrumentTrackState?.tracks.find((candidate) => candidate.id === instrumentTrackId);
 
-            let instrumentTrack = targetTrack;
-            if (targetTrack && targetTrack.parentId && trackState) {
-                const parent = trackState.tracks.find((candidate) => candidate.id === targetTrack.parentId);
-                if (parent?.devices.some((device) => device.type === 'toaster')) {
-                    instrumentTrack = parent;
-                }
+        if (instrumentTrack?.devices.some((device) => device.type === 'yeast')) {
+            const context = audioEngine.context;
+            const sampleTime = Math.round(context.currentTime * context.sampleRate);
+            const processedEvents = await deps.processRealtimeMidiInput({
+                context,
+                trackId: instrumentTrack.id,
+                note,
+                velocity: 0,
+                channel,
+                isNoteOn: false,
+                sampleTime,
+                sampleRate: context.sampleRate,
+            });
+            const strip = audioEngine.getTrackStrip(instrumentTrack.id);
+            function emitGrandBouleOff(deviceId: string, midiNote: number): void {
+                void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
             }
-
-            if (instrumentTrack?.devices.some((device) => device.type === 'yeast')) {
-                const context = audioEngine.context;
-                const sampleTime = Math.round(context.currentTime * context.sampleRate);
-                const processedEvents = deps.processRealtimeMidiInput(
-                    note,
-                    0,
-                    channel,
-                    false,
-                    sampleTime,
-                    context.sampleRate
+            for (const event of processedEvents) {
+                if (event.kind.type !== 'noteOff') {
+                    continue;
+                }
+                routeYeastNoteOffToInstrument(
+                    instrumentTrack,
+                    strip,
+                    event.kind.note,
+                    releaseVelocity,
+                    emitGrandBouleOff
                 );
-                const strip = audioEngine.getTrackStrip(instrumentTrack.id);
-                function emitGrandBouleOff(deviceId: string, midiNote: number): void {
-                    void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
-                }
-                for (const event of processedEvents) {
-                    if (event.kind.type !== 'noteOff') {
-                        continue;
-                    }
-                    routeYeastNoteOffToInstrument(
-                        instrumentTrack,
-                        strip,
-                        event.kind.note,
-                        releaseVelocity,
-                        emitGrandBouleOff
-                    );
-                }
             }
         }
 
-        if (noteData.fermenterDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+        if (noteData.fermenterDeviceId) {
+            const strip = audioEngine.getTrackStrip(instrumentTrackId);
             const deviceNode = strip?.deviceNodes.find(
                 (candidate) => candidate.deviceId === noteData.fermenterDeviceId
             );
@@ -116,50 +115,10 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
-        if (noteData.toasterDeviceId && targetTrackId) {
-            const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
-            let instrumentTrackId = targetTrackId;
-            let toasterChildPad: number | null = null;
+        releaseActiveToasterNote(noteData);
 
-            if (track && track.devices.length === 0 && track.parentId && trackState) {
-                let parent: typeof track | undefined;
-                let padIndex = 0;
-                for (const candidate of trackState.tracks) {
-                    if (candidate.id === track.parentId) {
-                        parent = candidate;
-                    } else if (candidate.parentId === track.parentId) {
-                        if (candidate.id === track.id) {
-                            toasterChildPad = padIndex;
-                        }
-                        padIndex++;
-                    }
-                }
-                if (parent?.devices.some((device) => device.type === 'toaster')) {
-                    instrumentTrackId = parent.id;
-                } else {
-                    toasterChildPad = null;
-                }
-            }
-
+        if (noteData.grandBouleDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
-            const deviceNode = strip?.deviceNodes.find((candidate) => candidate.deviceId === noteData.toasterDeviceId);
-            if (deviceNode?.toasterControls) {
-                let pad = toasterChildPad;
-                if (pad === null || pad === -1) {
-                    pad = note - 36;
-                    if (pad >= 24 && pad <= 39) {
-                        pad = pad - 24;
-                    }
-                }
-                if (pad >= 0 && pad < 16) {
-                    deviceNode.toasterControls.noteOff(pad);
-                }
-            }
-        }
-
-        if (noteData.grandBouleDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
             const deviceNode = strip?.deviceNodes.find(
                 (candidate) => candidate.deviceId === noteData.grandBouleDeviceId
             );
@@ -173,8 +132,8 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             });
         }
 
-        if (noteData.levainDeviceId && targetTrackId) {
-            const strip = audioEngine.getTrackStrip(targetTrackId);
+        if (noteData.levainDeviceId) {
+            const strip = audioEngine.getTrackStrip(instrumentTrackId);
             const levainId = noteData.levainDeviceId;
             const deviceNode = strip?.deviceNodes.find((candidate) => candidate.deviceId === levainId);
             if (deviceNode?.levainControls) {
@@ -184,8 +143,8 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
 
         if (noteData.osc) {
             const now = audioEngine.context.currentTime;
-            const synthParams = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId) : null;
-            const releaseTime = synthParams?.release ?? 0.3;
+            const synthParams = deps.getSynthParamsForTrack(targetTrackId);
+            const releaseTime = synthParams.release;
             if (noteData.osc._env) {
                 noteData.osc._env.gain.cancelScheduledValues(now);
                 noteData.osc._env.gain.setTargetAtTime(0, now, releaseTime / 3);
@@ -195,10 +154,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             } catch {
                 // Already stopped.
             }
-        }
-
-        if (!targetTrackId) {
-            return;
         }
 
         const transport = deps.getTransportStoreValue();

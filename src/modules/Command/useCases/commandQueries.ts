@@ -36,7 +36,10 @@ export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
     readonly shiftedClips: readonly RippleShiftSnapshot[];
 };
-type CommandDocumentBundle = Map<string, Uint8Array>;
+type CommandDocumentSnapshotEntry =
+    | { readonly state: 'present'; readonly bytes: Uint8Array }
+    | { readonly state: 'absent' };
+type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
@@ -214,6 +217,11 @@ export type AppAction =
     | { type: 'seekPlayhead'; payload: { beat: number } }
     | { type: 'setPunchIn'; payload: { beat: number } }
     | { type: 'setPunchOut'; payload: { beat: number } }
+    | {
+          /** Internal inverse action that atomically restores both punch endpoints. */
+          type: 'restorePunchRegion';
+          payload: { punchInBeat: number; punchOutBeat: number };
+      }
     | { type: 'togglePunch'; payload?: undefined }
     | { type: 'toggleCountIn'; payload?: undefined }
     | { type: 'setCountInBars'; payload: { bars: number } }
@@ -436,7 +444,7 @@ export type AppAction =
     | { type: 'enableWarping'; payload: { clipId: string } }
     | { type: 'setWarpAlgorithm'; payload: { clipId: string; algorithm: string } }
     | { type: 'setWarpPitchShift'; payload: { clipId: string; semitones: number } }
-    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentBundle } };
+    | { type: 'restoreDsoSnapshot'; payload: { bundle: CommandDocumentSnapshot } };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 

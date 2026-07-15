@@ -5,6 +5,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
+import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function stopPlayback(): void {
@@ -22,6 +23,7 @@ export function stopPlayback(): void {
         stopActiveRecording();
     }
 
+    panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();

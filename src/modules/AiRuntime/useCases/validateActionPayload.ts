@@ -62,6 +62,14 @@ function isOptional<Value>(value: unknown, check: (value: unknown) => value is V
     return value === undefined || check(value);
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    return Reflect.ownKeys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function hasFinitePunchBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
+    return isObj(param) && hasExactKeys(param, ['beat']) && isNumber(param.beat);
+}
+
 function hasNoPayload(value: unknown): value is undefined {
     return value === undefined;
 }
@@ -84,19 +92,26 @@ function isAddNotesNote(param: unknown): param is PayloadOf<'addNotes'>['notes']
     );
 }
 
-// A DocumentBundle is `Map<DocId, Uint8Array>` (CrdtDocumentTypes). The
-// restoreDsoSnapshot payload is the AI undo pipeline's own inverse action
-// (executeDsoEdit.ts emits it with binary Automerge snapshots); the LLM is
-// never supposed to produce it. This minimal guard enforces that trust
-// boundary at runtime: the bundle must be a Map whose entries are
-// (string key, Uint8Array value), so a hallucinated or hand-crafted JSON
-// payload — which deserializes to a plain object, not a Map — is rejected.
-function isDocumentBundle(value: unknown): value is Map<string, Uint8Array> {
+// Snapshot entries carry exact membership as well as present Automerge bytes.
+// The LLM never produces this inverse-only action; reject JSON-like lookalikes
+// and malformed runtime Maps at the action boundary.
+function isDocumentSnapshot(
+    value: unknown
+): value is Map<string, { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' }> {
     if (!(value instanceof Map)) {
         return false;
     }
-    for (const [key, bytes] of value) {
-        if (!isString(key) || !(bytes instanceof Uint8Array)) {
+    for (const [key, entry] of value) {
+        if (!isString(key) || !isObj(entry)) {
+            return false;
+        }
+        if (entry.state === 'absent') {
+            if ('bytes' in entry) {
+                return false;
+            }
+            continue;
+        }
+        if (entry.state !== 'present' || !(entry.bytes instanceof Uint8Array)) {
             return false;
         }
     }
@@ -223,8 +238,8 @@ const validators = {
     toggleCountIn: 'unchecked',
     togglePreRoll: 'unchecked',
     setLoopRegion: 'unchecked',
-    setPunchIn: 'unchecked',
-    setPunchOut: 'unchecked',
+    setPunchIn: hasFinitePunchBeat,
+    setPunchOut: hasFinitePunchBeat,
     setCountInBars: 'unchecked',
     setPreRollBars: 'unchecked',
     seekPlayhead: 'unchecked',
@@ -408,7 +423,7 @@ const validators = {
     // binary Automerge snapshots — the LLM is never meant to produce it. Guard the
     // bundle shape so an arbitrary/hand-crafted payload can't be restored unchecked.
     restoreDsoSnapshot: (param): param is PayloadOf<'restoreDsoSnapshot'> =>
-        isObj(param) && isDocumentBundle(param.bundle),
+        isObj(param) && isDocumentSnapshot(param.bundle),
 
     // Warp + pitch
     enableWarping: 'unchecked',

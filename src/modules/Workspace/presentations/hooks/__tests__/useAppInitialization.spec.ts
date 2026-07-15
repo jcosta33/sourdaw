@@ -1,8 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
-import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -28,7 +28,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ hasCrdtProject: vi.fn().mockResolvedValue(false) }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ registerProModulationEffects: vi.fn() }));
 vi.mock('#/modules/Project/stores', () => ({
@@ -208,18 +207,8 @@ describe('useAppInitialization — Project loading boundary', () => {
         vi.restoreAllMocks();
     });
 
-    it('clears Project loading through the Project use case when no saved CRDT project exists', async () => {
-        renderHook(() => useAppInitialization());
-
-        await waitFor(() => {
-            expect(finishProjectLoading).toHaveBeenCalledTimes(1);
-        });
-        expect(projectStoreMock.set).not.toHaveBeenCalled();
-        expect(loadProject).not.toHaveBeenCalled();
-    });
-
-    it('loads a saved CRDT project instead of clearing Project loading directly', async () => {
-        vi.mocked(hasCrdtProject).mockResolvedValueOnce(true);
+    it('uses the project loader as the authoritative read after storage becomes empty', async () => {
+        vi.mocked(loadProject).mockResolvedValueOnce(false);
 
         renderHook(() => useAppInitialization());
 
@@ -228,6 +217,28 @@ describe('useAppInitialization — Project loading boundary', () => {
         });
         expect(finishProjectLoading).not.toHaveBeenCalled();
         expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('uses the same authoritative load path for valid persisted startup', async () => {
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(loadProject).toHaveBeenCalledTimes(1);
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('surfaces corrupt or rootless persistence instead of completing first-run startup', async () => {
+        vi.mocked(loadProject).mockRejectedValueOnce(new Error('persisted root disappeared'));
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(logger.error).toHaveBeenCalled();
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(loadProject).toHaveBeenCalledOnce();
     });
 });
 

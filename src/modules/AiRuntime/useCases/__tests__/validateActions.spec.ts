@@ -29,6 +29,17 @@ describe('validateActions', () => {
         expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Unknown action type'));
     });
 
+    it('should reject the Command-only punch-region inverse as unavailable to AI', () => {
+        const actions = [
+            { type: 'restorePunchRegion', payload: { punchInBeat: 4, punchOutBeat: 12 } },
+        ] as unknown as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Unknown action type rejected: restorePunchRegion')
+        );
+    });
+
     it('should reject invalid setTempo bpm', () => {
         const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as RuntimeAction[];
         expect(validateActions(actions)).toEqual([]);

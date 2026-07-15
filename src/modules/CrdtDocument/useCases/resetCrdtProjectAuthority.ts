@@ -1,9 +1,18 @@
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { automergeRepository } from '../repositories/automergeRepository';
 import { branchStore, MAIN_BRANCH_ID } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
+import { runCrdtPersistenceOperation } from './runCrdtPersistenceOperation';
 
 export function resetCrdtProjectAuthority(name: string): void {
+    // Drain writes owned by the outgoing repository before replacing its root.
+    // The branch update below must then be the first store write observed by
+    // the new authority.
+    flushAutomergeStorageWrites();
+    void runCrdtPersistenceOperation('reset');
+    automergeRepository.createProject(name);
     branchStore.set({
         branches: [
             {
@@ -18,5 +27,4 @@ export function resetCrdtProjectAuthority(name: string): void {
         ],
         activeBranchId: MAIN_BRANCH_ID,
     });
-    automergeRepository.createProject(name);
 }

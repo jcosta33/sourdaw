@@ -243,8 +243,16 @@ async function removeFromIdb(id: string): Promise<void> {
     const generation = claimPersistenceGeneration(id);
     try {
         const db = await openDb();
+        if (persistenceGenerationById.get(id) !== generation) {
+            return;
+        }
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).delete(id);
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
+        });
     } catch {
         // ignore
     } finally {

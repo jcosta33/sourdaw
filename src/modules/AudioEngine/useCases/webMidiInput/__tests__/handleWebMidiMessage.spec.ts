@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const handle_note_on = vi.hoisted(() => vi.fn<void, [number, number, number]>());
-const handle_note_off = vi.hoisted(() => vi.fn<void, [number, number, number]>());
-const handle_cc = vi.hoisted(() => vi.fn<void, [number, number, number]>());
-const handle_channel_pressure = vi.hoisted(() => vi.fn<void, [number, number]>());
-const handle_pitch_bend = vi.hoisted(() => vi.fn<void, [number, number, number]>());
+const handle_note_on = vi.hoisted(() => vi.fn());
+const handle_note_off = vi.hoisted(() => vi.fn());
+const handle_cc = vi.hoisted(() => vi.fn());
+const handle_channel_pressure = vi.hoisted(() => vi.fn());
+const handle_pitch_bend = vi.hoisted(() => vi.fn());
 
 vi.mock('../handleWebMidiNoteOn', () => ({
     handleWebMidiNoteOn: handle_note_on,
@@ -58,5 +58,25 @@ describe('handleWebMidiMessage', () => {
         expect(handle_cc).not.toHaveBeenCalled();
         expect(handle_channel_pressure).not.toHaveBeenCalled();
         expect(handle_pitch_bend).not.toHaveBeenCalled();
+    });
+
+    it('should serialize note events while a Yeast runtime request is pending', async () => {
+        let resolveNoteOn!: () => void;
+        const noteOnPending = new Promise<void>((resolve) => {
+            resolveNoteOn = resolve;
+        });
+        handle_note_on.mockImplementationOnce(() => noteOnPending);
+
+        handleWebMidiMessage(midi_event([0x90, 60, 100]));
+        handleWebMidiMessage(midi_event([0x80, 60, 0]));
+
+        expect(handle_note_on).toHaveBeenCalledTimes(1);
+        expect(handle_note_off).not.toHaveBeenCalled();
+
+        resolveNoteOn();
+        await noteOnPending;
+        await Promise.resolve();
+
+        expect(handle_note_off).toHaveBeenCalledWith(0, 60, 0);
     });
 });
