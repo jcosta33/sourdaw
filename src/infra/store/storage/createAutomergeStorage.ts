@@ -36,14 +36,51 @@ type AutomergeStorageOptions<TData> = {
     hydrateMissing?: () => TData;
 };
 
-let automergeStoragePort: AutomergeStoragePort | null = null;
-type PendingAutomergeStorageWrite = {
+type AutomergeStorageWriteContext = {
+    readonly commitOwner: object;
     readonly snapshotTransaction: object | undefined;
-    readonly flush: () => void;
 };
 
+type PendingAutomergeStorageWrite = {
+    readonly commitOwner: object;
+    readonly docId: AutomergeStorageDocId;
+    readonly snapshotTransaction: object | undefined;
+    readonly flush: () => AutomergeStorageMutationInput | null;
+};
+
+type ActiveAutomergeStorageTransaction = {
+    readonly commitOwner: object;
+    readonly snapshotTransaction: object | undefined;
+};
+
+let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
-let activeAutomergeStorageTransaction: object | undefined;
+let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
+
+/** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
+function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMutationInput[]): void {
+    const firstMutation = mutations[0];
+    if (!firstMutation) {
+        return;
+    }
+
+    const port = getAutomergeStoragePort();
+    if (!port) {
+        return;
+    }
+
+    const message = mutations.find((mutation) => mutation.message !== undefined)?.message;
+    port.mutateDoc({
+        docId: firstMutation.docId,
+        changeFn: (doc) => {
+            for (const mutation of mutations) {
+                mutation.changeFn(doc);
+            }
+        },
+        message,
+        snapshotTransaction: firstMutation.snapshotTransaction,
+    });
+}
 
 /** Scope one synchronous action write path to an opaque snapshot transaction. */
 export function runWithAutomergeStorageTransaction<Result>(
@@ -51,7 +88,10 @@ export function runWithAutomergeStorageTransaction<Result>(
     callback: () => Result
 ): Result {
     const previousTransaction = activeAutomergeStorageTransaction;
-    activeAutomergeStorageTransaction = snapshotTransaction;
+    activeAutomergeStorageTransaction = {
+        commitOwner: Object.freeze({}),
+        snapshotTransaction,
+    };
     try {
         return callback();
     } finally {
@@ -59,23 +99,78 @@ export function runWithAutomergeStorageTransaction<Result>(
     }
 }
 
-export function flushAutomergeStorageWrites(snapshotTransaction?: object): void {
+function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
     let firstError: unknown;
+    const groups = new Map<string, Map<object, PendingAutomergeStorageWrite[]>>();
+
     for (const pending of [...pendingAutomergeStorageWrites]) {
-        if (snapshotTransaction !== undefined && pending.snapshotTransaction !== snapshotTransaction) {
+        if (!matches(pending)) {
             continue;
         }
-        try {
-            pending.flush();
-        } catch (error) {
-            firstError ??= error;
+
+        let ownerGroups = groups.get(pending.docId);
+        if (!ownerGroups) {
+            ownerGroups = new Map();
+            groups.set(pending.docId, ownerGroups);
+        }
+
+        const ownerWrites = ownerGroups.get(pending.commitOwner);
+        if (ownerWrites) {
+            ownerWrites.push(pending);
+        } else {
+            ownerGroups.set(pending.commitOwner, [pending]);
         }
     }
+
+    for (const ownerGroups of groups.values()) {
+        for (const writes of ownerGroups.values()) {
+            const mutations: AutomergeStorageMutationInput[] = [];
+            let preparationFailed = false;
+
+            for (const write of writes) {
+                try {
+                    const mutation = write.flush();
+                    if (mutation) {
+                        mutations.push(mutation);
+                    } else {
+                        preparationFailed = true;
+                    }
+                } catch (error) {
+                    preparationFailed = true;
+                    firstError ??= error;
+                }
+            }
+
+            if (preparationFailed) {
+                continue;
+            }
+
+            try {
+                commitAutomergeStorageMutations(mutations);
+            } catch (error) {
+                firstError ??= error;
+            }
+        }
+    }
+
     if (firstError !== undefined) {
         throw firstError instanceof Error
             ? firstError
             : new Error('Failed to flush an Automerge storage write', { cause: firstError });
     }
+}
+
+function flushAutomergeStorageWriteOwner(write: PendingAutomergeStorageWrite): void {
+    flushMatchingAutomergeStorageWrites(
+        (pending) =>
+            pending.commitOwner === write.commitOwner && pending.snapshotTransaction === write.snapshotTransaction
+    );
+}
+
+export function flushAutomergeStorageWrites(snapshotTransaction?: object): void {
+    flushMatchingAutomergeStorageWrites(
+        (pending) => snapshotTransaction === undefined || pending.snapshotTransaction === snapshotTransaction
+    );
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
@@ -125,6 +220,7 @@ export const createAutomergeStorage = <TData>(
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
     let pendingWrite: PendingAutomergeStorageWrite | null = null;
+    let unscopedCommitOwner: object | undefined;
     /**
      * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
      * skip re-stringifying cachedValue on every sync message when the
@@ -135,19 +231,23 @@ export const createAutomergeStorage = <TData>(
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
-    const writeToCrdt = (value: TData | null, message?: string, snapshotTransaction?: object): void => {
+    const createMutation = (
+        value: TData | null,
+        message?: string,
+        snapshotTransaction?: object
+    ): AutomergeStorageMutationInput | null => {
         const port = getAutomergeStoragePort();
         if (!port) {
-            return;
+            return null;
         }
 
         if (!port.hasDoc(docId)) {
-            return;
+            return null;
         }
 
         const crdtValue = value !== null && toCrdt ? toCrdt(value) : value;
 
-        port.mutateDoc({
+        return {
             docId,
             changeFn: (doc) => {
                 if (crdtValue === null) {
@@ -158,16 +258,35 @@ export const createAutomergeStorage = <TData>(
             },
             message,
             snapshotTransaction,
-        });
+        };
+    };
+
+    const writeToCrdt = (value: TData | null, message?: string, snapshotTransaction?: object): void => {
+        const mutation = createMutation(value, message, snapshotTransaction);
+        if (mutation) {
+            commitAutomergeStorageMutations([mutation]);
+        }
     };
 
     const getSemanticMessage = (): string | undefined => {
         return getAutomergeStoragePort()?.getSemanticMessage();
     };
 
-    const flushPendingWrite = (write: PendingAutomergeStorageWrite): void => {
+    const getWriteContext = (): AutomergeStorageWriteContext => {
+        if (activeAutomergeStorageTransaction) {
+            return activeAutomergeStorageTransaction;
+        }
+
+        unscopedCommitOwner ??= Object.freeze({});
+        return {
+            commitOwner: unscopedCommitOwner,
+            snapshotTransaction: undefined,
+        };
+    };
+
+    const flushPendingWrite = (write: PendingAutomergeStorageWrite): AutomergeStorageMutationInput | null => {
         if (pendingWrite !== write) {
-            return;
+            return null;
         }
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
@@ -175,21 +294,48 @@ export const createAutomergeStorage = <TData>(
         }
         pendingAutomergeStorageWrites.delete(write);
         pendingWrite = null;
+        if (unscopedCommitOwner === write.commitOwner) {
+            unscopedCommitOwner = undefined;
+        }
         const message = pendingMessage;
         pendingMessage = undefined;
-        writeToCrdt(cachedValue, message, write.snapshotTransaction);
+        return createMutation(cachedValue, message, write.snapshotTransaction);
     };
 
-    const discardPendingWrite = (): void => {
-        if (rafId !== null) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
+    const preparePendingWrite = (context: AutomergeStorageWriteContext): void => {
+        if (
+            pendingWrite &&
+            (pendingWrite.commitOwner !== context.commitOwner ||
+                pendingWrite.snapshotTransaction !== context.snapshotTransaction)
+        ) {
+            flushAutomergeStorageWriteOwner(pendingWrite);
         }
+    };
+
+    const schedulePendingWrite = (context: AutomergeStorageWriteContext): void => {
         if (pendingWrite) {
-            pendingAutomergeStorageWrites.delete(pendingWrite);
-            pendingWrite = null;
+            return;
         }
-        pendingMessage = undefined;
+
+        // Capture the semantic context while the action is still active. The
+        // first write in this adapter/action group owns its coalesced message.
+        pendingMessage = getSemanticMessage();
+        const write: PendingAutomergeStorageWrite = {
+            commitOwner: context.commitOwner,
+            docId,
+            snapshotTransaction: context.snapshotTransaction,
+            flush: () => flushPendingWrite(write),
+        };
+        pendingWrite = write;
+        pendingAutomergeStorageWrites.add(write);
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            try {
+                flushAutomergeStorageWriteOwner(write);
+            } catch (error) {
+                logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
+            }
+        });
     };
 
     return {
@@ -198,53 +344,17 @@ export const createAutomergeStorage = <TData>(
         },
 
         set(value: TData | null): void {
-            const snapshotTransaction = activeAutomergeStorageTransaction;
-            if (pendingWrite && pendingWrite.snapshotTransaction !== snapshotTransaction) {
-                flushPendingWrite(pendingWrite);
-            }
+            const context = getWriteContext();
+            preparePendingWrite(context);
             cachedValue = value;
-
-            if (!pendingWrite) {
-                // Capture the semantic context now, while the caller's context
-                // is live. The actual write is deferred to the next animation
-                // frame; by the time it fires, `executeAppAction` has already
-                // cleared the context in its `finally`, so reading it inside the
-                // RAF would always see `null` and record `message: undefined`.
-                // The first `set()` of a frame owns the coalesced write's message.
-                pendingMessage = getSemanticMessage();
-                const write: PendingAutomergeStorageWrite = {
-                    snapshotTransaction,
-                    flush: () => flushPendingWrite(write),
-                };
-                pendingWrite = write;
-                pendingAutomergeStorageWrites.add(write);
-                rafId = requestAnimationFrame(() => {
-                    rafId = null;
-                    try {
-                        flushPendingWrite(write);
-                    } catch (error) {
-                        logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
-                    }
-                });
-            }
+            schedulePendingWrite(context);
         },
 
         clear(): void {
-            const snapshotTransaction = activeAutomergeStorageTransaction;
-            if (pendingWrite && pendingWrite.snapshotTransaction !== snapshotTransaction) {
-                flushPendingWrite(pendingWrite);
-            }
+            const context = getWriteContext();
+            preparePendingWrite(context);
             cachedValue = null;
-            // Flush immediately on clear rather than batching. The write is
-            // synchronous here, so the caller's semantic context (set by
-            // `executeAppAction`) is still live and can annotate the change.
-            const message = getSemanticMessage();
-            discardPendingWrite();
-            try {
-                writeToCrdt(null, message, snapshotTransaction);
-            } catch {
-                // Best-effort
-            }
+            schedulePendingWrite(context);
         },
 
         isSupported(): boolean {

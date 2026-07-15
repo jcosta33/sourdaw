@@ -143,7 +143,7 @@ describe('createAutomergeStorage', () => {
         expect(doc.state).toEqual({ count: 7 });
     });
 
-    it('should cancel a pending frame and immediately delete the CRDT key on clear', () => {
+    it('should coalesce clear into a pending frame before deleting the CRDT key', () => {
         let semanticMessage: string | undefined = 'queued write';
         const { doc, mutations, port } = createTestPort({
             initialDoc: { state: { count: 1 } },
@@ -157,8 +157,10 @@ describe('createAutomergeStorage', () => {
         semanticMessage = 'clear write';
         storage.clear();
 
-        expect(cancelAnimationFrameMock).toHaveBeenCalledWith(42);
-        expect(mutations).toEqual([{ docId: 'root', message: 'clear write', snapshotTransaction: undefined }]);
+        expect(cancelAnimationFrameMock).not.toHaveBeenCalled();
+        expect(mutations).toEqual([]);
+        frameCallback?.(100);
+        expect(mutations).toEqual([{ docId: 'root', message: 'queued write', snapshotTransaction: undefined }]);
         expect(Object.hasOwn(doc, 'state')).toBe(false);
         expect(storage.get()).toBeNull();
     });
@@ -253,5 +255,192 @@ describe('createAutomergeStorage', () => {
             { docId: 'root', message: undefined, snapshotTransaction: undefined },
         ]);
         expect(doc.state).toEqual({ count: 2 });
+    });
+
+    it('commits same-document keys in one Automerge mutation', () => {
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+            midiStorage.set({ imported: true });
+        });
+
+        frameCallback?.(100);
+
+        expect(mutations).toHaveLength(1);
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
+    });
+
+    it('does not persist one key when a same-document multi-key commit fails', () => {
+        const doc: TestDoc = {};
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const candidate = { ...doc };
+                changeFn(candidate);
+                if (Object.hasOwn(candidate, 'midi')) {
+                    throw new Error('MIDI write failed');
+                }
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+            },
+        };
+        configureAutomergeStoragePort(port);
+
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+            midiStorage.set({ imported: true });
+        });
+
+        expect(() => flushAutomergeStorageWrites()).toThrow('MIDI write failed');
+        expect(doc).toEqual({});
+    });
+
+    it('preserves semantic messages across ordinary action scopes', () => {
+        let semanticMessage: string | undefined = 'First action';
+        const { doc, mutations, port } = createTestPort({
+            getSemanticMessage: () => semanticMessage,
+        });
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+        });
+        semanticMessage = 'Second action';
+        runWithAutomergeStorageTransaction(undefined, () => {
+            midiStorage.set({ imported: true });
+        });
+
+        flushAutomergeStorageWrites();
+
+        expect(mutations).toEqual([
+            { docId: 'root', message: 'First action', snapshotTransaction: undefined },
+            { docId: 'root', message: 'Second action', snapshotTransaction: undefined },
+        ]);
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
+    });
+
+    it('flushes only the action owner whose animation frame fired', () => {
+        const snapshotTransaction = {};
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+        });
+        runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+            midiStorage.set({ imported: true });
+        });
+
+        const arrangementFrame = requestAnimationFrameMock.mock.calls[0]?.[0];
+        arrangementFrame?.(100);
+
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
+        expect(doc.tracks).toEqual({ imported: true });
+        expect(doc.midi).toBeUndefined();
+
+        flushAutomergeStorageWrites(snapshotTransaction);
+        expect(doc.midi).toEqual({ imported: true });
+    });
+
+    it('keeps newly scheduled unscoped adapter writes in separate owner groups', () => {
+        let semanticMessage: string | undefined = 'Arrangement direct write';
+        const { doc, mutations, port } = createTestPort({
+            getSemanticMessage: () => semanticMessage,
+        });
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        arrangementStorage.set({ imported: true });
+        semanticMessage = 'MIDI direct write';
+        midiStorage.set({ imported: true });
+
+        flushAutomergeStorageWrites();
+
+        expect(mutations).toEqual([
+            { docId: 'root', message: 'Arrangement direct write', snapshotTransaction: undefined },
+            { docId: 'root', message: 'MIDI direct write', snapshotTransaction: undefined },
+        ]);
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
+    });
+
+    it('commits none of an action group when one key cannot be prepared', () => {
+        const { doc, mutations, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi', {
+            toCrdt: () => {
+                throw new Error('MIDI preparation failed');
+            },
+        });
+
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.set({ imported: true });
+            midiStorage.set({ imported: true });
+        });
+
+        expect(() => flushAutomergeStorageWrites()).toThrow('MIDI preparation failed');
+        expect(mutations).toEqual([]);
+        expect(doc).toEqual({});
+    });
+
+    it('atomically clears same-action keys and surfaces commit failure', () => {
+        const doc: TestDoc = {
+            tracks: { imported: true },
+            midi: { imported: true },
+        };
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => 'Clear import',
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                const candidate = { ...doc };
+                changeFn(candidate);
+                if (!Object.hasOwn(candidate, 'tracks') && !Object.hasOwn(candidate, 'midi')) {
+                    throw new Error('Clear commit failed');
+                }
+                for (const key of Object.keys(doc)) {
+                    delete doc[key];
+                }
+                Object.assign(doc, candidate);
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const arrangementStorage = createAutomergeStorage<TestDoc>('root', 'tracks');
+        const midiStorage = createAutomergeStorage<TestDoc>('root', 'midi');
+
+        runWithAutomergeStorageTransaction(undefined, () => {
+            arrangementStorage.clear();
+            midiStorage.clear();
+        });
+
+        expect(() => flushAutomergeStorageWrites()).toThrow('Clear commit failed');
+        expect(doc).toEqual({
+            tracks: { imported: true },
+            midi: { imported: true },
+        });
     });
 });
