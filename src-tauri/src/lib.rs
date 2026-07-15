@@ -41,7 +41,6 @@ pub fn run() {
             commands::speech::stop_dictation,
             commands::speech::get_asr_status,
             commands::audio_decode::get_audio_file_info,
-            commands::audio_decode::get_audio_file_metadata,
             commands::filesystem::read_audio_file,
             commands::filesystem::write_audio_file,
             commands::filesystem::list_directory,

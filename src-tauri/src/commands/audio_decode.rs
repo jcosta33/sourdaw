@@ -61,13 +61,6 @@ pub async fn get_audio_file_info(file_path: String) -> Result<AudioFileInfoRespo
     map_audio_file_info(&resolved_path, size_bytes, metadata)
 }
 
-/// Backward-compatible metadata command name for native callers that use the Rust source name.
-#[tauri::command]
-pub async fn get_audio_file_metadata(file_path: String) -> Result<AudioStreamMeta, String> {
-    let (_, metadata) = resolve_audio_metadata(&file_path)?;
-    Ok(metadata)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
