@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -231,12 +231,19 @@ export function findModelCasingFindings(filePaths) {
         }));
 }
 
-function walkFiles(directory) {
+function walkFiles(directory, symlinkPaths = []) {
     const files = [];
+    if (lstatSync(directory).isSymbolicLink()) {
+        symlinkPaths.push(directory);
+        return files;
+    }
+
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const entryPath = resolve(directory, entry.name);
-        if (entry.isDirectory()) {
-            files.push(...walkFiles(entryPath));
+        if (entry.isSymbolicLink()) {
+            symlinkPaths.push(entryPath);
+        } else if (entry.isDirectory()) {
+            files.push(...walkFiles(entryPath, symlinkPaths));
         } else {
             files.push(entryPath);
         }
@@ -245,9 +252,15 @@ function walkFiles(directory) {
 }
 
 function staticGuardFindings() {
-    const files = walkFiles(resolve(root, 'src/modules')).map((absolutePath) => ({
+    const symlinkPaths = [];
+    const files = walkFiles(resolve(root, 'src/modules'), symlinkPaths).map((absolutePath) => ({
         absolutePath,
         repoPath: toPosixPath(relative(root, absolutePath)),
+    }));
+    const symlinkFindings = symlinkPaths.map((absolutePath) => ({
+        file: toPosixPath(relative(root, absolutePath)),
+        line: 1,
+        reason: 'symbolic links are not permitted under src/modules',
     }));
     const rootIndexes = files
         .map(({ repoPath }) => repoPath)
@@ -264,7 +277,7 @@ function staticGuardFindings() {
     // Dependency-cruiser only reports nodes reachable from imports. Walk every
     // module file here so an unreferenced model path cannot evade the naming gate.
     const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
-    return [...rootIndexes, ...mixedExports, ...modelCasingFindings].sort((left, right) =>
+    return [...rootIndexes, ...mixedExports, ...modelCasingFindings, ...symlinkFindings].sort((left, right) =>
         comparePaths(left.file, right.file)
     );
 }
