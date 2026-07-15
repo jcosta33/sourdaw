@@ -1,6 +1,7 @@
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { createCrdtPersistenceMembershipConflictError } from '../errors/CrdtPersistenceMembershipConflictError';
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
@@ -161,6 +162,35 @@ function assertSamePersistenceEpoch(expected: CrdtPersistenceAuthority, actual: 
     }
 }
 
+function getSortedDocumentIds(documentIds: Iterable<DocId>): DocId[] {
+    return [...documentIds].sort((alpha, bravo) => {
+        if (alpha < bravo) {
+            return -1;
+        }
+        if (alpha > bravo) {
+            return 1;
+        }
+        return 0;
+    });
+}
+
+function getDurableDocumentIds(bundle: DocumentBundle): DocId[] {
+    return getSortedDocumentIds([...bundle.keys()].filter((id) => !id.includes(':incremental:')));
+}
+
+function assertSamePersistenceMembership(localDocumentIds: Iterable<DocId>, durableBundle: DocumentBundle): void {
+    const localIds = getSortedDocumentIds(localDocumentIds);
+    const durableIds = getDurableDocumentIds(durableBundle);
+    if (localIds.length === durableIds.length && localIds.every((id, index) => id === durableIds[index])) {
+        return;
+    }
+
+    throw createCrdtPersistenceMembershipConflictError({
+        localDocumentIds: localIds,
+        durableDocumentIds: durableIds,
+    });
+}
+
 function getPreviousOperationTail(state: unknown): Promise<void> {
     if (typeof state !== 'object' || state === null || !('operationTail' in state)) {
         return Promise.resolve();
@@ -308,11 +338,13 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
             }
 
             assertSamePersistenceEpoch(expectedAuthority, result.authority);
-            persistenceState.authority = result.authority;
+            assertSamePersistenceMembership(getActiveDocIds(), result.bundle);
             await automergeRepository.mergeBundle(result.bundle);
+            const mergedBundle = automergeRepository.saveAll();
+            persistenceState.authority = result.authority;
             currentPending = {
                 ...currentPending,
-                bundle: automergeRepository.saveAll(),
+                bundle: mergedBundle,
             };
             persistenceState.pendingFullSnapshot = currentPending;
         }
@@ -370,7 +402,6 @@ async function flushPendingChunks(generation: number): Promise<void> {
     }
 
     let result: SaveIncrementalsToIdbResult;
-    let rebasedToFullSnapshot = false;
     try {
         while (true) {
             const expectedAuthority = await ensurePersistenceAuthority(generation);
@@ -389,16 +420,13 @@ async function flushPendingChunks(generation: number): Promise<void> {
 
             const conflictResult: Extract<SaveIncrementalsToIdbResult, { status: 'conflict' }> = result;
             assertSamePersistenceEpoch(expectedAuthority, conflictResult.authority);
-            persistenceState.authority = conflictResult.authority;
-            if (chunks.some(({ id }) => !conflictResult.bundle.has(id))) {
-                await automergeRepository.mergeBundle(conflictResult.bundle);
-                await persistFullSnapshot({
-                    generation,
-                    bundle: automergeRepository.saveAll(),
-                });
-                rebasedToFullSnapshot = true;
-                break;
+            const localDocumentIds = new Set(getActiveDocIds());
+            for (const { id } of chunks) {
+                localDocumentIds.add(id);
             }
+            assertSamePersistenceMembership(localDocumentIds, conflictResult.bundle);
+            await automergeRepository.mergeBundle(conflictResult.bundle);
+            persistenceState.authority = conflictResult.authority;
         }
     } finally {
         for (const pending of chunks) {
@@ -416,9 +444,6 @@ async function flushPendingChunks(generation: number): Promise<void> {
     for (const pending of chunks) {
         removePendingChunk(pending);
     }
-    if (rebasedToFullSnapshot) {
-        return;
-    }
     // Every chunk in the atomic transaction is non-empty and committed here.
     crdtProjectCompactionState.incrementalSaveCount += chunks.length;
 }
@@ -434,15 +459,7 @@ function prunePendingChunks(generation: number): void {
 }
 
 function getActiveDocIds(): DocId[] {
-    return automergeRepository.getDocIds().sort((alpha, bravo) => {
-        if (alpha < bravo) {
-            return -1;
-        }
-        if (alpha > bravo) {
-            return 1;
-        }
-        return 0;
-    });
+    return getSortedDocumentIds(automergeRepository.getDocIds());
 }
 
 function hasPersistedDocumentShapeChanged(activeDocIds: DocId[]): boolean {
