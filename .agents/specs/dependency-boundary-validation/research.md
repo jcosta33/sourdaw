@@ -5,27 +5,27 @@ title: Dependency boundary validation research
 status: current
 owner: The Sourdaw team
 sources:
-  - ../../decisions/README.md
-  - ../hardware-controller-ecosystem/spec.md
-  - ../push-integration/spec.md
-  - ../rave-timbre-transfer/spec.md
-  - ../../../.dependency-cruiser.cjs
-  - ../../../.dependency-cruiser.reachability.cjs
-  - ../../../scripts/check-dependency-boundaries.mjs
-  - ../../../.dependency-cruiser.types.cjs
-  - ../../../.dependency-cruiser.tests.cjs
-  - ../../../.dependency-cruiser-known-violations.json
-  - ../../../.dependency-cruiser-known-violations-reachability.json
-  - ../../../.dependency-cruiser-known-violations-types.json
-  - ../../../.dependency-cruiser-known-violations-tests.json
-  - ../../../package.json
-  - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
-  - ../../../src/modules/AudioEngine/stores/rave.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
-  - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
+    - ../../decisions/README.md
+    - ../hardware-controller-ecosystem/spec.md
+    - ../push-integration/spec.md
+    - ../rave-timbre-transfer/spec.md
+    - ../../../.dependency-cruiser.cjs
+    - ../../../.dependency-cruiser.reachability.cjs
+    - ../../../scripts/check-dependency-boundaries.mjs
+    - ../../../.dependency-cruiser.types.cjs
+    - ../../../.dependency-cruiser.tests.cjs
+    - ../../../.dependency-cruiser-known-violations.json
+    - ../../../.dependency-cruiser-known-violations-reachability.json
+    - ../../../.dependency-cruiser-known-violations-types.json
+    - ../../../.dependency-cruiser-known-violations-tests.json
+    - ../../../package.json
+    - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
+    - ../../../src/modules/AudioEngine/stores/rave.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
+    - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
 ---
 
 # Research: dependency boundary validation
@@ -36,12 +36,12 @@ Current claims in this document derive only from the checked-in sources listed i
 and the commands below. Historical counts without a checked-in command and result are omitted;
 claims not reproducible from those checked-in sources are outside this research's authority.
 
-| Evidence | Checked-in authority |
-| --- | --- |
-| Rule behavior and graph options | `.dependency-cruiser.cjs`, `.dependency-cruiser.reachability.cjs`, `.dependency-cruiser.types.cjs`, `.dependency-cruiser.tests.cjs` |
-| Gate orchestration and exact error rows | `scripts/check-dependency-boundaries.mjs` and the four `.dependency-cruiser-known-violations*.json` files |
-| Public commands | `package.json` |
-| Current warning behavior | The five warning source paths listed in frontmatter and their owning durable specs |
+| Evidence                                | Checked-in authority                                                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Rule behavior and graph options         | `.dependency-cruiser.cjs`, `.dependency-cruiser.reachability.cjs`, `.dependency-cruiser.types.cjs`, `.dependency-cruiser.tests.cjs` |
+| Gate orchestration and exact error rows | `scripts/check-dependency-boundaries.mjs` and the four `.dependency-cruiser-known-violations*.json` files                           |
+| Public commands                         | `package.json`                                                                                                                      |
+| Current warning behavior                | The five warning source paths listed in frontmatter and their owning durable specs                                                  |
 
 Reproduce the current evidence from the repository root:
 
