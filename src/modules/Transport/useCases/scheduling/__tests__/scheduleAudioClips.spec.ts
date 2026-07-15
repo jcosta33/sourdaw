@@ -49,7 +49,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-vi.mock('../scheduleMidiNotes', () => ({
+vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
 }));
 vi.mock('#/modules/Collaboration/stores', () => ({
