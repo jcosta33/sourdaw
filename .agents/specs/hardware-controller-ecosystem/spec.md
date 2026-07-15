@@ -5,13 +5,13 @@ title: Hardware controller ecosystem
 status: draft
 owner: The Sourdaw team
 sources:
-  - ../workflow-ui/research.md
-  - ../dependency-boundary-validation/spec.md
-  - ../../decisions/README.md
-  - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
-  - ../../../src/modules/Command/useCases/index.ts
-  - ../../../src/modules/Command/useCases/executeAppAction.ts
-  - ../../../src/modules/Command/useCases/commandQueries.ts
+    - ../workflow-ui/research.md
+    - ../dependency-boundary-validation/spec.md
+    - ../../decisions/README.md
+    - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
+    - ../../../src/modules/Command/useCases/index.ts
+    - ../../../src/modules/Command/useCases/executeAppAction.ts
+    - ../../../src/modules/Command/useCases/commandQueries.ts
 ---
 
 # Hardware controller ecosystem
@@ -80,22 +80,32 @@ using host-issued grants and proving forged, self-issued, cross-session, and wid
 ### AC-005 — Script effect intents have exact schemas
 
 Every effect-bearing worker-to-host message MUST match this closed discriminated union after exact
-host-side schema validation:
+host-side schema validation. `MAX_WORKER_PROTOCOL_ID_UTF8_BYTES = 256` and
+`MAX_WORKER_DIAGNOSTIC_UTF8_BYTES = 4096` are reusable Worker-message limits measured as
+`new TextEncoder().encode(value).byteLength`; `WorkerProtocolId` is a non-empty string within the
+identifier limit, and `WorkerDiagnostic` is a non-empty string within the diagnostic limit:
 
-| Intent | Exact payload |
-| --- | --- |
-| `setDeviceParameter` | `{ deviceId: string, paramId: string, value: finite number }` |
-| `sendMidi` | `{ bytes: integer[1..1024] }`, with every byte in `0..255`; no output identifier |
+| Intent               | Exact payload                                                                     |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `setDeviceParameter` | `{ deviceId: WorkerProtocolId, paramId: WorkerProtocolId, value: finite number }` |
+| `sendMidi`           | `{ bytes: integer[1..1024] }`, with every byte in `0..255`; no output identifier  |
 
 Unknown kinds, missing or additional fields, non-finite values, and invalid byte arrays return
-`SCRIPT_MESSAGE_INVALID`; grant-bearing fields are rejected under AC-004. Validation completes
-before owner lookup, `AppAction` creation, or MIDI output access.
+`SCRIPT_MESSAGE_INVALID`; over-limit `deviceId` or `paramId` returns the same code, and grant-bearing
+fields are rejected under AC-004. The trusted bootstrap rejects an over-limit intent identifier
+while buffering intents and posts one AC-010 `SCRIPT_EXECUTION_LIMIT` result with no `intents`.
+The host independently validates a received intent after structured clone and before correlation,
+payload logging, owner lookup, `AppAction` creation, or MIDI output access. Receiver validation
+cannot prevent memory already consumed while cloning a compromised Worker's message; it bounds all
+subsequent processing and effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptHost.spec.ts`,
 covering unknown, missing, additional, grant-bearing, `NaN`, `Infinity`, empty, oversized,
-non-integer, and out-of-range messages with zero Command dispatches, zero MIDI writes, and zero
-store writes.
+non-integer, and out-of-range messages. Identifier cases include exact-limit and one-byte-over-limit
+ASCII and multibyte `deviceId` and `paramId` values at both the trusted bootstrap and compromised-
+Worker host boundary. Rejections prove zero correlation, payload logging, owner lookups, Command
+dispatches, MIDI writes, and store writes.
 
 ### AC-006 — Script parameter intents use Command
 
@@ -153,7 +163,7 @@ through AC-011 evidence, `rg -n "controllerScriptingWorker" src .agents/specs`, 
 ### AC-009 — Script source loading is closed
 
 The trusted host script-bundle loader MUST accept only the exact data object
-`{ scriptId: string, apiVersion: supported literal, language: 'javascript' | 'typescript', source: UTF-8 text }`
+`{ scriptId: WorkerProtocolId, apiVersion: supported literal, language: 'javascript' | 'typescript', source: UTF-8 text }`
 with no unknown fields, source URL, blob URL, package/module graph, compiler options, plugin, or
 loader hook supplied by the bundle. It rejects static imports/exports, `require`, `importScripts`,
 dynamic `import()`, source-loading directives, malformed UTF-8, and unsupported API/language values
@@ -168,6 +178,8 @@ recomputes `scriptDigest`, and rejects a mismatch as `SCRIPT_SOURCE_INVALID`. On
 digest-matched emitted JavaScript enters the ADR-selected runtime, never a native Worker evaluator.
 Source or emitted JavaScript above the ADR's finite byte limit returns
 `SCRIPT_SOURCE_TOO_LARGE` before runtime load.
+That source/emitted-code cap remains separate from the AC-005/AC-010 identifier and diagnostic
+limits.
 Every rejection creates no runtime session, grant, intent, or effect.
 
 Verify with: the future owning test, run as
@@ -181,18 +193,24 @@ byte limits, and proof that rejected source never reaches the selected runtime
 The trusted host and Worker bootstrap MUST communicate only through these exact, no-extra-field
 envelopes:
 
-| Direction | Envelope |
-| --- | --- |
-| Host to Worker load | `{ kind: 'load', requestId, sessionId, scriptId, scriptDigest, apiVersion, source }`, where `source` is only AC-009's emitted JavaScript |
-| Worker to host load success | `{ kind: 'result', operation: 'load', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_READY' }` |
-| Host to Worker execution | `{ kind: 'execute', requestId, sessionId, scriptId, scriptDigest, event }`, where `event` is one exact member of the closed `apiVersion`-owned `ControllerScriptEvent` union |
-| Worker to host execution success | `{ kind: 'result', operation: 'execute', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_EXECUTION_OK', intents }`, where `intents` is an array of at most 256 AC-005 `ControllerScriptIntent` values |
-| Worker to host failure | The correlated result fields for its operation, no `intents`, and one outcome from `SCRIPT_SOURCE_INVALID`, `SCRIPT_SANDBOX_UNAVAILABLE`, `SCRIPT_SANDBOX_VIOLATION`, `SCRIPT_EXECUTION_TIMEOUT`, `SCRIPT_EXECUTION_LIMIT`, or `SCRIPT_RUNTIME_ERROR` |
+| Direction                        | Envelope                                                                                                                                                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host to Worker load              | `{ kind: 'load', requestId, sessionId, scriptId, scriptDigest, apiVersion, source }`, where `source` is only AC-009's emitted JavaScript                                                                                                              |
+| Worker to host load success      | `{ kind: 'result', operation: 'load', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_READY' }`                                                                                                                                        |
+| Host to Worker execution         | `{ kind: 'execute', requestId, sessionId, scriptId, scriptDigest, event }`, where `event` is one exact member of the closed `apiVersion`-owned `ControllerScriptEvent` union                                                                          |
+| Worker to host execution success | `{ kind: 'result', operation: 'execute', requestId, sessionId, scriptId, scriptDigest, outcome: 'SCRIPT_EXECUTION_OK', intents }`, where `intents` is an array of at most 256 AC-005 `ControllerScriptIntent` values                                  |
+| Worker to host failure           | The correlated result fields for its operation, no `intents`, and one outcome from `SCRIPT_SOURCE_INVALID`, `SCRIPT_SANDBOX_UNAVAILABLE`, `SCRIPT_SANDBOX_VIOLATION`, `SCRIPT_EXECUTION_TIMEOUT`, `SCRIPT_EXECUTION_LIMIT`, or `SCRIPT_RUNTIME_ERROR` |
 
-`requestId` and `sessionId` are host-generated non-empty opaque strings; `scriptId`,
-`scriptDigest`, `apiVersion`, and `source` are the exact AC-009 values, with
-`scriptDigest` encoded as 64 lowercase hexadecimal SHA-256 digits. An `apiVersion` is unsupported
-until its complete `ControllerScriptEvent` union and exact per-member schemas are checked in.
+`requestId`, `sessionId`, and `scriptId` are `WorkerProtocolId` values under AC-005's exact
+256-byte limit; `requestId` and `sessionId` are host-generated, while `scriptId`, `scriptDigest`,
+`apiVersion`, and `source` are the exact AC-009 values. `scriptDigest` remains exactly 64 lowercase
+hexadecimal SHA-256 characters. Fixed `kind`, `operation`, `outcome`, `apiVersion`, and language
+strings are their shown or checked-in literals. `source` remains governed by AC-009's separate
+source/emitted-code cap, not either reusable Worker string constant. An `apiVersion` is unsupported
+until its complete `ControllerScriptEvent` union and exact per-member schemas are checked in. Every
+future non-literal string in an event, intent, or result names `WorkerProtocolId`,
+`WorkerDiagnostic`, or a tighter exact UTF-8 byte limit in that member's schema; an unbounded
+`string` is invalid. The current result union contains no diagnostic field.
 AC-009's host-side `SCRIPT_SOURCE_INVALID`, `SCRIPT_SOURCE_TOO_LARGE`, and
 `SCRIPT_COMPILE_REJECTED` outcomes occur before a Worker request; callers receive only those typed
 outcomes or an AC-010 terminal result, never a raw compiler diagnostic, exception, or Worker object.
@@ -200,18 +218,31 @@ outcomes or an AC-010 terminal result, never a raw compiler diagnostic, exceptio
 The selected runtime adapter maps its ADR-proven denied-global signal to
 `SCRIPT_SANDBOX_VIOLATION` even when the real ambient value is absent, and never exposes a native
 exception or runtime object. The trusted bootstrap is the only code allowed to call Worker
-`postMessage`; it buffers script intents and emits exactly one terminal result per request. The
-host exact-schema-validates and correlates the whole result before AC-004 through AC-007 are
-permitted to process an intent. A load-phase intent, unknown/extra field, wrong correlation,
-unrecognized outcome, over-limit intent list, duplicate terminal result, or script-originated
-message returns `SCRIPT_PROTOCOL_INVALID`, terminates the session, and causes zero Command, MIDI,
-or store effects. Every non-success outcome is fail closed with those same zero effects.
+`postMessage`; it buffers script intents, enforces all result and intent string limits before that
+call, and emits exactly one terminal result per accepted bounded request. An oversized AC-005 intent
+produces `SCRIPT_EXECUTION_LIMIT` with no `intents`; the bootstrap revalidates echoed identity and
+rejects any over-limit value before result construction, and any future diagnostic is truncated to
+the longest UTF-8 code-point prefix within
+`MAX_WORKER_DIAGNOSTIC_UTF8_BYTES`. The trusted host validates outgoing request strings before
+`postMessage` and independently exact-schema-validates every result after structured clone and
+before correlation, payload logging, or AC-004 through AC-007 intent processing. Over-limit
+`requestId`, `sessionId`, or `scriptId`, an invalid `scriptDigest`, a load-phase intent,
+unknown/extra field, wrong correlation, unrecognized outcome, over-limit intent list, duplicate
+terminal result, or script-originated message returns `SCRIPT_PROTOCOL_INVALID` and terminates the
+session. An AC-005-invalid intent returns `SCRIPT_MESSAGE_INVALID`. Receiver validation cannot
+prevent clone allocation by a compromised Worker. Every rejection and non-success outcome causes
+zero Command, MIDI, or store effects.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/HardwareController/useCases/__tests__/controllerScriptProtocol.spec.ts`,
 covering every request/result variant and typed outcome, absent denied globals, malformed and
-mis-correlated envelopes, duplicate results, raw script messaging, intent overflow, and zero effects
-for every failure
+mis-correlated envelopes, duplicate results, raw script messaging, and intent overflow. Boundary
+fixtures cover exact-limit and one-byte-over-limit ASCII and multibyte `requestId`, `sessionId`, and
+`scriptId`, a 65-character and non-hex `scriptDigest`, AC-005 intent identifiers, trusted pre-post
+enforcement, and independent compromised-Worker rejection after clone. Each future event, intent,
+or result string member adds exact-limit and one-byte-over-limit tests for its named bound. All
+rejections assert zero correlation, payload logging, intent processing, Command dispatches, MIDI
+writes, and store writes.
 
 ### AC-011 — Selected-runtime confinement is observed
 

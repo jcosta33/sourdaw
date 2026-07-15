@@ -77,24 +77,26 @@ Verify with: `pnpm test:run -- rave`
 The future `transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this
 contract:
 
-| Input condition                                                                                                                                     | Result                      | Required effect boundary                                                  |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------- |
-| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED`          | No pure-helper invocation and no worker/session request                   |
-| Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                 |
-| Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                 |
-| Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                 |
-| Worker response has no outstanding request                                                                                                          | `WORKER_RESPONSE_STALE`     | No response acceptance, render, cache write, or clip insertion            |
-| Worker response reuses a consumed request                                                                                                           | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion |
-| Worker response fields do not match the outstanding request's session, phase, model identity, or digest                                             | `WORKER_RESPONSE_MISMATCH`  | No response acceptance, render, cache write, or clip insertion            |
-| Worker response is malformed or contains a non-finite numeric value                                                                                 | `WORKER_RESPONSE_INVALID`   | No response acceptance, render, cache write, or clip insertion            |
-| Worker response exceeds an AC-031 host-owned payload bound                                                                                          | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, render, cache write, or clip insertion            |
-| A valid, correlated `terminal-error` worker response reports an operation failure                                                                   | `WORKER_OPERATION_FAILED`   | No render, cache write, or clip insertion                                 |
+| Input condition                                                                                                                                     | Result                      | Required effect boundary                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
+| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED`          | No pure-helper invocation and no worker/session request                         |
+| Verified capability/session does not match the AC-029 host-owned transfer selection                                                                 | `MODEL_SESSION_MISMATCH`    | No worker request, render, cache write, or clip insertion                       |
+| Verified matched session; invalid sample-rate input                                                                                                 | `SAMPLE_RATE_MISMATCH`      | No worker request, render, cache write, or clip insertion                       |
+| Verified matched session; invalid clip-type input                                                                                                   | `CLIP_NOT_AUDIO`            | No worker request, render, cache write, or clip insertion                       |
+| Worker response has no outstanding request                                                                                                          | `WORKER_RESPONSE_STALE`     | No response acceptance, render, cache write, or clip insertion                  |
+| Worker response reuses a consumed request                                                                                                           | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion       |
+| Worker response fields do not match the outstanding request's session, phase, model identity, or digest                                             | `WORKER_RESPONSE_MISMATCH`  | No response acceptance, render, cache write, or clip insertion                  |
+| Worker response violates an AC-031 shape, type, literal, or finite-number rule                                                                      | `WORKER_RESPONSE_INVALID`   | No response acceptance, render, cache write, or clip insertion                  |
+| Worker response exceeds an AC-031 UTF-8 string, typed-array backing, or frame-count bound                                                           | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, payload logging, render, cache write, or clip insertion |
+| A valid, correlated `terminal-error` worker response reports an operation failure                                                                   | `WORKER_OPERATION_FAILED`   | No render, cache write, or clip insertion                                       |
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 covering every table row. No-model execution invokes neither a pure helper nor a worker/session;
 flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability cases each
-return `MODEL_NOT_LOADED`. Every selection or response rejection occurs before the listed effects.
+return `MODEL_NOT_LOADED`. Oversized AC-031 identifiers and terminal diagnostics return
+`WORKER_RESPONSE_TOO_LARGE`. Every selection or response rejection occurs before the listed
+effects.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -354,19 +356,22 @@ effect counts.
 ### AC-031 — Worker response payloads are bounded data
 
 At the worker-message boundary and before AC-030 correlation or response acceptance, the RAVE host
-MUST validate the following single closed discriminated `RaveWorkerResponse` union. `NonEmptyString`
-means a string with at least one character; `Sha256Hex` means exactly 64 lowercase hexadecimal
-characters; and `PositiveSafeInteger` means a finite integer greater than zero that is safe in
-JavaScript. Every object below has exactly the shown keys, with no aliases, omitted keys, or
-unknown keys:
+MUST validate the following single closed discriminated `RaveWorkerResponse` union.
+`MAX_WORKER_PROTOCOL_ID_UTF8_BYTES = 256` and
+`MAX_WORKER_DIAGNOSTIC_UTF8_BYTES = 4096` are reusable Worker-message limits measured as
+`new TextEncoder().encode(value).byteLength`. `WorkerProtocolId` means a non-empty string within the
+identifier limit; `WorkerDiagnostic` means a non-empty string within the diagnostic limit;
+`Sha256Hex` means exactly 64 lowercase hexadecimal characters; and `PositiveSafeInteger` means a
+finite integer greater than zero that is safe in JavaScript. Every object below has exactly the
+shown keys, with no aliases, omitted keys, or unknown keys:
 
 ```text
 RaveWorkerResponse =
   | {
       type: "encode-success",
-      requestId: NonEmptyString,
-      sessionCorrelationId: NonEmptyString,
-      modelId: NonEmptyString,
+      requestId: WorkerProtocolId,
+      sessionCorrelationId: WorkerProtocolId,
+      modelId: WorkerProtocolId,
       modelDigest: Sha256Hex,
       phase: "encode",
       result: {
@@ -375,9 +380,9 @@ RaveWorkerResponse =
     }
   | {
       type: "decode-success",
-      requestId: NonEmptyString,
-      sessionCorrelationId: NonEmptyString,
-      modelId: NonEmptyString,
+      requestId: WorkerProtocolId,
+      sessionCorrelationId: WorkerProtocolId,
+      modelId: WorkerProtocolId,
       modelDigest: Sha256Hex,
       phase: "decode",
       result: {
@@ -390,14 +395,14 @@ RaveWorkerResponse =
     }
   | {
       type: "terminal-error",
-      requestId: NonEmptyString,
-      sessionCorrelationId: NonEmptyString,
-      modelId: NonEmptyString,
+      requestId: WorkerProtocolId,
+      sessionCorrelationId: WorkerProtocolId,
+      modelId: WorkerProtocolId,
       modelDigest: Sha256Hex,
       phase: "encode" | "decode",
       error: {
         code: "WORKER_OPERATION_FAILED",
-        message: NonEmptyString
+        message: WorkerDiagnostic
       }
     }
 ```
@@ -408,13 +413,23 @@ field. An `encode-success` result has only `latents`, and a `decode-success` res
 `audio`; `audio` has only `channels`, `sampleRate`, and `frameCount`. A `terminal-error` has only
 `error`, whose `code` has the one literal value shown and whose `message` is diagnostic text only.
 The terminal error object has no result payload and this contract defines no other terminal error
-codes.
+codes. Every response string is therefore an exact literal, `WorkerProtocolId`, `WorkerDiagnostic`,
+or `Sha256Hex`; no unbounded string is admitted.
+
+The trusted Worker response constructor rejects an over-limit identifier or malformed digest and
+does not post that envelope. It truncates a terminal diagnostic to the longest UTF-8 code-point
+prefix within `MAX_WORKER_DIAGNOSTIC_UTF8_BYTES` before `postMessage`. The host independently checks
+the same string limits after structured clone and before correlation, payload logging, or result use.
+Over-limit `requestId`, `sessionCorrelationId`, `modelId`, or `error.message` returns
+`WORKER_RESPONSE_TOO_LARGE`; an invalid `modelDigest` returns `WORKER_RESPONSE_INVALID`. Receiver
+validation cannot prevent memory already consumed while cloning a message from a compromised
+Worker; it bounds all subsequent processing and effects.
 
 Each `Float32Array` is non-empty, contains only finite elements, and has an ordinary, host-owned
 `ArrayBuffer` backing; a `SharedArrayBuffer` or any other backing type is invalid. Full validation
-includes every root and nested key, exact `type`/`phase` pairing, exact variant payload, typed-array
-shape, terminal error shape, and all scalar types before AC-030 reads any correlation field or any
-consumer reads a result. Unknown or missing fields,
+includes every root and nested key, exact `type`/`phase` pairing, exact variant payload, UTF-8 string
+bound, typed-array shape, terminal error shape, and all scalar types before AC-030 reads any
+correlation field or any consumer reads or logs a result. Unknown or missing fields,
 wrong types, invalid discriminants, invalid `type`/`phase` pairings, malformed payloads, and
 non-finite values return `WORKER_RESPONSE_INVALID`.
 
@@ -440,10 +455,15 @@ one exact `encode-success`, one exact `decode-success` with its sample-rate and 
 and one exact `terminal-error`, plus unknown fields at the root and nested result/error objects,
 missing fields, wrong discriminants, wrong typed-array shapes, shared backing, zero or unequal
 channels, wrong sample rate, `NaN`, `Infinity`, malformed terminal errors, a frame-count overflow,
-and a small view over a backing buffer larger than 64 MiB. The test proves invalid envelopes return
-`WORKER_RESPONSE_INVALID` before correlation or result use, byte or frame overflow returns
-`WORKER_RESPONSE_TOO_LARGE`, a valid correlated terminal error returns `WORKER_OPERATION_FAILED`,
-and every case has zero render, cache-write, and clip-insertion calls.
+and a small view over a backing buffer larger than 64 MiB. It also covers exact-limit and one-byte-
+over-limit ASCII and multibyte values for `requestId`, `sessionCorrelationId`, `modelId`, and
+`error.message`, plus a 65-character or non-hex `modelDigest`, Worker-side identifier rejection and
+diagnostic truncation, and host-side rejection of a compromised Worker's oversized response. The
+test proves wrong-type, empty, or invalid fixed-format strings return `WORKER_RESPONSE_INVALID`;
+variable-string, backing-buffer, and frame overflow returns `WORKER_RESPONSE_TOO_LARGE`; and
+rejection occurs with zero correlation, payload logging, render, cache-write, and clip-insertion
+calls. A valid correlated terminal error still returns `WORKER_OPERATION_FAILED` with the same zero
+effects.
 
 AC-029 through AC-031 are unimplemented today; no current worker/session transfer path emits the
 closed response union or can satisfy their selection, response-correlation, or payload-validation
