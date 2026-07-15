@@ -53,7 +53,13 @@ Tests live in **`__tests__/`** subfolders **inside** the folder that owns the co
 
 **Cross-module** test utilities (mock `AudioContext`, shared helpers) live in **`src/helpers/__tests__/`**. DI and event **runtime test helpers** (not specs) live in **`src/infra/di/testing/`** and **`src/infra/events/testing/`**.
 
-**Knip** excludes `**/*.spec.{ts,tsx}` from the project graph (`knip.json`) so specs are not analyzed as orphaned modules.
+**Knip** includes test files in the default project graph. Its Vitest plugin
+registers `*.spec.*` and `*.test.*` files as entry points automatically, so do
+not exclude them from `project`. The shipped `src` patterns in `knip.json`
+end with `!` for production mode; the unsuffixed `scripts` and `codemods`
+patterns remain comprehensive-only. Run `pnpm exec knip` for the full graph
+and `pnpm exec knip --production` for a production-only graph; install both
+dependency sets from the [README setup](../README.md) first.
 
 ```text
 src/modules/Arrangement/

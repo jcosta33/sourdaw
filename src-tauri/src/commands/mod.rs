@@ -1,5 +1,4 @@
 pub mod ai_audio;
-pub mod audio_decode;
 pub mod audio_gen;
 pub mod audio_postprocess;
 pub mod collab;

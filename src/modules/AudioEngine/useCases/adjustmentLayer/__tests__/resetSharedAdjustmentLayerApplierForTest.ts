@@ -1,6 +1,5 @@
-import { adjustmentApplicationStore } from '../../stores/adjustmentApplicationStore';
-
-import { sharedAdjustmentLayerApplierState } from './sharedAdjustmentLayerApplierState';
+import { adjustmentApplicationStore } from '../../../stores/adjustmentApplicationStore';
+import { sharedAdjustmentLayerApplierState } from '../sharedAdjustmentLayerApplierState';
 
 export function resetSharedAdjustmentLayerApplierForTest(): void {
     if (sharedAdjustmentLayerApplierState.singleton) {

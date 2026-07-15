@@ -79,14 +79,5 @@
       "severity": "error",
       "name": "components-no-usecase-transitively"
     }
-  },
-  {
-    "type": "reachability-causal",
-    "from": "src/modules/Workspace/presentations/components/Transport/VoiceButton.tsx",
-    "to": "src/modules/AiRuntime/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-transitively"
-    }
   }
 ]

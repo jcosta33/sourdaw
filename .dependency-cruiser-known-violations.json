@@ -595,24 +595,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/Transport/VoiceButton.tsx",
-    "to": "src/modules/AiRuntime/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-business-store-access"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/Transport/VoiceButton.tsx",
-    "to": "src/modules/AiRuntime/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-access"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Yeast/services/yeastWorkletProcessor.ts",
     "to": "src/modules/Yeast/useCases/MidiRack.ts",
     "rule": {
