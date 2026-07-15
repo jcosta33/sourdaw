@@ -1,20 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const rackMocks = vi.hoisted(() => ({
-    allNotesOff: vi.fn(() => [{ timeSamples: 512, kind: { type: 'noteOff' as const, channel: 0, note: 60 } }]),
-    executeCommand: vi.fn(),
-    processBlock: vi.fn(() => []),
-    replaceProjection: vi.fn(() => []),
-}));
-
-vi.mock('../MidiRack', () => ({
-    MidiRack: class {
-        allNotesOff = rackMocks.allNotesOff;
-        executeCommand = rackMocks.executeCommand;
-        processBlock = rackMocks.processBlock;
-        replaceProjection = rackMocks.replaceProjection;
-    },
-}));
+import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+import type { MidiProcessor } from '../MidiProcessor';
+import type { MidiRack } from '../MidiRack';
 
 type FakePort = {
     onmessage: ((event: MessageEvent) => void) | null;
@@ -23,6 +11,7 @@ type FakePort = {
 
 type FakeProcessor = {
     port: FakePort;
+    _rack: MidiRack;
 };
 
 const registeredProcessor = vi.fn();
@@ -42,67 +31,171 @@ await import('../yeastWorkletProcessor');
 
 const Processor = registeredProcessor.mock.calls[0]?.[1] as new () => FakeProcessor;
 
+function createWorkletPortHarness(): { processor: FakeProcessor; port: FakePort } {
+    const processor = new Processor();
+    const port: FakePort = {
+        onmessage: null,
+        postMessage: vi.fn((message: unknown) => {
+            processor.port.onmessage?.({ data: message } as MessageEvent);
+        }),
+    };
+
+    processor.port.postMessage = vi.fn((message: unknown) => {
+        port.onmessage?.({ data: message } as MessageEvent);
+    });
+
+    return { processor, port };
+}
+
+function makeThrowingProcessor(executeCommand: ReturnType<typeof vi.fn>): MidiProcessor {
+    return {
+        id: 'cm-throw',
+        name: 'Throwing processor',
+        processMidi: () => {},
+        reset: () => {},
+        setBypassed: () => {},
+        isBypassed: () => false,
+        setParam: () => {},
+        executeCommand,
+        latencySamples: () => 0,
+    };
+}
+
 describe('YeastWorkletProcessor', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('forwards panic note-offs back through the node port', () => {
-        const processor = new Processor();
+        const harness = createWorkletPortHarness();
+        const noteOn: MidiEvent = {
+            timeSamples: 0,
+            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+        };
+        harness.processor._rack.processBlock([noteOn], 0, 128, {} as TransportInfo);
+        const messages: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+        };
 
-        processor.port.onmessage?.({ data: { type: 'allNotesOff', nowSamples: 512 } } as MessageEvent);
+        harness.port.postMessage({ type: 'allNotesOff', nowSamples: 512 });
 
-        expect(rackMocks.allNotesOff).toHaveBeenCalledWith(512);
-        expect(processor.port.postMessage).toHaveBeenCalledWith({
+        expect(messages).toEqual([
+            {
+                type: 'notesOff',
+                events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+            },
+        ]);
+        expect(harness.processor.port.postMessage).toHaveBeenCalledWith({
             type: 'notesOff',
             events: [{ timeSamples: 512, kind: { type: 'noteOff', channel: 0, note: 60 } }],
         });
     });
 
-    it('acknowledges a typed one-shot command only after the rack accepts it', () => {
-        const processor = new Processor();
+    it('emits exactly one positive acknowledgement through the connected port after the rack accepts it', () => {
+        const harness = createWorkletPortHarness();
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
-        rackMocks.executeCommand.mockReturnValueOnce(true);
+        harness.port.postMessage({
+            type: 'setProjection',
+            processors: [{ id: 'cm-1', type: 'chordMemory', bypassed: false, params: {} }],
+        });
 
-        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 7, command } } as MessageEvent);
+        const acknowledgements: unknown[] = [];
+        let executeReturned = false;
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            acknowledgements.push(data);
+            if (typeof data === 'object' && data !== null && 'type' in data && data.type === 'commandAck') {
+                expect(executeReturned).toBe(true);
+            }
+        };
+        const originalExecuteCommand = harness.processor._rack.executeCommand.bind(harness.processor._rack);
+        const executeCommand = vi.spyOn(harness.processor._rack, 'executeCommand').mockImplementation((value) => {
+            const accepted = originalExecuteCommand(value);
+            executeReturned = accepted === true;
+            return accepted;
+        });
 
-        expect(rackMocks.executeCommand).toHaveBeenCalledTimes(1);
-        expect(rackMocks.executeCommand).toHaveBeenCalledWith(command);
-        expect(processor.port.postMessage).toHaveBeenCalledWith({
+        harness.port.postMessage({ type: 'executeCommand', commandId: 7, command });
+
+        expect(executeCommand).toHaveBeenCalledTimes(1);
+        expect(executeCommand).toHaveBeenCalledWith(command);
+        expect(acknowledgements).toHaveLength(1);
+        expect(acknowledgements[0]).toEqual({
             type: 'commandAck',
             commandId: 7,
             accepted: true,
         });
     });
 
-    it('propagates executeCommand false as a negative acknowledgement', () => {
-        const processor = new Processor();
+    it('emits exactly one negative acknowledgement without an error when the rack rejects', () => {
+        const harness = createWorkletPortHarness();
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
-        rackMocks.executeCommand.mockReturnValueOnce(false);
+        const acknowledgements: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            acknowledgements.push(data);
+        };
 
-        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 8, command } } as MessageEvent);
+        harness.port.postMessage({ type: 'executeCommand', commandId: 8, command });
 
-        expect(processor.port.postMessage).toHaveBeenCalledWith({
+        expect(acknowledgements).toHaveLength(1);
+        expect(acknowledgements[0]).toEqual({
             type: 'commandAck',
             commandId: 8,
             accepted: false,
         });
     });
 
-    it('catches command execution failures and acknowledges them as rejected', () => {
-        const processor = new Processor();
+    it('emits exactly one negative acknowledgement with the thrown error message', () => {
+        const harness = createWorkletPortHarness();
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
-        rackMocks.executeCommand.mockImplementationOnce(() => {
+        const executeCommand = vi.fn((): boolean => {
             throw new Error('processor failed');
         });
+        harness.processor._rack.addProcessor(makeThrowingProcessor(executeCommand), 'chordMemory');
+        const acknowledgements: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            acknowledgements.push(data);
+        };
 
-        processor.port.onmessage?.({ data: { type: 'executeCommand', commandId: 9, command } } as MessageEvent);
+        harness.port.postMessage({
+            type: 'executeCommand',
+            commandId: 9,
+            command: { ...command, processorId: 'cm-throw' },
+        });
 
-        expect(processor.port.postMessage).toHaveBeenCalledWith({
+        expect(executeCommand).toHaveBeenCalledTimes(1);
+        expect(acknowledgements).toHaveLength(1);
+        expect(acknowledgements[0]).toEqual({
             type: 'commandAck',
             commandId: 9,
             accepted: false,
             error: 'processor failed',
         });
+    });
+
+    it('rejects malformed execute envelopes without crashing or faking acceptance', () => {
+        const harness = createWorkletPortHarness();
+        const acknowledgements: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            acknowledgements.push(data);
+        };
+
+        expect(() => {
+            harness.port.postMessage({ type: 'executeCommand', commandId: 10, command: null });
+        }).not.toThrow();
+        harness.port.postMessage({
+            type: 'executeCommand',
+            commandId: '10',
+            command: { processorId: 'cm-1', type: 'chordMemory.clear' },
+        });
+
+        expect(acknowledgements).toEqual([
+            {
+                type: 'commandAck',
+                commandId: 10,
+                accepted: false,
+                error: 'Invalid executeCommand message',
+            },
+        ]);
     });
 });

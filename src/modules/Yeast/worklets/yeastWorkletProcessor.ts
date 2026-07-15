@@ -34,36 +34,99 @@ type YeastMsg =
       }
     | { type: 'allNotesOff'; nowSamples?: number };
 
+type ParsedExecuteCommand = {
+    commandId: number;
+    command: YeastProcessorCommand | null;
+};
+
+const INVALID_EXECUTE_COMMAND_ERROR = 'Invalid executeCommand message';
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function isCommandId(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
+    if (!isPlainObject(value) || value.type !== 'executeCommand' || !isCommandId(value.commandId)) {
+        return undefined;
+    }
+
+    const command = value.command;
+    if (
+        !isPlainObject(command) ||
+        typeof command.processorId !== 'string' ||
+        (command.type !== 'chordMemory.learn' && command.type !== 'chordMemory.clear')
+    ) {
+        return { commandId: value.commandId, command: null };
+    }
+    return {
+        commandId: value.commandId,
+        command: {
+            processorId: command.processorId,
+            type: command.type,
+        },
+    };
+}
+
 class YeastWorkletProcessor extends AudioWorkletProcessor {
     _rack = new MidiRack();
 
     constructor() {
         super();
-        this.port.onmessage = ({ data }: MessageEvent<YeastMsg>) => {
-            switch (data.type) {
-                case 'executeCommand': {
-                    try {
-                        const accepted = this._rack.executeCommand(data.command);
-                        this.port.postMessage({ type: 'commandAck', commandId: data.commandId, accepted });
-                    } catch (error: unknown) {
-                        this.port.postMessage({
-                            type: 'commandAck',
-                            commandId: data.commandId,
-                            accepted: false,
-                            error: error instanceof Error ? error.message : String(error),
-                        });
-                    }
-                    break;
+        this.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            if (!isPlainObject(data)) {
+                return;
+            }
+            if (data.type === 'executeCommand') {
+                const parsed = parseExecuteCommand(data);
+                if (!parsed) {
+                    return;
                 }
+                if (!parsed.command) {
+                    this.port.postMessage({
+                        type: 'commandAck',
+                        commandId: parsed.commandId,
+                        accepted: false,
+                        error: INVALID_EXECUTE_COMMAND_ERROR,
+                    });
+                    return;
+                }
+                try {
+                    const accepted = this._rack.executeCommand(parsed.command);
+                    this.port.postMessage({
+                        type: 'commandAck',
+                        commandId: parsed.commandId,
+                        accepted: accepted === true,
+                    });
+                } catch (error: unknown) {
+                    this.port.postMessage({
+                        type: 'commandAck',
+                        commandId: parsed.commandId,
+                        accepted: false,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                }
+                return;
+            }
+
+            const message = data as Exclude<YeastMsg, { type: 'executeCommand' }>;
+            switch (message.type) {
                 case 'setProjection': {
-                    const offs = this._rack.replaceProjection(data.processors, createProcessor, currentFrame);
+                    const offs = this._rack.replaceProjection(message.processors, createProcessor, currentFrame);
                     if (offs.length > 0) {
                         this.port.postMessage({ type: 'notesOff', events: offs });
                     }
                     break;
                 }
                 case 'allNotesOff': {
-                    const offs = this._rack.allNotesOff(data.nowSamples ?? currentFrame);
+                    const offs = this._rack.allNotesOff(message.nowSamples ?? currentFrame);
                     if (offs.length > 0) {
                         this.port.postMessage({ type: 'notesOff', events: offs });
                     }
@@ -71,12 +134,12 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 }
                 case 'processBlock': {
                     const processed = this._rack.processBlock(
-                        data.events,
-                        data.blockStart,
-                        data.blockEnd,
-                        data.transport
+                        message.events,
+                        message.blockStart,
+                        message.blockEnd,
+                        message.transport
                     );
-                    this.port.postMessage({ type: 'processed', requestId: data.requestId, events: processed });
+                    this.port.postMessage({ type: 'processed', requestId: message.requestId, events: processed });
                     break;
                 }
             }

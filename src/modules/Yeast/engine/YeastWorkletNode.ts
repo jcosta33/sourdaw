@@ -37,6 +37,50 @@ type YeastPortMessage =
     | { type: 'commandAck'; commandId: number; accepted: boolean; error?: string }
     | { type: 'notesOff'; events?: MidiEvent[] };
 
+type ParsedCommandAck = {
+    commandId: number;
+    ack: YeastCommandAck;
+};
+
+const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorkletNode command acknowledgement';
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+function isCommandId(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function parseCommandAck(value: unknown): ParsedCommandAck | undefined {
+    if (!isPlainObject(value) || value.type !== 'commandAck' || !isCommandId(value.commandId)) {
+        return undefined;
+    }
+
+    const invalidAck: ParsedCommandAck = {
+        commandId: value.commandId,
+        ack: { accepted: false, error: INVALID_COMMAND_ACK_ERROR },
+    };
+    if (typeof value.accepted !== 'boolean') {
+        return invalidAck;
+    }
+
+    const error = value.error;
+    if (value.accepted) {
+        return error === undefined ? { commandId: value.commandId, ack: { accepted: true } } : invalidAck;
+    }
+    if (error !== undefined && typeof error !== 'string') {
+        return invalidAck;
+    }
+    return error === undefined
+        ? { commandId: value.commandId, ack: { accepted: false } }
+        : { commandId: value.commandId, ack: { accepted: false, error } };
+}
+
 function toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error));
 }
@@ -125,15 +169,19 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     const notesOffHandlers = new Set<(notes: number[]) => void>();
 
     node.port.onmessage = (event: MessageEvent): void => {
+        if (!isPlainObject(event.data)) {
+            return;
+        }
         const msg = event.data as YeastPortMessage;
         if (msg.type === 'processed') {
             settle(msg.requestId)?.resolve(msg.events ?? []);
             return;
         }
         if (msg.type === 'commandAck') {
-            const ack: YeastCommandAck =
-                msg.error === undefined ? { accepted: msg.accepted } : { accepted: msg.accepted, error: msg.error };
-            settleCommand(msg.commandId)?.resolve(ack);
+            const parsed = parseCommandAck(event.data);
+            if (parsed) {
+                settleCommand(parsed.commandId)?.resolve(parsed.ack);
+            }
             return;
         }
         const notes: number[] = [];

@@ -27,12 +27,12 @@ function deferred<T>(): Deferred<T> {
 function makeNode(context: BaseAudioContext) {
     return {
         context,
-        processBlock: async (
+        processBlock: (
             _events: readonly MidiEvent[],
             _blockStart: number,
             _blockEnd: number,
             _transport: TransportInfo
-        ) => [],
+        ) => Promise.resolve([]),
         setProjection: vi.fn(),
         sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         allNotesOff: vi.fn(),
@@ -170,6 +170,25 @@ describe('yeastRuntime', () => {
 
         await initialization;
         expect(node.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('converts a command acknowledgement rejection to delivery-failed without an unhandled rejection', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        node.sendCommand.mockRejectedValueOnce(new Error('acknowledgement timed out'));
+
+        const delivery = runtime.sendYeastRuntimeCommand(command);
+
+        await expect(delivery).resolves.toEqual({
+            delivered: false,
+            reason: 'delivery-failed',
+        });
+        expect(node.destroy).toHaveBeenCalledTimes(1);
     });
 
     it('does not replay a delivered command on projection replay or context replacement', async () => {

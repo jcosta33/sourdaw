@@ -73,6 +73,10 @@ function replyCommandAck(port: FakePort, commandId: number, accepted: boolean, e
     port.onmessage?.({ data: { type: 'commandAck', commandId, accepted, error } } as MessageEvent);
 }
 
+function replyRawCommandAck(port: FakePort, data: unknown): void {
+    port.onmessage?.({ data } as MessageEvent);
+}
+
 describe('createYeastWorkletNode — processBlock lifecycle', () => {
     it('resolves processBlock when the worklet replies with a matching requestId', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
@@ -127,6 +131,7 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
         await expect(a).rejects.toThrow(/destroyed/);
         await expect(b).rejects.toThrow(/destroyed/);
         expect(lastPort().close).toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
     });
 });
 
@@ -176,7 +181,7 @@ describe('createYeastWorkletNode — projection protocol', () => {
 });
 
 describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
-    it('resolves one accepted command acknowledgement and ignores duplicate replies', async () => {
+    it('resolves one accepted acknowledgement and clears its timer', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
         const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
 
@@ -186,9 +191,26 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
         replyCommandAck(lastPort(), 0, true);
 
         await expect(result).resolves.toEqual({ accepted: true });
+        expect(vi.getTimerCount()).toBe(0);
         replyCommandAck(lastPort(), 0, false, 'late duplicate');
         await vi.advanceTimersByTimeAsync(1000);
         expect(lastPort().postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores duplicate and late acknowledgements without settling another command', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.learn' };
+
+        const first = node.sendCommand(command);
+        replyCommandAck(lastPort(), 0, true);
+        await expect(first).resolves.toEqual({ accepted: true });
+
+        const second = node.sendCommand(command);
+        replyCommandAck(lastPort(), 0, false, 'late duplicate');
+        replyCommandAck(lastPort(), 1, true);
+
+        await expect(second).resolves.toEqual({ accepted: true });
+        expect(vi.getTimerCount()).toBe(0);
     });
 
     it('resolves a negative acknowledgement without reporting acceptance', async () => {
@@ -200,6 +222,62 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
 
         await expect(result).resolves.toEqual({ accepted: false, error: 'processor rejected command' });
     });
+
+    it.each([
+        ['non-boolean accepted', { accepted: 'yes' }],
+        ['error on accepted acknowledgement', { accepted: true, error: 'unexpected error' }],
+        ['non-string rejection error', { accepted: false, error: 42 }],
+        ['missing accepted', { error: undefined }],
+    ] as const)('normalizes a malformed %s acknowledgement to failure', async (_label, malformed) => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+
+        const result = node.sendCommand(command);
+        replyRawCommandAck(lastPort(), { type: 'commandAck', commandId: 0, ...malformed });
+
+        const ack = await result;
+        expect(ack.accepted).toBe(false);
+        expect(typeof ack.error).toBe('string');
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('does not settle a pending command on a wrong valid command id', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+
+        const result = node.sendCommand(command);
+        replyRawCommandAck(lastPort(), { type: 'commandAck', commandId: 99, accepted: true });
+        expect(vi.getTimerCount()).toBe(1);
+
+        const assertion = expect(result).rejects.toThrow(/command acknowledgement timed out/);
+        await vi.advanceTimersByTimeAsync(1000);
+        await assertion;
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each([
+        ['missing', {}],
+        ['negative', { commandId: -1 }],
+        ['fractional', { commandId: 0.5 }],
+        ['string', { commandId: '0' }],
+        ['unsafe', { commandId: Number.MAX_SAFE_INTEGER + 1 }],
+        ['NaN', { commandId: Number.NaN }],
+        ['wrong type', { type: 'notCommandAck', commandId: 0 }],
+    ] as const)(
+        'does not settle a pending command on malformed acknowledgement data (%s)',
+        async (_label, malformedId) => {
+            const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+            const command: YeastProcessorCommand = { processorId: 'cm-1', type: 'chordMemory.clear' };
+
+            const result = node.sendCommand(command);
+            replyRawCommandAck(lastPort(), { type: 'commandAck', accepted: true, ...malformedId });
+
+            const assertion = expect(result).rejects.toThrow(/command acknowledgement timed out/);
+            await vi.advanceTimersByTimeAsync(1000);
+            await assertion;
+            expect(vi.getTimerCount()).toBe(0);
+        }
+    );
 
     it('rejects a command when the worklet acknowledgement is dropped', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
