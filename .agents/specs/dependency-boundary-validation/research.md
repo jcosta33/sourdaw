@@ -128,11 +128,12 @@ helpers: they have no direct runtime entrypoint or production consumer.
 The MIDI worker contains a `self.onmessage` handler and executes supplied code with
 `new Function`, but source search found no launcher, static import, string/path
 reference, or test import. Its own comment says Worker isolation is only basic and
-is not a complete secure sandbox. It is neither the sandboxed script artifact required by
-[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters)
+is not a complete secure sandbox. It is neither the capability-secure compartment/bootstrap
+required by
+[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-in-a-capability-secure-compartment)
 nor an implementation of its trusted-grant, exact-intent, Command-dispatch, or bound-output
 requirements in AC-004 through AC-007. It is also not a declarative-profile host.
-[Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact) keeps those
+[Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact) keeps those
 APIs separate; Push AC-023 through AC-027 own the future declarative host contract.
 
 The four RAVE files are imported only by the focused `encodeAudio.spec.ts`,
@@ -160,15 +161,16 @@ explicitly non-retiring.
   only to make a warning disappear.
 - The controller worker warning MUST remain visible until that exact path becomes the distinct
   product script-bundle worker satisfying
-  [hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters),
+  [hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-in-a-capability-secure-compartment),
   [AC-004](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite),
   [AC-005](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas),
   [AC-006](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command),
   [AC-007](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-intents-use-one-bound-output),
-  and [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact), or an
+  [AC-008](../hardware-controller-ecosystem/spec.md#ac-008--current-worker-warning-has-one-exact-disposition),
+  and [Push AC-028](../push-integration/spec.md#ac-028--separate-capability-secure-script-artifact), or an
   explicit superseding ADR retires the exact file. Generic reachability, a declarative-profile host
-  role, or an orphan exception does not close it; Push AC-023 through AC-027 remain on the separate
-  declarative path.
+  role, or an orphan exception does not close it; neither do Worker presence, `new Function`, a
+  launcher, or CSP alone. Push AC-023 through AC-027 remain on the separate declarative path.
 - The four RAVE helper warnings MUST remain visible while their current files serve as
   direct deterministic CI/test helpers. Each file MUST be relocated to its exact named
   `__tests__/helpers/` path with tests/contract preserved before that current path is
