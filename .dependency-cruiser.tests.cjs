@@ -7,7 +7,10 @@
  * cross-module private imports inside tests are invisible there. This cruise
  * keeps tests in the graph, treats `vi.mock()` targets as dependencies, and
  * enforces barrel boundaries from tests, __tests__ support, and setupTests.ts
- * (production edges stay on the main cruise).
+ * plus the shared promoted Tauri/model rules. The exact tauriBridge spec mock
+ * is the only non-repository Tauri test allowance.
+ * Production-only hygiene stays on the main cruise; promoted boundary rules
+ * are shared here deliberately because the main cruise excludes specs/tests.
  *
  * Orphan / dev-dependency rules intentionally omitted — those are
  * production-specific and already pathNot-exempt specs on the main cruise.
@@ -15,9 +18,12 @@
  * Run via `pnpm deps:validate` with its own known-violations baseline.
  */
 
-const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-// Group 1 = prefix (including optional namespace), group 2 = module name.
-const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
+const {
+    MODELS_MUST_BE_TITLE_CASE,
+    MODULE_ROOT,
+    SOURCE_FILE_RE,
+    TAURI_IPC_ONLY_IN_REPOSITORIES,
+} = require('./.dependency-cruiser.shared.cjs');
 
 // from: module-rooted test / __tests__ files (keeps $1$2 for same-module pathNot)
 const FROM_MODULE_TEST = [
@@ -36,6 +42,10 @@ const FROM_ANY_TEST = [...FROM_MODULE_TEST, ...FROM_EXTERNAL_TEST];
 /** @type {import('dependency-cruiser').IConfiguration} */
 module.exports = {
     forbidden: [
+        // Promoted rules are shared with the main cruise because that cruise
+        // excludes specs/tests from its graph.
+        TAURI_IPC_ONLY_IN_REPOSITORIES,
+        MODELS_MUST_BE_TITLE_CASE,
         {
             name: 'test-dependencies-must-resolve',
             severity: 'error',

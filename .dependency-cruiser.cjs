@@ -45,13 +45,14 @@
 // ------------------------------
 // Regex helpers
 // ------------------------------
-const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-
-// Group 1 = prefix (including an optional Common/Supporting namespace)
-// Group 2 = module name
-const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
+const {
+    MODELS_MUST_BE_TITLE_CASE,
+    MODULE_ROOT,
+    SOURCE_FILE_RE,
+    SPEC_FILE_RE,
+    STORY_FILE_RE,
+    TAURI_IPC_ONLY_IN_REPOSITORIES,
+} = require('./.dependency-cruiser.shared.cjs');
 
 // Private presentation subfolders
 const PRIVATE_PRESENTATION_FOLDERS =
@@ -646,27 +647,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // Tauri confinement
         // --------------------------------------------------------------------
-        {
-            name: 'tauri-ipc-only-in-repositories',
-            // The resolved-path match below catches pnpm-resolved @tauri-apps/*
-            // imports, while the tauriBridge target catches IPC laundering through
-            // src/utils. Repositories and tauriBridge itself are explicit origins.
-            severity: 'error',
-            comment:
-                'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
-                'Resolved @tauri-apps imports and tauriBridge laundering are error-gated.',
-            from: {
-                path: '^(src/modules/|src/utils/).*' + SOURCE_FILE_RE,
-                pathNot: ['^src/modules/.*repositories/', '^src/utils/tauriBridge\\.ts$'],
-            },
-            to: {
-                // Resolved-path match: the pnpm store resolves @tauri-apps/* to a
-                // path containing /@tauri-apps/. The old '^@tauri-apps/' bare-
-                // specifier pattern never matched a resolved path. The bridge
-                // path catches callers that launder IPC through src/utils.
-                path: '(/@tauri-apps/|^src/utils/tauriBridge\\.ts$)',
-            },
-        },
+        TAURI_IPC_ONLY_IN_REPOSITORIES,
 
         {
             name: 'application-to-modules-public-surface-only',
@@ -744,15 +725,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
-        {
-            name: 'models-must-be-title-case',
-            severity: 'error',
-            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). The current tree satisfies this convention, so a hard gate prevents case-sensitive path drift as models are added.',
-            from: {},
-            to: {
-                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
-            },
-        },
+        MODELS_MUST_BE_TITLE_CASE,
         {
             name: 'not-to-unresolvable',
             severity: 'error',

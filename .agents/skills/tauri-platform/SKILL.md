@@ -58,7 +58,7 @@ Use **commands** for explicit one-shot requests (open/save, file dialog, list MI
 
 ### 6. Keep transport payloads explicit and free of runtime internals
 
-Payloads crossing the bridge must be serializable, typed, minimal, and stable. Do not leak native/runtime handles over IPC — explicit DTOs only. Frontend Tauri I/O belongs in repositories; depcruise enforces `tauri-ipc-only-in-repositories` as an **error**.
+Payloads crossing the bridge must be serializable, typed, minimal, and stable. Do not leak native/runtime handles over IPC — explicit DTOs only. Frontend Tauri I/O belongs only in module-root `src/modules/<M>/repositories/` (including `Common/` and `Supporting/` namespaces) or the exact `src/utils/tauriBridge.ts` adapter. Only `src/utils/__tests__/tauriBridge.spec.ts` may mock the adapter dependencies; nested `useCases/repositories` and `presentations/repositories` folders, all other `src/**` origins, and non-allowlisted bridge callers are forbidden; depcruise enforces `tauri-ipc-only-in-repositories` as an **error**.
 
 **Why:** a runtime handle over IPC couples the frontend to Rust internals and breaks on native refactors.
 

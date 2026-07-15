@@ -6,6 +6,7 @@ import {
     collectCausalEdges,
     compareRows,
     findMixedTypeValueExports,
+    findModelCasingFindings,
     isModuleRootIndex,
     isUseCaseBarrel,
 } from '../check-dependency-boundaries.mjs';
@@ -119,6 +120,8 @@ describe('check-dependency-boundaries', () => {
         expect(matches('src/components/daw/__tests__/RotaryKnob.spec.tsx')).toBe(true);
         expect(matches('src/setupTests.ts')).toBe(true);
         expect(testConfig.options.exoticRequireStrings).toContain('vi.mock');
+        expect(mainConfig.options.exclude.path).toContain('spec');
+        expect(testConfig.options.exclude).toBeUndefined();
 
         const unresolvedRule = testConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'test-dependencies-must-resolve'
@@ -156,36 +159,129 @@ describe('check-dependency-boundaries', () => {
         const tauriRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
         );
+        const testTauriRule = testConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+        );
         const matches = (patterns: string | string[], filePath: string): boolean => {
             const patternList = Array.isArray(patterns) ? patterns : [patterns];
             return patternList.some((pattern) => new RegExp(pattern).test(filePath));
         };
-        const violates = (from: string, to: string): boolean =>
-            matches(tauriRule.from.path, from) &&
-            !matches(tauriRule.from.pathNot, from) &&
-            matches(tauriRule.to.path, to);
+        const violates = (
+            ruleConfig: { from: { path: string | string[]; pathNot?: string | string[] }; to: { path: string } },
+            from: string,
+            to: string
+        ): boolean =>
+            matches(ruleConfig.from.path, from) &&
+            !matches(ruleConfig.from.pathNot ?? [], from) &&
+            matches(ruleConfig.to.path, to);
         const resolvedTauriPaths = [
             '/node_modules/.pnpm/@tauri-apps+api@2.5.0/node_modules/@tauri-apps/api/index.js',
             '/node_modules/.pnpm/@tauri-apps+plugin-fs@2.5.0/node_modules/@tauri-apps/plugin-fs/dist-js/index.js',
         ];
+        const nonModuleOrigins = [
+            'src/infra/tauriClient.ts',
+            'src/components/TauriClient.tsx',
+            'src/app/tauriClient.ts',
+            'src/routes/tauriClient.ts',
+            'src/shared/tauriClient.ts',
+            'src/helpers/tauriClient.ts',
+            'src/types/tauriClient.d.ts',
+            'src/utils/otherBridge.ts',
+            'src/utils/__tests__/other.spec.ts',
+        ];
+        const allowedRepositoryOrigins = [
+            'src/modules/Foo/repositories/read.ts',
+            'src/modules/Common/Foo/repositories/read.ts',
+            'src/modules/Supporting/Foo/repositories/read.ts',
+        ];
+        const nestedRepositoryOrigins = [
+            'src/modules/Foo/useCases/repositories/tauriClient.ts',
+            'src/modules/Foo/presentations/repositories/tauriClient.ts',
+            'src/modules/Foo/repositoriesSibling/tauriClient.ts',
+        ];
 
         expect(tauriRule.severity).toBe('error');
+        expect(testTauriRule).toBe(tauriRule);
         for (const resolvedTauriPath of resolvedTauriPaths) {
-            expect(violates('src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
-            expect(violates('src/modules/Foo/repositories/read.ts', resolvedTauriPath)).toBe(false);
+            expect(violates(tauriRule, 'src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
+            for (const origin of nonModuleOrigins) {
+                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(true);
+            }
+            for (const origin of allowedRepositoryOrigins) {
+                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(false);
+            }
+            for (const origin of nestedRepositoryOrigins) {
+                expect(violates(tauriRule, origin, resolvedTauriPath)).toBe(true);
+            }
         }
-        expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
-        expect(violates('src/utils/tauriBridge.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(tauriRule, 'src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
+        expect(violates(tauriRule, 'src/utils/tauriBridge.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(tauriRule, 'src/utils/__tests__/tauriBridge.spec.ts', resolvedTauriPaths[0])).toBe(false);
+        expect(violates(tauriRule, allowedRepositoryOrigins[0], 'src/utils/tauriBridge.ts')).toBe(false);
+        expect(violates(tauriRule, 'src/utils/otherBridge.ts', 'src/utils/tauriBridge.ts')).toBe(true);
+        expect(violates(testTauriRule, 'src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPaths[0])).toBe(
+            true
+        );
     });
 
     it('should enforce TitleCase model targets from the configured rule', () => {
         const modelRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'models-must-be-title-case'
         );
+        const testModelRule = testConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'models-must-be-title-case'
+        );
+        const matches = (patterns: string | string[] | undefined, filePath: string): boolean => {
+            let patternList: string[];
+            if (Array.isArray(patterns)) {
+                patternList = patterns;
+            } else if (patterns) {
+                patternList = [patterns];
+            } else {
+                patternList = [];
+            }
+            return patternList.some((pattern) => new RegExp(pattern).test(filePath));
+        };
+        const violates = (filePath: string): boolean =>
+            matches(modelRule.to.path, filePath) && !matches(modelRule.to.pathNot, filePath);
 
         expect(modelRule.severity).toBe('error');
-        expect(new RegExp(modelRule.to.path).test('src/modules/Foo/models/fooBar.ts')).toBe(true);
-        expect(new RegExp(modelRule.to.path).test('src/modules/Foo/models/FooBar.ts')).toBe(false);
+        expect(testModelRule).toBe(modelRule);
+        expect(violates('src/modules/Foo/models/foo/FooBar.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/bar/FooBar.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/fooBar.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/Bar/baz.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/_Bad.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/Bar/index.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/__tests__support/Bad.ts')).toBe(true);
+        expect(violates('src/modules/Foo/models/Foo/Bar/Baz.ts')).toBe(false);
+        expect(violates('src/modules/Command/models/Commands/__tests__/EditCommands.spec.ts')).toBe(false);
+        expect(violates('src/modules/Transport/models/index.ts')).toBe(false);
+    });
+
+    it('should preflight unreferenced model paths without broad test exclusions', () => {
+        const findings = findModelCasingFindings([
+            'src/modules/Foo/models/foo/FooBar.ts',
+            'src/modules/Foo/models/Foo/bar/Baz.ts',
+            'src/modules/Foo/models/Foo/fooBar.ts',
+            'src/modules/Foo/models/Foo/_Bad.ts',
+            'src/modules/Foo/models/Foo/Bar/badFile.ts',
+            'src/modules/Foo/models/Foo/Bar/index.ts',
+            'src/modules/Foo/models/Foo/__tests__support/Bad.ts',
+            'src/modules/Foo/models/Foo/Bar/Baz.ts',
+            'src/modules/Command/models/Commands/__tests__/EditCommands.spec.ts',
+            'src/modules/Transport/models/index.ts',
+        ]);
+
+        expect(findings.map(({ file }: { file: string }) => file)).toEqual([
+            'src/modules/Foo/models/Foo/Bar/badFile.ts',
+            'src/modules/Foo/models/Foo/Bar/index.ts',
+            'src/modules/Foo/models/Foo/_Bad.ts',
+            'src/modules/Foo/models/Foo/__tests__support/Bad.ts',
+            'src/modules/Foo/models/Foo/bar/Baz.ts',
+            'src/modules/Foo/models/Foo/fooBar.ts',
+            'src/modules/Foo/models/foo/FooBar.ts',
+        ]);
     });
 
     it('should apply architecture boundaries to type-only edges', () => {

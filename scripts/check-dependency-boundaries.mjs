@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
+const {
+    MODEL_PATH_PREFIX,
+    MODEL_SUPPORT_BARREL_PATH,
+    MODEL_TEST_SUPPORT_PATH,
+} = require('../.dependency-cruiser.shared.cjs');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ruleName = 'components-no-usecase-transitively';
@@ -189,6 +194,43 @@ export function isUseCaseBarrel(filePath) {
     return /\/useCases\/index\.ts$/.test(toPosixPath(filePath));
 }
 
+const modelPathPrefix = new RegExp(MODEL_PATH_PREFIX);
+const modelTestSupportPath = new RegExp(MODEL_TEST_SUPPORT_PATH);
+const modelSupportBarrelPath = new RegExp(MODEL_SUPPORT_BARREL_PATH);
+
+function comparePaths(left, right) {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
+export function findModelCasingFindings(filePaths) {
+    return [...filePaths]
+        .map(toPosixPath)
+        .filter((filePath) => {
+            const prefixMatch = modelPathPrefix.exec(filePath);
+            if (!prefixMatch) {
+                return false;
+            }
+            if (modelTestSupportPath.test(filePath) || modelSupportBarrelPath.test(filePath)) {
+                return false;
+            }
+
+            const modelPathSegments = filePath.slice(prefixMatch[0].length).split('/');
+            return modelPathSegments.some((segment) => !/^[A-Z]/.test(segment));
+        })
+        .sort(comparePaths)
+        .map((file) => ({
+            file,
+            line: 1,
+            reason: 'model directory and file segments must start with an uppercase letter',
+        }));
+}
+
 function walkFiles(directory) {
     const files = [];
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -199,7 +241,7 @@ function walkFiles(directory) {
             files.push(entryPath);
         }
     }
-    return files;
+    return files.sort(comparePaths);
 }
 
 function staticGuardFindings() {
@@ -219,7 +261,12 @@ function staticGuardFindings() {
                 reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
             }))
         );
-    return [...rootIndexes, ...mixedExports];
+    // Dependency-cruiser only reports nodes reachable from imports. Walk every
+    // module file here so an unreferenced model path cannot evade the naming gate.
+    const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
+    return [...rootIndexes, ...mixedExports, ...modelCasingFindings].sort((left, right) =>
+        comparePaths(left.file, right.file)
+    );
 }
 
 function depcruiseBin() {
