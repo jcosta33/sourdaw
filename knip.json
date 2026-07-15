@@ -17,7 +17,9 @@
         },
         "server": {
             "entry": ["collab-server.ts!"],
-            "project": ["*.ts!"]
+            "project": ["*.ts!"],
+            "ignoreDependencies": ["tsx"],
+            "ignoreBinaries": ["tsx"]
         }
     }
 }
