@@ -50,14 +50,23 @@ const persistenceState = createHmrPersistentState<CrdtPersistenceQueueState>(
 );
 
 if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
+    const previousOperationTail = getPreviousOperationTail(persistenceState);
     const previousGeneration =
         typeof persistenceState.persistenceGeneration === 'number' ? persistenceState.persistenceGeneration : 0;
     persistenceState.version = CRDT_PERSISTENCE_QUEUE_STATE_VERSION;
     persistenceState.persistenceGeneration = previousGeneration + 1;
-    persistenceState.operationTail = Promise.resolve();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
     persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
+
+    const migrationGeneration = persistenceState.persistenceGeneration;
+    const migrationRecovery = previousOperationTail.then(() => compactCrdtProject(migrationGeneration));
+    // The recovery owns its serialized full bundle on failure, so later
+    // persistence work can retry it through the normal pending-snapshot path.
+    persistenceState.operationTail = migrationRecovery.then(
+        () => undefined,
+        () => undefined
+    );
 }
 
 type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset';
@@ -102,6 +111,29 @@ function resetQueueState(): void {
 
 function noOpPersistenceOperation(): Promise<void> {
     return Promise.resolve();
+}
+
+function getPreviousOperationTail(state: unknown): Promise<void> {
+    if (typeof state !== 'object' || state === null || !('operationTail' in state)) {
+        return Promise.resolve();
+    }
+
+    const operationTail = state.operationTail;
+    if (!isPromiseLike(operationTail)) {
+        return Promise.resolve();
+    }
+
+    return Promise.resolve(operationTail).then(
+        () => undefined,
+        () => undefined
+    );
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+    if (typeof value !== 'object' || value === null || !('then' in value)) {
+        return false;
+    }
+    return typeof value.then === 'function';
 }
 
 async function persistIncrementalCrdtProject(generation: number): Promise<void> {
