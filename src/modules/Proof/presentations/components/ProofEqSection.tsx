@@ -2,14 +2,14 @@
  * ProofEqSection — 8-band parametric EQ with interactive controls.
  * Knobs for freq/gain/Q per band, band type selector, M/S per-band.
  */
-import { type ReactElement, useLayoutEffect, useReducer, useRef } from 'react';
+import { type ReactElement } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { getProofPatchSnapshot, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
+import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 import { ProofEqCurve } from './ProofEqCurve';
 
@@ -20,24 +20,11 @@ const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#95
 
 type Props = {
     patch: ProofPatch;
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement => {
-    const [gestureOwner, incrementGestureOwner] = useReducer((currentOwner: number) => currentOwner + 1, 0);
-    const patchSnapshotRef = useRef(getProofPatchSnapshot(patch));
-    const acceptedTransientPatchSnapshotRef = useRef<string | null>(null);
-    const patchSnapshot = getProofPatchSnapshot(patch);
-    useLayoutEffect(() => {
-        const previousPatchSnapshot = patchSnapshotRef.current;
-        patchSnapshotRef.current = patchSnapshot;
-        const acceptedTransient = acceptedTransientPatchSnapshotRef.current === patchSnapshot;
-        acceptedTransientPatchSnapshotRef.current = null;
-        if (previousPatchSnapshot !== patchSnapshot && !acceptedTransient) {
-            incrementGestureOwner();
-        }
-    }, [patchSnapshot]);
-
+export const ProofEqSection = ({ patch, gestureOwner, onPatchChange }: Props): ReactElement => {
     const updatePatch = <Key extends keyof ProofPatch['eqBands'][number]>(
         idx: number,
         key: Key,
@@ -45,9 +32,6 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
         isTransient = false
     ) => {
         const bands = patch.eqBands.map((band, index) => (index === idx ? { ...band, [key]: value } : band));
-        if (isTransient) {
-            acceptedTransientPatchSnapshotRef.current = getProofPatchSnapshot({ ...patch, eqBands: bands });
-        }
         onPatchChange({
             key: 'eqBands',
             value: bands,

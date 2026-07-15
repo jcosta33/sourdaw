@@ -17,10 +17,17 @@ type Props = {
     patch: ProofPatch;
     limiterGrDb: number;
     truePeakDb: number;
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchChange }: Props): ReactElement => {
+export const ProofLimiterSection = ({
+    patch,
+    limiterGrDb,
+    truePeakDb,
+    gestureOwner,
+    onPatchChange,
+}: Props): ReactElement => {
     return (
         <div className="flex flex-col gap-1.5 px-2">
             <DawPluginSectionHeader
@@ -59,6 +66,7 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                                     isTransient,
                                 });
                             }}
+                            gestureOwner={gestureOwner}
                             min={-12}
                             max={0}
                             step={0.1}
@@ -82,6 +90,7 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                                     isTransient,
                                 });
                             }}
+                            gestureOwner={gestureOwner}
                             min={10}
                             max={500}
                             step={1}
@@ -105,6 +114,7 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                                     isTransient,
                                 });
                             }}
+                            gestureOwner={gestureOwner}
                             min={0.5}
                             max={10}
                             step={0.5}

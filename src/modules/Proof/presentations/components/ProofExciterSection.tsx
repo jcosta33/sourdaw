@@ -14,10 +14,11 @@ const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 const SAT_TYPES = ['Tape', 'Tube', 'Transistor', 'Warm'] as const;
 type Props = {
     patch: ProofPatch;
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactElement => {
+export const ProofExciterSection = ({ patch, gestureOwner, onPatchChange }: Props): ReactElement => {
     const updateBand = <Key extends keyof ProofPatch['excBands'][number]>(
         idx: number,
         key: Key,
@@ -98,6 +99,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                             <RotaryKnob
                                 value={band.drive}
                                 onChange={(value, isTransient) => updateBand(i, 'drive', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -111,6 +113,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                             <RotaryKnob
                                 value={band.blend}
                                 onChange={(value, isTransient) => updateBand(i, 'blend', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={0}
                                 max={1}
                                 step={0.01}

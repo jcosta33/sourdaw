@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useLayoutEffect, useReducer, useRef } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
@@ -13,7 +13,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
+import { getProofPatchSnapshot, type ProofPatchEdit, type ProofTarget } from '../../models/ProofPatch';
 import { proofStore, setProofUiLevel, setProofAbBypass, getProofState, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
@@ -57,6 +57,8 @@ const LEVEL_OPTIONS = [
     { level: 4 as const, label: 'Route', detail: 'Chain' },
     { level: 5 as const, label: 'Lab', detail: 'Check' },
 ];
+
+type ProofPatchChange = (edit: ProofPatchEdit) => void;
 
 function formatLufs(v: number): string {
     if (v <= -100) {
@@ -129,25 +131,38 @@ const SideCard = ({
     </DawPluginSectionCard>
 );
 
-function renderLevel(state: ProofState, deviceId: string): ReactElement {
+type ProofLevelContentProps = {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    onPatchChange: ProofPatchChange;
+};
+
+const ProofLevelContent = ({ state, deviceId, gestureOwner, onPatchChange }: ProofLevelContentProps): ReactElement => {
     if (state.uiLevel === 1) {
-        return <Level1Play state={state} deviceId={deviceId} />;
+        return (
+            <Level1Play state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+        );
     }
 
     if (state.uiLevel === 2) {
-        return <Level2Shape state={state} deviceId={deviceId} />;
+        return (
+            <Level2Shape state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+        );
     }
 
     if (state.uiLevel === 3) {
-        return <Level3Build state={state} deviceId={deviceId} />;
+        return <Level3Build state={state} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />;
     }
 
     if (state.uiLevel === 4) {
-        return <Level4Route state={state} deviceId={deviceId} />;
+        return (
+            <Level4Route state={state} deviceId={deviceId} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
+        );
     }
 
     return <Level5Lab state={state} deviceId={deviceId} />;
-}
+};
 
 function isModuleBypassed(state: ProofState, moduleIndex: number): boolean {
     if (moduleIndex === 0) {
@@ -176,6 +191,30 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const state: ProofState = allInstances?.[deviceId] ?? getProofState(deviceId);
 
     const { patch, uiLevel } = state;
+    const patchSnapshot = getProofPatchSnapshot(patch);
+    const [gestureOwner, incrementGestureOwner] = useReducer((owner: number) => owner + 1, 0);
+    const patchSnapshotRef = useRef(patchSnapshot);
+    const acceptedTransientPatchSnapshotRef = useRef<string | null>(null);
+
+    useLayoutEffect(() => {
+        const previousPatchSnapshot = patchSnapshotRef.current;
+        patchSnapshotRef.current = patchSnapshot;
+        const acceptedTransient = acceptedTransientPatchSnapshotRef.current === patchSnapshot;
+        acceptedTransientPatchSnapshotRef.current = null;
+        if (previousPatchSnapshot !== patchSnapshot && !acceptedTransient) {
+            incrementGestureOwner();
+        }
+    }, [patchSnapshot]);
+
+    const handlePatchChange: ProofPatchChange = (edit) => {
+        setProofParamWithPatch({ deviceId, ...edit });
+        if (edit.isTransient === true) {
+            acceptedTransientPatchSnapshotRef.current = getProofPatchSnapshot(getProofState(deviceId).patch);
+            return;
+        }
+        acceptedTransientPatchSnapshotRef.current = null;
+    };
+
     const levelMeta = getLevelMeta(uiLevel);
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
@@ -294,7 +333,14 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         </DawPluginMetricStrip>
                     </div>
 
-                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">{renderLevel(state, deviceId)}</div>
+                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">
+                        <ProofLevelContent
+                            state={state}
+                            deviceId={deviceId}
+                            gestureOwner={gestureOwner}
+                            onPatchChange={handlePatchChange}
+                        />
+                    </div>
                 </section>
 
                 <DawPluginRail>
@@ -375,13 +421,13 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 <RotaryKnob
                                     value={patch.limCeiling}
                                     onChange={(value, isTransient) =>
-                                        setProofParamWithPatch({
-                                            deviceId,
+                                        handlePatchChange({
                                             key: 'limCeiling',
                                             value,
                                             isTransient,
                                         })
                                     }
+                                    gestureOwner={gestureOwner}
                                     min={-12}
                                     max={0}
                                     step={0.1}
@@ -406,7 +452,17 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
-const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level1Play = ({
+    state,
+    deviceId,
+    gestureOwner,
+    onPatchChange,
+}: {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
 
     return (
@@ -477,9 +533,8 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Ceiling</span>
                 <RotaryKnob
                     value={patch.limCeiling}
-                    onChange={(value, isTransient) =>
-                        setProofParamWithPatch({ deviceId, key: 'limCeiling', value, isTransient })
-                    }
+                    onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
+                    gestureOwner={gestureOwner}
                     min={-12}
                     max={0}
                     step={0.1}
@@ -495,7 +550,17 @@ const Level1Play = ({ state, deviceId }: { state: ProofState; deviceId: string }
 
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
-const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level2Shape = ({
+    state,
+    deviceId,
+    gestureOwner,
+    onPatchChange,
+}: {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
     const bypasses = [patch.eqBypassed, patch.dynBypassed, patch.imgBypassed, patch.excBypassed, patch.limBypassed];
     const bypassKeys = ['eqBypassed', 'dynBypassed', 'imgBypassed', 'excBypassed', 'limBypassed'] as const;
@@ -551,10 +616,10 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Threshold"
                     bypassed={patch.dynBypassed}
                     value={patch.dynBands[0]?.threshold ?? -20}
+                    gestureOwner={gestureOwner}
                     onChange={(value, isTransient) => {
                         const bands = patch.dynBands.map((band) => ({ ...band, threshold: value }));
-                        setProofParamWithPatch({
-                            deviceId,
+                        onPatchChange({
                             key: 'dynBands',
                             value: bands,
                             changedParams: bands.flatMap((band, bandIndex) =>
@@ -576,12 +641,12 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Width"
                     bypassed={patch.imgBypassed}
                     value={patch.imgBandWidth[2] ?? 1}
+                    gestureOwner={gestureOwner}
                     onChange={(value, isTransient) => {
                         const widths: [number, number, number, number] = [...patch.imgBandWidth];
                         widths[2] = value;
                         widths[3] = value;
-                        setProofParamWithPatch({
-                            deviceId,
+                        onPatchChange({
                             key: 'imgBandWidth',
                             value: widths,
                             changedParams: [2, 3].flatMap((bandIndex) =>
@@ -601,14 +666,14 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Drive"
                     bypassed={patch.excBypassed}
                     value={patch.excBands[1]?.drive ?? 0.2}
+                    gestureOwner={gestureOwner}
                     onChange={(value, isTransient) => {
                         const bands = patch.excBands.map((b) => ({
                             ...b,
                             drive: value,
                             enabled: value > 0.01,
                         }));
-                        setProofParamWithPatch({
-                            deviceId,
+                        onPatchChange({
                             key: 'excBands',
                             value: bands,
                             changedParams: bands.flatMap((band, bandIndex) => {
@@ -639,9 +704,8 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     sublabel="Ceiling"
                     bypassed={patch.limBypassed}
                     value={patch.limCeiling}
-                    onChange={(value, isTransient) =>
-                        setProofParamWithPatch({ deviceId, key: 'limCeiling', value, isTransient })
-                    }
+                    gestureOwner={gestureOwner}
+                    onChange={(value, isTransient) => onPatchChange({ key: 'limCeiling', value, isTransient })}
                     min={-12}
                     max={0}
                     unit="dBTP"
@@ -655,44 +719,45 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 3: Build ───────────────────────────────────────────────────────────
 
-function applyLevel3Patch(deviceId: string, edit: ProofPatchEdit): void {
-    setProofParamWithPatch({ deviceId, ...edit });
-}
-
-const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level3Build = ({
+    state,
+    gestureOwner,
+    onPatchChange,
+}: {
+    state: ProofState;
+    gestureOwner: number;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
 
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Module controls — scrollable */}
             <div className="flex-1 overflow-y-auto py-2 space-y-3">
-                <ProofEqSection
-                    patch={patch}
-                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
-                />
+                <ProofEqSection patch={patch} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofDynSection
                     patch={patch}
                     dynGr={state.dynGr}
-                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
+                    gestureOwner={gestureOwner}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofImagerSection
                     patch={patch}
                     correlation={state.correlation}
-                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
+                    gestureOwner={gestureOwner}
+                    onPatchChange={onPatchChange}
                 />
                 <div className="mx-2 border-t border-border/20" />
-                <ProofExciterSection
-                    patch={patch}
-                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
-                />
+                <ProofExciterSection patch={patch} gestureOwner={gestureOwner} onPatchChange={onPatchChange} />
                 <div className="mx-2 border-t border-border/20" />
                 <ProofLimiterSection
                     patch={patch}
                     limiterGrDb={state.limiterGrDb}
                     truePeakDb={state.truePeakDb}
-                    onPatchChange={(changedPatch) => applyLevel3Patch(deviceId, changedPatch)}
+                    gestureOwner={gestureOwner}
+                    onPatchChange={onPatchChange}
                 />
             </div>
 
@@ -742,7 +807,17 @@ const Level3Build = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
 // ── Level 4: Route ───────────────────────────────────────────────────────────
 
-const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string }): ReactElement => {
+const Level4Route = ({
+    state,
+    deviceId,
+    gestureOwner,
+    onPatchChange,
+}: {
+    state: ProofState;
+    deviceId: string;
+    gestureOwner: number;
+    onPatchChange: ProofPatchChange;
+}): ReactElement => {
     const { patch } = state;
 
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
@@ -827,9 +902,8 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Input Gain</span>
                     <RotaryKnob
                         value={patch.inputGain}
-                        onChange={(value, isTransient) =>
-                            setProofParamWithPatch({ deviceId, key: 'inputGain', value, isTransient })
-                        }
+                        onChange={(value, isTransient) => onPatchChange({ key: 'inputGain', value, isTransient })}
+                        gestureOwner={gestureOwner}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -846,9 +920,8 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     <span className="text-[8px] text-muted-foreground">Output Gain</span>
                     <RotaryKnob
                         value={patch.outputGain}
-                        onChange={(value, isTransient) =>
-                            setProofParamWithPatch({ deviceId, key: 'outputGain', value, isTransient })
-                        }
+                        onChange={(value, isTransient) => onPatchChange({ key: 'outputGain', value, isTransient })}
+                        gestureOwner={gestureOwner}
                         min={-24}
                         max={24}
                         step={0.5}
@@ -1071,6 +1144,7 @@ const KnobColumn = ({
     bypassed,
     value,
     onChange,
+    gestureOwner,
     min,
     max,
     unit,
@@ -1082,6 +1156,7 @@ const KnobColumn = ({
     bypassed: boolean;
     value: number;
     onChange: (value: number, isTransient?: boolean) => void;
+    gestureOwner: number;
     min: number;
     max: number;
     unit: string;
@@ -1095,6 +1170,7 @@ const KnobColumn = ({
         <RotaryKnob
             value={value}
             onChange={onChange}
+            gestureOwner={gestureOwner}
             min={min}
             max={max}
             step={0.1}

@@ -14,10 +14,11 @@ const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
 type Props = {
     patch: ProofPatch;
     correlation: number;
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofImagerSection = ({ patch, correlation, onPatchChange }: Props): ReactElement => {
+export const ProofImagerSection = ({ patch, correlation, gestureOwner, onPatchChange }: Props): ReactElement => {
     const updateWidth = (idx: number, value: number, isTransient = false) => {
         const widths: [number, number, number, number] = [...patch.imgBandWidth];
         widths[idx] = value;
@@ -73,6 +74,7 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange }: Props)
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}
                                 onChange={(value, isTransient) => updateWidth(i, value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={0}
                                 max={2}
                                 step={0.01}
@@ -116,6 +118,7 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange }: Props)
                                 isTransient,
                             });
                         }}
+                        gestureOwner={gestureOwner}
                         min={40}
                         max={200}
                         step={1}

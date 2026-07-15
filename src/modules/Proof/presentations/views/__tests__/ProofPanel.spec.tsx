@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { proofStore, getProofState, type ProofState } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
+import { loadProofPatchWithAudio } from '../../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { PROOF_PRESETS } from '../../../useCases/proofPresets';
 import { ProofPanel } from '../ProofPanel';
 
@@ -46,6 +47,32 @@ const EQ_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGesture]
     ['gain', end, 1, endGesture] as const,
     ['Q', end, 2, endGesture] as const,
 ]);
+
+type ProofRotaryShape = readonly [
+    label: string,
+    uiLevel: ProofState['uiLevel'],
+    knobIndex: number,
+    replacement: (patch: ProofState['patch']) => ProofState['patch'],
+];
+
+const replaceProofPatch = (label: string, patch: ProofState['patch']): ProofState['patch'] => ({
+    ...patch,
+    name: `replacement-${label}`,
+    presetId: `replacement-${label}`,
+});
+
+const PROOF_ROTARY_SHAPES: readonly ProofRotaryShape[] = [
+    ['scalar', 3, 56, (patch) => replaceProofPatch('scalar', patch)],
+    ['indexed band', 3, 25, (patch) => replaceProofPatch('indexed-band', patch)],
+    ['top-level panel', 1, 1, (patch) => replaceProofPatch('top-level-panel', patch)],
+    ['route', 4, 1, (patch) => replaceProofPatch('route', patch)],
+];
+
+const PROOF_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGesture]) =>
+    PROOF_ROTARY_SHAPES.map(
+        ([shape, uiLevel, knobIndex, replacement]) => [shape, end, uiLevel, knobIndex, replacement, endGesture] as const
+    )
+);
 
 function makeBridge(): ProofAudioBridge & {
     setParam: ReturnType<typeof vi.fn>;
@@ -258,6 +285,38 @@ describe('ProofPanel', () => {
             expect(getProofState(DEVICE_ID).patch).toEqual(
                 PROOF_PRESETS.find((preset) => preset.id === 'streaming')?.patch
             );
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it.each(PROOF_ROTARY_REPLACEMENT_CASES)(
+        'preserves an authoritative replacement after a stale Proof %s drag via %s',
+        (_shape, _end, uiLevel, knobIndex, replacement, endGesture) => {
+            const bridge = makeBridge();
+            bridges.set(DEVICE_ID, bridge);
+            seedState({ uiLevel });
+
+            const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+            const knob = knobs.item(knobIndex);
+            if (!knob) {
+                throw new Error(`Expected the ${_shape} Proof rotary`);
+            }
+
+            fireEvent.pointerDown(knob, { button: 0, pointerId: 16, clientY: 100 });
+            fireEvent.pointerMove(knob, { pointerId: 16, clientY: 80 });
+            const replacementPatch = replacement(getProofState(DEVICE_ID).patch);
+
+            act(() => {
+                loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: replacementPatch });
+            });
+
+            expect(getProofState(DEVICE_ID).patch).toEqual(replacementPatch);
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+
+            endGesture(knob, unmount);
+
+            expect(getProofState(DEVICE_ID).patch).toEqual(replacementPatch);
             expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         }
     );

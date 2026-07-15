@@ -22,10 +22,11 @@ const BAND_COLORS = [
 type Props = {
     patch: ProofPatch;
     dynGr: [number, number, number, number];
+    gestureOwner: number;
     onPatchChange: (edit: ProofPatchEdit) => void;
 };
 
-export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactElement => {
+export const ProofDynSection = ({ patch, dynGr, gestureOwner, onPatchChange }: Props): ReactElement => {
     const updateBand = (
         idx: number,
         key: 'threshold' | 'ratio' | 'attack' | 'release',
@@ -93,6 +94,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                             <RotaryKnob
                                 value={freq}
                                 onChange={(value, isTransient) => updateXover(i, value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={min}
                                 max={max}
                                 step={1}
@@ -137,6 +139,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                             <RotaryKnob
                                 value={band.threshold}
                                 onChange={(value, isTransient) => updateBand(i, 'threshold', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={-60}
                                 max={0}
                                 step={0.5}
@@ -149,6 +152,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                             <RotaryKnob
                                 value={band.ratio}
                                 onChange={(value, isTransient) => updateBand(i, 'ratio', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={1}
                                 max={20}
                                 step={0.5}
@@ -161,6 +165,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                             <RotaryKnob
                                 value={band.attack}
                                 onChange={(value, isTransient) => updateBand(i, 'attack', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={1}
                                 max={200}
                                 step={1}
@@ -173,6 +178,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                             <RotaryKnob
                                 value={band.release}
                                 onChange={(value, isTransient) => updateBand(i, 'release', value, isTransient)}
+                                gestureOwner={gestureOwner}
                                 min={10}
                                 max={2000}
                                 step={1}

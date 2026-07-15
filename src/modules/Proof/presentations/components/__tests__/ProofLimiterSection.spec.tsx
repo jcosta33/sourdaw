@@ -6,7 +6,15 @@ import { ProofLimiterSection } from '../ProofLimiterSection';
 
 describe('ProofLimiterSection', () => {
     it('should render', () => {
-        render(<ProofLimiterSection patch={DEFAULT_PATCH} limiterGrDb={0} truePeakDb={-0.5} onPatchChange={vi.fn()} />);
+        render(
+            <ProofLimiterSection
+                patch={DEFAULT_PATCH}
+                limiterGrDb={0}
+                truePeakDb={-0.5}
+                gestureOwner={0}
+                onPatchChange={vi.fn()}
+            />
+        );
         expect(screen.getByText(/limiter/i)).toBeInTheDocument();
     });
 });

@@ -7,14 +7,14 @@ import { ProofDynSection } from '../ProofDynSection';
 
 describe('ProofDynSection', () => {
     it('should render', () => {
-        render(<ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} onPatchChange={vi.fn()} />);
+        render(<ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} gestureOwner={0} onPatchChange={vi.fn()} />);
         expect(screen.getByText(/multiband dynamics/i)).toBeInTheDocument();
     });
 
     it("colours each band's GR meter bar with that band's own colour, not a constant", () => {
         // Non-zero GR on every band so each bar has a visible width and a colour to read.
         const { container } = render(
-            <ProofDynSection patch={DEFAULT_PATCH} dynGr={[-3, -3, -3, -3]} onPatchChange={vi.fn()} />
+            <ProofDynSection patch={DEFAULT_PATCH} dynGr={[-3, -3, -3, -3]} gestureOwner={0} onPatchChange={vi.fn()} />
         );
 
         // The four GR bars are the only elements carrying the metering transition class.
@@ -36,7 +36,12 @@ describe('ProofDynSection', () => {
     it('keeps every crossover preview and commit strictly ordered', () => {
         const onPatchChange = vi.fn<(edit: ProofPatchEdit) => void>();
         const { container } = render(
-            <ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} onPatchChange={onPatchChange} />
+            <ProofDynSection
+                patch={DEFAULT_PATCH}
+                dynGr={[0, 0, 0, 0]}
+                gestureOwner={0}
+                onPatchChange={onPatchChange}
+            />
         );
         const lowCrossover = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[0]!;
 
