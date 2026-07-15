@@ -1,7 +1,7 @@
 import { change, load, loadIncremental, save } from '@automerge/automerge';
 
+import { sanitize_action_history_state } from '../models/ActionHistoryState';
 import { type DocumentBundle } from '../models/CrdtDocumentTypes';
-import { sanitize_action_history_state } from '../stores/actionHistoryStore';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -63,5 +63,5 @@ export function sanitizePersistedActionHistoryBundle({
         }
     }
 
-    return { bundle: sanitized_bundle, changed };
+    return changed ? { bundle: sanitized_bundle, changed } : { bundle, changed };
 }

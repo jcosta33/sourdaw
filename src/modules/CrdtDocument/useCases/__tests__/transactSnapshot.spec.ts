@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
     transactSnapshot: vi.fn<(callback: (transaction: object) => Promise<void>) => Promise<SnapshotBundle>>(),
 }));
 
-vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 

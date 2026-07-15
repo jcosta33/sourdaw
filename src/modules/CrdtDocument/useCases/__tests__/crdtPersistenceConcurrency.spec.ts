@@ -12,7 +12,8 @@ vi.mock('../../repositories/crdtPersistence/helpers', () => ({
     STORE_NAME: 'documents',
     openDatabase: mocks.openDatabase,
 }));
-vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: vi.fn(),
 }));
 vi.mock('#/utils/HMR/createHmrPersistentState', () => ({

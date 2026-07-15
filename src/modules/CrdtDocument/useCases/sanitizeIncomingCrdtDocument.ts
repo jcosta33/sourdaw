@@ -1,6 +1,6 @@
 import { change, load, save, type Doc } from '@automerge/automerge';
 
-import { sanitize_action_history_state } from '../stores/actionHistoryStore';
+import { sanitize_action_history_state } from '../models/ActionHistoryState';
 
 type IncomingDocument = {
     actionHistory?: unknown;

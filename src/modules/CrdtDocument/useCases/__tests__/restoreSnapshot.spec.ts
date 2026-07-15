@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
     restoreSnapshot: vi.fn(),
 }));
 
-vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/infra/store/storage/createAutomergeStorage')>()),
     flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 
