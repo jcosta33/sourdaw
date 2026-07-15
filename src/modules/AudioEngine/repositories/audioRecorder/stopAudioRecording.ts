@@ -2,9 +2,12 @@ import { audioRecordingStore } from '../../stores/audioRecordingStore';
 
 import { armRecordingStopFlushTimer } from './armRecordingStopFlushTimer';
 import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
-import { activeSessions } from './recordingSession';
+import { activeSessions, recordingLifecycleState } from './recordingSession';
+import { waitForRecordingSessions } from './waitForRecordingSessions';
 
-export function stopAudioRecording(): void {
+export function stopAudioRecording(): Promise<void> {
+    recordingLifecycleState.startGeneration++;
+    const stoppedTrackIds = new Set(activeSessions.keys());
     for (const session of activeSessions.values()) {
         session.recordingNode?.port.postMessage({ type: 'stop' });
         session.recordingWorker?.postMessage({ type: 'stop' });
@@ -13,4 +16,5 @@ export function stopAudioRecording(): void {
     }
 
     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
+    return waitForRecordingSessions(stoppedTrackIds);
 }

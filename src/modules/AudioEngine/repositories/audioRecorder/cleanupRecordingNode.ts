@@ -1,3 +1,4 @@
+import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupNodesForRecordingSession } from './cleanupNodesForRecordingSession';
 import { activeSessions } from './recordingSession';
 
@@ -6,5 +7,6 @@ export function cleanupRecordingNode(trackId: string): void {
     if (session) {
         cleanupNodesForRecordingSession(session);
         activeSessions.delete(trackId);
+        checkAllRecordingsStopped();
     }
 }

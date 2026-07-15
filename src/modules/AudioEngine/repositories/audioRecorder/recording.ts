@@ -26,7 +26,7 @@ import { acquireSharedMediaStream } from './acquireSharedMediaStream';
 import { checkAllRecordingsStopped } from './checkAllRecordingsStopped';
 import { cleanupRecordingNode } from './cleanupRecordingNode';
 import { clearRecordingStopFlushTimer } from './clearRecordingStopFlushTimer';
-import { activeSessions, SAB_BYTES, type RecordingSession } from './recordingSession';
+import { activeSessions, recordingLifecycleState, SAB_BYTES, type RecordingSession } from './recordingSession';
 import { releaseSharedMediaStream } from './releaseSharedMediaStream';
 import { terminateRecordingWorker } from './terminateRecordingWorker';
 
@@ -40,6 +40,7 @@ export const startAudioRecording = inject({ logger })(
             onComplete: (buffer: AudioBuffer) => void,
             inputId: string | null = null
         ): Promise<boolean> {
+            const startGeneration = recordingLifecycleState.startGeneration;
             let mediaStream: MediaStream | null = null;
             let sourceNode: MediaStreamAudioSourceNode | null = null;
             let recordingNode: AudioWorkletNode | null = null;
@@ -60,6 +61,11 @@ export const startAudioRecording = inject({ logger })(
                 }
 
                 mediaStream = await acquireSharedMediaStream(audioConstraints);
+                if (startGeneration !== recordingLifecycleState.startGeneration || activeSessions.has(trackId)) {
+                    releaseSharedMediaStream();
+                    mediaStream = null;
+                    return false;
+                }
                 const ctx = audioEngine.context;
                 sourceNode = ctx.createMediaStreamSource(mediaStream);
 

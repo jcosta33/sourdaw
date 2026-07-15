@@ -92,7 +92,10 @@ export async function replaceProjectData({
     }
 
     try {
-        stopPlayback();
+        await stopPlayback();
+        if (!transaction.isCurrent()) {
+            return { status: 'aborted' };
+        }
         resetAudioGraph();
     } catch (error) {
         logPreparationFailure(context, error);

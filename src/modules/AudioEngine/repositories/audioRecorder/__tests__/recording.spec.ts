@@ -126,4 +126,25 @@ describe('startAudioRecording', () => {
         await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(true);
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     });
+
+    it('cancels a recording start still waiting for microphone access', async () => {
+        let grantMicrophone: ((stream: MediaStream) => void) | undefined;
+        vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockReturnValueOnce(
+            new Promise<MediaStream>((resolve) => {
+                grantMicrophone = resolve;
+            })
+        );
+        const starting = startAudioRecording('track-pending', vi.fn());
+
+        await Promise.resolve(stopAudioRecording());
+        const grant = grantMicrophone;
+        if (!grant) {
+            throw new Error('Expected microphone request to be pending');
+        }
+        grant({ getTracks: () => [{ stop: media_track_stop }] } as unknown as MediaStream);
+
+        await expect(starting).resolves.toBe(false);
+        expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
+        expect(media_track_stop).toHaveBeenCalledOnce();
+    });
 });

@@ -5,8 +5,8 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 
 import { countInTimerId, setCountInTimerId } from './recordingLifecycle';
 
-export function stopActiveRecording(): void {
-    stopAudioRecording();
+export function stopActiveRecording(): Promise<void> {
+    const recordingFlush = stopAudioRecording();
     stopRecording();
 
     const timerId = countInTimerId;
@@ -16,4 +16,5 @@ export function stopActiveRecording(): void {
     }
 
     updateTransportState({ isRecording: false });
+    return recordingFlush;
 }

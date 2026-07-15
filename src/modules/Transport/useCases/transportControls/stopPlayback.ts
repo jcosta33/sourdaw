@@ -8,11 +8,13 @@ import { stopPlayheadScheduler } from '../playheadScheduler';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
-export function stopPlayback(): void {
+export function stopPlayback(): Promise<void> {
     const state = getTransportState();
     if (!state) {
-        return;
+        return Promise.resolve();
     }
+
+    let recordingFlush = Promise.resolve();
 
     // §8.7 / N5 — Spacebar stop used to flip `isRecording: false` directly,
     // which bypassed `stopAudioRecording` + `stopRecording`: the media
@@ -20,7 +22,7 @@ export function stopPlayback(): void {
     // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
     if (state.isRecording) {
-        stopActiveRecording();
+        recordingFlush = stopActiveRecording();
     }
 
     panicYeastRuntime();
@@ -40,4 +42,5 @@ export function stopPlayback(): void {
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition });
     playheadPositionRef.current = playheadPosition;
+    return recordingFlush;
 }

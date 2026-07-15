@@ -116,6 +116,21 @@ describe('stopAudioRecording', () => {
         expect(audioRecordingStore.value?.isRecording).toBe(false);
     });
 
+    it('resolves stop only after the recording worker finishes delivery', async () => {
+        const { worker } = await startAndArm('track-flush');
+        let settled = false;
+
+        const stopping = Promise.resolve(stopAudioRecording()).then(() => {
+            settled = true;
+        });
+        await Promise.resolve();
+
+        expect(settled).toBe(false);
+        worker.emit({ type: 'wav', buffer: new ArrayBuffer(40) });
+        await stopping;
+        expect(settled).toBe(true);
+    });
+
     it('should terminate a worker that never flushes and free the track to re-record', async () => {
         const { worker } = await startAndArm('track-stall');
 

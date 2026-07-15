@@ -544,6 +544,61 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(crdtAuthority.value).toBe('Old Project');
     });
 
+    it('waits for recording delivery before replacing the graph and project truth', async () => {
+        let finishRecordingFlush: (() => void) | undefined;
+        stopAudioRecording.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingFlush = resolve;
+            })
+        );
+        trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+
+        const applying = applyImportedProjectData({ data: makeProject() });
+        await vi.waitFor(() => expect(stopAudioRecording).toHaveBeenCalledOnce());
+
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
+        expect(crdtAuthority.value).toBe('Old Project');
+
+        const completeRecordingFlush = finishRecordingFlush;
+        if (!completeRecordingFlush) {
+            throw new Error('Expected recording flush to be pending');
+        }
+        completeRecordingFlush();
+        await expect(applying).resolves.toBe(true);
+
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
+        expect(crdtAuthority.value).toBe('Round Trip');
+    });
+
+    it('does not replace project truth when superseded during recording delivery', async () => {
+        let finishRecordingFlush: (() => void) | undefined;
+        stopAudioRecording.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingFlush = resolve;
+            })
+        );
+        trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+
+        const applying = applyImportedProjectData({ data: makeProject() });
+        await vi.waitFor(() => expect(stopAudioRecording).toHaveBeenCalledOnce());
+        runProjectLoadTransaction().activate();
+
+        const completeRecordingFlush = finishRecordingFlush;
+        if (!completeRecordingFlush) {
+            throw new Error('Expected recording flush to be pending');
+        }
+        completeRecordingFlush();
+        await expect(applying).resolves.toBe(false);
+
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
+        expect(crdtAuthority.value).toBe('Old Project');
+    });
+
     it('finalizes recording before a failed graph reset restores the previous project', async () => {
         const order: string[] = [];
         const persistEmbedded = vi.fn(() => {
