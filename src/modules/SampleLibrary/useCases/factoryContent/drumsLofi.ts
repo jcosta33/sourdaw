@@ -1,17 +1,12 @@
-import {
-    applyEnvelope,
-    biquad,
-    bitcrush,
-    createMono,
-    mixMono,
-    normalize,
-    renderEnvelope,
-    renderNoise,
-    renderSine,
-    softClip,
-    toAudioBufferMono,
-    SAMPLE_RATE,
-} from './synthesis';
+import { createMono, toAudioBufferMono } from '../../services/factorySynthesis/bufferCreation';
+import { SAMPLE_RATE } from '../../services/factorySynthesis/constants';
+import { normalize, softClip } from '../../services/factorySynthesis/dynamics';
+import { bitcrush } from '../../services/factorySynthesis/effects';
+import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
+import { biquad } from '../../services/factorySynthesis/filters';
+import { mixMono } from '../../services/factorySynthesis/mixing';
+import { renderNoise, renderSine } from '../../services/factorySynthesis/oscillators';
+
 import { type FactorySample } from './types';
 
 // Lo-fi aesthetic = LPF around 2 kHz, mild bitcrush, and dusty noise bed.

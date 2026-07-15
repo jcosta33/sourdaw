@@ -1,17 +1,16 @@
+import { createMono, toAudioBufferMono } from '../../services/factorySynthesis/bufferCreation';
+import { SAMPLE_RATE } from '../../services/factorySynthesis/constants';
+import { normalize } from '../../services/factorySynthesis/dynamics';
+import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
+import { biquad } from '../../services/factorySynthesis/filters';
+import { mixMono } from '../../services/factorySynthesis/mixing';
 import {
-    applyEnvelope,
-    biquad,
-    createMono,
-    mixMono,
-    normalize,
-    renderEnvelope,
     renderFmOscillator,
     renderNoise,
     renderSine,
     renderTriangle,
-    toAudioBufferMono,
-    SAMPLE_RATE,
-} from './synthesis';
+} from '../../services/factorySynthesis/oscillators';
+
 import { type FactorySample } from './types';
 
 function renderTabla(): Float32Array {

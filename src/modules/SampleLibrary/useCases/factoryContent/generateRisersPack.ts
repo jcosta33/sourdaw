@@ -1,16 +1,11 @@
-import {
-    applyEnvelope,
-    biquadSweep,
-    createStereo,
-    mixMonoIntoStereo,
-    normalizeStereo,
-    renderEnvelope,
-    renderNoise,
-    renderSine,
-    softClipStereo,
-    toAudioBufferStereo,
-    SAMPLE_RATE,
-} from './synthesis';
+import { createStereo, toAudioBufferStereo } from '../../services/factorySynthesis/bufferCreation';
+import { SAMPLE_RATE } from '../../services/factorySynthesis/constants';
+import { normalizeStereo, softClipStereo } from '../../services/factorySynthesis/dynamics';
+import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
+import { biquadSweep } from '../../services/factorySynthesis/filters';
+import { mixMonoIntoStereo } from '../../services/factorySynthesis/mixing';
+import { renderNoise, renderSine } from '../../services/factorySynthesis/oscillators';
+
 import { type FactorySample } from './types';
 
 function renderWhiteNoiseRiser(): [Float32Array, Float32Array] {
