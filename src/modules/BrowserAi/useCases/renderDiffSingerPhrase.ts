@@ -14,8 +14,11 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { DEFAULT_EN_PHONEME_MAP } from '../models/PhonemeMap';
 import { type RenderProvenance, type RenderQuality, RENDER_QUALITY_STEPS } from '../models/RenderProgress';
+import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
-import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
+import { readModel } from '../repositories/readModel';
+import { readRenderCache } from '../repositories/readRenderCache';
+import { writeRenderCache } from '../repositories/writeRenderCache';
 import { applyFades, normalizePeak } from '../services/audioResampler';
 import { type MidiNote } from '../services/midiToDdspInput';
 import { phonemize } from '../services/phonemizer';

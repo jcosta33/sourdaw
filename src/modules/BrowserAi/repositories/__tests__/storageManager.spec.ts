@@ -12,7 +12,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { checkModelCached, getStorageStatus } from '../storageManager';
+import { checkModelCached } from '../checkModelCached';
+import { getStorageStatus } from '../getStorageStatus';
 
 type FakeFile = { kind: 'file'; size: number };
 type FakeDir = {

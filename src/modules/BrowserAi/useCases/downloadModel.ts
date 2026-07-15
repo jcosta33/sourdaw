@@ -9,8 +9,8 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgressEvent';
+import { getStorageStatus } from '../repositories/getStorageStatus';
 import { downloadModel as downloadModelRepo } from '../repositories/modelDownloadManager';
-import { getStorageStatus } from '../repositories/storageManager';
 import { setStorageUsed } from '../stores/modelRegistryStore';
 
 type DownloadModelInput = {

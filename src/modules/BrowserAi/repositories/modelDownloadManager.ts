@@ -17,13 +17,11 @@ import { logger } from '#/infra/logger/appLogger';
 import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgressEvent';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
-import {
-    writeModel,
-    createModelWritable,
-    deleteModel,
-    getStorageStatus,
-    requestPersistentStorage,
-} from './storageManager';
+import { createModelWritable } from './createModelWritable';
+import { deleteModel } from './deleteModel';
+import { getStorageStatus } from './getStorageStatus';
+import { requestPersistentStorage } from './requestPersistentStorage';
+import { writeModel } from './writeModel';
 
 const BROADCAST_CHANNEL_NAME = 'sourdaw-model-downloads';
 const MAX_RETRIES = 3;

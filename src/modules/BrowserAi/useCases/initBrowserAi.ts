@@ -22,7 +22,7 @@ import {
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/DdspInstrumentCatalog';
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { checkModelCached } from '../repositories/storageManager';
+import { checkModelCached } from '../repositories/checkModelCached';
 import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 import { modelRegistryStore } from '../stores/modelRegistryStore';
 import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';

@@ -15,8 +15,11 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type RenderProvenance } from '../models/RenderProgress';
+import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
-import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
+import { readModel } from '../repositories/readModel';
+import { readRenderCache } from '../repositories/readRenderCache';
+import { writeRenderCache } from '../repositories/writeRenderCache';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
