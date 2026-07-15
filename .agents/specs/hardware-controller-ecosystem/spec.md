@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-hardware-controller-ecosystem
 title: Hardware controller ecosystem
-status: in-progress
+status: draft
 owner: The Sourdaw team
 sources:
   - ../workflow-ui/research.md
