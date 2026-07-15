@@ -12,51 +12,62 @@ import { projectStore, type ProjectStoreState } from '../../../stores/projectSto
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
 
-const module_mocks = vi.hoisted(() => ({
-    project_store_value: { value: { loading: false, initialized: true } as ProjectStoreState },
-    project_store_set: vi.fn(),
-    reset_module_stores: vi.fn(),
-    stop_active_auto_save: vi.fn(),
-    set_auto_save_handle: vi.fn(),
+const mocks = vi.hoisted(() => ({
+    projectStoreValue: { value: { loading: false, initialized: true } as ProjectStoreState },
+    projectStoreSet: vi.fn(),
+    createCrdtProject: vi.fn(),
+    getCrdtDoc: vi.fn(() => ({ tracks: { tracks: [] } })),
+    loadCrdtProject: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    startCrdtAutoSave: vi.fn(() => vi.fn()),
+    prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
+    resetModuleStores: vi.fn(),
+    stopActiveAutoSave: vi.fn(),
+    setAutoSaveHandle: vi.fn(),
 }));
 
 vi.mock('../../../stores/projectStore', () => ({
     projectStore: {
         get value() {
-            return module_mocks.project_store_value.value;
+            return mocks.projectStoreValue.value;
         },
-        set: module_mocks.project_store_set,
+        set: mocks.projectStoreSet,
     },
 }));
-
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cancelPendingAudioBufferImport: vi.fn(),
+    getAudioContext: vi.fn(() => ({})),
+    prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    createCrdtProject: vi.fn(),
-    loadCrdtProject: vi.fn(),
-    projectCrdtToStores: vi.fn(),
-    startCrdtAutoSave: vi.fn(() => vi.fn()),
+    createCrdtProject: mocks.createCrdtProject,
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: mocks.getCrdtDoc,
+    loadCrdtProject: mocks.loadCrdtProject,
+    projectCrdtToStores: mocks.projectCrdtToStores,
+    startCrdtAutoSave: mocks.startCrdtAutoSave,
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ migrateAbsoluteMidiNotes: vi.fn() }));
-vi.mock('../helpers/resetModuleStoresToDefault', () => ({
-    resetModuleStoresToDefault: module_mocks.reset_module_stores,
-}));
-vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: module_mocks.stop_active_auto_save }));
-vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: module_mocks.set_auto_save_handle }));
+vi.mock('../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mocks.resetModuleStores }));
+vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mocks.stopActiveAutoSave }));
+vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mocks.setAutoSaveHandle }));
 
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        module_mocks.project_store_value.value = { loading: false, initialized: true } as ProjectStoreState;
-        vi.mocked(loadCrdtProject).mockResolvedValue('loaded');
-        vi.mocked(createCrdtProject).mockResolvedValue(true);
-        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
+        mocks.projectStoreValue.value = { loading: false, initialized: true } as ProjectStoreState;
+        mocks.loadCrdtProject.mockResolvedValue(true);
+        mocks.createCrdtProject.mockResolvedValue(undefined);
+        mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
     });
 
-    it('should hydrate and start normal use after sanitized persistence is activated', async () => {
-        await loadProject();
+    it('should hydrate only after collaboration exits and persistence activates', async () => {
+        await expect(loadProject()).resolves.toBe(true);
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
@@ -65,43 +76,40 @@ describe('loadProject', () => {
     });
 
     it('should create a replacement document when persistence is empty', async () => {
-        vi.mocked(loadCrdtProject).mockResolvedValue('empty');
+        mocks.loadCrdtProject.mockResolvedValue(false);
 
-        await loadProject();
+        await expect(loadProject()).resolves.toBe(true);
 
-        expect(createCrdtProject).toHaveBeenCalledWith({
-            name: 'Untitled Project',
-            canActivate: expect.any(Function),
-        });
+        expect(createCrdtProject).toHaveBeenCalledWith('Untitled Project');
     });
 
-    it('should abort without replacement or hydration when persisted sanitization fails', async () => {
-        vi.mocked(loadCrdtProject).mockResolvedValue('sanitization-failed');
+    it('should preserve the current project when persistence loading fails', async () => {
+        const failure = new Error('sanitization failed');
+        mocks.loadCrdtProject.mockRejectedValue(failure);
 
-        await expect(loadProject()).resolves.toBe(false);
+        await expect(loadProject()).rejects.toBe(failure);
 
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
         expect(clearUndoHistory).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
-        expect(module_mocks.set_auto_save_handle).not.toHaveBeenCalled();
         expect(projectStore.set).not.toHaveBeenCalled();
     });
 
     it('should ignore an older load that resolves after a newer load', async () => {
-        let resolve_first: ((loaded: 'loaded') => void) | undefined;
-        let resolve_second: ((loaded: 'loaded') => void) | undefined;
-        vi.mocked(loadCrdtProject)
+        let resolveFirst: ((loaded: boolean) => void) | undefined;
+        let resolveSecond: ((loaded: boolean) => void) | undefined;
+        mocks.loadCrdtProject
             .mockImplementationOnce(
                 () =>
-                    new Promise<'loaded'>((resolve) => {
-                        resolve_first = resolve;
+                    new Promise<boolean>((resolve) => {
+                        resolveFirst = resolve;
                     })
             )
             .mockImplementationOnce(
                 () =>
-                    new Promise<'loaded'>((resolve) => {
-                        resolve_second = resolve;
+                    new Promise<boolean>((resolve) => {
+                        resolveSecond = resolve;
                     })
             );
 
@@ -109,9 +117,9 @@ describe('loadProject', () => {
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(1));
         const second = loadProject();
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(2));
-        resolve_second?.('loaded');
+        resolveSecond?.(true);
         await expect(second).resolves.toBe(true);
-        resolve_first?.('loaded');
+        resolveFirst?.(true);
         await expect(first).resolves.toBe(false);
 
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
@@ -120,9 +128,7 @@ describe('loadProject', () => {
 
     it('should abort before repository load when collaboration shutdown fails', async () => {
         setProjectIdentityTransitionDependencies({
-            leaveCollaborationSession: async () => {
-                throw new Error('shutdown failed');
-            },
+            leaveCollaborationSession: () => Promise.reject(new Error('shutdown failed')),
         });
 
         await expect(loadProject()).resolves.toBe(false);

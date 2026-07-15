@@ -1,7 +1,7 @@
 import { change, load, loadIncremental, save } from '@automerge/automerge';
 
 import { type DocumentBundle } from '../models/CrdtDocumentTypes';
-import { normalize_action_history_state } from '../stores/actionHistoryStore';
+import { sanitize_action_history_state } from '../stores/actionHistoryStore';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -13,11 +13,17 @@ type SanitizePersistedActionHistoryBundleInput = {
     bundle: DocumentBundle;
 };
 
+type SanitizePersistedActionHistoryBundleOutput = {
+    bundle: DocumentBundle;
+    changed: boolean;
+};
+
 export function sanitizePersistedActionHistoryBundle({
     bundle,
-}: SanitizePersistedActionHistoryBundleInput): DocumentBundle {
+}: SanitizePersistedActionHistoryBundleInput): SanitizePersistedActionHistoryBundleOutput {
     const sanitized_bundle = new Map(bundle);
     const document_ids = [...bundle.keys()].filter((key) => !key.includes(':incremental:'));
+    let changed = false;
 
     for (const document_id of document_ids) {
         const document_bytes = bundle.get(document_id);
@@ -37,18 +43,25 @@ export function sanitizePersistedActionHistoryBundle({
             }
         }
 
+        let document_changed = incremental_keys.length > 0;
         if (document.actionHistory !== undefined) {
-            const sanitized_history = normalize_action_history_state(document.actionHistory);
-            document = change(document, (draft) => {
-                draft.actionHistory = sanitized_history;
-            });
+            const sanitized_history = sanitize_action_history_state(document.actionHistory);
+            if (sanitized_history !== document.actionHistory) {
+                document = change(document, (draft) => {
+                    draft.actionHistory = sanitized_history;
+                });
+                document_changed = true;
+            }
         }
 
-        sanitized_bundle.set(document_id, save(document));
-        for (const key of incremental_keys) {
-            sanitized_bundle.delete(key);
+        if (document_changed) {
+            changed = true;
+            sanitized_bundle.set(document_id, save(document));
+            for (const key of incremental_keys) {
+                sanitized_bundle.delete(key);
+            }
         }
     }
 
-    return sanitized_bundle;
+    return { bundle: sanitized_bundle, changed };
 }

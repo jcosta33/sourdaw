@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
+import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
@@ -12,10 +13,11 @@ const mocks = vi.hoisted(() => ({
     projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
     createCrdtProject: vi.fn<() => void>(),
     getCrdtDoc: vi.fn(),
-    loadCrdtProject: vi.fn<() => Promise<boolean>>(),
+    loadCrdtProject: vi.fn<(input?: { shouldCommit?: () => boolean }) => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
     clearUndoHistory: vi.fn<() => void>(),
+    resetActionReplayAuthority: vi.fn<() => void>(),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
+    resetActionReplayAuthority: mocks.resetActionReplayAuthority,
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
@@ -68,6 +71,7 @@ vi.mock('../recentProjects/addToRecentProjects', () => ({
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         mocks.projectStoreValue.value = {
             loading: false,
             dirty: false,
@@ -93,7 +97,8 @@ describe('Project Persistence Use Cases', () => {
 
             await expect(loadProject()).resolves.toBe(true);
 
-            expect(mocks.loadCrdtProject).toHaveBeenCalledWith({ shouldCommit: expect.any(Function) });
+            expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
+            expect(mocks.loadCrdtProject.mock.calls[0]?.[0]?.shouldCommit).toBeTypeOf('function');
             expect(mocks.createCrdtProject).toHaveBeenCalledWith('Untitled Project');
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
         });
@@ -132,10 +137,11 @@ describe('Project Persistence Use Cases', () => {
         });
 
         it('returns benign false without creating a project when a newer load cancels it', async () => {
-            mocks.loadCrdtProject.mockImplementationOnce(() => {
+            mocks.loadCrdtProject.mockImplementationOnce(async () => {
                 const newerLoad = runProjectLoadTransaction();
+                await newerLoad.prepare();
                 newerLoad.activate();
-                return Promise.resolve(false);
+                return false;
             });
 
             await expect(loadProject()).resolves.toBe(false);

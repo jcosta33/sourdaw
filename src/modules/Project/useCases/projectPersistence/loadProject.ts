@@ -22,7 +22,14 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
-    transaction.activate();
+    try {
+        if (!(await transaction.prepare()) || !transaction.activate()) {
+            return false;
+        }
+    } catch (error) {
+        logger.error(new Error('Failed to end collaboration before loading project', { cause: error }));
+        return false;
+    }
 
     try {
         const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });

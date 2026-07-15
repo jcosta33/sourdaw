@@ -188,6 +188,15 @@ type ConsumeActionReplayClaimInput = {
     claim: ActionReplayClaim;
 };
 
+export function isActionReplayClaimCurrent({ entryId, claim }: ConsumeActionReplayClaimInput): boolean {
+    if (claim.generation !== action_replay_generation) {
+        return false;
+    }
+
+    const record = action_replay_capabilities.get(entryId);
+    return record?.state === 'claimed' && hasMatchingClaim({ record, claim });
+}
+
 export function consumeActionReplayClaim({ entryId, claim }: ConsumeActionReplayClaimInput): void {
     const record = action_replay_capabilities.get(entryId);
     if (record === undefined || record.state !== 'claimed' || !hasMatchingClaim({ record, claim })) {

@@ -6,6 +6,7 @@ import {
     completeActionReplayMarkReconciliation,
     consumeActionReplayClaim,
     getActionReplayMarkReconciliation,
+    isActionReplayClaimCurrent,
     restoreActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../stores/actionReplayCapabilities';
@@ -21,6 +22,10 @@ type MarkCommittedReplayInput = {
 };
 
 function markCommittedReplay({ entryId, claim }: MarkCommittedReplayInput): 'marked' | 'unavailable' {
+    if (!isActionReplayClaimCurrent({ entryId, claim })) {
+        return 'unavailable';
+    }
+
     try {
         const outcome = actionHistoryMetadataPort.markReverted({
             entryId,

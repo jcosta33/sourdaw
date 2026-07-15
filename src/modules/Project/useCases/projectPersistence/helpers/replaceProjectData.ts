@@ -7,7 +7,12 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import {
+    compactProject,
+    projectActionHistoryToStore,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -52,7 +57,7 @@ export async function replaceProjectData({
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
     try {
-        if (!transaction.activate()) {
+        if (!(await transaction.prepare()) || !transaction.activate()) {
             return { status: 'aborted' };
         }
     } catch (error) {
@@ -108,6 +113,7 @@ export async function replaceProjectData({
         stopActiveAutoSave();
         previousPersistenceStopped = true;
         resetCrdtProjectAuthority(data.meta.name);
+        projectActionHistoryToStore();
     } catch (error) {
         logPreparationFailure(context, error);
         restorePreviousAudioGraph(context);

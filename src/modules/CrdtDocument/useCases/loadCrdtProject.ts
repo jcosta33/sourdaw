@@ -2,12 +2,14 @@ import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
-import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
+import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
 import { branchStore } from '../stores/branchStore';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
+
+const MAX_SANITIZATION_ATTEMPTS = 3;
 
 /**
  * Load a CRDT project from persistence (IndexedDB).
@@ -35,20 +37,34 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
             return { loaded: false, snapshot };
         }
 
-        const sanitized_bundle = sanitizePersistedActionHistoryBundle({ bundle: snapshot.bundle });
+        let active_bundle = snapshot.bundle;
+        let active_authority = snapshot.authority;
+        for (let attempt = 0; attempt < MAX_SANITIZATION_ATTEMPTS; attempt++) {
+            const sanitized = sanitizePersistedActionHistoryBundle({ bundle: active_bundle });
+            active_bundle = sanitized.bundle;
+            if (!sanitized.changed) {
+                break;
+            }
+            if (!canCommit()) {
+                return { loaded: false, snapshot: null };
+            }
+
+            const persisted = await saveAllToIdb(active_bundle, { expectedAuthority: active_authority });
+            if (persisted.status === 'committed') {
+                active_authority = persisted.authority;
+                break;
+            }
+            if (attempt === MAX_SANITIZATION_ATTEMPTS - 1) {
+                throw new Error('[loadCrdtProject] Persisted project kept changing during action-history sanitation');
+            }
+            active_bundle = persisted.bundle;
+            active_authority = persisted.authority;
+        }
         if (!canCommit()) {
             return { loaded: false, snapshot: null };
         }
 
-        const persisted = await saveAllToIdb(sanitized_bundle, { expectedAuthority: snapshot.authority });
-        if (persisted.status === 'conflict') {
-            throw new Error('[loadCrdtProject] Persisted project changed during action-history sanitation');
-        }
-        if (!canCommit()) {
-            return { loaded: false, snapshot: null };
-        }
-
-        const committed = await automergeRepository.loadAll({ bundle: sanitized_bundle, shouldCommit: canCommit });
+        const committed = await automergeRepository.loadAll({ bundle: active_bundle, shouldCommit: canCommit });
         if (!committed || !canCommit()) {
             return { loaded: false, snapshot: null };
         }
@@ -57,8 +73,8 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
             loaded: true,
             snapshot: {
                 ...snapshot,
-                authority: persisted.authority,
-                bundle: sanitized_bundle,
+                authority: active_authority,
+                bundle: active_bundle,
             },
         };
     });

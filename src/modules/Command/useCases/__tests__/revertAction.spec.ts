@@ -92,8 +92,9 @@ describe('revertAction', () => {
         const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
         const order: string[] = [];
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(async () => {
+        mocks.execute_app_action.mockImplementation(() => {
             order.push('execute');
+            return Promise.resolve();
         });
         mocks.mark_reverted.mockImplementation(() => {
             order.push('mark');
@@ -199,6 +200,30 @@ describe('revertAction', () => {
         await expect(replay).rejects.toBe(failure);
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(mocks.mark_reverted).not.toHaveBeenCalled();
+    });
+
+    it('should not mark replacement metadata after replay authority is revoked in flight', async () => {
+        const entry = create_entry();
+        let resolve_execution: (() => void) | undefined;
+        mocks.action_history_store.value = { entries: [entry] };
+        mocks.execute_app_action.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolve_execution = resolve;
+                })
+        );
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        const replay = revertAction(entry.id);
+        clearActionReplayCapabilities();
+        if (resolve_execution === undefined) {
+            throw new Error('Expected replay execution to be pending');
+        }
+        resolve_execution();
+
+        await expect(replay).resolves.toEqual({ status: 'executed-unmarked' });
+        expect(mocks.mark_reverted).not.toHaveBeenCalled();
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
     });
 
     it('should retry only metadata marking after the inverse committed and marking failed', async () => {
