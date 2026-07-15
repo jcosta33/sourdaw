@@ -194,7 +194,11 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 fineStep={mappedFineStep}
                 defaultValue={mappedDefaultValue}
                 bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
-                modulations={modulation !== 0 ? [{ amount: modulation, color: 'var(--color-accent-cyan)' }] : undefined}
+                modulations={
+                    modulation !== 0
+                        ? [{ id: param.name, amount: modulation, color: 'var(--color-accent-cyan)' }]
+                        : undefined
+                }
                 size={
                     param.name.toLowerCase().includes('mix') ||
                     param.name.toLowerCase().includes('dry/wet') ||

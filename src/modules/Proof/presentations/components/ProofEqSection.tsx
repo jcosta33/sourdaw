@@ -15,6 +15,7 @@ import { ProofEqCurve } from './ProofEqCurve';
 
 const BAND_TYPES = ['Peak', 'Lo Shelf', 'Hi Shelf', 'HP', 'LP'] as const;
 const CHANNEL_MODES = ['L/R', 'Mid', 'Side'] as const;
+const EQ_BAND_KEYS = ['low-cut', 'low-shelf', 'low-mid', 'mid', 'high-mid', 'high', 'high-shelf', 'high-cut'] as const;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 
 type Props = {
@@ -71,7 +72,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
             <div className={`flex gap-1 overflow-x-auto ${patch.eqBypassed ? 'opacity-30' : ''}`}>
                 {patch.eqBands.map((band, i) => (
                     <div
-                        key={i}
+                        key={EQ_BAND_KEYS[i]}
                         className="flex flex-col items-center gap-0.5 min-w-[52px] px-0.5 py-1 rounded bg-surface-base/50"
                     >
                         {/* Enable toggle */}
@@ -138,7 +139,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                             onChange={(event) => updatePatch(i, 'type', Number.parseInt(event.target.value, 10))}
                         >
                             {BAND_TYPES.map((label, ti) => (
-                                <option key={ti} value={ti}>
+                                <option key={label} value={ti}>
                                     {label}
                                 </option>
                             ))}
@@ -153,7 +154,7 @@ export const ProofEqSection = ({ patch, onPatchChange }: Props): ReactElement =>
                             onChange={(event) => updatePatch(i, 'channel', Number.parseInt(event.target.value, 10))}
                         >
                             {CHANNEL_MODES.map((label, ci) => (
-                                <option key={ci} value={ci}>
+                                <option key={label} value={ci}>
                                     {label}
                                 </option>
                             ))}

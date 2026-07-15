@@ -1,6 +1,4 @@
-import { type ProofPatch } from '../models/ProofPatch';
-
-import { PROOF_PATCH_RANGES } from './proofPatchRanges';
+import { PROOF_PATCH_RANGES, type ProofPatch } from '../models/ProofPatch';
 
 export function isValidDynCrossoverFreqs([low, mid, high]: ProofPatch['dynCrossoverFreqs']): boolean {
     const [min, max] = PROOF_PATCH_RANGES.dynCrossoverFreq;

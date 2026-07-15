@@ -8,9 +8,10 @@ import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader'
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
-import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
+import { PROOF_PATCH_RANGES, type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;
+const CROSSOVER_KEYS = ['low', 'mid', 'high'] as const;
 const BAND_COLORS = [
     'var(--color-accent-peach)',
     'var(--color-accent-mint)',
@@ -79,23 +80,32 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
             {/* Crossover frequencies */}
             <div className="flex items-center gap-2 px-1">
                 <span className="text-[7px] text-muted-foreground">Crossovers:</span>
-                {patch.dynCrossoverFreqs.map((freq, i) => (
-                    <div key={i} className="flex items-center gap-0.5">
-                        <RotaryKnob
-                            value={freq}
-                            onChange={(value, isTransient) => updateXover(i, value, isTransient)}
-                            min={20}
-                            max={20000}
-                            step={1}
-                            defaultValue={freq}
-                            size="sm"
-                            tone="cyan"
-                        />
-                        <span className="text-[6px] text-muted-foreground font-mono">
-                            {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
-                        </span>
-                    </div>
-                ))}
+                {patch.dynCrossoverFreqs.map((freq, i) => {
+                    const crossoverKey = CROSSOVER_KEYS[i]!;
+                    const previous = patch.dynCrossoverFreqs[i - 1];
+                    const next = patch.dynCrossoverFreqs[i + 1];
+                    const [rangeMin, rangeMax] = PROOF_PATCH_RANGES.dynCrossoverFreq;
+                    const min = previous === undefined ? rangeMin : Math.min(freq, previous + 1);
+                    const max = next === undefined ? rangeMax : Math.max(freq, next - 1);
+
+                    return (
+                        <div key={crossoverKey} className="flex items-center gap-0.5">
+                            <RotaryKnob
+                                value={freq}
+                                onChange={(value, isTransient) => updateXover(i, value, isTransient)}
+                                min={min}
+                                max={max}
+                                step={1}
+                                defaultValue={freq}
+                                size="sm"
+                                tone="cyan"
+                            />
+                            <span className="text-[6px] text-muted-foreground font-mono">
+                                {freq >= 1000 ? `${(freq / 1000).toFixed(1)}k` : `${freq.toFixed(0)}`}
+                            </span>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Per-band controls */}
@@ -105,7 +115,7 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange }: Props): ReactEl
                     const gr = dynGr[i] ?? 0;
                     return (
                         <div
-                            key={i}
+                            key={label}
                             className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] font-bold uppercase" style={{ color: BAND_COLORS[i] }}>

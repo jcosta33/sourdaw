@@ -152,6 +152,40 @@ export type ProofPatchEdit =
           isTransient?: boolean;
       };
 
+export const PROOF_PATCH_RANGES = {
+    inputGain: [-24, 24],
+    outputGain: [-24, 24],
+    eqBand: {
+        freq: [20, 20_000],
+        gain: [-18, 18],
+        q: [0.1, 10],
+        type: [0, 4],
+        channel: [0, 2],
+    },
+    dynCrossoverFreq: [20, 20_000],
+    dynBand: {
+        threshold: [-60, 0],
+        ratio: [1, 20],
+        attack: [1, 200],
+        release: [10, 2_000],
+        knee: [0, 12],
+        makeup: [-12, 24],
+    },
+    imgBandWidth: [0, 2],
+    imgMonoBassFreq: [40, 200],
+    excBand: {
+        type: [0, 3],
+        drive: [0, 1],
+        blend: [0, 1],
+    },
+    limCeiling: [-12, 0],
+    limRelease: [10, 500],
+    limLookahead: [0.5, 10],
+    ditherBits: [16, 24],
+    targetLufs: [-60, 0],
+    chainModuleId: [0, 4],
+} as const;
+
 export const DEFAULT_PATCH: ProofPatch = {
     name: 'Init',
     chainOrder: [0, 1, 2, 3, 4],

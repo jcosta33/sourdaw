@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { DEFAULT_PATCH } from '../../../models/ProofPatch';
+import { DEFAULT_PATCH, type ProofPatchEdit } from '../../../models/ProofPatch';
+import { isValidDynCrossoverFreqs } from '../../../services/isValidDynCrossoverFreqs';
 import { ProofDynSection } from '../ProofDynSection';
 
 describe('ProofDynSection', () => {
@@ -30,5 +31,26 @@ describe('ProofDynSection', () => {
         ];
         const actual = bars.map((bar) => bar.style.backgroundColor);
         expect(actual).toEqual(expected);
+    });
+
+    it('keeps every crossover preview and commit strictly ordered', () => {
+        const onPatchChange = vi.fn<(edit: ProofPatchEdit) => void>();
+        const { container } = render(
+            <ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} onPatchChange={onPatchChange} />
+        );
+        const lowCrossover = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[0]!;
+
+        fireEvent.pointerDown(lowCrossover, { button: 0, pointerId: 1, clientY: 100 });
+        fireEvent.pointerMove(lowCrossover, { pointerId: 1, clientY: 98 });
+        fireEvent.pointerMove(lowCrossover, { pointerId: 1, clientY: 93 });
+        fireEvent.pointerUp(lowCrossover, { pointerId: 1 });
+
+        const edits = onPatchChange.mock.calls.map(([edit]) => edit);
+        expect(edits).toHaveLength(3);
+        expect(edits.map((edit) => edit.key)).toEqual(['dynCrossoverFreqs', 'dynCrossoverFreqs', 'dynCrossoverFreqs']);
+        expect(edits.map((edit) => edit.isTransient)).toEqual([true, true, false]);
+        expect(edits.every((edit) => edit.key === 'dynCrossoverFreqs' && isValidDynCrossoverFreqs(edit.value))).toBe(
+            true
+        );
     });
 });

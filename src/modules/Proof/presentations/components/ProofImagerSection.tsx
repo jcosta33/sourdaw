@@ -68,7 +68,7 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange }: Props)
                 {/* Per-band width knobs */}
                 <div className="flex justify-around">
                     {BAND_LABELS.map((label, i) => (
-                        <div key={i} className="flex flex-col items-center gap-0.5">
+                        <div key={label} className="flex flex-col items-center gap-0.5">
                             <span className="text-[7px] text-muted-foreground">{label}</span>
                             <RotaryKnob
                                 value={patch.imgBandWidth[i]!}

@@ -63,7 +63,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                     const band = patch.excBands[i]!;
                     return (
                         <div
-                            key={i}
+                            key={label}
                             className="flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded bg-surface-base/50"
                         >
                             <span className="text-[7px] text-muted-foreground">{label}</span>
@@ -88,7 +88,7 @@ export const ProofExciterSection = ({ patch, onPatchChange }: Props): ReactEleme
                                 onChange={(event) => updateBand(i, 'type', Number.parseInt(event.target.value, 10))}
                             >
                                 {SAT_TYPES.map((t, ti) => (
-                                    <option key={ti} value={ti}>
+                                    <option key={t} value={ti}>
                                         {t}
                                     </option>
                                 ))}

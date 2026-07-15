@@ -1,11 +1,10 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
-import { TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
+import { PROOF_PATCH_RANGES, TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
 import { ditherModeToInt } from '../../services/ditherModeToInt';
 import { getProofPatchParameterValues } from '../../services/getProofPatchParameterValues';
 import { isValidDynCrossoverFreqs } from '../../services/isValidDynCrossoverFreqs';
 import { isValidProofChainOrder } from '../../services/isValidProofChainOrder';
-import { PROOF_PATCH_RANGES } from '../../services/proofPatchRanges';
 import { proofTargetFromInt } from '../../services/proofTargetCodec';
 import { getProofState, hydrateProofPatch } from '../../stores/proofStore';
 import { PROOF_PRESETS } from '../proofPresets';

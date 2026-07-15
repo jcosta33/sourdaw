@@ -1,8 +1,7 @@
-import { DEFAULT_PATCH, TARGET_LUFS, type ProofPatch } from '../models/ProofPatch';
+import { DEFAULT_PATCH, PROOF_PATCH_RANGES, TARGET_LUFS, type ProofPatch } from '../models/ProofPatch';
 
 import { isValidDynCrossoverFreqs } from './isValidDynCrossoverFreqs';
 import { isValidProofChainOrder } from './isValidProofChainOrder';
-import { PROOF_PATCH_RANGES } from './proofPatchRanges';
 
 type NumberRange = readonly [min: number, max: number];
 

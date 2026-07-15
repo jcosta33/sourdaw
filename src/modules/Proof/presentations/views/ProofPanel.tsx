@@ -330,7 +330,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                                 const bypassed = isModuleBypassed(state, moduleIndex);
                                 return (
                                     <DawPluginChoiceRow
-                                        key={`${moduleIndex}-${slot}`}
+                                        key={moduleIndex}
                                         className="proof-window"
                                         title={label}
                                         startSlot={
@@ -518,7 +518,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     const tapIdx = slot + 1;
 
                     return (
-                        <div key={`${moduleIdx}-${slot}`} className="flex items-center gap-1">
+                        <div key={moduleIdx} className="flex items-center gap-1">
                             <div className="w-4 h-px bg-border/30" />
                             <button
                                 type="button"
@@ -773,7 +773,7 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     {patch.chainOrder.map((moduleIdx, slot) => {
                         const moduleLabel = MODULE_LABELS[moduleIdx] ?? 'module';
                         return (
-                            <div key={slot} className="flex items-center gap-1">
+                            <div key={moduleIdx} className="flex items-center gap-1">
                                 <div className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded bg-surface-base/80 border border-border/30">
                                     <span className="text-[9px] font-bold" style={{ color: MODULE_COLORS[moduleIdx] }}>
                                         {moduleLabel}

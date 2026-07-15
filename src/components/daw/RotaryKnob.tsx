@@ -41,6 +41,7 @@ const TONE_COLORS: Record<Tone, string> = {
 };
 
 type ModulationHalo = {
+    id: string;
     /** Fraction of full sweep (-1 to +1) representing modulation depth */
     amount: number;
     /** CSS color string for this modulation source */
@@ -284,7 +285,7 @@ export const RotaryKnob = ({
                 />
 
                 {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
-                {modulations?.map((mod, idx) => {
+                {modulations?.map((mod) => {
                     const amountDeg = mod.amount * 270;
                     let haloBg: string;
                     if (amountDeg >= 0) {
@@ -298,7 +299,7 @@ export const RotaryKnob = ({
                     }
                     return (
                         <div
-                            key={idx}
+                            key={mod.id}
                             className="absolute inset-0 rounded-full pointer-events-none"
                             style={{
                                 background: haloBg,

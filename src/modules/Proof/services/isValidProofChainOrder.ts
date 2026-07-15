@@ -1,4 +1,4 @@
-import { PROOF_PATCH_RANGES } from './proofPatchRanges';
+import { PROOF_PATCH_RANGES } from '../models/ProofPatch';
 
 export function isValidProofChainOrder(order: readonly number[]): boolean {
     const [min, max] = PROOF_PATCH_RANGES.chainModuleId;

@@ -161,7 +161,7 @@ export const ProofLimiterSection = ({ patch, limiterGrDb, truePeakDb, onPatchCha
                         }}
                     >
                         {DITHER_MODES.map((label, i) => (
-                            <option key={i} value={i}>
+                            <option key={label} value={i}>
                                 {label}
                             </option>
                         ))}
