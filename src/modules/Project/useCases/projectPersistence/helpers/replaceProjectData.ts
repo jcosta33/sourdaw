@@ -92,6 +92,7 @@ export async function replaceProjectData({
     }
 
     try {
+        stopPlayback();
         resetAudioGraph();
     } catch (error) {
         logPreparationFailure(context, error);
@@ -133,9 +134,8 @@ export async function replaceProjectData({
         }
     }
 
-    // The audio graph and CRDT authority now own the incoming project. Every
-    // remaining operation is best-effort; no later failure can become an abort.
-    runCommittedStep('transport shutdown', stopPlayback);
+    // Playback has stopped, the old graph is gone, and CRDT authority now owns
+    // the incoming project. Remaining operations cannot become an abort.
 
     try {
         // Notification coalescing only: each write remains independently fallible

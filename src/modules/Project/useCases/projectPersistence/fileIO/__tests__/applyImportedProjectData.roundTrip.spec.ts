@@ -544,7 +544,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(crdtAuthority.value).toBe('Old Project');
     });
 
-    it('aborts and restores the previous graph when audio reset fails before commit', async () => {
+    it('finalizes recording before a failed graph reset restores the previous project', async () => {
         const order: string[] = [];
         const persistEmbedded = vi.fn(() => {
             order.push('persist');
@@ -577,12 +577,15 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(order).toEqual(['reset']);
         expect(publishEmbedded).not.toHaveBeenCalled();
         expect(persistEmbedded).not.toHaveBeenCalled();
-        expect(stopAudioRecording).not.toHaveBeenCalled();
-        expect(stopRecording).not.toHaveBeenCalled();
-        expect(stopAllScheduled).not.toHaveBeenCalled();
-        expect(resetMidiState).not.toHaveBeenCalled();
+        expect(stopAudioRecording).toHaveBeenCalledOnce();
+        expect(stopRecording).toHaveBeenCalledOnce();
+        expect(stopAllScheduled).toHaveBeenCalled();
+        expect(resetMidiState).toHaveBeenCalledOnce();
+        expect(stopAudioRecording.mock.invocationCallOrder[0]).toBeLessThan(
+            resetAudioGraph.mock.invocationCallOrder[0]!
+        );
         expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
-        expect(transportStore.value).toMatchObject({ isPlaying: true, isRecording: true, playheadPosition: 8 });
+        expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
         expect(engineGraph.value).toBe('old-project');
         expect(crdtAuthority.value).toBe('Old Project');
         expect(restoreOldAudioGraph).toHaveBeenCalledOnce();
