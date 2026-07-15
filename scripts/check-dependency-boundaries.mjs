@@ -341,52 +341,85 @@ function bindingIdentifiers(name) {
     return [];
 }
 
-function propertyNameText(name) {
+function bindingPropertyNameText(name) {
     if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
         return name.text;
     }
     return null;
 }
 
-function isModuleExportsObject(node) {
-    if (isIdentifierNamed(node, 'exports')) {
-        return true;
+function staticExpressionName(checker, expression) {
+    if (!expression) {
+        return null;
     }
-    if (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) {
-        return false;
+    if (ts.isStringLiteralLike(expression) || ts.isNumericLiteral(expression)) {
+        return expression.text;
     }
-    const objectName = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression;
-    return isIdentifierNamed(node.expression, 'module') && propertyNameText(objectName) === 'exports';
+    try {
+        const type = checker.getTypeAtLocation(expression);
+        if (type.flags & ts.TypeFlags.StringLiteral) {
+            return type.value;
+        }
+        if (type.flags & ts.TypeFlags.NumberLiteral) {
+            return String(type.value);
+        }
+    } catch {
+        return null;
+    }
+    return null;
 }
 
-function commonJsExportName(left) {
-    if (!ts.isPropertyAccessExpression(left) && !ts.isElementAccessExpression(left)) {
-        return null;
+function staticMemberName(checker, node) {
+    if (ts.isPropertyAccessExpression(node)) {
+        return node.name.text;
     }
-    if (!isModuleExportsObject(left.expression)) {
-        return null;
+    if (ts.isElementAccessExpression(node)) {
+        return staticExpressionName(checker, node.argumentExpression);
     }
-    const name = ts.isPropertyAccessExpression(left) ? left.name : left.argumentExpression;
-    return propertyNameText(name);
+    return null;
 }
 
 function hasLocalDeclaration(context, sourceFile, identifier) {
     try {
         const symbol = context.checker.getSymbolAtLocation(identifier);
-        return (symbol?.declarations ?? []).some((declaration) => declaration.getSourceFile() === sourceFile);
+        return (symbol?.declarations ?? []).some(
+            (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
+        );
     } catch {
         return true;
     }
 }
 
-function isUnshadowedCommonJsTarget(context, sourceFile, node) {
+function unshadowedStaticMemberName(context, sourceFile, node, objectName) {
+    if (
+        (!ts.isPropertyAccessExpression(node) && !ts.isElementAccessExpression(node)) ||
+        !isIdentifierNamed(node.expression, objectName) ||
+        hasLocalDeclaration(context, sourceFile, node.expression)
+    ) {
+        return null;
+    }
+    return staticMemberName(context.checker, node);
+}
+
+function isModuleExportsObject(context, sourceFile, node) {
     if (isIdentifierNamed(node, 'exports')) {
         return !hasLocalDeclaration(context, sourceFile, node);
     }
-    if (!isModuleExportsObject(node)) {
-        return false;
+    return unshadowedStaticMemberName(context, sourceFile, node, 'module') === 'exports';
+}
+
+function commonJsExportName(context, sourceFile, left) {
+    if (
+        (!ts.isPropertyAccessExpression(left) && !ts.isElementAccessExpression(left)) ||
+        !isModuleExportsObject(context, sourceFile, left.expression)
+    ) {
+        return null;
     }
-    return !hasLocalDeclaration(context, sourceFile, node.expression);
+    return staticMemberName(context.checker, left);
+}
+
+function isUnshadowedCommonJsTarget(context, sourceFile, node) {
+    return isModuleExportsObject(context, sourceFile, node);
 }
 
 function createRepositoryTypeEnvironment(repositoryRoot) {
@@ -455,7 +488,7 @@ function resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, optio
     return existingPath ? normalizeFileName(existingPath) : null;
 }
 
-function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
+function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
     const targets = [];
     const addTarget = (moduleSpecifier, exportedName, all = false) => {
         const targetFile = moduleSpecifier ? resolveModuleSpecifier(moduleSpecifier, sourceFile.fileName) : null;
@@ -482,13 +515,13 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier) {
             if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
                 addTarget(moduleSpecifier, parent.name.text);
             } else if (ts.isElementAccessExpression(parent) && parent.expression === node) {
-                const name = propertyNameText(parent.argumentExpression);
+                const name = staticExpressionName(checker, parent.argumentExpression);
                 addTarget(moduleSpecifier, name ?? '*', !name);
             } else if (ts.isVariableDeclaration(parent) && parent.initializer === node) {
                 if (ts.isObjectBindingPattern(parent.name)) {
                     for (const element of parent.name.elements) {
                         if (ts.isBindingElement(element)) {
-                            const name = propertyNameText(element.propertyName ?? element.name);
+                            const name = bindingPropertyNameText(element.propertyName ?? element.name);
                             addTarget(moduleSpecifier, name ?? '*', !name);
                         }
                     }
@@ -541,6 +574,7 @@ function findRepositoryConsumerPaths(
     repositoryRoot,
     sourcePaths,
     sourceFilesByPath,
+    checker,
     options,
     compilerHost,
     targetsByFile
@@ -562,7 +596,7 @@ function findRepositoryConsumerPaths(
         if (!hasRepositoryImport && !/\b(?:import|require)\s*\(/.test(sourceFile.text)) {
             return false;
         }
-        const targets = collectConsumerTargets(sourceFile, resolveModuleSpecifier);
+        const targets = collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker);
         const consumesRepository = targets.some(({ targetFile }) => isRepositorySourceFile(repositoryRoot, targetFile));
         if (consumesRepository) {
             targetsByFile.set(normalizeFileName(filePath), targets);
@@ -886,6 +920,15 @@ function addRepositoryRecord(context, sourceFile, record) {
     return completeRecord;
 }
 
+function replaceCommonJsRecords(context, sourceFile, exportedNames = null) {
+    const fileName = normalizeFileName(sourceFile.fileName);
+    const records = context.recordsByFile.get(fileName) ?? [];
+    context.recordsByFile.set(
+        fileName,
+        records.filter((record) => !record.isCommonJs || exportedNames?.has(record.exportedName) === false)
+    );
+}
+
 function addDeclarationRecord(context, sourceFile, statement, declaration, exportedName) {
     return addRepositoryRecord(context, sourceFile, {
         diagnosticNode: statement,
@@ -943,12 +986,7 @@ function collectCommonJsObjectAssign(context, sourceFile, node) {
         return;
     }
     const callee = node.expression;
-    if (
-        !ts.isPropertyAccessExpression(callee) ||
-        !isIdentifierNamed(callee.expression, 'Object') ||
-        !isIdentifierNamed(callee.name, 'assign') ||
-        hasLocalDeclaration(context, sourceFile, callee.expression)
-    ) {
+    if (unshadowedStaticMemberName(context, sourceFile, callee, 'Object') !== 'assign') {
         return;
     }
     const statement = node.parent;
@@ -971,6 +1009,7 @@ function collectCommonJsObjectAssign(context, sourceFile, node) {
             recordsByName.set(record.exportedName, record);
         }
     }
+    replaceCommonJsRecords(context, sourceFile, new Set(recordsByName.keys()));
     for (const record of recordsByName.values()) {
         addRepositoryRecord(context, sourceFile, record);
     }
@@ -1060,13 +1099,15 @@ function collectExportRecords(context, sourceFile) {
     const visitCommonJs = (node) => {
         collectCommonJsObjectAssign(context, sourceFile, node);
         if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-            const propertyName = commonJsExportName(node.left);
+            const propertyName = commonJsExportName(context, sourceFile, node.left);
             const isWholeModuleAssignment =
-                ts.isPropertyAccessExpression(node.left) &&
-                isIdentifierNamed(node.left.expression, 'module') &&
-                isIdentifierNamed(node.left.name, 'exports');
+                unshadowedStaticMemberName(context, sourceFile, node.left, 'module') === 'exports';
             const statement = node.parent && ts.isExpressionStatement(node.parent) ? node.parent : node;
+            const isTopLevelAssignment = ts.isExpressionStatement(node.parent) && node.parent.parent === sourceFile;
             if (isWholeModuleAssignment) {
+                if (isTopLevelAssignment) {
+                    replaceCommonJsRecords(context, sourceFile);
+                }
                 addRepositoryRecord(context, sourceFile, {
                     diagnosticNode: statement,
                     exportedName: 'default',
@@ -1076,6 +1117,9 @@ function collectExportRecords(context, sourceFile) {
                 });
                 enumerateCommonJsProperties(context, sourceFile, statement, node.right);
             } else if (propertyName) {
+                if (isTopLevelAssignment) {
+                    replaceCommonJsRecords(context, sourceFile, new Set([propertyName]));
+                }
                 addRepositoryRecord(context, sourceFile, {
                     diagnosticNode: statement,
                     exportedName: propertyName,
@@ -1553,6 +1597,7 @@ export function findStaticGuardFindings(repositoryRoot = root) {
     );
     const environment = createRepositoryTypeEnvironment(repositoryRoot);
     const { program } = createRepositoryTypeProgram(sourcePaths, environment);
+    const checker = program.getTypeChecker();
     const sourceFilesByPath = new Map(
         program.getSourceFiles().map((sourceFile) => [normalizeFileName(sourceFile.fileName), sourceFile])
     );
@@ -1573,6 +1618,7 @@ export function findStaticGuardFindings(repositoryRoot = root) {
         repositoryRoot,
         sourcePaths,
         sourceFilesByPath,
+        checker,
         environment.options,
         environment.compilerHost,
         consumerTargetsByFile

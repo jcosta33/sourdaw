@@ -752,7 +752,7 @@ describe('check-dependency-boundaries', () => {
                 ],
                 'commonjs-assign-shadowed.cjs': [
                     'const Object = { assign() {} };',
-                    'Object.assign(exports, {',
+                    "Object['assign'](exports, {",
                     "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
                     '    shadowed(args) { return args; },',
                     '});',
@@ -761,7 +761,7 @@ describe('check-dependency-boundaries', () => {
                     "const { invoke } = require('@tauri-apps/api/core');",
                     '/** @type {{ runtimeOnly(): Promise<string> }} */',
                     "const runtime = { runtimeOnly: () => invoke('assign-clean-runtime') };",
-                    'Object.assign(exports, runtime);',
+                    "Object['assign'](exports, runtime);",
                 ],
                 'commonjs-assign-overwrite.cjs': [
                     'const leaked = {',
@@ -778,6 +778,64 @@ describe('check-dependency-boundaries', () => {
                     '};',
                     'Object.assign(module.exports, source);',
                     "module.exports = { replaced() { return 'clean'; } };",
+                ],
+                'commonjs-element-module-string.cjs': [
+                    'const api = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    elementModuleString(args) { return args; },',
+                    '};',
+                    "module['exports'] = api;",
+                ],
+                'commonjs-element-module-template.cjs': [
+                    'const api = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    elementModuleTemplate(args) { return args; },',
+                    '};',
+                    'module[`exports`] = api;',
+                ],
+                'commonjs-element-assign.cjs': [
+                    'const exportsApi = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    elementAssignExports(args) { return args; },',
+                    '};',
+                    'const moduleApi = {',
+                    "    /** @returns {import('@tauri-apps/api/core').InvokeArgs} */",
+                    '    elementAssignModule() { return null; },',
+                    '};',
+                    "Object['assign'](exports, exportsApi);",
+                    'Object[`assign`](module[`exports`], moduleApi);',
+                ],
+                'commonjs-element-named.cjs': [
+                    'const api = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    namedString(args) { return args; },',
+                    "    /** @returns {import('@tauri-apps/api/core').InvokeArgs} */",
+                    '    namedTemplate() { return null; },',
+                    '};',
+                    "exports['namedString'] = api.namedString;",
+                    'module[`exports`][`namedTemplate`] = api.namedTemplate;',
+                ],
+                'commonjs-element-dynamic.cjs': [
+                    "const moduleKey = Math.random() > 0.5 ? 'exports' : 'other';",
+                    "const assignKey = Math.random() > 0.5 ? 'assign' : 'other';",
+                    "const exportKey = Math.random() > 0.5 ? 'invented' : 'other';",
+                    'const api = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    invented(args) { return args; },',
+                    '};',
+                    'module[moduleKey] = api;',
+                    'Object[assignKey](exports, api);',
+                    'exports[exportKey] = api.invented;',
+                ],
+                'commonjs-element-shadowed-module.cjs': [
+                    'const api = {',
+                    "    /** @param {import('@tauri-apps/api/core').InvokeArgs} args */",
+                    '    shadowedModule(args) { return args; },',
+                    '};',
+                    'function replace(module) {',
+                    "    module['exports'] = api;",
+                    '}',
+                    'replace({ exports: {} });',
                 ],
                 'import-type-source.ts': [
                     "export type Leaked = import('@tauri-apps/api/core').InvokeArgs;",
@@ -803,6 +861,13 @@ describe('check-dependency-boundaries', () => {
                     "const { runtimeOnly } = require('../repositories/commonjs-assign-clean-runtime');",
                     "const { overwritten } = require('../repositories/commonjs-assign-overwrite');",
                     "const { replaced } = require('../repositories/commonjs-assign-replaced');",
+                    "const { elementModuleString } = require('../repositories/commonjs-element-module-string');",
+                    "const { elementModuleTemplate } = require('../repositories/commonjs-element-module-template');",
+                    "const { elementAssignExports, elementAssignModule } = require('../repositories/commonjs-element-assign');",
+                    "const namedString = require('../repositories/commonjs-element-named')['namedString'];",
+                    "const namedTemplate = require('../repositories/commonjs-element-named')[`namedTemplate`];",
+                    "const { invented, exportKey } = require('../repositories/commonjs-element-dynamic');",
+                    "const { shadowedModule } = require('../repositories/commonjs-element-shadowed-module');",
                     '',
                     "export type ExternalMember = import('../repositories/import-type-source').Leaked;",
                     "export type ExternalQualified = import('../repositories/import-type-source').Api.Leaked;",
@@ -826,6 +891,15 @@ describe('check-dependency-boundaries', () => {
                     'void runtimeOnly;',
                     'void overwritten;',
                     'void replaced;',
+                    'void elementModuleString;',
+                    'void elementModuleTemplate;',
+                    'void elementAssignExports;',
+                    'void elementAssignModule;',
+                    'void namedString;',
+                    'void namedTemplate;',
+                    'void invented;',
+                    'void exportKey;',
+                    'void shadowedModule;',
                 ],
             });
 
@@ -838,11 +912,16 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/commonjs-partial.cjs', 1),
                     vendorFinding('src/modules/Foo/repositories/commonjs-assign-exports.cjs', 5),
                     vendorFinding('src/modules/Foo/repositories/commonjs-assign-module.cjs', 7),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-module-string.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-module-template.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-assign.cjs', 9),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-assign.cjs', 10),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-named.cjs', 7),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-named.cjs', 8),
                     vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 1),
                     vendorFinding('src/modules/Foo/repositories/import-type-source.ts', 3),
                 ])
             );
-            expect(vendorFindings).toHaveLength(7);
             expect(vendorFindings).not.toEqual(
                 expect.arrayContaining([
                     vendorFinding('src/modules/Foo/repositories/runtime-only.ts', 3),
@@ -855,8 +934,13 @@ describe('check-dependency-boundaries', () => {
                     vendorFinding('src/modules/Foo/repositories/commonjs-assign-clean-runtime.cjs', 4),
                     vendorFinding('src/modules/Foo/repositories/commonjs-assign-overwrite.cjs', 6),
                     vendorFinding('src/modules/Foo/repositories/commonjs-assign-replaced.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-dynamic.cjs', 8),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-dynamic.cjs', 9),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-dynamic.cjs', 10),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-element-shadowed-module.cjs', 6),
                 ])
             );
+            expect(vendorFindings).toHaveLength(13);
         } finally {
             if (repositoryRoot) {
                 rmSync(repositoryRoot, { force: true, recursive: true });
