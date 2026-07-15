@@ -432,12 +432,82 @@ describe('applyImportedProjectData round-trip hydration', () => {
         );
     });
 
+    it('reports success only after the replacement CRDT snapshot is durable', async () => {
+        let finishCompaction: (() => void) | undefined;
+        compactProject.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    finishCompaction = resolve;
+                })
+        );
+        let settled = false;
+        const applying = applyImportedProjectData({ data: makeProject() }).then((result) => {
+            settled = true;
+            return result;
+        });
+
+        await vi.waitFor(() => expect(compactProject).toHaveBeenCalledOnce());
+        expect(settled).toBe(false);
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+
+        const completeCompaction = finishCompaction;
+        if (!completeCompaction) {
+            throw new Error('Expected CRDT compaction to be pending');
+        }
+        completeCompaction();
+        await expect(applying).resolves.toBe(true);
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('does not let a superseded replacement overwrite newer autosave ownership', async () => {
+        let finishFirstPersistence: ((persisted: boolean) => void) | undefined;
+        const persistFirst = vi.fn(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    finishFirstPersistence = resolve;
+                })
+        );
+        importCachedAudioBuffers.mockResolvedValueOnce({ persist: persistFirst, publish: () => 0 });
+        const firstProject = makeProject();
+        firstProject.meta.name = 'First Project';
+        firstProject.audioBuffers = {
+            'buf-1': { sampleRate: 48_000, numberOfChannels: 1, channelData: ['encoded'] },
+        };
+        const firstReplacement = applyImportedProjectData({ data: firstProject });
+        await vi.waitFor(() => expect(persistFirst).toHaveBeenCalledOnce());
+
+        const secondProject = makeProject();
+        secondProject.meta.name = 'Second Project';
+        await expect(applyImportedProjectData({ data: secondProject })).resolves.toBe(true);
+        expect(crdtAuthority.value).toBe('Second Project');
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+
+        const completeFirstPersistence = finishFirstPersistence;
+        if (!completeFirstPersistence) {
+            throw new Error('Expected first embedded audio-buffer persistence to be pending');
+        }
+        completeFirstPersistence(true);
+        await expect(firstReplacement).resolves.toBe(true);
+
+        expect(crdtAuthority.value).toBe('Second Project');
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
     it('starts the committed project durability lifecycle', async () => {
         await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
 
         expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
         expect(engineGraph.value).toBe('empty');
         expect(crdtAuthority.value).toBe('Round Trip');
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('keeps durability retries active when the initial CRDT snapshot fails', async () => {
+        compactProject.mockRejectedValueOnce(new Error('storage unavailable'));
+
+        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
+
+        expect(compactProject).toHaveBeenCalledOnce();
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 

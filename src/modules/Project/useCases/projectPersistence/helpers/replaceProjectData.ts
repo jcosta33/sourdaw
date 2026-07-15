@@ -7,7 +7,7 @@ import {
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -173,9 +173,20 @@ export async function replaceProjectData({
         }
     }
 
-    runCommittedStep('CRDT durability lifecycle start', () => {
-        setAutoSaveHandle(startCrdtAutoSave());
-    });
+    if (transaction.isCurrent()) {
+        try {
+            await compactProject();
+        } catch (error) {
+            degraded = true;
+            logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
+        }
+    }
+
+    if (transaction.isCurrent()) {
+        runCommittedStep('CRDT durability lifecycle start', () => {
+            setAutoSaveHandle(startCrdtAutoSave());
+        });
+    }
 
     return { status: 'committed', degraded };
 }
