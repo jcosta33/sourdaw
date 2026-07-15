@@ -2,8 +2,7 @@ import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
-
-import { TransactionalPersistence } from './helpers/transactionalPersistence';
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
 const mocks = vi.hoisted(() => ({
     openDatabase: vi.fn(),
@@ -30,7 +29,7 @@ type OperationOutcome = { kind: 'resolved' } | { kind: 'rejected'; error: unknow
 
 type ConflictAttempt = {
     error: unknown;
-    unexpectedWrites: readonly import('./helpers/transactionalPersistence').TransactionWrite[];
+    unexpectedWrites: readonly import('../../testing/transactionalPersistence').TransactionWrite[];
 };
 
 type LoadedPersistenceSnapshot = {
@@ -137,7 +136,7 @@ async function runRetryAttempt({
 }: {
     persistence: TransactionalPersistence;
     operation: Promise<void>;
-}): Promise<{ error: unknown; writes: readonly import('./helpers/transactionalPersistence').TransactionWrite[] }> {
+}): Promise<{ error: unknown; writes: readonly import('../../testing/transactionalPersistence').TransactionWrite[] }> {
     const occurrence = persistence.getTransactions('readwrite').length + 1;
     const transaction = await persistence.waitForTransaction('readwrite', occurrence);
     const writes = [...transaction.writes];

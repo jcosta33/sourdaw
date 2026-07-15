@@ -249,13 +249,16 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('restoreDsoSnapshot', () => {
-        it('should accept a bundle that is a Map<string, Uint8Array>', () => {
+        it('should accept present bytes and absent membership entries', () => {
             const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
-            const bundle = new Map<string, Uint8Array>([['root', new Uint8Array([1, 2, 3])]]);
+            const bundle = new Map([
+                ['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }],
+                ['removed', { state: 'absent' as const }],
+            ]);
             expect(guard({ bundle })).toBe(true);
             expect(guard({ bundle: new Map() })).toBe(true);
         });
@@ -270,7 +273,10 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
             expect(guard({ bundle: { root: [1, 2, 3] } })).toBe(false);
             expect(guard({})).toBe(false);
             expect(guard({ bundle: new Map([['root', [1, 2, 3]]]) })).toBe(false);
-            expect(guard({ bundle: new Map([[1, new Uint8Array()]]) })).toBe(false);
+            expect(guard({ bundle: new Map([['root', { state: 'present', bytes: [1, 2, 3] }]]) })).toBe(false);
+            expect(guard({ bundle: new Map([['root', { state: 'unknown' }]]) })).toBe(false);
+            expect(guard({ bundle: new Map([['root', { state: 'absent', bytes: new Uint8Array() }]]) })).toBe(false);
+            expect(guard({ bundle: new Map([[1, { state: 'absent' }]]) })).toBe(false);
         });
     });
 

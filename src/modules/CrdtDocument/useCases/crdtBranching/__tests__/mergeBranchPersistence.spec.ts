@@ -6,7 +6,7 @@ import { loadAllFromIdb } from '../../../repositories/crdtPersistence/loadAllFro
 import {
     TransactionalPersistence,
     type TransactionalPersistenceTransaction,
-} from '../../__tests__/helpers/transactionalPersistence';
+} from '../../../testing/transactionalPersistence';
 import { compactProject } from '../../compactProject';
 import { runCrdtPersistenceOperation } from '../../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../../crdtProjectCompactionState';

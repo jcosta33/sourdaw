@@ -1,6 +1,11 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { type Logger } from '#/infra/logger/types';
+import {
+    configureAutomergeStoragePort,
+    createAutomergeStorage,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { shortcutStore } from '../../stores/shortcutStore';
@@ -74,6 +79,12 @@ describe('executeAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
     });
 
     it('logs error if no handler is found', async () => {
@@ -95,6 +106,33 @@ describe('executeAppAction', () => {
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.pushActionHistoryEntry).toHaveBeenCalled();
+    });
+
+    it('scopes the snapshot transaction to storage writes made by the action', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const snapshotTransaction = {};
+        const mutations: Array<{ snapshotTransaction?: object }> = [];
+        const doc: Record<string, unknown> = {};
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn, snapshotTransaction: mutationTransaction }) => {
+                changeFn(doc);
+                mutations.push({ snapshotTransaction: mutationTransaction });
+            },
+        });
+        const storage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => storage.set({ tool: 'marquee' }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipUndo: true, snapshotTransaction });
+        flushAutomergeStorageWrites(snapshotTransaction);
+
+        expect(mutations).toEqual([{ snapshotTransaction }]);
+        expect(doc.editingTool).toEqual({ tool: 'marquee' });
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {

@@ -15,11 +15,12 @@ export function registerCrdtStorageRuntime(): void {
         getDoc: (docId) => getCrdtDoc<StorageRuntimeDoc>(docId),
         getSemanticMessage: () => getSemanticContext()?.message,
         hasDoc: (docId) => hasCrdtDoc(docId),
-        mutateDoc: ({ docId, changeFn, message }) => {
+        mutateDoc: ({ docId, changeFn, message, snapshotTransaction }) => {
             mutateCrdtDoc<StorageRuntimeDoc>({
                 id: docId,
                 changeFn,
                 message,
+                snapshotTransaction,
             });
         },
     });

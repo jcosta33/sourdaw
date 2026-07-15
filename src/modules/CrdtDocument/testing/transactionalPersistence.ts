@@ -1,3 +1,4 @@
+/** Owner-local deterministic IndexedDB transaction fixture for CRDT tests. */
 type FakeRequest<Result> = {
     result: Result;
 };
@@ -9,6 +10,10 @@ export type TransactionWrite = {
 };
 
 type TransactionOperation = (records: Map<string, Uint8Array>) => void;
+
+export type TransactionalPersistenceDatabase = {
+    transaction(storeName: string, mode?: IDBTransactionMode): TransactionalPersistenceTransaction;
+};
 
 export class TransactionalPersistenceTransaction {
     readonly mode: IDBTransactionMode;
@@ -162,7 +167,7 @@ export class TransactionalPersistenceTransaction {
 }
 
 export class TransactionalPersistence {
-    readonly database: IDBDatabase;
+    readonly database: TransactionalPersistenceDatabase;
     readonly records = new Map<string, Uint8Array>();
 
     private readonly transactions: TransactionalPersistenceTransaction[] = [];
@@ -178,7 +183,7 @@ export class TransactionalPersistence {
         const database = {
             transaction: (_storeName: string, mode: IDBTransactionMode = 'readonly') => this.createTransaction(mode),
         };
-        this.database = database as unknown as IDBDatabase;
+        this.database = database;
     }
 
     seed(key: string, value: Uint8Array): void {

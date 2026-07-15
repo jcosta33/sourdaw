@@ -17,6 +17,7 @@ import {
 
 import { logger } from '#/infra/logger/appLogger';
 
+import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
@@ -173,18 +174,18 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
 type ChangeListener = (docId?: DocId) => void;
 
 /**
- * Active snapshot transaction state. While one is open, every mutation method
- * captures the pre-mutation clone of each doc it is about to replace — lazily,
- * the first time that doc is touched. Automerge v3 mutates the WASM-backed doc
- * in place (the pre-`change()` reference reads the *post*-change state, verified
- * empirically), so the "before" snapshot must be cloned *before* the mutation
- * lands, not read back from a retained reference afterwards.
+ * Active snapshot transaction state. A mutation participates only when it
+ * carries this transaction's exact handle; concurrent unowned mutations are
+ * never inferred from timing. Automerge v3 mutates WASM-backed docs in place,
+ * so present bytes are captured before the mutation lands.
  */
 type SnapshotTransaction = {
+    /** Unforgeable-by-identity handle passed only to owned mutation calls. */
+    readonly handle: object;
     /** Docs dirtied during the transaction, in first-touch order. */
     readonly dirtied: Set<DocId>;
-    /** Pre-mutation clones, captured lazily on first touch per doc. */
-    readonly preDocs: Map<DocId, Doc<AnyDoc>>;
+    /** Pre-mutation membership/content, captured lazily on first touch. */
+    readonly before: CrdtDocumentSnapshot;
 };
 
 /**
@@ -199,12 +200,12 @@ class AutomergeRepository {
     private mutationEpoch = 0;
     private documentIdentityEpoch = 0;
     private changeListeners = new Set<ChangeListener>();
-    /** The currently-open snapshot transaction, or null when none is in flight. */
+    /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
     /**
      * Tail of the serial transaction queue. `transactSnapshot` chains onto this
-     * so two racing callers never share a `dirtied`/`preDocs` set — the second
-     * waits for the first to finish before its own before-bundle is captured.
+     * so two racing callers never share capture state; the second waits for the
+     * first to finish before receiving its own handle.
      */
     private transactionQueue: Promise<unknown> = Promise.resolve();
     // Automerge's actor ID must be a hex string with an even length; the
@@ -261,7 +262,8 @@ class AutomergeRepository {
      * Create a new child document and register it.
      * Returns the DocId.
      */
-    createChildDoc(docId: DocId): DocId {
+    createChildDoc(docId: DocId, snapshotTransaction?: object): DocId {
+        this.captureBeforeMutation(docId, snapshotTransaction);
         const doc = init<AnyDoc>();
         this.docs.set(docId, doc);
         this.markDocumentIdentityMutation();
@@ -269,7 +271,8 @@ class AutomergeRepository {
     }
 
     /** Insert or replace a document (used by branching). */
-    insertDoc(docId: DocId, doc: Doc<unknown>): void {
+    insertDoc(docId: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
+        this.captureBeforeMutation(docId, snapshotTransaction);
         this.docs.set(docId, doc as Doc<AnyDoc>);
         this.markDocumentIdentityMutation();
     }
@@ -281,13 +284,18 @@ class AutomergeRepository {
      * @param message - Optional semantic message attached to the Automerge change.
      *   Used for history inspection (`getHistory()` returns this in `DecodedChange.message`).
      */
-    changeDoc<TDoc = AnyDoc>(id: DocId, changeFn: ChangeFn<TDoc>, message?: string): void {
+    changeDoc<TDoc = AnyDoc>(
+        id: DocId,
+        changeFn: ChangeFn<TDoc>,
+        message?: string,
+        snapshotTransaction?: object
+    ): void {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
-        this.captureBeforeMutation(id);
+        this.captureBeforeMutation(id, snapshotTransaction);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated as Doc<AnyDoc>);
         this.markMutation();
@@ -298,8 +306,8 @@ class AutomergeRepository {
      * Replace a document directly (used by sync protocol after receiveSyncMessage).
      * Notifies listeners so response sync messages can be generated.
      */
-    replaceDoc(id: DocId, doc: Doc<unknown>): void {
-        this.captureBeforeMutation(id);
+    replaceDoc(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
+        this.captureBeforeMutation(id, snapshotTransaction);
         this.docs.set(id, doc as Doc<AnyDoc>);
         this.markDocumentIdentityMutation();
         this.notifyListeners(id);
@@ -309,11 +317,11 @@ class AutomergeRepository {
      * Merge a remote document's binary state into a local document.
      * Used for sync and merge-on-open.
      */
-    mergeRemoteDoc(id: DocId, binary: Uint8Array): void {
+    mergeRemoteDoc(id: DocId, binary: Uint8Array, snapshotTransaction?: object): void {
         const incoming = load<AnyDoc>(binary);
         const isNewDocument = !this.docs.has(id);
 
-        this.captureBeforeMutation(id);
+        this.captureBeforeMutation(id, snapshotTransaction);
         if (!isNewDocument) {
             const local = this.docs.get(id)!;
             const merged = merge(local, incoming);
@@ -357,49 +365,23 @@ class AutomergeRepository {
         return bundle;
     }
 
-    /**
-     * Clone the pre-mutation state of `id` into the active transaction the
-     * first time that doc is touched within the transaction. Called by every
-     * mutation method *before* it replaces the doc, so the clone captures the
-     * genuine "before" state (Automerge v3 mutates the doc in place — a
-     * reference held from before `change()` reads the post-change state, so the
-     * snapshot cannot be reconstructed after the fact). No-op outside a
-     * transaction, and at most one clone per doc per transaction.
-     */
-    private captureBeforeMutation(id: DocId): void {
+    /** Capture one exact pre-mutation content/membership entry for an owned write. */
+    private captureBeforeMutation(id: DocId, snapshotTransaction?: object): void {
         const txn = this.activeTransaction;
-        if (!txn) {
+        if (!txn || snapshotTransaction !== txn.handle) {
             return;
         }
         txn.dirtied.add(id);
-        if (!txn.preDocs.has(id)) {
-            const current = this.docs.get(id);
-            if (current) {
-                txn.preDocs.set(id, clone(current));
-            }
+        if (txn.before.has(id)) {
+            return;
         }
-    }
 
-    /**
-     * Wait for any in-flight `requestAnimationFrame`-deferred work to drain.
-     *
-     * Store writes (`createAutomergeStorage.set`) update their in-memory cache
-     * synchronously but defer the actual `changeDoc()` to the next animation
-     * frame to coalesce burst updates. A `transactSnapshot` body that drives
-     * such stores therefore returns before any CRDT mutation has landed. This
-     * yields past the current frame's rAF queue (scheduling our own rAF after
-     * the store's, then a macrotask) so those deferred writes — and the
-     * `captureBeforeMutation` clones they trigger — complete before we read the
-     * dirtied set. Matches the flush idiom already used in sendChatMessage.
-     */
-    private flushPendingFrameWrites(): Promise<void> {
-        if (typeof requestAnimationFrame !== 'function') {
-            // Non-DOM environment (e.g. worker/test without rAF): nothing to drain.
-            return Promise.resolve();
+        const current = this.docs.get(id);
+        if (current) {
+            txn.before.set(id, { state: 'present', bytes: save(clone(current)) });
+        } else {
+            txn.before.set(id, { state: 'absent' });
         }
-        return new Promise<void>((resolve) => {
-            requestAnimationFrame(() => setTimeout(resolve, 0));
-        });
     }
 
     /**
@@ -410,7 +392,9 @@ class AutomergeRepository {
      * waits for the first to finish before opening, so two racing callers never
      * interleave their dirtied sets nor capture each other's mutations.
      */
-    transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+    transactSnapshot(
+        fn: (transaction: object) => Promise<void>
+    ): Promise<{ before: CrdtDocumentSnapshot; after: CrdtDocumentSnapshot }> {
         const run = this.transactionQueue.then(() => this.runTransaction(fn));
         // Keep the queue tail alive even if this transaction rejects, so a
         // failed transaction does not wedge every later one.
@@ -418,56 +402,71 @@ class AutomergeRepository {
         return run;
     }
 
-    private async runTransaction(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
-        const txn: SnapshotTransaction = { dirtied: new Set<DocId>(), preDocs: new Map<DocId, Doc<AnyDoc>>() };
+    private async runTransaction(
+        fn: (transaction: object) => Promise<void>
+    ): Promise<{ before: CrdtDocumentSnapshot; after: CrdtDocumentSnapshot }> {
+        const txn: SnapshotTransaction = {
+            handle: Object.freeze({}),
+            dirtied: new Set<DocId>(),
+            before: new Map(),
+        };
 
         this.activeTransaction = txn;
         try {
-            await fn();
-            // Drain rAF-deferred store writes so their mutations (and the
-            // pre-mutation clones they trigger) land before we read `dirtied`.
-            await this.flushPendingFrameWrites();
+            await fn(txn.handle);
         } finally {
             this.activeTransaction = null;
         }
 
-        const bundleBefore: DocumentBundle = new Map();
-        const bundleAfter: DocumentBundle = new Map();
+        const snapshotAfter: CrdtDocumentSnapshot = new Map();
 
         for (const id of txn.dirtied) {
-            const preDoc = txn.preDocs.get(id);
-            if (preDoc) {
-                bundleBefore.set(id, save(preDoc));
-            }
             const postDoc = this.docs.get(id);
             if (postDoc) {
-                bundleAfter.set(id, save(postDoc));
+                snapshotAfter.set(id, { state: 'present', bytes: save(postDoc) });
+            } else {
+                snapshotAfter.set(id, { state: 'absent' });
             }
         }
 
-        return { before: bundleBefore, after: bundleAfter };
+        return { before: txn.before, after: snapshotAfter };
     }
 
     /**
-     * Restore all in-memory documents from a binary snapshot bundle (e.g. for undo/redo).
+     * Restore exact content and membership from a transaction snapshot.
      * Unlike `loadAll`, this does NOT clear docs or handle IDB incremental chunks —
      * it replaces existing docs in-place and fires listeners exactly once.
      */
-    restoreSnapshot(bundle: DocumentBundle): void {
-        let addsDocument = false;
-        for (const [id, bytes] of bundle) {
-            addsDocument ||= !this.docs.has(id);
-            this.captureBeforeMutation(id);
-            this.docs.set(id, load<AnyDoc>(bytes));
+    restoreSnapshot(snapshot: CrdtDocumentSnapshot): void {
+        const decoded = new Map<DocId, Doc<AnyDoc>>();
+        for (const [id, entry] of snapshot) {
+            if (entry.state === 'present') {
+                decoded.set(id, load<AnyDoc>(entry.bytes));
+            }
         }
-        if (bundle.size > 0) {
-            if (addsDocument) {
+
+        let changesMembership = false;
+        let changesContent = false;
+        for (const [id, entry] of snapshot) {
+            if (entry.state === 'absent') {
+                if (this.docs.delete(id)) {
+                    changesMembership = true;
+                }
+                continue;
+            }
+
+            changesMembership ||= !this.docs.has(id);
+            this.docs.set(id, decoded.get(id)!);
+            changesContent = true;
+        }
+        if (changesMembership || changesContent) {
+            if (changesMembership) {
                 this.markDocumentIdentityMutation();
             } else {
                 this.markMutation();
             }
+            this.notifyListeners();
         }
-        this.notifyListeners();
     }
 
     /** Validate a bundle with the same decode path used by project loading. */
@@ -718,10 +717,13 @@ class AutomergeRepository {
     }
 
     /** Remove a document. */
-    removeDoc(id: DocId): void {
-        if (this.docs.delete(id)) {
-            this.markDocumentIdentityMutation();
+    removeDoc(id: DocId, snapshotTransaction?: object): void {
+        if (!this.docs.has(id)) {
+            return;
         }
+        this.captureBeforeMutation(id, snapshotTransaction);
+        this.docs.delete(id);
+        this.markDocumentIdentityMutation();
     }
 
     /** Clear all documents and listeners. */

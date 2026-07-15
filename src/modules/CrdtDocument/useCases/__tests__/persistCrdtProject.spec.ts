@@ -7,13 +7,12 @@ import { automergeRepository } from '../../repositories/automergeRepository';
 import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compactProject } from '../compactProject';
 import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
-
-import { TransactionalPersistence } from './helpers/transactionalPersistence';
 
 type VersionedQueueState = {
     version: number;
@@ -135,12 +134,12 @@ async function settleOperationCapturingWrites({
     firstWriteOccurrence: number;
     operation: Promise<void>;
     persistence: TransactionalPersistence;
-}): Promise<{ error: unknown; writes: readonly import('./helpers/transactionalPersistence').TransactionWrite[] }> {
+}): Promise<{ error: unknown; writes: readonly import('../../testing/transactionalPersistence').TransactionWrite[] }> {
     const outcomePromise: Promise<PersistenceOperationOutcome> = operation.then(
         () => ({ kind: 'resolved' }),
         (error: unknown) => ({ kind: 'rejected', error })
     );
-    const writes: import('./helpers/transactionalPersistence').TransactionWrite[] = [];
+    const writes: import('../../testing/transactionalPersistence').TransactionWrite[] = [];
     let occurrence = firstWriteOccurrence;
 
     for (let attempt = 0; attempt < 4; attempt++) {

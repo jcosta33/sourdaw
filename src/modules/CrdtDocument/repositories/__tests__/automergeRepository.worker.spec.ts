@@ -1,7 +1,7 @@
 import { change, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TransactionalPersistence } from '../../useCases/__tests__/helpers/transactionalPersistence';
+import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 
 type BundleEntry = [string, Uint8Array];
