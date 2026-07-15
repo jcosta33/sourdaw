@@ -25,6 +25,22 @@ const rule = {
     name: 'components-no-usecase-transitively',
 };
 
+type FixtureContents = string | readonly string[];
+
+function writeFixtureFiles(directory: string, fixtures: Record<string, FixtureContents>): void {
+    for (const [fileName, contents] of Object.entries(fixtures)) {
+        writeFileSync(join(directory, fileName), Array.isArray(contents) ? `${contents.join('\n')}\n` : contents);
+    }
+}
+
+function vendorFinding(file: string, line: number, moduleSpecifier = '@tauri-apps/api/core') {
+    return {
+        file,
+        line,
+        reason: `repository public type surface exposes Tauri vendor type from ${moduleSpecifier}`,
+    };
+}
+
 function isUnsupportedSymlinkError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
         return false;
@@ -316,22 +332,14 @@ describe('check-dependency-boundaries', () => {
             mkdirSync(repositoryDirectory, { recursive: true });
             mkdirSync(useCaseDirectory, { recursive: true });
 
-            writeFileSync(
-                join(repositoryDirectory, 'direct-export.ts'),
-                "export type { InvokeArgs } from '@tauri-apps/api/core';\n"
-            );
-            writeFileSync(
-                join(repositoryDirectory, 'bridge.ts'),
-                [
+            writeFixtureFiles(repositoryDirectory, {
+                'direct-export.ts': "export type { InvokeArgs } from '@tauri-apps/api/core';\n",
+                'bridge.ts': [
                     "import type { TauriChannel as BridgeChannel } from '#/utils/tauriBridge';",
                     'export type PublicChannel = BridgeChannel<unknown>;',
                     "export { type TauriChannel } from '#/utils/tauriBridge';",
-                    '',
-                ].join('\n')
-            );
-            writeFileSync(
-                join(repositoryDirectory, 'alias.ts'),
-                [
+                ],
+                'alias.ts': [
                     "import type { InvokeArgs as TauriInvokeArgs } from '@tauri-apps/api/core';",
                     'type LocalInvokeArgs = TauriInvokeArgs;',
                     'export type PublicInvokeArgs = LocalInvokeArgs;',
@@ -343,31 +351,19 @@ describe('check-dependency-boundaries', () => {
                     '}',
                     'function privateOnly(args: TauriInvokeArgs): TauriInvokeArgs { return args; }',
                     'void privateOnly;',
-                    '',
-                ].join('\n')
-            );
-            writeFileSync(
-                join(repositoryDirectory, 'inline.mts'),
-                [
+                ],
+                'inline.mts': [
                     "export type InlineInvokeArgs = import('@tauri-apps/api/core').InvokeArgs;",
                     "export function inline(args: import('@tauri-apps/api/core').InvokeArgs): void { void args; }",
-                    '',
-                ].join('\n')
-            );
-            writeFileSync(
-                join(repositoryDirectory, 'jsdoc.js'),
-                [
+                ],
+                'jsdoc.js': [
                     '/**',
                     " * @param {import('@tauri-apps/api/core').InvokeArgs} args",
                     ' */',
                     'export function jsdocPublic(args) { return args; }',
-                    '',
-                ].join('\n')
-            );
-            writeFileSync(
-                join(repositoryDirectory, 'owner-dto.ts'),
-                'export type OwnerRequest = { args: Record<string, unknown> };\n'
-            );
+                ],
+                'owner-dto.ts': 'export type OwnerRequest = { args: Record<string, unknown> };\n',
+            });
 
             for (const extension of ['.cjs', '.d.ts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx']) {
                 writeFileSync(
@@ -375,90 +371,253 @@ describe('check-dependency-boundaries', () => {
                     "export * from '@tauri-apps/api/core';\n"
                 );
             }
-            writeFileSync(
-                join(useCaseDirectory, 'consume.ts'),
-                [
+            writeFixtureFiles(useCaseDirectory, {
+                'consume.ts': [
                     "import type { InvokeArgs } from '../repositories/direct-export';",
+                    "import type { InlineInvokeArgs } from '../repositories/inline.mts';",
+                    "import { inline } from '../repositories/inline.mts';",
+                    "import { jsdocPublic } from '../repositories/jsdoc.js';",
                     "import type { PublicInvokeArgs } from '../repositories/alias';",
+                    "import type { PublicRequest } from '../repositories/alias';",
+                    "import { send } from '../repositories/alias';",
+                    "import type { PublicChannel, TauriChannel } from '../repositories/bridge';",
                     'export function consume(args: InvokeArgs, aliased: PublicInvokeArgs): void {',
                     '    void args;',
                     '    void aliased;',
+                    '    void (null as unknown as InlineInvokeArgs);',
+                    '    void inline;',
+                    '    void jsdocPublic;',
+                    '    void (null as unknown as PublicRequest);',
+                    '    void send;',
+                    '    void (null as unknown as PublicChannel);',
+                    '    void (null as unknown as TauriChannel);',
                     '}',
-                    '',
-                ].join('\n')
-            );
+                ],
+            });
+            const directStarExtensions = ['.cjs', '.d.ts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx'];
+
+            for (const [index, extension] of directStarExtensions.entries()) {
+                writeFileSync(
+                    join(useCaseDirectory, `consume-direct-star-${index}.ts`),
+                    `import * as directStar from '../repositories/direct-star${extension}';\nvoid directStar;\n`
+                );
+            }
 
             const findings = findStaticGuardFindings(repositoryRoot);
             const vendorFindings = findings.filter(({ reason }) => reason.includes('Tauri vendor type'));
 
             expect(vendorFindings).toEqual(
                 expect.arrayContaining([
-                    {
-                        file: 'src/modules/Foo/repositories/alias.ts',
-                        line: 3,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/alias.ts',
-                        line: 4,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/alias.ts',
-                        line: 5,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/bridge.ts',
-                        line: 2,
-                        reason: 'repository public type surface exposes Tauri vendor type from #/utils/tauriBridge',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/bridge.ts',
-                        line: 3,
-                        reason: 'repository public type surface exposes Tauri vendor type from #/utils/tauriBridge',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/direct-export.ts',
-                        line: 1,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/inline.mts',
-                        line: 1,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/inline.mts',
-                        line: 2,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                    {
-                        file: 'src/modules/Foo/repositories/jsdoc.js',
-                        line: 4,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
+                    vendorFinding('src/modules/Foo/repositories/alias.ts', 3),
+                    vendorFinding('src/modules/Foo/repositories/alias.ts', 4),
+                    vendorFinding('src/modules/Foo/repositories/alias.ts', 5),
+                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 2, '#/utils/tauriBridge'),
+                    vendorFinding('src/modules/Foo/repositories/bridge.ts', 3, '#/utils/tauriBridge'),
+                    vendorFinding('src/modules/Foo/repositories/direct-export.ts', 1),
+                    vendorFinding('src/modules/Foo/repositories/inline.mts', 1),
+                    vendorFinding('src/modules/Foo/repositories/inline.mts', 2),
+                    vendorFinding('src/modules/Foo/repositories/jsdoc.js', 4),
                 ])
             );
             expect(vendorFindings).toHaveLength(17);
             expect(vendorFindings).not.toEqual(
-                expect.arrayContaining([
-                    {
-                        file: 'src/modules/Foo/repositories/alias.ts',
-                        line: 6,
-                        reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                    },
-                ])
+                expect.arrayContaining([vendorFinding('src/modules/Foo/repositories/alias.ts', 6)])
             );
             for (const extension of ['.cjs', '.d.ts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx']) {
-                expect(vendorFindings).toContainEqual({
-                    file: `src/modules/Foo/repositories/direct-star${extension}`,
-                    line: 1,
-                    reason: 'repository public type surface exposes Tauri vendor type from @tauri-apps/api/core',
-                });
+                expect(vendorFindings).toContainEqual(
+                    vendorFinding(`src/modules/Foo/repositories/direct-star${extension}`, 1)
+                );
             }
             expect(vendorFindings.some(({ file }) => file.endsWith('/owner-dto.ts'))).toBe(false);
             expect(findings.some(({ file }) => file.endsWith('/useCases/consume.ts'))).toBe(false);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should resolve exported vendor types across supported module forms and consumers', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-resolved-types-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+            mkdirSync(join(repositoryRoot, 'src/utils'), { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare const module: { exports: unknown };',
+                    'declare const exports: Record<string, unknown>;',
+                    'declare function require(moduleName: string): any;',
+                ],
+                'src/utils/tauriBridge.ts': 'export type BridgeChannel<T> = { value: T };\n',
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': [
+                    'export type InvokeArgs = { command: string };',
+                    'export type InvokeResult = { data: string };',
+                    'export declare function invoke(args: InvokeArgs): Promise<InvokeResult>;',
+                    'export declare const channel: <T>(value: T) => T;',
+                ],
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'export-assignment.cts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    '',
+                    'const request: InvokeArgs = null as unknown as InvokeArgs;',
+                    'export = request;',
+                ],
+                'commonjs-module.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    'const request = {};',
+                    'module.exports = request;',
+                ],
+                'commonjs-name.js': [
+                    '/**',
+                    " * @param {import('@tauri-apps/api/core').InvokeArgs} args",
+                    " * @returns {import('@tauri-apps/api/core').InvokeArgs}",
+                    ' */',
+                    'function send(args) {',
+                    '    return args;',
+                    '}',
+                    'exports.send = send;',
+                ],
+                'require-destructured.mjs': [
+                    "/** @type {typeof import('@tauri-apps/api/core')} */",
+                    "const { invoke: tauriInvoke } = require('@tauri-apps/api/core');",
+                    '',
+                    '/** @returns {typeof tauriInvoke} */',
+                    'function invokeFromNamespace() {',
+                    '    return tauriInvoke;',
+                    '}',
+                    'module.exports = { invokeFromNamespace };',
+                ],
+                'require-namespace.cjs': [
+                    "/** @type {typeof import('@tauri-apps/api/core')} */",
+                    "const tauri = require('@tauri-apps/api/core');",
+                    'module.exports = tauri;',
+                ],
+                'inferred.mts': [
+                    "import { invoke } from '@tauri-apps/api/core';",
+                    '',
+                    'const request = { invoke };',
+                    'const makeRequest = () => request;',
+                    'class RequestBox {',
+                    '    value = request;',
+                    '    get() {',
+                    '        return this.value;',
+                    '    }',
+                    '}',
+                    'const makeGeneric = <T>(value: T) => ({ value, invoke });',
+                    'export { request };',
+                    'export { makeRequest };',
+                    'export { RequestBox };',
+                    'export { makeGeneric };',
+                ],
+                'chain-private.ts': [
+                    "import { invoke } from '@tauri-apps/api/core';",
+                    'const privateValue = { invoke };',
+                    'export { privateValue };',
+                ],
+                'chain-one.ts': "export { privateValue as aliasValue } from './chain-private';\n",
+                'chain-two.ts': "export { aliasValue as publicValue } from './chain-one';\n",
+                'repo-only-helper.ts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    'export type InternalRequest = InvokeArgs;',
+                ],
+                'repo-only-consumer.ts': [
+                    "import type { InternalRequest } from './repo-only-helper';",
+                    'export type OwnedRequest = { request: InternalRequest };',
+                ],
+                'external-helper.ts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    'export type ExternalRequest = InvokeArgs;',
+                ],
+                'internal-implementation.ts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    'export function internalImplementation(): void {',
+                    '    const request = null as unknown as InvokeArgs;',
+                    '    void request;',
+                    '}',
+                    'export class InternalImplementation {',
+                    '    private request: InvokeArgs = null as unknown as InvokeArgs;',
+                    '}',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-resolved-types.cts': [
+                    "import exportAssignment = require('../repositories/export-assignment');",
+                    "import commonJs = require('../repositories/commonjs-module');",
+                    "import { send } from '../repositories/commonjs-name.js';",
+                    "import destructured = require('../repositories/require-destructured.mjs');",
+                    "import namespace = require('../repositories/require-namespace.cjs');",
+                    "import { request, makeRequest, RequestBox, makeGeneric } from '../repositories/inferred.mts';",
+                    "import { publicValue } from '../repositories/chain-two';",
+                    "import type { ExternalRequest } from '../repositories/external-helper';",
+                    "import { internalImplementation, InternalImplementation } from '../repositories/internal-implementation';",
+                    'export const consumed = [',
+                    '    exportAssignment,',
+                    '    commonJs,',
+                    '    send,',
+                    '    destructured,',
+                    '    namespace,',
+                    '    request,',
+                    '    makeRequest,',
+                    '    RequestBox,',
+                    '    makeGeneric,',
+                    '    publicValue,',
+                    '    internalImplementation,',
+                    '    InternalImplementation,',
+                    '];',
+                    'export type ConsumedRequest = ExternalRequest;',
+                ],
+            });
+
+            const findings = findStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(findings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/export-assignment.cts', 4),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-module.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-name.js', 8),
+                    vendorFinding('src/modules/Foo/repositories/require-destructured.mjs', 8),
+                    vendorFinding('src/modules/Foo/repositories/require-namespace.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/inferred.mts', 12),
+                    vendorFinding('src/modules/Foo/repositories/inferred.mts', 13),
+                    vendorFinding('src/modules/Foo/repositories/inferred.mts', 14),
+                    vendorFinding('src/modules/Foo/repositories/inferred.mts', 15),
+                    vendorFinding('src/modules/Foo/repositories/chain-two.ts', 1),
+                    vendorFinding('src/modules/Foo/repositories/external-helper.ts', 2),
+                ])
+            );
+            expect(findings).toHaveLength(11);
+            expect(findings).not.toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/repo-only-helper.ts', 2),
+                    vendorFinding('src/modules/Foo/repositories/chain-private.ts', 3),
+                ])
+            );
         } finally {
             if (repositoryRoot) {
                 rmSync(repositoryRoot, { force: true, recursive: true });
