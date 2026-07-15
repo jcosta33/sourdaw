@@ -1,13 +1,12 @@
 import { type ReactElement, type ChangeEvent } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
-import { MidiLearnButton } from '#/modules/MIDI/presentations/views';
+import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/MIDI/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
@@ -187,6 +186,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
         return (
             <RotaryKnob
+                paramId={param.id}
+                targetType="deviceParam"
+                trackId={trackId}
+                deviceId={device.id}
                 value={mappedValue}
                 onChange={onChange}
                 min={min}

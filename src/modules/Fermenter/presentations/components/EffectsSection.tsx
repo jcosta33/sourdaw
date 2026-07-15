@@ -6,13 +6,14 @@
 import { type ReactElement, useState } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 
 type EffectsSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     reverbMix: number;
     reverbDecay: number;
     delayTime: number;
@@ -58,16 +59,7 @@ const TAB_ITEMS: Array<{ id: FxTab; label: string; color: string }> = [
     { id: 'master', label: 'Master', color: '#fff' },
 ];
 
-const K = ({
-    value,
-    onChange,
-    label,
-    min,
-    max,
-    step,
-    defaultValue,
-    paramId,
-}: {
+type EffectsKnobProps = {
     value: number;
     onChange: (v: number) => void;
     label: string;
@@ -76,8 +68,21 @@ const K = ({
     step: number;
     defaultValue: number;
     paramId: string;
-}): ReactElement => (
-    <RotaryKnob
+    rotaryKnob?: RotaryKnobComponent;
+};
+
+const RotaryKnobControl = ({
+    value,
+    onChange,
+    label,
+    min,
+    max,
+    step,
+    defaultValue,
+    paramId,
+    rotaryKnob: Knob = RotaryKnob,
+}: EffectsKnobProps): ReactElement => (
+    <Knob
         paramId={paramId}
         value={value}
         onChange={onChange}
@@ -92,7 +97,8 @@ const K = ({
 );
 
 export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
-    const { onParam } = props;
+    const { onParam, rotaryKnob } = props;
+    const Knob = rotaryKnob ?? RotaryKnob;
     const [activeTab, setActiveTab] = useState<FxTab>('dist');
 
     const renderContent = (): ReactElement => {
@@ -117,7 +123,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             }}
                         />
                         <div className="flex gap-2">
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="distMix"
                                 value={props.distMix}
                                 onChange={(v) => onParam('distMix', v)}
@@ -127,7 +134,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={0}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="distDrive"
                                 value={props.distDrive}
                                 onChange={(v) => onParam('distDrive', v)}
@@ -137,7 +145,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.1}
                                 defaultValue={0}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="distTone"
                                 value={props.distTone}
                                 onChange={(v) => onParam('distTone', v)}
@@ -169,7 +178,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             }}
                         />
                         <div className="flex flex-wrap gap-2 max-w-[200px]">
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="compMix"
                                 value={props.compMix}
                                 onChange={(v) => onParam('compMix', v)}
@@ -179,7 +189,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={0}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="compThreshold"
                                 value={props.compThreshold}
                                 onChange={(v) => onParam('compThreshold', v)}
@@ -189,7 +200,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={1}
                                 defaultValue={-20}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="compRatio"
                                 value={props.compRatio}
                                 onChange={(v) => onParam('compRatio', v)}
@@ -199,7 +211,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.5}
                                 defaultValue={4}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="compAttack"
                                 value={props.compAttack}
                                 onChange={(v) => onParam('compAttack', v)}
@@ -209,7 +222,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.1}
                                 defaultValue={10}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="compRelease"
                                 value={props.compRelease}
                                 onChange={(v) => onParam('compRelease', v)}
@@ -225,7 +239,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
             case 'reverb':
                 return (
                     <div className="flex gap-3">
-                        <K
+                        <RotaryKnobControl
+                            rotaryKnob={rotaryKnob}
                             paramId="reverbMix"
                             value={props.reverbMix}
                             onChange={(v) => onParam('reverbMix', v)}
@@ -235,7 +250,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             step={0.01}
                             defaultValue={0.2}
                         />
-                        <K
+                        <RotaryKnobControl
+                            rotaryKnob={rotaryKnob}
                             paramId="reverbDecay"
                             value={props.reverbDecay}
                             onChange={(v) => onParam('reverbDecay', v)}
@@ -279,7 +295,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             }}
                         />
                         <div className="flex gap-2">
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="delayMix"
                                 value={props.delayMix}
                                 onChange={(v) => onParam('delayMix', v)}
@@ -289,7 +306,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={0.01}
                                 defaultValue={0}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="delayTime"
                                 value={props.delayTime}
                                 onChange={(v) => onParam('delayTime', v)}
@@ -299,7 +317,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 step={1}
                                 defaultValue={375}
                             />
-                            <K
+                            <RotaryKnobControl
+                                rotaryKnob={rotaryKnob}
                                 paramId="delayFeedback"
                                 value={props.delayFeedback}
                                 onChange={(v) => onParam('delayFeedback', v)}
@@ -318,7 +337,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                         <div className="space-y-1">
                             <div className="text-[9px] text-muted-foreground/70 font-medium">Chorus</div>
                             <div className="flex gap-2">
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="chorusMix"
                                     value={props.chorusMix}
                                     onChange={(v) => onParam('chorusMix', v)}
@@ -328,7 +348,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.01}
                                     defaultValue={0}
                                 />
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="chorusRate"
                                     value={props.chorusRate}
                                     onChange={(v) => onParam('chorusRate', v)}
@@ -338,7 +359,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.1}
                                     defaultValue={1.2}
                                 />
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="chorusDepth"
                                     value={props.chorusDepth}
                                     onChange={(v) => onParam('chorusDepth', v)}
@@ -353,7 +375,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                         <div className="space-y-1">
                             <div className="text-[9px] text-muted-foreground/70 font-medium">Phaser</div>
                             <div className="flex gap-2">
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="phaserMix"
                                     value={props.phaserMix}
                                     onChange={(v) => onParam('phaserMix', v)}
@@ -363,7 +386,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.01}
                                     defaultValue={0}
                                 />
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="phaserRate"
                                     value={props.phaserRate}
                                     onChange={(v) => onParam('phaserRate', v)}
@@ -373,7 +397,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                     step={0.1}
                                     defaultValue={0.5}
                                 />
-                                <K
+                                <RotaryKnobControl
+                                    rotaryKnob={rotaryKnob}
                                     paramId="phaserDepth"
                                     value={props.phaserDepth}
                                     onChange={(v) => onParam('phaserDepth', v)}
@@ -426,7 +451,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                 return (
                     <div className="flex items-end gap-4">
                         <div className="flex flex-col items-center gap-1">
-                            <RotaryKnob
+                            <Knob
                                 paramId="stereoWidth"
                                 value={props.stereoWidth}
                                 onChange={(v) => onParam('stereoWidth', v)}
@@ -443,7 +468,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                             </span>
                         </div>
                         <div className="flex flex-col items-center gap-1">
-                            <RotaryKnob
+                            <Knob
                                 paramId="masterGain"
                                 value={props.masterGain}
                                 onChange={(v) => onParam('masterGain', v)}

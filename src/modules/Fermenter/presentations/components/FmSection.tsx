@@ -3,11 +3,12 @@
  */
 import { type ReactElement } from 'react';
 
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 
 import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
 
 type FmSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     algorithm: number;
     ratios: [number, number, number, number];
     levels: [number, number, number, number];
@@ -24,6 +25,7 @@ const OP_COLORS = [
 ];
 
 export const FmSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     algorithm,
     ratios,
     levels,
@@ -58,7 +60,7 @@ export const FmSection = ({
                     return (
                         <div key={i} className="flex flex-col items-center gap-0.5">
                             <span className={`text-[8px] font-bold ${OP_COLORS[i]}`}>Op {i + 1}</span>
-                            <RotaryKnob
+                            <Knob
                                 paramId={`fmRatio${i + 1}`}
                                 value={ratio}
                                 onChange={(v) => onParam(`fmRatio${i + 1}`, v)}
@@ -70,7 +72,7 @@ export const FmSection = ({
                                 tone="sage"
                             />
                             <span className="text-[7px] text-muted-foreground/60 font-mono">{ratio.toFixed(1)}×</span>
-                            <RotaryKnob
+                            <Knob
                                 paramId={`fmLevel${i + 1}`}
                                 value={level}
                                 onChange={(v) => onParam(`fmLevel${i + 1}`, v)}
@@ -92,7 +94,7 @@ export const FmSection = ({
             {/* Feedback + Mod Depth */}
             <div className="flex items-end gap-2 px-1">
                 <div className="flex flex-col items-center gap-0.5">
-                    <RotaryKnob
+                    <Knob
                         paramId="fmFeedback"
                         value={feedback}
                         onChange={(v) => onParam('fmFeedback', v)}
@@ -106,7 +108,7 @@ export const FmSection = ({
                     <span className="text-[8px] text-muted-foreground">Feedback</span>
                 </div>
                 <div className="flex flex-col items-center gap-0.5">
-                    <RotaryKnob
+                    <Knob
                         paramId="fmModAmount"
                         value={modAmount}
                         onChange={(v) => onParam('fmModAmount', v)}

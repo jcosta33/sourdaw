@@ -1,24 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/components/daw/__tests__/RotaryKnob.spec.tsx",
-    "to": "src/modules/MIDI/stores/midiLearnStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "external-tests-contract-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/components/daw/__tests__/RotaryKnob.spec.tsx",
-    "to": "src/modules/MIDI/useCases/midiLearn/startMidiLearn.ts",
-    "rule": {
-      "severity": "error",
-      "name": "external-tests-contract-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AiGeneration/handlers/aiMidi/__tests__/handleAddNotes.spec.ts",
     "to": "src/modules/MIDI/useCases/midiNoteCrud/addMidiNote.ts",
     "rule": {

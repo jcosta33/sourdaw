@@ -7,6 +7,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { MidiLearnRotaryKnob } from '#/modules/MIDI/presentations/views';
 
 import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
 import {
@@ -205,6 +206,7 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
     if (patch.oscEngine === 2) {
         return (
             <FmSection
+                rotaryKnob={MidiLearnRotaryKnob}
                 algorithm={patch.fmAlgorithm}
                 ratios={[patch.fmRatio1, patch.fmRatio2, patch.fmRatio3, patch.fmRatio4]}
                 levels={[patch.fmLevel1, patch.fmLevel2, patch.fmLevel3, patch.fmLevel4]}
@@ -265,6 +267,7 @@ function renderEngineControls(patch: FermenterPatch, onParam: (key: string, valu
 
     return (
         <UnisonSection
+            rotaryKnob={MidiLearnRotaryKnob}
             voices={patch.unisonVoices}
             detune={patch.unisonDetune}
             spread={patch.unisonSpread}
@@ -284,6 +287,7 @@ function renderSectionContent(
         return (
             <div className="flex flex-wrap items-start gap-4">
                 <OscillatorSection
+                    rotaryKnob={MidiLearnRotaryKnob}
                     engine={patch.oscEngine}
                     waveform={patch.oscWaveform}
                     level={patch.oscLevel}
@@ -319,6 +323,7 @@ function renderSectionContent(
     if (section === 'filter') {
         return (
             <FilterSection
+                rotaryKnob={MidiLearnRotaryKnob}
                 model={patch.filterModel}
                 cutoff={patch.filterCutoff}
                 resonance={patch.filterResonance}
@@ -341,6 +346,7 @@ function renderSectionContent(
         return (
             <div className="flex flex-wrap items-start gap-4">
                 <EnvelopeSection
+                    rotaryKnob={MidiLearnRotaryKnob}
                     ampA={patch.ampAttack}
                     ampD={patch.ampDecay}
                     ampS={patch.ampSustain}
@@ -354,6 +360,7 @@ function renderSectionContent(
                 />
                 <div className="border-l border-border/15 pl-4">
                     <LfoSection
+                        rotaryKnob={MidiLearnRotaryKnob}
                         rate={patch.lfoRate}
                         shape={patch.lfoShape}
                         pitchAmount={patch.lfoPitchAmount}
@@ -408,6 +415,7 @@ function renderSectionContent(
 
     return (
         <EffectsSection
+            rotaryKnob={MidiLearnRotaryKnob}
             reverbMix={patch.reverbMix}
             reverbDecay={patch.reverbDecay}
             delayTime={patch.delayTime}

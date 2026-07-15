@@ -6,7 +6,7 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 
 import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/FermenterPatch';
@@ -14,6 +14,7 @@ import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/Fe
 const WAVEFORM_KEYS = ['sine', 'sawtooth', 'square', 'triangle'] as const;
 
 type OscillatorSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     engine: number;
     waveform: number;
     level: number;
@@ -33,6 +34,7 @@ type OscillatorSectionProps = {
 };
 
 export const OscillatorSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     engine,
     waveform,
     level,
@@ -107,7 +109,7 @@ export const OscillatorSection = ({
 
             {/* Knob row: Level + Coarse + Fine + (PW) */}
             <div className="flex items-end gap-2">
-                <RotaryKnob
+                <Knob
                     paramId="oscLevel"
                     value={level}
                     onChange={onLevelChange}
@@ -119,7 +121,7 @@ export const OscillatorSection = ({
                     label="Level"
                     tone="sage"
                 />
-                <RotaryKnob
+                <Knob
                     paramId="oscCoarse"
                     value={coarse}
                     onChange={onCoarseChange}
@@ -131,7 +133,7 @@ export const OscillatorSection = ({
                     label="Coarse"
                     tone="sage"
                 />
-                <RotaryKnob
+                <Knob
                     paramId="oscFine"
                     value={fine}
                     onChange={onFineChange}
@@ -144,7 +146,7 @@ export const OscillatorSection = ({
                     tone="sage"
                 />
                 {showPW ? (
-                    <RotaryKnob
+                    <Knob
                         paramId="pulseWidth"
                         value={pulseWidth}
                         onChange={onPulseWidthChange}
@@ -161,7 +163,7 @@ export const OscillatorSection = ({
 
             {/* Noise sub-row */}
             <div className="flex items-end gap-2 pt-1 border-t border-border/15">
-                <RotaryKnob
+                <Knob
                     paramId="noiseLevel"
                     value={noiseLevel}
                     onChange={onNoiseLevelChange}
