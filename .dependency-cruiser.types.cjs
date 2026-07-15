@@ -39,6 +39,7 @@ const TYPE_ONLY_RULE_NAMES = new Set([
     'services-must-stay-pure',
     'validators-must-stay-pure',
     'worklets-no-module-runtime-imports',
+    'module-runtime-no-worklet-imports',
     'worklets-no-app-helper-or-tauri',
     'react-only-in-presentation',
     'react-dom-only-in-presentation',

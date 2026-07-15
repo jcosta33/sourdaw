@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { MidiEvent } from '#/modules/Yeast/useCases';
-
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
 const get_track_strip = vi.hoisted(() => vi.fn());
+
+type TestMidiEvent = {
+    timeSamples: number;
+    kind: { type: 'noteOff'; channel: number; note: number };
+};
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -63,7 +66,7 @@ function make_dependencies(
         }),
         appendRecordedMidiNote: () => {},
         getSynthParamsForTrack: () => ({ release: 0.3 }),
-        processRealtimeMidiInput: () => [],
+        processRealtimeMidiInput: async () => [],
         stepRecordNoteOff: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         ...overrides,
@@ -79,7 +82,7 @@ describe('handleWebMidiNoteOff', () => {
         target_track_id.value = 'track-1';
     });
 
-    it('should append recorded notes through the MIDI-owned append use case', () => {
+    it('should append recorded notes through the MIDI-owned append use case', async () => {
         const recorded_note = {
             id: 'note-recorded',
             pitch: 60,
@@ -97,7 +100,7 @@ describe('handleWebMidiNoteOff', () => {
         );
         activeNotes.set(60, { channel: 0, startTime: 1, startBeat: 4 });
 
-        fn(0, 60, 0);
+        await fn(0, 60, 0);
 
         expect(create_midi_note).toHaveBeenCalledWith(60, 4, 2, 100);
         expect(append_recorded_midi_note).toHaveBeenCalledWith({
@@ -106,11 +109,11 @@ describe('handleWebMidiNoteOff', () => {
         });
     });
 
-    it('should route Yeast note-off events through the rack to the instrument', () => {
+    it('should route Yeast note-off events through the rack to the instrument', async () => {
         const fermenter_note_off = vi.fn<void, [number]>();
-        const process_realtime_midi_input = vi.fn((): MidiEvent[] => [
-            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
-        ]);
+        const process_realtime_midi_input = vi.fn(
+            async (): Promise<TestMidiEvent[]> => [{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } }]
+        );
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -136,13 +139,13 @@ describe('handleWebMidiNoteOff', () => {
         });
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0 });
 
-        fn(0, 60);
+        await fn(0, 60);
 
         expect(process_realtime_midi_input).toHaveBeenCalledTimes(1);
         expect(fermenter_note_off).toHaveBeenCalledWith(67);
     });
 
-    it('should release a live synth oscillator through its envelope', () => {
+    it('should release a live synth oscillator through its envelope', async () => {
         const set_target_at_time = vi.fn<void, [number, number, number]>();
         const cancel_scheduled_values = vi.fn<void, [number]>();
         const stop = vi.fn<void, [number]>();
@@ -171,14 +174,14 @@ describe('handleWebMidiNoteOff', () => {
             } as unknown as OscillatorNode & { _env?: GainNode },
         });
 
-        fn(0, 64);
+        await fn(0, 64);
 
         expect(cancel_scheduled_values).toHaveBeenCalledWith(2);
         expect(set_target_at_time).toHaveBeenCalledWith(0, 2, 0.6 / 3);
         expect(stop).toHaveBeenCalledWith(2 + 0.6 + 0.05);
     });
 
-    it('should pass Grand Boule release velocity to controls and event payloads', () => {
+    it('should pass Grand Boule release velocity to controls and event payloads', async () => {
         const grand_boule_note_off = vi.fn<void, [number, number | undefined, number]>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiNoteOff._factory(
@@ -204,7 +207,7 @@ describe('handleWebMidiNoteOff', () => {
         });
         activeNotes.set(60, { channel: 0, startTime: 0, startBeat: 0, grandBouleDeviceId: 'gb-1' });
 
-        fn(0, 60, 96 / 127);
+        await fn(0, 60, 96 / 127);
 
         expect(grand_boule_note_off).toHaveBeenCalledWith(60, undefined, 96 / 127);
         expect(emitted).toContainEqual({

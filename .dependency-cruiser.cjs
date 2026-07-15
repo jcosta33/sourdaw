@@ -567,6 +567,21 @@ module.exports = {
         },
 
         {
+            name: 'module-runtime-no-worklet-imports',
+            severity: 'error',
+            comment:
+                'Use cases, repositories, stores, handlers, and presentations must not import module worklet internals. ' +
+                'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
+            from: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
+                    SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'worklets-no-app-helper-or-tauri',
             severity: 'error',
             comment: 'Worklets must not depend on application/, src/helpers/, or Tauri APIs.',

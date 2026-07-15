@@ -120,6 +120,33 @@ describe('MidiRack', () => {
         });
     });
 
+    describe('replaceProjection', () => {
+        it('reconciles ownership, order, and removal note-offs from one projection', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('arp-1'), 'arpeggiator');
+            rack.addProcessor(new PassthroughProcessor('filter-1'), 'filter');
+            rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                0,
+                128,
+                transport
+            );
+
+            const offs = rack.replaceProjection(
+                [
+                    { id: 'filter-1', type: 'filter', bypassed: true, params: {} },
+                    { id: 'arp-2', type: 'arpeggiator', bypassed: false, params: {} },
+                ],
+                (_type, id) => new PassthroughProcessor(id),
+                256
+            );
+
+            expect(rack.getProcessorIds()).toEqual(['filter-1', 'arp-2']);
+            expect(offs.filter(isNoteOff).map((event) => event.kind.note)).toEqual([60]);
+            expect(offs[0]?.timeSamples).toBe(256);
+        });
+    });
+
     describe('processBlock (fix #2: degenerate block range)', () => {
         it('does not swallow input into the scheduled queue when blockEnd < blockStart', () => {
             const rack = new MidiRack();

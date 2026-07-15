@@ -5,14 +5,10 @@
  * with React renders and CRDT writes during the transport scheduler tick.
  *
  * Port protocol (this.port.onmessage):
- *   ← { type: 'addProcessor',  processorType: string, processorId: string }
- *   ← { type: 'removeProcessor', processorId: string }
- *   ← { type: 'reorder',      fromIdx, toIdx }
- *   ← { type: 'setParam',     processorId, name, value }
- *   ← { type: 'setBypass',    processorId, bypassed }
+ *   ← { type: 'setProjection', processors }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
  *   → { type: 'processed',    requestId, events }
- *   → { type: 'notesOff',     events }   // hung-note offs from removeProcessor
+ *   → { type: 'notesOff',     events }   // hung-note offs from projection changes
  *   ← { type: 'allNotesOff',  nowSamples }
  */
 
@@ -20,14 +16,10 @@ import { MidiRack } from './MidiRack';
 import { createProcessor } from './processorFactory';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
-import type { ProcessorType } from '../models/ProcessorCatalog';
+import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 type YeastMsg =
-    | { type: 'addProcessor'; processorType: ProcessorType; processorId: string }
-    | { type: 'removeProcessor'; processorId: string }
-    | { type: 'reorder'; fromIdx: number; toIdx: number }
-    | { type: 'setParam'; processorId: string; name: string; value: number }
-    | { type: 'setBypass'; processorId: string; bypassed: boolean }
+    | { type: 'setProjection'; processors: YeastProcessorProjectionItem[] }
     | {
           type: 'processBlock';
           requestId: number;
@@ -45,33 +37,20 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
         super();
         this.port.onmessage = ({ data }: MessageEvent<YeastMsg>) => {
             switch (data.type) {
-                case 'addProcessor':
-                    this._rack.addProcessor(createProcessor(data.processorType, data.processorId));
-                    break;
-                case 'removeProcessor': {
-                    // removeProcessor returns a Note Off for every note still
-                    // sounding through the worklet chain. The worklet has no
-                    // instrument downstream of its own, so post the offs back to
-                    // the main thread (its only channel) and let the node route
-                    // them to the live instrument — otherwise the note hangs.
-                    const offs = this._rack.removeProcessor(data.processorId, currentFrame);
+                case 'setProjection': {
+                    const offs = this._rack.replaceProjection(data.processors, createProcessor, currentFrame);
                     if (offs.length > 0) {
                         this.port.postMessage({ type: 'notesOff', events: offs });
                     }
                     break;
                 }
-                case 'reorder':
-                    this._rack.reorder(data.fromIdx, data.toIdx);
+                case 'allNotesOff': {
+                    const offs = this._rack.allNotesOff(data.nowSamples ?? currentFrame);
+                    if (offs.length > 0) {
+                        this.port.postMessage({ type: 'notesOff', events: offs });
+                    }
                     break;
-                case 'setParam':
-                    this._rack.setProcessorParam(data.processorId, data.name, data.value);
-                    break;
-                case 'setBypass':
-                    this._rack.setProcessorBypass(data.processorId, data.bypassed);
-                    break;
-                case 'allNotesOff':
-                    this._rack.allNotesOff(data.nowSamples ?? currentFrame);
-                    break;
+                }
                 case 'processBlock': {
                     const processed = this._rack.processBlock(
                         data.events,

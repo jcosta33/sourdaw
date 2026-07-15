@@ -1,20 +1,52 @@
-import { type MidiEvent } from '../../models/MidiEvent';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { processYeastMidi } from './processYeastMidi';
 
-export function processRealtimeMidiInput(
-    note: number,
-    velocity: number,
-    channel: number,
-    isNoteOn: boolean,
-    sampleTime: number,
-    sampleRate: number,
-    blockSize: number = 128
-): MidiEvent[] {
+import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+
+type ProcessRealtimeMidiInputInput = {
+    context: BaseAudioContext;
+    note: number;
+    velocity: number;
+    channel: number;
+    isNoteOn: boolean;
+    sampleTime: number;
+    sampleRate: number;
+    blockSize?: number;
+};
+
+export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
     const event: MidiEvent = {
-        timeSamples: sampleTime,
-        kind: isNoteOn ? { type: 'noteOn', channel, note, velocity } : { type: 'noteOff', channel, note },
+        timeSamples: input.sampleTime,
+        kind: input.isNoteOn
+            ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
+            : { type: 'noteOff', channel: input.channel, note: input.note },
     };
 
-    return processYeastMidi([event], sampleTime, sampleTime + blockSize, sampleRate);
+    const transport = transportStore.value;
+    if (!transport) {
+        return Promise.resolve([event]);
+    }
+
+    const transportInfo: TransportInfo = {
+        sampleRate: input.sampleRate,
+        bpm: transport.tempo,
+        ppqPosition: transport.playheadPosition,
+        isPlaying: transport.isPlaying,
+        barIndex: 0,
+        beatInBar: 0,
+        timeSigNum: transport.timeSignatureNumerator,
+        timeSigDen: transport.timeSignatureDenominator,
+        loopEnabled: transport.loopStart < transport.loopEnd,
+        loopStartPpq: transport.loopStart,
+        loopEndPpq: transport.loopEnd,
+    };
+
+    return processYeastMidi({
+        context: input.context,
+        events: [event],
+        blockStartSamples: input.sampleTime,
+        blockEndSamples: input.sampleTime + (input.blockSize ?? 128),
+        transport: transportInfo,
+    });
 }

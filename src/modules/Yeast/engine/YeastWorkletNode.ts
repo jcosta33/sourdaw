@@ -5,14 +5,14 @@
  * audio thread. Provides an async `processBlock()` that returns transformed
  * MIDI events; caller supplies `requestId` correlation internally.
  *
- * Mirrors add/remove/reorder/setParam/setBypass to the worklet so the
- * audio-thread rack stays in sync with the main-thread rack (UI state tracker).
+ * Sends the serializable processor projection to the worklet. The worklet owns
+ * the rack and processor instances; this wrapper owns only the port protocol.
  */
 
 import yeastWorkletProcessorUrl from '../worklets/yeastWorkletProcessor.ts?worker&url';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
-import type { ProcessorType } from '../models/ProcessorCatalog';
+import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
 const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 
@@ -51,18 +51,13 @@ export type YeastWorkletNodeResult = {
         blockEnd: number,
         transport: TransportInfo
     ) => Promise<MidiEvent[]>;
-    addProcessor: (processorType: ProcessorType, processorId: string) => void;
-    removeProcessor: (processorId: string) => void;
-    reorder: (fromIdx: number, toIdx: number) => void;
-    setParam: (processorId: string, name: string, value: number) => void;
-    setBypass: (processorId: string, bypassed: boolean) => void;
+    setProjection: (projection: readonly YeastProcessorProjectionItem[]) => void;
     allNotesOff: (nowSamples: number) => void;
     /**
-     * Register a listener for the Note Offs a `removeProcessor` left hanging in
-     * the worklet rack. The worklet computes them on the audio thread and posts
-     * them back here; without a listener routing them to the live instrument,
-     * the note hangs. Returns an unsubscribe function. Multiple listeners are
-     * supported (last-registered are all notified).
+     * Register a listener for Note Offs a projection change left hanging in the
+     * worklet rack. The worklet computes them and posts them back here; without
+     * routing them to the live instrument, the note hangs. Returns an
+     * unsubscribe function. Multiple listeners are supported.
      */
     onNotesOff: (handler: (notes: number[]) => void) => () => void;
     destroy: () => void;
@@ -138,12 +133,14 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     return {
         context: ctx,
         processBlock,
-        addProcessor: (processorType, processorId) =>
-            node.port.postMessage({ type: 'addProcessor', processorType, processorId }),
-        removeProcessor: (processorId) => node.port.postMessage({ type: 'removeProcessor', processorId }),
-        reorder: (fromIdx, toIdx) => node.port.postMessage({ type: 'reorder', fromIdx, toIdx }),
-        setParam: (processorId, name, value) => node.port.postMessage({ type: 'setParam', processorId, name, value }),
-        setBypass: (processorId, bypassed) => node.port.postMessage({ type: 'setBypass', processorId, bypassed }),
+        setProjection: (projection) =>
+            node.port.postMessage({
+                type: 'setProjection',
+                processors: projection.map((processor) => ({
+                    ...processor,
+                    params: { ...processor.params },
+                })),
+            }),
         allNotesOff: (nowSamples) => node.port.postMessage({ type: 'allNotesOff', nowSamples }),
         onNotesOff: (handler) => {
             notesOffHandlers.add(handler);

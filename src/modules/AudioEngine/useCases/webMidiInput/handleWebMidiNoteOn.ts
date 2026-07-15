@@ -16,9 +16,9 @@ export const handleWebMidiNoteOn = inject({
     handleWebMidiNoteOff,
 })(
     ({ handleWebMidiNoteOff, ...deps }) =>
-        function handleWebMidiNoteOn(channel: number, note: number, velocity: number): void {
+        async function handleWebMidiNoteOn(channel: number, note: number, velocity: number): Promise<void> {
             if (velocity === 0) {
-                handleWebMidiNoteOff(channel, note, 0);
+                await handleWebMidiNoteOff(channel, note, 0);
                 return;
             }
 
@@ -78,14 +78,15 @@ export const handleWebMidiNoteOn = inject({
             const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
             if (hasYeast) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
-                const processedEvents = deps.processRealtimeMidiInput(
+                const processedEvents = await deps.processRealtimeMidiInput({
+                    context: engine.context,
                     note,
                     velocity,
                     channel,
-                    true,
+                    isNoteOn: true,
                     sampleTime,
-                    engine.context.sampleRate
-                );
+                    sampleRate: engine.context.sampleRate,
+                });
                 for (const event of processedEvents) {
                     if (event.kind.type === 'noteOn') {
                         const eventNote = event.kind.note;

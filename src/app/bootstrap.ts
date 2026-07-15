@@ -89,6 +89,7 @@ import {
 } from '#/modules/Transport/useCases';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
+import { configureYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -111,6 +112,7 @@ setMixAnalysisDisplayLifecycle({
 setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
+configureYeastRuntime();
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat });

@@ -86,6 +86,24 @@ module.exports = {
             },
         },
         {
+            name: 'module-runtime-no-worklet-imports',
+            severity: 'error',
+            comment:
+                'Module tests in useCases, repositories, stores, handlers, and presentations must not import worklet internals. ' +
+                'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
+            from: {
+                path: [
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*__tests__/.*' +
+                        SOURCE_FILE_RE,
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*\\.(spec|test)' +
+                        SOURCE_FILE_RE,
+                ],
+            },
+            to: {
+                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
+            },
+        },
+        {
             name: 'external-tests-contract-only',
             severity: 'error',
             comment:

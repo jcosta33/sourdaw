@@ -9,8 +9,12 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
 
+import type { ProcessorType } from '../models/ProcessorCatalog';
+import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
+
 export class MidiRack {
     private processors: MidiProcessor[] = [];
+    private processorTypes: Map<string, ProcessorType> = new Map();
     private scheduled = new ScheduledEventQueue();
     // Numeric key = (channel << 7) | note avoids per-event template-literal
     // string allocation in AudioWorkletGlobalScope (§149.2).
@@ -23,8 +27,11 @@ export class MidiRack {
     private separateOutput: MidiEvent[] = [];
 
     /** Add a processor to the end of the chain. */
-    addProcessor(processor: MidiProcessor): void {
+    addProcessor(processor: MidiProcessor, type?: ProcessorType): void {
         this.processors.push(processor);
+        if (type) {
+            this.processorTypes.set(processor.id, type);
+        }
     }
 
     /**
@@ -60,7 +67,47 @@ export class MidiRack {
         this.activeNotes.clear();
         this.processors[idx]!.reset();
         this.processors.splice(idx, 1);
+        this.processorTypes.delete(id);
         return output;
+    }
+
+    /** Reconcile the worklet-owned chain to the latest serializable projection. */
+    replaceProjection(
+        projection: readonly YeastProcessorProjectionItem[],
+        createProcessor: (type: ProcessorType, id: string) => MidiProcessor,
+        nowSamples = 0
+    ): MidiEvent[] {
+        const desiredById = new Map(projection.map((processor) => [processor.id, processor]));
+        const hangingOffs: MidiEvent[] = [];
+
+        for (const processor of [...this.processors]) {
+            const desired = desiredById.get(processor.id);
+            const currentType = this.processorTypes.get(processor.id);
+            if (!desired || currentType !== desired.type) {
+                hangingOffs.push(...this.removeProcessor(processor.id, nowSamples));
+            }
+        }
+
+        for (const desired of projection) {
+            const current = this.processors.find((processor) => processor.id === desired.id);
+            if (!current) {
+                this.addProcessor(createProcessor(desired.type, desired.id), desired.type);
+            }
+            this.setProcessorBypass(desired.id, desired.bypassed);
+            for (const [name, value] of Object.entries(desired.params)) {
+                this.setProcessorParam(desired.id, name, value);
+            }
+        }
+
+        for (let targetIndex = 0; targetIndex < projection.length; targetIndex++) {
+            const desiredId = projection[targetIndex]!.id;
+            const currentIndex = this.processors.findIndex((processor) => processor.id === desiredId);
+            if (currentIndex !== -1 && currentIndex !== targetIndex) {
+                this.reorder(currentIndex, targetIndex);
+            }
+        }
+
+        return hangingOffs;
     }
 
     /** Reorder: move processor from fromIdx to toIdx. */

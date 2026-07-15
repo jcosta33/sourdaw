@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../YeastWorkletNode';
 
 import type { TransportInfo } from '../../models/MidiEvent';
+import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
 /**
  * A controllable AudioWorkletNode stand-in. Captures posted messages and lets a
@@ -124,11 +125,48 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
     });
 });
 
-describe('createYeastWorkletNode — reorder protocol', () => {
-    it('posts a reorder message to the worklet port', async () => {
+describe('createYeastWorkletNode — projection protocol', () => {
+    it('posts one complete serializable projection snapshot', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
-        node.reorder(2, 0);
-        expect(lastPort().postMessage).toHaveBeenCalledWith({ type: 'reorder', fromIdx: 2, toIdx: 0 });
+        const projection: YeastProcessorProjection = [
+            {
+                id: 'arp-1',
+                type: 'arpeggiator',
+                bypassed: false,
+                params: { rate_denom: 16 },
+            },
+            {
+                id: 'filter-1',
+                type: 'filter',
+                bypassed: true,
+                params: {},
+            },
+        ];
+
+        node.setProjection(projection);
+
+        expect(lastPort().postMessage).toHaveBeenCalledWith({
+            type: 'setProjection',
+            processors: projection,
+        });
+    });
+
+    it('delivers worklet note-offs to the registered listener', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const onNotesOff = vi.fn();
+        node.onNotesOff(onNotesOff);
+
+        lastPort().onmessage?.({
+            data: {
+                type: 'notesOff',
+                events: [
+                    { timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } },
+                    { timeSamples: 128, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+                ],
+            },
+        } as MessageEvent);
+
+        expect(onNotesOff).toHaveBeenCalledWith([60]);
     });
 });
 

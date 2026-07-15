@@ -50,7 +50,11 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         return midiClips[midiClips.length - 1]!.id;
     }
 
-    return function handleWebMidiNoteOff(channel: number, note: number, releaseVelocity: number = 0): void {
+    return async function handleWebMidiNoteOff(
+        channel: number,
+        note: number,
+        releaseVelocity: number = 0
+    ): Promise<void> {
         deps.stepRecordNoteOff(note);
         const noteData = activeNotes.get(note);
         if (!noteData) {
@@ -79,14 +83,15 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             if (instrumentTrack?.devices.some((device) => device.type === 'yeast')) {
                 const context = audioEngine.context;
                 const sampleTime = Math.round(context.currentTime * context.sampleRate);
-                const processedEvents = deps.processRealtimeMidiInput(
+                const processedEvents = await deps.processRealtimeMidiInput({
+                    context,
                     note,
-                    0,
+                    velocity: 0,
                     channel,
-                    false,
+                    isNoteOn: false,
                     sampleTime,
-                    context.sampleRate
-                );
+                    sampleRate: context.sampleRate,
+                });
                 const strip = audioEngine.getTrackStrip(instrumentTrack.id);
                 function emitGrandBouleOff(deviceId: string, midiNote: number): void {
                     void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
