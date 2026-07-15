@@ -1,46 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use daw_io::{AudioStreamMeta, DecodedAudio};
+use daw_io::AudioStreamMeta;
 use serde::Serialize;
 
 use super::filesystem;
-
-#[derive(Debug, Serialize)]
-pub struct DecodedAudioResponse {
-    pub samples: Vec<f32>,
-    pub sample_rate: u32,
-    pub channels: u32,
-    pub duration_ms: f64,
-    pub total_frames: u64,
-}
-
-impl From<DecodedAudio> for DecodedAudioResponse {
-    fn from(decoded: DecodedAudio) -> Self {
-        let channels = decoded.channels as usize;
-        let total_frames = decoded.samples.first().map_or(0, Vec::len);
-        let mut samples = Vec::with_capacity(total_frames.saturating_mul(channels));
-
-        for frame in 0..total_frames {
-            for channel in 0..channels {
-                let sample = decoded
-                    .samples
-                    .get(channel)
-                    .and_then(|channel_samples| channel_samples.get(frame))
-                    .copied()
-                    .unwrap_or(0.0);
-                samples.push(sample);
-            }
-        }
-
-        Self {
-            samples,
-            sample_rate: decoded.sample_rate,
-            channels: decoded.channels,
-            duration_ms: decoded.duration_seconds * 1000.0,
-            total_frames: total_frames as u64,
-        }
-    }
-}
 
 #[derive(Debug, Serialize)]
 pub struct AudioFileInfoResponse {
@@ -88,15 +51,6 @@ fn map_audio_file_info(
     })
 }
 
-/// Decode an audio file from disk. Supports WAV, FLAC, MP3, OGG/Vorbis, AAC, ALAC, and more.
-/// Takes a file path rather than bytes to avoid loading the entire file through the IPC boundary.
-#[tauri::command]
-pub async fn decode_audio_file(file_path: String) -> Result<DecodedAudioResponse, String> {
-    let file_path = filesystem::resolve_existing_file_path(&file_path)?;
-    let file_path = file_path.to_string_lossy().to_string();
-    daw_io::decode_audio_file(&file_path).map(DecodedAudioResponse::from)
-}
-
 /// Read metadata from an audio file on disk without fully decoding it.
 #[tauri::command]
 pub async fn get_audio_file_info(file_path: String) -> Result<AudioFileInfoResponse, String> {
@@ -117,30 +71,6 @@ pub async fn get_audio_file_metadata(file_path: String) -> Result<AudioStreamMet
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn maps_decoded_audio_to_the_frontend_contract() {
-        let response = DecodedAudioResponse::from(DecodedAudio {
-            sample_rate: 48_000,
-            channels: 2,
-            samples: vec![vec![1.0, -1.0], vec![0.5, -0.5]],
-            duration_seconds: 2.0 / 48_000.0,
-            codec: "pcm".to_string(),
-        });
-
-        assert_eq!(response.samples, vec![1.0, 0.5, -1.0, -0.5]);
-        assert_eq!(response.sample_rate, 48_000);
-        assert_eq!(response.channels, 2);
-        assert_eq!(response.total_frames, 2);
-        assert_eq!(response.duration_ms, 2.0 / 48_000.0 * 1000.0);
-
-        let serialized = serde_json::to_value(&response).expect("response should serialize");
-        assert_eq!(
-            serialized["samples"],
-            serde_json::json!([1.0, 0.5, -1.0, -0.5])
-        );
-        assert!(serialized.get("duration_seconds").is_none());
-    }
 
     #[test]
     fn maps_audio_file_info_to_the_frontend_contract() {

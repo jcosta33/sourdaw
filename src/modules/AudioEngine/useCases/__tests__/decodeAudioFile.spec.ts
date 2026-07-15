@@ -1,12 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as subject from '../decodeAudioFile';
 
 const mocks = vi.hoisted(() => ({
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    writeAudioFileToCache: vi.fn(),
-    nativeDecode: vi.fn(),
-    samplesToAudioBuffer: vi.fn(),
+    decodeAudioData: vi.fn(),
     decodeAudioBytesWasm: vi.fn(),
     wasmDecodedToAudioBuffer: vi.fn(),
     bufferCacheSet: vi.fn(),
@@ -14,18 +12,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: mocks.logger,
-}));
-
-vi.mock('../../repositories/audioDecoding/tauriDecoding/writeAudioFileToCache', () => ({
-    writeAudioFileToCache: mocks.writeAudioFileToCache,
-}));
-
-vi.mock('../../repositories/audioDecoding/tauriDecoding/decodeAudioFile', () => ({
-    decodeAudioFile: mocks.nativeDecode,
-}));
-
-vi.mock('../../repositories/audioDecoding/samplesToAudioBuffer', () => ({
-    samplesToAudioBuffer: mocks.samplesToAudioBuffer,
 }));
 
 vi.mock('../../repositories/audioDecoding/wasmDecoding/decodeAudioBytesWasm', () => ({
@@ -39,7 +25,7 @@ vi.mock('../../repositories/audioDecoding/wasmDecoding/wasmDecodedToAudioBuffer'
 vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
         context: {
-            decodeAudioData: vi.fn(() => Promise.reject(new Error('no native decode in test'))),
+            decodeAudioData: mocks.decodeAudioData,
         },
     },
 }));
@@ -49,128 +35,66 @@ vi.mock('../../stores/audioBufferCache', () => ({
 }));
 
 function makeFile(name: string): File {
-    return new File([new Uint8Array(8)], name);
+    return new File([new Uint8Array(8)], name, { type: 'audio/wav' });
 }
 
-describe('decodeAudioFile — native decode path', () => {
+describe('decodeAudioFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.writeAudioFileToCache.mockResolvedValue({ kind: 'ready', path: '/app/models/../cache/song.flac' });
-        mocks.nativeDecode.mockResolvedValue(null);
-        mocks.decodeAudioBytesWasm.mockResolvedValue({ sampleRate: 48_000, channels: [new Float32Array(4)] });
-        mocks.wasmDecodedToAudioBuffer.mockReturnValue({} as AudioBuffer);
+        mocks.decodeAudioData.mockResolvedValue({ duration: 2 } as AudioBuffer);
+        mocks.decodeAudioBytesWasm.mockResolvedValue(null);
+        mocks.wasmDecodedToAudioBuffer.mockReturnValue({ duration: 3 } as AudioBuffer);
     });
 
-    it('does not log a "Tauri unavailable" warning when the repository skips native decode outside Tauri', async () => {
-        mocks.writeAudioFileToCache.mockResolvedValue({ kind: 'skipped' });
+    it('uses Web Audio first and caches the decoded AudioBuffer', async () => {
+        const webBuffer = { duration: 2 } as AudioBuffer;
+        mocks.decodeAudioData.mockResolvedValue(webBuffer);
 
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
+        const result = await subject.decodeAudioFile(makeFile('song.wav'));
 
-        expect(result).toBeDefined();
-        expect(mocks.nativeDecode).not.toHaveBeenCalled();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-        expect(mocks.logger.warn).not.toHaveBeenCalled();
-    });
-
-    it('returns decoded native samples when cache write and native decode succeed', async () => {
-        const nativeBuffer = {} as AudioBuffer;
-        mocks.nativeDecode.mockResolvedValue({
-            samples: [0.1, 0.2],
-            sampleRate: 48_000,
-            channels: 2,
-            durationMs: 1,
-            totalFrames: 2,
-        });
-        mocks.samplesToAudioBuffer.mockReturnValue(nativeBuffer);
-
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
-
-        expect(mocks.writeAudioFileToCache).toHaveBeenCalled();
-        expect(mocks.nativeDecode).toHaveBeenCalledWith('/app/models/../cache/song.flac');
-        expect(mocks.samplesToAudioBuffer).toHaveBeenCalled();
-        expect(result.buffer).toBe(nativeBuffer);
-        expect(mocks.bufferCacheSet).toHaveBeenCalledWith(expect.stringMatching(/^audio-/), nativeBuffer);
+        expect(mocks.decodeAudioData).toHaveBeenCalledWith(expect.any(ArrayBuffer));
         expect(mocks.decodeAudioBytesWasm).not.toHaveBeenCalled();
+        expect(result.buffer).toBe(webBuffer);
+        expect(mocks.bufferCacheSet).toHaveBeenCalledWith(expect.stringMatching(/^audio-/), webBuffer);
     });
 
-    it('logs a "Tauri unavailable" warning when the bridge cannot load, then falls back', async () => {
-        const bridgeError = new Error('missing tauri bridge');
-        mocks.writeAudioFileToCache.mockResolvedValue({ kind: 'unavailable', error: bridgeError });
-
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
-
-        expect(result).toBeDefined();
-        expect(mocks.nativeDecode).not.toHaveBeenCalled();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-        expect(mocks.logger.warn).toHaveBeenCalledWith(
-            '[decodeAudioFile] Tauri unavailable — falling back to browser decoder:',
-            bridgeError
-        );
-    });
-
-    it('logs a "Tauri decoder failed" warning when the cache write throws, then falls back', async () => {
-        const cacheError = new Error('write failed');
-        mocks.writeAudioFileToCache.mockRejectedValue(cacheError);
-
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
-
-        expect(result).toBeDefined();
-        expect(mocks.nativeDecode).not.toHaveBeenCalled();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-        expect(mocks.logger.warn).toHaveBeenCalledWith(
-            '[decodeAudioFile] Tauri decoder failed for "song.flac" — falling back to browser decoder:',
-            cacheError
-        );
-    });
-
-    it('logs a "Tauri decoder failed" warning when the native decode throws, then falls back', async () => {
-        mocks.nativeDecode.mockRejectedValue(new Error('symphonia boom'));
-
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
-
-        // Fell back to the WASM decoder rather than throwing.
-        expect(result).toBeDefined();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-
-        // The swallowed error is now surfaced, tagged as a decoder failure.
-        expect(mocks.logger.warn).toHaveBeenCalledWith(
-            '[decodeAudioFile] Tauri decoder failed for "song.flac" — falling back to browser decoder:',
-            expect.any(Error)
-        );
-    });
-
-    it('warns and falls back when the native decoder returns no samples', async () => {
-        // decoded === null is a non-throwing "decoder produced nothing" outcome —
-        // previously this fell through silently with no record.
-        mocks.nativeDecode.mockResolvedValue(null);
-
-        const result = await subject.decodeAudioFile(makeFile('song.flac'));
-
-        expect(result).toBeDefined();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-        const warnedNoSamples = mocks.logger.warn.mock.calls.some(
-            ([msg]) => typeof msg === 'string' && msg.includes('returned no samples')
-        );
-        expect(warnedNoSamples).toBe(true);
-    });
-
-    it('falls back when the native decoder returns an empty decoded buffer', async () => {
-        mocks.nativeDecode.mockResolvedValue({
-            samples: [],
+    it('falls back to Symphonia WASM when Web Audio rejects the file', async () => {
+        const webError = new Error('unsupported browser codec');
+        const wasmDecoded = {
+            interleaved: new Float32Array([0.1, 0.5, 0.2, 0.6]),
             sampleRate: 48_000,
             channels: 2,
-            durationMs: 0,
-            totalFrames: 0,
-        });
+            totalFrames: 2,
+        };
+        const wasmBuffer = { duration: 2 } as AudioBuffer;
+        mocks.decodeAudioData.mockRejectedValue(webError);
+        mocks.decodeAudioBytesWasm.mockResolvedValue(wasmDecoded);
+        mocks.wasmDecodedToAudioBuffer.mockReturnValue(wasmBuffer);
 
         const result = await subject.decodeAudioFile(makeFile('song.flac'));
 
-        expect(result).toBeDefined();
-        expect(mocks.samplesToAudioBuffer).not.toHaveBeenCalled();
-        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalled();
-        const warnedNoSamples = mocks.logger.warn.mock.calls.some(
-            ([msg]) => typeof msg === 'string' && msg.includes('returned no samples')
+        expect(mocks.decodeAudioBytesWasm).toHaveBeenCalledWith(expect.any(ArrayBuffer));
+        expect(mocks.wasmDecodedToAudioBuffer).toHaveBeenCalledWith(wasmDecoded, expect.anything());
+        expect(result.buffer).toBe(wasmBuffer);
+        expect(mocks.bufferCacheSet).toHaveBeenCalledWith(expect.stringMatching(/^audio-/), wasmBuffer);
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+            '[decodeAudioFile] Web Audio decode failed for "song.flac" — trying Symphonia WASM decoder:',
+            webError
         );
-        expect(warnedNoSamples).toBe(true);
+    });
+
+    it('throws a DecodeError when both browser decoders reject the file', async () => {
+        const webError = new Error('unsupported browser codec');
+        mocks.decodeAudioData.mockRejectedValue(webError);
+
+        await expect(subject.decodeAudioFile(makeFile('broken.flac'))).rejects.toMatchObject({
+            _tag: 'Decode',
+            message: 'Unable to decode "broken.flac" — format not supported.',
+        });
+
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+            '[decodeAudioFile] Web Audio decode failed for "broken.flac" — trying Symphonia WASM decoder:',
+            webError
+        );
     });
 });
