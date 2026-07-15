@@ -81,13 +81,6 @@ pub struct BpmDetectionResult {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MeteringResult {
-    pub peak_left: f32,
-    pub peak_right: f32,
-    pub active_voices: u8,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct LoopPointDetectionResult {
     pub start_frame: u32,
     pub end_frame: u32,
@@ -498,28 +491,6 @@ pub async fn detect_sample_pitch(
         frequency_hz: result.frequency_hz,
         midi_note: result.midi_note,
         confidence: result.confidence,
-    })
-}
-
-/// Get current metering values (peak levels and active voice count).
-#[tauri::command]
-pub async fn get_crumbs_metering(
-    instance_id: String,
-    state: State<'_, CrumbsState>,
-) -> Result<MeteringResult, String> {
-    let instances = state
-        .instances
-        .lock()
-        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
-    let instance = instances
-        .get(&instance_id)
-        .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
-
-    let m = &instance.metering;
-    Ok(MeteringResult {
-        peak_left: f32::from_bits(m.peak_left.load(Ordering::Relaxed)),
-        peak_right: f32::from_bits(m.peak_right.load(Ordering::Relaxed)),
-        active_voices: m.active_voice_count.load(Ordering::Relaxed),
     })
 }
 

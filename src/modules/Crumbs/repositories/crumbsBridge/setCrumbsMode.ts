@@ -1,6 +1,4 @@
-import { isTauri } from '#/utils/tauriBridge';
-
-import { invokeCrumbs } from './invokeCrumbs';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import type { CrumbsMode } from '../../models/CrumbsTypes';
 
@@ -8,5 +6,5 @@ export async function setCrumbsMode(instanceId: string, mode: CrumbsMode): Promi
     if (!isTauri()) {
         return;
     }
-    await invokeCrumbs('set_crumbs_mode', { instanceId, mode });
+    await tauriInvoke('set_crumbs_mode', { instanceId, mode });
 }

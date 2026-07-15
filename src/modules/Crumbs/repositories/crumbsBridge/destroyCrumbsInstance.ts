@@ -1,10 +1,8 @@
-import { isTauri } from '#/utils/tauriBridge';
-
-import { invokeCrumbs } from './invokeCrumbs';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 export async function destroyCrumbsInstance(instanceId: string): Promise<void> {
     if (!isTauri()) {
         return;
     }
-    await invokeCrumbs('destroy_crumbs', { instanceId });
+    await tauriInvoke('destroy_crumbs', { instanceId });
 }

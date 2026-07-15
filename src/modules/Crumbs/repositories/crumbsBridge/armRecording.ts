@@ -1,6 +1,4 @@
-import { isTauri } from '#/utils/tauriBridge';
-
-import { invokeCrumbs } from './invokeCrumbs';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 export async function armRecording(
     instanceId: string,
@@ -11,5 +9,5 @@ export async function armRecording(
     if (!isTauri()) {
         return;
     }
-    await invokeCrumbs('arm_recording', { instanceId, threshold, targetPad, maxDurationSecs });
+    await tauriInvoke('arm_recording', { instanceId, threshold, targetPad, maxDurationSecs });
 }

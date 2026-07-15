@@ -1,5 +1,6 @@
+import { tauriInvoke } from '#/utils/tauriBridge';
+
 import { ensureTauri } from './helpers';
-import { invokeCrumbs } from './invokeCrumbs';
 
 import type { OnsetAlgorithm, OnsetDetectionResult } from '../../models/CrumbsTypes';
 
@@ -9,6 +10,6 @@ export async function detectOnsets(
     algorithm: OnsetAlgorithm
 ): Promise<OnsetDetectionResult> {
     ensureTauri('detect_onsets');
-    const result = await invokeCrumbs('detect_onsets', { instanceId, sampleId, algorithm });
+    const result = await tauriInvoke('detect_onsets', { instanceId, sampleId, algorithm });
     return result as OnsetDetectionResult;
 }
