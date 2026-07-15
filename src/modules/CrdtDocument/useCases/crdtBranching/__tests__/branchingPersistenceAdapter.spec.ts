@@ -81,6 +81,7 @@ describe('CRDT branch persistence adapter interleavings', () => {
         if (!branch) {
             throw new Error('Expected the fork branch record');
         }
+        expect(automergeRepository.getDoc(branch.rootDocId)).not.toBe(automergeRepository.getDoc('root'));
         const sourceSnapshot = cloneDoc(automergeRepository.getDoc(branch.rootDocId)!);
 
         automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -125,5 +126,57 @@ describe('CRDT branch persistence adapter interleavings', () => {
         expect(automergeRepository.getDoc('root')).not.toMatchObject({
             state: { queuedBeforeSwitch: true },
         });
+    });
+
+    it('keeps main and its fork isolated across switches and a binary reload', async () => {
+        automergeRepository.createProject('project');
+        branchStore.set({
+            branches: [createBranchRecord(MAIN_BRANCH_ID, 'root')],
+            activeBranchId: MAIN_BRANCH_ID,
+        });
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.sharedBeforeFork = true;
+        });
+
+        const featureId = await forkProjectBranch('feature');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.featureOnly = true;
+        });
+
+        switchBranch(MAIN_BRANCH_ID);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            sharedBeforeFork: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('featureOnly');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mainOnly = true;
+        });
+
+        switchBranch(featureId);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            sharedBeforeFork: true,
+            featureOnly: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('mainOnly');
+
+        const persistedBundle = automergeRepository.saveAll();
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle: persistedBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+
+        switchBranch(MAIN_BRANCH_ID);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            sharedBeforeFork: true,
+            mainOnly: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('featureOnly');
+
+        switchBranch(featureId);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            sharedBeforeFork: true,
+            featureOnly: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('mainOnly');
     });
 });

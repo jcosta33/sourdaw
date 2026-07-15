@@ -8,6 +8,7 @@ const CLONED_DOC = { tag: 'cloned' };
 const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn(),
     getDoc: vi.fn(),
+    hasDoc: vi.fn(() => false),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
@@ -28,6 +29,7 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
 vi.mock('../../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getDoc: mocks.getDoc,
+        hasDoc: mocks.hasDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
     },
@@ -58,7 +60,11 @@ describe('forkProjectBranch', () => {
         expect(mocks.replaceDoc).toHaveBeenCalledWith('root', CLONED_DOC);
 
         // The fork is also stored under its own branch slot.
-        const insertCall = mocks.insertDoc.mock.calls[0];
+        expect(mocks.insertDoc).toHaveBeenCalledWith('branch_main', CLONED_DOC);
+        const insertCall = mocks.insertDoc.mock.calls.find(([id]) => id !== 'branch_main');
+        if (!insertCall) {
+            throw new Error('Expected the fork branch backing insert');
+        }
         expect(insertCall[0]).toMatch(/^branch_/);
         expect(insertCall[1]).toBe(CLONED_DOC);
     });

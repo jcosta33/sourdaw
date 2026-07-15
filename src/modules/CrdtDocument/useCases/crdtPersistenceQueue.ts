@@ -7,7 +7,10 @@ import {
 } from '../errors/CrdtPersistenceMembershipConflictError';
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
-import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
+import {
+    loadPersistenceSnapshotFromIdb,
+    type CrdtPersistenceSnapshot,
+} from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import {
     EMPTY_PERSISTENCE_AUTHORITY,
     type CrdtPersistenceAuthority,
@@ -34,11 +37,12 @@ type PendingFullSnapshot = {
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
-const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 3;
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 4;
 
 type CrdtPersistenceQueueState = {
     version: number;
     persistenceGeneration: number;
+    persistenceAbortController: AbortController;
     operationTail: Promise<void>;
     pendingChunks: PendingIncrementalChunk[];
     pendingFullSnapshot: PendingFullSnapshot | null;
@@ -53,6 +57,7 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
     return {
         version: CRDT_PERSISTENCE_QUEUE_STATE_VERSION,
         persistenceGeneration: 0,
+        persistenceAbortController: new AbortController(),
         operationTail: Promise.resolve(),
         pendingChunks: [],
         pendingFullSnapshot: null,
@@ -75,6 +80,7 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
         typeof persistenceState.persistenceGeneration === 'number' ? persistenceState.persistenceGeneration : 0;
     persistenceState.version = CRDT_PERSISTENCE_QUEUE_STATE_VERSION;
     persistenceState.persistenceGeneration = previousGeneration + 1;
+    persistenceState.persistenceAbortController = new AbortController();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
     persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
@@ -97,6 +103,15 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
 }
 
 type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset';
+
+type LoadCrdtPersistenceOperationResult = {
+    loaded: boolean;
+    snapshot: CrdtPersistenceSnapshot | null;
+};
+
+type LoadCrdtPersistenceOperation = (input: {
+    shouldCommit: () => boolean;
+}) => Promise<LoadCrdtPersistenceOperationResult>;
 
 /** Serialize persistence operations and reset private lifecycle state. */
 export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
@@ -122,8 +137,44 @@ export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation)
     return run;
 }
 
+/** Revoke old writes, then load and adopt one persistence snapshot behind their settled tail. */
+export function runCrdtPersistenceLoad(operation: LoadCrdtPersistenceOperation): Promise<boolean> {
+    const previousOperationTail = persistenceState.operationTail;
+    const generation = beginLoadQueueState();
+    function shouldCommit(): boolean {
+        return generation === persistenceState.persistenceGeneration;
+    }
+    const run = previousOperationTail.then(async () => {
+        if (!shouldCommit()) {
+            return false;
+        }
+
+        let result: LoadCrdtPersistenceOperationResult;
+        try {
+            result = await operation({ shouldCommit });
+        } catch (error) {
+            if (!shouldCommit()) {
+                return false;
+            }
+            throw error;
+        }
+        if (!shouldCommit()) {
+            return false;
+        }
+        if (result.snapshot) {
+            adoptPersistenceSnapshot(result.snapshot);
+        }
+        return result.loaded;
+    });
+    persistenceState.operationTail = run.then(
+        () => undefined,
+        () => undefined
+    );
+    return run;
+}
+
 /** Adopt the authority read with the project bundle that this realm loaded. */
-export function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void {
+function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void {
     persistenceState.authority = authority;
     persistenceState.replacementEpoch = null;
     persistenceState.migrationReconciliationRequired = false;
@@ -131,24 +182,44 @@ export function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority)
 }
 
 function resetQueueState(): void {
-    persistenceState.persistenceGeneration++;
-    for (let index = persistenceState.pendingChunks.length - 1; index >= 0; index--) {
-        const pending = persistenceState.pendingChunks[index];
-        if (pending && !pending.inFlight) {
-            persistenceState.pendingChunks.splice(index, 1);
-        }
-    }
-    persistenceState.pendingFullSnapshot = null;
-    persistenceState.persistedBaseDocIds.clear();
+    beginPersistenceGeneration();
     persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
     // A project reset intentionally publishes a new epoch, but it still reads
     // and claims the current durable revision before replacing the bundle. A
     // concurrent realm can therefore never be cleared by an unseen reset.
-    persistenceState.authority = null;
     persistenceState.replacementEpoch = crypto.randomUUID();
+}
+
+function beginLoadQueueState(): number {
+    const generation = beginPersistenceGeneration();
+    persistenceState.replacementEpoch = null;
+    return generation;
+}
+
+function beginPersistenceGeneration(): number {
+    const previousAbortController = persistenceState.persistenceAbortController;
+    persistenceState.persistenceGeneration++;
+    persistenceState.persistenceAbortController = new AbortController();
+    previousAbortController.abort();
+    persistenceState.pendingChunks = [];
+    persistenceState.pendingFullSnapshot = null;
+    persistenceState.persistedBaseDocIds.clear();
+    persistenceState.authority = null;
     persistenceState.migrationReconciliationRequired = false;
     persistenceState.migrationMembershipConflict = null;
     crdtProjectCompactionState.incrementalSaveCount = 0;
+    return persistenceState.persistenceGeneration;
+}
+
+function adoptPersistenceSnapshot(snapshot: CrdtPersistenceSnapshot): void {
+    setCrdtPersistenceAuthority(snapshot.authority);
+    persistenceState.persistedBaseDocIds.clear();
+    if (!snapshot.bundle) {
+        return;
+    }
+    for (const id of getDurableDocumentIds(snapshot.bundle)) {
+        persistenceState.persistedBaseDocIds.add(id);
+    }
 }
 
 function noOpPersistenceOperation(): Promise<void> {
@@ -416,6 +487,7 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
         return;
     }
 
+    const generationSignal = persistenceState.persistenceAbortController.signal;
     let currentPending = pending;
     persistenceState.pendingFullSnapshot = currentPending;
 
@@ -428,6 +500,7 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
             const result = await saveAllToIdb(currentPending.bundle, {
                 expectedAuthority,
                 nextEpoch: persistenceState.replacementEpoch ?? expectedAuthority.epoch,
+                signal: generationSignal,
             });
             if (currentPending.generation !== persistenceState.persistenceGeneration) {
                 return;
@@ -456,9 +529,13 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
             persistenceState.pendingFullSnapshot = currentPending;
         }
     } catch (error: unknown) {
-        if (pending.generation === persistenceState.persistenceGeneration) {
-            persistenceState.pendingFullSnapshot = currentPending;
+        if (pending.generation !== persistenceState.persistenceGeneration) {
+            if (generationSignal.aborted) {
+                return;
+            }
+            throw error;
         }
+        persistenceState.pendingFullSnapshot = currentPending;
         throw error;
     }
 
@@ -508,6 +585,7 @@ async function flushPendingChunks(generation: number): Promise<void> {
         pending.inFlight = true;
     }
 
+    const generationSignal = persistenceState.persistenceAbortController.signal;
     try {
         while (generation === persistenceState.persistenceGeneration) {
             const expectedAuthority = await ensurePersistenceAuthority(generation);
@@ -519,7 +597,10 @@ async function flushPendingChunks(generation: number): Promise<void> {
                     id,
                     chunk,
                 })),
-                { expectedAuthority }
+                {
+                    expectedAuthority,
+                    signal: generationSignal,
+                }
             );
             if (generation !== persistenceState.persistenceGeneration) {
                 return;
@@ -545,6 +626,14 @@ async function flushPendingChunks(generation: number): Promise<void> {
             }
             persistenceState.authority = conflictResult.authority;
         }
+    } catch (error) {
+        if (generation !== persistenceState.persistenceGeneration) {
+            if (generationSignal.aborted) {
+                return;
+            }
+            throw error;
+        }
+        throw error;
     } finally {
         for (const pending of chunks) {
             pending.inFlight = false;

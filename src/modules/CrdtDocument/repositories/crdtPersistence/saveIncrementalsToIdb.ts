@@ -1,5 +1,6 @@
 import { type DocumentBundle, type DocId } from '../../models/CrdtDocumentTypes';
 
+import { bindTransactionAbortSignal } from './bindTransactionAbortSignal';
 import { STORE_NAME, openDatabase } from './helpers';
 import {
     advancePersistenceAuthority,
@@ -19,6 +20,7 @@ export type IncrementalChunk = {
 
 export type SaveIncrementalsToIdbOptions = {
     expectedAuthority?: CrdtPersistenceAuthority;
+    signal?: AbortSignal;
 };
 
 export type SaveIncrementalsToIdbResult =
@@ -91,6 +93,7 @@ export async function saveIncrementalsToIdb(
         let transactionResult: SaveIncrementalsToIdbResult | null = null;
         let conflictKeysRequest: IDBRequest<IDBValidKey[]> | null = null;
         let conflictValuesRequest: IDBRequest<unknown[]> | null = null;
+        let detachAbortSignal: (() => void) | null = null;
 
         authorityRequest.onsuccess = () => {
             const current = decodePersistenceAuthority(authorityRequest.result);
@@ -124,6 +127,7 @@ export async function saveIncrementalsToIdb(
         };
 
         tx.oncomplete = () => {
+            detachAbortSignal?.();
             try {
                 if (transactionResult?.status === 'conflict' && conflictKeysRequest && conflictValuesRequest) {
                     transactionResult = {
@@ -140,8 +144,18 @@ export async function saveIncrementalsToIdb(
                 reject(error instanceof Error ? error : new Error(String(error)));
             }
         };
-        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
-        tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
-        authorityRequest.onerror = () => reject(authorityRequest.error ?? new Error('IDB authority read failed'));
+        tx.onerror = () => {
+            detachAbortSignal?.();
+            reject(tx.error ?? new Error('IDB transaction failed'));
+        };
+        tx.onabort = () => {
+            detachAbortSignal?.();
+            reject(tx.error ?? new Error('IDB transaction aborted'));
+        };
+        authorityRequest.onerror = () => {
+            detachAbortSignal?.();
+            reject(authorityRequest.error ?? new Error('IDB authority read failed'));
+        };
+        detachAbortSignal = bindTransactionAbortSignal(tx, options.signal);
     });
 }

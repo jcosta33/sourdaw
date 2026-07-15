@@ -10,6 +10,8 @@ import { branchStore } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
+import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
+
 /**
  * Switch to a different branch.
  *
@@ -21,8 +23,8 @@ import { projectCrdtToStores } from '../projection/projectProjection';
  *      own snapshot, so they are not left aliased/stale behind the new active
  *      branch.
  *   2. Load the target branch's snapshot into the root slot.
- * The main branch's snapshot *is* the root slot (`rootDocId === DOC_PREFIX_ROOT`),
- * so its writeback is a no-op and is skipped.
+ * Legacy root-backed main records are migrated to a distinct backing document
+ * the first time main becomes inactive.
  */
 export function switchBranch(branchId: string): void {
     const state = branchStore.value;
@@ -38,30 +40,29 @@ export function switchBranch(branchId: string): void {
     if (!branch) {
         throw createBranchError(`Branch not found: ${branchId}`);
     }
+    if (branch.rootDocId === DOC_PREFIX_ROOT) {
+        throw createBranchError(`Branch has no independent backing document: ${branchId}`);
+    }
 
     flushAutomergeStorageWrites();
+    const liveDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
+    if (!liveDoc) {
+        throw createBranchError('Active root document not found');
+    }
     const branchDoc = automergeRepository.getDoc(branch.rootDocId);
     if (!branchDoc) {
         throw createBranchError(`Branch document not found: ${branch.rootDocId}`);
     }
 
     flushAutomergeStorageWrites();
-    // 1. Write the outgoing active branch's live root-slot edits back into its
-    //    own snapshot before we overwrite the root slot. Skip when the outgoing
-    //    branch is backed directly by the root slot (main).
-    const outgoing = state.branches.find((b) => b.branchId === state.activeBranchId);
-    if (outgoing && outgoing.rootDocId !== DOC_PREFIX_ROOT) {
-        const liveDoc = automergeRepository.getDoc(DOC_PREFIX_ROOT);
-        if (liveDoc) {
-            automergeRepository.replaceDoc(outgoing.rootDocId, cloneDoc(liveDoc));
-        }
-    }
+    // 1. Every outgoing branch owns a snapshot distinct from the active root.
+    const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
 
     // 2. Swap the root slot to point at the target branch's snapshot. Clone so
     //    edits to the active slot do not alias the stored snapshot handle.
     automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(branchDoc));
 
-    branchStore.set({ ...state, activeBranchId: branchId });
+    branchStore.set({ ...stateWithOutgoingSnapshot, activeBranchId: branchId });
     projectCrdtToStores();
 
     // Persist the slot writeback + swap. Fire-and-forget so the (synchronous)

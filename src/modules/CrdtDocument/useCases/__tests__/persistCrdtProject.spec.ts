@@ -8,7 +8,7 @@ import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromId
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { compactProject } from '../compactProject';
-import { runCrdtPersistenceOperation, setCrdtPersistenceAuthority } from '../crdtPersistenceQueue';
+import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
@@ -525,11 +525,11 @@ describe('persistCrdtProject', () => {
         const oldIncremental = await persistence.waitForTransaction('readwrite', 2);
 
         await runCrdtPersistenceOperation('reset');
+        expect(oldIncremental.isAbortRequested()).toBe(true);
         automergeRepository.createProject('new-project');
         const newProjectCompaction = compactProject();
 
-        oldIncremental.abort();
-        await expect(oldPersist).rejects.toThrow('IDB transaction aborted');
+        await expect(oldPersist).resolves.toBeUndefined();
 
         const newProjectSave = await persistence.waitForTransaction('readwrite', 3);
         expect(newProjectSave.writes.some((write) => write.kind === 'add')).toBe(false);
@@ -610,7 +610,6 @@ describe('persistCrdtProject', () => {
                 loadPersistenceSnapshotFromIdb: () => emptySnapshot,
             }));
             vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
-            vi.doMock('../crdtPersistenceQueue', () => ({ setCrdtPersistenceAuthority }));
             const { loadCrdtProject: loadWithDeferredEmptySnapshot } = await import('../loadCrdtProject');
 
             staleLoad = loadWithDeferredEmptySnapshot({ shouldCommit: () => loadIsCurrent });
@@ -655,7 +654,6 @@ describe('persistCrdtProject', () => {
                     transaction.abort();
                 }
             }
-            vi.doUnmock('../crdtPersistenceQueue');
             vi.doUnmock('../../repositories/automergeRepository');
             vi.doUnmock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb');
             vi.resetModules();
@@ -1359,7 +1357,7 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(3);
+            expect(state.version).toBe(4);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();

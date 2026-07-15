@@ -21,6 +21,7 @@ export type BranchStoreState = {
 };
 
 export const MAIN_BRANCH_ID = 'main';
+export const MAIN_BRANCH_DOC_ID = `branch_${MAIN_BRANCH_ID}`;
 
 type UnknownRecord = {
     [key: string]: unknown;
@@ -65,8 +66,11 @@ function validateStoredBranchRecord(value: unknown): BranchRecord | null {
         return null;
     }
 
-    if (value.branchId === MAIN_BRANCH_ID && (value.rootDocId !== DOC_PREFIX_ROOT || value.sourceBranchId !== null)) {
-        return null;
+    if (value.branchId === MAIN_BRANCH_ID) {
+        const hasValidMainBacking = value.rootDocId === DOC_PREFIX_ROOT || value.rootDocId === MAIN_BRANCH_DOC_ID;
+        if (!hasValidMainBacking || value.sourceBranchId !== null) {
+            return null;
+        }
     }
 
     const createdFromHeads: string[] = [];

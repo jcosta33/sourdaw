@@ -30,6 +30,11 @@ type ConflictAttempt = {
     unexpectedWrites: readonly import('./helpers/transactionalPersistence').TransactionWrite[];
 };
 
+type LoadedPersistenceSnapshot = {
+    authority: { epoch: string; revision: number };
+    bundle: Map<string, Uint8Array>;
+};
+
 async function importContext(): Promise<PersistenceContext> {
     vi.resetModules();
     const [queue, repository, snapshot] = await Promise.all([
@@ -38,6 +43,23 @@ async function importContext(): Promise<PersistenceContext> {
         import('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb'),
     ]);
     return { queue, repository, snapshot };
+}
+
+async function loadContextSnapshot({
+    context,
+    snapshot,
+}: {
+    context: PersistenceContext;
+    snapshot: LoadedPersistenceSnapshot;
+}): Promise<void> {
+    const loaded = await context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
+        const committed = await context.repository.automergeRepository.loadAll({
+            bundle: snapshot.bundle,
+            shouldCommit,
+        });
+        return { loaded: committed, snapshot };
+    });
+    expect(loaded).toBe(true);
 }
 
 async function createSharedContexts({
@@ -54,8 +76,6 @@ async function createSharedContexts({
     for (const documentId of documentIds) {
         first.repository.automergeRepository.createChildDoc(documentId);
     }
-    first.queue.setCrdtPersistenceAuthority({ epoch: '', revision: 0 });
-
     const basePersist = first.queue.runCrdtPersistenceOperation('compact');
     const baseTransaction = await persistence.waitForTransaction('readwrite', 1);
     baseTransaction.complete();
@@ -65,11 +85,7 @@ async function createSharedContexts({
     if (!baseSnapshot?.bundle) {
         throw new Error('Expected the shared base snapshot');
     }
-    await second.repository.automergeRepository.loadAll({
-        bundle: baseSnapshot.bundle,
-        shouldCommit: () => true,
-    });
-    second.queue.setCrdtPersistenceAuthority(baseSnapshot.authority);
+    await loadContextSnapshot({ context: second, snapshot: baseSnapshot });
 
     return { first, second };
 }
@@ -186,10 +202,7 @@ describe('CRDT persistence across independent queue contexts', () => {
     it('merges a fresh tab incremental before a stale tab full replacement and reloads both edits', async () => {
         const firstContext = await importContext();
         const secondContext = await importContext();
-        const emptyAuthority = { epoch: '', revision: 0 };
-
         firstContext.repository.automergeRepository.createProject('project');
-        firstContext.queue.setCrdtPersistenceAuthority(emptyAuthority);
 
         const basePersist = firstContext.queue.runCrdtPersistenceOperation('compact');
         const baseTransaction = await persistence.waitForTransaction('readwrite', 1);
@@ -200,11 +213,7 @@ describe('CRDT persistence across independent queue contexts', () => {
         if (!baseSnapshot?.bundle) {
             throw new Error('Expected the shared base snapshot');
         }
-        await secondContext.repository.automergeRepository.loadAll({
-            bundle: baseSnapshot.bundle,
-            shouldCommit: () => true,
-        });
-        secondContext.queue.setCrdtPersistenceAuthority(baseSnapshot.authority);
+        await loadContextSnapshot({ context: secondContext, snapshot: baseSnapshot });
 
         firstContext.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
             doc.fromIncrementalTab = true;
@@ -340,7 +349,10 @@ describe('CRDT persistence across independent queue contexts', () => {
         if (!currentSnapshot) {
             throw new Error('Expected current persistence authority');
         }
-        first.queue.setCrdtPersistenceAuthority(currentSnapshot.authority);
+        if (!currentSnapshot.bundle) {
+            throw new Error('Expected the current persistence bundle');
+        }
+        await loadContextSnapshot({ context: first, snapshot: currentSnapshot });
         first.repository.automergeRepository.removeDoc('branch_stale');
         const deletionPersist = first.queue.runCrdtPersistenceOperation('compact');
         const deletionTransaction = await persistence.waitForTransaction('readwrite', 3);

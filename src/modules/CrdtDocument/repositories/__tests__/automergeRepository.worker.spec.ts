@@ -1,5 +1,8 @@
-import { change, init, load, merge, save } from '@automerge/automerge';
+import { change, init, load, loadIncremental, merge, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { TransactionalPersistence } from '../../useCases/__tests__/helpers/transactionalPersistence';
+import { compareIncrementalKeys } from '../crdtPersistence/compareIncrementalKeys';
 
 type BundleEntry = [string, Uint8Array];
 
@@ -132,10 +135,29 @@ class ControlledWorker {
 }
 
 function respondToLoad(worker: ControlledWorker, request: LoadBundleRequest): void {
+    const documents = new Map<string, ReturnType<typeof load<Record<string, unknown>>>>();
+    const incrementals: BundleEntry[] = [];
+    for (const [id, bytes] of request.bundle) {
+        if (id.includes(':incremental:')) {
+            incrementals.push([id, bytes]);
+        } else {
+            documents.set(id, load<Record<string, unknown>>(bytes));
+        }
+    }
+    incrementals.sort(([left], [right]) => compareIncrementalKeys(left, right));
+    for (const [key, bytes] of incrementals) {
+        const documentId = key.slice(0, key.indexOf(':incremental:'));
+        const document = documents.get(documentId);
+        if (!document) {
+            throw new Error(`Missing base document for ${key}`);
+        }
+        documents.set(documentId, loadIncremental(document, bytes));
+    }
+
     worker.emitMessage({
         id: request.id,
         type: 'loaded',
-        compacted: request.bundle,
+        compacted: [...documents].map(([id, document]) => [id, save(document)]),
         rootId: 'root',
     });
 }
@@ -201,6 +223,42 @@ function deferFirstMergeRequest(): {
     return { firstRequest, getRequestCount: () => requestCount };
 }
 
+async function completePersistenceWritesUntilSettled({
+    operation,
+    persistence,
+    startOccurrence,
+}: {
+    operation: Promise<void>;
+    persistence: TransactionalPersistence;
+    startOccurrence: number;
+}): Promise<void> {
+    const outcome = operation.then(
+        () => ({ kind: 'resolved' as const }),
+        (error: unknown) => ({ kind: 'rejected' as const, error })
+    );
+    let occurrence = startOccurrence;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const result = await Promise.race([
+            outcome,
+            persistence
+                .waitForTransaction('readwrite', occurrence)
+                .then((transaction) => ({ kind: 'transaction' as const, transaction })),
+        ]);
+        if (result.kind === 'resolved') {
+            return;
+        }
+        if (result.kind === 'rejected') {
+            throw result.error;
+        }
+
+        result.transaction.complete();
+        occurrence++;
+    }
+
+    throw new Error('Persistence operation did not settle after four transactions');
+}
+
 describe('AutomergeRepository worker lifecycle', () => {
     beforeEach(() => {
         ControlledWorker.reset();
@@ -209,6 +267,8 @@ describe('AutomergeRepository worker lifecycle', () => {
     });
 
     afterEach(() => {
+        vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+        vi.doUnmock('../crdtPersistence/helpers');
         vi.unstubAllGlobals();
         vi.resetModules();
     });
@@ -299,6 +359,94 @@ describe('AutomergeRepository worker lifecycle', () => {
         await expect(mergeOperation).rejects.toThrow(/document identity changed/i);
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ replacementProject: true });
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('remoteOldProject');
+    });
+
+    it('aborts an old incremental before a delayed replacement load can adopt authority', async () => {
+        const persistence = new TransactionalPersistence();
+        vi.doMock('#/utils/HMR/createHmrPersistentState', () => ({
+            createHmrPersistentState: <State>(_key: string, factory: () => State): State => factory(),
+        }));
+        vi.doMock('../crdtPersistence/helpers', async (importOriginal) => ({
+            ...(await importOriginal<typeof import('../crdtPersistence/helpers')>()),
+            openDatabase: () => Promise.resolve(persistence.database),
+        }));
+
+        const { automergeRepository } = await import('../automergeRepository');
+        const { compactProject } = await import('../../useCases/compactProject');
+        const { runCrdtPersistenceOperation } = await import('../../useCases/crdtPersistenceQueue');
+        const { loadCrdtProject } = await import('../../useCases/loadCrdtProject');
+        const { persistCrdtProject } = await import('../../useCases/persistCrdtProject');
+        const { loadAllFromIdb } = await import('../crdtPersistence/loadAllFromIdb');
+
+        automergeRepository.reset();
+        await runCrdtPersistenceOperation('reset');
+        automergeRepository.createProject('project');
+        const baseCompaction = compactProject();
+        const baseTransaction = await persistence.waitForTransaction('readwrite', 1);
+        baseTransaction.complete();
+        await baseCompaction;
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.oldGenerationEdit = true;
+        });
+        const oldSave = persistCrdtProject();
+        const oldTransaction = await persistence.waitForTransaction('readwrite', 2);
+        expect(oldTransaction.writes.some(({ kind }) => kind === 'add')).toBe(true);
+
+        let resolveDeferredLoad: ((value: { worker: ControlledWorker; request: LoadBundleRequest }) => void) | null =
+            null;
+        const deferredLoad = new Promise<{ worker: ControlledWorker; request: LoadBundleRequest }>((resolve) => {
+            resolveDeferredLoad = resolve;
+        });
+        let hasDeferredLoad = false;
+        ControlledWorker.onPostMessage = (worker, request) => {
+            if (!hasDeferredLoad && request.type === 'loadBundle') {
+                hasDeferredLoad = true;
+                resolveDeferredLoad?.({ worker, request });
+                return;
+            }
+            queueMicrotask(() => {
+                if (request.type === 'loadBundle') {
+                    respondToLoad(worker, request);
+                } else {
+                    respondToMerge(worker, request);
+                }
+            });
+        };
+
+        const replacementLoad = loadCrdtProject();
+        await persistence.waitForTransaction('readonly', 1);
+        const delayedWorkerRequest = await deferredLoad;
+        oldTransaction.complete();
+        respondToLoad(delayedWorkerRequest.worker, delayedWorkerRequest.request);
+
+        await expect(oldSave).resolves.toBeUndefined();
+        await expect(replacementLoad).resolves.toBe(true);
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.afterReplacementLoad = true;
+        });
+        const postLoadSave = persistCrdtProject();
+        await completePersistenceWritesUntilSettled({
+            operation: postLoadSave,
+            persistence,
+            startOccurrence: 3,
+        });
+
+        const durableBundle = await loadAllFromIdb();
+        if (!durableBundle) {
+            throw new Error('Expected durable project bundle');
+        }
+        automergeRepository.reset();
+        await expect(automergeRepository.loadAll({ bundle: durableBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            afterReplacementLoad: true,
+        });
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('oldGenerationEdit');
+        expect(oldTransaction.isAbortRequested()).toBe(true);
     });
 
     it.each(['error', 'messageerror'] as const)('replaces a worker after a fatal $0 event', async (fatalEvent) => {

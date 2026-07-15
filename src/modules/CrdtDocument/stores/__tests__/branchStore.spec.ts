@@ -1,7 +1,7 @@
 import { parse, stringify } from 'superjson';
 import { describe, expect, it, vi } from 'vitest';
 
-import { MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
+import { MAIN_BRANCH_DOC_ID, MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
 
 const BRANCH_STORAGE_KEY = 'sourdaw-branches';
 const BRANCH_SESSION_BACKUP_STORAGE_KEY = 'sourdaw-branch-session-backup';
@@ -89,6 +89,15 @@ describe('branchStore', () => {
             await expect(loadBranchStateFromStoredValue(validState)).resolves.toEqual(validState);
         });
 
+        it('should preserve a main branch migrated to its independent backing document', async () => {
+            const migratedState = {
+                branches: [{ ...validMainBranch, rootDocId: MAIN_BRANCH_DOC_ID }, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            } satisfies BranchStoreState;
+
+            await expect(loadBranchStateFromStoredValue(migratedState)).resolves.toEqual(migratedState);
+        });
+
         it('should drop invalid branch records while preserving valid branch metadata', async () => {
             const state = await loadBranchStateFromStoredValue({
                 branches: [
@@ -139,7 +148,7 @@ describe('branchStore', () => {
             });
         });
 
-        it('should reject a main branch record that is not backed by the root slot', async () => {
+        it('should reject a main branch record with an unknown backing document or source', async () => {
             const nonCanonicalMainBranch = {
                 ...validMainBranch,
                 rootDocId: validFeatureBranch.rootDocId,

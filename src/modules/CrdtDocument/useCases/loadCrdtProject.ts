@@ -1,7 +1,7 @@
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 
-import { setCrdtPersistenceAuthority } from './crdtPersistenceQueue';
+import { runCrdtPersistenceLoad } from './crdtPersistenceQueue';
 
 /**
  * Load a CRDT project from persistence (IndexedDB).
@@ -11,24 +11,27 @@ type LoadCrdtProjectInput = {
     shouldCommit?: () => boolean;
 };
 
-export async function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
-    const snapshot = await loadPersistenceSnapshotFromIdb();
-    if (snapshot?.bundle) {
-        const committed = await automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit });
-        if (!committed) {
-            return false;
+export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Promise<boolean> {
+    return runCrdtPersistenceLoad(async ({ shouldCommit: shouldCommitQueue }) => {
+        function canCommit(): boolean {
+            return shouldCommitQueue() && shouldCommit?.() !== false;
         }
-        if (shouldCommit?.() === false) {
-            return false;
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
         }
-        setCrdtPersistenceAuthority(snapshot.authority);
-        return true;
-    }
 
-    if (!snapshot || shouldCommit?.() === false) {
-        return false;
-    }
+        const snapshot = await loadPersistenceSnapshotFromIdb();
+        if (!canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+        if (!snapshot?.bundle) {
+            return { loaded: false, snapshot };
+        }
 
-    setCrdtPersistenceAuthority(snapshot.authority);
-    return false;
+        const committed = await automergeRepository.loadAll({ bundle: snapshot.bundle, shouldCommit: canCommit });
+        if (!committed || !canCommit()) {
+            return { loaded: false, snapshot: null };
+        }
+        return { loaded: true, snapshot };
+    });
 }

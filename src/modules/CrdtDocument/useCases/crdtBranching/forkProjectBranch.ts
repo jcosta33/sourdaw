@@ -9,6 +9,8 @@ import { branchStore, type BranchRecord } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
+import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
+
 /**
  * Fork the current project into a new branch.
  * Uses Automerge.clone() for a fast copy that shares history with the source.
@@ -29,19 +31,13 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     const branchDocId = `branch_${branchId}`;
     const heads = getHeads(sourceDoc).map(String);
 
-    // Clone the document — shares full history with source.
-    // The clone is stored under the branch's own slot AND becomes the active
-    // working document. The `DOC_PREFIX_ROOT` slot always mirrors the active
-    // branch (it is the doc all edits, persistence, and projection target), so
-    // we must repoint it at the fork; otherwise post-fork edits keep landing in
-    // the source branch's working copy while the UI shows the new branch active.
-    // Automerge docs are immutable: a later `changeDoc(DOC_PREFIX_ROOT, ...)`
-    // produces a new handle stored only under the root slot, so the branch
-    // snapshot does not drift when the two start from the same handle.
+    // The root slot is only the active working document. Snapshot the source
+    // into its own backing slot before root is repointed at the fork.
     const forkedDoc = cloneDoc(sourceDoc);
     flushAutomergeStorageWrites();
+    const stateWithSourceSnapshot = saveActiveBranchSnapshot({ state, liveRoot: sourceDoc });
     automergeRepository.insertDoc(branchDocId, forkedDoc);
-    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, forkedDoc);
+    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(forkedDoc));
 
     const record: BranchRecord = {
         branchId,
@@ -54,7 +50,7 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     };
 
     branchStore.set({
-        branches: [...state.branches, record],
+        branches: [...stateWithSourceSnapshot.branches, record],
         activeBranchId: branchId,
     });
 

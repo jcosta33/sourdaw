@@ -10,6 +10,8 @@ const docs: Record<string, unknown> = {};
 const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn(),
     getDoc: vi.fn(),
+    hasDoc: vi.fn(),
+    insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
     storeValue: {
         branches: [
@@ -19,7 +21,8 @@ const mocks = vi.hoisted(() => ({
         ],
         activeBranchId: 'feat',
     },
-    storeSet: vi.fn(),
+    storeSet:
+        vi.fn<(state: { branches: Array<{ branchId: string; rootDocId: string }>; activeBranchId: string }) => void>(),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
     clone: vi.fn((d: unknown) => ({ tag: 'cloned', from: d })),
@@ -30,7 +33,12 @@ vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
     flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({
-    automergeRepository: { getDoc: mocks.getDoc, replaceDoc: mocks.replaceDoc },
+    automergeRepository: {
+        getDoc: mocks.getDoc,
+        hasDoc: mocks.hasDoc,
+        insertDoc: mocks.insertDoc,
+        replaceDoc: mocks.replaceDoc,
+    },
 }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
@@ -45,8 +53,10 @@ describe('switchBranch', () => {
         vi.clearAllMocks();
         mocks.flushAutomergeStorageWrites.mockImplementation(() => undefined);
         docs.root = ROOT_LIVE_DOC;
+        docs.branch_feat = { tag: 'feature-snap' };
         docs.branch_other = TARGET_SNAPSHOT;
         mocks.getDoc.mockImplementation((id: string) => docs[id]);
+        mocks.hasDoc.mockImplementation((id: string) => id in docs);
         mocks.compactProject.mockResolvedValue(undefined);
         mocks.storeValue.activeBranchId = 'feat';
     });
@@ -76,6 +86,9 @@ describe('switchBranch', () => {
         mocks.replaceDoc.mockImplementation((id: string) => {
             order.push(`replace:${id}`);
         });
+        mocks.insertDoc.mockImplementation((id: string) => {
+            order.push(`insert:${id}`);
+        });
 
         switchBranch('other');
 
@@ -84,16 +97,17 @@ describe('switchBranch', () => {
         expect(order.indexOf('flush', 1)).toBeLessThan(order.indexOf('replace:root'));
     });
 
-    it('does not write back when the outgoing branch is main (root-backed)', () => {
+    it('migrates an outgoing legacy main branch to an independent backing document', () => {
         mocks.storeValue.activeBranchId = 'main';
         switchBranch('other');
 
-        // main.rootDocId === 'root', so no separate snapshot writeback.
-        const writeback = mocks.replaceDoc.mock.calls.find(
-            (c) => typeof c[0] === 'string' && c[0].startsWith('branch_') && c[0] !== 'branch_other'
-        );
-        expect(writeback).toBeUndefined();
+        expect(mocks.insertDoc).toHaveBeenCalledWith('branch_main', expect.anything());
         expect(mocks.replaceDoc).toHaveBeenCalledWith('root', expect.anything());
+        const nextState = mocks.storeSet.mock.calls[0]?.[0];
+        expect(nextState?.activeBranchId).toBe('other');
+        expect(nextState?.branches).toContainEqual(
+            expect.objectContaining({ branchId: 'main', rootDocId: 'branch_main' })
+        );
     });
 
     it('persists after the swap', () => {
