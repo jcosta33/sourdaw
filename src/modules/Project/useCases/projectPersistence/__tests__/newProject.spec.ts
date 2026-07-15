@@ -7,7 +7,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
-import { removeProjectJson } from '../../../repositories/project/storageOperations';
+import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
@@ -48,7 +48,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
 }));
 
-vi.mock('../../../repositories/project/storageOperations', () => ({
+vi.mock('../../../repositories/project/removeProjectJson', () => ({
     removeProjectJson: vi.fn(),
 }));
 

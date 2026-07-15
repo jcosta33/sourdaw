@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * Minimal in-memory IndexedDB fake covering exactly the surface
- * storageOperations uses: open (+ onupgradeneeded), a readonly/readwrite
+ * project storage uses: open (+ onupgradeneeded), a readonly/readwrite
  * transaction, and objectStore.get/put/delete. Keyed by store name so a single
  * fake backs the whole module under test.
  */
@@ -61,7 +61,7 @@ function installFakeIndexedDb(): Map<string, string> {
     return store;
 }
 
-describe('storageOperations', () => {
+describe('project storage operations', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         localStorage.clear();
@@ -73,7 +73,8 @@ describe('storageOperations', () => {
     });
 
     it('should write and read from cache and localStorage', async () => {
-        const { writeProjectJson, readProjectJson } = await import('../storageOperations');
+        const { writeProjectJson } = await import('../writeProjectJson');
+        const { readProjectJson } = await import('../readProjectJson');
         const json = JSON.stringify({ name: 'Test' });
         writeProjectJson(json);
 
@@ -82,7 +83,9 @@ describe('storageOperations', () => {
     });
 
     it('should remove project from cache and localStorage', async () => {
-        const { writeProjectJson, removeProjectJson, readProjectJson } = await import('../storageOperations');
+        const { writeProjectJson } = await import('../writeProjectJson');
+        const { removeProjectJson } = await import('../removeProjectJson');
+        const { readProjectJson } = await import('../readProjectJson');
         writeProjectJson('{}');
         removeProjectJson();
 
@@ -91,7 +94,8 @@ describe('storageOperations', () => {
     });
 
     it('should fallback to legacy localStorage if cache is empty', async () => {
-        const { removeProjectJson, readProjectJson } = await import('../storageOperations');
+        const { removeProjectJson } = await import('../removeProjectJson');
+        const { readProjectJson } = await import('../readProjectJson');
         const json = JSON.stringify({ name: 'Legacy' });
 
         removeProjectJson();
@@ -101,7 +105,8 @@ describe('storageOperations', () => {
     });
 
     it('should read a named project from localStorage when present', async () => {
-        const { writeNamedProjectJson, readNamedProjectJson } = await import('../storageOperations');
+        const { writeNamedProjectJson } = await import('../writeNamedProjectJson');
+        const { readNamedProjectJson } = await import('../readNamedProjectJson');
         const json = JSON.stringify({ version: 1, name: 'Small' });
         writeNamedProjectJson('Small', json);
 
@@ -112,7 +117,7 @@ describe('storageOperations', () => {
         // Simulate a large project whose localStorage dual-write was dropped on
         // quota: the value lands in IndexedDB only. The reader must still find it.
         const fakeStore = installFakeIndexedDb();
-        const { readNamedProjectJson } = await import('../storageOperations');
+        const { readNamedProjectJson } = await import('../readNamedProjectJson');
 
         const key = 'sourdaw:project:Large';
         const json = JSON.stringify({ version: 1, name: 'Large' });

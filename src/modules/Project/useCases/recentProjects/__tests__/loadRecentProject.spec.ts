@@ -10,7 +10,8 @@ import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
-import { readNamedProjectJson, writeProjectJson } from '../../../repositories/project/storageOperations';
+import { readNamedProjectJson } from '../../../repositories/project/readNamedProjectJson';
+import { writeProjectJson } from '../../../repositories/project/writeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { hydrateArrangementStoreFromProjectData } from '../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from '../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
@@ -23,8 +24,11 @@ const { audioContext } = vi.hoisted(() => ({
     audioContext: { id: 'audio-context' },
 }));
 
-vi.mock('../../../repositories/project/storageOperations', () => ({
+vi.mock('../../../repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
+}));
+
+vi.mock('../../../repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 
