@@ -463,6 +463,21 @@ function createCommonJsFlow() {
     };
 }
 
+function cloneCommonJsFlow(flow) {
+    return {
+        ...flow,
+        aliases: new Map(flow.aliases),
+        inexactStaticMemberIdentities: new Set(flow.inexactStaticMemberIdentities),
+        lexicalBindings: new Map([...flow.lexicalBindings].map(([name, identities]) => [name, [...identities]])),
+        lexicalScopes: flow.lexicalScopes.map((scope) => new Set(scope)),
+        nodeIdentities: new Map(flow.nodeIdentities),
+        staticMembersByIdentity: new Map(
+            [...flow.staticMembersByIdentity].map(([identity, members]) => [identity, new Map(members)])
+        ),
+        symbolIdentities: new Map(flow.symbolIdentities),
+    };
+}
+
 function createCommonJsIdentity(flow, node = null) {
     if (node && flow.nodeIdentities.has(node)) {
         return flow.nodeIdentities.get(node);
@@ -862,11 +877,21 @@ function applyCertainObjectAssign(flow, target, sources) {
 
 function isCertainIifeStatement(statement) {
     return (
+        ts.isBlock(statement) ||
         ts.isClassDeclaration(statement) ||
+        ts.isDoStatement(statement) ||
         ts.isEmptyStatement(statement) ||
         ts.isExpressionStatement(statement) ||
+        ts.isForInStatement(statement) ||
+        ts.isForOfStatement(statement) ||
+        ts.isForStatement(statement) ||
         ts.isFunctionDeclaration(statement) ||
+        ts.isIfStatement(statement) ||
         ts.isReturnStatement(statement) ||
+        ts.isSwitchStatement(statement) ||
+        ts.isThrowStatement(statement) ||
+        ts.isTryStatement(statement) ||
+        ts.isWhileStatement(statement) ||
         ts.isVariableStatement(statement)
     );
 }
@@ -1108,7 +1133,260 @@ function evaluateCertainExpression(context, sourceFile, flow, expression, effect
     return commonJsResult(flow, node);
 }
 
+function isUnsupportedCommonJsControlStatement(statement) {
+    return (
+        ts.isDoStatement(statement) ||
+        ts.isForInStatement(statement) ||
+        ts.isForOfStatement(statement) ||
+        ts.isForStatement(statement) ||
+        ts.isIfStatement(statement) ||
+        ts.isSwitchStatement(statement) ||
+        ts.isTryStatement(statement) ||
+        ts.isWhileStatement(statement)
+    );
+}
+
+function staticControlValue(expression) {
+    const node = unwrapCommonJsExpression(expression);
+    if (node.kind === ts.SyntaxKind.TrueKeyword) {
+        return { known: true, value: true };
+    }
+    if (node.kind === ts.SyntaxKind.FalseKeyword) {
+        return { known: true, value: false };
+    }
+    if (node.kind === ts.SyntaxKind.NullKeyword) {
+        return { known: true, value: null };
+    }
+    if (ts.isStringLiteralLike(node)) {
+        return { known: true, value: node.text };
+    }
+    if (ts.isNumericLiteral(node)) {
+        return { known: true, value: Number(node.text) };
+    }
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken) {
+        const operand = staticControlValue(node.operand);
+        return operand.known ? { known: true, value: !operand.value } : { known: false };
+    }
+    return { known: false };
+}
+
+function staticControlBoolean(expression) {
+    const result = staticControlValue(expression);
+    return result.known ? Boolean(result.value) : null;
+}
+
+// Probe possible control subtrees independently; speculative state never rejoins
+// the certain top-level CommonJS flow.
+function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootStatement) {
+    const tracker = { mutated: false };
+    const markMutation = () => {
+        tracker.mutated = true;
+    };
+    const mutationEffects = (flow) => ({
+        onExportPropertyAssignment: markMutation,
+        onModuleExportsAssignment: markMutation,
+        onObjectAssign: ({ argumentResults }) => {
+            const target = argumentResults[0];
+            const sources = argumentResults.slice(1);
+            const sourceMayContain = (memberName = null) =>
+                sources.some((source) => {
+                    const members = flow.staticMembersByIdentity.get(source.identity);
+                    return (
+                        !members ||
+                        flow.inexactStaticMemberIdentities.has(source.identity) ||
+                        (memberName ? members.has(memberName) : members.size > 0)
+                    );
+                });
+            if (
+                (target?.identity === flow.currentModuleExports && sourceMayContain()) ||
+                (target?.identity === flow.moduleObject && sourceMayContain('exports'))
+            ) {
+                markMutation();
+            }
+        },
+        onUnsupportedControlFlowMutation: markMutation,
+        onUnsupportedExportMutation: markMutation,
+    });
+    const evaluate = (flow, expression, statement) =>
+        evaluateCertainExpression(context, sourceFile, flow, expression, mutationEffects(flow), statement);
+
+    function bindLoopInitializer(flow, initializer, statement) {
+        const effects = mutationEffects(flow);
+        const fallback = commonJsResult(flow, statement.expression ?? statement);
+        if (ts.isVariableDeclarationList(initializer)) {
+            for (const declaration of initializer.declarations) {
+                const value = declaration.initializer ? evaluate(flow, declaration.initializer, statement) : fallback;
+                bindCertainValue(context, sourceFile, flow, declaration.name, value, effects, statement);
+            }
+            return;
+        }
+        applyCertainAssignmentPattern(context, sourceFile, flow, initializer, fallback, effects, statement);
+    }
+
+    function scanStatements(flow, statements) {
+        for (const statement of statements) {
+            scanStatement(flow, statement);
+            if (tracker.mutated) {
+                return;
+            }
+        }
+    }
+
+    function scanStatement(flow, statement) {
+        if (ts.isBlock(statement)) {
+            flow.lexicalScopes.push(new Set());
+            try {
+                return scanStatements(flow, statement.statements);
+            } finally {
+                popCommonJsLexicalScope(flow);
+            }
+        }
+        if (ts.isIfStatement(statement)) {
+            evaluate(flow, statement.expression, statement);
+            if (tracker.mutated) {
+                return;
+            }
+            const condition = staticControlBoolean(statement.expression);
+            if (condition !== null) {
+                const branch = condition ? statement.thenStatement : statement.elseStatement;
+                if (branch) {
+                    scanStatement(flow, branch);
+                }
+                return;
+            }
+            scanStatement(cloneCommonJsFlow(flow), statement.thenStatement);
+            if (!tracker.mutated && statement.elseStatement) {
+                scanStatement(cloneCommonJsFlow(flow), statement.elseStatement);
+            }
+            return;
+        }
+        if (ts.isSwitchStatement(statement)) {
+            evaluate(flow, statement.expression, statement);
+            if (tracker.mutated) {
+                return;
+            }
+            const clauses = [...statement.caseBlock.clauses];
+            const discriminant = staticControlValue(statement.expression);
+            const casesAreStatic = clauses.every(
+                (clause) => ts.isDefaultClause(clause) || staticControlValue(clause.expression).known
+            );
+            let possibleClauses = clauses;
+            if (discriminant.known && casesAreStatic) {
+                const match = clauses.findIndex(
+                    (clause) =>
+                        ts.isCaseClause(clause) && staticControlValue(clause.expression).value === discriminant.value
+                );
+                const start = match >= 0 ? match : clauses.findIndex(ts.isDefaultClause);
+                possibleClauses = start >= 0 ? clauses.slice(start) : [];
+            }
+            for (const clause of possibleClauses) {
+                const branchFlow = cloneCommonJsFlow(flow);
+                if (ts.isCaseClause(clause)) {
+                    evaluate(branchFlow, clause.expression, statement);
+                }
+                scanStatements(branchFlow, clause.statements);
+                if (tracker.mutated) {
+                    break;
+                }
+            }
+            return;
+        }
+        if (
+            ts.isDoStatement(statement) ||
+            ts.isForInStatement(statement) ||
+            ts.isForOfStatement(statement) ||
+            ts.isForStatement(statement) ||
+            ts.isWhileStatement(statement)
+        ) {
+            if (ts.isForStatement(statement) && statement.initializer) {
+                if (ts.isVariableDeclarationList(statement.initializer)) {
+                    bindLoopInitializer(flow, statement.initializer, statement);
+                } else {
+                    evaluate(flow, statement.initializer, statement);
+                }
+            }
+            if (ts.isForInStatement(statement) || ts.isForOfStatement(statement)) {
+                evaluate(flow, statement.expression, statement);
+            }
+            const condition =
+                (ts.isForStatement(statement) && statement.condition) ||
+                (ts.isWhileStatement(statement) && statement.expression) ||
+                null;
+            if (condition) {
+                evaluate(flow, condition, statement);
+                if (staticControlBoolean(condition) === false) {
+                    return;
+                }
+            }
+            if (tracker.mutated) {
+                return;
+            }
+            const iterationFlow = cloneCommonJsFlow(flow);
+            if (ts.isForInStatement(statement) || ts.isForOfStatement(statement)) {
+                bindLoopInitializer(iterationFlow, statement.initializer, statement);
+            }
+            scanStatement(iterationFlow, statement.statement);
+            const tailFlow = cloneCommonJsFlow(flow);
+            if (!tracker.mutated && ts.isForStatement(statement) && statement.incrementor) {
+                evaluate(tailFlow, statement.incrementor, statement);
+            }
+            if (!tracker.mutated && ts.isDoStatement(statement)) {
+                evaluate(tailFlow, statement.expression, statement);
+            }
+            return;
+        }
+        if (ts.isTryStatement(statement)) {
+            scanStatement(cloneCommonJsFlow(flow), statement.tryBlock);
+            if (tracker.mutated) {
+                return;
+            }
+            if (statement.catchClause) {
+                const catchFlow = cloneCommonJsFlow(flow);
+                catchFlow.lexicalScopes.push(new Set());
+                if (statement.catchClause.variableDeclaration) {
+                    bindCertainValue(
+                        context,
+                        sourceFile,
+                        catchFlow,
+                        statement.catchClause.variableDeclaration.name,
+                        commonJsResult(catchFlow, statement.catchClause.variableDeclaration),
+                        mutationEffects(catchFlow),
+                        statement
+                    );
+                }
+                scanStatements(catchFlow, statement.catchClause.block.statements);
+                popCommonJsLexicalScope(catchFlow);
+            }
+            if (statement.finallyBlock && !tracker.mutated) {
+                scanStatement(cloneCommonJsFlow(flow), statement.finallyBlock);
+            }
+            return;
+        }
+        executeCertainStatement(context, sourceFile, flow, statement, mutationEffects(flow));
+    }
+
+    scanStatement(cloneCommonJsFlow(outerFlow), rootStatement);
+    return tracker.mutated;
+}
+
 function executeCertainStatement(context, sourceFile, flow, statement, effects) {
+    if (isUnsupportedCommonJsControlStatement(statement)) {
+        if (
+            effects.onUnsupportedControlFlowMutation &&
+            possibleCommonJsSubtreeMutation(context, sourceFile, flow, statement)
+        ) {
+            effects.onUnsupportedControlFlowMutation({ statement });
+        }
+        return null;
+    }
+    if (ts.isBlock(statement)) {
+        flow.lexicalScopes.push(new Set());
+        try {
+            return executeCertainStatements(context, sourceFile, flow, statement.statements, effects);
+        } finally {
+            popCommonJsLexicalScope(flow);
+        }
+    }
     if (ts.isVariableStatement(statement)) {
         for (const declaration of statement.declarationList.declarations) {
             const result = declaration.initializer
@@ -1150,7 +1428,8 @@ function executeCertainStatement(context, sourceFile, flow, statement, effects) 
     return null;
 }
 
-// Branches, loops, and stored, indirect, async, or generator function bodies deliberately remain inert.
+// Unsupported control flow is inspected only for possible public CommonJS mutations;
+// stored, indirect, async, and generator function bodies remain inert.
 function executeCertainStatements(context, sourceFile, flow, statements, effects = {}) {
     for (const statement of statements) {
         const completion = executeCertainStatement(context, sourceFile, flow, statement, effects);
@@ -1825,6 +2104,8 @@ function collectExportRecords(context, sourceFile) {
             collectCommonJsModuleAssignment(context, sourceFile, statement, result),
         onObjectAssign: ({ argumentResults, statement }) =>
             collectCommonJsObjectAssign(context, sourceFile, statement, argumentResults, commonJsFlow),
+        onUnsupportedControlFlowMutation: ({ statement }) =>
+            addUnsupportedCommonJsFinding(context, sourceFile, statement),
         onUnsupportedExportMutation: ({ statement }) => addUnsupportedCommonJsFinding(context, sourceFile, statement),
     };
     executeCertainStatements(context, sourceFile, commonJsFlow, sourceFile.statements, commonJsEffects);

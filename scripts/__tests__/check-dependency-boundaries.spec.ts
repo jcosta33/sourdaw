@@ -1992,6 +1992,203 @@ describe('check-dependency-boundaries', () => {
         }
     });
 
+    it('should fail closed only for possible live CommonJS mutations in unsupported control flow', () => {
+        const { repositoryDirectory, repositoryRoot } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-commonjs-control-flow-'
+        );
+
+        try {
+            const boundedControl = ['const unrelated = {};'];
+            for (let index = 0; index < 300; index += 1) {
+                boundedControl.push(`if (conditions[${index}]) { unrelated.value = ${index}; }`);
+            }
+
+            writeFixtureFiles(repositoryDirectory, {
+                'if.cjs': ['if (condition) {', '    module.exports = { conditional: true };', '}'],
+                'switch.cjs': [
+                    'switch (selector) {',
+                    "    case 'mutate':",
+                    '        exports.switched = true;',
+                    '        break;',
+                    '    default:',
+                    '        break;',
+                    '}',
+                ],
+                'for.cjs': [
+                    'for (let index = 0; index < count; index += 1) {',
+                    '    module.exports.forLoop = index;',
+                    '}',
+                ],
+                'for-of.cjs': ['for (const value of values) {', '    exports.forOf = value;', '}'],
+                'for-in.cjs': ['for (const key in values) {', '    module.exports.forIn = key;', '}'],
+                'while.cjs': ['while (condition) {', '    exports.whileLoop = true;', '}'],
+                'do-while.cjs': ['do {', '    module.exports.doWhile = true;', '} while (false);'],
+                'try.cjs': ['try {', '    exports.inTry = true;', '} catch {}'],
+                'catch.cjs': ['try {', '    risky();', '} catch {', '    module.exports.inCatch = true;', '}'],
+                'finally.cjs': ['try {', '    void 0;', '} finally {', '    exports.inFinally = true;', '}'],
+                'nested-block.cjs': [
+                    'if (condition) {',
+                    '    {',
+                    '        const out = module.exports;',
+                    '        out.nested = true;',
+                    '    }',
+                    '}',
+                ],
+                'iife-control.cjs': [
+                    '(() => {',
+                    '    if (condition) {',
+                    '        module.exports.iifeControl = true;',
+                    '    }',
+                    '})();',
+                ],
+                'control-iife.cjs': [
+                    'if (condition) {',
+                    '    (() => {',
+                    '        exports.controlIife = true;',
+                    '    })();',
+                    '}',
+                ],
+                'alias.cjs': [
+                    'if (condition) {',
+                    '    const out = module.exports;',
+                    '    out.aliasMutation = true;',
+                    '}',
+                ],
+                'object-assign.cjs': [
+                    'switch (selector) {',
+                    "    case 'mutate':",
+                    '        Object.assign(module.exports, { assigned: true });',
+                    '        break;',
+                    '}',
+                ],
+                'condition.cjs': ['if ((exports.conditionMutation = condition)) {', '    void 0;', '}'],
+                'deduplicated-if.cjs': [
+                    'if (condition) {',
+                    '    exports.first = true;',
+                    '    module.exports.second = true;',
+                    '}',
+                ],
+                'if-false.cjs': ['if (false) {', '    module.exports.unreachable = true;', '}'],
+                'if-true-else.cjs': [
+                    'if (true) {',
+                    '    void 0;',
+                    '} else {',
+                    '    exports.unreachableElse = true;',
+                    '}',
+                ],
+                'while-false.cjs': ['while (false) {', '    exports.unreachable = true;', '}'],
+                'for-false.cjs': ['for (; false; ) {', '    module.exports.unreachable = true;', '}'],
+                'switch-false.cjs': [
+                    'switch (false) {',
+                    '    case true:',
+                    '        exports.unreachable = true;',
+                    '        break;',
+                    '}',
+                ],
+                'detached-alias.cjs': [
+                    'const out = module.exports;',
+                    'module.exports = { clean: true };',
+                    'if (condition) {',
+                    '    out.detached = true;',
+                    '}',
+                ],
+                'detached-exports.cjs': [
+                    'module.exports = { clean: true };',
+                    'if (condition) {',
+                    '    exports.detached = true;',
+                    '}',
+                ],
+                'reassigned-alias.cjs': [
+                    'let out = module.exports;',
+                    'if (condition) {',
+                    '    out = {};',
+                    '    out.reassigned = true;',
+                    '}',
+                ],
+                'reassigned-exports.cjs': [
+                    'if (condition) {',
+                    '    exports = {};',
+                    '    exports.reassigned = true;',
+                    '}',
+                ],
+                'reassigned-module.cjs': [
+                    'if (condition) {',
+                    '    module = { exports: {} };',
+                    '    module.exports.reassigned = true;',
+                    '}',
+                ],
+                'shadowed-carriers.cjs': [
+                    'if (condition) {',
+                    '    ((module, exports) => {',
+                    '        module.exports = { shadowedModule: true };',
+                    '        exports.shadowedExports = true;',
+                    '    })({ exports: {} }, {});',
+                    '}',
+                ],
+                'unrelated-object.cjs': [
+                    'const target = {};',
+                    'if (condition) {',
+                    '    target.value = true;',
+                    '    Object.assign(target, unknownSource);',
+                    '}',
+                ],
+                'noninvoked.cjs': [
+                    'if (condition) {',
+                    '    const later = () => {',
+                    '        module.exports.noninvoked = true;',
+                    '    };',
+                    '    void later;',
+                    '}',
+                ],
+                'unreachable-iife.cjs': [
+                    'if (false) {',
+                    '    (() => {',
+                    '        exports.unreachableIife = true;',
+                    '    })();',
+                    '}',
+                ],
+                'nonmutating-controls.cjs': [
+                    'if (condition) { void 0; }',
+                    'switch (selector) { default: break; }',
+                    'for (; condition; ) { break; }',
+                    'for (const value of values) { void value; }',
+                    'for (const key in values) { void key; }',
+                    'while (condition) { break; }',
+                    'do { break; } while (condition);',
+                    'try { void 0; } catch {} finally { void 0; }',
+                ],
+                'bounded-control.cjs': boundedControl,
+            });
+
+            const startedAt = performance.now();
+            const findings = invokeStaticGuardFindings(repositoryRoot);
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(findings).toEqual([
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/alias.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/catch.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/condition.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/control-iife.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/deduplicated-if.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/do-while.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/finally.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/for-in.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/for-of.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/for.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/if.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/iife-control.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/nested-block.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/object-assign.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/switch.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/try.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/while.cjs', 1),
+            ]);
+            expect(elapsedMs).toBeLessThan(10_000);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
     it('should reject shadowed require consumers while preserving real require consumers', () => {
         let repositoryRoot: string | undefined;
 
