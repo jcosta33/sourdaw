@@ -40,6 +40,15 @@ describe('ProofDynSection', () => {
         expect(new Set(names).size).toBe(names.length);
     });
 
+    it('gives the module bypass toggle a contextual name and pressed state', () => {
+        render(<ProofDynSection patch={DEFAULT_PATCH} dynGr={[0, 0, 0, 0]} gestureOwner={0} onPatchChange={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Dynamics module' })).toHaveAttribute(
+            'aria-pressed',
+            String(!DEFAULT_PATCH.dynBypassed)
+        );
+    });
+
     it("colours each band's GR meter bar with that band's own colour, not a constant", () => {
         // Non-zero GR on every band so each bar has a visible width and a colour to read.
         const { container } = render(

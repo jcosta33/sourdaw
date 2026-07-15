@@ -123,6 +123,9 @@ describe('ProofPanel', () => {
     it('renders the panel for the given device without crashing', () => {
         render(<ProofPanel deviceId={DEVICE_ID} />);
         expect(screen.getByText('Mission')).toBeInTheDocument();
+
+        const compareToggle = screen.getByRole('button', { name: 'A/B compare' });
+        expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
     });
 
     it.each([
@@ -164,6 +167,20 @@ describe('ProofPanel', () => {
         expect(names).toEqual(expect.arrayContaining(expectedNames));
         expect(names.every((name) => name !== null && name !== 'Parameter control')).toBe(true);
         expect(new Set(names).size).toBe(names.length);
+
+        if (uiLevel === 2) {
+            const moduleButtons = [
+                ['EQ module', 'eqBypassed'],
+                ['Dynamics module', 'dynBypassed'],
+                ['Imager module', 'imgBypassed'],
+                ['Exciter module', 'excBypassed'],
+                ['Limiter module', 'limBypassed'],
+            ] as const;
+            const patch = getProofState(DEVICE_ID).patch;
+            for (const [name, key] of moduleButtons) {
+                expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', String(!patch[key]));
+            }
+        }
     });
 
     it('persists a target selection atomically and updates the store', () => {
@@ -337,15 +354,23 @@ describe('ProofPanel', () => {
         fireEvent.pointerDown(dynamicsCrossover, { button: 0, pointerId: 22, clientY: 100 });
         fireEvent.pointerMove(dynamicsCrossover, { pointerId: 22, clientY: 80 });
         const crossoverValue = getProofState(DEVICE_ID).patch.dynCrossoverFreqs[0];
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                eq_band2_freq: curveBand?.freq,
+                eq_band2_gain: curveBand?.gain,
+            })
+        );
 
         try {
             fireEvent.pointerUp(canvas, { pointerId: 21 });
 
-            expect(persistDevicePatchMock).not.toHaveBeenCalled();
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
 
             fireEvent.pointerUp(dynamicsCrossover, { pointerId: 22 });
 
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
             expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
                 freq: curveBand?.freq,
                 gain: curveBand?.gain,
@@ -388,15 +413,23 @@ describe('ProofPanel', () => {
         fireEvent.pointerDown(otherEqGain, { button: 0, pointerId: 24, clientY: 100 });
         fireEvent.pointerMove(otherEqGain, { pointerId: 24, clientY: 80 });
         const otherBand = getProofState(DEVICE_ID).patch.eqBands[3];
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({
+                eq_band2_freq: curveBand?.freq,
+                eq_band2_gain: curveBand?.gain,
+            })
+        );
 
         try {
             fireEvent.pointerUp(canvas, { pointerId: 23 });
 
-            expect(persistDevicePatchMock).not.toHaveBeenCalled();
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
 
             fireEvent.pointerUp(otherEqGain, { pointerId: 24 });
 
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
             expect(getProofState(DEVICE_ID).patch.eqBands[2]).toMatchObject({
                 freq: curveBand?.freq,
                 gain: curveBand?.gain,
@@ -476,15 +509,28 @@ describe('ProofPanel', () => {
                 startKnobGesture();
             }
 
-            const expectedBand = getProofState(DEVICE_ID).patch.eqBands[2];
-            if (!expectedBand) {
-                throw new Error('Expected the winning EQ band 2 edit');
-            }
-            const transientEngineWriteCount = bridge.setParam.mock.calls.length;
             const loser = winner === 'curve' ? knob : canvas;
             const loserPointerId = winner === 'curve' ? knobPointerId : curvePointerId;
             const winningElement = winner === 'curve' ? canvas : knob;
             const winningPointerId = winner === 'curve' ? curvePointerId : knobPointerId;
+
+            if (winner === 'curve') {
+                const point = getBand2Point();
+                fireEvent.pointerMove(winningElement, {
+                    pointerId: winningPointerId,
+                    clientX: point.x + 15,
+                    clientY: point.y - 25,
+                });
+            } else {
+                fireEvent.pointerMove(winningElement, { pointerId: winningPointerId, clientY: 65 });
+            }
+
+            const expectedBand = getProofState(DEVICE_ID).patch.eqBands[2];
+            if (!expectedBand) {
+                throw new Error('Expected the winning EQ band 2 edit');
+            }
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            const transientEngineWriteCount = bridge.setParam.mock.calls.length;
             if (winner === 'curve') {
                 fireEvent.pointerMove(loser, { pointerId: loserPointerId, clientY: 40 });
             } else {
@@ -512,7 +558,7 @@ describe('ProofPanel', () => {
                 freq: expectedBand.freq,
                 gain: expectedBand.gain,
             });
-            expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+            expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
             expect(persistDevicePatchMock).toHaveBeenCalledWith(
                 DEVICE_ID,
                 expect.objectContaining({
@@ -741,8 +787,9 @@ describe('ProofPanel', () => {
 
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
-        const moduleToggles = screen.getAllByRole('button', { name: 'ON' });
-        fireEvent.click(moduleToggles.at(-1)!);
+        const limiterToggle = screen.getByRole('button', { name: 'Limiter module' });
+        expect(limiterToggle).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(limiterToggle);
 
         expect(getProofState(DEVICE_ID).patch.limBypassed).toBe(true);
         expect(persistDevicePatchMock).toHaveBeenCalledWith(DEVICE_ID, { lim_bypass: 1 });

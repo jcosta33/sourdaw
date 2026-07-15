@@ -39,6 +39,7 @@ export const ProofLimiterSection = ({
                 actions={
                     <DawPluginToggle
                         pressed={!patch.limBypassed}
+                        aria-label="Limiter module"
                         tone="danger"
                         size="xs"
                         onClick={() => {

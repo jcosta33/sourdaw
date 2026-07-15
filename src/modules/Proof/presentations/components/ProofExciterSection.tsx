@@ -44,6 +44,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                 actions={
                     <DawPluginToggle
                         pressed={!patch.excBypassed}
+                        aria-label="Exciter module"
                         tone="lavender"
                         size="xs"
                         onClick={() => {
@@ -73,6 +74,7 @@ export const ProofExciterSection = ({ patch, gestureOwner, gestureAuthority, onP
                             {/* Enable */}
                             <DawPluginToggle
                                 pressed={band.enabled}
+                                aria-label={`${label} exciter band`}
                                 tone="lavender"
                                 size="xs"
                                 className="w-full"

@@ -56,6 +56,7 @@ export const ProofImagerSection = ({
                 actions={
                     <DawPluginToggle
                         pressed={!patch.imgBypassed}
+                        aria-label="Imager module"
                         tone="mint"
                         size="xs"
                         onClick={() => {
@@ -104,6 +105,7 @@ export const ProofImagerSection = ({
                 <div className="flex items-center gap-2 px-1">
                     <DawPluginToggle
                         pressed={patch.imgAutoMonoBass}
+                        aria-label="Imager auto mono bass"
                         tone="mint"
                         size="xs"
                         caps={false}

@@ -60,6 +60,7 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                 actions={
                     <DawPluginToggle
                         pressed={!patch.eqBypassed}
+                        aria-label="EQ module"
                         tone="cyan"
                         size="xs"
                         onClick={() => {
@@ -97,6 +98,8 @@ export const ProofEqSection = ({ patch, gestureOwner, gestureAuthority, onPatchC
                         {/* Enable toggle */}
                         <button
                             type="button"
+                            aria-label={`EQ ${EQ_BAND_LABELS[i]!} band`}
+                            aria-pressed={band.enabled}
                             className={`w-2 h-2 rounded-full cursor-pointer ${band.enabled ? '' : 'opacity-20'}`}
                             style={{ backgroundColor: BAND_COLORS[i] }}
                             onClick={() => {

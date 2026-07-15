@@ -57,7 +57,8 @@ type ModulationHalo = {
 };
 
 export type GestureAuthority = {
-    acquire: () => string | number;
+    /** Finalize the current owner synchronously before installing the new owner. */
+    acquire: (finalize: () => void) => string | number;
     isCurrent: (token: string | number) => boolean;
 };
 
@@ -264,7 +265,7 @@ export const RotaryKnob = ({
             resetToDefault();
             return;
         }
-        const gestureToken = gestureAuthorityRef.current?.acquire() ?? gestureOwner;
+        const gestureToken = gestureAuthorityRef.current?.acquire(() => finalizeDragRef.current()) ?? gestureOwner;
         if (typeof event.currentTarget.setPointerCapture === 'function') {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
@@ -350,7 +351,7 @@ export const RotaryKnob = ({
 
         const authority = gestureAuthorityRef.current;
         if (authority) {
-            const token = authority.acquire();
+            const token = authority.acquire(() => finalizeDragRef.current());
             if (!authority.isCurrent(token)) {
                 return;
             }

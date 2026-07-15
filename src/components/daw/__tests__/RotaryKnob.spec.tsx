@@ -63,6 +63,21 @@ const setDocumentVisibility = (state: DocumentVisibilityState): void => {
     });
 };
 
+const createProtocolAuthority = (): GestureAuthority => {
+    let currentToken = 0;
+    let currentFinalizer: (() => void) | null = null;
+
+    return {
+        acquire: (finalize: () => void) => {
+            currentFinalizer?.();
+            currentToken += 1;
+            currentFinalizer = finalize;
+            return currentToken;
+        },
+        isCurrent: (token) => token === currentToken,
+    };
+};
+
 describe('RotaryKnob', () => {
     beforeEach(() => {
         mockMidiState = { ...baseMidiState };
@@ -180,15 +195,8 @@ describe('RotaryKnob', () => {
         expect(latestOnChange).toHaveBeenCalledWith(transientValue, false);
     });
 
-    it('rejects stale moves and finalization synchronously after authority takeover', () => {
-        let currentToken = 0;
-        const authority: GestureAuthority = {
-            acquire: () => {
-                currentToken += 1;
-                return currentToken;
-            },
-            isCurrent: (token) => token === currentToken,
-        };
+    it('finalizes the previous scalar gesture before takeover and ignores its late release', () => {
+        const authority = createProtocolAuthority();
         const firstOnChange = vi.fn();
         const secondOnChange = vi.fn();
         const { container } = render(
@@ -209,14 +217,17 @@ describe('RotaryKnob', () => {
         const firstTransientCount = firstOnChange.mock.calls.length;
 
         fireEvent.pointerDown(secondRoot, { button: 0, pointerId: 11, clientY: 100 });
+        const firstTransientValue = firstOnChange.mock.calls[0]?.[0];
+        expect(firstOnChange).toHaveBeenLastCalledWith(firstTransientValue, false);
         fireEvent.pointerMove(secondRoot, { pointerId: 11, clientY: 70 });
         fireEvent.pointerMove(firstRoot, { pointerId: 10, clientY: 40 });
         fireEvent.pointerUp(firstRoot, { pointerId: 10 });
+        fireEvent.pointerMove(secondRoot, { pointerId: 11, clientY: 55 });
         fireEvent.pointerUp(secondRoot, { pointerId: 11 });
 
-        expect(firstOnChange).toHaveBeenCalledTimes(firstTransientCount);
-        expect(firstOnChange).not.toHaveBeenLastCalledWith(expect.any(Number), false);
-        expect(secondOnChange).toHaveBeenCalledTimes(2);
+        expect(firstOnChange).toHaveBeenCalledTimes(firstTransientCount + 1);
+        expect(firstOnChange).toHaveBeenLastCalledWith(firstTransientValue, false);
+        expect(secondOnChange.mock.calls.filter(([, isTransient]) => isTransient === false)).toHaveLength(1);
         expect(secondOnChange).toHaveBeenLastCalledWith(expect.any(Number), false);
     });
 
@@ -320,8 +331,11 @@ describe('RotaryKnob', () => {
     });
 
     it('keeps the first pointer as drag owner when another pointer cancels', () => {
+        const authority = createProtocolAuthority();
         const onChange = vi.fn();
-        const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const { container } = render(
+            <RotaryKnob value={50} onChange={onChange} min={0} max={100} gestureAuthority={authority} />
+        );
         const root = getRoot(container);
 
         fireEvent.pointerDown(root, { button: 0, pointerId: 4, clientY: 100 });
@@ -410,9 +424,12 @@ describe('RotaryKnob', () => {
     it('checks synchronous keyboard gesture authority and preserves pointer ownership', () => {
         let currentToken = 0;
         let allowKeyboard = true;
+        let currentFinalizer: (() => void) | null = null;
         const authority: GestureAuthority = {
-            acquire: vi.fn(() => {
+            acquire: vi.fn((finalize: () => void) => {
+                currentFinalizer?.();
                 currentToken += 1;
+                currentFinalizer = finalize;
                 return currentToken;
             }),
             isCurrent: vi.fn(() => allowKeyboard),

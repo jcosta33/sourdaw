@@ -43,4 +43,26 @@ describe('ProofEqSection', () => {
         ]);
         expect(new Set(names).size).toBe(names.length);
     });
+
+    it('names the module toggle and every band enable button while exposing pressed state', () => {
+        render(<ProofEqSection patch={DEFAULT_PATCH} gestureOwner={0} onPatchChange={vi.fn()} />);
+
+        const moduleToggle = screen.getByRole('button', { name: 'EQ module' });
+        expect(moduleToggle).toHaveAttribute('aria-pressed', String(!DEFAULT_PATCH.eqBypassed));
+
+        const bandButtons = screen.getAllByRole('button', { name: /EQ .* band$/ });
+        expect(bandButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+            'EQ Low Cut band',
+            'EQ Low Shelf band',
+            'EQ Low-Mid band',
+            'EQ Mid band',
+            'EQ High-Mid band',
+            'EQ High band',
+            'EQ High Shelf band',
+            'EQ High Cut band',
+        ]);
+        expect(bandButtons.map((button) => button.getAttribute('aria-pressed'))).toEqual(
+            DEFAULT_PATCH.eqBands.map((band) => String(band.enabled))
+        );
+    });
 });

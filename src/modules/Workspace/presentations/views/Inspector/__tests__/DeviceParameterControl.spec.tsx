@@ -66,10 +66,19 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
 }));
 
 vi.mock('#/components/ui/bipolar-slider', () => ({
-    BipolarSlider: ({ value, onValueChange }: { value: number; onValueChange: (v: number) => void }) => (
+    BipolarSlider: ({
+        value,
+        onValueChange,
+        'aria-label': ariaLabel,
+    }: {
+        value: number;
+        onValueChange: (v: number) => void;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
             data-testid="bipolar-slider"
+            aria-label={ariaLabel}
             value={value}
             onChange={(event) => onValueChange(Number(event.target.value))}
         />
@@ -166,7 +175,7 @@ describe('DeviceParameterControl', () => {
             unit: 'dB',
         };
         render(<DeviceParameterControl param={dbParam} device={mockDevice} trackId="track-1" />);
-        expect(screen.getByTestId('bipolar-slider')).toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
     });
 
     it('should render MIDI learn button', () => {

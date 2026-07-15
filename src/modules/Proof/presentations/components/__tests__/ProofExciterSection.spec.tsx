@@ -27,4 +27,23 @@ describe('ProofExciterSection', () => {
         ]);
         expect(new Set(names).size).toBe(names.length);
     });
+
+    it('names the module and every band enable toggle with pressed state', () => {
+        render(<ProofExciterSection patch={DEFAULT_PATCH} gestureOwner={0} onPatchChange={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Exciter module' })).toHaveAttribute(
+            'aria-pressed',
+            String(!DEFAULT_PATCH.excBypassed)
+        );
+        const bandButtons = screen.getAllByRole('button', { name: /exciter band$/i });
+        expect(bandButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+            'Sub exciter band',
+            'Low-Mid exciter band',
+            'Hi-Mid exciter band',
+            'High exciter band',
+        ]);
+        expect(bandButtons.map((button) => button.getAttribute('aria-pressed'))).toEqual(
+            DEFAULT_PATCH.excBands.map((band) => String(band.enabled))
+        );
+    });
 });

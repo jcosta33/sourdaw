@@ -494,7 +494,7 @@ export const ProofEqCurve = ({
         }
 
         if (closestIdx >= 0) {
-            const gestureToken = gestureAuthorityRef.current?.acquire() ?? gestureOwner;
+            const gestureToken = gestureAuthorityRef.current?.acquire(() => finalizeDragRef.current()) ?? gestureOwner;
             canvas.setPointerCapture(e.pointerId);
             activePointerIdRef.current = e.pointerId;
             dragBandRef.current = closestIdx;

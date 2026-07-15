@@ -69,6 +69,7 @@ export const ProofDynSection = ({
                 actions={
                     <DawPluginToggle
                         pressed={!patch.dynBypassed}
+                        aria-label="Dynamics module"
                         tone="peach"
                         size="xs"
                         onClick={() => {

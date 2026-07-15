@@ -178,6 +178,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     max={max}
                     step={mappedStep}
                     defaultValue={mappedDefaultValue}
+                    aria-label={param.name}
                     formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
                     className="w-full"
                 />

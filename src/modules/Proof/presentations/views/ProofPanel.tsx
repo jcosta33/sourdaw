@@ -226,6 +226,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const patchSnapshot = getProofPatchSnapshot(patch);
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
     const activeGestureTokenRef = useRef(0);
+    const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
     const patchSnapshotRef = useRef(patchSnapshot);
     const acceptedTransientPatchSnapshotRef = useRef<string | null>(null);
 
@@ -238,11 +239,21 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
     const invalidateGesture = (): void => {
         acceptedTransientPatchSnapshotRef.current = null;
+        activeGestureFinalizerRef.current = null;
         advanceGestureOwner();
     };
 
+    const acquireGesture = (finalize: () => void): number => {
+        const previousFinalizer = activeGestureFinalizerRef.current;
+        activeGestureFinalizerRef.current = null;
+        previousFinalizer?.();
+        const nextOwner = advanceGestureOwner();
+        activeGestureFinalizerRef.current = finalize;
+        return nextOwner;
+    };
+
     const gestureAuthority: GestureAuthority = {
-        acquire: advanceGestureOwner,
+        acquire: acquireGesture,
         isCurrent: (token) => Object.is(activeGestureTokenRef.current, token),
     };
 
@@ -252,6 +263,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         const acceptedTransient = acceptedTransientPatchSnapshotRef.current === patchSnapshot;
         acceptedTransientPatchSnapshotRef.current = null;
         if (previousPatchSnapshot !== patchSnapshot && !acceptedTransient) {
+            activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
         }
     }, [patchSnapshot]);
@@ -451,6 +463,8 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <div className="flex flex-col gap-2">
                             <DawPluginChip
                                 active={state.abBypass}
+                                aria-label="A/B compare"
+                                aria-pressed={state.abBypass}
                                 tone="mint"
                                 size="sm"
                                 onClick={() => {
@@ -647,6 +661,8 @@ const Level2Shape = ({
                             <div className="w-4 h-px bg-border/30" />
                             <button
                                 type="button"
+                                aria-label={`${label} module`}
+                                aria-pressed={!bypassed}
                                 className={`px-2 py-1 rounded text-[8px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                                     bypassed
                                         ? 'opacity-30 text-muted-foreground border border-border/20'
