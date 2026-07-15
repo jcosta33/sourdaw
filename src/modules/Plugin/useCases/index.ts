@@ -3,7 +3,10 @@
 
 export { registerBuiltinFaustDSP } from './faustEngine/builtinDSP';
 
-export { registerFaustDSP, compileFaustDSP, createFaustNode, isFaustModule } from './faustEngine/compilerEngine';
+export { registerFaustDSP } from './faustEngine/registerFaustDSP';
+export { compileFaustDSP } from './faustEngine/compileFaustDSP';
+export { createFaustNode } from './faustEngine/createFaustNode';
+export { isFaustModule } from './faustEngine/isFaustModule';
 
 export { toggleNodeView } from './nodeView/toggleNodeView';
 

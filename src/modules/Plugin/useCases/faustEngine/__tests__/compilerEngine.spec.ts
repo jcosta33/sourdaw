@@ -1,51 +1,49 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../compilerEngine';
+import { compileAllFaustModules } from '../compileAllFaustModules';
+import { compileFaustDSP } from '../compileFaustDSP';
+import { createFaustNode } from '../createFaustNode';
+import { getFaustCompilerError } from '../getFaustCompilerError';
+import { getFaustModule } from '../getFaustModule';
+import { getFaustModules } from '../getFaustModules';
+import { isFaustCompilerReady } from '../isFaustCompilerReady';
+import { isFaustModule } from '../isFaustModule';
+import { registerFaustDSP } from '../registerFaustDSP';
 
 describe('compilerEngine', () => {
     it('should export compileAllFaustModules', () => {
-        expect(subject.compileAllFaustModules).toBeDefined();
-        const time = typeof subject.compileAllFaustModules;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof compileAllFaustModules).toBe('function');
     });
     it('should export compileFaustDSP', () => {
-        expect(subject.compileFaustDSP).toBeDefined();
-        const time = typeof subject.compileFaustDSP;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof compileFaustDSP).toBe('function');
     });
     it('should export createFaustNode', () => {
-        expect(subject.createFaustNode).toBeDefined();
-        const time = typeof subject.createFaustNode;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof createFaustNode).toBe('function');
     });
     it('should export getFaustCompilerError', () => {
-        expect(subject.getFaustCompilerError).toBeDefined();
-        const time = typeof subject.getFaustCompilerError;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof getFaustCompilerError).toBe('function');
     });
     it('should export getFaustModule', () => {
-        expect(subject.getFaustModule).toBeDefined();
-        const time = typeof subject.getFaustModule;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof getFaustModule).toBe('function');
     });
     it('should export getFaustModules', () => {
-        expect(subject.getFaustModules).toBeDefined();
-        const time = typeof subject.getFaustModules;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof getFaustModules).toBe('function');
     });
     it('should export isFaustCompilerReady', () => {
-        expect(subject.isFaustCompilerReady).toBeDefined();
-        const time = typeof subject.isFaustCompilerReady;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof isFaustCompilerReady).toBe('function');
     });
     it('should export isFaustModule', () => {
-        expect(subject.isFaustModule).toBeDefined();
-        const time = typeof subject.isFaustModule;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof isFaustModule).toBe('function');
     });
     it('should export registerFaustDSP', () => {
-        expect(subject.registerFaustDSP).toBeDefined();
-        const time = typeof subject.registerFaustDSP;
-        expect(time === 'function' || time === 'object').toBe(true);
+        expect(typeof registerFaustDSP).toBe('function');
+    });
+
+    it('shares registered modules across the query owners', () => {
+        const registered = registerFaustDSP('Compiler Engine Test', 'process = _;');
+
+        expect(getFaustModule(registered.id)).toBe(registered);
+        expect(getFaustModules()).toContain(registered);
+        expect(isFaustModule(registered.id)).toBe(true);
     });
 });
