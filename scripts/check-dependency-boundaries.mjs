@@ -1051,6 +1051,21 @@ function evaluateCertainCall(context, sourceFile, flow, node, effects, statement
     return result;
 }
 
+function isLogicalAssignmentOperator(kind) {
+    return (
+        kind === ts.SyntaxKind.AmpersandAmpersandEqualsToken ||
+        kind === ts.SyntaxKind.BarBarEqualsToken ||
+        kind === ts.SyntaxKind.QuestionQuestionEqualsToken
+    );
+}
+
+function isLiveCommonJsExportTarget(flow, target) {
+    return (
+        target?.kind === 'moduleExports' ||
+        (target?.kind === 'property' && target.ownerIdentity === flow.currentModuleExports)
+    );
+}
+
 function evaluateCertainExpression(context, sourceFile, flow, expression, effects, statement) {
     const node = unwrapCommonJsExpression(expression);
     if (!node) {
@@ -1071,6 +1086,14 @@ function evaluateCertainExpression(context, sourceFile, flow, expression, effect
             const result = evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
             applyCertainAssignment(flow, target, result, effects, statement);
             return result;
+        }
+        if (isLogicalAssignmentOperator(node.operatorToken.kind)) {
+            const target = certainAssignmentTarget(context, sourceFile, flow, node.left, effects, statement);
+            evaluateCertainExpression(context, sourceFile, flow, node.right, effects, statement);
+            if (isLiveCommonJsExportTarget(flow, target)) {
+                effects.onUnsupportedExportMutation?.({ statement });
+            }
+            return commonJsResult(flow, node);
         }
         evaluateCertainExpression(context, sourceFile, flow, node.left, effects, statement);
         if (
@@ -1225,11 +1248,15 @@ function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootSta
 
     function scanStatements(flow, statements) {
         for (const statement of statements) {
-            scanStatement(flow, statement);
+            const completion = scanStatement(flow, statement);
             if (tracker.mutated) {
-                return;
+                return null;
+            }
+            if (completion) {
+                return completion;
             }
         }
+        return null;
     }
 
     function scanStatement(flow, statement) {
@@ -1249,47 +1276,59 @@ function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootSta
             const condition = staticControlBoolean(statement.expression);
             if (condition !== null) {
                 const branch = condition ? statement.thenStatement : statement.elseStatement;
-                if (branch) {
-                    scanStatement(flow, branch);
-                }
-                return;
+                return branch ? scanStatement(flow, branch) : null;
             }
             scanStatement(cloneCommonJsFlow(flow), statement.thenStatement);
             if (!tracker.mutated && statement.elseStatement) {
                 scanStatement(cloneCommonJsFlow(flow), statement.elseStatement);
             }
-            return;
+            return null;
         }
         if (ts.isSwitchStatement(statement)) {
             evaluate(flow, statement.expression, statement);
             if (tracker.mutated) {
-                return;
+                return null;
             }
             const clauses = [...statement.caseBlock.clauses];
             const discriminant = staticControlValue(statement.expression);
             const casesAreStatic = clauses.every(
                 (clause) => ts.isDefaultClause(clause) || staticControlValue(clause.expression).known
             );
-            let possibleClauses = clauses;
+            let startIndexes = clauses.map((_, index) => index);
+            let deterministic = false;
             if (discriminant.known && casesAreStatic) {
                 const match = clauses.findIndex(
                     (clause) =>
                         ts.isCaseClause(clause) && staticControlValue(clause.expression).value === discriminant.value
                 );
                 const start = match >= 0 ? match : clauses.findIndex(ts.isDefaultClause);
-                possibleClauses = start >= 0 ? clauses.slice(start) : [];
+                startIndexes = start >= 0 ? [start] : [];
+                deterministic = true;
             }
-            for (const clause of possibleClauses) {
+            for (const startIndex of startIndexes) {
                 const branchFlow = cloneCommonJsFlow(flow);
-                if (ts.isCaseClause(clause)) {
-                    evaluate(branchFlow, clause.expression, statement);
+                let completion = null;
+                for (let clauseIndex = startIndex; clauseIndex < clauses.length; clauseIndex += 1) {
+                    const clause = clauses[clauseIndex];
+                    if (ts.isCaseClause(clause)) {
+                        evaluate(branchFlow, clause.expression, statement);
+                    }
+                    completion = scanStatements(branchFlow, clause.statements);
+                    if (tracker.mutated || completion) {
+                        break;
+                    }
                 }
-                scanStatements(branchFlow, clause.statements);
                 if (tracker.mutated) {
-                    break;
+                    return null;
+                }
+                if (completion?.kind === 'break' && !completion.label) {
+                    completion = null;
+                }
+                if (deterministic && completion) {
+                    return completion;
                 }
             }
-            return;
+            return null;
         }
         if (
             ts.isDoStatement(statement) ||
@@ -1333,7 +1372,7 @@ function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootSta
             if (!tracker.mutated && ts.isDoStatement(statement)) {
                 evaluate(tailFlow, statement.expression, statement);
             }
-            return;
+            return null;
         }
         if (ts.isTryStatement(statement)) {
             scanStatement(cloneCommonJsFlow(flow), statement.tryBlock);
@@ -1360,9 +1399,15 @@ function possibleCommonJsSubtreeMutation(context, sourceFile, outerFlow, rootSta
             if (statement.finallyBlock && !tracker.mutated) {
                 scanStatement(cloneCommonJsFlow(flow), statement.finallyBlock);
             }
-            return;
+            return null;
         }
-        executeCertainStatement(context, sourceFile, flow, statement, mutationEffects(flow));
+        if (ts.isBreakStatement(statement)) {
+            return { kind: 'break', label: statement.label?.text ?? null };
+        }
+        if (ts.isContinueStatement(statement)) {
+            return { kind: 'continue', label: statement.label?.text ?? null };
+        }
+        return executeCertainStatement(context, sourceFile, flow, statement, mutationEffects(flow));
     }
 
     scanStatement(cloneCommonJsFlow(outerFlow), rootStatement);

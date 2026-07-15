@@ -1949,6 +1949,9 @@ describe('check-dependency-boundaries', () => {
                 ],
                 'assign-known.cjs': ['Object.assign(exports, { known: true });'],
                 'assign-known-spread.cjs': ['const known = { known: true };', 'Object.assign(exports, { ...known });'],
+                'logical-or.cjs': ['exports.logicalOr ||= loadUnknown();'],
+                'logical-and.cjs': ['exports.logicalAnd = true;', 'exports.logicalAnd &&= loadUnknown();'],
+                'logical-nullish-alias.cjs': ['const out = module.exports;', 'out.logicalNullish ??= loadUnknown();'],
                 'unrelated-object.cjs': [
                     'const target = {};',
                     "const key = Math.random() > 0.5 ? 'first' : 'second';",
@@ -1986,6 +1989,9 @@ describe('check-dependency-boundaries', () => {
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-deduplicated.cjs', 3),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-exports.cjs', 2),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-iife.cjs', 3),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/logical-and.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/logical-nullish-alias.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/logical-or.cjs', 1),
             ]);
         } finally {
             rmSync(repositoryRoot, { force: true, recursive: true });
@@ -2002,6 +2008,11 @@ describe('check-dependency-boundaries', () => {
             for (let index = 0; index < 300; index += 1) {
                 boundedControl.push(`if (conditions[${index}]) { unrelated.value = ${index}; }`);
             }
+            const boundedSwitch = ['switch (selector) {'];
+            for (let index = 0; index < 300; index += 1) {
+                boundedSwitch.push(`    case ${index}:`, `        unrelated.value = ${index};`, '        break;');
+            }
+            boundedSwitch.push('}');
 
             writeFixtureFiles(repositoryDirectory, {
                 'if.cjs': ['if (condition) {', '    module.exports = { conditional: true };', '}'],
@@ -2085,6 +2096,22 @@ describe('check-dependency-boundaries', () => {
                     '        break;',
                     '}',
                 ],
+                'switch-break.cjs': [
+                    "switch ('clean') {",
+                    "    case 'clean':",
+                    '        break;',
+                    "    case 'unreachable':",
+                    '        exports.unreachableAfterBreak = true;',
+                    '}',
+                ],
+                'switch-fallthrough.cjs': [
+                    "switch ('clean') {",
+                    "    case 'clean':",
+                    '        void 0;',
+                    "    case 'mutate':",
+                    '        exports.reachableByFallthrough = true;',
+                    '}',
+                ],
                 'detached-alias.cjs': [
                     'const out = module.exports;',
                     'module.exports = { clean: true };',
@@ -2158,6 +2185,7 @@ describe('check-dependency-boundaries', () => {
                     'try { void 0; } catch {} finally { void 0; }',
                 ],
                 'bounded-control.cjs': boundedControl,
+                'bounded-switch.cjs': ['const unrelated = {};', ...boundedSwitch],
             });
 
             const startedAt = performance.now();
@@ -2179,6 +2207,7 @@ describe('check-dependency-boundaries', () => {
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/iife-control.cjs', 2),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/nested-block.cjs', 1),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/object-assign.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/switch-fallthrough.cjs', 1),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/switch.cjs', 1),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/try.cjs', 1),
                 unsupportedCommonJsFinding('src/modules/Foo/repositories/while.cjs', 1),
