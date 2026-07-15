@@ -9,10 +9,9 @@ import {
     resumeEngine,
     requestMicPermission,
 } from '#/modules/AudioEngine/useCases';
-import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases';
-import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
+import { loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
@@ -49,12 +48,7 @@ export const useAppInitialization = (): void => {
                 registerProModulationEffects();
                 registerProSynthInstruments();
 
-                const hasSaved = await hasCrdtProject();
-                if (hasSaved) {
-                    await loadProject();
-                } else {
-                    finishProjectLoading();
-                }
+                await loadProject();
                 ensureTrackStrips();
             } catch (error) {
                 logger.error(new Error('App initialization failed', { cause: error }));

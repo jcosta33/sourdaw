@@ -500,11 +500,12 @@ class AutomergeRepository {
         for (const { id: key, bytes } of incrementals) {
             const docId = key.substring(0, key.indexOf(':incremental:'));
             const doc = documents.get(docId);
-            if (doc) {
-                documents.set(docId, loadIncremental(doc, bytes));
-            } else {
-                logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
+            if (!doc) {
+                throw new Error(
+                    `[AutomergeRepository] Incremental chunk ${key} references missing base document ${docId}`
+                );
             }
+            documents.set(docId, loadIncremental(doc, bytes));
         }
 
         for (const [id, doc] of documents) {

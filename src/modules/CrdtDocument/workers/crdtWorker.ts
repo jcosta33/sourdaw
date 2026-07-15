@@ -22,7 +22,7 @@ const DOC_PREFIX_ROOT = 'root';
 
 // ── loadBundle ────────────────────────────────────────────────────────────────
 
-function processLoad(bundle: Map<string, Uint8Array>): {
+export function processLoad(bundle: Map<string, Uint8Array>): {
     compacted: [string, Uint8Array][];
     rootId: string;
 } {
@@ -74,9 +74,10 @@ function processLoad(bundle: Map<string, Uint8Array>): {
     for (const { key, bytes } of incrementals) {
         const docId = key.substring(0, key.indexOf(':incremental:'));
         const doc = docs.get(docId);
-        if (doc) {
-            docs.set(docId, loadIncremental(doc, bytes));
+        if (!doc) {
+            throw new Error(`[CrdtWorker] Incremental chunk ${key} references missing base document ${docId}`);
         }
+        docs.set(docId, loadIncremental(doc, bytes));
     }
 
     const compacted: [string, Uint8Array][] = [];

@@ -30,6 +30,14 @@ describe('loadCrdtProject', () => {
         expect(mocks.loadAll).toHaveBeenCalledWith({ bundle: mockBundle, shouldCommit: undefined });
     });
 
+    it('returns absence from one empty persistence read without committing', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(null);
+
+        await expect(loadCrdtProject()).resolves.toBe(false);
+
+        expect(mocks.loadAll).not.toHaveBeenCalled();
+    });
+
     it('keeps the loaded root authoritative over an older active-branch snapshot', async () => {
         const loadedRoot = new Uint8Array([1, 2, 3]);
         const olderBranchSnapshot = new Uint8Array([1]);

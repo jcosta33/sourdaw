@@ -319,7 +319,7 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
                     ['root:incremental:10-0', new Uint8Array([1, 2, 3])],
                 ]),
             })
-        ).rejects.toThrow('missing the exact root document');
+        ).rejects.toThrow('missing base document');
 
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
@@ -348,6 +348,65 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
             })
         ).rejects.toThrow();
 
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('rejects orphan incrementals in the synchronous fallback without replacing authority', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected a persisted root document');
+        }
+
+        const bundle = new Map([
+            ['root', rootBytes],
+            ['orphan-child:incremental:1-0', new Uint8Array([1, 2, 3])],
+        ]);
+
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing base document');
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+        expect(automergeRepository.getRootId()).toBe('root');
+    });
+
+    it('does not let a worker integrity error fall back to acceptance', async () => {
+        class IntegrityErrorWorker {
+            private messageListener: EventListener | null = null;
+
+            addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+                if (type === 'message' && typeof listener === 'function') {
+                    this.messageListener = listener;
+                }
+            }
+
+            removeEventListener(): void {
+                this.messageListener = null;
+            }
+
+            postMessage(message: Record<string, unknown>): void {
+                this.messageListener?.(
+                    new MessageEvent('message', {
+                        data: { id: message.id, type: 'error', message: 'orphan incremental integrity failure' },
+                    })
+                );
+            }
+        }
+
+        vi.stubGlobal('Worker', IntegrityErrorWorker);
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+        const rootBytes = automergeRepository.saveDoc('root');
+        if (!rootBytes) {
+            throw new Error('Expected a persisted root document');
+        }
+
+        const bundle = new Map([
+            ['root', rootBytes],
+            ['orphan-child:incremental:1-0', new Uint8Array([1, 2, 3])],
+        ]);
+
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing base document');
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 });

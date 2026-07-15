@@ -88,6 +88,16 @@ describe('Project Persistence Use Cases', () => {
     });
 
     describe('loadProject', () => {
+        it('creates a new project only after the authoritative load reports absence', async () => {
+            mocks.loadCrdtProject.mockResolvedValue(false);
+
+            await expect(loadProject()).resolves.toBe(true);
+
+            expect(mocks.loadCrdtProject).toHaveBeenCalledWith({ shouldCommit: expect.any(Function) });
+            expect(mocks.createCrdtProject).toHaveBeenCalledWith('Untitled Project');
+            expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+        });
+
         it('loads CRDT and hydrates stores without publishing an abortable loading state', async () => {
             mocks.loadCrdtProject.mockResolvedValue(true);
 
@@ -106,14 +116,16 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
 
-        it('does not create a replacement project when persisted CRDT loading fails', async () => {
-            const corruption = new Error('corrupt persisted root');
+        it('does not create or compact a replacement project when persistence is corrupt', async () => {
+            const corruption = new Error('orphan incremental references missing base document');
             mocks.loadCrdtProject.mockRejectedValue(corruption);
 
             await expect(loadProject()).rejects.toThrow(corruption);
 
             expect(mocks.createCrdtProject).not.toHaveBeenCalled();
             expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         });
 
         it('returns benign false without creating a project when a newer load cancels it', async () => {
