@@ -1,7 +1,7 @@
 /// Crumbs voice — the per-voice playback unit.
 ///
 /// Each voice handles:
-///   - Fractional-position playback with 4-point cubic Hermite interpolation
+///   - Fractional-position playback with variable-cutoff bandlimited interpolation
 ///   - Per-voice AHDSR amplitude envelope
 ///   - Per-voice TPT SVF filter
 ///   - Loop handling (Forward, PingPong, Reverse) with equal-power crossfade
@@ -17,6 +17,8 @@ use super::types::{
 };
 
 // ── Constants ──────────────────────────────────────────────────────────
+
+const SINC_TAPS: usize = 32;
 
 // ── Crumbs Voice ──────────────────────────────────────────────────────
 
@@ -223,34 +225,20 @@ impl CrumbsVoice {
             return false;
         }
 
-        // Read sample with 8-point windowed Sinc interpolation
+        // Scale the reconstruction cutoff for downsampling so source content
+        // above the output Nyquist cannot fold back into the audible band.
         let frame = self.position as usize;
         let frac = (self.position - frame as f64) as f32;
+        let cutoff = (1.0 / self.speed.max(1.0)) as f32;
 
-        let left_samples = [
-            sample_data.read_left(frame.wrapping_sub(3)),
-            sample_data.read_left(frame.wrapping_sub(2)),
-            sample_data.read_left(frame.wrapping_sub(1)),
-            sample_data.read_left(frame),
-            sample_data.read_left(frame + 1),
-            sample_data.read_left(frame + 2),
-            sample_data.read_left(frame + 3),
-            sample_data.read_left(frame + 4),
-        ];
-        let left = windowed_sinc(frac, &left_samples);
+        let left = bandlimited_sinc(frac, cutoff, |offset| {
+            sample_data.read_left(frame.wrapping_add_signed(offset))
+        });
 
         let right = if sample_data.is_stereo() {
-            let right_samples = [
-                sample_data.read_right(frame.wrapping_sub(3)),
-                sample_data.read_right(frame.wrapping_sub(2)),
-                sample_data.read_right(frame.wrapping_sub(1)),
-                sample_data.read_right(frame),
-                sample_data.read_right(frame + 1),
-                sample_data.read_right(frame + 2),
-                sample_data.read_right(frame + 3),
-                sample_data.read_right(frame + 4),
-            ];
-            windowed_sinc(frac, &right_samples)
+            bandlimited_sinc(frac, cutoff, |offset| {
+                sample_data.read_right(frame.wrapping_add_signed(offset))
+            })
         } else {
             left
         };
@@ -457,32 +445,105 @@ impl Default for VoiceTriggerParams {
     }
 }
 
-// ── Windowed Sinc Interpolation ────────────────────────────────────────
+// ── Variable-Cutoff Bandlimited Interpolation ──────────────────────────
 
-/// 8-point Hann-windowed Sinc interpolation for bandlimited fractional resampling.
+/// Fixed-cost Blackman-windowed sinc resampling.
 ///
-/// Given eight consecutive samples (y[-3] to y[4]) and a fractional
-/// position `t` between y[0] and y[1] (0.0–1.0), returns the interpolated value.
-fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
-    let mut sum = 0.0;
-    
-    // For n from -3 to 4
-    for i in 0..8 {
-        let n = i as f32 - 3.0;
-        let x = t - n;
-        
-        if x == 0.0 {
-            sum += samples[i];
+/// `cutoff` is relative to the source Nyquist frequency. Values below 1.0
+/// prefilter the source before a pitched-up voice decimates it. The callback
+/// keeps sample access channel-local without allocating a temporary buffer.
+fn bandlimited_sinc<F>(t: f32, cutoff: f32, mut read: F) -> f32
+where
+    F: FnMut(isize) -> f32,
+{
+    let cutoff = cutoff.clamp(0.0, 1.0);
+    let half_taps = SINC_TAPS as f32 * 0.5;
+    let mut weighted_sum = 0.0;
+    let mut weight_sum = 0.0;
+
+    for index in 0..SINC_TAPS {
+        let offset = index as isize - (SINC_TAPS as isize / 2 - 1);
+        let x = t - offset as f32;
+        let window_phase = std::f32::consts::PI * x / half_taps;
+        let window = 0.42 + 0.5 * window_phase.cos() + 0.08 * (2.0 * window_phase).cos();
+        let sinc = if x.abs() < f32::EPSILON {
+            cutoff
         } else {
-            let pi_x = std::f32::consts::PI * x;
-            let sinc = pi_x.sin() / pi_x;
-            
-            // Hann window over [-4, 4]
-            let window = 0.5 * (1.0 + (std::f32::consts::PI * x / 4.0).cos());
-            
-            sum += samples[i] * sinc * window;
-        }
+            (std::f32::consts::PI * cutoff * x).sin() / (std::f32::consts::PI * x)
+        };
+        let weight = sinc * window;
+
+        weighted_sum += read(offset) * weight;
+        weight_sum += weight;
     }
-    
-    sum
+
+    if weight_sum.abs() > f32::EPSILON {
+        weighted_sum / weight_sum
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn magnitude_at_frequency(samples: &[f32], frequency_hz: f32, sample_rate: f32) -> f32 {
+        let phase_step = 2.0 * std::f32::consts::PI * frequency_hz / sample_rate;
+        let mut real = 0.0;
+        let mut imaginary = 0.0;
+
+        for (index, sample) in samples.iter().enumerate() {
+            let phase = phase_step * index as f32;
+            real += sample * phase.cos();
+            imaginary -= sample * phase.sin();
+        }
+
+        2.0 * (real * real + imaginary * imaginary).sqrt() / samples.len() as f32
+    }
+
+    #[test]
+    fn pitch_up_rejects_source_energy_that_would_alias() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const SOURCE_FREQUENCY: f32 = 16_000.0;
+        const RENDER_FRAMES: usize = 4_096;
+
+        let source = (0..RENDER_FRAMES * 2 + 8)
+            .map(|frame| {
+                let phase = frame as f32 / SAMPLE_RATE * 2.0 * std::f32::consts::PI;
+                0.5 * (phase * 2_000.0).sin() + 0.5 * (phase * SOURCE_FREQUENCY).sin()
+            })
+            .collect();
+        let sample = SampleData::from_mono(source, SAMPLE_RATE as u32);
+
+        let mut params = VoiceTriggerParams::default();
+        params.note = 72;
+        params.root_note = 60;
+        params.attack = 0.0;
+        params.decay = 0.0;
+        params.filter_cutoff = 20_000.0;
+
+        let mut voice = CrumbsVoice::new(SAMPLE_RATE);
+        voice.trigger(&params);
+
+        let mut rendered = Vec::with_capacity(RENDER_FRAMES);
+        for _ in 0..RENDER_FRAMES {
+            let mut left = 0.0;
+            let mut right = 0.0;
+            assert!(voice.render_sample(&sample, &mut left, &mut right));
+            rendered.push(left);
+        }
+
+        let measured = &rendered[256..];
+        let passband_magnitude = magnitude_at_frequency(measured, 4_000.0, SAMPLE_RATE);
+        let alias_magnitude = magnitude_at_frequency(measured, 16_000.0, SAMPLE_RATE);
+        assert!(
+            passband_magnitude > 0.2,
+            "passband magnitude at 4 kHz was {passband_magnitude:.6}"
+        );
+        assert!(
+            alias_magnitude < 0.01,
+            "alias magnitude at 16 kHz was {alias_magnitude:.6}"
+        );
+    }
 }

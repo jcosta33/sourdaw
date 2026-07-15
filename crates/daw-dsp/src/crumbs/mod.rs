@@ -3,7 +3,7 @@
 /// Provides a four-mode crumbs (Quick, Drum, Slice, Warp) with:
 ///   - Lock-free voice allocation (128 voices, AtomicU64 bitfield)
 ///   - 6-state AHDSR envelope with configurable curve shape
-///   - Cubic Hermite interpolation playback
+///   - Variable-cutoff bandlimited sinc interpolation playback
 ///   - Cytomic TPT SVF filter with simultaneous multi-output
 ///   - One-pole parameter smoothing with denormal prevention
 ///   - In-memory sample pool
