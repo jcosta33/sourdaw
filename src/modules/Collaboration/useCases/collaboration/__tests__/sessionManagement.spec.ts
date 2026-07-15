@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createSession, leaveSession, onPresence } from '../sessionManagement';
+import { createSession } from '../createSession';
+import { leaveSession } from '../leaveSession';
+import { onPresence } from '../onPresence';
 
 type TestClip = {
     id: string;

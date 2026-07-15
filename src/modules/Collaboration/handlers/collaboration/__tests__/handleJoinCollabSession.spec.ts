@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     joinSession: vi.fn(),
 }));
 
-vi.mock('../../../useCases/collaboration/sessionManagement', () => ({
+vi.mock('../../../useCases/collaboration/joinSession', () => ({
     joinSession: mocks.joinSession,
 }));
 

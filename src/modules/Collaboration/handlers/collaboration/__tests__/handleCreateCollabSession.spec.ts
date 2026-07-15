@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createSession } from '../../../useCases/collaboration/sessionManagement';
+import { createSession } from '../../../useCases/collaboration/createSession';
 import { handleCreateCollabSession } from '../handleCreateCollabSession';
 
-vi.mock('../../../useCases/collaboration/sessionManagement', () => ({
+vi.mock('../../../useCases/collaboration/createSession', () => ({
     createSession: vi.fn(),
-    joinSession: vi.fn(),
-    leaveSession: vi.fn(),
 }));
 
 describe('collaborationHandlers', () => {

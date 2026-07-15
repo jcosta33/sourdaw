@@ -7,7 +7,7 @@ import { usePresence } from '../usePresence';
 // Capture the listener that usePresence registers so the test can push deltas.
 const presence = vi.hoisted(() => ({ listener: null as ((data: PresenceDelta) => void) | null }));
 
-vi.mock('../../../useCases/collaboration/sessionManagement', () => ({
+vi.mock('../../../useCases/collaboration/onPresence', () => ({
     onPresence: (listener: (data: PresenceDelta) => void) => {
         presence.listener = listener;
         return () => {

@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { joinSession } from '../../useCases/collaboration/sessionManagement';
+import { joinSession } from '../../useCases/collaboration/joinSession';
 
 export const handleJoinCollabSession = createHandler<'joinCollabSession'>({
     execute: async (alpha) => {

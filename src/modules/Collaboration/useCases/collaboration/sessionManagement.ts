@@ -19,11 +19,9 @@ import {
 import { transportStore } from '#/modules/Transport/stores';
 import { bytesToBase64 } from '#/utils/base64';
 
-import { createCollaborationError } from '../../errors/CollaborationError';
 import {
     type PeerId,
     type PeerMessage,
-    type SignalingMessage,
     PEER_COLORS,
     peerColorForIndex,
     type PresenceDelta,
@@ -33,7 +31,7 @@ import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
-import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
+import { type CollaborationPeer } from '../collaborationQueries';
 import { PermissionManager } from '../permissions';
 
 /**
@@ -334,29 +332,19 @@ function getLocalPeerInfo(): CollaborationPeer {
     };
 }
 
-/**
- * Create a new collaboration session as host.
- * Returns the session ID.
- */
-export function createSession(name: string): string {
-    // Clean up any existing session first
-    cleanupSubsystems();
-
-    const peerId = generatePeerId();
-    const sessionId = generateSessionId();
-    const color = pickPeerColor([]);
-
-    sessionState.peerManager = new PeerConnectionManager({
+function initializeSessionRuntime(): PeerConnectionManager {
+    const peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
         onConnected: handlePeerConnected,
         onDisconnected: handlePeerDisconnected,
     });
+    sessionState.peerManager = peerManager;
 
-    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager, buildAutomergeSyncHooks());
+    sessionState.automergeSync = new AutomergeSync(peerManager, buildAutomergeSyncHooks());
     sessionState.automergeSync.start();
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
-    sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
+    sessionState.assetTransfer = new AssetTransfer(peerManager, {
         onAssetAvailable: (hash) => {
             void resolveAssetForClips(hash);
         },
@@ -365,181 +353,8 @@ export function createSession(name: string): string {
         },
     });
 
-    sessionState.permissionManager = new PermissionManager(sessionState.peerManager);
-    startPlayheadBroadcast();
-    startBranchSync(true);
-
-    collaborationStore.set({
-        isEnabled: true,
-        sessionId,
-        localPeerId: peerId,
-        localName: name,
-        localColor: color,
-        isHost: true,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-    });
-
-    return sessionId;
-}
-
-/**
- * Generate an invite string containing the SDP offer for a new peer.
- * The host calls this, copies the result, and the joiner pastes it into `joinSession`.
- */
-export async function generateInvite(): Promise<string> {
-    if (!sessionState.peerManager) {
-        throw createCollaborationError('No active session');
-    }
-
-    // Clean up any previously generated invite that was never answered.
-    if (sessionState.pendingInviteId) {
-        sessionState.peerManager.removePeer(sessionState.pendingInviteId);
-        sessionState.pendingInviteId = null;
-    }
-
-    const joinerPeerId = generatePeerId();
-    sessionState.pendingInviteId = joinerPeerId;
-    const peer = sessionState.peerManager.createPeer(joinerPeerId);
-    const sdp = await peer.createOffer();
-
-    const state = collaborationStore.value!;
-    const invite: SignalingMessage = {
-        type: 'offer',
-        peerId: state.localPeerId!,
-        name: state.localName,
-        sessionId: state.sessionId!,
-        sdp,
-        pendingPeerId: joinerPeerId,
-    };
-
-    return await compressInvite(JSON.stringify(invite));
-}
-
-/**
- * Join a session by pasting an invite string.
- * Returns an answer string to send back to the host.
- */
-export async function joinSession(inviteString: string, name: string): Promise<string> {
-    cleanupSubsystems();
-
-    if (!inviteString.trim()) {
-        throw createCollaborationError('Invite string is empty');
-    }
-
-    let invite: SignalingMessage;
-    try {
-        const json = await decompressInvite(inviteString.trim());
-        invite = JSON.parse(json) as SignalingMessage;
-    } catch {
-        throw createCollaborationError('Invalid invite — must be a valid invite string');
-    }
-
-    if (invite.type !== 'offer') {
-        throw createCollaborationError('Invalid invite: expected offer');
-    }
-
-    const peerId = generatePeerId();
-    // Pick a color that doesn't clash with the host's (always the first color).
-    const color = pickPeerColor([PEER_COLORS[0]]);
-
-    sessionState.peerManager = new PeerConnectionManager({
-        onMessage: handlePeerMessage,
-        onConnected: handlePeerConnected,
-        onDisconnected: handlePeerDisconnected,
-    });
-
-    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager, buildAutomergeSyncHooks());
-    sessionState.automergeSync.start();
-    sessionState.cleanupProjectionBridge = setupProjectionBridge();
-
-    sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
-        onAssetAvailable: (hash) => {
-            void resolveAssetForClips(hash);
-        },
-        onProgress: (_hash, _received, _total) => {},
-    });
-
-    sessionState.permissionManager = new PermissionManager(sessionState.peerManager);
-    startPlayheadBroadcast();
-    startBranchSync(false);
-
-    const peer = sessionState.peerManager.createPeer(invite.peerId);
-    const answerSdp = await peer.acceptOffer(invite.sdp);
-
-    collaborationStore.set({
-        isEnabled: true,
-        sessionId: invite.sessionId,
-        localPeerId: peerId,
-        localName: name,
-        localColor: color,
-        isHost: false,
-        peers: [
-            {
-                id: invite.peerId,
-                name: invite.name,
-                color: PEER_COLORS[0],
-                isHost: true,
-                isConnected: false,
-                lastSeen: Date.now(),
-                latencyMs: null,
-            },
-        ],
-        connectionStatus: 'connecting',
-        error: null,
-    });
-
-    const answer: SignalingMessage = {
-        type: 'answer',
-        peerId,
-        name,
-        sdp: answerSdp,
-        pendingPeerId: invite.pendingPeerId,
-    };
-
-    return await compressInvite(JSON.stringify(answer));
-}
-
-/**
- * Accept an answer from a joiner (host side, completes the connection).
- */
-export async function acceptAnswer(answerString: string): Promise<void> {
-    const json = await decompressInvite(answerString);
-    const answer = JSON.parse(json) as SignalingMessage;
-    if (answer.type !== 'answer') {
-        throw createCollaborationError('Invalid answer');
-    }
-
-    if (!sessionState.peerManager) {
-        throw createCollaborationError('No active session');
-    }
-
-    const peer = sessionState.peerManager.getPeer(answer.pendingPeerId);
-    if (!peer) {
-        throw createCollaborationError('No pending peer connection matches this answer — the invite may have expired');
-    }
-
-    await peer.acceptAnswer(answer.sdp);
-    sessionState.pendingInviteId = null;
-
-    // Add the joiner to our peer list
-    const state = collaborationStore.value;
-    if (state) {
-        const joinerInfo: CollaborationPeer = {
-            id: answer.peerId,
-            name: answer.name,
-            color: pickPeerColor([state.localColor, ...state.peers.map((param) => param.color)]),
-            isHost: false,
-            isConnected: false,
-            lastSeen: Date.now(),
-            latencyMs: null,
-        };
-        collaborationStore.set({
-            ...state,
-            peers: [...state.peers, joinerInfo],
-        });
-    }
+    sessionState.permissionManager = new PermissionManager(peerManager);
+    return peerManager;
 }
 
 /** Tear down all subsystems without changing store state. */
@@ -644,95 +459,6 @@ function stopPlayheadBroadcast(): void {
         clearInterval(sessionState.playheadBroadcastInterval);
         sessionState.playheadBroadcastInterval = null;
     }
-}
-
-/**
- * Leave the current session.
- *
- * §fix-11 — Previously this broadcast `peer-leave` and then immediately called
- * `closeAll()`, which dropped the buffered message: the remote never saw the
- * leave and waited the full PEER_CLEANUP_DELAY_MS before reaping us. We now
- * send the leave through the buffered/back-pressure-aware send path and await
- * it per connected peer before tearing the channels down, so the message
- * actually flushes. Returns a Promise so callers may await the flush; existing
- * fire-and-forget callers are unaffected (cleanup still runs after the await).
- */
-export async function leaveSession(): Promise<void> {
-    const peerManager = sessionState.peerManager;
-    if (peerManager) {
-        const leaveMessage: PeerMessage = {
-            type: 'peer-leave',
-            peerId: collaborationStore.value?.localPeerId ?? '',
-        };
-        // Drain the send buffer to each connected peer before closing so the
-        // leave isn't discarded mid-flight by closeAll().
-        await Promise.all(
-            peerManager.getConnectedPeerIds().map((peerId) =>
-                peerManager.sendCrdtSyncBuffered({ peerId, message: leaveMessage }).catch(() => {
-                    // A peer that errors/closes during flush is being torn down
-                    // anyway; ignore so the remaining peers still get the leave.
-                })
-            )
-        );
-    }
-
-    cleanupSubsystems();
-
-    collaborationStore.set({
-        isEnabled: false,
-        sessionId: null,
-        localPeerId: null,
-        localName: '',
-        localColor: '',
-        isHost: false,
-        peers: [],
-        connectionStatus: 'disconnected',
-        error: null,
-    });
-}
-
-/**
- * Broadcast a local presence delta to all peers.
- *
- * §fix-9 — Callers send only the fields their path owns (e.g. the cursor path
- * omits playheadBeat). Omitted fields are preserved by the receiver's merge,
- * so the cursor broadcast and the playhead heartbeat no longer clobber each
- * other's state.
- */
-export function broadcastPresence(data: Partial<Omit<PresenceData, 'peerId' | 'name' | 'color'>>): void {
-    if (!sessionState.peerManager) {
-        return;
-    }
-
-    const state = collaborationStore.value;
-    if (!state?.localPeerId) {
-        return;
-    }
-
-    sessionState.peerManager.broadcastPresence({
-        type: 'presence',
-        data: {
-            ...data,
-            peerId: state.localPeerId,
-            name: state.localName,
-            color: state.localColor,
-        },
-    });
-}
-
-/**
- * Subscribe to incoming presence data from peers.
- */
-export function onPresence(listener: (data: PresenceDelta) => void): () => void {
-    sessionState.presenceListeners.add(listener);
-    return () => {
-        sessionState.presenceListeners.delete(listener);
-    };
-}
-
-/** Get the asset transfer instance (for requesting/providing assets). */
-export function getAssetTransfer(): AssetTransfer | null {
-    return sessionState.assetTransfer;
 }
 
 // -- Internal handlers --
@@ -965,3 +691,17 @@ async function decompressInvite(raw: string): Promise<string> {
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }
+
+/** Shared state and runtime primitives used by the focused use cases. */
+export const sessionRuntimePrimitives = {
+    state: sessionState,
+    initialize: initializeSessionRuntime,
+    cleanup: cleanupSubsystems,
+    startBranchSync,
+    startPlayheadBroadcast,
+    generatePeerId,
+    generateSessionId,
+    pickPeerColor,
+    compressInvite,
+    decompressInvite,
+};
