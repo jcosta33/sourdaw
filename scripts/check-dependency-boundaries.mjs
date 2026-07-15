@@ -12,12 +12,16 @@ const {
     MODEL_PATH_PREFIX,
     MODEL_SUPPORT_BARREL_PATH,
     MODEL_TEST_SUPPORT_PATH,
+    SOURCE_FILE_RE,
 } = require('../.dependency-cruiser.shared.cjs');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ruleName = 'components-no-usecase-transitively';
 const useCasesPath = /\/useCases\//;
 const leafComponentPath = /(^src\/components\/|\/presentations\/components\/)/;
+const sourceFilePath = new RegExp(SOURCE_FILE_RE, 'i');
+const moduleRootRepositoryPath = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/repositories(?:\/|$)/;
+const tauriBridgeModulePath = /(?:^|\/)utils\/tauriBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
 
 const gates = {
     main: {
@@ -236,6 +240,356 @@ export function findModelCasingFindings(filePaths) {
         }));
 }
 
+function moduleSpecifierText(node) {
+    if (!node) {
+        return null;
+    }
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        return node.text;
+    }
+    return null;
+}
+
+function tauriVendorModule(moduleSpecifier) {
+    const normalizedSpecifier = moduleSpecifier.replaceAll('\\', '/');
+    if (normalizedSpecifier.startsWith('@tauri-apps/')) {
+        return normalizedSpecifier;
+    }
+    if (tauriBridgeModulePath.test(normalizedSpecifier)) {
+        return normalizedSpecifier;
+    }
+    return null;
+}
+
+function scriptKindForFile(filePath) {
+    const lowerFilePath = filePath.toLowerCase();
+    if (lowerFilePath.endsWith('.tsx')) {
+        return ts.ScriptKind.TSX;
+    }
+    if (lowerFilePath.endsWith('.jsx')) {
+        return ts.ScriptKind.JSX;
+    }
+    if (lowerFilePath.endsWith('.js') || lowerFilePath.endsWith('.mjs') || lowerFilePath.endsWith('.cjs')) {
+        return ts.ScriptKind.JS;
+    }
+    return ts.ScriptKind.TS;
+}
+
+function entityNameRoot(entityName) {
+    if (ts.isIdentifier(entityName)) {
+        return entityName;
+    }
+    if (ts.isQualifiedName(entityName)) {
+        return entityNameRoot(entityName.left);
+    }
+    return null;
+}
+
+function isPrivateMember(member) {
+    if (member.name && ts.isPrivateIdentifier(member.name)) {
+        return true;
+    }
+    return (member.modifiers ?? []).some(
+        (modifier) => modifier.kind === ts.SyntaxKind.PrivateKeyword || modifier.kind === ts.SyntaxKind.ProtectedKeyword
+    );
+}
+
+function collectRepositoryTauriTypeFindings(sourceText, fileName) {
+    const sourceFile = ts.createSourceFile(
+        fileName,
+        sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+        scriptKindForFile(fileName)
+    );
+    const vendorBindings = new Map();
+    const typeDeclarations = new Map();
+    const declarations = new Map();
+
+    const addDeclaration = (declaration) => {
+        if (declaration.name && ts.isIdentifier(declaration.name)) {
+            declarations.set(declaration.name.text, declaration);
+        }
+    };
+
+    const addTypeDeclaration = (declaration) => {
+        addDeclaration(declaration);
+        if (declaration.name && ts.isIdentifier(declaration.name)) {
+            typeDeclarations.set(declaration.name.text, declaration);
+        }
+    };
+
+    for (const statement of sourceFile.statements) {
+        if (ts.isImportDeclaration(statement)) {
+            const moduleSpecifier = moduleSpecifierText(statement.moduleSpecifier);
+            const vendorModule = moduleSpecifier ? tauriVendorModule(moduleSpecifier) : null;
+            if (vendorModule && statement.importClause) {
+                if (statement.importClause.name) {
+                    vendorBindings.set(statement.importClause.name.text, {
+                        moduleSpecifier: vendorModule,
+                        importedName: 'default',
+                    });
+                }
+                const namedBindings = statement.importClause.namedBindings;
+                if (namedBindings && ts.isNamespaceImport(namedBindings)) {
+                    vendorBindings.set(namedBindings.name.text, {
+                        moduleSpecifier: vendorModule,
+                        importedName: '*',
+                    });
+                }
+                if (namedBindings && ts.isNamedImports(namedBindings)) {
+                    for (const element of namedBindings.elements) {
+                        vendorBindings.set(element.name.text, {
+                            moduleSpecifier: vendorModule,
+                            importedName: (element.propertyName ?? element.name).text,
+                        });
+                    }
+                }
+            }
+        } else if (ts.isImportEqualsDeclaration(statement)) {
+            const moduleReference = statement.moduleReference;
+            const moduleSpecifier =
+                ts.isExternalModuleReference(moduleReference) && moduleReference.expression
+                    ? moduleSpecifierText(moduleReference.expression)
+                    : null;
+            const vendorModule = moduleSpecifier ? tauriVendorModule(moduleSpecifier) : null;
+            if (vendorModule) {
+                vendorBindings.set(statement.name.text, {
+                    moduleSpecifier: vendorModule,
+                    importedName: '*',
+                });
+            }
+        } else if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
+            addTypeDeclaration(statement);
+        } else if (ts.isClassDeclaration(statement) || ts.isFunctionDeclaration(statement)) {
+            addDeclaration(statement);
+        } else if (ts.isVariableStatement(statement)) {
+            for (const declaration of statement.declarationList.declarations) {
+                addDeclaration(declaration);
+            }
+        }
+    }
+
+    const findings = new Map();
+    const addFinding = (node, moduleSpecifier) => {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const finding = {
+            file: fileName,
+            line: line + 1,
+            reason: `repository public type surface exposes Tauri vendor type from ${moduleSpecifier}`,
+        };
+        findings.set(`${finding.line}:${moduleSpecifier}`, finding);
+    };
+
+    const collectJSDocModules = (node, visit) => {
+        for (const tag of ts.getJSDocTags(node)) {
+            if (tag.typeExpression?.type) {
+                visit(tag.typeExpression.type);
+            }
+        }
+    };
+
+    const collectModules = (visitSubject) => {
+        const modules = new Map();
+        const seenDeclarations = new Set();
+
+        const addModule = (moduleSpecifier) => {
+            const vendorModule = tauriVendorModule(moduleSpecifier);
+            if (vendorModule) {
+                modules.set(vendorModule, vendorModule);
+            }
+        };
+
+        const vendorForEntityName = (entityName) => {
+            const rootName = entityNameRoot(entityName);
+            return rootName ? vendorBindings.get(rootName.text) : undefined;
+        };
+
+        const visitTypeParameters = (typeParameters) => {
+            for (const typeParameter of typeParameters ?? []) {
+                visit(typeParameter.constraint);
+                visit(typeParameter.default);
+            }
+        };
+
+        const visitSignature = (signature) => {
+            visitTypeParameters(signature.typeParameters);
+            for (const parameter of signature.parameters ?? []) {
+                visit(parameter.type);
+                collectJSDocModules(parameter, visit);
+            }
+            visit(signature.type);
+            collectJSDocModules(signature, visit);
+        };
+
+        const visitMember = (member) => {
+            if (isPrivateMember(member)) {
+                return;
+            }
+            if (
+                ts.isMethodSignature(member) ||
+                ts.isMethodDeclaration(member) ||
+                ts.isCallSignatureDeclaration(member) ||
+                ts.isConstructSignatureDeclaration(member) ||
+                ts.isIndexSignatureDeclaration(member) ||
+                ts.isConstructorDeclaration(member) ||
+                ts.isGetAccessorDeclaration(member) ||
+                ts.isSetAccessorDeclaration(member)
+            ) {
+                visitSignature(member);
+                return;
+            }
+            if (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) {
+                visit(member.type);
+            }
+        };
+
+        const visitInitializer = (initializer) => {
+            if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
+                visitSignature(initializer);
+                return;
+            }
+            if (
+                ts.isAsExpression(initializer) ||
+                ts.isTypeAssertionExpression(initializer) ||
+                ts.isSatisfiesExpression(initializer)
+            ) {
+                visit(initializer.type);
+                visitInitializer(initializer.expression);
+            }
+        };
+
+        const visitDeclaration = (declaration) => {
+            if (!declaration || seenDeclarations.has(declaration)) {
+                return;
+            }
+            seenDeclarations.add(declaration);
+
+            if (ts.isTypeAliasDeclaration(declaration)) {
+                visitTypeParameters(declaration.typeParameters);
+                visit(declaration.type);
+                collectJSDocModules(declaration, visit);
+                return;
+            }
+            if (ts.isInterfaceDeclaration(declaration)) {
+                visitTypeParameters(declaration.typeParameters);
+                for (const heritageClause of declaration.heritageClauses ?? []) {
+                    for (const type of heritageClause.types) {
+                        visit(type);
+                    }
+                }
+                for (const member of declaration.members) {
+                    visitMember(member);
+                }
+                collectJSDocModules(declaration, visit);
+                return;
+            }
+            if (ts.isClassDeclaration(declaration)) {
+                visitTypeParameters(declaration.typeParameters);
+                for (const heritageClause of declaration.heritageClauses ?? []) {
+                    for (const type of heritageClause.types) {
+                        visit(type);
+                    }
+                }
+                for (const member of declaration.members) {
+                    visitMember(member);
+                }
+                collectJSDocModules(declaration, visit);
+                return;
+            }
+            if (ts.isFunctionDeclaration(declaration)) {
+                visitSignature(declaration);
+                return;
+            }
+            if (ts.isVariableDeclaration(declaration)) {
+                visit(declaration.type);
+                collectJSDocModules(declaration, visit);
+                visitInitializer(declaration.initializer);
+            }
+        };
+
+        const visit = (node) => {
+            if (!node) {
+                return;
+            }
+            if (ts.isImportTypeNode(node)) {
+                const moduleSpecifier = moduleSpecifierText(node.argument.literal);
+                if (moduleSpecifier) {
+                    addModule(moduleSpecifier);
+                }
+            }
+            if (ts.isTypeReferenceNode(node)) {
+                const vendorBinding = vendorForEntityName(node.typeName);
+                if (vendorBinding) {
+                    addModule(vendorBinding.moduleSpecifier);
+                }
+                const rootName = entityNameRoot(node.typeName);
+                const declaration = rootName ? typeDeclarations.get(rootName.text) : undefined;
+                visitDeclaration(declaration);
+            }
+            if (ts.isTypeQueryNode(node)) {
+                const vendorBinding = vendorForEntityName(node.exprName);
+                if (vendorBinding) {
+                    addModule(vendorBinding.moduleSpecifier);
+                }
+            }
+            ts.forEachChild(node, visit);
+        };
+
+        visitDeclaration(visitSubject);
+        return modules.values();
+    };
+
+    const addDeclarationFindings = (reportNode, declaration) => {
+        for (const moduleSpecifier of collectModules(declaration)) {
+            addFinding(reportNode, moduleSpecifier);
+        }
+    };
+
+    const hasExportModifier = (node) =>
+        (node.modifiers ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+
+    for (const statement of sourceFile.statements) {
+        if (ts.isExportDeclaration(statement)) {
+            const moduleSpecifier = moduleSpecifierText(statement.moduleSpecifier);
+            const vendorModule = moduleSpecifier ? tauriVendorModule(moduleSpecifier) : null;
+            if (vendorModule) {
+                addFinding(statement, vendorModule);
+                continue;
+            }
+            if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) {
+                continue;
+            }
+            for (const specifier of statement.exportClause.elements) {
+                const localName = (specifier.propertyName ?? specifier.name).text;
+                const vendorBinding = vendorBindings.get(localName);
+                if (vendorBinding) {
+                    addFinding(specifier, vendorBinding.moduleSpecifier);
+                }
+                addDeclarationFindings(specifier, declarations.get(localName));
+            }
+            continue;
+        }
+
+        if (!hasExportModifier(statement)) {
+            continue;
+        }
+        if (ts.isVariableStatement(statement)) {
+            for (const declaration of statement.declarationList.declarations) {
+                addDeclarationFindings(statement, declaration);
+            }
+        } else {
+            addDeclarationFindings(statement, statement);
+        }
+    }
+
+    return findings.values();
+}
+
+function isModuleRootRepositorySource(filePath) {
+    return moduleRootRepositoryPath.test(filePath) && sourceFilePath.test(filePath);
+}
+
 function walkFiles(directory, symlinkPaths = []) {
     const files = [];
     if (lstatSync(directory).isSymbolicLink()) {
@@ -279,11 +633,26 @@ export function findStaticGuardFindings(repositoryRoot = root) {
                 reason: 'split mixed value/type exports so type-edge rules can inspect the type export',
             }))
         );
+    const repositoryTypeFindings = files
+        .filter(({ repoPath }) => isModuleRootRepositorySource(repoPath))
+        .flatMap(({ absolutePath, repoPath }) => [
+            ...collectRepositoryTauriTypeFindings(readFileSync(absolutePath, 'utf8'), repoPath),
+        ]);
     // Dependency-cruiser only reports nodes reachable from imports. Walk every
     // module file here so an unreferenced model path cannot evade the naming gate.
     const modelCasingFindings = findModelCasingFindings(files.map(({ repoPath }) => repoPath));
-    return [...rootIndexes, ...mixedExports, ...modelCasingFindings, ...symlinkFindings].sort((left, right) =>
-        comparePaths(left.file, right.file)
+    // Dependency-cruiser sees resolved edges, so inspect repository declarations to close type laundering through local aliases.
+    return [
+        ...rootIndexes,
+        ...mixedExports,
+        ...modelCasingFindings,
+        ...repositoryTypeFindings,
+        ...symlinkFindings,
+    ].sort(
+        (left, right) =>
+            comparePaths(left.file, right.file) ||
+            (left.line ?? 0) - (right.line ?? 0) ||
+            comparePaths(left.reason, right.reason)
     );
 }
 
