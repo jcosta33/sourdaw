@@ -99,6 +99,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     seekPlayhead: true,
     setPunchIn: true,
     setPunchOut: true,
+    restorePunchRegion: true,
     togglePunch: true,
     toggleCountIn: true,
     setCountInBars: true,

@@ -17,6 +17,7 @@ describe('getTransportHandlers', () => {
             'seekPlayhead',
             'setPunchIn',
             'setPunchOut',
+            'restorePunchRegion',
             'togglePunch',
             'toggleCountIn',
             'setCountInBars',

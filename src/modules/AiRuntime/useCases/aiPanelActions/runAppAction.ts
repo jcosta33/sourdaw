@@ -1,10 +1,13 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 
-// AiRuntime-local shape (AGENTS.md §95 — derive from Command's public use-case signature
-// rather than importing the AppAction union directly). Passed through opaquely.
-type AppAction = Parameters<typeof executeAppAction>[0];
+import { type RuntimeAction } from '../../models/RuntimeAction';
+import { validateActions } from '../validateActions';
 
-export function runAppAction(action: AppAction): Promise<void> {
-    // executeAppAction is typed as `any` via the inject() DI pattern; cast the return to its declared type
-    return executeAppAction(action) as Promise<void>;
+export async function runAppAction(action: RuntimeAction): Promise<void> {
+    const [validated_action] = validateActions([action]);
+    if (!validated_action) {
+        return;
+    }
+
+    await executeAppAction(validated_action);
 }

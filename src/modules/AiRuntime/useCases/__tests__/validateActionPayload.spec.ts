@@ -126,6 +126,60 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe.each(['setPunchIn', 'setPunchOut'] as const)('%s', (actionType) => {
+        it('should accept an exact payload with any finite numeric beat', () => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ beat: -4 })).toBe(true);
+            expect(guard({ beat: -0 })).toBe(true);
+            expect(guard({ beat: 0.25 })).toBe(true);
+            expect(guard({ beat: Number.MAX_VALUE })).toBe(true);
+        });
+
+        it.each([
+            ['string payload', '4'],
+            ['missing payload', undefined],
+            ['null payload', null],
+            ['missing beat', {}],
+            ['string beat', { beat: '4' }],
+            ['null beat', { beat: null }],
+            ['NaN beat', { beat: Number.NaN }],
+            ['positive infinity beat', { beat: Number.POSITIVE_INFINITY }],
+            ['negative infinity beat', { beat: Number.NEGATIVE_INFINITY }],
+            ['extra property', { beat: 4, extra: true }],
+        ] as const)('should reject %s', (_label, payload) => {
+            const guard = PAYLOAD_VALIDATORS[actionType];
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard(payload)).toBe(false);
+        });
+    });
+
+    describe('restorePunchRegion', () => {
+        it('should accept only an exact finite, non-negative, strictly ordered pair', () => {
+            const guard = PAYLOAD_VALIDATORS.restorePunchRegion;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            expect(guard({ punchInBeat: 0, punchOutBeat: Number.MIN_VALUE })).toBe(true);
+            expect(guard({ punchInBeat: 4.5, punchOutBeat: 8.25 })).toBe(true);
+            expect(guard({ punchInBeat: 4, punchOutBeat: 4 })).toBe(false);
+            expect(guard({ punchInBeat: 8, punchOutBeat: 4 })).toBe(false);
+            expect(guard({ punchInBeat: -1, punchOutBeat: 4 })).toBe(false);
+            expect(guard({ punchInBeat: 0, punchOutBeat: Number.POSITIVE_INFINITY })).toBe(false);
+            expect(guard({ punchInBeat: 0, punchOutBeat: 4, extra: true })).toBe(false);
+        });
+    });
+
     describe('joinCollabSession', () => {
         it('should require inviteString and peerName strings (the fields the handler reads)', () => {
             const guard = PAYLOAD_VALIDATORS.joinCollabSession;
