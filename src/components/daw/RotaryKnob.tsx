@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactElement, type PointerEvent, useRef } from 'react';
+import { type MouseEvent, type ReactElement, type PointerEvent, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores';
@@ -123,6 +123,34 @@ export const RotaryKnob = ({
     const currentValue = useRef(value);
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
+    const onChangeRef = useRef(onChange);
+    const finalizeDragRef = useRef<(pointerId?: number) => boolean>(() => false);
+
+    useLayoutEffect(() => {
+        onChangeRef.current = onChange;
+        finalizeDragRef.current = (pointerId?: number): boolean => {
+            if (!draggingRef.current) {
+                return false;
+            }
+            if (pointerId !== undefined && activePointerIdRef.current !== pointerId) {
+                return false;
+            }
+
+            draggingRef.current = false;
+            activePointerIdRef.current = null;
+            rootRef.current?.removeAttribute('data-dragging');
+            if (!Object.is(currentValue.current, startValue.current)) {
+                onChangeRef.current(currentValue.current, false);
+            }
+            return true;
+        };
+    });
+
+    useEffect(() => {
+        return () => {
+            finalizeDragRef.current();
+        };
+    }, []);
 
     const clamp = (value1: number): number => {
         let clamped = Math.max(min, Math.min(max, value1));
@@ -197,19 +225,7 @@ export const RotaryKnob = ({
         onChange(clamped, true);
     };
 
-    const commitDrag = (event: PointerEvent<HTMLDivElement>): boolean => {
-        if (!draggingRef.current || activePointerIdRef.current !== event.pointerId) {
-            return false;
-        }
-
-        draggingRef.current = false;
-        activePointerIdRef.current = null;
-        rootRef.current?.removeAttribute('data-dragging');
-        if (!Object.is(currentValue.current, startValue.current)) {
-            onChange(currentValue.current, false);
-        }
-        return true;
-    };
+    const commitDrag = (event: PointerEvent<HTMLDivElement>): boolean => finalizeDragRef.current(event.pointerId);
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
         if (!commitDrag(event)) {

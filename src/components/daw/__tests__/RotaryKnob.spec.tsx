@@ -85,6 +85,61 @@ describe('RotaryKnob', () => {
         expect(onChange.mock.calls.at(-1)).toEqual([transientValue, false]);
     });
 
+    it('commits the latest transient value when unmounted during a drag', () => {
+        const onChange = vi.fn();
+        const { container, unmount } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 6, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 6, clientY: 80 });
+        const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
+
+        unmount();
+
+        expect(onChange.mock.calls).toEqual([
+            [transientValue, true],
+            [transientValue, false],
+        ]);
+    });
+
+    it('uses the latest owner callback when teardown finalizes the drag', () => {
+        const initialOnChange = vi.fn();
+        const latestOnChange = vi.fn();
+        const { container, rerender, unmount } = render(
+            <RotaryKnob value={50} onChange={initialOnChange} min={0} max={100} />
+        );
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 9, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 9, clientY: 80 });
+        const transientValue = initialOnChange.mock.calls.at(-1)?.[0] as number;
+
+        rerender(<RotaryKnob value={transientValue} onChange={latestOnChange} min={0} max={100} />);
+        unmount();
+
+        expect(initialOnChange).toHaveBeenCalledTimes(1);
+        expect(latestOnChange).toHaveBeenCalledWith(transientValue, false);
+    });
+
+    it('does not commit again after lost pointer capture has finalized the drag', () => {
+        const onChange = vi.fn();
+        const { container, unmount } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);
+        const root = container.firstChild as HTMLElement;
+
+        fireEvent.pointerDown(root, { button: 0, pointerId: 7, clientY: 100 });
+        fireEvent.pointerMove(root, { pointerId: 7, clientY: 80 });
+        const transientValue = onChange.mock.calls.at(-1)?.[0] as number;
+
+        fireEvent.lostPointerCapture(root, { pointerId: 7 });
+        fireEvent.pointerUp(root, { pointerId: 7 });
+        unmount();
+
+        expect(onChange.mock.calls).toEqual([
+            [transientValue, true],
+            [transientValue, false],
+        ]);
+    });
+
     it('keeps the first pointer as drag owner when another pointer cancels', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={50} onChange={onChange} min={0} max={100} />);

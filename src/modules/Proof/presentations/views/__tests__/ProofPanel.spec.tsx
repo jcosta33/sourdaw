@@ -125,6 +125,29 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
     });
 
+    it('persists an accepted transient edit when the panel unmounts during a drag', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 2 });
+
+        const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        expect(knobs).toHaveLength(5);
+        const exciterKnob = knobs[2]!;
+
+        fireEvent.pointerDown(exciterKnob, { button: 0, pointerId: 8, clientY: 100 });
+        fireEvent.pointerMove(exciterKnob, { pointerId: 8, clientY: 80 });
+        const transientValue = getProofState(DEVICE_ID).patch.excBands[0]?.drive;
+
+        unmount();
+
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(
+            DEVICE_ID,
+            expect.objectContaining({ exc_band0_drive: transientValue })
+        );
+    });
+
     it('toggles A/B compare through the bridge and the store (no inline view-code store write)', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
