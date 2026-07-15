@@ -1,6 +1,6 @@
 import { resolveFileHandle } from './resolveFileHandle';
 import { MODELS_DIRECTORY } from './storageConstants';
-import { type ModelPath } from './storageTypes';
+import { type ModelPath } from './toOpfsPath';
 import { toOpfsPath } from './toOpfsPath';
 
 /**

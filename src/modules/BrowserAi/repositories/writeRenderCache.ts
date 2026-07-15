@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
+import { abortWritable } from './abortWritable';
 import { RENDER_CACHE_EXTENSION, RENDERS_DIRECTORY } from './storageConstants';
 
 type WriteRenderCacheInput = { cacheKey: string; audio: Float32Array };
@@ -18,8 +19,13 @@ export const writeRenderCache = inject({ logger })(
                 const writable = await fileHandle.createWritable();
                 // Use ArrayBuffer explicitly for FileSystemWritableFileStream compatibility
                 const buffer = audio.buffer.slice(0) as ArrayBuffer;
-                await writable.write(buffer);
-                await writable.close();
+                try {
+                    await writable.write(buffer);
+                    await writable.close();
+                } catch (error) {
+                    await abortWritable(writable);
+                    throw error;
+                }
                 logger.info(`[StorageManager] Cached render: ${cacheKey}`);
             } catch (error) {
                 logger.warn(`[StorageManager] Failed to cache render ${cacheKey}: ${String(error)}`);

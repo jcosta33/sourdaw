@@ -12,7 +12,10 @@ export const deleteModel = inject({ logger })(
             try {
                 const root = await navigator.storage.getDirectory();
                 const modelsDir = await root.getDirectoryHandle(MODELS_DIRECTORY, { create: false });
-                const familyDir = await modelsDir.getDirectoryHandle(family, { create: false });
+                let familyDir = modelsDir;
+                for (const segment of family.split('/').filter(Boolean)) {
+                    familyDir = await familyDir.getDirectoryHandle(segment, { create: false });
+                }
                 await familyDir.removeEntry(modelId);
                 logger.info(`[StorageManager] Deleted model ${family}/${modelId}`);
             } catch (error) {

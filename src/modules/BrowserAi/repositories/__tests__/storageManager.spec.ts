@@ -13,7 +13,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { checkModelCached } from '../checkModelCached';
+import { createModelWritable } from '../createModelWritable';
+import { deleteModel } from '../deleteModel';
 import { getStorageStatus } from '../getStorageStatus';
+import { writeModel } from '../writeModel';
+import { writeRenderCache } from '../writeRenderCache';
+
+vi.mock('../createModelWritable', () => ({
+    createModelWritable: vi.fn(),
+}));
 
 type FakeFile = { kind: 'file'; size: number };
 type FakeDir = {
@@ -104,6 +112,7 @@ function installStorage(root: FakeDir, overrides?: Partial<StorageManager>): voi
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.mocked(createModelWritable).mockReset();
 });
 
 describe('getStorageStatus', () => {
@@ -180,5 +189,88 @@ describe('checkModelCached', () => {
         });
 
         await expect(checkModelCached({ family: 'ddsp', modelId: 'violin' })).rejects.toBe(ioError);
+    });
+});
+
+describe('deleteModel', () => {
+    it('traverses nested family directories before deleting the model file', async () => {
+        const removeEntry = vi.fn(() => Promise.resolve());
+        const vocoderDirectory = { removeEntry } as unknown as FileSystemDirectoryHandle;
+        const diffsingerDirectory = {
+            getDirectoryHandle: vi.fn((name: string) => {
+                if (name === 'vocoder') {
+                    return Promise.resolve(vocoderDirectory);
+                }
+                return Promise.reject(notFound());
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            getDirectoryHandle: vi.fn((name: string) => {
+                if (name === 'diffsinger') {
+                    return Promise.resolve(diffsingerDirectory);
+                }
+                return Promise.reject(notFound());
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn((name: string) => {
+                if (name === 'models') {
+                    return Promise.resolve(modelsDirectory);
+                }
+                return Promise.reject(notFound());
+            }),
+        } as unknown as FileSystemDirectoryHandle;
+        installStorage(dir(), {
+            getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
+        });
+
+        await deleteModel({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan-44k' });
+
+        expect(removeEntry).toHaveBeenCalledWith('nsf-hifigan-44k');
+    });
+});
+
+describe('writeModel', () => {
+    it('aborts the writable when writing fails', async () => {
+        const writeError = new Error('write failed');
+        const writable = {
+            write: vi.fn(() => Promise.reject(writeError)),
+            close: vi.fn(() => Promise.resolve()),
+            abort: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemWritableFileStream;
+        vi.mocked(createModelWritable).mockResolvedValue(writable);
+
+        await expect(writeModel({ family: 'ddsp', modelId: 'violin', data: new ArrayBuffer(4) })).rejects.toBe(
+            writeError
+        );
+
+        expect(writable.abort).toHaveBeenCalledOnce();
+    });
+});
+
+describe('writeRenderCache', () => {
+    it('aborts the writable when closing the cache file fails', async () => {
+        const closeError = new Error('close failed');
+        const writable = {
+            write: vi.fn(() => Promise.resolve()),
+            close: vi.fn(() => Promise.reject(closeError)),
+            abort: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemWritableFileStream;
+        const fileHandle = {
+            createWritable: vi.fn(() => Promise.resolve(writable)),
+        } as unknown as FileSystemFileHandle;
+        const cacheDirectory = {
+            getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(cacheDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        installStorage(dir(), {
+            getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
+        });
+
+        await writeRenderCache({ cacheKey: 'phrase', audio: new Float32Array([0.5]) });
+
+        expect(writable.abort).toHaveBeenCalledOnce();
     });
 });
