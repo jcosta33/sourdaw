@@ -28,6 +28,81 @@ function encodeFloat32(values: number[]): string {
     return btoa(binary);
 }
 
+type StoredAudioBuffer = {
+    sampleRate: number;
+    numberOfChannels: number;
+    channelData: Float32Array[];
+    lastAccessed: number;
+    sizeInBytes: number;
+};
+
+function installFakeIndexedDb(): Map<string, StoredAudioBuffer> {
+    const backing = new Map<string, StoredAudioBuffer>();
+    const objectStore = {
+        clear: () => backing.clear(),
+        delete: (key: string) => backing.delete(key),
+        get: (key: string) => {
+            const request = {
+                result: undefined as StoredAudioBuffer | undefined,
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+            };
+            queueMicrotask(() => {
+                request.result = backing.get(key);
+                request.onsuccess?.();
+            });
+            return request;
+        },
+        getAllKeys: () => {
+            const request = {
+                result: [] as string[],
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+            };
+            queueMicrotask(() => {
+                request.result = [...backing.keys()];
+                request.onsuccess?.();
+            });
+            return request;
+        },
+        put: (value: StoredAudioBuffer, key: string) => {
+            backing.set(key, value);
+        },
+    };
+    const database = {
+        objectStoreNames: { contains: () => true },
+        createObjectStore: () => objectStore,
+        transaction: () => {
+            const transaction = {
+                error: null,
+                onabort: null as (() => void) | null,
+                oncomplete: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+                abort: vi.fn(),
+                objectStore: () => objectStore,
+            };
+            queueMicrotask(() => transaction.oncomplete?.());
+            return transaction;
+        },
+    };
+    vi.stubGlobal('indexedDB', {
+        open: () => {
+            const request = {
+                result: database,
+                error: null,
+                onsuccess: null as (() => void) | null,
+                onerror: null as (() => void) | null,
+                onupgradeneeded: null as (() => void) | null,
+            };
+            queueMicrotask(() => request.onsuccess?.());
+            return request;
+        },
+    });
+    return backing;
+}
+
 // Test the pure conversion functions by importing them indirectly
 // since they're not exported. We test them through the module's
 // public API where possible, or test the pattern directly.
@@ -35,6 +110,7 @@ function encodeFloat32(values: number[]): string {
 describe('audioBufferCache conversions', () => {
     afterEach(() => {
         audioBufferCache.clear();
+        vi.unstubAllGlobals();
     });
 
     it('Float32Array to base64 round-trip preserves data', async () => {
@@ -131,8 +207,8 @@ describe('audioBufferCache conversions', () => {
 
         const firstCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: first } });
         expect(audioBufferCache.get('shared')).toBeUndefined();
-        await expect(firstCandidate?.persist()).resolves.toBe(true);
         firstCandidate?.publish();
+        await expect(firstCandidate?.persist()).resolves.toBe(true);
 
         const canceledCandidate = audioBufferCache.importBuffers({
             context,
@@ -156,13 +232,51 @@ describe('audioBufferCache conversions', () => {
             buffers: { shared: second, archived: first },
             cacheIds: ['shared'],
         });
+        unavailableNonresidentCandidate?.publish();
         await expect(unavailableNonresidentCandidate?.persist()).resolves.toBe(false);
 
         const secondCandidate = audioBufferCache.importBuffers({ context, buffers: { shared: second } });
-        await expect(secondCandidate?.persist()).resolves.toBe(true);
         secondCandidate?.publish();
+        await expect(secondCandidate?.persist()).resolves.toBe(true);
         expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
         expect(audioBufferCache.get('archived')).toBeUndefined();
+    });
+
+    it('preserves a colliding durable buffer until the replacement candidate is published', async () => {
+        const backing = installFakeIndexedDb();
+        backing.set('shared', {
+            sampleRate: 48_000,
+            numberOfChannels: 1,
+            channelData: [new Float32Array([0.25])],
+            lastAccessed: 1,
+            sizeInBytes: Float32Array.BYTES_PER_ELEMENT,
+        });
+        const context = {
+            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            ),
+        };
+        const restored = await audioBufferCache.prepareFromIdb({ context, ids: ['shared'] });
+        restored?.publish();
+        const candidate = audioBufferCache.importBuffers({
+            context,
+            buffers: {
+                shared: { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] },
+            },
+            cacheIds: ['shared'],
+        });
+
+        await expect(candidate?.persist()).resolves.toBe(false);
+
+        expect(backing.get('shared')?.channelData[0]?.[0]).toBeCloseTo(0.25);
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.25);
+
+        candidate?.publish();
+        audioBufferCache.cancelPendingImport();
+        await expect(candidate?.persist()).resolves.toBe(true);
+
+        expect(backing.get('shared')?.channelData[0]?.[0]).toBeCloseTo(0.75);
+        expect(audioBufferCache.get('shared')?.getChannelData(0)[0]).toBeCloseTo(0.75);
     });
 
     it('validates every embedded buffer before opening a persistence transaction', () => {
@@ -197,8 +311,8 @@ describe('audioBufferCache conversions', () => {
         } as unknown as BaseAudioContext;
 
         const prepared = audioBufferCache.importBuffers({ context, buffers, cacheIds: ids });
-        await expect(prepared?.persist()).resolves.toBe(true);
         prepared?.publish();
+        await expect(prepared?.persist()).resolves.toBe(true);
 
         expect(audioBufferCache.get(ids[0]!)).toBeDefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
@@ -208,8 +322,8 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
 
         const emptyProject = audioBufferCache.importBuffers({ context, buffers: {}, cacheIds: [] });
-        await expect(emptyProject?.persist()).resolves.toBe(true);
         emptyProject?.publish();
+        await expect(emptyProject?.persist()).resolves.toBe(true);
 
         expect(audioBufferCache.get(ids[1]!)).toBeUndefined();
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
