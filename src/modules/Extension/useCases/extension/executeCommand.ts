@@ -1,5 +1,6 @@
-import { appendLog } from '../../services/scripting';
 import { extensionStore } from '../../stores/extension';
+
+import { appendLog } from './appendLog';
 
 export function executeCommand(commandId: string): void {
     const state = extensionStore.value;

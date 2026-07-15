@@ -118,24 +118,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Extension/services/scripting.ts",
-    "to": "src/modules/Command/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Extension/services/scripting.ts",
-    "to": "src/modules/Extension/stores/extension.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
     "to": "src/modules/AudioEngine/useCases/index.ts",
     "rule": {
