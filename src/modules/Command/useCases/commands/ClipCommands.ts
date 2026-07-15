@@ -3,11 +3,10 @@ import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 import { getSelectedClipIds } from '../selectionHelpers/getSelectedClipIds';
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /** Clip commands — rename, split, normalize, reverse, glue, loop, consolidate. */
 export const clipCommands: CallableCommandEntry[] = [

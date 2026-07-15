@@ -2,10 +2,9 @@ import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangem
 
 import { deselectAllClips } from '../deselectAllClips';
 import { redo } from '../redo';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { selectAllClips } from '../selectAllClips';
 import { undo } from '../undo';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */
 export const editCommands: CallableCommandEntry[] = [

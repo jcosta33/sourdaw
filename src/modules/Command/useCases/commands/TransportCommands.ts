@@ -1,10 +1,9 @@
 import { seekPlayhead } from '#/modules/Transport/useCases';
 
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getLastClipEndBeat } from '../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../selectionHelpers/goToPreviousMarker';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /** Transport commands — play, stop, record, loop, metronome, seek. */
 export const transportCommands: CallableCommandEntry[] = [

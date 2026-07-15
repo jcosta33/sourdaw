@@ -1,9 +1,8 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 function requireMidiClip(fn: (clipId: string) => void): () => void {
     return () => {

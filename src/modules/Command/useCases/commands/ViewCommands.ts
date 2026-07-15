@@ -12,9 +12,8 @@ import {
 } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
 export const viewCommands: CallableCommandEntry[] = [

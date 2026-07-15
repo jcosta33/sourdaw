@@ -1,7 +1,7 @@
 import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
 import { openExportDialog } from '#/modules/Workspace/useCases';
 
-import { type CallableCommandEntry } from './commandEntry';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 
 /** Project commands — new, save, export audio, import/export files, version control. */
 export const projectCommands: CallableCommandEntry[] = [

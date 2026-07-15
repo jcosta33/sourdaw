@@ -1,8 +1,7 @@
 import { automationStore } from '#/modules/Automation/stores';
 
 import { executeAppAction } from '../executeAppAction';
-
-import { type CallableCommandEntry } from './commandEntry';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 
 /** Automation commands — scale, invert, thin automation points. */
 export const automationCommands: CallableCommandEntry[] = [

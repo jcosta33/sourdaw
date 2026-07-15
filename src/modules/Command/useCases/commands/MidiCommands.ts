@@ -1,7 +1,6 @@
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /** MIDI commands — quantize, transpose, humanize, invert, arpeggiate. */
 export const midiCommands: CallableCommandEntry[] = [

@@ -1,7 +1,6 @@
 import { aiCommands } from '../../useCases/commands/AiCommands';
 import { automationCommands } from '../../useCases/commands/AutomationCommands';
 import { clipCommands } from '../../useCases/commands/ClipCommands';
-import { type CallableCommandEntry } from '../../useCases/commands/commandEntry';
 import { editCommands } from '../../useCases/commands/EditCommands';
 import { elasticCommands } from '../../useCases/commands/ElasticCommands';
 import { midiCommands } from '../../useCases/commands/MidiCommands';
@@ -10,7 +9,7 @@ import { projectCommands } from '../../useCases/commands/ProjectCommands';
 import { trackCommands } from '../../useCases/commands/TrackCommands';
 import { transportCommands } from '../../useCases/commands/TransportCommands';
 import { viewCommands } from '../../useCases/commands/ViewCommands';
-import { searchCommandRegistry } from '../../useCases/searchCommandRegistry';
+import { type CallableCommandEntry, searchCommandRegistry } from '../../useCases/searchCommandRegistry';
 
 /**
  * Command registry — aggregates all commands from per-category sub-files.
@@ -18,7 +17,7 @@ import { searchCommandRegistry } from '../../useCases/searchCommandRegistry';
  * To add a new command: find the relevant sub-file in
  * `../../useCases/commands/` and add it there. The data shape lives in
  * `../../models/CommandEntry.ts`; callable command ownership lives in
- * `../../useCases/commands/commandEntry.ts`. Pure search helpers
+ * `../../useCases/searchCommandRegistry.ts`. Pure search helpers
  * (`fuzzyMatch`, `searchCommands`) live in `../../services/commandSearch.ts`.
  *
  * This file owns only the aggregation and a thin search wrapper bound to the

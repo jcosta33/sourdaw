@@ -1,9 +1,8 @@
 import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 /**
  * Miscellaneous commands covering: time editing, app settings,

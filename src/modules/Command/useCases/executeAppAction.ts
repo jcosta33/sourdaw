@@ -17,6 +17,19 @@ import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
 
+export type HandlerDescribeResult = {
+    label: string;
+    inverseAction?: AppAction | null;
+};
+
+export type ActionHandler<Action extends AppAction = AppAction> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => HandlerDescribeResult;
+    undoable: boolean;
+};
+
+export type { AppAction } from '../models/AppAction';
+
 export type ExecuteOptions = {
     groupId?: string;
     groupLabel?: string;

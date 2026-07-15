@@ -5,7 +5,7 @@ import { handleStartMacroRecording } from '../handlers/macro/handleStartMacroRec
 import { handleStopMacroRecording } from '../handlers/macro/handleStopMacroRecording';
 import { type AppAction } from '../models/AppAction';
 
-import { type ActionHandler } from './commandQueries';
+import { type ActionHandler } from './executeAppAction';
 
 type MacroAppAction =
     | Extract<AppAction, { type: 'startMacroRecording' }>

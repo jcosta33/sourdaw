@@ -1,6 +1,9 @@
+import { type AppAction } from '../models/AppAction';
+import { type CommandEntry } from '../models/CommandEntry';
 import { searchCommands } from '../services/commandSearch';
 
-import { type CallableCommandEntry } from './commands/commandEntry';
+export type CommandAction = AppAction | (() => void);
+export type CallableCommandEntry = CommandEntry<CommandAction>;
 
 export type SearchCommandRegistryInput = {
     registry: CallableCommandEntry[];

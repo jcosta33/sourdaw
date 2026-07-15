@@ -1,7 +1,6 @@
 import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
-
-import { type CallableCommandEntry } from './commandEntry';
 
 export const elasticCommands: CallableCommandEntry[] = [
     {

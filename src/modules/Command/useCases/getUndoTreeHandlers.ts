@@ -2,7 +2,7 @@ import { handleLabelUndoBranch } from '../handlers/undoTree/handleLabelUndoBranc
 import { handleToggleUndoTree } from '../handlers/undoTree/handleToggleUndoTree';
 import { type AppAction } from '../models/AppAction';
 
-import { type ActionHandler } from './commandQueries';
+import { type ActionHandler } from './executeAppAction';
 
 type UndoTreeAppAction =
     | Extract<AppAction, { type: 'toggleUndoTree' }>
