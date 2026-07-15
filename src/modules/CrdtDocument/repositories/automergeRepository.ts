@@ -36,61 +36,130 @@ function createMissingRootError(): Error {
     return new Error('[AutomergeRepository] Non-empty bundle is missing the exact root document');
 }
 
+function createDocumentIdentityChangedError(): Error {
+    return new Error('[AutomergeRepository] Document identity changed during merge; retry from fresh state');
+}
+
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
 // and collaboration patch ingestion.
-
-// §135.3 — Worker + next-id coalesced into a single holder.
-const crdtWorkerState: { worker: Worker | null; nextId: number } = {
-    worker: null,
-    nextId: 0,
-};
-
-function getCrdtWorker(): Worker {
-    if (!crdtWorkerState.worker) {
-        crdtWorkerState.worker = new Worker(new URL('../workers/crdtWorker.ts', import.meta.url), { type: 'module' });
-    }
-    return crdtWorkerState.worker;
-}
 
 type WorkerResponse =
     | { id: number; type: 'loaded'; compacted: [string, Uint8Array][]; rootId: string }
     | { id: number; type: 'merged'; compacted: [string, Uint8Array][]; mergedDocIds: string[]; newDocIds: string[] }
     | { id: number; type: 'error'; message: string };
 
+type PendingWorkerRequest = {
+    resolve: (response: WorkerResponse) => void;
+    reject: (reason: Error) => void;
+};
+
+type CrdtWorkerInstance = {
+    worker: Worker;
+    pending: Map<number, PendingWorkerRequest>;
+    failed: boolean;
+    handleMessage: (event: MessageEvent) => void;
+    handleFatalError: (event: ErrorEvent | MessageEvent) => void;
+};
+
+// §135.3 — Worker + next-id coalesced into a single holder.
+const crdtWorkerState: { instance: CrdtWorkerInstance | null; nextId: number } = {
+    instance: null,
+    nextId: 0,
+};
+
+function failCrdtWorker(instance: CrdtWorkerInstance, error: Error): void {
+    if (instance.failed) {
+        return;
+    }
+
+    instance.failed = true;
+    if (crdtWorkerState.instance === instance) {
+        crdtWorkerState.instance = null;
+    }
+
+    instance.worker.removeEventListener('message', instance.handleMessage);
+    instance.worker.removeEventListener('error', instance.handleFatalError);
+    instance.worker.removeEventListener('messageerror', instance.handleFatalError);
+    try {
+        instance.worker.terminate();
+    } catch (terminationError) {
+        logger.warn('[AutomergeRepository] Failed to terminate crashed CRDT worker:', terminationError);
+    }
+
+    const pending = Array.from(instance.pending.values());
+    instance.pending.clear();
+    for (const request of pending) {
+        request.reject(error);
+    }
+}
+
+function createCrdtWorkerInstance(): CrdtWorkerInstance {
+    const worker = new Worker(new URL('../workers/crdtWorker.ts', import.meta.url), { type: 'module' });
+    let instance: CrdtWorkerInstance;
+
+    function handleMessage(event: MessageEvent): void {
+        if (instance.failed) {
+            return;
+        }
+
+        const data = event.data as WorkerResponse;
+        const request = instance.pending.get(data.id);
+        if (!request) {
+            return;
+        }
+
+        instance.pending.delete(data.id);
+        if (data.type === 'error') {
+            request.reject(new Error(data.message));
+        } else {
+            request.resolve(data);
+        }
+    }
+    function handleFatalError(event: ErrorEvent | MessageEvent): void {
+        const message = event instanceof ErrorEvent ? event.message : 'crdt worker postMessage failed';
+        failCrdtWorker(instance, new Error(`crdtWorker crashed: ${message}`));
+    }
+
+    instance = {
+        worker,
+        pending: new Map(),
+        failed: false,
+        handleMessage,
+        handleFatalError,
+    };
+    worker.addEventListener('message', handleMessage);
+    worker.addEventListener('error', handleFatalError);
+    worker.addEventListener('messageerror', handleFatalError);
+    return instance;
+}
+
+function getCrdtWorkerInstance(): CrdtWorkerInstance {
+    if (!crdtWorkerState.instance) {
+        crdtWorkerState.instance = createCrdtWorkerInstance();
+    }
+    return crdtWorkerState.instance;
+}
+
 function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
-        const worker = getCrdtWorker();
+        let instance: CrdtWorkerInstance;
+        try {
+            instance = getCrdtWorkerInstance();
+        } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+            return;
+        }
+
         const id = crdtWorkerState.nextId++;
-        function cleanup(): void {
-            worker.removeEventListener('message', handler);
-            worker.removeEventListener('error', errorHandler);
-            worker.removeEventListener('messageerror', errorHandler);
+        instance.pending.set(id, { resolve, reject });
+        try {
+            instance.worker.postMessage({ ...msg, id });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            failCrdtWorker(instance, new Error(`crdtWorker postMessage failed: ${message}`));
         }
-        function handler(event: MessageEvent): void {
-            const data = event.data as WorkerResponse;
-            if (data.id !== id) {
-                return;
-            }
-            cleanup();
-            if (data.type === 'error') {
-                reject(new Error(data.message));
-            } else {
-                resolve(data);
-            }
-        }
-        // §71.3: if the worker crashes or the message cannot be deserialised,
-        // without these listeners the returned Promise would hang forever.
-        function errorHandler(event: ErrorEvent | MessageEvent): void {
-            cleanup();
-            const msg = event instanceof ErrorEvent ? event.message : 'crdt worker postMessage failed';
-            reject(new Error(`crdtWorker crashed: ${msg}`));
-        }
-        worker.addEventListener('message', handler);
-        worker.addEventListener('error', errorHandler);
-        worker.addEventListener('messageerror', errorHandler);
-        worker.postMessage({ ...msg, id });
     });
 }
 
@@ -127,6 +196,8 @@ type SnapshotTransaction = {
 class AutomergeRepository {
     private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
+    private mutationEpoch = 0;
+    private documentIdentityEpoch = 0;
     private changeListeners = new Set<ChangeListener>();
     /** The currently-open snapshot transaction, or null when none is in flight. */
     private activeTransaction: SnapshotTransaction | null = null;
@@ -181,6 +252,7 @@ class AutomergeRepository {
 
         this.rootId = DOC_PREFIX_ROOT;
         this.docs.set(this.rootId, init<AnyDoc>());
+        this.markDocumentIdentityMutation();
 
         return this.rootId;
     }
@@ -192,12 +264,14 @@ class AutomergeRepository {
     createChildDoc(docId: DocId): DocId {
         const doc = init<AnyDoc>();
         this.docs.set(docId, doc);
+        this.markDocumentIdentityMutation();
         return docId;
     }
 
     /** Insert or replace a document (used by branching). */
     insertDoc(docId: DocId, doc: Doc<unknown>): void {
         this.docs.set(docId, doc as Doc<AnyDoc>);
+        this.markDocumentIdentityMutation();
     }
 
     /**
@@ -216,6 +290,7 @@ class AutomergeRepository {
         this.captureBeforeMutation(id);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated as Doc<AnyDoc>);
+        this.markMutation();
         this.notifyListeners(id);
     }
 
@@ -226,6 +301,7 @@ class AutomergeRepository {
     replaceDoc(id: DocId, doc: Doc<unknown>): void {
         this.captureBeforeMutation(id);
         this.docs.set(id, doc as Doc<AnyDoc>);
+        this.markDocumentIdentityMutation();
         this.notifyListeners(id);
     }
 
@@ -235,9 +311,10 @@ class AutomergeRepository {
      */
     mergeRemoteDoc(id: DocId, binary: Uint8Array): void {
         const incoming = load<AnyDoc>(binary);
+        const isNewDocument = !this.docs.has(id);
 
         this.captureBeforeMutation(id);
-        if (this.docs.has(id)) {
+        if (!isNewDocument) {
             const local = this.docs.get(id)!;
             const merged = merge(local, incoming);
             this.docs.set(id, merged);
@@ -245,6 +322,11 @@ class AutomergeRepository {
             this.docs.set(id, incoming);
         }
 
+        if (isNewDocument) {
+            this.markDocumentIdentityMutation();
+        } else {
+            this.markMutation();
+        }
         this.notifyListeners(id);
     }
 
@@ -372,9 +454,18 @@ class AutomergeRepository {
      * it replaces existing docs in-place and fires listeners exactly once.
      */
     restoreSnapshot(bundle: DocumentBundle): void {
+        let addsDocument = false;
         for (const [id, bytes] of bundle) {
+            addsDocument ||= !this.docs.has(id);
             this.captureBeforeMutation(id);
             this.docs.set(id, load<AnyDoc>(bytes));
+        }
+        if (bundle.size > 0) {
+            if (addsDocument) {
+                this.markDocumentIdentityMutation();
+            } else {
+                this.markMutation();
+            }
         }
         this.notifyListeners();
     }
@@ -429,6 +520,7 @@ class AutomergeRepository {
 
         this.docs = documents;
         this.rootId = rootId;
+        this.markDocumentIdentityMutation();
         this.notifyListeners();
         return true;
     }
@@ -528,49 +620,74 @@ class AutomergeRepository {
      * incoming bundle, then the worker returns merged compacted binaries.
      */
     async mergeBundle(bundle: DocumentBundle, { shouldCommit }: MergeBundleOptions = {}): Promise<MergeResult> {
+        const initialDocumentIdentityEpoch = this.documentIdentityEpoch;
         const decodedIncoming = await this.decodeAll(bundle);
         if (shouldCommit?.() === false) {
             return { mergedDocIds: [], newDocIds: [] };
+        }
+        if (this.documentIdentityEpoch !== initialDocumentIdentityEpoch) {
+            throw createDocumentIdentityChangedError();
         }
         const normalizedIncoming: DocumentBundle = new Map();
         for (const [id, doc] of decodedIncoming.documents) {
             normalizedIncoming.set(id, save(doc));
         }
-        const current = this.saveAll();
 
-        let compacted: [string, Uint8Array][];
-        let mergedDocIds: string[];
-        let newDocIds: string[];
+        while (shouldCommit?.() !== false) {
+            const current = this.saveAll();
+            const capturedMutationEpoch = this.mutationEpoch;
+            const capturedDocumentIdentityEpoch = this.documentIdentityEpoch;
 
-        try {
-            const response = await invokeWorker({
-                type: 'mergeBundle',
-                current: Array.from(current.entries()),
-                incoming: Array.from(normalizedIncoming.entries()),
-            });
-            if (response.type !== 'merged') {
-                throw new Error('Unexpected worker response type');
+            let compacted: [string, Uint8Array][];
+            let mergedDocIds: string[];
+            let newDocIds: string[];
+
+            try {
+                const response = await invokeWorker({
+                    type: 'mergeBundle',
+                    current: Array.from(current.entries()),
+                    incoming: Array.from(normalizedIncoming.entries()),
+                });
+                if (response.type !== 'merged') {
+                    throw new Error('Unexpected worker response type');
+                }
+                compacted = response.compacted;
+                mergedDocIds = response.mergedDocIds;
+                newDocIds = response.newDocIds;
+            } catch (error) {
+                logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', error);
+                if (shouldCommit?.() === false) {
+                    return { mergedDocIds: [], newDocIds: [] };
+                }
+                if (this.documentIdentityEpoch !== capturedDocumentIdentityEpoch) {
+                    throw createDocumentIdentityChangedError();
+                }
+                return this._mergeBundleSync(normalizedIncoming);
             }
-            compacted = response.compacted;
-            mergedDocIds = response.mergedDocIds;
-            newDocIds = response.newDocIds;
-        } catch (error) {
-            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', error);
+
             if (shouldCommit?.() === false) {
                 return { mergedDocIds: [], newDocIds: [] };
             }
-            return this._mergeBundleSync(normalizedIncoming);
+            if (this.documentIdentityEpoch !== capturedDocumentIdentityEpoch) {
+                throw createDocumentIdentityChangedError();
+            }
+            if (this.mutationEpoch !== capturedMutationEpoch) {
+                continue;
+            }
+            for (const [id, bytes] of compacted) {
+                this.docs.set(id, load<AnyDoc>(bytes));
+            }
+
+            if (newDocIds.length > 0) {
+                this.markDocumentIdentityMutation();
+            } else {
+                this.markMutation();
+            }
+            this.notifyListeners();
+            return { mergedDocIds, newDocIds };
         }
 
-        if (shouldCommit?.() === false) {
-            return { mergedDocIds: [], newDocIds: [] };
-        }
-        for (const [id, bytes] of compacted) {
-            this.docs.set(id, load<AnyDoc>(bytes));
-        }
-
-        this.notifyListeners();
-        return { mergedDocIds, newDocIds };
+        return { mergedDocIds: [], newDocIds: [] };
     }
 
     /** Synchronous fallback for mergeBundle (used when worker is unavailable). */
@@ -589,22 +706,41 @@ class AutomergeRepository {
             }
         }
 
+        if (bundle.size > 0) {
+            if (result.newDocIds.length > 0) {
+                this.markDocumentIdentityMutation();
+            } else {
+                this.markMutation();
+            }
+        }
         this.notifyListeners();
         return result;
     }
 
     /** Remove a document. */
     removeDoc(id: DocId): void {
-        this.docs.delete(id);
+        if (this.docs.delete(id)) {
+            this.markDocumentIdentityMutation();
+        }
     }
 
     /** Clear all documents and listeners. */
     reset(): void {
         this.docs.clear();
         this.rootId = DOC_PREFIX_ROOT;
+        this.markDocumentIdentityMutation();
         // Drop change listeners too: otherwise projection-bridge subscriptions
         // from a previous session keep firing on the next session's edits.
         this.changeListeners.clear();
+    }
+
+    private markMutation(): void {
+        this.mutationEpoch += 1;
+    }
+
+    private markDocumentIdentityMutation(): void {
+        this.documentIdentityEpoch += 1;
+        this.markMutation();
     }
 
     /** Get the incremental changes since a given set of heads. */

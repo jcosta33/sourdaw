@@ -8,7 +8,7 @@ import { loadAllFromIdb } from '../../repositories/crdtPersistence/loadAllFromId
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { compactProject } from '../compactProject';
-import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
+import { runCrdtPersistenceOperation, setCrdtPersistenceAuthority } from '../crdtPersistenceQueue';
 import { crdtProjectCompactionState } from '../crdtProjectCompactionState';
 import { createCrdtProject } from '../createCrdtProject';
 import { persistCrdtProject } from '../persistCrdtProject';
@@ -589,6 +589,77 @@ describe('persistCrdtProject', () => {
         );
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({ newEdit: true });
         expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('oldEdit');
+    });
+
+    it('does not let a superseded empty load strand reset authority or later autosaves', async () => {
+        let resolveEmptySnapshot:
+            | ((value: { authority: { epoch: string; revision: number }; bundle: null }) => void)
+            | null = null;
+        const emptySnapshot = new Promise<{ authority: { epoch: string; revision: number }; bundle: null }>(
+            (resolve) => {
+                resolveEmptySnapshot = resolve;
+            }
+        );
+        let loadIsCurrent = true;
+        let staleLoad: Promise<boolean> | null = null;
+        let autosave: Promise<void> | null = null;
+
+        try {
+            vi.resetModules();
+            vi.doMock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
+                loadPersistenceSnapshotFromIdb: () => emptySnapshot,
+            }));
+            vi.doMock('../../repositories/automergeRepository', () => ({ automergeRepository }));
+            vi.doMock('../crdtPersistenceQueue', () => ({ setCrdtPersistenceAuthority }));
+            const { loadCrdtProject: loadWithDeferredEmptySnapshot } = await import('../loadCrdtProject');
+
+            staleLoad = loadWithDeferredEmptySnapshot({ shouldCommit: () => loadIsCurrent });
+            loadIsCurrent = false;
+
+            await runCrdtPersistenceOperation('reset');
+            automergeRepository.createProject('replacement');
+            const replacementCompaction = compactProject();
+            const replacementSave = await persistence.waitForTransaction('readwrite', 1);
+            replacementSave.complete();
+            await replacementCompaction;
+
+            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0 }, bundle: null });
+            await expect(staleLoad).resolves.toBe(false);
+
+            automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.afterSupersededLoad = true;
+            });
+            autosave = persistCrdtProject();
+            const autosaveTransaction = await persistence.waitForTransaction('readwrite', 2);
+            autosaveTransaction.complete();
+            await expect(autosave).resolves.toBeUndefined();
+            expect(autosaveTransaction.writes.some((write) => write.kind === 'add')).toBe(true);
+
+            const finalBundle = await readCurrentBundle(persistence);
+            if (!finalBundle) {
+                throw new Error('Expected the replacement project with its later edit');
+            }
+            automergeRepository.reset();
+            await expect(automergeRepository.loadAll({ bundle: finalBundle, shouldCommit: () => true })).resolves.toBe(
+                true
+            );
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                afterSupersededLoad: true,
+            });
+        } finally {
+            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0 }, bundle: null });
+            await staleLoad?.catch(() => undefined);
+            await autosave?.catch(() => undefined);
+            for (const transaction of persistence.getTransactions('readwrite')) {
+                if (!transaction.isSettled()) {
+                    transaction.abort();
+                }
+            }
+            vi.doUnmock('../crdtPersistenceQueue');
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb');
+            vi.resetModules();
+        }
     });
 
     it('survives queue module replacement after an aborted incremental transaction', async () => {

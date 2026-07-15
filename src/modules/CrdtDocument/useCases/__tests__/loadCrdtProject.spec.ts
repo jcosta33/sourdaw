@@ -5,6 +5,7 @@ import { loadCrdtProject } from '../loadCrdtProject';
 const mocks = vi.hoisted(() => ({
     loadAll: vi.fn<(input: { bundle: Map<string, Uint8Array>; shouldCommit?: () => boolean }) => Promise<boolean>>(),
     loadPersistenceSnapshotFromIdb: vi.fn(),
+    setCrdtPersistenceAuthority: vi.fn(),
 }));
 
 vi.mock('../../repositories/automergeRepository', () => ({
@@ -14,6 +15,9 @@ vi.mock('../../repositories/automergeRepository', () => ({
 }));
 vi.mock('../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb', () => ({
     loadPersistenceSnapshotFromIdb: mocks.loadPersistenceSnapshotFromIdb,
+}));
+vi.mock('../crdtPersistenceQueue', () => ({
+    setCrdtPersistenceAuthority: mocks.setCrdtPersistenceAuthority,
 }));
 
 describe('loadCrdtProject', () => {
@@ -45,6 +49,15 @@ describe('loadCrdtProject', () => {
         await expect(loadCrdtProject()).resolves.toBe(false);
 
         expect(mocks.loadAll).not.toHaveBeenCalled();
+    });
+
+    it('does not adopt empty persistence authority after commit is superseded', async () => {
+        const shouldCommit = vi.fn(() => false);
+
+        await expect(loadCrdtProject({ shouldCommit })).resolves.toBe(false);
+
+        expect(mocks.loadAll).not.toHaveBeenCalled();
+        expect(mocks.setCrdtPersistenceAuthority).not.toHaveBeenCalled();
     });
 
     it('keeps the loaded root authoritative over an older active-branch snapshot', async () => {

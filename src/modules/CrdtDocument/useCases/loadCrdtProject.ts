@@ -25,8 +25,10 @@ export async function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {
         return true;
     }
 
-    if (snapshot) {
-        setCrdtPersistenceAuthority(snapshot.authority);
+    if (!snapshot || shouldCommit?.() === false) {
+        return false;
     }
+
+    setCrdtPersistenceAuthority(snapshot.authority);
     return false;
 }
