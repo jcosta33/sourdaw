@@ -6,11 +6,12 @@ import { type ReactElement, useState } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { Stack, Row } from '#/components/layout';
 
 type EnvelopeSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     ampA: number;
     ampD: number;
     ampS: number;
@@ -24,6 +25,7 @@ type EnvelopeSectionProps = {
 };
 
 export const EnvelopeSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     ampA,
     ampD,
     ampS,
@@ -104,7 +106,7 @@ export const EnvelopeSection = ({
                     const mappedKey = `${isAmp ? 'amp' : 'filter'}${key}` as const;
                     return (
                         <Stack key={key} align="center" gap={0}>
-                            <RotaryKnob
+                            <Knob
                                 paramId={mappedKey}
                                 value={value}
                                 onChange={(v) => handle(key.toLowerCase(), v)}

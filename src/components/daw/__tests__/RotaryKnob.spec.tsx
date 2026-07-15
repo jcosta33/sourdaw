@@ -1,25 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { type MouseEvent as ReactMouseEvent } from 'react';
 
-import { type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
-import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { RotaryKnob, type GestureAuthority } from '../RotaryKnob';
-
-const baseMidiState: MidiLearnState = {
-    mappings: [],
-    isLearning: false,
-    learningTarget: null,
-};
-
-let mockMidiState: MidiLearnState = { ...baseMidiState };
-
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => mockMidiState),
-}));
-vi.mock('#/modules/MIDI/useCases/midiLearn/startMidiLearn', () => ({
-    startMidiLearn: vi.fn(),
-}));
 
 type PointerCaptureSpy = {
     capturedPointerId: number | null;
@@ -79,11 +63,6 @@ const createProtocolAuthority = (): GestureAuthority => {
 };
 
 describe('RotaryKnob', () => {
-    beforeEach(() => {
-        mockMidiState = { ...baseMidiState };
-        vi.mocked(startMidiLearn).mockClear();
-    });
-
     it('should render label', () => {
         render(<RotaryKnob value={50} onChange={vi.fn()} label="Gain" />);
         expect(screen.getByText('Gain')).toBeInTheDocument();
@@ -472,59 +451,21 @@ describe('RotaryKnob', () => {
         expect(onChange).not.toHaveBeenCalled();
     });
 
-    it('should show learning overlay when this param is targeted', () => {
-        mockMidiState = {
-            mappings: [],
-            isLearning: true,
-            learningTarget: {
-                targetType: 'fermenterGlobalParam',
-                trackId: 'global',
-                paramId: 'p-learn',
-            },
-        };
-        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} paramId="p-learn" />);
+    it('should render a learning indicator supplied by the owning view', () => {
+        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} isLearning />);
         expect(container.querySelector('.border-dashed')).toBeInTheDocument();
     });
 
-    it('should show mapped dot when param has a mapping', () => {
-        mockMidiState = {
-            isLearning: false,
-            learningTarget: null,
-            mappings: [
-                {
-                    id: 'm1',
-                    channel: 1,
-                    cc: 1,
-                    targetType: 'fermenterGlobalParam',
-                    trackId: 'global',
-                    paramId: 'p-mapped',
-                    minValue: 0,
-                    maxValue: 1,
-                },
-            ],
-        };
-        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} paramId="p-mapped" />);
+    it('should render a mapped indicator supplied by the owning view', () => {
+        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} isMapped />);
         expect(container.querySelector('.size-2.rounded-full')).toBeInTheDocument();
     });
 
-    it('should start midi learn from context menu when paramId is set', () => {
-        const { container } = render(
-            <RotaryKnob
-                value={50}
-                onChange={vi.fn()}
-                paramId="p-ctx"
-                targetType="deviceParam"
-                trackId="t1"
-                deviceId="d1"
-            />
-        );
+    it('should delegate context-menu behavior to the owning view', () => {
+        const onContextMenu = vi.fn((event: ReactMouseEvent<HTMLDivElement>) => event.preventDefault());
+        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} onContextMenu={onContextMenu} />);
         fireEvent.contextMenu(getRoot(container));
-        expect(startMidiLearn).toHaveBeenCalledWith({
-            targetType: 'deviceParam',
-            paramId: 'p-ctx',
-            trackId: 't1',
-            deviceId: 'd1',
-        });
+        expect(onContextMenu).toHaveBeenCalledTimes(1);
     });
 
     it('should render bipolar arc when bipolar is enabled', () => {

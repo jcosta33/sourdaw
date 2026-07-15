@@ -6,11 +6,12 @@ import { type ReactElement, useRef, useEffect } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 
 import { LFO_SHAPE_NAMES } from '../../models/FermenterPatch';
 
 type LfoSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     rate: number;
     shape: number;
     pitchAmount: number;
@@ -83,6 +84,7 @@ const LfoPreview = ({ shape, rate }: { shape: number; rate: number }): ReactElem
 };
 
 export const LfoSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     rate,
     shape,
     pitchAmount,
@@ -121,7 +123,7 @@ export const LfoSection = ({
         {/* Knobs */}
         <div className="flex items-end gap-2">
             <div className="flex flex-col items-center gap-0">
-                <RotaryKnob
+                <Knob
                     paramId="lfoRate"
                     value={rate}
                     onChange={onRateChange}
@@ -135,7 +137,7 @@ export const LfoSection = ({
                 <span className="text-[7px] text-muted-foreground">Rate</span>
                 <span className="text-[6px] text-muted-foreground/50 font-mono">{rate.toFixed(1)}Hz</span>
             </div>
-            <RotaryKnob
+            <Knob
                 paramId="lfoPitchAmount"
                 value={pitchAmount}
                 onChange={onPitchAmountChange}
@@ -147,7 +149,7 @@ export const LfoSection = ({
                 label="→ Pitch"
                 tone="sage"
             />
-            <RotaryKnob
+            <Knob
                 paramId="lfoFilterAmount"
                 value={filterAmount}
                 onChange={onFilterAmountChange}

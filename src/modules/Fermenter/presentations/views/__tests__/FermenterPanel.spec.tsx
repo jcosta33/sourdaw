@@ -9,6 +9,7 @@ const presetBrowserMock = vi.hoisted(() =>
         <div data-testid="preset-browser">{JSON.stringify(userPatches)}</div>
     ))
 );
+const midiLearnRotaryKnobMock = vi.hoisted(() => vi.fn(() => <div data-testid="midi-learn-knob" />));
 
 vi.mock('#/infra/store/useStoreSelector', () => ({
     useStoreSelector: vi.fn((_store, selector: (state: null) => unknown) => selector(null)),
@@ -16,6 +17,10 @@ vi.mock('#/infra/store/useStoreSelector', () => ({
 
 vi.mock('../../components/PresetBrowser', () => ({
     PresetBrowser: presetBrowserMock,
+}));
+
+vi.mock('#/modules/MIDI/presentations/views', () => ({
+    MidiLearnRotaryKnob: midiLearnRotaryKnobMock,
 }));
 
 describe('FermenterPanel', () => {
@@ -36,7 +41,8 @@ describe('FermenterPanel', () => {
 
     it('should render with useCase bindings', () => {
         render(<FermenterPanel deviceId="fermenter-1" />);
-        expect(document.body).toBeTruthy();
+        expect(midiLearnRotaryKnobMock).toHaveBeenCalled();
+        expect(screen.getAllByTestId('midi-learn-knob').length).toBeGreaterThan(0);
     });
 
     it('should have interactive elements', () => {

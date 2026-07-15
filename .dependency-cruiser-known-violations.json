@@ -1,24 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/components/daw/RotaryKnob.tsx",
-    "to": "src/modules/MIDI/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-business-store-access"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/components/daw/RotaryKnob.tsx",
-    "to": "src/modules/MIDI/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-access"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AiRuntime/models/MidiPatternLibrary.ts",
     "to": "src/modules/AiRuntime/services/scaleTheory.ts",
     "rule": {

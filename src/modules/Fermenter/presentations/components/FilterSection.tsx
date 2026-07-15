@@ -7,12 +7,13 @@ import { type ReactElement } from 'react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
 
 type FilterSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     model: number;
     cutoff: number;
     resonance: number;
@@ -30,6 +31,7 @@ type FilterSectionProps = {
 };
 
 export const FilterSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     model,
     cutoff,
     resonance,
@@ -126,7 +128,7 @@ export const FilterSection = ({
             {/* Knobs — all in one row */}
             <div className="flex items-end gap-3">
                 <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob
+                    <Knob
                         paramId="filterCutoff"
                         value={cutoff}
                         onChange={onCutoffChange}
@@ -144,7 +146,7 @@ export const FilterSection = ({
                     </span>
                 </div>
                 <div className="flex flex-col items-center gap-0">
-                    <RotaryKnob
+                    <Knob
                         paramId="filterResonance"
                         value={resonance}
                         onChange={onResonanceChange}
@@ -158,7 +160,7 @@ export const FilterSection = ({
                     <span className="text-[7px] text-muted-foreground">Reso</span>
                     <span className="text-[6px] text-muted-foreground/50 font-mono">{resonance.toFixed(1)}</span>
                 </div>
-                <RotaryKnob
+                <Knob
                     paramId="filterDrive"
                     value={drive}
                     onChange={onDriveChange}
@@ -170,7 +172,7 @@ export const FilterSection = ({
                     label="Drive"
                     tone="sage"
                 />
-                <RotaryKnob
+                <Knob
                     paramId="filterEnvAmount"
                     value={envAmount}
                     onChange={onEnvAmountChange}
@@ -182,7 +184,7 @@ export const FilterSection = ({
                     label="Env"
                     tone="sage"
                 />
-                <RotaryKnob
+                <Knob
                     paramId="filterKeytrack"
                     value={keytrack}
                     onChange={onKeytrackChange}

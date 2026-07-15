@@ -8,16 +8,7 @@ import {
     useRef,
 } from 'react';
 
-import { useStore } from '#/infra/store/useStore';
-import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores';
-import { startMidiLearn } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
-
-const defaultMidiLearnState: MidiLearnState = {
-    mappings: [],
-    isLearning: false,
-    learningTarget: null,
-};
 
 type Tone =
     | 'neutral'
@@ -62,7 +53,7 @@ export type GestureAuthority = {
     isCurrent: (token: string | number) => boolean;
 };
 
-type RotaryKnobProps = {
+export type RotaryKnobProps = {
     value: number;
     onChange: (val: number, isTransient?: boolean) => void;
     min?: number;
@@ -78,10 +69,12 @@ type RotaryKnobProps = {
     label?: string;
     /** Explicit accessible name for contexts where the visible label is owned by surrounding markup. */
     'aria-label'?: string;
+    /** Optional presentation state for an owning view to decorate the control. */
+    isLearning?: boolean;
+    isMapped?: boolean;
+    /** Optional context-menu behavior supplied by the owning view. */
+    onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
     paramId?: string;
-    targetType?: 'trackGain' | 'trackPan' | 'deviceParam' | 'fermenterGlobalParam';
-    trackId?: string;
-    deviceId?: string;
     /** Color tone for the value arc */
     tone?: Tone;
     /** Stable semantic owner token; changing it cancels an active drag without committing it. */
@@ -94,6 +87,8 @@ type RotaryKnobProps = {
      */
     modulations?: ModulationHalo[];
 };
+
+export type RotaryKnobComponent = (props: RotaryKnobProps) => ReactElement;
 
 const SIZES = { sm: 24, md: 32, lg: 40, xl: 72 } as const;
 
@@ -117,10 +112,10 @@ export const RotaryKnob = ({
     size = 'md',
     className,
     label,
+    isLearning = false,
+    isMapped = false,
+    onContextMenu,
     paramId,
-    targetType = 'fermenterGlobalParam', // Default to fermenterGlobalParam for now
-    trackId,
-    deviceId,
     tone = 'cyan',
     modulations,
     scale = 'linear',
@@ -128,14 +123,6 @@ export const RotaryKnob = ({
     gestureAuthority,
     'aria-label': ariaLabel,
 }: RotaryKnobProps): ReactElement => {
-    const midiLearnState = useStore<MidiLearnState>(midiLearnStore, defaultMidiLearnState);
-    const isLearningThis = Boolean(
-        midiLearnState.isLearning &&
-        midiLearnState.learningTarget &&
-        midiLearnState.learningTarget.paramId === paramId &&
-        paramId !== undefined
-    );
-    const isMapped = Boolean(midiLearnState.mappings.some((message) => message.paramId === paramId));
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
@@ -368,18 +355,6 @@ export const RotaryKnob = ({
         resetToDefault();
     };
 
-    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
-        if (paramId && targetType) {
-            event.preventDefault();
-            startMidiLearn({
-                targetType,
-                paramId,
-                trackId: trackId ?? 'global',
-                deviceId,
-            });
-        }
-    };
-
     const rotation = -135 + normalized * 270;
 
     // Conic arc gradient for the value ring
@@ -416,12 +391,12 @@ export const RotaryKnob = ({
             onKeyDown={handleKeyDown}
             onBlur={handleFocusLoss}
             onDoubleClick={handleDoubleClick}
-            onContextMenu={handleContextMenu}
+            onContextMenu={onContextMenu}
         >
-            {isLearningThis ? (
+            {isLearning ? (
                 <div className="absolute inset-[-4px] rounded-full border border-dashed border-[var(--color-accent-lavender)] animate-pulse pointer-events-none z-10" />
             ) : null}
-            {isMapped && !isLearningThis ? (
+            {isMapped && !isLearning ? (
                 <div className="absolute top-0 right-0 size-2 rounded-full bg-[var(--color-accent-lavender)]/80 pointer-events-none z-10" />
             ) : null}
             {/* Outer bezel (well) */}

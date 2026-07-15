@@ -3,9 +3,10 @@
  */
 import { type ReactElement } from 'react';
 
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { RotaryKnob, type RotaryKnobComponent } from '#/components/daw/RotaryKnob';
 
 type UnisonSectionProps = {
+    rotaryKnob?: RotaryKnobComponent;
     voices: number;
     detune: number;
     spread: number;
@@ -15,6 +16,7 @@ type UnisonSectionProps = {
 };
 
 export const UnisonSection = ({
+    rotaryKnob: Knob = RotaryKnob,
     voices,
     detune,
     spread,
@@ -27,7 +29,7 @@ export const UnisonSection = ({
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Unison</div>
             <div className="flex items-end gap-3">
                 <div className="flex flex-col items-center gap-1">
-                    <RotaryKnob
+                    <Knob
                         paramId="unisonVoices"
                         value={voices}
                         onChange={onVoicesChange}
@@ -42,7 +44,7 @@ export const UnisonSection = ({
                     <span className="text-[8px] text-muted-foreground/60 font-mono">{voices}</span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                    <RotaryKnob
+                    <Knob
                         paramId="unisonDetune"
                         value={detune}
                         onChange={onDetuneChange}
@@ -57,7 +59,7 @@ export const UnisonSection = ({
                     <span className="text-[8px] text-muted-foreground/60 font-mono">{Math.round(detune)}ct</span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                    <RotaryKnob
+                    <Knob
                         paramId="unisonSpread"
                         value={spread}
                         onChange={onSpreadChange}
