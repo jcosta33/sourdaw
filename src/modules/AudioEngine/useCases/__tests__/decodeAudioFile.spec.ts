@@ -83,6 +83,52 @@ describe('decodeAudioFile', () => {
         );
     });
 
+    it('re-reads the File after Web Audio detaches its input before rejecting', async () => {
+        const webError = new Error('unsupported browser codec');
+        const firstInput = new ArrayBuffer(4);
+        const secondInput = new ArrayBuffer(4);
+        new Uint8Array(firstInput).set([1, 2, 3, 4]);
+        new Uint8Array(secondInput).set([5, 6, 7, 8]);
+
+        const file = makeFile('song.flac');
+        const arrayBuffer = vi
+            .spyOn(file, 'arrayBuffer')
+            .mockResolvedValueOnce(firstInput)
+            .mockResolvedValueOnce(secondInput);
+        const wasmDecoded = {
+            interleaved: new Float32Array([0.1, 0.5, 0.2, 0.6]),
+            sampleRate: 48_000,
+            channels: 2,
+            totalFrames: 2,
+        };
+        const wasmBuffer = { duration: 2 } as AudioBuffer;
+        let webAudioInput: ArrayBuffer | undefined;
+        let wasmInput: ArrayBuffer | undefined;
+        mocks.decodeAudioData.mockImplementation((input: ArrayBuffer) => {
+            webAudioInput = input;
+            structuredClone(input, { transfer: [input] });
+            return Promise.reject(webError);
+        });
+        mocks.decodeAudioBytesWasm.mockImplementation((input: ArrayBuffer) => {
+            wasmInput = input;
+            return Promise.resolve(wasmDecoded);
+        });
+        mocks.wasmDecodedToAudioBuffer.mockReturnValue(wasmBuffer);
+
+        const result = await subject.decodeAudioFile(file);
+
+        expect(arrayBuffer).toHaveBeenCalledTimes(2);
+        expect(webAudioInput).toBe(firstInput);
+        expect(firstInput.byteLength).toBe(0);
+        expect(wasmInput).toBe(secondInput);
+        expect(wasmInput).not.toBe(firstInput);
+        if (wasmInput === undefined) {
+            throw new Error('WASM decoder did not receive an ArrayBuffer');
+        }
+        expect(new Uint8Array(wasmInput)).toEqual(new Uint8Array([5, 6, 7, 8]));
+        expect(result.buffer).toBe(wasmBuffer);
+    });
+
     it('throws a DecodeError when both browser decoders reject the file', async () => {
         const webError = new Error('unsupported browser codec');
         mocks.decodeAudioData.mockRejectedValue(webError);
