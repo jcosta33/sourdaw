@@ -3,8 +3,8 @@ import { getHeads, clone as cloneDoc } from '@automerge/automerge';
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
+import { compactProject } from '../compactProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 /**
@@ -54,9 +54,8 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
         activeBranchId: branchId,
     });
 
-    // Persist the new branch document
-    const bundle = automergeRepository.saveAll();
-    await saveAllToIdb(bundle);
+    // Queue the full snapshot behind any retained or in-flight persistence.
+    await compactProject();
 
     // Hydrate stores from the forked branch
     projectCrdtToStores();

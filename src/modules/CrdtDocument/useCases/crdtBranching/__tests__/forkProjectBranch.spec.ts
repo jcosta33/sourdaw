@@ -9,10 +9,9 @@ const mocks = vi.hoisted(() => ({
     getDoc: vi.fn(),
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
-    saveAll: vi.fn(() => new Map()),
     storeValue: { branches: [{ branchId: 'main', rootDocId: 'root' }], activeBranchId: 'main' },
     storeSet: vi.fn(),
-    saveAllToIdb: vi.fn(),
+    compactProject: vi.fn(),
     projectCrdtToStores: vi.fn(),
     clone: vi.fn(() => CLONED_DOC),
     getHeads: vi.fn(() => ['h1']),
@@ -27,15 +26,14 @@ vi.mock('../../../repositories/automergeRepository', () => ({
         getDoc: mocks.getDoc,
         insertDoc: mocks.insertDoc,
         replaceDoc: mocks.replaceDoc,
-        saveAll: mocks.saveAll,
     },
 }));
-vi.mock('../../../repositories/crdtPersistence/saveAllToIdb', () => ({ saveAllToIdb: mocks.saveAllToIdb }));
 vi.mock('../../../stores/branchStore', () => ({
     get branchStore() {
         return { value: mocks.storeValue, set: mocks.storeSet };
     },
 }));
+vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
 
 describe('forkProjectBranch', () => {
@@ -44,6 +42,7 @@ describe('forkProjectBranch', () => {
         mocks.clone.mockReturnValue(CLONED_DOC);
         mocks.getHeads.mockReturnValue(['h1']);
         mocks.getDoc.mockImplementation((id: string) => (id === 'root' ? SOURCE_DOC : undefined));
+        mocks.compactProject.mockResolvedValue(undefined);
     });
 
     it('repoints the root slot at the forked doc so post-fork edits route to the new branch', async () => {
@@ -63,8 +62,16 @@ describe('forkProjectBranch', () => {
         const branchId = await forkProjectBranch('feature');
 
         expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ activeBranchId: branchId }));
-        expect(mocks.saveAllToIdb).toHaveBeenCalled();
+        expect(mocks.compactProject).toHaveBeenCalledOnce();
         expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+    });
+
+    it('propagates queued persistence errors before projecting the fork', async () => {
+        const error = new Error('persist failed');
+        mocks.compactProject.mockRejectedValueOnce(error);
+
+        await expect(forkProjectBranch('feature')).rejects.toBe(error);
+        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
     });
 
     it('throws when there is no root document to fork', async () => {

@@ -3,8 +3,8 @@ import { merge, clone as cloneDoc } from '@automerge/automerge';
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { saveAllToIdb } from '../../repositories/crdtPersistence/saveAllToIdb';
 import { branchStore } from '../../stores/branchStore';
+import { compactProject } from '../compactProject';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 /**
@@ -52,9 +52,8 @@ export async function mergeBranch(sourceBranchId: string): Promise<void> {
         automergeRepository.replaceDoc(activeBranch.rootDocId, cloneDoc(merged));
     }
 
-    // Persist merged state
-    const bundle = automergeRepository.saveAll();
-    await saveAllToIdb(bundle);
+    // Queue the full snapshot behind any retained or in-flight persistence.
+    await compactProject();
 
     projectCrdtToStores();
 }
