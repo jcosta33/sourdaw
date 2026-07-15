@@ -83,6 +83,27 @@ export async function replaceProjectData({
         return { status: 'aborted' };
     }
 
+    let previousPersistenceStopped = false;
+    try {
+        stopActiveAutoSave();
+        previousPersistenceStopped = true;
+        resetCrdtProjectAuthority(data.meta.name);
+    } catch (error) {
+        logPreparationFailure(context, error);
+        if (previousPersistenceStopped) {
+            try {
+                setAutoSaveHandle(startCrdtAutoSave());
+            } catch (restartError) {
+                logger.error(
+                    new Error(`[${context}] Previous CRDT durability lifecycle restart failed`, {
+                        cause: restartError,
+                    })
+                );
+            }
+        }
+        return { status: 'aborted' };
+    }
+
     let degraded = false;
     function runCommittedStep(step: string, operation: () => void): void {
         try {
@@ -95,9 +116,8 @@ export async function replaceProjectData({
         }
     }
 
-    // Irreversible live commit boundary. Every operation below is best-effort,
-    // and no later failure may turn this accepted replacement into an abort.
-    runCommittedStep('previous persistence shutdown', stopActiveAutoSave);
+    // The CRDT authority now owns the incoming project. Every remaining
+    // operation is best-effort, and no later failure can turn it into an abort.
     runCommittedStep('transport shutdown', stopPlayback);
     runCommittedStep('audio graph reset', resetAudioGraph);
 
@@ -105,7 +125,6 @@ export async function replaceProjectData({
         // Notification coalescing only: each write remains independently fallible
         // and is guarded so one owner failure cannot prevent later owner steps.
         batchStoreUpdates(() => {
-            runCommittedStep('CRDT authority reset', () => resetCrdtProjectAuthority(data.meta.name));
             runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
             if (preparedEmbeddedBuffers) {
                 runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);

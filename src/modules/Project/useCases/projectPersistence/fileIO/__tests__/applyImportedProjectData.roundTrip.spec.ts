@@ -362,7 +362,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(call?.shouldContinue?.()).toBe(true);
     });
 
-    it('reports a committed degraded load and finishes store publication when CRDT authority reset fails', async () => {
+    it('aborts before live publication when CRDT authority reset fails', async () => {
         trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
@@ -370,12 +370,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
             throw new Error('branch persistence failed');
         });
 
-        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
+        await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(false);
 
-        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
-        expect(engineGraph.value).toBe('empty');
+        expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
+        expect(engineGraph.value).toBe('old-project');
         expect(crdtAuthority.value).toBe('Old Project');
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
     });
 
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
