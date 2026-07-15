@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { crumbsNoteOff } from '../../repositories/crumbsBridge';
+import { crumbsNoteOff } from '../../repositories/crumbsBridge/crumbsNoteOff';
 import { padStore } from '../../stores/padStore';
 
 export async function triggerPadOff(instanceId: string, padIndex: number): Promise<void> {

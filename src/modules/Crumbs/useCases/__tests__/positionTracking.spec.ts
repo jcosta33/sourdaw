@@ -12,7 +12,7 @@ vi.mock('../../repositories/is-crumbs-native-available', () => ({
     isCrumbsNativeAvailable: mocks.isCrumbsNativeAvailable,
 }));
 
-vi.mock('../../repositories/crumbsBridge', () => ({
+vi.mock('../../repositories/crumbsBridge/getCrumbsPosition', () => ({
     getCrumbsPosition: mocks.getCrumbsPosition,
 }));
 

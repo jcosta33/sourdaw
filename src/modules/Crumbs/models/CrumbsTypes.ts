@@ -83,12 +83,6 @@ export type PitchDetectionResult = {
     confidence: number;
 };
 
-export type MeteringResult = {
-    peakLeft: number;
-    peakRight: number;
-    activeVoices: number;
-};
-
 export type LoopPointDetectionResult = {
     startFrame: number;
     endFrame: number;

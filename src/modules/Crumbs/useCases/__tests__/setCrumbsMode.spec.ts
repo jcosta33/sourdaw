@@ -10,7 +10,7 @@ vi.mock('../../stores/crumbsStore', () => ({
     setMode: mocks.setMode,
 }));
 
-vi.mock('../../repositories/crumbsBridge', () => ({
+vi.mock('../../repositories/crumbsBridge/setCrumbsMode', () => ({
     setCrumbsMode: mocks.setCrumbsMode,
 }));
 

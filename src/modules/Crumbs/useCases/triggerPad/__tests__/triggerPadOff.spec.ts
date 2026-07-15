@@ -19,7 +19,7 @@ vi.mock('../../../stores/padStore', () => ({
     },
 }));
 
-vi.mock('../../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge/crumbsNoteOff', () => ({
     crumbsNoteOff: mocks.crumbsNoteOff,
 }));
 

@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
-import { setCrumbsParam } from '../../repositories/crumbsBridge';
+import { setCrumbsParam } from '../../repositories/crumbsBridge/setCrumbsParam';
 
 // §57.1 — Shared rAF-batch primitive (same as the 6 plugin bridges).
 type CrumbsBatchEntry = { instanceId: string; param: string; value: number };

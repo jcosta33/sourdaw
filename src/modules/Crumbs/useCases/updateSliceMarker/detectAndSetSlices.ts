@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { detectOnsets } from '../../repositories/crumbsBridge';
+import { detectOnsets } from '../../repositories/crumbsBridge/detectOnsets';
 import { crumbsStore } from '../../stores/crumbsStore';
 import { setMarkers } from '../../stores/sliceStore';
 

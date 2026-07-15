@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { setCrumbsParam } from '../../repositories/crumbsBridge';
+import { setCrumbsParam } from '../../repositories/crumbsBridge/setCrumbsParam';
 
 export function setCrumbsParamImmediate(instanceId: string, param: string, value: number): void {
     setCrumbsParam(instanceId, param, value).catch((error) => {

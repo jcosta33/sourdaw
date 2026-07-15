@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const createCrumbsInstance = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
-vi.mock('../../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge/createCrumbsInstance', () => ({
     createCrumbsInstance,
 }));
 

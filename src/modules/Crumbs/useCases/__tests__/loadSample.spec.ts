@@ -20,8 +20,11 @@ vi.mock('../../stores/crumbsStore', () => ({
     setWaveformPeaks: mocks.setWaveformPeaks,
 }));
 
-vi.mock('../../repositories/crumbsBridge', () => ({
+vi.mock('../../repositories/crumbsBridge/loadSample', () => ({
     loadSample: mocks.loadSample,
+}));
+
+vi.mock('../../repositories/crumbsBridge/getWaveformPeaks', () => ({
     getWaveformPeaks: mocks.getWaveformPeaks,
 }));
 

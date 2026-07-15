@@ -6,7 +6,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { getCrumbsPosition } from '../repositories/crumbsBridge';
+import { getCrumbsPosition } from '../repositories/crumbsBridge/getCrumbsPosition';
 import { isCrumbsNativeAvailable } from '../repositories/is-crumbs-native-available';
 
 import { interpolateFrame } from './interpolateFrame';
