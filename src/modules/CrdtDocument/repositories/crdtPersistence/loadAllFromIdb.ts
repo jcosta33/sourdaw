@@ -27,10 +27,13 @@ export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
 
             const bundle: DocumentBundle = new Map();
             for (let index = 0; index < keys.length; index++) {
+                const key = keys[index];
                 const value = values[index];
-                if (value) {
-                    bundle.set(keys[index] as string, value);
+                if (typeof key !== 'string' || !(value instanceof Uint8Array)) {
+                    reject(new Error(`[CrdtPersistence] Invalid persisted record at index ${index}`));
+                    return;
                 }
+                bundle.set(key, value);
             }
             resolve(bundle);
         };

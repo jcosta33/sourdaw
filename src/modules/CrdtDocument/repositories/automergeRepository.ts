@@ -28,6 +28,10 @@ type DecodedBundle = {
     rootId: DocId;
 };
 
+function createMissingRootError(): Error {
+    return new Error('[AutomergeRepository] Non-empty bundle is missing the exact root document');
+}
+
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
@@ -373,8 +377,16 @@ class AutomergeRepository {
 
     /** Validate a bundle with the same decode path used by project loading. */
     async validateAll({ bundle }: { bundle: DocumentBundle }): Promise<boolean> {
+        if (bundle.size === 0) {
+            return false;
+        }
+
         const { documents } = await this.decodeAll(bundle);
-        return documents.has(DOC_PREFIX_ROOT);
+        if (!documents.has(DOC_PREFIX_ROOT)) {
+            throw createMissingRootError();
+        }
+
+        return true;
     }
 
     /** Load all documents from a bundle, replacing current state. */
@@ -385,14 +397,30 @@ class AutomergeRepository {
         bundle: DocumentBundle;
         shouldCommit?: () => boolean;
     }): Promise<boolean> {
-        const { documents, rootId } = await this.decodeAll(bundle);
-
-        if (!documents.has(DOC_PREFIX_ROOT)) {
+        if (bundle.size === 0) {
             return false;
+        }
+
+        let decoded: DecodedBundle;
+        try {
+            decoded = await this.decodeAll(bundle);
+        } catch (error) {
+            // A superseding load owns the state now. Its canceled result must
+            // stay benign even when the abandoned bundle cannot be decoded.
+            if (shouldCommit?.() === false) {
+                return false;
+            }
+            throw error;
         }
 
         if (shouldCommit?.() === false) {
             return false;
+        }
+
+        const { documents, rootId } = decoded;
+
+        if (!documents.has(DOC_PREFIX_ROOT)) {
+            throw createMissingRootError();
         }
 
         this.docs = documents;

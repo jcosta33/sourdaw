@@ -274,20 +274,67 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 
-    it('rejects a bundle without the authoritative root document', async () => {
+    it('treats only an empty bundle as absence', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(automergeRepository.validateAll({ bundle: new Map() })).resolves.toBe(false);
+        await expect(automergeRepository.loadAll({ bundle: new Map() })).resolves.toBe(false);
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('rejects a non-empty bundle without the exact authoritative root document', async () => {
         automergeRepository.createProject('source');
         automergeRepository.createChildDoc('branch-only');
         const branchBytes = automergeRepository.saveDoc('branch-only')!;
 
         automergeRepository.reset();
         automergeRepository.createProject('current');
+        automergeRepository.createChildDoc('current-child');
+        const currentRoot = automergeRepository.getDoc('root');
+        const currentChild = automergeRepository.getDoc('current-child');
+        const bundle = new Map([['branch-only', branchBytes]]);
+
+        await expect(automergeRepository.validateAll({ bundle })).rejects.toThrow('missing the exact root document');
+        await expect(automergeRepository.loadAll({ bundle })).rejects.toThrow('missing the exact root document');
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+        expect(automergeRepository.getDoc('current-child')).toBe(currentChild);
+    });
+
+    it('does not count root-prefixed siblings or root incrementals as the root', async () => {
+        automergeRepository.createProject('source');
+        automergeRepository.createChildDoc('rootBackup');
+        const backupBytes = automergeRepository.saveDoc('rootBackup')!;
+
+        automergeRepository.reset();
+        automergeRepository.createProject('current');
         const currentRoot = automergeRepository.getDoc('root');
 
-        const committed = await automergeRepository.loadAll({
-            bundle: new Map([['branch-only', branchBytes]]),
-        });
+        await expect(
+            automergeRepository.loadAll({
+                bundle: new Map([
+                    ['rootBackup', backupBytes],
+                    ['root:incremental:10-0', new Uint8Array([1, 2, 3])],
+                ]),
+            })
+        ).rejects.toThrow('missing the exact root document');
 
-        expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('returns false instead of classifying corruption when commit authority is revoked', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(
+            automergeRepository.loadAll({
+                bundle: new Map([['root', new Uint8Array([1, 2, 3])]]),
+                shouldCommit: () => false,
+            })
+        ).resolves.toBe(false);
+
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
@@ -110,6 +111,19 @@ describe('Project Persistence Use Cases', () => {
             mocks.loadCrdtProject.mockRejectedValue(corruption);
 
             await expect(loadProject()).rejects.toThrow(corruption);
+
+            expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        });
+
+        it('returns benign false without creating a project when a newer load cancels it', async () => {
+            mocks.loadCrdtProject.mockImplementationOnce(() => {
+                const newerLoad = runProjectLoadTransaction();
+                newerLoad.activate();
+                return Promise.resolve(false);
+            });
+
+            await expect(loadProject()).resolves.toBe(false);
 
             expect(mocks.createCrdtProject).not.toHaveBeenCalled();
             expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();

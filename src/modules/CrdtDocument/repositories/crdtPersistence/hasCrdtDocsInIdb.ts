@@ -1,15 +1,26 @@
-import { automergeRepository } from '../automergeRepository';
+import { STORE_NAME, openDatabase } from './helpers';
 
-import { loadAllFromIdb } from './loadAllFromIdb';
-
-/** Check whether the persisted bundle is present and loadable without committing it. */
+/** Check whether IndexedDB contains any persisted records without reading their bytes. */
 export async function hasCrdtDocsInIdb(): Promise<boolean> {
-    const bundle = await loadAllFromIdb();
-    if (!bundle) {
+    const database = await openDatabase();
+    if (!database) {
         return false;
     }
 
-    // Reuse the repository's complete base/incremental decode and exact-root
-    // validation without replacing the active in-memory project.
-    return automergeRepository.validateAll({ bundle });
+    return new Promise((resolve, reject) => {
+        let transaction: IDBTransaction;
+        try {
+            transaction = database.transaction(STORE_NAME, 'readonly');
+        } catch (error) {
+            reject(error instanceof Error ? error : new Error('IDB transaction could not be opened', { cause: error }));
+            return;
+        }
+
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.count();
+        request.onsuccess = () => resolve(request.result > 0);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
+        transaction.onerror = () => reject(transaction.error ?? new Error('IDB transaction failed'));
+        transaction.onabort = () => reject(transaction.error ?? new Error('IDB transaction aborted'));
+    });
 }

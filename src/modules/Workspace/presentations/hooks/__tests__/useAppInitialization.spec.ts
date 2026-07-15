@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
@@ -228,6 +229,19 @@ describe('useAppInitialization — Project loading boundary', () => {
         });
         expect(finishProjectLoading).not.toHaveBeenCalled();
         expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('does not turn a saved-project load race into first-run completion', async () => {
+        vi.mocked(hasCrdtProject).mockResolvedValueOnce(true);
+        vi.mocked(loadProject).mockRejectedValueOnce(new Error('persisted root disappeared'));
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(logger.error).toHaveBeenCalled();
+        });
+        expect(finishProjectLoading).not.toHaveBeenCalled();
+        expect(loadProject).toHaveBeenCalledOnce();
     });
 });
 

@@ -2,60 +2,91 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { hasCrdtDocsInIdb } from '../hasCrdtDocsInIdb';
 
-type DocumentBundle = Map<string, Uint8Array>;
+type CountRequest = {
+    result: number;
+    onsuccess: (() => void) | null;
+    onerror: (() => void) | null;
+};
+
+type MockStore = {
+    count: ReturnType<typeof vi.fn<() => CountRequest>>;
+};
+
+type MockTransaction = {
+    objectStore: () => MockStore;
+    onerror: (() => void) | null;
+    onabort: (() => void) | null;
+    error: Error | null;
+};
+
+type MockDatabase = {
+    transaction: ReturnType<typeof vi.fn<() => MockTransaction>>;
+};
 
 const mocks = vi.hoisted(() => ({
-    loadAllFromIdb: vi.fn<() => Promise<DocumentBundle | null>>(),
-    validateAll: vi.fn<(input: { bundle: DocumentBundle }) => Promise<boolean>>(),
+    openDatabase: vi.fn<() => Promise<MockDatabase | null>>(),
 }));
 
-vi.mock('../loadAllFromIdb', () => ({
-    loadAllFromIdb: mocks.loadAllFromIdb,
-}));
-vi.mock('../../automergeRepository', () => ({
-    automergeRepository: {
-        validateAll: mocks.validateAll,
-    },
+vi.mock('../helpers', () => ({
+    STORE_NAME: 'documents',
+    openDatabase: mocks.openDatabase,
 }));
 
 describe('hasCrdtDocsInIdb', () => {
+    let countRequest: CountRequest;
+    let store: MockStore;
+    let transaction: MockTransaction;
+    let database: MockDatabase;
+
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.loadAllFromIdb.mockResolvedValue(new Map());
-        mocks.validateAll.mockResolvedValue(false);
+
+        countRequest = { result: 0, onsuccess: null, onerror: null };
+        store = { count: vi.fn<() => CountRequest>(() => countRequest) };
+        transaction = {
+            objectStore: () => store,
+            onerror: null,
+            onabort: null,
+            error: null,
+        };
+        database = { transaction: vi.fn(() => transaction) };
+        mocks.openDatabase.mockResolvedValue(database);
     });
 
-    it('returns false when IndexedDB contains no persisted bundle', async () => {
-        mocks.loadAllFromIdb.mockResolvedValue(null);
-        await expect(hasCrdtDocsInIdb()).resolves.toBe(false);
-        expect(mocks.validateAll).not.toHaveBeenCalled();
-    });
-
-    it('validates the complete bundle without committing it', async () => {
-        const bundle = new Map([
-            ['root', new Uint8Array([1])],
-            ['child', new Uint8Array([2])],
-            ['root:incremental:10-0', new Uint8Array([3])],
-        ]);
-        mocks.loadAllFromIdb.mockResolvedValue(bundle);
-        mocks.validateAll.mockResolvedValue(true);
-
-        await expect(hasCrdtDocsInIdb()).resolves.toBe(true);
-        expect(mocks.validateAll).toHaveBeenCalledWith({ bundle });
-    });
-
-    it('returns false when the repository rejects the bundle as not a project', async () => {
-        mocks.loadAllFromIdb.mockResolvedValue(new Map([['child', new Uint8Array([1])]]));
-        mocks.validateAll.mockResolvedValue(false);
-
+    it('returns false when IndexedDB is unavailable', async () => {
+        mocks.openDatabase.mockResolvedValue(null);
         await expect(hasCrdtDocsInIdb()).resolves.toBe(false);
     });
 
-    it('propagates persisted decode failures instead of treating corruption as absence', async () => {
-        const corruption = new Error('corrupt persisted root');
-        mocks.loadAllFromIdb.mockResolvedValue(new Map([['root', new Uint8Array([1, 2, 3])]]));
-        mocks.validateAll.mockRejectedValue(corruption);
+    it('returns false when IndexedDB contains no persisted records', async () => {
+        const promise = hasCrdtDocsInIdb();
+        await Promise.resolve();
+        countRequest.result = 0;
+        countRequest.onsuccess?.();
 
-        await expect(hasCrdtDocsInIdb()).rejects.toBe(corruption);
+        await expect(promise).resolves.toBe(false);
+        expect(store.count).toHaveBeenCalledOnce();
+    });
+
+    it('observes non-empty persistence with a count only', async () => {
+        const promise = hasCrdtDocsInIdb();
+        await Promise.resolve();
+        countRequest.result = 1;
+        countRequest.onsuccess?.();
+
+        await expect(promise).resolves.toBe(true);
+        expect(database.transaction).toHaveBeenCalledWith('documents', 'readonly');
+        expect(store.count).toHaveBeenCalledOnce();
+    });
+
+    it('does not read or decode the full bundle during presence inspection', async () => {
+        const promise = hasCrdtDocsInIdb();
+        await Promise.resolve();
+        countRequest.result = 1;
+        countRequest.onsuccess?.();
+
+        await expect(promise).resolves.toBe(true);
+        expect(database.transaction).toHaveBeenCalledTimes(1);
+        expect(store.count).toHaveBeenCalledTimes(1);
     });
 });
