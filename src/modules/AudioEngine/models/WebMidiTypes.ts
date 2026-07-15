@@ -15,10 +15,17 @@ export type WebMidiState = {
     selectedInputId: string | null;
 };
 
+export type WebMidiNoteKey = `${number}:${number}`;
+
+export function createWebMidiNoteKey(channel: number, note: number): WebMidiNoteKey {
+    return `${channel}:${note}`;
+}
+
 export type ActiveNoteData = {
     startTime: number;
     startBeat: number;
     channel: number;
+    note: number;
     /** Track that originated the note; selection changes must not retarget release. */
     trackId: string;
     pressure?: number;

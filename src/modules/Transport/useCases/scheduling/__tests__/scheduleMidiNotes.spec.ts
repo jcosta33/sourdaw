@@ -12,8 +12,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
-import { getTempoAtBeat } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleFrozenTrack, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
@@ -23,14 +23,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
 }));
-vi.mock('../../stores/tempoMapStore', () => ({
+vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
-}));
-vi.mock('../../../models/TempoMap', () => ({
-    getTempoAtBeat: vi.fn(() => 120),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
@@ -96,10 +93,10 @@ describe('scheduleMidiNotes', () => {
         vi.clearAllMocks();
         (trackStore as { value: unknown }).value = { tracks: [] };
         (midiStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) => clips);
         vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
-        vi.mocked(getTempoAtBeat).mockReturnValue(120);
         vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });
 
@@ -248,7 +245,9 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
         };
         // Tempo map reports 240bpm at the block; transport.tempo stays at 120.
-        vi.mocked(getTempoAtBeat).mockReturnValue(240);
+        (tempoMapStore as { value: unknown }).value = {
+            changes: [{ id: 'tempo-0', beat: 0, tempo: 240, curve: 'instant' }],
+        };
 
         let seenNoteOnSample: number | undefined;
         const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
@@ -262,6 +261,56 @@ describe('scheduleMidiNotes', () => {
         // spb = 240/60 = 4; beat 1 => round(1 * 48000 / 4) = 12000.
         // Flat-tempo (buggy) spb = 120/60 = 2 would give 24000.
         expect(seenNoteOnSample).toBe(12000);
+    });
+
+    it('uses integrated samples and drains a spanning note-off in the post-change Worker block', async () => {
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n0', pitch: 60, startBeat: 3, duration: 2, velocity: 100 }],
+            },
+        };
+        (tempoMapStore as { value: unknown }).value = {
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 4, tempo: 240, curve: 'instant' },
+            ],
+        };
+        const retained: Array<{ timeSamples: number; kind: { type: string } }> = [];
+        const processYeast = vi.fn(
+            async (input: {
+                events: Array<{ timeSamples: number; kind: { type: string } }>;
+                blockStartSamples: number;
+                blockEndSamples: number;
+                transport: { bpm: number; ppqPosition: number };
+            }) => {
+                retained.push(...input.events);
+                const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
+                const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
+                retained.splice(0, retained.length, ...future);
+                return due as Awaited<ReturnType<typeof processYeastMidi>>;
+            }
+        );
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
+
+        await scheduleMidiNotes(3, 6, 3, -1, [], defaultTransportState, 120);
+
+        expect(processYeast).toHaveBeenCalledTimes(2);
+        expect(processYeast.mock.calls.map(([input]) => input.blockStartSamples)).toEqual([72000, 96000]);
+        expect(processYeast.mock.calls.map(([input]) => input.blockEndSamples)).toEqual([96000, 120000]);
+        expect(processYeast.mock.calls.map(([input]) => input.transport)).toEqual([
+            expect.objectContaining({ bpm: 120, ppqPosition: 3 }),
+            expect.objectContaining({ bpm: 240, ppqPosition: 4 }),
+        ]);
+        expect(processYeast.mock.calls[0]![0].events.map((event) => event.timeSamples)).toEqual([72000, 108000]);
+        expect(processYeast.mock.calls[1]![0].events).toEqual([]);
+        expect(retained).toEqual([]);
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.75);
     });
 
     // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time

@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 
+import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
@@ -55,14 +56,15 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         releaseVelocity: number = 0
     ): Promise<void> {
         deps.stepRecordNoteOff(note);
-        const noteData = activeNotes.get(note);
+        const noteKey = createWebMidiNoteKey(channel, note);
+        const noteData = activeNotes.get(noteKey);
         if (!noteData) {
             return;
         }
 
-        activeNotes.delete(note);
+        activeNotes.delete(noteKey);
 
-        if (getMpeEnabled()) {
+        if (channelToNote.get(noteData.channel) === noteKey) {
             channelToNote.delete(noteData.channel);
         }
 

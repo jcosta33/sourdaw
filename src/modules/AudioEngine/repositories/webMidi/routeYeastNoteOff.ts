@@ -4,7 +4,7 @@
  * Extracted from `handleNoteOff` so the same device-node delivery is reused by
  * (a) the live-keyboard Note Off path and (b) the processor-removal panic path
  * (`yeast.notesOff` app event — emitted by Yeast's `removeYeastProcessor` use
- * case and by the worklet node when a processor is removed mid-playback, whose
+ * case and by the Worker runtime when a processor is removed mid-playback, whose
  * captured Note Offs would otherwise be discarded, hanging the note).
  */
 

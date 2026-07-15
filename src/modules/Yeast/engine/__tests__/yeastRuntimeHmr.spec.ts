@@ -51,6 +51,7 @@ type LegacyRuntimeSession = {
     error: string | undefined;
     onNotesOff: ((notesOff: YeastNotesOffPayload[]) => void) | null;
     pendingAllNotesOff: { context: BaseAudioContext; generation: number; nowSamples: number } | null;
+    activeOutputNotes?: Map<string, { generation: number; trackId: string; channel: number; note: number }>;
 };
 
 function deferred<T>(): Deferred<T> {
@@ -132,8 +133,9 @@ describe('yeastRuntime HMR migration', () => {
         retainedHmrState.value = legacySession;
 
         const runtime = await import('../yeastRuntime');
+        const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(4);
+        expect(legacySession.version).toBe(5);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -147,6 +149,13 @@ describe('yeastRuntime HMR migration', () => {
         expect(legacySession.error).toBeUndefined();
         expect(legacySession.onNotesOff).toBe(onNotesOff);
         expect(legacySession.pendingAllNotesOff).toBeNull();
+        expect(legacySession.activeOutputNotes).toEqual(new Map());
+        expect(onNotesOff).not.toHaveBeenCalled();
+
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
 
         const worker = makeWorker(newContext);
         createWorker.mockResolvedValueOnce(worker);
@@ -161,5 +170,51 @@ describe('yeastRuntime HMR migration', () => {
         expect(legacySession.node).toBe(worker);
         expect(oldNode.processBlock).not.toHaveBeenCalled();
         expect(stalePendingNode.processBlock).not.toHaveBeenCalled();
+    });
+
+    it('settles retained v4 Worker output notes before revoking its generation', async () => {
+        const context = {} as BaseAudioContext;
+        const worker = makeWorker(context);
+        const onNotesOff = vi.fn();
+        const generation = 11;
+        const projection: YeastProcessorProjection = [
+            { id: 'arp-1', type: 'arpeggiator', bypassed: false, params: { rate_denom: 16 } },
+        ];
+        const retainedSession: LegacyRuntimeSession = {
+            version: 4,
+            context,
+            node: worker,
+            nodePromise: null,
+            projection,
+            processTail: Promise.resolve(),
+            generation,
+            projectionRevision: 2,
+            appliedProjectionRevision: 2,
+            status: 'ready',
+            error: undefined,
+            onNotesOff,
+            pendingAllNotesOff: null,
+            activeOutputNotes: new Map([
+                ['track-a:2:67', { generation, trackId: 'track-a', channel: 2, note: 67 }],
+                ['track-a:3:67', { generation, trackId: 'track-a', channel: 3, note: 67 }],
+            ]),
+        };
+        retainedHmrState.value = retainedSession;
+
+        const runtime = await import('../yeastRuntime');
+        const panicOutputNotes = vi.fn();
+
+        expect(retainedSession.version).toBe(5);
+        expect(retainedSession.generation).toBe(generation + 1);
+        expect(retainedSession.projection).toBe(projection);
+        expect(retainedSession.activeOutputNotes).toEqual(new Map());
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [67] }]);
+        expect(worker.destroy).toHaveBeenCalledTimes(1);
+
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
     });
 });

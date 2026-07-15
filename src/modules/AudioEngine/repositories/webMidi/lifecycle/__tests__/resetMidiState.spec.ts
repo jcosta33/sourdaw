@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ActiveNoteData } from '../../../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type ActiveNoteData, type WebMidiNoteKey } from '../../../../models/WebMidiTypes';
 
 // resetMidiState reads the real `activeNotes`/`channelToNote` singletons and the
 // audioEngine context. Mock both: control the active-note map directly and skip
@@ -8,8 +8,8 @@ import type { ActiveNoteData } from '../../../../models/WebMidiTypes';
 // Mock specifiers resolve from this test file: `../state` is `../../state`,
 // `../../createWebAudioEngine` is `../../../createWebAudioEngine`.
 const { activeNotes, channelToNote } = vi.hoisted(() => ({
-    activeNotes: new Map<number, ActiveNoteData>(),
-    channelToNote: new Map<number, number>(),
+    activeNotes: new Map<WebMidiNoteKey, ActiveNoteData>(),
+    channelToNote: new Map<number, WebMidiNoteKey>(),
 }));
 
 vi.mock('../../state', () => ({
@@ -51,7 +51,14 @@ beforeEach(() => {
 describe('resetMidiState — smooth release on active notes', () => {
     it('applies the exponential release through _env and stops each active oscillator', () => {
         const { osc, setTargetAtTime, stop } = makeOscWithEnv();
-        activeNotes.set(60, { startTime: 0, startBeat: 0, channel: 0, osc });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            startTime: 0,
+            startBeat: 0,
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            osc,
+        });
 
         resetMidiState();
 
@@ -66,8 +73,16 @@ describe('resetMidiState — smooth release on active notes', () => {
 
     it('clears the active-note and channel maps', () => {
         const { osc } = makeOscWithEnv();
-        activeNotes.set(60, { startTime: 0, startBeat: 0, channel: 0, osc });
-        channelToNote.set(1, 60);
+        const key = createWebMidiNoteKey(0, 60);
+        activeNotes.set(key, {
+            startTime: 0,
+            startBeat: 0,
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            osc,
+        });
+        channelToNote.set(0, key);
 
         resetMidiState();
 

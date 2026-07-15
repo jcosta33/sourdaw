@@ -1279,15 +1279,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts",
-    "to": "../../stores/tempoMapStore",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts",
     "to": "src/modules/AudioEngine/useCases/scheduling/stopAllScheduled.ts",
     "rule": {

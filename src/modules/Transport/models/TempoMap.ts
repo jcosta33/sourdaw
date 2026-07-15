@@ -5,6 +5,52 @@ export type TempoChange = {
     curve: 'instant' | 'linear';
 };
 
+export type TempoRange = {
+    fromBeat: number;
+    toBeat: number;
+};
+
+function sortTempoChanges(changes: readonly TempoChange[]): TempoChange[] {
+    return [...changes].sort((alpha, beta) => alpha.beat - beta.beat);
+}
+
+function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number, defaultTempo: number): number {
+    if (changes.length === 0) {
+        return defaultTempo;
+    }
+
+    let previous: TempoChange | undefined;
+    let next: TempoChange | undefined;
+    for (const change of changes) {
+        if (change.beat <= beat) {
+            previous = change;
+        } else {
+            next = change;
+            break;
+        }
+    }
+    if (!previous) {
+        return changes[0]!.tempo;
+    }
+    if (!next || previous.curve === 'instant') {
+        return previous.tempo;
+    }
+
+    const time = (beat - previous.beat) / (next.beat - previous.beat);
+    return previous.tempo + (next.tempo - previous.tempo) * time;
+}
+
+function getActiveTempoChange(changes: readonly TempoChange[], beat: number): TempoChange | undefined {
+    let active: TempoChange | undefined;
+    for (const change of changes) {
+        if (change.beat > beat) {
+            break;
+        }
+        active = change;
+    }
+    return active;
+}
+
 export function createTempoChange(beat: number, tempo: number, curve: TempoChange['curve'] = 'instant'): TempoChange {
     return {
         id: `tempo-${crypto.randomUUID()}`,
@@ -14,29 +60,122 @@ export function createTempoChange(beat: number, tempo: number, curve: TempoChang
     };
 }
 
-export function getTempoAtBeat(changes: TempoChange[], beat: number, defaultTempo: number): number {
-    if (changes.length === 0) {
-        return defaultTempo;
+export function getTempoAtBeat(changes: readonly TempoChange[], beat: number, defaultTempo: number): number {
+    return getTempoAtBeatFromSorted(sortTempoChanges(changes), beat, defaultTempo);
+}
+
+function secondsAcrossSortedTempoRange(
+    sortedChanges: readonly TempoChange[],
+    fromBeat: number,
+    toBeat: number,
+    defaultTempo: number
+): number {
+    if (fromBeat === toBeat) {
+        return 0;
+    }
+    if (toBeat < fromBeat) {
+        return -secondsAcrossSortedTempoRange(sortedChanges, toBeat, fromBeat, defaultTempo);
     }
 
-    const sorted = [...changes].sort((alpha, b) => alpha.beat - b.beat);
-    const before = sorted.filter((context) => context.beat <= beat);
-    const after = sorted.filter((context) => context.beat > beat);
-
-    if (before.length === 0) {
-        return sorted[0]!.tempo;
+    const boundaries = [fromBeat];
+    for (const change of sortedChanges) {
+        if (change.beat > fromBeat && change.beat < toBeat && change.beat !== boundaries.at(-1)) {
+            boundaries.push(change.beat);
+        }
     }
-    if (after.length === 0) {
-        return before[before.length - 1]!.tempo;
+    boundaries.push(toBeat);
+    let seconds = 0;
+    for (let index = 0; index < boundaries.length - 1; index++) {
+        const segmentStart = boundaries[index]!;
+        const segmentEnd = boundaries[index + 1]!;
+        const startTempo = getTempoAtBeatFromSorted(sortedChanges, segmentStart, defaultTempo);
+        const activeChange = getActiveTempoChange(sortedChanges, segmentStart);
+        if (!activeChange || activeChange.curve === 'instant') {
+            seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
+            continue;
+        }
+
+        const endTempo = getTempoAtBeatFromSorted(sortedChanges, segmentEnd, defaultTempo);
+        const tempoSlope = (endTempo - startTempo) / (segmentEnd - segmentStart);
+        if (Math.abs(tempoSlope) < Number.EPSILON) {
+            seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
+        } else {
+            seconds += (60 / tempoSlope) * Math.log(endTempo / startTempo);
+        }
+    }
+    return seconds;
+}
+
+export function beatToSamples(
+    changes: readonly TempoChange[],
+    beat: number,
+    defaultTempo: number,
+    sampleRate: number
+): number {
+    const sortedChanges = sortTempoChanges(changes);
+    return Math.round(secondsAcrossSortedTempoRange(sortedChanges, 0, beat, defaultTempo) * sampleRate);
+}
+
+export function samplesToBeat(
+    changes: readonly TempoChange[],
+    samples: number,
+    defaultTempo: number,
+    sampleRate: number
+): number {
+    if (samples === 0) {
+        return 0;
+    }
+    const sortedChanges = sortTempoChanges(changes);
+    const targetSeconds = samples / sampleRate;
+    for (const change of sortedChanges) {
+        if (
+            Math.abs(secondsAcrossSortedTempoRange(sortedChanges, 0, change.beat, defaultTempo) - targetSeconds) < 1e-12
+        ) {
+            return change.beat;
+        }
     }
 
-    const prev = before[before.length - 1]!;
-    const next = after[0]!;
-
-    if (prev.curve === 'instant') {
-        return prev.tempo;
+    let lowerBeat = targetSeconds < 0 ? -1 : 0;
+    let upperBeat = targetSeconds < 0 ? 0 : 1;
+    if (targetSeconds < 0) {
+        while (secondsAcrossSortedTempoRange(sortedChanges, 0, lowerBeat, defaultTempo) > targetSeconds) {
+            lowerBeat *= 2;
+        }
+    } else {
+        while (secondsAcrossSortedTempoRange(sortedChanges, 0, upperBeat, defaultTempo) < targetSeconds) {
+            upperBeat *= 2;
+        }
     }
 
-    const time = (beat - prev.beat) / (next.beat - prev.beat);
-    return prev.tempo + (next.tempo - prev.tempo) * time;
+    for (let iteration = 0; iteration < 64; iteration++) {
+        const midpoint = (lowerBeat + upperBeat) / 2;
+        const midpointSeconds = secondsAcrossSortedTempoRange(sortedChanges, 0, midpoint, defaultTempo);
+        if (midpointSeconds < targetSeconds) {
+            lowerBeat = midpoint;
+        } else {
+            upperBeat = midpoint;
+        }
+    }
+    return (lowerBeat + upperBeat) / 2;
+}
+
+export function splitRangeAtTempoChanges(
+    changes: readonly TempoChange[],
+    fromBeat: number,
+    toBeat: number
+): TempoRange[] {
+    if (toBeat <= fromBeat) {
+        return [];
+    }
+    const boundaries = [
+        fromBeat,
+        ...sortTempoChanges(changes)
+            .map((change) => change.beat)
+            .filter((beat, index, beats) => beat > fromBeat && beat < toBeat && beat !== beats[index - 1]),
+        toBeat,
+    ];
+    return boundaries.slice(0, -1).map((segmentStart, index) => ({
+        fromBeat: segmentStart,
+        toBeat: boundaries[index + 1]!,
+    }));
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { YeastNotesOffPayload } from '../../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
@@ -49,6 +50,7 @@ async function flushRuntimeQueue(): Promise<void> {
 
 function makeNode(context: BaseAudioContext) {
     let terminalErrorHandler: ((error: Error) => void) | null = null;
+    let notesOffHandler: ((notesOff: YeastNotesOffPayload[]) => void) | null = null;
     return {
         context,
         processBlock: vi.fn(
@@ -58,7 +60,14 @@ function makeNode(context: BaseAudioContext) {
         setProjection: vi.fn(),
         sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         allNotesOff: vi.fn(),
-        onNotesOff: vi.fn(() => () => {}),
+        onNotesOff: vi.fn((handler: (notesOff: YeastNotesOffPayload[]) => void) => {
+            notesOffHandler = handler;
+            return () => {
+                if (notesOffHandler === handler) {
+                    notesOffHandler = null;
+                }
+            };
+        }),
         onTerminalError: vi.fn((handler: (error: Error) => void) => {
             terminalErrorHandler = handler;
             return () => {
@@ -70,6 +79,9 @@ function makeNode(context: BaseAudioContext) {
         emitTerminalError: (error: Error) => {
             terminalErrorHandler?.(error);
         },
+        emitNotesOff: (notesOff: YeastNotesOffPayload[]) => {
+            notesOffHandler?.(notesOff);
+        },
         destroy: vi.fn(),
     };
 }
@@ -80,6 +92,30 @@ const projectionA: YeastProcessorProjection = [
 const projectionB: YeastProcessorProjection = [
     { id: 'filter-1', type: 'filter', bypassed: true, params: { min_note: 48 } },
 ];
+
+function makeRuntimeBlockInput(context: BaseAudioContext): RuntimeBlockInput {
+    return {
+        context,
+        trackId: 'track-a',
+        projection: projectionA,
+        events: [],
+        blockStartSamples: 0,
+        blockEndSamples: 128,
+        transport: {
+            bpm: 120,
+            isPlaying: true,
+            sampleRate: 48000,
+            ppqPosition: 0,
+            barIndex: 0,
+            beatInBar: 0,
+            timeSigNum: 4,
+            timeSigDen: 4,
+            loopEnabled: false,
+            loopStartPpq: 0,
+            loopEndPpq: 0,
+        },
+    };
+}
 
 async function loadRuntime(): Promise<typeof import('../yeastRuntime')> {
     vi.resetModules();
@@ -251,6 +287,209 @@ describe('yeastRuntime', () => {
         expect(result).toEqual(processed);
         expect(createNode).toHaveBeenCalledTimes(2);
         expect(nodeB.setProjection).toHaveBeenCalledWith(projectionA);
+    });
+
+    it('settles accepted output notes exactly once when the Worker becomes terminal', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock.mockResolvedValueOnce([
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 100 },
+            },
+        ]);
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+
+        node.emitTerminalError(new Error('Worker crashed'));
+        node.emitTerminalError(new Error('duplicate terminal signal'));
+        runtime.destroyYeastRuntime();
+
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [67] }]);
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+        expect(node.allNotesOff).not.toHaveBeenCalled();
+    });
+
+    it('does not settle an output note again after an accepted note-off', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 100 },
+                },
+            ])
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 128,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff' as const, channel: 2, note: 67 },
+                },
+            ]);
+        createNode.mockResolvedValueOnce(node);
+        const input = makeRuntimeBlockInput(context);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        node.emitTerminalError(new Error('Worker crashed after release'));
+
+        expect(onNotesOff).not.toHaveBeenCalled();
+        expect(panicOutputNotes).not.toHaveBeenCalled();
+    });
+
+    it('settles accepted output notes on explicit runtime teardown without duplicates', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock.mockResolvedValueOnce([
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
+            },
+        ]);
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+
+        runtime.destroyYeastRuntime();
+        runtime.destroyYeastRuntime();
+
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [60] }]);
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+        expect(node.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('settles accepted output notes before replacing the AudioContext generation', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        nodeA.processBlock.mockResolvedValueOnce([
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 3, note: 69, velocity: 100 },
+            },
+        ]);
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(contextA));
+
+        await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+        nodeA.emitNotesOff([{ trackId: 'track-a', notes: [69] }]);
+
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [69] }]);
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+        expect(nodeA.destroy).toHaveBeenCalledTimes(1);
+        expect(nodeB.destroy).not.toHaveBeenCalled();
+    });
+
+    it.each(['process', 'projection', 'command', 'panic'] as const)(
+        'settles accepted output notes when a %s request times out',
+        async (failureKind) => {
+            const runtime = await loadRuntime();
+            const context = {} as BaseAudioContext;
+            const node = makeNode(context);
+            const onNotesOff = vi.fn();
+            const panicOutputNotes = vi.fn();
+            const timeout = new Error(`${failureKind} acknowledgement timed out`);
+            const input = makeRuntimeBlockInput(context);
+            node.processBlock.mockResolvedValueOnce([
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 1, note: 65, velocity: 100 },
+                },
+            ]);
+            createNode.mockResolvedValueOnce(node);
+
+            await runtime.ensureYeastRuntime({ context, projection: projectionA });
+            runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+            runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+            await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+
+            if (failureKind === 'process') {
+                node.processBlock.mockRejectedValueOnce(timeout);
+                await expect((runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input)).rejects.toBe(
+                    timeout
+                );
+            } else if (failureKind === 'projection') {
+                node.setProjection.mockRejectedValueOnce(timeout);
+                await expect(runtime.applyYeastRuntimeProjection(projectionB)).rejects.toBe(timeout);
+            } else if (failureKind === 'command') {
+                node.sendCommand.mockRejectedValueOnce(timeout);
+                await expect(
+                    runtime.sendYeastRuntimeCommand({ processorId: 'arp-1', type: 'chordMemory.learn' })
+                ).resolves.toEqual({ delivered: false, reason: 'delivery-failed' });
+            } else {
+                node.allNotesOff.mockRejectedValueOnce(timeout);
+                await expect(runtime.sendYeastRuntimeAllNotesOff(512)).resolves.toBeUndefined();
+            }
+
+            expect(onNotesOff).toHaveBeenCalledTimes(1);
+            expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [65] }]);
+            expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+            expect(node.destroy).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('removes host-owned notes after a successful Worker panic so terminal failure cannot release them twice', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock.mockResolvedValueOnce([
+            {
+                timeSamples: 0,
+                trackId: 'track-a',
+                kind: { type: 'noteOn' as const, channel: 1, note: 65, velocity: 100 },
+            },
+        ]);
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+
+        node.emitNotesOff([{ trackId: 'track-a', notes: [65] }]);
+        node.emitTerminalError(new Error('Worker crashed after panic'));
+
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', notes: [65] }]);
+        expect(panicOutputNotes).not.toHaveBeenCalled();
     });
 
     it('fences a terminally failed panic and never settles notes against its replacement', async () => {

@@ -4,7 +4,12 @@
  */
 import { isTauri } from '#/utils/tauriBridge';
 
-import { type WebMidiState, type MidiLearnState, type ActiveNoteData } from '../../models/WebMidiTypes';
+import {
+    type WebMidiState,
+    type MidiLearnState,
+    type ActiveNoteData,
+    type WebMidiNoteKey,
+} from '../../models/WebMidiTypes';
 
 import { readPersistedInputId } from './readPersistedInputId';
 
@@ -12,8 +17,8 @@ export type WebMidiSubscriber = () => void;
 
 const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
 
-export const activeNotes = new Map<number, ActiveNoteData>();
-export const channelToNote = new Map<number, number>();
+export const activeNotes = new Map<WebMidiNoteKey, ActiveNoteData>();
+export const channelToNote = new Map<number, WebMidiNoteKey>();
 
 export const midiLearn: MidiLearnState = {
     active: false,

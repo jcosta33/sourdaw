@@ -1,10 +1,15 @@
 import { Container } from '#/infra/di/Container';
 
-import { setYeastRuntimeNotesOffHandler } from '../engine/yeastRuntime';
+import { setYeastRuntimeNotesOffHandler, setYeastRuntimeOutputPanicHandler } from '../engine/yeastRuntime';
 import { YeastEventBus } from '../stores/yeastEventBus';
 
-export function configureYeastRuntime(): void {
+type ConfigureYeastRuntimeInput = {
+    panicOutputNotes: () => void;
+};
+
+export function configureYeastRuntime({ panicOutputNotes }: ConfigureYeastRuntimeInput): void {
     const eventBus = Container.get(YeastEventBus);
+    setYeastRuntimeOutputPanicHandler(panicOutputNotes);
     setYeastRuntimeNotesOffHandler((notesOff) => {
         for (const payload of notesOff) {
             if (payload.notes.length > 0) {

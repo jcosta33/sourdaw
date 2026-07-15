@@ -2,7 +2,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 
-import { type ActiveNoteData } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -22,6 +22,18 @@ export const handleWebMidiNoteOn = inject({
                 return;
             }
 
+            const noteKey = createWebMidiNoteKey(channel, note);
+            const mpeEnabled = getMpeEnabled();
+            const channelNoteKey = mpeEnabled && channel >= 1 ? channelToNote.get(channel) : undefined;
+            const noteToRelease =
+                activeNotes.get(noteKey) ??
+                (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
+            if (noteToRelease) {
+                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0);
+            } else if (channelNoteKey !== undefined) {
+                channelToNote.delete(channel);
+            }
+
             deps.stepRecordNoteOn(note, velocity);
 
             const targetTrackId = getTargetTrackId();
@@ -38,12 +50,13 @@ export const handleWebMidiNoteOn = inject({
                 startTime: now,
                 startBeat: transport ? deps.playheadPositionRef.current : 0,
                 channel,
+                note,
                 trackId: targetTrackId,
             };
-            activeNotes.set(note, noteData);
+            activeNotes.set(noteKey, noteData);
 
-            if (getMpeEnabled() && channel >= 1) {
-                channelToNote.set(channel, note);
+            if (mpeEnabled && channel >= 1) {
+                channelToNote.set(channel, noteKey);
             }
 
             const trackState = deps.getTrackStoreState();

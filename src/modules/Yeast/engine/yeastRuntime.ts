@@ -38,7 +38,17 @@ type YeastRuntimeSession = {
     status: YeastRuntimeStatus;
     error: string | undefined;
     onNotesOff: ((notesOff: YeastNotesOffPayload[]) => void) | null;
+    onOutputPanic: (() => void) | null;
+    pendingOutputPanic: boolean;
     pendingAllNotesOff: PendingAllNotesOff | null;
+    activeOutputNotes: Map<string, ActiveOutputNote>;
+};
+
+type ActiveOutputNote = {
+    generation: number;
+    trackId: string;
+    channel: number;
+    note: number;
 };
 
 type PendingAllNotesOff = {
@@ -47,7 +57,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 4;
+const YEAST_RUNTIME_SESSION_VERSION = 5;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -62,13 +72,18 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     status: 'uninitialized',
     error: undefined,
     onNotesOff: null,
+    onOutputPanic: null,
+    pendingOutputPanic: false,
     pendingAllNotesOff: null,
+    activeOutputNotes: new Map(),
 }));
 
-// Version 3 retained an AudioWorklet-backed node. Revoke every runtime handle
-// before preserving only projection data and the stable host note-off sink.
+// Retained pre-v5 sessions do not guarantee host-owned output-note settlement.
+// Revoke every runtime handle while preserving projection and the host sink.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     const staleNode = session.node;
+    const retainedRuntimeMayOwnOutput = session.context !== null || session.nodePromise !== null || staleNode !== null;
+    const hadActiveOutputNotes = settleActiveOutputNotes(session.generation);
     session.version = YEAST_RUNTIME_SESSION_VERSION;
     session.generation =
         Number.isSafeInteger(session.generation) && session.generation < Number.MAX_SAFE_INTEGER
@@ -82,7 +97,10 @@ if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     session.appliedProjectionRevision = 0;
     session.status = 'uninitialized';
     session.error = undefined;
+    session.onOutputPanic = null;
+    session.pendingOutputPanic = retainedRuntimeMayOwnOutput || hadActiveOutputNotes;
     session.pendingAllNotesOff = null;
+    session.activeOutputNotes = new Map();
     if (staleNode) {
         try {
             staleNode.destroy();
@@ -153,12 +171,119 @@ function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
     return session.node === node && session.generation === generation;
 }
 
+function activeOutputNoteKey(trackId: string, channel: number, note: number): string {
+    return `${trackId}\u0000${channel}\u0000${note}`;
+}
+
+function emitNotesOff(notesOff: YeastNotesOffPayload[]): void {
+    if (notesOff.length === 0) {
+        return;
+    }
+    try {
+        session.onNotesOff?.(notesOff);
+    } catch (error: unknown) {
+        logger.warn('[Yeast] Host note-off settlement failed:', error);
+    }
+}
+
+function settleActiveOutputNotes(generation: number): boolean {
+    const activeOutputNotes = session.activeOutputNotes;
+    if (!(activeOutputNotes instanceof Map) || activeOutputNotes.size === 0) {
+        session.activeOutputNotes = new Map();
+        return false;
+    }
+
+    const notesByTrack = new Map<string, Set<number>>();
+    for (const activeNote of activeOutputNotes.values()) {
+        if (activeNote.generation !== generation) {
+            continue;
+        }
+        const notes = notesByTrack.get(activeNote.trackId) ?? new Set<number>();
+        notes.add(activeNote.note);
+        notesByTrack.set(activeNote.trackId, notes);
+    }
+    session.activeOutputNotes = new Map();
+    emitNotesOff(
+        [...notesByTrack].map(([trackId, notes]) => ({
+            trackId,
+            notes: [...notes],
+        }))
+    );
+    return notesByTrack.size > 0;
+}
+
+function flushPendingOutputPanic(): void {
+    if (!session.pendingOutputPanic || !session.onOutputPanic) {
+        return;
+    }
+    const onOutputPanic = session.onOutputPanic;
+    session.pendingOutputPanic = false;
+    try {
+        onOutputPanic();
+    } catch (error: unknown) {
+        logger.warn('[Yeast] Host output panic failed:', error);
+    }
+}
+
+function requestOutputPanic(): void {
+    session.pendingOutputPanic = true;
+    flushPendingOutputPanic();
+}
+
+function settleRuntimeOutputNotes(generation: number): void {
+    if (settleActiveOutputNotes(generation)) {
+        requestOutputPanic();
+    }
+}
+
+function recordAcceptedOutputNotes(events: readonly MidiEvent[], generation: number, fallbackTrackId: string): void {
+    if (session.generation !== generation) {
+        return;
+    }
+    for (const event of events) {
+        if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
+            continue;
+        }
+        const trackId = event.trackId ?? fallbackTrackId;
+        const key = activeOutputNoteKey(trackId, event.kind.channel, event.kind.note);
+        if (event.kind.type === 'noteOn' && event.kind.velocity > 0) {
+            session.activeOutputNotes.set(key, {
+                generation,
+                trackId,
+                channel: event.kind.channel,
+                note: event.kind.note,
+            });
+        } else {
+            session.activeOutputNotes.delete(key);
+        }
+    }
+}
+
+function recordWorkerNotesOff(notesOff: readonly YeastNotesOffPayload[], generation: number): void {
+    if (session.generation !== generation) {
+        return;
+    }
+    for (const payload of notesOff) {
+        const notes = new Set(payload.notes);
+        for (const [key, activeNote] of session.activeOutputNotes) {
+            if (
+                activeNote.generation === generation &&
+                activeNote.trackId === payload.trackId &&
+                notes.has(activeNote.note)
+            ) {
+                session.activeOutputNotes.delete(key);
+            }
+        }
+    }
+}
+
 function prepareRuntimeContext(context: BaseAudioContext): void {
     if (session.context !== null && session.context !== context) {
         const previousNode = session.node;
         if (previousNode) {
             invalidateCurrentRuntime(previousNode);
         } else {
+            settleRuntimeOutputNotes(session.generation);
             session.generation += 1;
             session.processTail = Promise.resolve();
             session.appliedProjectionRevision = 0;
@@ -203,6 +328,7 @@ function invalidateCurrentRuntime(node: YeastWorkerResult): boolean {
     if (session.node !== node) {
         return false;
     }
+    settleRuntimeOutputNotes(session.generation);
     session.generation += 1;
     destroyCurrentNode();
     session.nodePromise = null;
@@ -359,7 +485,11 @@ async function ensureYeastRuntimeInternal(
                 return null;
             }
             node.onNotesOff((notes) => {
-                session.onNotesOff?.(notes);
+                if (!isLiveRuntime(node, generation)) {
+                    return;
+                }
+                recordWorkerNotesOff(notes, generation);
+                emitNotesOff(notes);
             });
             try {
                 const projectionToApply = initializationProjection ?? {
@@ -451,6 +581,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
+            recordAcceptedOutputNotes(processedEvents, generation, input.trackId);
             return processedEvents;
         });
     } catch (error: unknown) {
@@ -504,6 +635,7 @@ export async function processYeastRuntimeTransaction(
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
+            recordAcceptedOutputNotes(processedEvents, generation, input.trackId);
             return processedEvents;
         } catch (error: unknown) {
             if (isLiveRuntime(node, generation)) {
@@ -547,6 +679,37 @@ export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<v
 
 export function setYeastRuntimeNotesOffHandler(handler: (notesOff: YeastNotesOffPayload[]) => void): void {
     session.onNotesOff = handler;
+}
+
+export function setYeastRuntimeOutputPanicHandler(handler: () => void): void {
+    session.onOutputPanic = handler;
+    flushPendingOutputPanic();
+}
+
+export function destroyYeastRuntime(): void {
+    if (
+        session.context === null &&
+        session.node === null &&
+        session.nodePromise === null &&
+        session.activeOutputNotes.size === 0
+    ) {
+        return;
+    }
+
+    const node = session.node;
+    if (node) {
+        invalidateCurrentRuntime(node);
+    } else {
+        settleRuntimeOutputNotes(session.generation);
+        session.generation += 1;
+        session.nodePromise = null;
+        session.processTail = Promise.resolve();
+        session.appliedProjectionRevision = 0;
+        session.pendingAllNotesOff = null;
+    }
+    session.context = null;
+    session.status = 'uninitialized';
+    session.error = undefined;
 }
 
 export function getYeastRuntimeStatus(): YeastRuntimeStatus {

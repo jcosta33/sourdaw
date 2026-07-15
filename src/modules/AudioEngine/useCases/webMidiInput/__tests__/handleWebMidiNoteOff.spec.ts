@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
 
@@ -92,7 +94,13 @@ describe('handleWebMidiNoteOff', () => {
                 appendRecordedMidiNote: append_recorded_midi_note,
             })
         );
-        activeNotes.set(60, { channel: 0, trackId: 'track-1', startTime: 1, startBeat: 4 });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+        });
 
         await fn(0, 60, 0);
 
@@ -131,7 +139,13 @@ describe('handleWebMidiNoteOff', () => {
                 { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: { noteOff: fermenter_note_off } },
             ],
         });
-        activeNotes.set(60, { channel: 0, trackId: 'track-1', startTime: 0, startBeat: 0 });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
 
         await fn(0, 60);
 
@@ -168,7 +182,13 @@ describe('handleWebMidiNoteOff', () => {
                 { type: 'fermenter', deviceId: 'ferm-a', fermenterControls: { noteOff: fermenter_note_off } },
             ],
         });
-        activeNotes.set(60, { channel: 0, trackId: 'track-a', startTime: 0, startBeat: 0 });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-a',
+            startTime: 0,
+            startBeat: 0,
+        });
 
         await fn(0, 60);
 
@@ -191,8 +211,9 @@ describe('handleWebMidiNoteOff', () => {
                 getSynthParamsForTrack: () => ({ release: 0.6 }),
             })
         );
-        activeNotes.set(64, {
+        activeNotes.set(createWebMidiNoteKey(0, 64), {
             channel: 0,
+            note: 64,
             trackId: 'track-1',
             startTime: 0,
             startBeat: 0,
@@ -238,8 +259,9 @@ describe('handleWebMidiNoteOff', () => {
                 { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOff: grand_boule_note_off } },
             ],
         });
-        activeNotes.set(60, {
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
             channel: 0,
+            note: 60,
             trackId: 'track-1',
             startTime: 0,
             startBeat: 0,
@@ -253,5 +275,69 @@ describe('handleWebMidiNoteOff', () => {
             type: 'midi.noteOff',
             payload: { deviceId: 'gb-1', midiNote: 60, releaseVelocity: 96 / 127 },
         });
+    });
+
+    it('releases same-pitch notes on two channels through their original tracks', async () => {
+        const note_off_a = vi.fn<void, [number]>();
+        const note_off_b = vi.fn<void, [number]>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        { id: 'track-a', devices: [{ id: 'ferm-a', type: 'fermenter' }] },
+                        { id: 'track-b', devices: [{ id: 'ferm-b', type: 'fermenter' }] },
+                    ],
+                    selectedTrackId: 'track-b',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+            })
+        );
+        get_track_strip.mockImplementation((trackId: string) => ({
+            deviceNodes: [
+                trackId === 'track-a'
+                    ? { deviceId: 'ferm-a', fermenterControls: { noteOff: note_off_a } }
+                    : { deviceId: 'ferm-b', fermenterControls: { noteOff: note_off_b } },
+            ],
+        }));
+        activeNotes.set(createWebMidiNoteKey(1, 60), {
+            channel: 1,
+            note: 60,
+            trackId: 'track-a',
+            startTime: 0,
+            startBeat: 0,
+            fermenterDeviceId: 'ferm-a',
+        });
+        activeNotes.set(createWebMidiNoteKey(2, 60), {
+            channel: 2,
+            note: 60,
+            trackId: 'track-b',
+            startTime: 0,
+            startBeat: 0,
+            fermenterDeviceId: 'ferm-b',
+        });
+
+        await fn(1, 60);
+        await fn(2, 60);
+
+        expect(note_off_a).toHaveBeenCalledWith(60);
+        expect(note_off_b).toHaveBeenCalledWith(60);
+        expect(activeNotes.size).toBe(0);
+    });
+
+    it('clears the matching channel identity even when MPE was disabled before release', async () => {
+        const fn = handleWebMidiNoteOff._factory(make_dependencies());
+        const noteKey = createWebMidiNoteKey(3, 60);
+        activeNotes.set(noteKey, {
+            channel: 3,
+            note: 60,
+            trackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+        channelToNote.set(3, noteKey);
+
+        await fn(3, 60);
+
+        expect(channelToNote.has(3)).toBe(false);
     });
 });
