@@ -7,7 +7,8 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { deleteModel, getStorageStatus } from '../repositories/storageManager';
+import { deleteModel } from '../repositories/deleteModel';
+import { getStorageStatus } from '../repositories/getStorageStatus';
 import { updateModelStatus, setStorageUsed } from '../stores/modelRegistryStore';
 
 type RemoveModelInput = {

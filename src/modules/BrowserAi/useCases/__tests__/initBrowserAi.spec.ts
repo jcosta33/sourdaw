@@ -101,4 +101,23 @@ describe('initBrowserAi', () => {
         expect(modelRegistryStore.value?.kokoroModel?.status).toBe('not-downloaded');
         expect(modelRegistryStore.value?.vocoder?.status).toBe('not-downloaded');
     });
+
+    it('should preserve cache-probe failures as model error state', async () => {
+        const detect_capabilities_repo = vi.fn<DetectCapabilitiesRepo>().mockResolvedValue(fresh_capability_report);
+        const check_model_cached = vi
+            .fn<CheckModelCached>()
+            .mockRejectedValueOnce(new DOMException('denied', 'NotAllowedError'))
+            .mockResolvedValueOnce(false);
+
+        injectDependencies(initBrowserAi, {
+            logger: create_logger_mock(),
+            detectCapabilitiesRepo: detect_capabilities_repo,
+            checkModelCached: check_model_cached,
+        });
+
+        await initBrowserAi();
+
+        expect(modelRegistryStore.value?.kokoroModel?.status).toBe('error');
+        expect(modelRegistryStore.value?.vocoder?.status).toBe('not-downloaded');
+    });
 });

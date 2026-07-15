@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { readNamedProjectJson } from '../../repositories/project/storageOperations';
+import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
 import { getRecentProjects } from '../recentProjects/helpers';
@@ -25,8 +25,11 @@ vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 
-vi.mock('#/modules/Project/repositories/project/storageOperations', () => ({
+vi.mock('#/modules/Project/repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
+}));
+
+vi.mock('#/modules/Project/repositories/project/writeProjectJson', () => ({
     writeProjectJson: vi.fn(),
 }));
 

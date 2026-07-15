@@ -99,7 +99,6 @@ pub fn run() {
             commands::crumbs::get_waveform_peaks,
             commands::crumbs::detect_onsets,
             commands::crumbs::detect_sample_pitch,
-            commands::crumbs::get_crumbs_metering,
             commands::crumbs::crumbs_all_sound_off,
             commands::crumbs::get_crumbs_position,
             commands::crumbs::detect_smart_loop_points,

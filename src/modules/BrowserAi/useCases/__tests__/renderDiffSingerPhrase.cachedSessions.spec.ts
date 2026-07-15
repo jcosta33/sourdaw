@@ -39,11 +39,20 @@ vi.mock('../../repositories/inferenceWorkerBridge', () => ({
     },
 }));
 
-vi.mock('../../repositories/storageManager', () => ({
-    readModel,
-    readRenderCache,
-    writeRenderCache,
+vi.mock('../../repositories/computeRenderCacheKey', () => ({
     computeRenderCacheKey,
+}));
+
+vi.mock('../../repositories/readModel', () => ({
+    readModel,
+}));
+
+vi.mock('../../repositories/readRenderCache', () => ({
+    readRenderCache,
+}));
+
+vi.mock('../../repositories/writeRenderCache', () => ({
+    writeRenderCache,
 }));
 
 // Phonemizer + capability store are pure collaborators; stub to deterministic values.

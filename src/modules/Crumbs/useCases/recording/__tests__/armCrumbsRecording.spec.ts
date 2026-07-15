@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const armRecording = vi.hoisted(() =>
-    vi.fn<typeof import('../../../repositories/crumbsBridge').armRecording>(() => Promise.resolve())
+    vi.fn<typeof import('../../../repositories/crumbsBridge/armRecording').armRecording>(() => Promise.resolve())
 );
 
-vi.mock('../../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge/armRecording', () => ({
     armRecording,
 }));
 

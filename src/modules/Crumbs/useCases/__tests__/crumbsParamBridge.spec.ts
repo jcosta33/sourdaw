@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
     setCrumbsParam: vi.fn(),
 }));
 
-vi.mock('../../repositories/crumbsBridge', () => ({
+vi.mock('../../repositories/crumbsBridge/setCrumbsParam', () => ({
     setCrumbsParam: mocks.setCrumbsParam,
 }));
 

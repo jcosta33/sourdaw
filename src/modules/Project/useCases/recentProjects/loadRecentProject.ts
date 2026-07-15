@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
+import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
+import { writeProjectJson } from '../../repositories/project/writeProjectJson';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../projectPersistence/helpers/replaceProjectData';

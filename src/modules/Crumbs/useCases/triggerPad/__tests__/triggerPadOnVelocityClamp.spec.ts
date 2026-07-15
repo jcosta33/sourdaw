@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const crumbsNoteOn = vi.hoisted(() =>
-    vi.fn<typeof import('../../../repositories/crumbsBridge').crumbsNoteOn>(() => Promise.resolve())
+    vi.fn<typeof import('../../../repositories/crumbsBridge/crumbsNoteOn').crumbsNoteOn>(() => Promise.resolve())
 );
 
-vi.mock('../../../repositories/crumbsBridge', () => ({
+vi.mock('../../../repositories/crumbsBridge/crumbsNoteOn', () => ({
     crumbsNoteOn,
 }));
 
