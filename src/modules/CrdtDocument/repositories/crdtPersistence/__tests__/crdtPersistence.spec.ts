@@ -36,6 +36,7 @@ describe('crdtPersistence repository', () => {
             objectStore: vi.fn().mockReturnValue(mockStore),
             oncomplete: null,
             onerror: null,
+            onabort: null,
             error: new Error('tx error'),
         };
 
@@ -82,6 +83,19 @@ describe('crdtPersistence repository', () => {
             expect(result).toBeInstanceOf(Map);
             expect(result?.get('doc1')).toEqual(new Uint8Array([1]));
             expect(result?.get('doc2')).toEqual(new Uint8Array([2]));
+        });
+
+        it('should reject when the read transaction aborts', async () => {
+            vi.mocked(openDatabase).mockResolvedValue(mockDb);
+            mockStore.getAllKeys.mockReturnValue({ result: ['root'] });
+            mockStore.getAll.mockReturnValue({ result: [new Uint8Array([1])] });
+
+            const promise = loadAllFromIdb();
+            await Promise.resolve();
+            mockTx.error = null;
+            mockTx.onabort();
+
+            await expect(promise).rejects.toThrow('IDB transaction aborted');
         });
     });
 

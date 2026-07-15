@@ -104,6 +104,16 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.clearUndoHistory).toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
+
+        it('does not create a replacement project when persisted CRDT loading fails', async () => {
+            const corruption = new Error('corrupt persisted root');
+            mocks.loadCrdtProject.mockRejectedValue(corruption);
+
+            await expect(loadProject()).rejects.toThrow(corruption);
+
+            expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        });
     });
 
     describe('saveProject', () => {

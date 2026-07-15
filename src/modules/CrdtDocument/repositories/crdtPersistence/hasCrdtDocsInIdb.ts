@@ -1,25 +1,15 @@
-import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
+import { automergeRepository } from '../automergeRepository';
 
-import { STORE_NAME, openDatabase } from './helpers';
+import { loadAllFromIdb } from './loadAllFromIdb';
 
-/** Check whether the persisted bundle contains the loadable root document. */
+/** Check whether the persisted bundle is present and loadable without committing it. */
 export async function hasCrdtDocsInIdb(): Promise<boolean> {
-    const database = await openDatabase();
-    if (!database) {
+    const bundle = await loadAllFromIdb();
+    if (!bundle) {
         return false;
     }
 
-    return new Promise((resolve, reject) => {
-        const tx = database.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.getKey(DOC_PREFIX_ROOT);
-        let key: IDBValidKey | undefined;
-        request.onsuccess = () => {
-            key = request.result;
-        };
-        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
-        tx.oncomplete = () => resolve(key === DOC_PREFIX_ROOT);
-        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
-        tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
-    });
+    // Reuse the repository's complete base/incremental decode and exact-root
+    // validation without replacing the active in-memory project.
+    return automergeRepository.validateAll({ bundle });
 }

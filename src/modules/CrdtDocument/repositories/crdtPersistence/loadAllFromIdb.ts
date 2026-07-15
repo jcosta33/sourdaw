@@ -36,5 +36,6 @@ export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
         };
 
         tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
+        tx.onabort = () => reject(tx.error ?? new Error('IDB transaction aborted'));
     });
 }

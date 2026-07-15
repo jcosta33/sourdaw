@@ -221,6 +221,25 @@ describe('reset clears change listeners (fix 5)', () => {
 });
 
 describe('root id inference is exact, not prefix (fix 6)', () => {
+    it('validates a loadable bundle without replacing the current repository', async () => {
+        automergeRepository.createProject('current');
+        automergeRepository.createChildDoc('child');
+        const bundle = automergeRepository.saveAll();
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.value = 'incremental';
+        });
+        const incremental = automergeRepository.saveDocIncremental('root');
+        if (!incremental) {
+            throw new Error('Expected an incremental root chunk');
+        }
+        bundle.set('root:incremental:10-0', incremental);
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(automergeRepository.validateAll({ bundle })).resolves.toBe(true);
+
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
     it('selects "root" exactly even when sibling ids start with "root" iterate later', async () => {
         // Bundle whose Map iteration order puts a "rootBackup" sibling *after*
         // the real "root". With startsWith, rootBackup would win.
@@ -269,6 +288,19 @@ describe('root id inference is exact, not prefix (fix 6)', () => {
         });
 
         expect(committed).toBe(false);
+        expect(automergeRepository.getDoc('root')).toBe(currentRoot);
+    });
+
+    it('propagates corrupt persisted bytes during presence validation', async () => {
+        automergeRepository.createProject('current');
+        const currentRoot = automergeRepository.getDoc('root');
+
+        await expect(
+            automergeRepository.validateAll({
+                bundle: new Map([['root', new Uint8Array([1, 2, 3])]]),
+            })
+        ).rejects.toThrow();
+
         expect(automergeRepository.getDoc('root')).toBe(currentRoot);
     });
 });

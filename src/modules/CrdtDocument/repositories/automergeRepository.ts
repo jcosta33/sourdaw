@@ -23,6 +23,11 @@ import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys
 
 type AnyDoc = Record<string, unknown>;
 
+type DecodedBundle = {
+    documents: Map<DocId, Doc<AnyDoc>>;
+    rootId: DocId;
+};
+
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
 // Heavy Automerge WASM ops (load + loadIncremental loops, merge) run in a
 // background Worker so the main thread stays responsive during project open
@@ -366,13 +371,13 @@ class AutomergeRepository {
         this.notifyListeners();
     }
 
-    /**
-     * Load all documents from a bundle, replacing current state.
-     *
-     * Heavy WASM parsing (load + loadIncremental loops) runs in
-     * crdtWorker.ts. The worker returns compacted binaries; main thread calls
-     * load() once per doc (fast — no incremental chain to replay).
-     */
+    /** Validate a bundle with the same decode path used by project loading. */
+    async validateAll({ bundle }: { bundle: DocumentBundle }): Promise<boolean> {
+        const { documents } = await this.decodeAll(bundle);
+        return documents.has(DOC_PREFIX_ROOT);
+    }
+
+    /** Load all documents from a bundle, replacing current state. */
     async loadAll({
         bundle,
         shouldCommit,
@@ -380,6 +385,30 @@ class AutomergeRepository {
         bundle: DocumentBundle;
         shouldCommit?: () => boolean;
     }): Promise<boolean> {
+        const { documents, rootId } = await this.decodeAll(bundle);
+
+        if (!documents.has(DOC_PREFIX_ROOT)) {
+            return false;
+        }
+
+        if (shouldCommit?.() === false) {
+            return false;
+        }
+
+        this.docs = documents;
+        this.rootId = rootId;
+        this.notifyListeners();
+        return true;
+    }
+
+    /**
+     * Decode a bundle without mutating the repository.
+     *
+     * Heavy WASM parsing (load + loadIncremental loops) runs in
+     * crdtWorker.ts. The worker returns compacted binaries; main thread calls
+     * load() once per doc (fast — no incremental chain to replay).
+     */
+    private async decodeAll(bundle: DocumentBundle): Promise<DecodedBundle> {
         let compacted: [string, Uint8Array][];
         let rootId: string;
         let documents: Map<DocId, Doc<AnyDoc>>;
@@ -406,18 +435,7 @@ class AutomergeRepository {
             rootId = parsed.rootId;
         }
 
-        if (!documents.has(DOC_PREFIX_ROOT)) {
-            return false;
-        }
-
-        if (shouldCommit?.() === false) {
-            return false;
-        }
-
-        this.docs = documents;
-        this.rootId = rootId;
-        this.notifyListeners();
-        return true;
+        return { documents, rootId };
     }
 
     /** Parse fallback for loadAll when the worker is unavailable. */

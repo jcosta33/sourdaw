@@ -1,115 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { hasCrdtDocsInIdb } from '../hasCrdtDocsInIdb';
-import { openDatabase } from '../helpers';
 
-type MockRequest = {
-    result: IDBValidKey | undefined;
-    onsuccess: (() => void) | null;
-    onerror: (() => void) | null;
-};
-
-type MockStore = {
-    getKey: ReturnType<typeof vi.fn>;
-};
-
-type MockTransaction = {
-    objectStore: ReturnType<typeof vi.fn>;
-    oncomplete: (() => void) | null;
-    onerror: (() => void) | null;
-    onabort: (() => void) | null;
-};
+type DocumentBundle = Map<string, Uint8Array>;
 
 const mocks = vi.hoisted(() => ({
-    openDatabase: vi.fn(),
+    loadAllFromIdb: vi.fn<() => Promise<DocumentBundle | null>>(),
+    validateAll: vi.fn<(input: { bundle: DocumentBundle }) => Promise<boolean>>(),
 }));
 
-vi.mock('../helpers', () => ({
-    STORE_NAME: 'documents',
-    openDatabase: mocks.openDatabase,
+vi.mock('../loadAllFromIdb', () => ({
+    loadAllFromIdb: mocks.loadAllFromIdb,
+}));
+vi.mock('../../automergeRepository', () => ({
+    automergeRepository: {
+        validateAll: mocks.validateAll,
+    },
 }));
 
 describe('hasCrdtDocsInIdb', () => {
-    let mockStore: MockStore;
-    let mockTransaction: MockTransaction;
-    let mockDatabase: IDBDatabase;
-
     beforeEach(() => {
         vi.clearAllMocks();
-
-        mockStore = {
-            getKey: vi.fn(),
-        };
-        mockTransaction = {
-            objectStore: vi.fn().mockReturnValue(mockStore),
-            oncomplete: null,
-            onerror: null,
-            onabort: null,
-        };
-        mockDatabase = {
-            transaction: vi.fn().mockReturnValue(mockTransaction),
-        } as IDBDatabase;
-        vi.mocked(openDatabase).mockResolvedValue(mockDatabase);
+        mocks.loadAllFromIdb.mockResolvedValue(new Map());
+        mocks.validateAll.mockResolvedValue(false);
     });
 
-    function settle(request: MockRequest): void {
-        request.onsuccess?.();
-        mockTransaction.oncomplete?.();
-    }
-
-    it('returns false when IndexedDB contains only incremental chunks', async () => {
-        const keyRequest: MockRequest = { result: undefined, onsuccess: null, onerror: null };
-        mockStore.getKey.mockReturnValue(keyRequest);
-
-        const resultPromise = hasCrdtDocsInIdb();
-        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
-        settle(keyRequest);
-
-        await expect(resultPromise).resolves.toBe(false);
-        expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
+    it('returns false when IndexedDB contains no persisted bundle', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(null);
+        await expect(hasCrdtDocsInIdb()).resolves.toBe(false);
+        expect(mocks.validateAll).not.toHaveBeenCalled();
     });
 
-    it('returns true when the root document is persisted', async () => {
-        const keyRequest: MockRequest = { result: DOC_PREFIX_ROOT, onsuccess: null, onerror: null };
-        mockStore.getKey.mockReturnValue(keyRequest);
+    it('validates the complete bundle without committing it', async () => {
+        const bundle = new Map([
+            ['root', new Uint8Array([1])],
+            ['child', new Uint8Array([2])],
+            ['root:incremental:10-0', new Uint8Array([3])],
+        ]);
+        mocks.loadAllFromIdb.mockResolvedValue(bundle);
+        mocks.validateAll.mockResolvedValue(true);
 
-        const resultPromise = hasCrdtDocsInIdb();
-        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
-        settle(keyRequest);
-
-        await expect(resultPromise).resolves.toBe(true);
-        expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
+        await expect(hasCrdtDocsInIdb()).resolves.toBe(true);
+        expect(mocks.validateAll).toHaveBeenCalledWith({ bundle });
     });
 
-    it('does not treat a child base document as a persisted project', async () => {
-        const keyRequest: MockRequest = { result: undefined, onsuccess: null, onerror: null };
-        mockStore.getKey.mockReturnValue(keyRequest);
-
-        const resultPromise = hasCrdtDocsInIdb();
-        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
-        settle(keyRequest);
-
-        await expect(resultPromise).resolves.toBe(false);
-        expect(mockStore.getKey).toHaveBeenCalledWith(DOC_PREFIX_ROOT);
-    });
-
-    it('returns false when IndexedDB is unavailable', async () => {
-        vi.mocked(openDatabase).mockResolvedValue(null);
+    it('returns false when the repository rejects the bundle as not a project', async () => {
+        mocks.loadAllFromIdb.mockResolvedValue(new Map([['child', new Uint8Array([1])]]));
+        mocks.validateAll.mockResolvedValue(false);
 
         await expect(hasCrdtDocsInIdb()).resolves.toBe(false);
-        expect(mockDatabase.transaction).not.toHaveBeenCalled();
     });
 
-    it('rejects when the read transaction aborts before completion', async () => {
-        const keyRequest: MockRequest = { result: DOC_PREFIX_ROOT, onsuccess: null, onerror: null };
-        mockStore.getKey.mockReturnValue(keyRequest);
+    it('propagates persisted decode failures instead of treating corruption as absence', async () => {
+        const corruption = new Error('corrupt persisted root');
+        mocks.loadAllFromIdb.mockResolvedValue(new Map([['root', new Uint8Array([1, 2, 3])]]));
+        mocks.validateAll.mockRejectedValue(corruption);
 
-        const resultPromise = hasCrdtDocsInIdb();
-        await vi.waitFor(() => expect(keyRequest.onsuccess).toBeTypeOf('function'));
-
-        mockTransaction.onabort?.();
-
-        await expect(resultPromise).rejects.toThrow('IDB transaction aborted');
+        await expect(hasCrdtDocsInIdb()).rejects.toBe(corruption);
     });
 });
