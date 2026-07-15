@@ -27,7 +27,17 @@ const rule = {
 };
 
 type FixtureContents = string | readonly string[];
-type StaticGuardFindingsFunction = (repositoryRoot: string) => unknown;
+type StaticGuardFinding = {
+    file: string;
+    line: number;
+    reason: string;
+};
+type StaticGuardFindingsFunction = (repositoryRoot: string) => StaticGuardFinding[];
+type CommonJsStaticGuardFixture = {
+    repositoryDirectory: string;
+    repositoryRoot: string;
+    useCaseDirectory: string;
+};
 
 function writeFixtureFiles(directory: string, fixtures: Record<string, FixtureContents>): void {
     for (const [fileName, contents] of Object.entries(fixtures)) {
@@ -43,11 +53,58 @@ function vendorFinding(file: string, line: number, moduleSpecifier = '@tauri-app
     };
 }
 
+function unsupportedCommonJsFinding(file: string, line: number) {
+    return {
+        file,
+        line,
+        reason: 'unsupported CommonJS public-surface mutation cannot be statically inspected',
+    };
+}
+
+function createCommonJsStaticGuardFixture(prefix: string): CommonJsStaticGuardFixture {
+    const repositoryRoot = mkdtempSync(join(tmpdir(), prefix));
+    const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+    const repositoryDirectory = join(moduleDirectory, 'repositories');
+    const useCaseDirectory = join(moduleDirectory, 'useCases');
+    const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+    mkdirSync(repositoryDirectory, { recursive: true });
+    mkdirSync(useCaseDirectory, { recursive: true });
+    mkdirSync(vendorDirectory, { recursive: true });
+
+    writeFixtureFiles(repositoryRoot, {
+        'package.json': JSON.stringify({ type: 'module' }),
+        'src/globals.d.ts': [
+            'declare let module: {',
+            '    exports: Record<string, unknown>;',
+            '    require: (moduleName: string) => any;',
+            '};',
+            'declare let exports: Record<string, unknown>;',
+            'declare let require: (moduleName: string) => any;',
+        ],
+    });
+    writeFixtureFiles(vendorDirectory, {
+        'package.json': JSON.stringify({
+            name: '@tauri-apps/api',
+            type: 'module',
+            exports: {
+                './core': {
+                    types: './core.d.ts',
+                    default: './core.js',
+                },
+            },
+        }),
+        'core.js': 'export const invoke = null;\n',
+        'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+    });
+
+    return { repositoryDirectory, repositoryRoot, useCaseDirectory };
+}
+
 function isStaticGuardFindingsFunction(value: unknown): value is StaticGuardFindingsFunction {
     return typeof value === 'function';
 }
 
-function invokeStaticGuardFindings(repositoryRoot: string): unknown {
+function invokeStaticGuardFindings(repositoryRoot: string): StaticGuardFinding[] {
     const candidate: unknown = findStaticGuardFindings;
     if (!isStaticGuardFindingsFunction(candidate)) {
         throw new TypeError('findStaticGuardFindings is not callable');
@@ -904,7 +961,11 @@ describe('check-dependency-boundaries', () => {
                 ],
             });
 
-            const vendorFindings = invokeStaticGuardFindings(repositoryRoot);
+            const findings = invokeStaticGuardFindings(repositoryRoot);
+            const vendorFindings = findings.filter(({ reason }) => reason.includes('Tauri vendor type'));
+            const unsupportedCommonJsFindings = findings.filter(
+                ({ reason }) => reason === 'unsupported CommonJS public-surface mutation cannot be statically inspected'
+            );
 
             expect(vendorFindings).toEqual(
                 expect.arrayContaining([
@@ -942,6 +1003,11 @@ describe('check-dependency-boundaries', () => {
                 ])
             );
             expect(vendorFindings).toHaveLength(13);
+            expect(unsupportedCommonJsFindings).toEqual([
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/commonjs-assign-dynamic.cjs', 8),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/commonjs-element-dynamic.cjs', 10),
+            ]);
+            expect(findings).toHaveLength(15);
         } finally {
             if (repositoryRoot) {
                 rmSync(repositoryRoot, { force: true, recursive: true });
@@ -1498,6 +1564,433 @@ describe('check-dependency-boundaries', () => {
             }
         }
     }, 20_000);
+
+    it('should resolve require only through the live CommonJS module object', () => {
+        const { repositoryDirectory, repositoryRoot, useCaseDirectory } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-module-require-'
+        );
+
+        try {
+            const moduleAliasDepth = 100;
+            const typedSurface = (name: string): readonly string[] => [
+                "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                `const ${name} = { command: '${name}' };`,
+                `module.exports = { ${name} };`,
+            ];
+            writeFixtureFiles(repositoryDirectory, {
+                'direct.cjs': typedSurface('direct'),
+                'element.cjs': typedSurface('element'),
+                'computed.cjs': typedSurface('computed'),
+                'module-alias.cjs': typedSurface('moduleAlias'),
+                'destructured.cjs': typedSurface('destructured'),
+                'computed-destructured.cjs': typedSurface('computedDestructured'),
+                'assigned-destructured.cjs': typedSurface('assignedDestructured'),
+                'iife.cjs': typedSurface('iife'),
+                'captured-before-rebind.cjs': typedSurface('capturedBeforeRebind'),
+                'before-property-rebind.cjs': typedSurface('beforePropertyRebind'),
+                'after-property-rebind.cjs': typedSurface('afterPropertyRebind'),
+                'live-object-after-module-rebind.cjs': typedSurface('liveObjectAfterModuleRebind'),
+                'rebound-module.cjs': typedSurface('reboundModule'),
+                'property-rebound-through-alias.cjs': typedSurface('propertyReboundThroughAlias'),
+                'shadowed-module.cjs': typedSurface('shadowedModule'),
+                'noninvoked.cjs': typedSurface('noninvoked'),
+                'dynamic-property.cjs': typedSurface('dynamicProperty'),
+                'reassigned-destructured.cjs': typedSurface('reassignedDestructured'),
+                'long-module-alias.cjs': typedSurface('longModuleAlias'),
+                'vendor-live.cjs': [
+                    "const vendor = module.require('@tauri-apps/api/core');",
+                    'module.exports = { vendor };',
+                ],
+                'vendor-element.cjs': [
+                    "const vendor = module['require']('@tauri-apps/api/core');",
+                    'module.exports = { vendor };',
+                ],
+                'vendor-rebound.cjs': [
+                    'module.require = () => ({ clean: true });',
+                    "const vendor = module.require('@tauri-apps/api/core');",
+                    'module.exports = { vendor };',
+                ],
+                'vendor-shadowed.cjs': [
+                    '((module) => {',
+                    "    module.exports = { vendor: module.require('@tauri-apps/api/core') };",
+                    '})({ exports: {}, require: () => ({ clean: true }) });',
+                ],
+            });
+            const longModuleAliasConsumer = ['const module0000 = module;'];
+            for (let index = 1; index < moduleAliasDepth; index += 1) {
+                const current = String(index).padStart(4, '0');
+                const previous = String(index - 1).padStart(4, '0');
+                longModuleAliasConsumer.push(`const module${current} = module${previous};`);
+            }
+            longModuleAliasConsumer.push(
+                `const longModuleAlias = module${String(moduleAliasDepth - 1).padStart(
+                    4,
+                    '0'
+                )}.require('../repositories/long-module-alias.cjs');`,
+                'void longModuleAlias;',
+                'export {};'
+            );
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-live.ts': [
+                    "const direct = module.require('../repositories/direct.cjs');",
+                    "const element = module['require']('../repositories/element.cjs');",
+                    "const requireKey = 'require';",
+                    "const computed = module[requireKey]('../repositories/computed.cjs');",
+                    'const liveModule = module;',
+                    'const load = liveModule.require;',
+                    "const moduleAlias = load('../repositories/module-alias.cjs');",
+                    'const { require: destructuredLoad } = module;',
+                    "const destructured = destructuredLoad('../repositories/destructured.cjs');",
+                    "const destructuredKey = 'require';",
+                    'const { [destructuredKey]: computedLoad } = module;',
+                    "const computedDestructured = computedLoad('../repositories/computed-destructured.cjs');",
+                    'let assignedLoad;',
+                    '({ require: assignedLoad } = module);',
+                    "const assignedDestructured = assignedLoad('../repositories/assigned-destructured.cjs');",
+                    '(() => {',
+                    "    const iife = module.require('../repositories/iife.cjs');",
+                    '    void iife;',
+                    '})();',
+                    "const vendorLive = require('../repositories/vendor-live.cjs');",
+                    "const vendorElement = require('../repositories/vendor-element.cjs');",
+                    'void direct;',
+                    'void element;',
+                    'void computed;',
+                    'void moduleAlias;',
+                    'void destructured;',
+                    'void computedDestructured;',
+                    'void assignedDestructured;',
+                    'void vendorLive;',
+                    'void vendorElement;',
+                    'export {};',
+                ],
+                'consume-property-order.ts': [
+                    'const captured = module.require;',
+                    "const before = module.require('../repositories/before-property-rebind.cjs');",
+                    "module['require'] = () => ({ clean: true });",
+                    "const capturedBeforeRebind = captured('../repositories/captured-before-rebind.cjs');",
+                    "const after = module.require('../repositories/after-property-rebind.cjs');",
+                    'void before;',
+                    'void capturedBeforeRebind;',
+                    'void after;',
+                    'export {};',
+                ],
+                'consume-module-order.ts': [
+                    'const actualModule = module;',
+                    'module = { exports: {}, require: () => ({ clean: true }) };',
+                    "const liveObject = actualModule.require('../repositories/live-object-after-module-rebind.cjs');",
+                    "const rebound = module.require('../repositories/rebound-module.cjs');",
+                    'void liveObject;',
+                    'void rebound;',
+                    'export {};',
+                ],
+                'consume-negative.ts': [
+                    'const actualModule = module;',
+                    'actualModule.require = () => ({ clean: true });',
+                    "const aliasRebound = module.require('../repositories/property-rebound-through-alias.cjs');",
+                    '((module) => {',
+                    "    const shadowed = module.require('../repositories/shadowed-module.cjs');",
+                    '    void shadowed;',
+                    '})({ exports: {}, require: () => ({ clean: true }) });',
+                    "const later = () => module.require('../repositories/noninvoked.cjs');",
+                    "const dynamicKey = Math.random() > 0.5 ? 'require' : 'other';",
+                    "const dynamic = module[dynamicKey]('../repositories/dynamic-property.cjs');",
+                    'let { require: reassignedLoad } = module;',
+                    'reassignedLoad = () => ({ clean: true });',
+                    "const reassigned = reassignedLoad('../repositories/reassigned-destructured.cjs');",
+                    "const vendorRebound = require('../repositories/vendor-rebound.cjs');",
+                    "const vendorShadowed = require('../repositories/vendor-shadowed.cjs');",
+                    'void aliasRebound;',
+                    'void later;',
+                    'void dynamic;',
+                    'void reassigned;',
+                    'void vendorRebound;',
+                    'void vendorShadowed;',
+                    'export {};',
+                ],
+                'consume-long-module-alias.ts': longModuleAliasConsumer,
+            });
+
+            const startedAt = performance.now();
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/direct.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/element.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/computed.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/module-alias.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/destructured.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/computed-destructured.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/assigned-destructured.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/iife.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/captured-before-rebind.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/before-property-rebind.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/live-object-after-module-rebind.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/long-module-alias.cjs', 3),
+                    vendorFinding('src/modules/Foo/repositories/vendor-live.cjs', 2),
+                    vendorFinding('src/modules/Foo/repositories/vendor-element.cjs', 2),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(14);
+            expect(elapsedMs).toBeLessThan(10_000);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
+    it('should project tracked carrier members through binding and assignment patterns', () => {
+        const { repositoryDirectory, repositoryRoot, useCaseDirectory } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-carrier-patterns-'
+        );
+
+        try {
+            writeFixtureFiles(repositoryDirectory, {
+                'object-binding.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'object-binding' };",
+                    'const { assign } = Object;',
+                    'assign(exports, { objectBinding: leaked });',
+                ],
+                'object-computed-binding.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'object-computed-binding' };",
+                    "const key = 'assign';",
+                    'const { [key]: assign } = Object;',
+                    'assign(exports, { objectComputedBinding: leaked });',
+                ],
+                'module-binding.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'module-binding' };",
+                    'const { exports: out } = module;',
+                    'out.moduleBinding = leaked;',
+                ],
+                'object-assignment-pattern.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'object-assignment-pattern' };",
+                    'let assign;',
+                    '({ assign } = Object);',
+                    'assign(exports, { objectAssignmentPattern: leaked });',
+                ],
+                'module-assignment-pattern.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'module-assignment-pattern' };",
+                    'let out;',
+                    '({ exports: out } = module);',
+                    'out.moduleAssignmentPattern = leaked;',
+                ],
+                'array-binding.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'array-binding' };",
+                    'const [{ exports: out }] = [module];',
+                    'out.arrayBinding = leaked;',
+                ],
+                'array-assignment-pattern.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'array-assignment-pattern' };",
+                    'let out;',
+                    '([{ exports: out }] = [module]);',
+                    'out.arrayAssignmentPattern = leaked;',
+                ],
+                'module-computed-assignment.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'module-computed-assignment' };",
+                    "const key = 'exports';",
+                    'let out;',
+                    '({ [key]: out } = module);',
+                    'out.moduleComputedAssignment = leaked;',
+                ],
+                'detached-export-binding.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'detached-export-binding' };",
+                    'const { exports: out } = module;',
+                    'module.exports = { clean: true };',
+                    'out.detachedExportBinding = leaked;',
+                ],
+                'rebound-assign.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'rebound-assign' };",
+                    'let { assign } = Object;',
+                    'assign = () => ({ clean: true });',
+                    'assign(exports, { reboundAssign: leaked });',
+                ],
+                'dynamic-pattern.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'dynamic-pattern' };",
+                    "const key = Math.random() > 0.5 ? 'exports' : 'other';",
+                    'const { [key]: out } = module;',
+                    'out.dynamicPattern = leaked;',
+                ],
+                'rest-pattern.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'rest-pattern' };",
+                    'const { ...copy } = module;',
+                    'copy.exports.restPattern = leaked;',
+                ],
+                'shadowed-carriers.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'shadowed-carriers' };",
+                    '((Object, module) => {',
+                    '    const { assign } = Object;',
+                    '    const { exports: out } = module;',
+                    '    assign(out, { shadowedCarriers: leaked });',
+                    '})({ assign: () => ({}) }, { exports: {} });',
+                    'module.exports = { clean: true };',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-patterns.ts': [
+                    "const objectBinding = require('../repositories/object-binding.cjs');",
+                    "const objectComputed = require('../repositories/object-computed-binding.cjs');",
+                    "const moduleBinding = require('../repositories/module-binding.cjs');",
+                    "const objectAssignment = require('../repositories/object-assignment-pattern.cjs');",
+                    "const moduleAssignment = require('../repositories/module-assignment-pattern.cjs');",
+                    "const arrayBinding = require('../repositories/array-binding.cjs');",
+                    "const arrayAssignment = require('../repositories/array-assignment-pattern.cjs');",
+                    "const moduleComputed = require('../repositories/module-computed-assignment.cjs');",
+                    "const detached = require('../repositories/detached-export-binding.cjs');",
+                    "const rebound = require('../repositories/rebound-assign.cjs');",
+                    "const dynamic = require('../repositories/dynamic-pattern.cjs');",
+                    "const rest = require('../repositories/rest-pattern.cjs');",
+                    "const shadowed = require('../repositories/shadowed-carriers.cjs');",
+                    'void objectBinding;',
+                    'void objectComputed;',
+                    'void moduleBinding;',
+                    'void objectAssignment;',
+                    'void moduleAssignment;',
+                    'void arrayBinding;',
+                    'void arrayAssignment;',
+                    'void moduleComputed;',
+                    'void detached;',
+                    'void rebound;',
+                    'void dynamic;',
+                    'void rest;',
+                    'void shadowed;',
+                    'export {};',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/object-binding.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/object-computed-binding.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/module-binding.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/object-assignment-pattern.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/module-assignment-pattern.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/array-binding.cjs', 4),
+                    vendorFinding('src/modules/Foo/repositories/array-assignment-pattern.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/module-computed-assignment.cjs', 6),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(8);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
+    it('should fail closed only for dynamic mutations of the live CommonJS export surface', () => {
+        const { repositoryDirectory, repositoryRoot } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-dynamic-commonjs-'
+        );
+
+        try {
+            writeFixtureFiles(repositoryDirectory, {
+                'dynamic-exports.cjs': [
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'exports[key] = { clean: true };',
+                ],
+                'dynamic-alias.cjs': [
+                    'const out = module.exports;',
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'out[key] = { clean: true };',
+                ],
+                'dynamic-iife.cjs': [
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    '(() => {',
+                    '    module.exports[key] = { clean: true };',
+                    '})();',
+                ],
+                'dynamic-deduplicated.cjs': [
+                    "const first = Math.random() > 0.5 ? 'first' : 'second';",
+                    "const second = Math.random() > 0.5 ? 'third' : 'fourth';",
+                    '(exports[first] = 1, exports[second] = 2);',
+                ],
+                'assign-unknown.cjs': ['Object.assign(exports, loadUnknown());'],
+                'assign-unknown-alias.cjs': ['const out = module.exports;', 'Object.assign(out, unknownSource);'],
+                'assign-dynamic-member.cjs': [
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'Object.assign(module.exports, { [key]: true });',
+                ],
+                'assign-unknown-spread.cjs': ['Object.assign(exports, { ...loadUnknown() });'],
+                'assign-multiple-unknown.cjs': ['Object.assign(exports, firstUnknown, secondUnknown);'],
+                'computed-static.cjs': ["const key = 'known';", 'exports[key] = { clean: true };'],
+                'detached-alias.cjs': [
+                    'const out = module.exports;',
+                    'module.exports = { clean: true };',
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'out[key] = { detached: true };',
+                ],
+                'detached-exports.cjs': [
+                    'module.exports = { clean: true };',
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'exports[key] = { detached: true };',
+                ],
+                'assign-detached.cjs': [
+                    'const out = module.exports;',
+                    'module.exports = { clean: true };',
+                    'Object.assign(out, unknownSource);',
+                ],
+                'assign-known.cjs': ['Object.assign(exports, { known: true });'],
+                'assign-known-spread.cjs': ['const known = { known: true };', 'Object.assign(exports, { ...known });'],
+                'unrelated-object.cjs': [
+                    'const target = {};',
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'target[key] = { clean: true };',
+                    'Object.assign(target, unknownSource);',
+                ],
+                'dynamic-module-property.cjs': [
+                    "const key = Math.random() > 0.5 ? 'exports' : 'other';",
+                    'module[key] = { clean: true };',
+                ],
+                'noninvoked.cjs': [
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    'const later = () => {',
+                    '    exports[key] = { clean: true };',
+                    '};',
+                    'void later;',
+                ],
+                'shadowed-exports.cjs': [
+                    "const key = Math.random() > 0.5 ? 'first' : 'second';",
+                    '((exports) => {',
+                    '    exports[key] = { clean: true };',
+                    '})({});',
+                ],
+            });
+
+            const findings = invokeStaticGuardFindings(repositoryRoot);
+
+            expect(findings).toEqual([
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/assign-dynamic-member.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/assign-multiple-unknown.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/assign-unknown-alias.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/assign-unknown-spread.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/assign-unknown.cjs', 1),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-alias.cjs', 3),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-deduplicated.cjs', 3),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-exports.cjs', 2),
+                unsupportedCommonJsFinding('src/modules/Foo/repositories/dynamic-iife.cjs', 3),
+            ]);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
 
     it('should reject shadowed require consumers while preserving real require consumers', () => {
         let repositoryRoot: string | undefined;
