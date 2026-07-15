@@ -29,12 +29,6 @@ importers:
       '@spotify/basic-pitch':
         specifier: ^1.0.1
         version: 1.0.1(seedrandom@3.0.5)
-      '@tailwindcss/vite':
-        specifier: ^4.2.2
-        version: 4.2.2(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
-      '@tanstack/eslint-plugin-query':
-        specifier: ^5.99.2
-        version: 5.99.2(eslint@10.2.1(jiti@2.6.1))(typescript@6.0.3)
       '@tanstack/react-query':
         specifier: ^5.99.2
         version: 5.99.2(react@19.2.5)
@@ -47,12 +41,6 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.0
         version: 2.7.0
-      '@tauri-apps/plugin-fs':
-        specifier: ^2.5.0
-        version: 2.5.0
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.58.2
-        version: 8.58.2(@typescript-eslint/parser@8.58.2(eslint@10.2.1(jiti@2.6.1))(typescript@6.0.3))(eslint@10.2.1(jiti@2.6.1))(typescript@6.0.3)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -120,6 +108,12 @@ importers:
       '@stylistic/eslint-plugin':
         specifier: ^5.10.0
         version: 5.10.0(eslint@10.2.1(jiti@2.6.1))
+      '@tailwindcss/vite':
+        specifier: ^4.2.2
+        version: 4.2.2(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+      '@tanstack/eslint-plugin-query':
+        specifier: ^5.99.2
+        version: 5.99.2(eslint@10.2.1(jiti@2.6.1))(typescript@6.0.3)
       '@tanstack/router-plugin':
         specifier: ^1.167.22
         version: 1.167.22(@tanstack/react-router@1.168.23(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
@@ -213,6 +207,9 @@ importers:
       playwright:
         specifier: ^1.59.1
         version: 1.59.1
+      prettier:
+        specifier: ^3.8.3
+        version: 3.8.3
       ts-morph:
         specifier: ^28.0.0
         version: 28.0.0
@@ -2350,9 +2347,6 @@ packages:
 
   '@tauri-apps/plugin-dialog@2.7.0':
     resolution: {integrity: sha512-4nS/hfGMGCXiAS3LtVjH9AgsSAPJeG/7R+q8agTFqytjnMa4Zq95Bq8WzVDkckpanX+yyRHXnRtrKXkANKDHvw==}
-
-  '@tauri-apps/plugin-fs@2.5.0':
-    resolution: {integrity: sha512-c83kbz61AK+rKjhS+je9+stIO27nXj7p9cqeg36TwkIUtxpCFTttlHHtqon6h6FN54cXjyAjlMPOJcW3mwE5XQ==}
 
   '@tensorflow/tfjs-backend-cpu@3.21.0':
     resolution: {integrity: sha512-88S21UAdzyK0CsLUrH17GPTD+26E85OP9CqmLZslaWjWUmBkeTQ5Zqyp6iK+gELnLxPx6q7JsNEeFuPv4254lQ==}
@@ -6995,10 +6989,6 @@ snapshots:
       '@tauri-apps/cli-win32-x64-msvc': 2.10.1
 
   '@tauri-apps/plugin-dialog@2.7.0':
-    dependencies:
-      '@tauri-apps/api': 2.10.1
-
-  '@tauri-apps/plugin-fs@2.5.0':
     dependencies:
       '@tauri-apps/api': 2.10.1
 
