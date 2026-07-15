@@ -3,6 +3,7 @@ import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 export function copySelectedClip(): void {
     const workspace = workspaceStore.value;
@@ -22,9 +23,10 @@ export function copySelectedClip(): void {
     }
 
     const midiState = midiStore.value;
+    const tracks = getTrackStoreState()?.tracks ?? [];
     const entries = [];
     for (const id of ids) {
-        const found = findClipById(id);
+        const found = findClipById({ clipId: id, tracks });
         if (!found) {
             continue;
         }
