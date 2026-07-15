@@ -379,15 +379,22 @@ function staticMemberName(checker, node) {
     return null;
 }
 
-function hasLocalDeclaration(context, sourceFile, identifier) {
+function symbolAtLocation(context, identifier) {
     try {
-        const symbol = context.checker.getSymbolAtLocation(identifier);
-        return (symbol?.declarations ?? []).some(
-            (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
-        );
+        return context.checker.getSymbolAtLocation(identifier) ?? null;
     } catch {
+        return null;
+    }
+}
+
+function hasLocalDeclaration(context, sourceFile, identifier) {
+    const symbol = symbolAtLocation(context, identifier);
+    if (!symbol) {
         return true;
     }
+    return (symbol.declarations ?? []).some(
+        (declaration) => declaration.getSourceFile() === sourceFile && ts.isDeclaration(declaration)
+    );
 }
 
 function unshadowedStaticMemberName(context, sourceFile, node, objectName) {
@@ -401,25 +408,149 @@ function unshadowedStaticMemberName(context, sourceFile, node, objectName) {
     return staticMemberName(context.checker, node);
 }
 
-function isModuleExportsObject(context, sourceFile, node) {
-    if (isIdentifierNamed(node, 'exports')) {
-        return !hasLocalDeclaration(context, sourceFile, node);
-    }
-    return unshadowedStaticMemberName(context, sourceFile, node, 'module') === 'exports';
+function isUnshadowedIdentifier(context, sourceFile, node, name) {
+    return isIdentifierNamed(node, name) && !hasLocalDeclaration(context, sourceFile, node);
 }
 
-function commonJsExportName(context, sourceFile, left) {
-    if (
-        (!ts.isPropertyAccessExpression(left) && !ts.isElementAccessExpression(left)) ||
-        !isModuleExportsObject(context, sourceFile, left.expression)
+function unwrapCommonJsExpression(expression) {
+    let current = expression;
+    while (
+        current &&
+        (ts.isParenthesizedExpression(current) ||
+            ts.isAsExpression(current) ||
+            ts.isTypeAssertionExpression(current) ||
+            ts.isSatisfiesExpression(current) ||
+            ts.isNonNullExpression(current))
     ) {
+        current = current.expression;
+    }
+    return current;
+}
+
+function createCommonJsFlow() {
+    const initialExportsObject = {};
+    return {
+        aliases: new Map(),
+        currentModuleExports: initialExportsObject,
+        exportsBinding: initialExportsObject,
+        nodeIdentities: new Map(),
+    };
+}
+
+function createCommonJsIdentity(flow, node = null) {
+    if (node && flow.nodeIdentities.has(node)) {
+        return flow.nodeIdentities.get(node);
+    }
+    const identity = {};
+    if (node) {
+        flow.nodeIdentities.set(node, identity);
+    }
+    return identity;
+}
+
+function isCommonJsObjectExpression(node) {
+    return Boolean(
+        node &&
+        (ts.isObjectLiteralExpression(node) ||
+            ts.isArrayLiteralExpression(node) ||
+            ts.isArrowFunction(node) ||
+            ts.isFunctionExpression(node) ||
+            ts.isClassExpression(node))
+    );
+}
+
+function isModuleExportsMember(context, sourceFile, node) {
+    return (
+        (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+        unshadowedStaticMemberName(context, sourceFile, node, 'module') === 'exports'
+    );
+}
+
+function commonJsObjectIdentity(context, sourceFile, flow, expression) {
+    const node = unwrapCommonJsExpression(expression);
+    if (!node) {
         return null;
     }
-    return staticMemberName(context.checker, left);
+    if (isModuleExportsMember(context, sourceFile, node)) {
+        return flow.currentModuleExports;
+    }
+    if (isUnshadowedIdentifier(context, sourceFile, node, 'exports')) {
+        return flow.exportsBinding;
+    }
+    if (ts.isIdentifier(node)) {
+        return flow.aliases.get(symbolAtLocation(context, node)) ?? null;
+    }
+    if (isCommonJsObjectExpression(node)) {
+        return createCommonJsIdentity(flow, node);
+    }
+    return null;
 }
 
-function isUnshadowedCommonJsTarget(context, sourceFile, node) {
-    return isModuleExportsObject(context, sourceFile, node);
+function commonJsAssignmentIdentity(context, sourceFile, flow, expression) {
+    return commonJsObjectIdentity(context, sourceFile, flow, expression) ?? createCommonJsIdentity(flow);
+}
+
+function commonJsTargetIdentity(context, sourceFile, flow, node) {
+    return commonJsObjectIdentity(context, sourceFile, flow, node);
+}
+
+function commonJsExportName(context, sourceFile, left, flow) {
+    if (!ts.isPropertyAccessExpression(left) && !ts.isElementAccessExpression(left)) {
+        return null;
+    }
+    const targetIdentity = commonJsTargetIdentity(context, sourceFile, flow, left.expression);
+    return targetIdentity === flow.currentModuleExports ? staticMemberName(context.checker, left) : null;
+}
+
+function isUnshadowedCommonJsTarget(context, sourceFile, flow, node) {
+    return commonJsTargetIdentity(context, sourceFile, flow, node) === flow.currentModuleExports;
+}
+
+function isCommonJsBindingAssignment(context, sourceFile, flow, left, right) {
+    if (isUnshadowedIdentifier(context, sourceFile, left, 'exports')) {
+        flow.exportsBinding = commonJsAssignmentIdentity(context, sourceFile, flow, right);
+        return true;
+    }
+    if (!ts.isIdentifier(left)) {
+        return false;
+    }
+    const symbol = symbolAtLocation(context, left);
+    if (!symbol || !flow.aliases.has(symbol)) {
+        return false;
+    }
+    flow.aliases.set(symbol, commonJsAssignmentIdentity(context, sourceFile, flow, right));
+    return true;
+}
+
+function registerCommonJsBindings(context, sourceFile, flow, statement) {
+    if (ts.isVariableStatement(statement)) {
+        for (const declaration of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name)) {
+                continue;
+            }
+            const symbol = symbolAtLocation(context, declaration.name);
+            if (!symbol) {
+                continue;
+            }
+            const identity = commonJsObjectIdentity(context, sourceFile, flow, declaration.initializer);
+            const isConst = Boolean(declaration.parent.flags & ts.NodeFlags.Const);
+            if (identity || !isConst) {
+                flow.aliases.set(symbol, identity);
+            } else {
+                flow.aliases.delete(symbol);
+            }
+        }
+        return;
+    }
+    if (!ts.isFunctionDeclaration(statement) && !ts.isClassDeclaration(statement)) {
+        return;
+    }
+    if (statement.name) {
+        const symbol = symbolAtLocation(context, statement.name);
+        if (symbol) {
+            flow.aliases.set(symbol, createCommonJsIdentity(flow, statement));
+        }
+    }
 }
 
 function createRepositoryTypeEnvironment(repositoryRoot) {
@@ -509,7 +640,11 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
         ) {
             addTarget(moduleSpecifierText(node.arguments[0]), '*', true);
         }
-        if (ts.isCallExpression(node) && isIdentifierNamed(node.expression, 'require') && node.arguments.length === 1) {
+        if (
+            ts.isCallExpression(node) &&
+            isUnshadowedIdentifier({ checker }, sourceFile, node.expression, 'require') &&
+            node.arguments.length === 1
+        ) {
             const moduleSpecifier = moduleSpecifierText(node.arguments[0]);
             const parent = node.parent;
             if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
@@ -521,6 +656,10 @@ function collectConsumerTargets(sourceFile, resolveModuleSpecifier, checker) {
                 if (ts.isObjectBindingPattern(parent.name)) {
                     for (const element of parent.name.elements) {
                         if (ts.isBindingElement(element)) {
+                            if (element.dotDotDotToken) {
+                                addTarget(moduleSpecifier, '*', true);
+                                continue;
+                            }
                             const name = bindingPropertyNameText(element.propertyName ?? element.name);
                             addTarget(moduleSpecifier, name ?? '*', !name);
                         }
@@ -627,20 +766,29 @@ function createRepositoryTypeContext(repositoryRoot, program, environment) {
         ),
         recordsByFile: new Map(),
         repositoryRoot,
-        vendorBindingsByFile: new Map(),
+        vendorBindingsBySymbol: new Map(),
         vendorModulesByFile: new Map(),
     };
 }
 
-function addVendorBinding(context, sourceFileName, bindingName, moduleSpecifier) {
-    if (!bindingName || !moduleSpecifier) {
+function addVendorBinding(context, binding, moduleSpecifier) {
+    if (!binding || !moduleSpecifier) {
         return;
     }
-    addToSetMap(context.vendorBindingsByFile, `${normalizeFileName(sourceFileName)}:${bindingName}`, moduleSpecifier);
+    const symbol = symbolAtLocation(context, binding);
+    if (symbol) {
+        addToSetMap(context.vendorBindingsBySymbol, symbol, moduleSpecifier);
+    }
 }
 
-function vendorBindingsFor(context, sourceFileName, bindingName) {
-    return context.vendorBindingsByFile.get(`${normalizeFileName(sourceFileName)}:${bindingName}`) ?? [];
+function declarationForSymbol(context, sourceFile, node) {
+    const symbol = symbolAtLocation(context, node);
+    return (symbol && context.declarationsByFile.get(normalizeFileName(sourceFile.fileName))?.get(symbol)) ?? null;
+}
+
+function vendorBindingsFor(context, binding) {
+    const symbol = symbolAtLocation(context, binding);
+    return symbol ? (context.vendorBindingsBySymbol.get(symbol) ?? []) : [];
 }
 
 function registerVendorModule(context, moduleSpecifier, containingFile) {
@@ -718,25 +866,23 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
         if (ts.isTypeReferenceNode(current)) {
             const rootName = entityNameRoot(current.typeName);
             if (rootName) {
-                for (const moduleSpecifier of vendorBindingsFor(context, sourceFileName, rootName.text)) {
+                for (const moduleSpecifier of vendorBindingsFor(context, rootName)) {
                     modules.add(moduleSpecifier);
                 }
-                const declaration = context.declarationsByFile
-                    .get(normalizeFileName(sourceFileName))
-                    ?.get(rootName.text);
+                const declaration = declarationForSymbol(context, sourceFile, rootName);
                 if (declaration) {
                     visit(declaration);
                 }
             }
         }
         if (ts.isIdentifier(current)) {
-            for (const moduleSpecifier of vendorBindingsFor(context, sourceFileName, current.text)) {
+            for (const moduleSpecifier of vendorBindingsFor(context, current)) {
                 modules.add(moduleSpecifier);
             }
         }
         if (
             ts.isCallExpression(current) &&
-            isIdentifierNamed(current.expression, 'require') &&
+            isUnshadowedIdentifier(context, sourceFile, current.expression, 'require') &&
             current.arguments.length === 1
         ) {
             const moduleSpecifier = moduleSpecifierText(current.arguments[0]);
@@ -747,9 +893,7 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
 
         if (includeImplementation) {
             if (ts.isIdentifier(current)) {
-                const declaration = context.declarationsByFile
-                    .get(normalizeFileName(sourceFileName))
-                    ?.get(current.text);
+                const declaration = declarationForSymbol(context, sourceFile, current);
                 if (declaration && declaration !== current) {
                     visit(declaration);
                 }
@@ -817,19 +961,19 @@ function registerImportMetadata(context, sourceFile, statement) {
             return;
         }
         const namedBindings = clause.namedBindings;
-        const bindingNames = [
-            clause.name?.text,
-            namedBindings && ts.isNamespaceImport(namedBindings) ? namedBindings.name.text : null,
+        const bindingNodes = [
+            clause.name,
+            namedBindings && ts.isNamespaceImport(namedBindings) ? namedBindings.name : null,
             ...(namedBindings && ts.isNamedImports(namedBindings)
-                ? namedBindings.elements.map((element) => element.name.text)
+                ? namedBindings.elements.map((element) => element.name)
                 : []),
         ].filter(Boolean);
-        for (const bindingName of bindingNames) {
-            addVendorBinding(context, sourceFileName, bindingName, vendorModule);
+        for (const binding of bindingNodes) {
+            addVendorBinding(context, binding, vendorModule);
         }
         return;
     }
-    addVendorBinding(context, sourceFileName, statement.name.text, vendorModule);
+    addVendorBinding(context, statement.name, vendorModule);
 }
 
 function collectVendorMetadata(context, sourceFiles) {
@@ -839,11 +983,17 @@ function collectVendorMetadata(context, sourceFiles) {
             if (ts.isVariableStatement(statement)) {
                 for (const declaration of statement.declarationList.declarations) {
                     for (const identifier of bindingIdentifiers(declaration.name)) {
-                        declarations.set(identifier.text, declaration);
+                        const symbol = symbolAtLocation(context, identifier);
+                        if (symbol) {
+                            declarations.set(symbol, declaration);
+                        }
                     }
                 }
             } else if (isNamedDeclaration(statement)) {
-                declarations.set(statement.name.text, statement);
+                const symbol = symbolAtLocation(context, statement.name);
+                if (symbol) {
+                    declarations.set(symbol, statement);
+                }
             }
             registerImportMetadata(context, sourceFile, statement);
         }
@@ -869,7 +1019,7 @@ function collectVendorMetadata(context, sourceFiles) {
                 }
             } else if (
                 ts.isCallExpression(node) &&
-                isIdentifierNamed(node.expression, 'require') &&
+                isUnshadowedIdentifier(context, sourceFile, node.expression, 'require') &&
                 node.arguments.length === 1
             ) {
                 const moduleSpecifier = moduleSpecifierText(node.arguments[0]);
@@ -883,7 +1033,7 @@ function collectVendorMetadata(context, sourceFiles) {
                 });
                 for (const identifier of bindingIdentifiers(node.name)) {
                     for (const moduleSpecifier of modules) {
-                        addVendorBinding(context, sourceFile.fileName, identifier.text, moduleSpecifier);
+                        addVendorBinding(context, identifier, moduleSpecifier);
                     }
                 }
             }
@@ -981,7 +1131,7 @@ function enumerateCommonJsProperties(context, sourceFile, statement, valueNode) 
     return true;
 }
 
-function collectCommonJsObjectAssign(context, sourceFile, node) {
+function collectCommonJsObjectAssign(context, sourceFile, node, flow) {
     if (!ts.isCallExpression(node) || node.arguments.length < 2) {
         return;
     }
@@ -993,7 +1143,7 @@ function collectCommonJsObjectAssign(context, sourceFile, node) {
     if (
         !ts.isExpressionStatement(statement) ||
         statement.parent !== sourceFile ||
-        !isUnshadowedCommonJsTarget(context, sourceFile, node.arguments[0])
+        !isUnshadowedCommonJsTarget(context, sourceFile, flow, node.arguments[0])
     ) {
         return;
     }
@@ -1015,12 +1165,48 @@ function collectCommonJsObjectAssign(context, sourceFile, node) {
     }
 }
 
+function collectCommonJsAssignment(context, sourceFile, statement, node, flow) {
+    if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
+        return;
+    }
+    const isWholeModuleAssignment = isModuleExportsMember(context, sourceFile, node.left);
+    if (isWholeModuleAssignment) {
+        flow.currentModuleExports = commonJsAssignmentIdentity(context, sourceFile, flow, node.right);
+        replaceCommonJsRecords(context, sourceFile);
+        addRepositoryRecord(context, sourceFile, {
+            diagnosticNode: statement,
+            exportedName: 'default',
+            isCommonJs: true,
+            symbolNode: node.right,
+            valueNode: node.right,
+        });
+        enumerateCommonJsProperties(context, sourceFile, statement, node.right);
+        return;
+    }
+
+    const propertyName = commonJsExportName(context, sourceFile, node.left, flow);
+    if (propertyName) {
+        replaceCommonJsRecords(context, sourceFile, new Set([propertyName]));
+        addRepositoryRecord(context, sourceFile, {
+            diagnosticNode: statement,
+            exportedName: propertyName,
+            isCommonJs: true,
+            symbolNode: node.right,
+            valueNode: node.right,
+        });
+        return;
+    }
+
+    isCommonJsBindingAssignment(context, sourceFile, flow, node.left, node.right);
+}
+
 function collectExportRecords(context, sourceFile) {
-    const declarations = context.declarationsByFile.get(normalizeFileName(sourceFile.fileName)) ?? new Map();
     const resolveModuleSpecifier = (moduleSpecifier, containingFile) =>
         resolveRepositoryModuleSpecifier(moduleSpecifier, containingFile, context.options, context.compilerHost);
+    const commonJsFlow = createCommonJsFlow();
 
     for (const statement of sourceFile.statements) {
+        registerCommonJsBindings(context, sourceFile, commonJsFlow, statement);
         if (ts.isExportDeclaration(statement)) {
             const moduleSpecifier = moduleSpecifierText(statement.moduleSpecifier);
             const targetFile = moduleSpecifier ? resolveModuleSpecifier(moduleSpecifier, sourceFile.fileName) : null;
@@ -1034,7 +1220,10 @@ function collectExportRecords(context, sourceFile) {
                         symbolNode: specifier.name,
                         targetFile,
                         targetName: moduleSpecifier ? localName : null,
-                        valueNode: moduleSpecifier ? specifier : (declarations.get(localName) ?? specifier),
+                        valueNode: moduleSpecifier
+                            ? specifier
+                            : (declarationForSymbol(context, sourceFile, specifier.propertyName ?? specifier.name) ??
+                              specifier),
                     });
                 }
             } else if (statement.exportClause && ts.isNamespaceExport(statement.exportClause)) {
@@ -1069,69 +1258,40 @@ function collectExportRecords(context, sourceFile) {
             });
             continue;
         }
-        if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
+        if (hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
+            const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
+            if (ts.isVariableStatement(statement)) {
+                for (const declaration of statement.declarationList.declarations) {
+                    for (const identifier of bindingIdentifiers(declaration.name)) {
+                        addDeclarationRecord(
+                            context,
+                            sourceFile,
+                            statement,
+                            declaration,
+                            isDefault ? 'default' : identifier.text
+                        );
+                    }
+                }
+            } else if (isNamedDeclaration(statement)) {
+                addDeclarationRecord(
+                    context,
+                    sourceFile,
+                    statement,
+                    statement,
+                    isDefault ? 'default' : statement.name.text
+                );
+            }
+        }
+
+        if (!ts.isExpressionStatement(statement)) {
             continue;
         }
-        const isDefault = hasModifier(statement, ts.SyntaxKind.DefaultKeyword);
-        if (ts.isVariableStatement(statement)) {
-            for (const declaration of statement.declarationList.declarations) {
-                for (const identifier of bindingIdentifiers(declaration.name)) {
-                    addDeclarationRecord(
-                        context,
-                        sourceFile,
-                        statement,
-                        declaration,
-                        isDefault ? 'default' : identifier.text
-                    );
-                }
-            }
-        } else if (isNamedDeclaration(statement)) {
-            addDeclarationRecord(
-                context,
-                sourceFile,
-                statement,
-                statement,
-                isDefault ? 'default' : statement.name.text
-            );
+        const expression = statement.expression;
+        if (ts.isCallExpression(expression)) {
+            collectCommonJsObjectAssign(context, sourceFile, expression, commonJsFlow);
         }
+        collectCommonJsAssignment(context, sourceFile, statement, expression, commonJsFlow);
     }
-
-    const visitCommonJs = (node) => {
-        collectCommonJsObjectAssign(context, sourceFile, node);
-        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-            const propertyName = commonJsExportName(context, sourceFile, node.left);
-            const isWholeModuleAssignment =
-                unshadowedStaticMemberName(context, sourceFile, node.left, 'module') === 'exports';
-            const statement = node.parent && ts.isExpressionStatement(node.parent) ? node.parent : node;
-            const isTopLevelAssignment = ts.isExpressionStatement(node.parent) && node.parent.parent === sourceFile;
-            if (isWholeModuleAssignment) {
-                if (isTopLevelAssignment) {
-                    replaceCommonJsRecords(context, sourceFile);
-                }
-                addRepositoryRecord(context, sourceFile, {
-                    diagnosticNode: statement,
-                    exportedName: 'default',
-                    isCommonJs: true,
-                    symbolNode: node.right,
-                    valueNode: node.right,
-                });
-                enumerateCommonJsProperties(context, sourceFile, statement, node.right);
-            } else if (propertyName) {
-                if (isTopLevelAssignment) {
-                    replaceCommonJsRecords(context, sourceFile, new Set([propertyName]));
-                }
-                addRepositoryRecord(context, sourceFile, {
-                    diagnosticNode: statement,
-                    exportedName: propertyName,
-                    isCommonJs: true,
-                    symbolNode: node.right,
-                    valueNode: node.right,
-                });
-            }
-        }
-        ts.forEachChild(node, visitCommonJs);
-    };
-    visitCommonJs(sourceFile);
 }
 
 function moduleExportSymbols(context, fileName) {
@@ -1498,17 +1658,26 @@ function collectRepositoryTauriTypeFindings(
             ),
         ])
     );
-    const vendorRelevantFiles = new Set(context.directVendorFiles);
-    let expandedRelevantFiles = true;
-    while (expandedRelevantFiles) {
-        expandedRelevantFiles = false;
-        for (const [sourceFileName, dependencies] of repositoryDependencies) {
-            if (
-                !vendorRelevantFiles.has(sourceFileName) &&
-                [...dependencies].some((dependency) => vendorRelevantFiles.has(dependency))
-            ) {
-                vendorRelevantFiles.add(sourceFileName);
-                expandedRelevantFiles = true;
+    const dependentsByDependency = new Map();
+    for (const [sourceFileName, dependencies] of repositoryDependencies) {
+        for (const dependency of dependencies) {
+            addToSetMap(dependentsByDependency, dependency, sourceFileName);
+        }
+    }
+    const vendorRelevantFiles = new Set();
+    const relevanceQueue = [];
+    for (const sourceFileName of context.directVendorFiles) {
+        if (repositoryDependencies.has(sourceFileName)) {
+            vendorRelevantFiles.add(sourceFileName);
+            relevanceQueue.push(sourceFileName);
+        }
+    }
+    for (let queueIndex = 0; queueIndex < relevanceQueue.length; queueIndex += 1) {
+        const dependency = relevanceQueue[queueIndex];
+        for (const dependent of dependentsByDependency.get(dependency) ?? []) {
+            if (!vendorRelevantFiles.has(dependent)) {
+                vendorRelevantFiles.add(dependent);
+                relevanceQueue.push(dependent);
             }
         }
     }

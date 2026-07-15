@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { describe, expect, it } from 'vitest';
 
@@ -947,6 +948,393 @@ describe('check-dependency-boundaries', () => {
             }
         }
     });
+
+    it('should model CommonJS export-object identity across aliases and rebinding', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-cjs-identity-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': [
+                    'declare const module: { exports: Record<string, unknown> };',
+                    'declare let exports: Record<string, unknown>;',
+                ],
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'commonjs-alias-flow.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'alias-flow' };",
+                    'const exportsAlias = exports;',
+                    'const moduleAlias = module.exports;',
+                    'exportsAlias.beforeExports = leaked;',
+                    'moduleAlias.beforeModule = leaked;',
+                    'let delayedExports;',
+                    'delayedExports = exports;',
+                    'delayedExports.afterDelayedExports = leaked;',
+                    'exports = {};',
+                    'exports.detachedExports = leaked;',
+                    'moduleAlias.afterExportsRebindAlias = leaked;',
+                    'const currentModule = module.exports;',
+                    'currentModule.afterExportsRebindCurrent = leaked;',
+                    'let delayedModule;',
+                    'delayedModule = module.exports;',
+                    'delayedModule.afterDelayedModule = leaked;',
+                ],
+                'commonjs-module-rebind.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'module-rebind' };",
+                    'const oldModule = module.exports;',
+                    'module.exports = { clean: true };',
+                    'oldModule.detachedModule = leaked;',
+                    'exports.detachedExports = leaked;',
+                    'const currentModule = module.exports;',
+                    'currentModule.afterModuleRebind = leaked;',
+                ],
+                'commonjs-clean-detached.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'clean-detached' };",
+                    'const detached = {};',
+                    'exports = detached;',
+                    'exports.detachedExports = leaked;',
+                    'module.exports = { clean: true };',
+                    'detached.afterModuleRebind = leaked;',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-cjs-identity.ts': [
+                    "import { beforeExports, beforeModule, afterExportsRebindAlias, afterExportsRebindCurrent, afterDelayedExports, afterDelayedModule } from '../repositories/commonjs-alias-flow.cjs';",
+                    "import { afterModuleRebind, detachedModule, detachedExports } from '../repositories/commonjs-module-rebind.cjs';",
+                    "import { detachedExports as cleanDetached } from '../repositories/commonjs-clean-detached.cjs';",
+                    'void beforeExports;',
+                    'void beforeModule;',
+                    'void afterExportsRebindAlias;',
+                    'void afterExportsRebindCurrent;',
+                    'void afterDelayedExports;',
+                    'void afterDelayedModule;',
+                    'void afterModuleRebind;',
+                    'void detachedModule;',
+                    'void detachedExports;',
+                    'void cleanDetached;',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 6),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 9),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 12),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 14),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 17),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-module-rebind.cjs', 8),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(7);
+            expect(vendorFindings).not.toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/commonjs-alias-flow.cjs', 11),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-module-rebind.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-module-rebind.cjs', 6),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-clean-detached.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/commonjs-clean-detached.cjs', 7),
+                ])
+            );
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should reject shadowed require consumers while preserving real require consumers', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-require-shadow-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': 'declare function require(moduleName: string): any;\n',
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'positive-require.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'positive-require' };",
+                    'module.exports = { leaked };',
+                ],
+                'shadowed-require.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const leaked = { command: 'shadowed-require' };",
+                    'module.exports = { leaked };',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-real-require.ts': [
+                    "const { leaked } = require('../repositories/positive-require.cjs');",
+                    'void leaked;',
+                ],
+                'consume-shadowed-require.ts': [
+                    'export function consume(require: (moduleName: string) => { leaked: unknown }) {',
+                    "    const { leaked } = require('../repositories/shadowed-require.cjs');",
+                    '    return leaked;',
+                    '}',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual([vendorFinding('src/modules/Foo/repositories/positive-require.cjs', 3)]);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should match vendor bindings by checker symbol, not a same-name local type parameter', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-binding-symbol-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, { 'package.json': JSON.stringify({ type: 'module' }) });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'actual-binding.ts': [
+                    "import type { InvokeArgs as ActualArgs } from '@tauri-apps/api/core';",
+                    'export type ActualPublic = ActualArgs;',
+                ],
+                'shadowed-binding.ts': [
+                    "import type { InvokeArgs as ImportedArgs } from '@tauri-apps/api/core';",
+                    'type ShadowedArgs = ImportedArgs;',
+                    'export function clean<ShadowedArgs>(value: ShadowedArgs): ShadowedArgs {',
+                    '    return value;',
+                    '}',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-binding-symbols.ts': [
+                    "import type { ActualPublic } from '../repositories/actual-binding';",
+                    "import { clean } from '../repositories/shadowed-binding';",
+                    'export type Consumed = ActualPublic;',
+                    'void clean;',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual([vendorFinding('src/modules/Foo/repositories/actual-binding.ts', 2)]);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should inspect the full repository surface for rest destructuring', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-require-rest-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            writeFixtureFiles(repositoryRoot, {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': 'declare function require(moduleName: string): any;\n',
+            });
+            writeFixtureFiles(vendorDirectory, {
+                'package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'core.js': 'export const invoke = null;\n',
+                'core.d.ts': 'export type InvokeArgs = { command: string };\n',
+            });
+            writeFixtureFiles(repositoryDirectory, {
+                'rest-surface.cjs': [
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const namedLeaked = { command: 'named-rest' };",
+                    "/** @type {import('@tauri-apps/api/core').InvokeArgs} */",
+                    "const restLeaked = { command: 'rest-only' };",
+                    'exports.namedLeaked = namedLeaked;',
+                    'exports.restLeaked = restLeaked;',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-rest.ts': [
+                    "const { namedLeaked, ...rest } = require('../repositories/rest-surface.cjs');",
+                    'void namedLeaked;',
+                    'void rest;',
+                ],
+            });
+
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual(
+                expect.arrayContaining([
+                    vendorFinding('src/modules/Foo/repositories/rest-surface.cjs', 5),
+                    vendorFinding('src/modules/Foo/repositories/rest-surface.cjs', 6),
+                ])
+            );
+            expect(vendorFindings).toHaveLength(2);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    });
+
+    it('should propagate vendor relevance through an adversarial long repository chain', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-relevance-chain-'));
+            const moduleDirectory = join(repositoryRoot, 'src/modules/Foo');
+            const repositoryDirectory = join(moduleDirectory, 'repositories');
+            const useCaseDirectory = join(moduleDirectory, 'useCases');
+            const vendorDirectory = join(repositoryRoot, 'node_modules/@tauri-apps/api');
+            const chainLength = 700;
+            mkdirSync(repositoryDirectory, { recursive: true });
+            mkdirSync(useCaseDirectory, { recursive: true });
+            mkdirSync(vendorDirectory, { recursive: true });
+
+            const fixtures: Record<string, FixtureContents> = {
+                'package.json': JSON.stringify({ type: 'module' }),
+                'src/globals.d.ts': 'declare function require(moduleName: string): any;\n',
+                'node_modules/@tauri-apps/api/package.json': JSON.stringify({
+                    name: '@tauri-apps/api',
+                    type: 'module',
+                    exports: {
+                        './core': {
+                            types: './core.d.ts',
+                            default: './core.js',
+                        },
+                    },
+                }),
+                'node_modules/@tauri-apps/api/core.js': 'export const invoke = null;\n',
+                'node_modules/@tauri-apps/api/core.d.ts': [
+                    'export type InvokeArgs = { command: string };',
+                    'export declare function invoke(command: string): Promise<unknown>;',
+                ],
+                'src/modules/Foo/repositories/zz-vendor.ts': [
+                    "import { invoke } from '@tauri-apps/api/core';",
+                    'const privateValue = { invoke };',
+                    'export { privateValue };',
+                ],
+                'src/modules/Foo/useCases/consume-chain.ts': [
+                    "import { publicValue } from '../repositories/chain-0000';",
+                    'void publicValue;',
+                ],
+            };
+            for (let index = 0; index < chainLength; index += 1) {
+                const current = String(index).padStart(4, '0');
+                const next = index === chainLength - 1 ? 'zz-vendor' : `chain-${String(index + 1).padStart(4, '0')}`;
+                const targetName = index === chainLength - 1 ? 'privateValue' : 'publicValue';
+                fixtures[`src/modules/Foo/repositories/chain-${current}.ts`] =
+                    `export { ${targetName} as publicValue } from './${next}';\n`;
+            }
+            writeFixtureFiles(repositoryRoot, fixtures);
+
+            const startedAt = performance.now();
+            const vendorFindings = invokeStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+            const elapsedMs = performance.now() - startedAt;
+
+            expect(vendorFindings).toContainEqual(vendorFinding('src/modules/Foo/repositories/chain-0000.ts', 1));
+            expect(elapsedMs).toBeLessThan(10_000);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
+    }, 20_000);
 
     it('should enforce TitleCase model targets from the configured rule', () => {
         const modelRule = mainConfig.forbidden.find(
