@@ -648,17 +648,13 @@ module.exports = {
         // --------------------------------------------------------------------
         {
             name: 'tauri-ipc-only-in-repositories',
-            // WARN pending the IPC→repositories refactor: the resolved-path fix
-            // below (was '^@tauri-apps/', which never matched the pnpm-resolved
-            // path so the rule silently never fired) plus the tauriBridge target
-            // below surface real violations — IPC used directly from useCases/,
-            // presentation hooks, and shared utilities. Landing this at 'error'
-            // would block until that refactor (backlogged)
-            // is done; until then it stays 'warn' so the violations are visible.
-            severity: 'warn',
+            // The resolved-path match below catches pnpm-resolved @tauri-apps/*
+            // imports, while the tauriBridge target catches IPC laundering through
+            // src/utils. Repositories and tauriBridge itself are explicit origins.
+            severity: 'error',
             comment:
                 'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
-                'Currently warn pending the backlogged IPC→repositories refactor.',
+                'Resolved @tauri-apps imports and tauriBridge laundering are error-gated.',
             from: {
                 path: '^(src/modules/|src/utils/).*' + SOURCE_FILE_RE,
                 pathNot: ['^src/modules/.*repositories/', '^src/utils/tauriBridge\\.ts$'],
@@ -750,8 +746,8 @@ module.exports = {
         // --------------------------------------------------------------------
         {
             name: 'models-must-be-title-case',
-            severity: 'warn',
-            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
+            severity: 'error',
+            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). The current tree satisfies this convention, so a hard gate prevents case-sensitive path drift as models are added.',
             from: {},
             to: {
                 path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,

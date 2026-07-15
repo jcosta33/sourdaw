@@ -152,6 +152,42 @@ describe('check-dependency-boundaries', () => {
         expect(new RegExp(reactRule.to.path).test('/node_modules/react/jsx-runtime.js')).toBe(false);
     });
 
+    it('should enforce Tauri IPC origins against resolved packages and bridge laundering', () => {
+        const tauriRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'tauri-ipc-only-in-repositories'
+        );
+        const matches = (patterns: string | string[], filePath: string): boolean => {
+            const patternList = Array.isArray(patterns) ? patterns : [patterns];
+            return patternList.some((pattern) => new RegExp(pattern).test(filePath));
+        };
+        const violates = (from: string, to: string): boolean =>
+            matches(tauriRule.from.path, from) &&
+            !matches(tauriRule.from.pathNot, from) &&
+            matches(tauriRule.to.path, to);
+        const resolvedTauriPaths = [
+            '/node_modules/.pnpm/@tauri-apps+api@2.5.0/node_modules/@tauri-apps/api/index.js',
+            '/node_modules/.pnpm/@tauri-apps+plugin-fs@2.5.0/node_modules/@tauri-apps/plugin-fs/dist-js/index.js',
+        ];
+
+        expect(tauriRule.severity).toBe('error');
+        for (const resolvedTauriPath of resolvedTauriPaths) {
+            expect(violates('src/modules/Foo/useCases/run.ts', resolvedTauriPath)).toBe(true);
+            expect(violates('src/modules/Foo/repositories/read.ts', resolvedTauriPath)).toBe(false);
+        }
+        expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/tauriBridge.ts')).toBe(true);
+        expect(violates('src/utils/tauriBridge.ts', resolvedTauriPaths[0])).toBe(false);
+    });
+
+    it('should enforce TitleCase model targets from the configured rule', () => {
+        const modelRule = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'models-must-be-title-case'
+        );
+
+        expect(modelRule.severity).toBe('error');
+        expect(new RegExp(modelRule.to.path).test('src/modules/Foo/models/fooBar.ts')).toBe(true);
+        expect(new RegExp(modelRule.to.path).test('src/modules/Foo/models/FooBar.ts')).toBe(false);
+    });
+
     it('should apply architecture boundaries to type-only edges', () => {
         const typeRuleNames = new Set(typeConfig.forbidden.map((candidate: { name: string }) => candidate.name));
 

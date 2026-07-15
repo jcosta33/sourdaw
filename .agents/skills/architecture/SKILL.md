@@ -91,7 +91,7 @@ Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index
 
 ### 7. Repositories touch metal; engine does not import repositories
 
-I/O (storage, Web Audio setup, Tauri IPC) belongs in `repositories/`. Engine receives deps from use cases — never imports repositories (**error** `usecases-only-write-boundary-to-repositories`). Tauri IPC placement is also **policy** with depcruise **warn** (`tauri-ipc-only-in-repositories`) — not an error gate.
+I/O (storage, Web Audio setup, Tauri IPC) belongs in `repositories/`. Engine receives deps from use cases — never imports repositories (**error** `usecases-only-write-boundary-to-repositories`). Tauri IPC placement is **error-gated** via depcruise (`tauri-ipc-only-in-repositories`).
 
 **Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 

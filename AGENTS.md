@@ -47,7 +47,7 @@ Hard gate via `pnpm deps:validate` (main **error** rules + causal reachability +
 - Direction: presentation → use cases → repositories / stores / services. Business/IO must not import `presentations/`. Only `useCases/` orchestrate `repositories/`. Repositories must not import business/event contracts or foreign stores; same-module stores remain an existing adapter pattern. Models, events, services, validators, and transformers stay pure. (**error**)
 - Leaf `presentations/components/` and shared `src/components/`: no **direct** business-store or use-case imports (**error**, main cruise). No **transitive** reach of use cases (**error**, reachability cruise). Transitive store reach is **not** reachability-gated — still avoid via props/hooks (**policy**).
 - Worklets stay isolated from app/helpers/Tauri. (**error**)
-- **Tauri IPC only from `repositories/`** — policy; depcruise **`warn`** (`tauri-ipc-only-in-repositories`), not an error gate.
+- **Tauri IPC only from `repositories/`** — **error** via `deps:validate` (`tauri-ipc-only-in-repositories`).
 - Tests cruise: cross-module **barrel** + **no relative cross-module** for module tests, external tests, and global test setup (not the full production layer suite).
 
 Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
