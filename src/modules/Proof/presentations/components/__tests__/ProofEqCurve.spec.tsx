@@ -204,7 +204,10 @@ describe('ProofEqCurve', () => {
             const latestTransientEdit = initialOnPatchChange.mock.calls.at(-1)?.[0] as ProofPatchEdit;
             rerender(
                 <ProofEqCurve
-                    patch={{ ...DEFAULT_PATCH, eqBands: latestTransientEdit.value }}
+                    patch={{
+                        ...DEFAULT_PATCH,
+                        eqBands: latestTransientEdit.value.map((band) => ({ ...band })),
+                    }}
                     width={200}
                     height={100}
                     onPatchChange={latestOnPatchChange}
@@ -255,6 +258,43 @@ describe('ProofEqCurve', () => {
 
             const edits = onPatchChange.mock.calls.map(([edit]) => edit as ProofPatchEdit);
             expect(edits.map((edit) => edit.isTransient)).toEqual([true, false]);
+        });
+
+        it.each([
+            ['pointerup', (canvas: HTMLCanvasElement) => fireEvent.pointerUp(canvas, { pointerId: 15 })],
+            ['pointercancel', (canvas: HTMLCanvasElement) => fireEvent.pointerCancel(canvas, { pointerId: 15 })],
+            [
+                'lost pointer capture',
+                (canvas: HTMLCanvasElement) => fireEvent.lostPointerCapture(canvas, { pointerId: 15 }),
+            ],
+            ['unmount', (_canvas: HTMLCanvasElement, unmount: () => void) => unmount()],
+        ])('cancels a stale finalizer after authoritative replacement via %s', (_end, endGesture) => {
+            const onPatchChange = vi.fn();
+            const { container, rerender, unmount } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+            const canvas = container.querySelector('canvas')!;
+            const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 200;
+
+            fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 50, pointerId: 15 });
+            fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 20, pointerId: 15 });
+
+            const authoritativePatch: ProofPatch = {
+                ...DEFAULT_PATCH,
+                name: 'Streaming Master',
+                presetId: 'streaming',
+                eqBands: DEFAULT_PATCH.eqBands.map((band, index) =>
+                    index === 2 ? { ...band, freq: 400, gain: -3 } : { ...band }
+                ),
+            };
+            rerender(
+                <ProofEqCurve patch={authoritativePatch} width={200} height={100} onPatchChange={onPatchChange} />
+            );
+
+            endGesture(canvas, unmount);
+
+            expect(onPatchChange).toHaveBeenCalledTimes(1);
+            expect(onPatchChange.mock.calls[0]?.[0]).toMatchObject({ isTransient: true });
         });
 
         it('does not commit when a dragged band returns to its starting position', () => {

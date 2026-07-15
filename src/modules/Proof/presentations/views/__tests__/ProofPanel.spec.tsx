@@ -183,6 +183,33 @@ describe('ProofPanel', () => {
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
     });
 
+    it('does not finalize an EQ drag after a preset replacement', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        seedState({ uiLevel: 3 });
+
+        const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const canvas = container.querySelector<HTMLCanvasElement>(
+            'canvas[aria-label="8-band parametric EQ frequency response"]'
+        );
+        if (!canvas) {
+            throw new Error('Expected the Level 3 EQ curve canvas');
+        }
+        const peakX = (Math.log10(250 / 20) / Math.log10(20000 / 20)) * 500;
+
+        fireEvent.pointerDown(canvas, { clientX: peakX, clientY: 60, pointerId: 15 });
+        fireEvent.pointerMove(canvas, { clientX: peakX + 10, clientY: 30, pointerId: 15 });
+        fireEvent.click(screen.getByRole('button', { name: /Streaming Master/ }));
+
+        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+
+        fireEvent.pointerUp(canvas, { pointerId: 15 });
+
+        expect(getProofState(DEVICE_ID).patch.presetId).toBe('streaming');
+        expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('toggles A/B compare through the bridge and the store (no inline view-code store write)', () => {
         const bridge = makeBridge();
         bridges.set(DEVICE_ID, bridge);
