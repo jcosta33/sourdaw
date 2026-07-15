@@ -6,7 +6,8 @@ status: in-progress
 owner: The Sourdaw team
 sources:
   - ../drum-machine/spec.md
-  - intake/research-ai.md
+  - ../midi-generation/research.md
+  - ../ai-ghost-surfaces/spec.md
 ---
 
 # Drum machine text-to-pattern generation

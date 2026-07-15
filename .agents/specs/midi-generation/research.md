@@ -60,16 +60,50 @@ what product behaviours must it inherit?
 - **Confidence:** high
 - **Bears on:** AC-008 (registry license allowlist).
 
+### R-007 — The current generator is LLM-backed; the local pipeline is a planned migration
+
+- **Claim:** The current MIDI path uses structured prompting in
+  `src/modules/AiGeneration/useCases/llmMidiGeneration.ts`, resolving native, WebLLM, or cloud
+  backends and falling back to built-in pattern templates. Magenta.js (`@magenta/music`,
+  MusicVAE/MusicRNN) and `@huggingface/transformers` are not package dependencies. The local
+  rule-plus-transformer and `ort` pipeline in this research is therefore a future replacement or
+  extension, not a description of the current runtime; the current cloud surface is Claude via
+  Anthropic only, with no OpenAI or Replicate dependency.
+- **Evidence:** the current generator source and `package.json` (`@mlc-ai/web-llm` and
+  `@anthropic-ai/sdk` are present; Magenta, Transformers.js, OpenAI, and Replicate are absent).
+- **Confidence:** high
+- **Bears on:** migration sequencing, bundle/licensing tradeoffs, and the boundary between the
+  current prompt path and the local inference contract; it adds no v1 dependency.
+
+### R-008 — Keep the LLM path as the baseline until local inference proves its value
+
+- **Claim:** Structured LLM generation remains the maintainable, bundle-light default. Do not add
+  Magenta.js or Transformers.js merely to duplicate capabilities already served by the LLM path.
+  A dedicated local pipeline is justified only when it delivers a measured offline,
+  deterministic, latency, or musical-quality advantage; its models must be optional rather than a
+  second always-loaded generation stack.
+- **Evidence:** the current structured-prompt implementation already covers generation without a
+  dedicated framework dependency, while the proposed local architecture introduces model weights,
+  tokenizers, runtime integration, and memory costs.
+- **Confidence:** high for the dependency decision; medium until local quality and latency
+  benchmarks establish whether the planned pipeline should replace or extend the LLM path.
+- **Bears on:** migration gates, bundle size, model-download policy, and the go/no-go decision for
+  the neural tier.
+
 ## Open questions
 
 - [ ] Q-001 — Are MLC-quantized AMT weights legally shippable under Apache-2.0 for a commercial DAW (Lakh provenance)? Blocks the neural tier.
 - [ ] Q-002 — Real residency of AMT-medium + acoustic models on 8 GB machines; optional-download vs RAM-gated.
 - [ ] Q-003 — Per-feature CPU/GPU routing table once benchmarks land.
+- [ ] Q-004 — When the local pipeline ships, should it replace or coexist with the current
+  prompt-based generator? Preserve standard MIDI output and route any future cloud fallback
+  through the AI trust/policy boundary rather than creating a second mutation path.
 
 ## Recommendation
 
 Prototype the rule engine (Tier 1) and the AMT ONNX path (Tier 3) in parallel (R-001,
-R-002); standardise on `ort` with KV-cache (R-003) and two tokenizer adapters (R-004);
+R-002), while treating the existing structured LLM path as the compatibility bridge (R-007);
+standardise on `ort` with KV-cache (R-003) and two tokenizer adapters (R-004);
 pin the three Logic-derived product rules at the pipeline layer (R-005); gate the model
 registry on a commercial-safe license allowlist (R-006). The neural tier is blocked until
 Q-001 is resolved in writing.

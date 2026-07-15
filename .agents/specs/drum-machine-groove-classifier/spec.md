@@ -6,7 +6,8 @@ status: in-progress
 owner: The Sourdaw team
 sources:
   - ../drum-machine/spec.md
-  - intake/research-ai.md
+  - ../audio-generation-browser/research.md
+  - ../workflow-ui/research.md
 ---
 
 # Drum machine groove-quality classifier
