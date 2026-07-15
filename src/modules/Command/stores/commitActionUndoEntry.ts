@@ -1,6 +1,7 @@
 import { type AppAction } from '../models/AppAction';
-import { createUndoEntry, type UndoSource } from '../models/UndoEntry';
+import { type UndoSource } from '../models/UndoEntry';
 import { commitUndoEntry } from '../useCases/commitUndoEntry';
+import { createUndoEntry } from '../useCases/createUndoEntry';
 
 type CommitActionUndoEntryInput = {
     action: AppAction;

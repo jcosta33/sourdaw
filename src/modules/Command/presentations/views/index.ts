@@ -4,3 +4,4 @@
 export { CommandPalette } from './CommandPalette';
 export { UndoHistoryPanel } from './UndoHistoryPanel';
 export { useGlobalKeyboardShortcuts } from './keyboardShortcutsContract';
+export { commandRegistry, searchCommands } from './commandRegistry';

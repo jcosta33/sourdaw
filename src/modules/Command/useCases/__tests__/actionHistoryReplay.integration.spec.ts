@@ -13,11 +13,12 @@ import {
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 
+import { type AppAction } from '../../models/AppAction';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearActionHistory } from '../clearActionHistory';
 import { clearUndoHistory } from '../clearUndoHistory';
-import { type ActionHandler, type AppAction } from '../commandQueries';
+import { type ActionHandler } from '../executeAppAction';
 import { executeAppAction } from '../executeAppAction';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';

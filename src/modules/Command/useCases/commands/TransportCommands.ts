@@ -1,12 +1,12 @@
 import { seekPlayhead } from '#/modules/Transport/useCases';
 
-import { getLastClipEndBeat } from '../../useCases/selectionHelpers/getLastClipEndBeat';
-import { goToNextMarker } from '../../useCases/selectionHelpers/goToNextMarker';
-import { goToPreviousMarker } from '../../useCases/selectionHelpers/goToPreviousMarker';
-import { type CommandEntry } from '../CommandEntry';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
+import { getLastClipEndBeat } from '../selectionHelpers/getLastClipEndBeat';
+import { goToNextMarker } from '../selectionHelpers/goToNextMarker';
+import { goToPreviousMarker } from '../selectionHelpers/goToPreviousMarker';
 
 /** Transport commands — play, stop, record, loop, metronome, seek. */
-export const transportCommands: CommandEntry[] = [
+export const transportCommands: CallableCommandEntry[] = [
     {
         id: 'toggle-playback',
         label: 'Play / Pause',

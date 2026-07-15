@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { type UndoTreeNode, createEmptyTree, type UndoTree } from '../../../../models/UndoTree';
 import { undoTreeStore } from '../../../../stores/undoTree';
-import { createUndoEntry } from '../../../commandQueries';
+import { createUndoEntry } from '../../../createUndoEntry';
 import { switchBranch } from '../switchBranch';
 
 describe('switchBranch', () => {

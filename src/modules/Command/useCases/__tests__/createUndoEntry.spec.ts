@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { createUndoEntry, type AppAction } from '../commandQueries';
+import { type AppAction } from '../../models/AppAction';
+import { createUndoEntry } from '../createUndoEntry';
 
-describe('commandQueries (undo helpers)', () => {
+describe('createUndoEntry', () => {
     it('should build an action undo entry with sequential ids and the given source', () => {
         const action: AppAction = { type: 'removeAllTracks' };
         const inverse: AppAction = { type: 'togglePlayback' };

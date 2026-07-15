@@ -667,15 +667,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/MIDI/useCases/__tests__/getMidiLearnHandlers.spec.ts",
-    "to": "src/modules/Command/models/CommandRegistry.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Plugin/presentations/views/__tests__/ProofChamberPanel.spec.tsx",
     "to": "../../stores/chamberStore",
     "rule": {

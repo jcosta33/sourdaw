@@ -8,8 +8,9 @@ import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCommandPalette } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
+
+import { searchCommands, type CommandEntry } from './commandRegistry';
 
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;

@@ -1,8 +1,8 @@
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 
-export const elasticCommands: CommandEntry[] = [
+export const elasticCommands: CallableCommandEntry[] = [
     {
         id: 'elastic-detect-transients',
         label: 'Elastic: Detect Transients',

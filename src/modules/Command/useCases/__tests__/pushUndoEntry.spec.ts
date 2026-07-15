@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type CallbackUndoEntry } from '../commandQueries';
+import { type CallbackUndoEntry } from '../../models/UndoEntry';
 import { commitUndoEntry } from '../commitUndoEntry';
 import { pushUndoEntry } from '../pushUndoEntry';
 

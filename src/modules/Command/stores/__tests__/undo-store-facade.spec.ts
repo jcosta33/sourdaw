@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { createUndoEntry } from '../../useCases/commandQueries';
+import { createUndoEntry } from '../../useCases/createUndoEntry';
 import { undoStore as public_undo_store } from '../undo-store-facade';
 import { undoStore as mutable_undo_store } from '../undoStore';
 

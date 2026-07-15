@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { macroStore } from '../../../../stores/macroStore';
-import { type AppAction } from '../../../commandQueries';
+import { type AppAction } from '../../../executeAppAction';
 import { recordAction } from '../recordAction';
 
 function startRecording(): void {

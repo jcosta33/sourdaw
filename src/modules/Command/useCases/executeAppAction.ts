@@ -7,14 +7,28 @@ import {
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
+import { type AppAction } from '../models/AppAction';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
-import { type AppAction, createUndoEntry } from './commandQueries';
 import { commitUndoEntry } from './commitUndoEntry';
+import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
+
+export type HandlerDescribeResult = {
+    label: string;
+    inverseAction?: AppAction | null;
+};
+
+export type ActionHandler<Action extends AppAction = AppAction> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => HandlerDescribeResult;
+    undoable: boolean;
+};
+
+export type { AppAction } from '../models/AppAction';
 
 export type ExecuteOptions = {
     groupId?: string;

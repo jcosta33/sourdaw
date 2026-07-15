@@ -4,8 +4,10 @@
 export { describeAction } from './actionLabels';
 export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
 export { setCommandEventBus } from './commandEventBus';
+export { createCallbackUndoEntry } from './createCallbackUndoEntry';
+export { createUndoEntry } from './createUndoEntry';
 
-export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
+export type { AppAction, ActionHandler, HandlerDescribeResult } from './executeAppAction';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';

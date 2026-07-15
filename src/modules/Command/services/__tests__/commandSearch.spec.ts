@@ -3,7 +3,9 @@ import { describe, it, expect } from 'vitest';
 import { type CommandEntry } from '../../models/CommandEntry';
 import { fuzzyMatch, searchCommands } from '../commandSearch';
 
-function entry(overrides: Partial<CommandEntry>): CommandEntry {
+type TestCommandEntry = CommandEntry<() => void>;
+
+function entry(overrides: Partial<TestCommandEntry>): TestCommandEntry {
     return {
         id: 'id',
         label: 'Label',
@@ -31,7 +33,7 @@ describe('fuzzyMatch', () => {
 });
 
 describe('searchCommands', () => {
-    const registry: CommandEntry[] = [
+    const registry: TestCommandEntry[] = [
         entry({ id: '1', label: 'Add Track', description: 'Create a track', category: 'Track' }),
         entry({ id: '2', label: 'Export', description: 'Save project', category: 'Project' }),
     ];

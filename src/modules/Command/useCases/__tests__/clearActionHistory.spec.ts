@@ -11,7 +11,7 @@ import {
 import { undoStore, pushUndo } from '../../stores/undoStore';
 import { clearActionHistory } from '../clearActionHistory';
 
-import type { CallbackUndoEntry } from '../commandQueries';
+import type { CallbackUndoEntry } from '../../models/UndoEntry';
 
 const mocks = vi.hoisted(() => ({
     clear_metadata: vi.fn<() => void>(),

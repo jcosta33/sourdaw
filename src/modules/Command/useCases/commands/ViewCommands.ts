@@ -1,5 +1,4 @@
-import { zoomTimeline } from '#/modules/Arrangement/stores';
-import { addMarker } from '#/modules/Arrangement/useCases';
+import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
@@ -11,12 +10,12 @@ import {
     startOnboardingTour,
 } from '#/modules/Workspace/useCases';
 
-import { executeAppAction } from '../../useCases/executeAppAction';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
-import { type CommandEntry } from '../CommandEntry';
+import { executeAppAction } from '../executeAppAction';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
+import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
-export const viewCommands: CommandEntry[] = [
+export const viewCommands: CallableCommandEntry[] = [
     {
         id: 'zoom-to-fit',
         label: 'Zoom to Fit',
@@ -44,7 +43,7 @@ export const viewCommands: CommandEntry[] = [
         category: 'View',
         shortcut: '+',
         action: () => {
-            zoomTimeline(4);
+            zoomTimelineBy(4);
         },
     },
     {
@@ -54,7 +53,7 @@ export const viewCommands: CommandEntry[] = [
         category: 'View',
         shortcut: '-',
         action: () => {
-            zoomTimeline(-4);
+            zoomTimelineBy(-4);
         },
     },
     {

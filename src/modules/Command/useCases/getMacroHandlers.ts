@@ -3,8 +3,9 @@ import { handlePlayMacro } from '../handlers/macro/handlePlayMacro';
 import { handleRenameMacro } from '../handlers/macro/handleRenameMacro';
 import { handleStartMacroRecording } from '../handlers/macro/handleStartMacroRecording';
 import { handleStopMacroRecording } from '../handlers/macro/handleStopMacroRecording';
+import { type AppAction } from '../models/AppAction';
 
-import { type ActionHandler, type AppAction } from './commandQueries';
+import { type ActionHandler } from './executeAppAction';
 
 type MacroAppAction =
     | Extract<AppAction, { type: 'startMacroRecording' }>

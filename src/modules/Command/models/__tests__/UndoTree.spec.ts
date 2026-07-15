@@ -1,7 +1,23 @@
 import { describe, it, expect } from 'vitest';
 
-import { createUndoEntry } from '../../useCases/commandQueries';
+import { type ActionUndoEntry } from '../UndoEntry';
 import { createEmptyTree, labelBranch, pushToTree, type UndoTree } from '../UndoTree';
+
+function makeEntry(
+    label: string,
+    action: ActionUndoEntry['action'],
+    inverseAction: ActionUndoEntry['inverseAction']
+): ActionUndoEntry {
+    return {
+        id: label,
+        kind: 'action',
+        label,
+        action,
+        inverseAction,
+        timestamp: 0,
+        source: 'manual',
+    };
+}
 
 describe('UndoTree', () => {
     describe('createEmptyTree', () => {
@@ -17,7 +33,7 @@ describe('UndoTree', () => {
     describe('pushToTree', () => {
         it('should add a node and set it as current without a parent when tree was empty', () => {
             const tree = createEmptyTree();
-            const entry = createUndoEntry('a', { type: 'togglePlayback' }, { type: 'stopPlayback' });
+            const entry = makeEntry('a', { type: 'togglePlayback' }, { type: 'stopPlayback' });
             const next = pushToTree(tree, entry);
 
             expect(next.nextId).toBe(2);
@@ -31,8 +47,8 @@ describe('UndoTree', () => {
 
         it('should link a second node to the first as parent', () => {
             let tree: UndoTree = createEmptyTree();
-            const e1 = createUndoEntry('one', { type: 'toggleLoop' }, { type: 'toggleLoop' });
-            const e2 = createUndoEntry('two', { type: 'toggleMetronome' }, { type: 'toggleMetronome' });
+            const e1 = makeEntry('one', { type: 'toggleLoop' }, { type: 'toggleLoop' });
+            const e2 = makeEntry('two', { type: 'toggleMetronome' }, { type: 'toggleMetronome' });
             tree = pushToTree(tree, e1);
             tree = pushToTree(tree, e2);
 
@@ -46,7 +62,7 @@ describe('UndoTree', () => {
     describe('labelBranch', () => {
         it('should set branchLabel on an existing node', () => {
             let tree = createEmptyTree();
-            const entry = createUndoEntry('x', { type: 'setTempo', payload: { bpm: 120 } }, null);
+            const entry = makeEntry('x', { type: 'setTempo', payload: { bpm: 120 } }, null);
             tree = pushToTree(tree, entry);
             const id = tree.currentNodeId!;
             tree = labelBranch(tree, id, 'My branch');

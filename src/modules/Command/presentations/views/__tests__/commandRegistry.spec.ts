@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { commandRegistry } from '../CommandRegistry';
+import { commandRegistry } from '../commandRegistry';
 
 describe('commandRegistry', () => {
     it('should expose each command id once', () => {
@@ -16,5 +16,11 @@ describe('commandRegistry', () => {
             .map(([command_id]) => command_id);
 
         expect(duplicate_ids).toEqual([]);
+    });
+
+    it('dispatches the clear-all MIDI mappings action', () => {
+        const entry = commandRegistry.find((command) => command.id === 'clear-all-midi-mappings');
+
+        expect(entry?.action).toEqual({ type: 'clearAllMidiMappings' });
     });
 });

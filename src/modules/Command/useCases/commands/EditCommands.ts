@@ -1,13 +1,13 @@
 import { copySelectedClip, cutSelectedClip, pasteClip } from '#/modules/Arrangement/useCases';
 
-import { deselectAllClips } from '../../useCases/deselectAllClips';
-import { redo } from '../../useCases/redo';
-import { selectAllClips } from '../../useCases/selectAllClips';
-import { undo } from '../../useCases/undo';
-import { type CommandEntry } from '../CommandEntry';
+import { deselectAllClips } from '../deselectAllClips';
+import { redo } from '../redo';
+import { type CallableCommandEntry } from '../searchCommandRegistry';
+import { selectAllClips } from '../selectAllClips';
+import { undo } from '../undo';
 
 /** Edit commands — undo, redo, copy, cut, paste, select/deselect all. */
-export const editCommands: CommandEntry[] = [
+export const editCommands: CallableCommandEntry[] = [
     {
         id: 'undo',
         label: 'Undo',
