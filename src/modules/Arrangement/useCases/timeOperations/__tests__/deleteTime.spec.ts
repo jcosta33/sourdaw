@@ -40,6 +40,17 @@ describe('deleteTime', () => {
         expect(mocks.deleteTimelineMapsTimeRange).not.toHaveBeenCalled();
     });
 
+    it('throws before writing when dependencies are not registered', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null } as never);
+        setTimeOperationDependencies(null);
+
+        expect(() => deleteTime(0, 4)).toThrow('Arrangement time operation dependencies are not registered');
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+        expect(mocks.deleteAutomationTimeRange).not.toHaveBeenCalled();
+        expect(mocks.deleteTimelineMapsTimeRange).not.toHaveBeenCalled();
+    });
+
     it('processes time deletion with empty tracks', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null } as never);
         expect(() => deleteTime(0, 4)).not.toThrow();
