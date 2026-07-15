@@ -5,156 +5,58 @@ title: Dependency boundary validation research
 status: current
 owner: The Sourdaw team
 sources:
+  - ../hardware-controller-ecosystem/spec.md
+  - ../push-integration/spec.md
+  - ../rave-timbre-transfer/spec.md
   - ../../../.dependency-cruiser.cjs
+  - ../../../.dependency-cruiser.reachability.cjs
   - ../../../scripts/check-dependency-boundaries.mjs
   - ../../../.dependency-cruiser.types.cjs
   - ../../../.dependency-cruiser.tests.cjs
+  - ../../../.dependency-cruiser-known-violations.json
+  - ../../../.dependency-cruiser-known-violations-reachability.json
+  - ../../../.dependency-cruiser-known-violations-types.json
+  - ../../../.dependency-cruiser-known-violations-tests.json
   - ../../../package.json
+  - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
+  - ../../../src/modules/AudioEngine/stores/rave.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/interpolateLatent.ts
 ---
 
 # Research: dependency boundary validation
 
-## Promoted evidence provenance
+## Durable authority
 
-This ledger is the durable disposition record for the six transient sources read for
-this promotion. Coverage is source-complete for the three dedicated no-orphans
-records and deliberately slice-only for the three broader records. It contains no
-links to transient artifacts.
+Current claims in this document derive only from the checked-in sources listed in frontmatter
+and the commands below. Historical counts without a checked-in command and result are omitted;
+claims not reproducible from those checked-in sources are outside this research's authority.
 
-| Source ID and name | Date or capture | Status captured | Coverage and disposition |
-| --- | --- | --- | --- |
-| `INV-depcruiser-no-orphans-overexclusion-2026-06-30` — Dependency-cruiser no-orphans over-exclusion inventory | 2026-06-30 | current | Complete no-orphans inventory; delete after merge. |
-| `TASK-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate | capture 2026-07-15 | blocked | Complete decision-gate packet; delete after merge. |
-| `REVIEW-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate review | capture 2026-07-15 | blocked | Complete review record; delete after merge. |
-| `FINDING-depcruiser-laundering-gaps` — dep-cruiser enforces value edges, not laundering paths — gaps an adversarial review proved | 2026-06-16 | accepted | No-orphans slice only; retain for its other laundering gaps. |
-| `FINDING-depcruiser-warn-backlog` — Two dependency-cruiser rules landed at warn pending a real cleanup pass | 2026-06-16 | accepted | No-orphans slice only; retain for its other warn-backlog material. |
-| `INV-deadcode` — Dead-code map (knip) inventory | 2026-06-13 | open | No-orphans slice only; retain for its Knip/dead-code material. |
+| Evidence | Checked-in authority |
+| --- | --- |
+| Rule behavior and graph options | `.dependency-cruiser.cjs`, `.dependency-cruiser.reachability.cjs`, `.dependency-cruiser.types.cjs`, `.dependency-cruiser.tests.cjs` |
+| Gate orchestration and exact error rows | `scripts/check-dependency-boundaries.mjs` and the four `.dependency-cruiser-known-violations*.json` files |
+| Public commands | `package.json` |
+| Current warning behavior | The five warning source paths listed in frontmatter and their owning durable specs |
 
-### Dedicated source: no-orphans over-exclusion inventory
+Reproduce the current evidence from the repository root:
 
-Coverage is complete for the inventory's stated scope: rule shape, hidden target
-set, validator interfaces, observed behavior, risks, existing checks, and unknowns.
+```sh
+pnpm deps:validate
+rg -n "controllerScriptingWorker" src --glob "!src/modules/MIDI/workers/controllerScriptingWorker.ts"
+rg -n "from ['\"][^'\"]*(encodeAudio|decodeLatent|timbreTransfer|interpolateLatent)['\"]" src --glob "!**/*.spec.ts" --glob "!**/*.spec.tsx"
+pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/interpolateLatent.spec.ts
+```
 
-- **Preserved requirements:** keep `no-orphans` as a warning over `from.orphan: true`;
-  document the general, hidden-target, dynamic-worker, fixture, known-reachable,
-  traversal, and test-graph exclusions; preserve the `pnpm deps:validate`, CI, and
-  pre-commit interfaces; and treat the inventory as read-only evidence rather than
-  a source/config change.
-- **Preserved decisions:** do not remove the blanket `/models/`, `/events/`, and
-  `/types.ts` exclusions without a type-aware strategy; do not treat the four
-  no-static-reference candidates as automatically deletable; and do not infer a
-  dynamic entrypoint from a worker-shaped file.
-- **Evidence and provenance:** the inventory records the rule locations in
-  `.dependency-cruiser.cjs`, the non-breaking validation baseline, a probe result of
-  63 hidden-target candidates (`models=46`, `events=8`, `types.ts=9`), a static scan
-  result of 58 production type-only references (`42`, `8`, `8`), four candidates
-  without static `src` references, one test-only `Toaster` candidate, and zero
-  dynamic entrypoints in the hidden target set.
-- **Future-work constraints:** any narrowed exclusion needs runtime/type-only/test-
-  only classification; the four named candidates still need explicit path-named
-  human approval or a documented retention decision; and the project still needs to
-  choose whether type-only orphan analysis is a validator feature or a separate
-  audit. These are retained roadmap constraints, not unrepresented inventory text.
-- **Disposition:** every inventory section is represented above or in the durable
-  graph and warning evidence below. It is deletion-eligible after merge; this branch
-  does not delete the source.
+The two focused `rg` commands intentionally return no matches and exit `1` in the current
+checkout: the first excludes the worker's own definition; the second excludes test imports.
 
-### Dedicated source: no-orphans decision-gate task
+## Reproducible current evidence
 
-Coverage is complete for the task packet's requirements, protected scope, evidence,
-instructions, findings, run summary, blocked questions, and self-review.
-
-- **Preserved requirements:** AC-001 classifies the five warnings as remediation,
-  blocker, or explicit product/deletion decision; AC-002 forbids cosmetic exceptions
-  and invented wiring; AC-003 records the exact blocker decisions.
-- **Preserved decisions and scope:** do not implement source changes, delete without
-  exact path-named approval, add exceptions for unproven entrypoints, or wire RAVE
-  helpers without a product spec. The protected paths remain the MIDI worker, the
-  RAVE folder, `.dependency-cruiser.cjs`, public/generated sample assets, manifests,
-  CI/build configuration, and native code.
-- **Evidence and provenance:** the task's validation reproduced five warnings: the
-  MIDI worker plus four RAVE helpers. Focused searches found no MIDI launcher,
-  import, string/path reference, or test import; the four RAVE files were imported
-  only by sibling specs and had no production/UI/runtime pipeline. The packet records
-  all three verification items as passed and no source branch, worktree, PR, or
-  merge as opened.
-- **Future-work constraints:** the MIDI path may be retired only by exact-path
-  approval or a compliant controller-profile implementation; each RAVE path remains a
-  direct deterministic CI/test helper now, then MUST move to its named
-  `__tests__/helpers/` path with tests/contract preserved before its exact current file is
-  retired. An explicit superseding ADR may replace an exact disposition. Product reachability,
-  dependency-cruiser exceptions, and synthetic reachability are not alternatives.
-- **Disposition:** all task requirements and its blocked questions are preserved in
-  the durable warning ownership and roadmap invariants. The packet is deletion-
-  eligible after merge; this branch does not delete the source.
-
-### Dedicated source: no-orphans decision-gate review
-
-Coverage is complete for the review summary, three review lenses, reconciliation,
-changed-file scope, AC-001/AC-002/AC-003 coverage, human-attention decisions, open
-decision options, task status, recommendation, and residual risk.
-
-- **Preserved requirements and decisions:** the review marks AC-001 and AC-002
-  supported, AC-003 blocked pending human decisions, and rejects both dependency-
-  cruiser laundering and invented product behavior. It records the exact MIDI path
-  and exact four RAVE paths, with delete, keep-blocked, and spec-and-wire options;
-  its recommendation is to keep both decisions blocked until explicitly resolved.
-- **Evidence and provenance:** independent MIDI reachability, RAVE reachability, and
-  command/config lenses agreed; the review found no launcher for the MIDI worker and
-  no production RAVE pipeline. It records Suspec-only changes, no source worktree,
-  branch, PR, or merge, and the remaining human-attention items.
-- **Future-work constraints:** source remediation stays blocked until exact path-
-  named retirement or compliant implementation. The MIDI path remains subject to
-  the worker trust and typed-action decisions owned by Push integration. RAVE model-backed
-  transfer must satisfy its real acceptance criteria, and each helper warning still requires
-  the named relocation or an explicit superseding ADR rather than dormant heuristic tests.
-- **Disposition:** the complete review record, including its blocked verdict and
-  residual risk, is represented here and in the durable warning sections. It is
-  deletion-eligible after merge; this branch does not delete the source.
-
-### Broader source: depcruiser laundering gaps
-
-- **Promoted no-orphans slice only:** the blanket hidden-target gap, the 2026-06-30
-  63-candidate probe and its 58 type-only classifications, the four no-static-ref
-  candidates, the zero-dynamic-entrypoint result, and the historical five-warning
-  decision-gate outcome are represented in this research.
-- **Unrepresented content retained:** the source's type-only boundary laundering,
-  re-export laundering, Tauri bridge laundering, unenforced one-function rule,
-  React exemptions, stale barrel/from-scope rules, and other no-orphans-unrelated
-  architecture gaps remain in that source. It is not exhausted and is not
-  deletion-eligible.
-
-### Broader source: depcruiser warn backlog
-
-- **Promoted no-orphans slice only:** the historical `~107` raw count, the four
-  proven dynamic-worker exceptions, four shared test-fixture exceptions, seven
-  exact reachable type/helper exceptions, and the resulting 16 residual warnings
-  and classifications are represented. The later no-orphans resolutions in PRs
-  #124-#133 and the current five-warning state are represented by the durable
-  current set and warning ownership, not as a claim that this broad record is
-  exhausted.
-- **Unrepresented content retained:** the source's other warn-rule history and
-  guidance, including non-orphans backlog material, remain in that source. It is
-  not exhausted and is not deletion-eligible.
-
-### Broader source: dead-code inventory
-
-- **Promoted no-orphans slice only:** its 16-path cross-check is represented: 11
-  paths were later wired or explicitly retired by PRs #124-#133, while the MIDI
-  worker and four RAVE helpers remain the exact visible warnings and blocked
-  decisions recorded above. The cross-check's test-only observations and
-  owner-decision/deletion-candidate distinctions are preserved in the warning
-  evidence and constraints.
-- **Unrepresented content retained:** the Knip-built-but-unwired feature map,
-  unused exports/types, broken test imports, empty event barrels, dependency hints,
-  and other dead-code unknowns remain in the inventory. It is not exhausted and is
-  not deletion-eligible.
-
-## Promotion-time evidence
-
-The promotion-time checkout was verified on 2026-07-15. This current graph capture
-is distinct from the historical raw count below. `pnpm deps:validate`
-reported four exact error baselines and five visible warnings:
+`pnpm deps:validate` reports four exact error baselines and five visible warnings:
 
 ```text
 main: 68 exact baseline row(s); 5 warning(s) remain visible
@@ -226,63 +128,19 @@ helpers: they have no direct runtime entrypoint or production consumer.
 The MIDI worker contains a `self.onmessage` handler and executes supplied code with
 `new Function`, but source search found no launcher, static import, string/path
 reference, or test import. Its own comment says Worker isolation is only basic and
-is not a complete secure sandbox. The controller-profile boundaries belong to Push
-integration AC-023 through AC-027: typed message validation, the future binding and
-typed action/port contract, and no profile-source execution. Q-004 is sequencing/generalization
-context only; this research does not authorize arbitrary script execution.
+is not a complete secure sandbox. It is neither the sandboxed script artifact required by
+[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters)
+nor a declarative-profile host. [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact)
+keeps those APIs separate; Push AC-023 through AC-027 own the future declarative host contract.
 
 The four RAVE files are imported only by their sibling specs and have no production,
 UI, or runtime transform pipeline. `encodeAudio` is a deterministic spectral
 transform, `decodeLatent` is a synthetic sine-based decoder, and the interpolation
-and transfer helpers blend arrays in memory. The RAVE store explicitly describes the
-encoder as simulation rather than actual ONNX. They are direct deterministic CI/test
-helpers, not evidence for the real model-backed acceptance criteria in
+and transfer helpers blend arrays in memory. Current `loadModel.ts` only changes model state in
+`raveStore`; it does not load ONNX or create a transfer path. These files are direct deterministic
+CI/test helpers, not evidence for the future model-backed acceptance criteria in
 [RAVE timbre transfer](../rave-timbre-transfer/spec.md); green helper tests are
 explicitly non-retiring.
-
-## Historical evidence
-
-The following findings are dated evidence, not current warning counts or automatic
-deletion decisions.
-
-### 2026-06-16 raw no-orphans count (pre-triage)
-
-`FINDING-depcruiser-warn-backlog` recorded `~107` raw `no-orphans` modules before
-later exact exceptions and classification. This dated pre-triage evidence is the
-historical 107-count, not the current graph result, not a current exact baseline,
-and not a deletion decision. The current promotion capture independently verifies
-only the five warning paths listed above.
-
-### 2026-06-30 no-orphans probe
-
-Removing the blanket `/models/`, `/events/`, and `/types.ts` exclusions was probed
-to expose 63 candidate orphans: `models=46`, `events=8`, and `types.ts=9`.
-
-The static TypeScript scan classified 58 of those as production type-only static
-references: `models=42`, `events=8`, and `types.ts=8`. Four candidates had no static
-reference in `src`:
-
-- `src/modules/AiRuntime/models/LlmOrchestrationTypes.ts`
-- `src/modules/Arrangement/handlers/types.ts`
-- `src/modules/AudioEngine/models/AudioGraph.ts`
-- `src/modules/AudioEngine/models/SidechainRoute.ts`
-
-One additional candidate, `src/modules/Toaster/models/GrooveTemplates.ts`, was
-referenced only by its excluded sibling spec. No dynamic entrypoints were found in
-the hidden target set. The probe supports type-aware triage; it does not support a
-blanket exclusion removal or automatic deletion of any path.
-
-### 2026-06-26 type-edge context
-
-An earlier module sweep found 28 real DDD boundary violations across 17 modules that
-the then-current main dependency cruise accepted. Later guard and remediation work
-made many of those edges visible or closed, so that count is historical rather than
-a current baseline. The durable lesson remains: a green dependency check is not
-proof that type-only edges or orphan reachability are fully modeled.
-
-The same review confirmed that value-edge cross-module and React/Tauri confinement
-checks fire; the unresolved concern here is type-aware orphan reachability, not a
-claim that every validator rule is ineffective.
 
 ## Roadmap invariants
 
@@ -296,14 +154,15 @@ claim that every validator rule is ineffective.
   the runtime/type-only/test-only triage required by AC-003.
 - No source import, barrel export, registry entry, or product consumer may be added
   only to make a warning disappear.
-- The controller worker warning MUST remain visible until real product behavior satisfies
-  Push integration AC-023 through AC-027, or an explicit exact-path retirement
-  decision names the file; Q-004 is sequencing/generalization context only and MUST NOT
-  close, defer, weaken, or replace those requirements.
+- The controller worker warning MUST remain visible until that exact path becomes the distinct
+  product script-bundle worker satisfying hardware-controller-ecosystem AC-002 and Push AC-028,
+  or an explicit superseding ADR retires the exact file. Generic reachability, a declarative-profile
+  host role, or an orphan exception does not close it; Push AC-023 through AC-027 remain on the
+  separate declarative path.
 - The four RAVE helper warnings MUST remain visible while their current files serve as
   direct deterministic CI/test helpers. Each file MUST be relocated to its exact named
   `__tests__/helpers/` path with tests/contract preserved before that current path is
   retired, unless an explicit superseding ADR names the exact path; product reachability
   and green helper tests MUST NOT close the warning.
-- Loaded-model RAVE transfer MUST derive rendered, cached, and inserted audio from the
+- Future loaded-model RAVE transfer MUST derive rendered, cached, and inserted audio from the
   worker/ONNX encode-decode result; pure-helper output MUST NOT satisfy that product contract.

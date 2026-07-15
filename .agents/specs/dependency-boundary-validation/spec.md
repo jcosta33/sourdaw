@@ -6,10 +6,18 @@ status: draft
 owner: The Sourdaw team
 sources:
   - research.md
+  - ../hardware-controller-ecosystem/spec.md
+  - ../push-integration/spec.md
+  - ../rave-timbre-transfer/spec.md
   - ../../../.dependency-cruiser.cjs
+  - ../../../.dependency-cruiser.reachability.cjs
   - ../../../scripts/check-dependency-boundaries.mjs
   - ../../../.dependency-cruiser.types.cjs
   - ../../../.dependency-cruiser.tests.cjs
+  - ../../../.dependency-cruiser-known-violations.json
+  - ../../../.dependency-cruiser-known-violations-reachability.json
+  - ../../../.dependency-cruiser-known-violations-types.json
+  - ../../../.dependency-cruiser-known-violations-tests.json
   - ../../../package.json
 ---
 
@@ -18,9 +26,9 @@ sources:
 ## Intent
 
 Keep dependency validation honest as the project decides how to classify dormant
-modules. This spec governs validator behavior and the no-orphans roadmap; dated
-probe evidence is preserved in [research.md](research.md), without restating the
-project's architecture rules.
+modules. This spec governs validator behavior and the no-orphans roadmap; current
+checked-in authority and reproducible commands are recorded in [research.md](research.md),
+without restating the project's architecture rules.
 
 ## Current state
 
@@ -38,7 +46,7 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Push integration AC-023](../push-integration/spec.md#ac-023--schema-validated-controller-profile-messages) through [AC-027](../push-integration/spec.md#ac-027--bound-sendmidi-output): retain only as a visible dormant warning until the future typed binding, exact action/port mappings, and no-source boundaries are implemented, or an explicit exact-path retirement names this file; [Q-004](../push-integration/spec.md) is sequencing context only. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters) and [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact): the current file is an unlaunched, unsandboxed script worker, not a declarative-profile host. Retain the visible warning until this exact path either becomes the distinct product script-bundle worker satisfying both requirements, while Push AC-023 through AC-027 remain on the separate declarative path, or an explicit superseding ADR retires this exact file. Product reachability alone, a declarative-profile role, or an orphan exception does not close it. |
 | `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
 | `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
 | `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
@@ -47,7 +55,8 @@ linked owning requirement remains authoritative.
 Each warning remains visible until its exact path-specific disposition is met. Direct helper
 availability, passing CI, product reachability, synthetic imports, and new registry entries do
 not clear the four RAVE warnings; only the named relocation plus exact current-path retirement or
-an explicit superseding ADR can do so.
+an explicit superseding ADR can do so. The controller-worker warning likewise requires its exact
+sandboxed-script disposition or exact-path retirement, not wiring alone.
 
 ## Requirements
 
@@ -74,7 +83,8 @@ classify incoming runtime, type-only, and test-only references with a type-aware
 analysis and triage its false positives instead of applying a blanket exclusion
 change.
 
-Verify with: a dated type-aware orphan probe recorded beside this spec and `pnpm deps:validate`
+Verify with: a checked-in reproducible type-aware probe command and result recorded in
+[research.md](research.md), plus `pnpm deps:validate`
 
 ### AC-004 — Evidence-based dynamic entrypoints
 

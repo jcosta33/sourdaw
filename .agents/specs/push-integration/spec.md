@@ -7,6 +7,10 @@ owner: The Sourdaw team
 sources:
   - ../hardware-controller-ecosystem/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../../src/modules/MIDI/models/ControllerProfile.ts
+  - ../../../src/modules/MIDI/useCases/hardware/importHardwareMappings.ts
+  - ../../../src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts
+  - ../../../src/modules/MIDI/stores/hardwareControllerStore.ts
   - ../../../src/modules/MIDI/workers/controllerScriptingWorker.ts
 ---
 
@@ -183,20 +187,20 @@ is reflected on the hardware.
 
 Verify with: `pnpm test:run -- PushHardware`
 
-### AC-023 — Schema-validated controller-profile messages
+### AC-023 — Schema-validated declarative-profile messages
 
-Every controller-profile boundary MUST accept only a schema-validated typed message union.
-Malformed messages and unknown kinds return the typed `INVALID_MESSAGE` rejection without
-dispatching an `AppAction` or writing to a MIDI output.
+Every declarative controller-profile host boundary MUST accept only a schema-validated typed
+message union. Malformed messages and unknown kinds return the typed `INVALID_MESSAGE`
+rejection without dispatching an `AppAction` or writing to a MIDI output.
 
 Verify with: the future owning test, run as
-`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
 valid, malformed, and unknown message kinds, plus `pnpm deps:validate`.
 
 ### AC-024 — Future controller-profile host binding
 
-The future host contract MUST validate controller-profile data and capability requests against a
-`ControllerProfileBinding` carrying exactly:
+The future host contract MUST validate declarative controller-profile data and capability
+requests against a `ControllerProfileBinding` carrying exactly:
 
 | Field | Contract |
 | --- | --- |
@@ -211,29 +215,33 @@ rejections are `INVALID_MESSAGE`, `CAPABILITY_OR_TARGET_DENIED`, `TARGET_UNRESOL
 and the MIDI-owned typed output port are unimplemented today; this is a future host contract.
 
 Verify with: the future owning test, run as
-`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, using
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
 binding shape, exact-target matching, one-output binding, pre-dispatch validation, and the four
 typed rejection outcomes; inspect the current profile surface and run `pnpm deps:validate`.
 
-### AC-025 — No profile-source execution at any boundary
+### AC-025 — Declarative profiles are source-free data
 
-Controller profiles remain schema-validated data from ingestion and loading through storage,
-host dispatch, and worker messaging. Every boundary MUST reject injected `source`, `code`, or
-equivalent fields, and no boundary executes profile-provided strings through `eval`, `new
-Function`, string-to-code compilation, or an equivalent mechanism.
+A Push profile or imported mapping profile MUST remain a source-free, schema-validated data
+artifact through ingestion, loading, storage, host dispatch, and any declarative-profile worker
+message. Each boundary rejects `source`, `code`, `scriptUrl`, script bundles, and equivalent
+injected fields before storage or dispatch; declarative profile data is never evaluated, compiled,
+or converted into executable code.
 
-The complete current/future surface for this check is `src/modules/MIDI/models/ControllerProfile.ts`,
+The complete current/future scan surface is
+`src/modules/MIDI/models/ControllerProfile.ts`,
 `src/modules/MIDI/useCases/hardware/importHardwareMappings.ts`,
 `src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts`,
 `src/modules/MIDI/stores/hardwareControllerStore.ts`,
-`src/modules/MIDI/workers/controllerScriptingWorker.ts`, and any future controller-profile
-loader, host, or worker under `src/modules/MIDI/` or `src/modules/PushHardware/`. The current
-checkout is knowingly non-conforming: `ControllerProfile.scriptUrl` is a source field and the
-dormant worker calls `new Function`; the future requirement remains open until that worker is
-implemented to comply or the exact path is retired.
+`src/modules/MIDI/workers/controllerScriptingWorker.ts`, and every future declarative-profile
+ingestion, loader, store, host, or worker boundary under `src/modules/MIDI/` or
+`src/modules/PushHardware/`. The current checkout does not implement this contract:
+`ControllerProfile.scriptUrl` conflates profile data with executable-source location, and the
+dormant worker accepts source and calls `new Function`. That worker leaves the declarative-profile
+scan only after the distinct artifact/API split in AC-028 proves it cannot receive declarative
+profiles, or after its exact path is retired.
 
 Verify with: the future owning test, run as
-`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`, covering
 injected source fields at ingestion, host, and worker boundaries; and
 `rg -n 'ControllerProfile|scriptUrl|eval|new Function|Function\(' src/modules/MIDI src/modules/PushHardware`
 after the surface exists, plus `pnpm deps:validate`.
@@ -247,7 +255,7 @@ to the typed `setDeviceParameter` `AppAction`. A missing grant returns
 outcome dispatches an action.
 
 Verify with: the future owning test, run as
-`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, using
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, using
 granted, denied, unresolved, non-finite, and unknown-target cases, plus `pnpm deps:validate`.
 
 ### AC-027 — Bound sendMidi output
@@ -258,9 +266,32 @@ An absent bound output returns `OUTPUT_UNBOUND`; invalid bytes return `INVALID_M
 outcome sends bytes or creates a generic DAW command.
 
 Verify with: the future owning test, run as
-`pnpm test:run src/modules/MIDI/workers/__tests__/controllerScriptingWorker.spec.ts`, covering
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileHost.spec.ts`, covering
 valid bounds, empty/oversized/non-integer/out-of-range bytes, and unbound output, plus
 `pnpm deps:validate`.
+
+### AC-028 — Separate sandboxed script artifact
+
+A future executable controller-script artifact/API, provisionally `ControllerScriptBundle`, MUST
+use a distinct hardware-controller-ecosystem-owned ingestion, storage, and worker pipeline and
+never enter the declarative profile ingestion, storage, binding, host-message, or worker-message
+path governed by AC-023 through AC-027. That separate pipeline is the sole route for JS/TS to the
+sandboxed Web Worker required by
+[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters).
+
+Hardware-controller-ecosystem AC-002 remains authoritative for script capabilities and sandbox
+isolation; Push AC-023 through AC-027 remain authoritative for declarative profiles and their
+host capabilities. A split or replacement of common `ControllerProfile` types is valid only when
+one explicit superseding ADR names both specifications, assigns
+distinct public data-profile and script-bundle types/APIs, updates both cross-links and owning
+tests in the same change, and preserves both requirement sets. Otherwise neither specification
+supersedes the other. This contract is unimplemented today: the current `scriptUrl` field and
+dormant `new Function` worker conflate the artifacts and satisfy neither contract.
+
+Verify with: the future declarative-profile boundary test
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`, proving a
+script bundle is rejected by every declarative boundary; the ecosystem sandbox test
+`pnpm test:run -- HardwareController scriptSandbox`; and `pnpm deps:validate`.
 
 ## Open questions
 
@@ -279,9 +310,10 @@ valid bounds, empty/oversized/non-integer/out-of-range bytes, and unbound output
   expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
   not part of this Push-integration spec.
   Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
-  replace AC-023 through AC-027; any future scripting proposal still requires a data-only,
-  schema-validated profile contract and cannot authorize profile-source execution. The
-  dependency-boundary map points to those requirements for the current worker warning.
+  replace AC-023 through AC-028. Declarative profiles remain data-only under AC-025; executable
+  script bundles use only the separate ecosystem-owned sandbox path in AC-028 and
+  hardware-controller-ecosystem AC-002. The dependency-boundary map points to those requirements
+  for the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap

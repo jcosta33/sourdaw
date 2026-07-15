@@ -8,6 +8,8 @@ sources:
   - ../audio-generation/research.md
   - ../audio-generation/spec.md
   - ../dependency-boundary-validation/spec.md
+  - ../../../src/modules/AudioEngine/stores/rave.ts
+  - ../../../src/modules/AudioEngine/useCases/rave/loadModel.ts
   - ../../../src/modules/AudioEngine/useCases/rave/encodeAudio.ts
   - ../../../src/modules/AudioEngine/useCases/rave/decodeLatent.ts
   - ../../../src/modules/AudioEngine/useCases/rave/timbreTransfer.ts
@@ -29,19 +31,28 @@ mode streams a track through the model at higher latency for live auditioning.
 - Storing model weights in the project (models are a user-scoped cache, referenced by id).
 - Syncing per-track real-time assignments across CRDT peers (they are local).
 
+## Current state
+
+No loaded-model AudioEngine/ONNX transfer path exists today. The current `loadModel.ts` only
+marks a model `loaded` and records `activeModelId` in `raveStore`; it does not fetch model bytes,
+create an ONNX session or worker, or enable `transferTimbreToClip`. The four warning paths named
+under Current-state ownership are directly callable deterministic test helpers, not a product
+transfer implementation. Every model-backed requirement below is future work.
+
 ## Requirements
 
 ### AC-001 — Real ONNX encode/decode round-trip
 
-`encodeAudioWithOnnx` → `decodeLatentWithOnnx` through a loaded model must reproduce an
-identity model's input ramp within ±1e-3.
+The future `encodeAudioWithOnnx` → `decodeLatentWithOnnx` path through a genuinely loaded model
+MUST reproduce an identity model's input ramp within ±1e-3.
 
 Verify with: `pnpm test:run -- rave`
 
 ### AC-002 — Loaded-model transfer inserts a clip
 
-With a loaded model, `transferTimbreToClip` must render output and insert a new clip on the
-source track through the existing clip-insertion path, honouring the `placement` mode.
+A future `transferTimbreToClip` invocation with a genuinely loaded model MUST render output and
+insert a new clip on the source track through the existing clip-insertion path, honouring the
+`placement` mode.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -60,7 +71,8 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-005 — `transferTimbreToClip` typed error contract
 
-`transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this contract:
+The future `transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this
+contract:
 
 | Input condition | Result | Pure-helper behavior |
 | --- | --- | --- |
@@ -202,15 +214,17 @@ Verify with: `pnpm test:run -- RavePanel`
 
 ### AC-024 — Direct deterministic helpers are test-only
 
-The current `encodeAudio.ts`, `decodeLatent.ts`, and `timbreTransfer.ts` files remain directly
-callable only as deterministic CI/test helpers, while product transfer uses the loaded model path
-and never silently calls these helpers. Future implementation MUST relocate each helper, with its
-tests and observable contract preserved, to its exact corresponding
+No loaded-model product transfer exists today. The current `encodeAudio.ts`, `decodeLatent.ts`,
+and `timbreTransfer.ts` files remain directly callable only as deterministic CI/test helpers.
+Future implementation MUST relocate each helper, with its tests and observable contract
+preserved, to its exact corresponding
 `src/modules/AudioEngine/useCases/rave/__tests__/helpers/` path before retiring the current
 `useCases/rave` file; helper-test success and product reachability are not retirement conditions.
 
-Verify with: `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__` covering direct
-calls to each named pure helper and the exact current-to-future path disposition.
+Verify with: the three focused helper tests:
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/encodeAudio.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/decodeLatent.spec.ts src/modules/AudioEngine/useCases/rave/__tests__/timbreTransfer.spec.ts`,
+covering direct calls to each named pure helper, plus inspection of the exact current-to-future
+path disposition.
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -238,11 +252,11 @@ dimensions defaulting to `0`, and deep-equality snapshots proving neither input 
 
 ### AC-027 — Model-backed transfer provenance
 
-With a loaded model, `transferTimbreToClip` derives the rendered audio, cache entry, and
-inserted clip bytes from the named worker's ONNX `encodeAudioWithOnnx` -> `decodeLatentWithOnnx`
-result. The owning test MUST make that model result intentionally different from every pure-helper
-result and assert that the inserted bytes equal the model result; pure-helper output is excluded
-from model-backed transfer.
+A future `transferTimbreToClip` invocation with a genuinely loaded model MUST derive its rendered
+audio, cache entry, and inserted clip bytes from the named worker's ONNX
+`encodeAudioWithOnnx` -> `decodeLatentWithOnnx` result. The owning test makes that model result
+intentionally different from every pure-helper result and proves the rendered, cached, and
+inserted bytes equal the model result; pure-helper output cannot satisfy model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
@@ -264,16 +278,15 @@ AC-001 through AC-005 or AC-027:
 Direct helper availability, passing CI tests, and product reachability are not warning retirement
 conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024` and `AC-026`
 own the direct test contracts and exact relocation; `AC-027` owns model-result provenance. This
-promotion retains all four current files and does not authorize a silent product fallback.
+spec retains all four current files and does not authorize a silent product fallback.
 
 ## Constraints
 
 - **Model-path resolution under Vite** — the `modelPath` strings in `FACTORY_MODELS` are
   relative (e.g. `models/rave/strings.onnx`) and must be resolved against
   `import.meta.env.BASE_URL` by a future RAVE-owned download implementation so model fetches
-  work under a non-root deploy base; no RAVE-owned download implementation exists under
-  `src/modules/AudioEngine/useCases/rave` at promotion SHA
-  `078dfc3383760a01d219a04d735c7e8f74a0f820`. The existing BrowserAi owner at
+  work under a non-root deploy base; no RAVE-owned download implementation exists under the
+  current `src/modules/AudioEngine/useCases/rave` surface. The existing BrowserAi owner at
   `src/modules/BrowserAi/useCases/downloadModel.ts` is unrelated and does not implement
   RAVE model-path resolution, so this is an unimplemented requirement, not a completed fix.
 - **Model buffer memory management** — decoded audio buffers (≈5.3 MB per 30 s stereo at
