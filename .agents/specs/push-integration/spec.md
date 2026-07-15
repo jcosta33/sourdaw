@@ -297,21 +297,29 @@ use a distinct hardware-controller-ecosystem-owned ingestion, storage, and worke
 never enter the declarative profile ingestion, storage, binding, host-message, or worker-message
 path governed by AC-023 through AC-027. That separate pipeline is the sole route for JS/TS to the
 sandboxed Web Worker required by
-[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters).
+[hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters)
+and remains subject to the ecosystem-owned
+[trusted-grant](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite),
+[intent-schema](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas),
+[Command-dispatch](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command),
+and [bound-output](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-intents-use-one-bound-output)
+contracts.
 
-Hardware-controller-ecosystem AC-002 remains authoritative for script capabilities and sandbox
-isolation; Push AC-023 through AC-027 remain authoritative for declarative profiles and their
-host capabilities. A split or replacement of common `ControllerProfile` types is valid only when
-one explicit superseding ADR names both specifications, assigns
-distinct public data-profile and script-bundle types/APIs, updates both cross-links and owning
-tests in the same change, and preserves both requirement sets. Otherwise neither specification
-supersedes the other. This contract is unimplemented today: the current `scriptUrl` field and
-dormant `new Function` worker conflate the artifacts and satisfy neither contract.
+Those hardware-controller-ecosystem requirements remain authoritative for executable-script
+sandboxing, grants, intent validation, and effects; Push AC-023 through AC-027 remain authoritative
+for declarative profiles and their host capabilities. A split or replacement of common
+`ControllerProfile` types is valid only when one explicit superseding ADR names both
+specifications, assigns distinct public data-profile and script-bundle types/APIs, updates both
+cross-links and owning tests in the same change, and preserves both requirement sets. Otherwise
+neither specification supersedes the other. This contract is unimplemented today: the current
+`scriptUrl` field and dormant `new Function` worker conflate the artifacts and satisfy neither
+contract.
 
 Verify with: the future declarative-profile boundary test
-`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`, proving a
-script bundle is rejected by every declarative boundary; the ecosystem sandbox test
-`pnpm test:run -- HardwareController scriptSandbox`; and `pnpm deps:validate`.
+`pnpm test:run src/modules/MIDI/useCases/hardware/__tests__/controllerProfileBoundaries.spec.ts`,
+proving a script bundle is rejected by every declarative boundary; the future ecosystem sandbox
+and host tests under `src/modules/HardwareController/useCases/__tests__/`; and
+`pnpm deps:validate`.
 
 ## Open questions
 
@@ -332,8 +340,8 @@ script bundle is rejected by every declarative boundary; the ecosystem sandbox t
   Q-004 is sequencing/generalization context only. It does not own, close, defer, weaken, or
   replace AC-023 through AC-028. Declarative profiles remain data-only under AC-025; executable
   script bundles use only the separate ecosystem-owned sandbox path in AC-028 and
-  hardware-controller-ecosystem AC-002. The dependency-boundary map points to those requirements
-  for the current worker warning.
+  hardware-controller-ecosystem AC-002 and AC-004 through AC-007. The dependency-boundary map
+  points to those requirements for the current worker warning.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap

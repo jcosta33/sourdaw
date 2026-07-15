@@ -46,7 +46,7 @@ linked owning requirement remains authoritative.
 
 | Warning path | Owning requirement and disposition |
 | --- | --- |
-| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters) and [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact): the current file is an unlaunched, unsandboxed script worker, not a declarative-profile host. Retain the visible warning until this exact path either becomes the distinct product script-bundle worker satisfying both requirements, while Push AC-023 through AC-027 remain on the separate declarative path, or an explicit superseding ADR retires this exact file. Product reachability alone, a declarative-profile role, or an orphan exception does not close it. |
+| `src/modules/MIDI/workers/controllerScriptingWorker.ts` | [Hardware-controller-ecosystem AC-002](../hardware-controller-ecosystem/spec.md#ac-002--scripts-run-sandboxed-and-control-parameters), [AC-004](../hardware-controller-ecosystem/spec.md#ac-004--script-grants-are-trusted-and-finite), [AC-005](../hardware-controller-ecosystem/spec.md#ac-005--script-effect-intents-have-exact-schemas), [AC-006](../hardware-controller-ecosystem/spec.md#ac-006--script-parameter-intents-use-command), [AC-007](../hardware-controller-ecosystem/spec.md#ac-007--script-midi-intents-use-one-bound-output), and [Push AC-028](../push-integration/spec.md#ac-028--separate-sandboxed-script-artifact): the current file is an unlaunched script worker with none of the required sandbox, grant, validation, or effect boundaries, not a declarative-profile host. Retain the visible warning until this exact path either becomes the distinct product script-bundle worker satisfying every linked requirement, while Push AC-023 through AC-027 remain on the separate declarative path, or an explicit superseding ADR retires this exact file. Product reachability alone, a declarative-profile role, or an orphan exception does not close it. |
 | `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/encodeAudio.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
 | `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/decodeLatent.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
 | `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts` | [RAVE AC-024](../rave-timbre-transfer/spec.md#ac-024--direct-deterministic-helpers-are-test-only): direct deterministic CI/test helper now; future path is `src/modules/AudioEngine/useCases/rave/__tests__/helpers/timbreTransfer.ts`; retire only the exact current file after relocation with tests/contract preserved or an explicit superseding ADR names it. Product reachability and green helper tests do not close this warning. |
@@ -56,7 +56,8 @@ Each warning remains visible until its exact path-specific disposition is met. D
 availability, passing CI, product reachability, synthetic imports, and new registry entries do
 not clear the four RAVE warnings; only the named relocation plus exact current-path retirement or
 an explicit superseding ADR can do so. The controller-worker warning likewise requires its exact
-sandboxed-script disposition or exact-path retirement, not wiring alone.
+sandboxed-script authority and effect-boundary disposition or exact-path retirement, not wiring
+alone.
 
 ## Requirements
 
@@ -119,8 +120,9 @@ The five current warning paths MUST remain covered by the path-specific ownershi
 disposition map above before source remediation; each row points to an exact owning
 requirement or an explicit exact-path retirement condition.
 
-Verify with: the table and cross-links in this spec, the linked Push/RAVE requirements,
-and `rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`
+Verify with: the table and cross-links in this spec, the linked hardware-controller, Push, and RAVE
+requirements, and
+`rg -n "controllerScriptingWorker|timbreTransfer|interpolateLatent|encodeAudio|decodeLatent" .agents/specs`
 
 ## Open questions
 

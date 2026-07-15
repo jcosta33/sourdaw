@@ -51,9 +51,10 @@ Verify with: `pnpm test:run -- rave`
 
 ### AC-002 — Loaded-model transfer inserts a clip
 
-A future `transferTimbreToClip` invocation carrying the verified AC-028 session capability MUST
-render output and insert a new clip on the source track through the existing clip-insertion path,
-honouring the `placement` mode.
+A future `transferTimbreToClip` invocation carrying the verified AC-028 session capability, matched
+to the host-owned transfer selection under AC-029, MUST render output from only AC-030/AC-031-valid
+worker responses and insert a new clip on the source track through the existing clip-insertion
+path, honouring the `placement` mode.
 
 Verify with: `pnpm test:run -- rave`
 
@@ -76,17 +77,23 @@ Verify with: `pnpm test:run -- rave`
 The future `transferTimbreToClip` MUST return one typed `RaveError` rather than throw, using this
 contract:
 
-| Input condition | Result | Pure-helper behavior |
+| Input condition | Result | Required effect boundary |
 | --- | --- | --- |
-| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, wrong-model-or-digest, or fabricated-capability input | `MODEL_NOT_LOADED` | No invocation of `encodeAudio`, `decodeLatent`, `timbreTransfer`, or `interpolateLatent`; no worker/session request |
-| Verified session capability; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | Not applicable |
-| Verified session capability; invalid clip-type input | `CLIP_NOT_AUDIO` | Not applicable |
+| No verified AC-028 session capability, including store-flag-only, deterministic-shim, fake-worker, tampered-binding, or fabricated-capability input | `MODEL_NOT_LOADED` | No pure-helper invocation and no worker/session request |
+| Verified capability/session does not match the AC-029 host-owned transfer selection | `MODEL_SESSION_MISMATCH` | No worker request, render, cache write, or clip insertion |
+| Verified matched session; invalid sample-rate input | `SAMPLE_RATE_MISMATCH` | No worker request, render, cache write, or clip insertion |
+| Verified matched session; invalid clip-type input | `CLIP_NOT_AUDIO` | No worker request, render, cache write, or clip insertion |
+| Worker response has no outstanding request | `WORKER_RESPONSE_STALE` | No response acceptance, render, cache write, or clip insertion |
+| Worker response reuses a consumed request | `WORKER_RESPONSE_DUPLICATE` | No additional response acceptance, render, cache write, or clip insertion |
+| Worker response fields do not match the outstanding request's session, phase, model identity, or digest | `WORKER_RESPONSE_MISMATCH` | No response acceptance, render, cache write, or clip insertion |
+| Worker response is malformed or contains a non-finite numeric value | `WORKER_RESPONSE_INVALID` | No response acceptance, render, cache write, or clip insertion |
+| Worker response exceeds an AC-031 host-owned payload bound | `WORKER_RESPONSE_TOO_LARGE` | No response acceptance, render, cache write, or clip insertion |
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
-covering no-model, sample-rate, and clip-type error paths and asserting that no-model execution
-does not invoke a pure helper or worker/session. Flag-only, deterministic-shim, fake-worker,
-wrong-model-or-digest, and fabricated-capability cases each return `MODEL_NOT_LOADED`.
+covering every table row. No-model execution invokes neither a pure helper nor a worker/session;
+flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability cases each
+return `MODEL_NOT_LOADED`. Every selection or response rejection occurs before the listed effects.
 
 ### AC-006 — Real-time underrun degrades to silence
 
@@ -256,17 +263,18 @@ dimensions defaulting to `0`, and deep-equality snapshots proving neither input 
 
 ### AC-027 — Model-backed transfer provenance
 
-A future `transferTimbreToClip` invocation with the verified AC-028 session capability MUST derive
-its rendered audio, cache entry, and inserted clip bytes from encode/decode requests received by
-that capability's named worker and worker-owned `onnxruntime-web` session. The owning test observes
-the verified session receive both encode and decode, makes its result intentionally different from
-every pure-helper result, and proves the rendered, cached, and inserted bytes equal the session
-result; pure-helper output cannot satisfy model-backed transfer.
+A future `transferTimbreToClip` invocation with the verified AC-028 session capability matched to
+the AC-029 host-owned selection MUST derive its rendered audio, cache entry, and inserted clip bytes
+from AC-030-correlated, AC-031-validated encode/decode responses produced by that capability's named
+worker and worker-owned `onnxruntime-web` session. The owning test observes the verified session
+receive both encode and decode, makes its result intentionally different from every pure-helper
+result, and proves the rendered, cached, and inserted bytes equal the accepted session result;
+pure-helper output cannot satisfy model-backed transfer.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
-asserting the verified session's encode/decode calls and model-distinguishable bytes at render,
-cache, and insertion boundaries.
+asserting the verified session's encode/decode calls, accepted response correlation, and
+model-distinguishable bytes at render, cache, and insertion boundaries.
 
 ### AC-028 — Verified ONNX session capability
 
@@ -277,22 +285,83 @@ model bytes and binds that session to `{ modelId, modelDigest }`, where `modelDi
 digest of those bytes. Capability authenticity plus the model identity and digest bindings are
 verified against the host-private session registry before transfer; the capability and session
 never enter `raveStore`, project data, or caller-supplied worker messages. A `loaded` store flag,
-deterministic helper or shim, worker-like object, wrong model identity or digest, or fabricated
-capability is not loaded and returns `MODEL_NOT_LOADED` before render, cache, insertion,
-pure-helper invocation, or worker/session request. This contract is unimplemented today.
+deterministic helper or shim, worker-like object, missing registry entry, tampered capability
+binding, or fabricated capability is not loaded and returns `MODEL_NOT_LOADED` before render,
+cache, insertion, pure-helper invocation, or worker/session request. This contract is unimplemented
+today.
+A capability verified for one registry session does not select a transfer model or authorize a
+different host-owned selection; AC-029 owns that separate operation match.
 
 Verify with: the future owning test, run as
 `pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
 obtaining a capability only through successful worker/session initialization for selected bytes,
-then proving flag-only, deterministic-shim, fake-worker, wrong-model-or-digest, and
-fabricated-capability inputs return `MODEL_NOT_LOADED` while the verified capability reaches the
-bound session.
+then proving flag-only, deterministic-shim, fake-worker, tampered-binding, and fabricated-capability
+inputs return `MODEL_NOT_LOADED` while the verified capability reaches its bound session.
+
+### AC-029 — Capability matches the host-owned selection
+
+Before any worker request, the trusted RAVE host MUST snapshot the transfer operation's selected
+`{ modelId, modelDigest }` from host-owned model selection, resolve the supplied capability in the
+host-private session registry, and require the resolved session's exact identity/digest tuple to
+equal that snapshot. Neither the capability nor caller-supplied data can select, replace, or widen
+the operation tuple. A valid capability for model B used while the host selected model A returns
+`MODEL_SESSION_MISMATCH` before worker request, render, cache write, or clip insertion.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, using
+valid capabilities for models A and B. Selection A with capability A reaches its session; selection
+A with capability B returns `MODEL_SESSION_MISMATCH` with zero worker calls and zero render, cache,
+or insertion effects.
+
+### AC-030 — Worker responses are correlated once
+
+Before posting each encode or decode request, the trusted RAVE host MUST register one outstanding
+correlation record containing a host-generated `requestId`, a non-authority
+`sessionCorrelationId` bound by the host-private registry to the verified AC-028 session, the
+AC-029 `{ modelId, modelDigest }`, and the request phase. After AC-031 boundary validation, a worker
+response is accepted exactly once only when every field matches that record. A never-issued,
+expired, or cancelled `requestId` returns `WORKER_RESPONSE_STALE`; a retained consumed request
+returns `WORKER_RESPONSE_DUPLICATE`. A wrong session, phase, model identity, or digest returns
+`WORKER_RESPONSE_MISMATCH`. Rejected responses never reach render, cache, or clip insertion, and a
+duplicate causes no additional write.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`,
+accepting one matching encode and decode response, then injecting never-issued, expired, cancelled,
+replayed, wrong-session, wrong-phase, wrong-model, and wrong-digest responses. Each rejection
+returns its exact typed error and leaves render, cache-write, and clip-insertion call counts
+unchanged.
+
+### AC-031 — Worker response payloads are bounded data
+
+At the worker-message boundary and before AC-030 correlation or response acceptance, the RAVE host
+MUST parse the exact phase-specific response schema with no unknown fields and validate all
+latent/audio numeric vectors as non-empty `Float32Array` values with finite elements and host-owned,
+non-shared `ArrayBuffer` backing; `SharedArrayBuffer` is rejected. The host checks the sum of
+distinct backing `ArrayBuffer.byteLength` values, not only typed-array view lengths, against
+`MAX_RAVE_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024` bytes before iterating values.
+Decoded audio contains one or two equal-length channels; its declared frame count equals those
+channel lengths and does not exceed the host-owned expected frame count, while its declared sample
+rate equals the host-owned expected output sample rate. Malformed shapes, wrong types, zero-length
+or unequal channels, sample-rate mismatch, `NaN`, or `Infinity` return
+`WORKER_RESPONSE_INVALID`; a byte or frame-count overflow returns `WORKER_RESPONSE_TOO_LARGE`.
+Rejected payloads never reach render, cache, or clip insertion.
+
+Verify with: the future owning test, run as
+`pnpm test:run src/modules/AudioEngine/useCases/rave/__tests__/transferTimbreToClip.spec.ts`, covering
+malformed and unknown fields, wrong typed-array shapes, shared backing, zero/unequal channels, wrong
+sample rate, `NaN`, `Infinity`, a frame-count overflow, and a small view over a backing buffer larger
+than 64 MiB. Every case returns the exact typed error with zero render, cache-write, or
+clip-insertion calls.
+
+AC-029 through AC-031 are unimplemented today; no current worker/session transfer path can satisfy
+their selection, response-correlation, or payload-validation contracts.
 
 ## Current-state ownership
 
 The four current `no-orphans` paths are direct deterministic CI/test helpers only. Their green
 tests are intentionally non-retiring and do not prove the model-backed product contracts in
-AC-001 through AC-005, AC-027, or AC-028:
+AC-001 through AC-005 or AC-027 through AC-031:
 
 | Current warning path | Current disposition | Required future helper path | Warning closes only when |
 | --- | --- | --- | --- |
@@ -304,8 +373,9 @@ AC-001 through AC-005, AC-027, or AC-028:
 Direct helper availability, passing CI tests, and product reachability are not warning retirement
 conditions. `AC-005` owns `MODEL_NOT_LOADED` with zero pure-helper calls; `AC-024` and `AC-026`
 own the direct test contracts and exact relocation; `AC-027` owns model-result provenance; and
-`AC-028` owns loaded-session authenticity. This spec retains all four current files and does not
-authorize a silent product fallback.
+`AC-028` owns loaded-session authenticity. `AC-029` owns the host-selection/session match; `AC-030`
+owns response correlation and replay rejection; and `AC-031` owns response schema and payload
+bounds. This spec retains all four current files and does not authorize a silent product fallback.
 
 ## Constraints
 
