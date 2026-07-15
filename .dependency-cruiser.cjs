@@ -45,13 +45,14 @@
 // ------------------------------
 // Regex helpers
 // ------------------------------
-const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
-
-// Group 1 = prefix (including an optional Common/Supporting namespace)
-// Group 2 = module name
-const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
+const {
+    MODELS_MUST_BE_TITLE_CASE,
+    MODULE_ROOT,
+    SOURCE_FILE_RE,
+    SPEC_FILE_RE,
+    STORY_FILE_RE,
+    TAURI_IPC_ONLY_IN_REPOSITORIES,
+} = require('./.dependency-cruiser.shared.cjs');
 
 // Private presentation subfolders
 const PRIVATE_PRESENTATION_FOLDERS =
@@ -704,31 +705,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // Tauri confinement
         // --------------------------------------------------------------------
-        {
-            name: 'tauri-ipc-only-in-repositories',
-            // WARN pending the IPC→repositories refactor: the resolved-path fix
-            // below (was '^@tauri-apps/', which never matched the pnpm-resolved
-            // path so the rule silently never fired) plus the tauriBridge target
-            // below surface real violations — IPC used directly from useCases/,
-            // presentation hooks, and shared utilities. Landing this at 'error'
-            // would block until that refactor (backlogged)
-            // is done; until then it stays 'warn' so the violations are visible.
-            severity: 'warn',
-            comment:
-                'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
-                'Currently warn pending the backlogged IPC→repositories refactor.',
-            from: {
-                path: '^(src/modules/|src/utils/).*' + SOURCE_FILE_RE,
-                pathNot: ['^src/modules/.*repositories/', '^src/utils/tauriBridge\\.ts$'],
-            },
-            to: {
-                // Resolved-path match: the pnpm store resolves @tauri-apps/* to a
-                // path containing /@tauri-apps/. The old '^@tauri-apps/' bare-
-                // specifier pattern never matched a resolved path. The bridge
-                // path catches callers that launder IPC through src/utils.
-                path: '(/@tauri-apps/|^src/utils/tauriBridge\\.ts$)',
-            },
-        },
+        TAURI_IPC_ONLY_IN_REPOSITORIES,
 
         {
             name: 'application-to-modules-public-surface-only',
@@ -806,15 +783,7 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
-        {
-            name: 'models-must-be-title-case',
-            severity: 'warn',
-            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
-            from: {},
-            to: {
-                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
-            },
-        },
+        MODELS_MUST_BE_TITLE_CASE,
         {
             name: 'not-to-unresolvable',
             severity: 'error',
