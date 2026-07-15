@@ -16,6 +16,7 @@ import {
 export type SaveAllToIdbOptions = {
     expectedAuthority?: CrdtPersistenceAuthority;
     nextEpoch?: string;
+    nextRootLineage?: string;
     signal?: AbortSignal;
 };
 
@@ -64,7 +65,11 @@ export async function saveAllToIdb(
         const current = options.expectedAuthority ?? EMPTY_PERSISTENCE_AUTHORITY;
         return {
             status: 'committed',
-            authority: advancePersistenceAuthority(current, options.nextEpoch ?? current.epoch),
+            authority: advancePersistenceAuthority(
+                current,
+                options.nextEpoch ?? current.epoch,
+                options.nextRootLineage ?? current.rootLineage
+            ),
         };
     }
 
@@ -92,7 +97,11 @@ export async function saveAllToIdb(
                 return;
             }
 
-            const nextAuthority = advancePersistenceAuthority(current, options.nextEpoch ?? current.epoch);
+            const nextAuthority = advancePersistenceAuthority(
+                current,
+                options.nextEpoch ?? current.epoch,
+                options.nextRootLineage ?? current.rootLineage
+            );
             store.clear();
             for (const [id, bytes] of bundle) {
                 store.put(new Uint8Array(bytes), id);

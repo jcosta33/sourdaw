@@ -1,6 +1,7 @@
 import { parse, stringify } from 'superjson';
 import { describe, expect, it, vi } from 'vitest';
 
+import { MAX_CRDT_ROOT_LINEAGE_LENGTH } from '../../models/CrdtRootLineage';
 import { MAIN_BRANCH_DOC_ID, MAIN_BRANCH_ID, type BranchRecord, type BranchStoreState } from '../branchStore';
 
 const BRANCH_STORAGE_KEY = 'sourdaw-branches';
@@ -143,6 +144,32 @@ describe('branchStore', () => {
             });
 
             expect(state).toEqual({
+                branches: [validMainBranch, validFeatureBranch],
+                activeBranchId: validFeatureBranch.branchId,
+            });
+        });
+
+        it('should drop malformed and oversized branch lineage tokens', async () => {
+            const invalidCharacters = {
+                ...validFeatureBranch,
+                branchId: 'feature/unsafe',
+            };
+            const oversized = {
+                ...validFeatureBranch,
+                branchId: 'x'.repeat(MAX_CRDT_ROOT_LINEAGE_LENGTH + 1),
+            };
+            const invalidSource = {
+                ...validFeatureBranch,
+                branchId: 'valid-feature',
+                sourceBranchId: 'main/unsafe',
+            };
+
+            await expect(
+                loadBranchStateFromStoredValue({
+                    branches: [validMainBranch, invalidCharacters, oversized, invalidSource, validFeatureBranch],
+                    activeBranchId: validFeatureBranch.branchId,
+                })
+            ).resolves.toEqual({
                 branches: [validMainBranch, validFeatureBranch],
                 activeBranchId: validFeatureBranch.branchId,
             });

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
         vi.fn<(state: { branches: Array<{ branchId: string; rootDocId: string }>; activeBranchId: string }) => void>(),
     projectCrdtToStores: vi.fn(),
     compactProject: vi.fn(() => Promise.resolve()),
+    runCrdtPersistenceOperation: vi.fn(() => Promise.resolve()),
     clone: vi.fn((d: unknown) => ({ tag: 'cloned', from: d })),
 }));
 
@@ -47,6 +48,9 @@ vi.mock('../../../stores/branchStore', () => ({
 }));
 vi.mock('../../projection/projectProjection', () => ({ projectCrdtToStores: mocks.projectCrdtToStores }));
 vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject }));
+vi.mock('../../crdtPersistenceQueue', () => ({
+    runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
+}));
 
 describe('switchBranch', () => {
     beforeEach(() => {
@@ -112,6 +116,11 @@ describe('switchBranch', () => {
 
     it('persists after the swap', () => {
         switchBranch('other');
+        expect(mocks.runCrdtPersistenceOperation).toHaveBeenCalledWith({
+            type: 'root-lineage-transition',
+            from: 'feat',
+            to: 'other',
+        });
         expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ activeBranchId: 'other' }));
         expect(mocks.compactProject).toHaveBeenCalled();
     });

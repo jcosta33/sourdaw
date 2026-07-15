@@ -90,12 +90,15 @@ async function readCurrentBundle(
 async function commitRemoteBundle({
     bundle,
     persistence,
+    nextRootLineage,
 }: {
     bundle: DocumentBundle;
     persistence: TransactionalPersistence;
+    nextRootLineage?: string;
 }): Promise<void> {
     const occurrence = persistence.getTransactions('readwrite').length + 1;
-    const save = saveAllToIdb(bundle);
+    const options = nextRootLineage === undefined ? {} : { nextRootLineage };
+    const save = saveAllToIdb(bundle, options);
     const transaction = await persistence.waitForTransaction('readwrite', occurrence);
     transaction.complete();
     await expect(save).resolves.toMatchObject({ status: 'committed' });
@@ -593,13 +596,14 @@ describe('persistCrdtProject', () => {
 
     it('does not let a superseded empty load strand reset authority or later autosaves', async () => {
         let resolveEmptySnapshot:
-            | ((value: { authority: { epoch: string; revision: number }; bundle: null }) => void)
+            | ((value: { authority: { epoch: string; revision: number; rootLineage: string }; bundle: null }) => void)
             | null = null;
-        const emptySnapshot = new Promise<{ authority: { epoch: string; revision: number }; bundle: null }>(
-            (resolve) => {
-                resolveEmptySnapshot = resolve;
-            }
-        );
+        const emptySnapshot = new Promise<{
+            authority: { epoch: string; revision: number; rootLineage: string };
+            bundle: null;
+        }>((resolve) => {
+            resolveEmptySnapshot = resolve;
+        });
         let loadIsCurrent = true;
         let staleLoad: Promise<boolean> | null = null;
         let autosave: Promise<void> | null = null;
@@ -622,7 +626,7 @@ describe('persistCrdtProject', () => {
             replacementSave.complete();
             await replacementCompaction;
 
-            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0 }, bundle: null });
+            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
             await expect(staleLoad).resolves.toBe(false);
 
             automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -646,7 +650,7 @@ describe('persistCrdtProject', () => {
                 afterSupersededLoad: true,
             });
         } finally {
-            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0 }, bundle: null });
+            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
             await staleLoad?.catch(() => undefined);
             await autosave?.catch(() => undefined);
             for (const transaction of persistence.getTransactions('readwrite')) {
@@ -864,6 +868,62 @@ describe('persistCrdtProject', () => {
                 localMigrationEdit: true,
                 remoteMigrationEdit: true,
             });
+        } finally {
+            vi.doUnmock('../../repositories/automergeRepository');
+            vi.doUnmock('#/utils/HMR/createHmrPersistentState');
+            vi.resetModules();
+        }
+    });
+
+    it('rejects a durable root lineage change during incompatible queue migration until reload', async () => {
+        automergeRepository.createProject('project');
+
+        const baseCompaction = compactProject();
+        const baseSave = await persistence.waitForTransaction('readwrite', 1);
+        baseSave.complete();
+        await baseCompaction;
+        const staleMainBundle = automergeRepository.saveAll();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.remoteFeatureEdit = true;
+        });
+        await commitRemoteBundle({
+            bundle: automergeRepository.saveAll(),
+            persistence,
+            nextRootLineage: 'feature',
+        });
+        await expect(automergeRepository.loadAll({ bundle: staleMainBundle, shouldCommit: () => true })).resolves.toBe(
+            true
+        );
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.staleMainEdit = true;
+        });
+
+        try {
+            const { persistCrdtProject: persistAfterMigration } = await importPersistenceAfterQueueVersionMismatch();
+            const firstAttempt = await settleOperationCapturingWrites({
+                firstWriteOccurrence: 3,
+                operation: persistAfterMigration(),
+                persistence,
+            });
+            const retry = await settleOperationCapturingWrites({
+                firstWriteOccurrence: 3,
+                operation: persistAfterMigration(),
+                persistence,
+            });
+
+            expect(firstAttempt.error).toMatchObject({ _tag: 'CrdtPersistenceRootLineageConflict' });
+            expect(firstAttempt.writes).toEqual([]);
+            expect(retry.error).toMatchObject({ _tag: 'CrdtPersistenceRootLineageConflict' });
+            expect(retry.writes).toEqual([]);
+            expect(persistence.getTransactions('readwrite')).toHaveLength(2);
+
+            const { loadCrdtProject: reloadAfterConflict } = await import('../loadCrdtProject');
+            await expect(reloadAfterConflict()).resolves.toBe(true);
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                remoteFeatureEdit: true,
+            });
+            expect(automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('staleMainEdit');
         } finally {
             vi.doUnmock('../../repositories/automergeRepository');
             vi.doUnmock('#/utils/HMR/createHmrPersistentState');
@@ -1357,7 +1417,7 @@ describe('persistCrdtProject', () => {
             recoverySave.complete();
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-            expect(state.version).toBe(4);
+            expect(state.version).toBe(5);
             expect(state.persistenceGeneration).toBe(previousGeneration + 1);
             expect(state.pendingChunks).toEqual([]);
             expect(state.pendingFullSnapshot).toBeNull();

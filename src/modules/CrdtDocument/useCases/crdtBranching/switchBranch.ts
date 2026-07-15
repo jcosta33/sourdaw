@@ -8,6 +8,7 @@ import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
+import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
@@ -55,6 +56,11 @@ export function switchBranch(branchId: string): void {
     }
 
     flushAutomergeStorageWrites();
+    void runCrdtPersistenceOperation({
+        type: 'root-lineage-transition',
+        from: state.activeBranchId,
+        to: branchId,
+    });
     // 1. Every outgoing branch owns a snapshot distinct from the active root.
     const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
 

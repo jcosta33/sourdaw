@@ -5,7 +5,12 @@ import {
     createCrdtPersistenceMembershipConflictError,
     type CrdtPersistenceMembershipConflictError,
 } from '../errors/CrdtPersistenceMembershipConflictError';
+import {
+    createCrdtPersistenceRootLineageConflictError,
+    type CrdtPersistenceRootLineageConflictError,
+} from '../errors/CrdtPersistenceRootLineageConflictError';
 import { type DocId, type DocumentBundle } from '../models/CrdtDocumentTypes';
+import { DEFAULT_CRDT_ROOT_LINEAGE, parseCrdtRootLineage } from '../models/CrdtRootLineage';
 import { automergeRepository } from '../repositories/automergeRepository';
 import {
     loadPersistenceSnapshotFromIdb,
@@ -37,7 +42,7 @@ type PendingFullSnapshot = {
 };
 
 const CRDT_PERSISTENCE_QUEUE_STATE_KEY = 'crdtDocument.persistenceQueue';
-const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 4;
+const CRDT_PERSISTENCE_QUEUE_STATE_VERSION = 5;
 
 type CrdtPersistenceQueueState = {
     version: number;
@@ -48,6 +53,10 @@ type CrdtPersistenceQueueState = {
     pendingFullSnapshot: PendingFullSnapshot | null;
     persistedBaseDocIds: Set<DocId>;
     authority: CrdtPersistenceAuthority | null;
+    activeRootLineage: string;
+    nextRootLineage: string | null;
+    rootLineageTransitionFrom: string | null;
+    rootLineageConflict: CrdtPersistenceRootLineageConflictError | null;
     replacementEpoch: string | null;
     migrationReconciliationRequired: boolean;
     migrationMembershipConflict: CrdtPersistenceMembershipConflictError | null;
@@ -63,6 +72,10 @@ function createInitialPersistenceQueueState(): CrdtPersistenceQueueState {
         pendingFullSnapshot: null,
         persistedBaseDocIds: new Set<DocId>([DOC_PREFIX_ROOT]),
         authority: null,
+        activeRootLineage: DEFAULT_CRDT_ROOT_LINEAGE,
+        nextRootLineage: null,
+        rootLineageTransitionFrom: null,
+        rootLineageConflict: null,
         replacementEpoch: null,
         migrationReconciliationRequired: false,
         migrationMembershipConflict: null,
@@ -85,6 +98,10 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     persistenceState.pendingFullSnapshot = null;
     persistenceState.persistedBaseDocIds = new Set<DocId>([DOC_PREFIX_ROOT]);
     persistenceState.authority = null;
+    persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
+    persistenceState.nextRootLineage = null;
+    persistenceState.rootLineageTransitionFrom = null;
+    persistenceState.rootLineageConflict = null;
     persistenceState.replacementEpoch = null;
     persistenceState.migrationReconciliationRequired = true;
     persistenceState.migrationMembershipConflict = null;
@@ -102,7 +119,13 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     );
 }
 
-type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset';
+type RootLineageTransitionOperation = {
+    type: 'root-lineage-transition';
+    from: string;
+    to: string;
+};
+
+type CrdtPersistenceOperation = 'incremental' | 'compact' | 'reset' | RootLineageTransitionOperation;
 
 type LoadCrdtPersistenceOperationResult = {
     loaded: boolean;
@@ -115,6 +138,10 @@ type LoadCrdtPersistenceOperation = (input: {
 
 /** Serialize persistence operations and reset private lifecycle state. */
 export function runCrdtPersistenceOperation(operation: CrdtPersistenceOperation): Promise<void> {
+    if (typeof operation === 'object') {
+        beginRootLineageTransition(operation);
+        return Promise.resolve();
+    }
     if (operation === 'reset') {
         resetQueueState();
         return Promise.resolve();
@@ -176,6 +203,10 @@ export function runCrdtPersistenceLoad(operation: LoadCrdtPersistenceOperation):
 /** Adopt the authority read with the project bundle that this realm loaded. */
 function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void {
     persistenceState.authority = authority;
+    persistenceState.activeRootLineage = authority.rootLineage;
+    persistenceState.nextRootLineage = null;
+    persistenceState.rootLineageTransitionFrom = null;
+    persistenceState.rootLineageConflict = null;
     persistenceState.replacementEpoch = null;
     persistenceState.migrationReconciliationRequired = false;
     persistenceState.migrationMembershipConflict = null;
@@ -184,6 +215,8 @@ function setCrdtPersistenceAuthority(authority: CrdtPersistenceAuthority): void 
 function resetQueueState(): void {
     beginPersistenceGeneration();
     persistenceState.persistedBaseDocIds.add(DOC_PREFIX_ROOT);
+    persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
+    persistenceState.nextRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
     // A project reset intentionally publishes a new epoch, but it still reads
     // and claims the current durable revision before replacing the bundle. A
     // concurrent realm can therefore never be cleared by an unseen reset.
@@ -197,18 +230,53 @@ function beginLoadQueueState(): number {
 }
 
 function beginPersistenceGeneration(): number {
+    const generation = revokePersistenceGeneration();
+    persistenceState.persistedBaseDocIds.clear();
+    persistenceState.authority = null;
+    persistenceState.activeRootLineage = DEFAULT_CRDT_ROOT_LINEAGE;
+    persistenceState.nextRootLineage = null;
+    persistenceState.rootLineageTransitionFrom = null;
+    persistenceState.rootLineageConflict = null;
+    persistenceState.replacementEpoch = null;
+    persistenceState.migrationReconciliationRequired = false;
+    persistenceState.migrationMembershipConflict = null;
+    return generation;
+}
+
+function revokePersistenceGeneration(): number {
     const previousAbortController = persistenceState.persistenceAbortController;
     persistenceState.persistenceGeneration++;
     persistenceState.persistenceAbortController = new AbortController();
     previousAbortController.abort();
     persistenceState.pendingChunks = [];
     persistenceState.pendingFullSnapshot = null;
-    persistenceState.persistedBaseDocIds.clear();
-    persistenceState.authority = null;
-    persistenceState.migrationReconciliationRequired = false;
-    persistenceState.migrationMembershipConflict = null;
     crdtProjectCompactionState.incrementalSaveCount = 0;
     return persistenceState.persistenceGeneration;
+}
+
+function beginRootLineageTransition({ from, to }: RootLineageTransitionOperation): void {
+    const sourceRootLineage = parseCrdtRootLineage(from);
+    const targetRootLineage = parseCrdtRootLineage(to);
+    if (!sourceRootLineage || !targetRootLineage) {
+        throw new TypeError('[CrdtPersistence] Invalid root lineage transition');
+    }
+    if (persistenceState.rootLineageConflict) {
+        throw persistenceState.rootLineageConflict;
+    }
+    if (persistenceState.migrationReconciliationRequired || persistenceState.migrationMembershipConflict) {
+        throw new Error('[CrdtPersistence] Persistence migration is incomplete; reload is required before branching');
+    }
+    if (sourceRootLineage !== persistenceState.activeRootLineage) {
+        throw poisonRootLineageConflict(sourceRootLineage, persistenceState.activeRootLineage);
+    }
+    if (sourceRootLineage === targetRootLineage) {
+        return;
+    }
+
+    revokePersistenceGeneration();
+    persistenceState.activeRootLineage = targetRootLineage;
+    persistenceState.nextRootLineage = targetRootLineage;
+    persistenceState.rootLineageTransitionFrom = sourceRootLineage;
 }
 
 function adoptPersistenceSnapshot(snapshot: CrdtPersistenceSnapshot): void {
@@ -230,6 +298,9 @@ async function ensurePersistenceAuthority(generation: number): Promise<CrdtPersi
     if (generation !== persistenceState.persistenceGeneration) {
         return EMPTY_PERSISTENCE_AUTHORITY;
     }
+    if (persistenceState.rootLineageConflict) {
+        throw persistenceState.rootLineageConflict;
+    }
     if (persistenceState.migrationMembershipConflict) {
         throw persistenceState.migrationMembershipConflict;
     }
@@ -248,13 +319,20 @@ async function ensurePersistenceAuthority(generation: number): Promise<CrdtPersi
         return EMPTY_PERSISTENCE_AUTHORITY;
     }
 
-    persistenceState.authority = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    const durableAuthority = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    if (persistenceState.replacementEpoch === null) {
+        assertSameRootLineage(persistenceState.activeRootLineage, durableAuthority.rootLineage);
+    }
+    persistenceState.authority = durableAuthority;
     return persistenceState.authority;
 }
 
 async function reconcileMigrationPersistenceSnapshot(generation: number): Promise<void> {
     if (generation !== persistenceState.persistenceGeneration) {
         return;
+    }
+    if (persistenceState.rootLineageConflict) {
+        throw persistenceState.rootLineageConflict;
     }
     if (persistenceState.migrationMembershipConflict) {
         throw persistenceState.migrationMembershipConflict;
@@ -267,6 +345,9 @@ async function reconcileMigrationPersistenceSnapshot(generation: number): Promis
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
+
+    const durableAuthority = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
+    assertSameRootLineage(persistenceState.activeRootLineage, durableAuthority.rootLineage);
 
     const durableBundle = getMigrationDurableBundle(snapshot);
     if (durableBundle) {
@@ -285,15 +366,15 @@ async function reconcileMigrationPersistenceSnapshot(generation: number): Promis
         }
     }
 
-    persistenceState.authority = snapshot?.authority ?? EMPTY_PERSISTENCE_AUTHORITY;
-    persistenceState.migrationReconciliationRequired = false;
+    setCrdtPersistenceAuthority(durableAuthority);
 }
 
 function shouldCommitMigrationReconciliation(generation: number): boolean {
     return (
         generation === persistenceState.persistenceGeneration &&
         persistenceState.migrationReconciliationRequired &&
-        persistenceState.migrationMembershipConflict === null
+        persistenceState.migrationMembershipConflict === null &&
+        persistenceState.rootLineageConflict === null
     );
 }
 
@@ -316,6 +397,32 @@ function getMigrationDurableBundle(
 function assertSamePersistenceEpoch(expected: CrdtPersistenceAuthority, actual: CrdtPersistenceAuthority): void {
     if (expected.epoch !== actual.epoch) {
         throw new Error('[CrdtPersistence] Project authority changed; reload is required before saving');
+    }
+}
+
+function poisonRootLineageConflict(
+    localRootLineage: string,
+    durableRootLineage: string
+): CrdtPersistenceRootLineageConflictError {
+    const conflict = createCrdtPersistenceRootLineageConflictError({
+        localRootLineage,
+        durableRootLineage,
+    });
+    persistenceState.rootLineageConflict = conflict;
+    return conflict;
+}
+
+function assertSameRootLineage(localRootLineage: string, durableRootLineage: string): void {
+    if (localRootLineage !== durableRootLineage) {
+        throw poisonRootLineageConflict(localRootLineage, durableRootLineage);
+    }
+}
+
+function assertPersistenceConflictCanMerge(expected: CrdtPersistenceAuthority, actual: CrdtPersistenceAuthority): void {
+    assertSamePersistenceEpoch(expected, actual);
+    assertSameRootLineage(expected.rootLineage, actual.rootLineage);
+    if (persistenceState.rootLineageTransitionFrom !== null) {
+        throw poisonRootLineageConflict(persistenceState.activeRootLineage, actual.rootLineage);
     }
 }
 
@@ -383,9 +490,17 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 
 async function persistIncrementalCrdtProject(generation: number): Promise<void> {
     await flushPendingFullSnapshot(generation);
-    await ensurePersistenceAuthority(generation);
+    const expectedAuthority = await ensurePersistenceAuthority(generation);
     await flushPendingChunks(generation);
     if (generation !== persistenceState.persistenceGeneration) {
+        return;
+    }
+
+    if (
+        persistenceState.nextRootLineage !== null &&
+        persistenceState.nextRootLineage !== expectedAuthority.rootLineage
+    ) {
+        await compactCrdtProject(generation);
         return;
     }
 
@@ -500,19 +615,20 @@ async function persistFullSnapshot(pending: PendingFullSnapshot): Promise<void> 
             const result = await saveAllToIdb(currentPending.bundle, {
                 expectedAuthority,
                 nextEpoch: persistenceState.replacementEpoch ?? expectedAuthority.epoch,
+                nextRootLineage: persistenceState.nextRootLineage ?? expectedAuthority.rootLineage,
                 signal: generationSignal,
             });
             if (currentPending.generation !== persistenceState.persistenceGeneration) {
+                observeSupersededPersistenceCommit(result);
                 return;
             }
 
             if (result.status === 'committed') {
-                persistenceState.authority = result.authority;
-                persistenceState.replacementEpoch = null;
+                setCrdtPersistenceAuthority(result.authority);
                 break;
             }
 
-            assertSamePersistenceEpoch(expectedAuthority, result.authority);
+            assertPersistenceConflictCanMerge(expectedAuthority, result.authority);
             assertSamePersistenceMembership(getActiveDocIds(), result.bundle);
             await automergeRepository.mergeBundle(result.bundle, {
                 shouldCommit: () => currentPending.generation === persistenceState.persistenceGeneration,
@@ -603,16 +719,17 @@ async function flushPendingChunks(generation: number): Promise<void> {
                 }
             );
             if (generation !== persistenceState.persistenceGeneration) {
+                observeSupersededPersistenceCommit(result);
                 return;
             }
 
             if (result.status === 'committed') {
-                persistenceState.authority = result.authority;
+                setCrdtPersistenceAuthority(result.authority);
                 break;
             }
 
             const conflictResult: Extract<SaveIncrementalsToIdbResult, { status: 'conflict' }> = result;
-            assertSamePersistenceEpoch(expectedAuthority, conflictResult.authority);
+            assertPersistenceConflictCanMerge(expectedAuthority, conflictResult.authority);
             const localDocumentIds = new Set(getActiveDocIds());
             for (const { id } of chunks) {
                 localDocumentIds.add(id);
@@ -652,6 +769,26 @@ async function flushPendingChunks(generation: number): Promise<void> {
     }
     // Every chunk in the atomic transaction is non-empty and committed here.
     crdtProjectCompactionState.incrementalSaveCount += chunks.length;
+}
+
+function observeSupersededPersistenceCommit(
+    result: SaveIncrementalsToIdbResult | Awaited<ReturnType<typeof saveAllToIdb>>
+): void {
+    if (result.status !== 'committed' || persistenceState.rootLineageTransitionFrom === null) {
+        return;
+    }
+
+    const currentAuthority = persistenceState.authority;
+    const committedCurrentTransitionSource =
+        result.authority.rootLineage === persistenceState.rootLineageTransitionFrom;
+    const advancesKnownAuthority =
+        currentAuthority !== null &&
+        currentAuthority.epoch === result.authority.epoch &&
+        currentAuthority.rootLineage === result.authority.rootLineage &&
+        currentAuthority.revision < result.authority.revision;
+    if (committedCurrentTransitionSource || advancesKnownAuthority) {
+        persistenceState.authority = result.authority;
+    }
 }
 
 function prunePendingChunks(generation: number): void {

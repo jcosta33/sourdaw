@@ -11,6 +11,9 @@ import { switchBranch } from '../switchBranch';
 vi.mock('../../compactProject', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../../crdtPersistenceQueue', () => ({
+    runCrdtPersistenceOperation: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../projection/projectProjection', () => ({
     projectCrdtToStores: vi.fn(),
 }));

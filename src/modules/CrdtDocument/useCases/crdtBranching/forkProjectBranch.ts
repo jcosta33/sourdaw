@@ -7,6 +7,7 @@ import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
 import { compactProject } from '../compactProject';
+import { runCrdtPersistenceOperation } from '../crdtPersistenceQueue';
 import { projectCrdtToStores } from '../projection/projectProjection';
 
 import { saveActiveBranchSnapshot } from './saveActiveBranchSnapshot';
@@ -35,6 +36,11 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
     // into its own backing slot before root is repointed at the fork.
     const forkedDoc = cloneDoc(sourceDoc);
     flushAutomergeStorageWrites();
+    void runCrdtPersistenceOperation({
+        type: 'root-lineage-transition',
+        from: state.activeBranchId,
+        to: branchId,
+    });
     const stateWithSourceSnapshot = saveActiveBranchSnapshot({ state, liveRoot: sourceDoc });
     automergeRepository.insertDoc(branchDocId, forkedDoc);
     automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(forkedDoc));

@@ -1,4 +1,7 @@
+import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthority';
 
 import { TransactionalPersistence } from './helpers/transactionalPersistence';
 
@@ -31,7 +34,7 @@ type ConflictAttempt = {
 };
 
 type LoadedPersistenceSnapshot = {
-    authority: { epoch: string; revision: number };
+    authority: { epoch: string; revision: number; rootLineage: string };
     bundle: Map<string, Uint8Array>;
 };
 
@@ -242,7 +245,7 @@ describe('CRDT persistence across independent queue contexts', () => {
         if (!finalSnapshot?.bundle) {
             throw new Error('Expected the merged full snapshot');
         }
-        expect(finalSnapshot.authority).toEqual({ epoch: '', revision: 3 });
+        expect(finalSnapshot.authority).toEqual({ epoch: '', revision: 3, rootLineage: 'main' });
         expect([...finalSnapshot.bundle.keys()]).toEqual(['root']);
 
         firstContext.repository.automergeRepository.reset();
@@ -253,6 +256,237 @@ describe('CRDT persistence across independent queue contexts', () => {
         expect(firstContext.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
             fromIncrementalTab: true,
             fromStaleFullTab: true,
+        });
+    });
+
+    it.each(['incremental', 'compact'] as const)(
+        'rejects a stale Feature root during $0 persistence after another context switches to Main',
+        async (operation) => {
+            const first = await importContext();
+            const second = await importContext();
+            const firstRepository = first.repository.automergeRepository;
+
+            firstRepository.createProject('project');
+            firstRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.sharedBeforeFork = true;
+            });
+
+            const mainPersist = first.queue.runCrdtPersistenceOperation('compact');
+            const mainTransaction = await persistence.waitForTransaction('readwrite', 1);
+            mainTransaction.complete();
+            await mainPersist;
+
+            const forkPoint = firstRepository.getDoc('root');
+            if (!forkPoint) {
+                throw new Error('Expected the fork point');
+            }
+            void first.queue.runCrdtPersistenceOperation({
+                type: 'root-lineage-transition',
+                from: 'main',
+                to: 'feature',
+            });
+            firstRepository.insertDoc('branch_main', cloneDoc(forkPoint));
+            firstRepository.insertDoc('branch_feature', cloneDoc(forkPoint));
+            firstRepository.replaceDoc('root', cloneDoc(forkPoint));
+            firstRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.featureBeforeSwitch = true;
+            });
+            firstRepository.replaceDoc('branch_feature', cloneDoc(firstRepository.getDoc('root')!));
+
+            const featurePersist = first.queue.runCrdtPersistenceOperation('compact');
+            const featureTransaction = await persistence.waitForTransaction('readwrite', 2);
+            featureTransaction.complete();
+            await featurePersist;
+
+            const featureSnapshot = await first.snapshot.loadPersistenceSnapshotFromIdb();
+            if (!featureSnapshot?.bundle) {
+                throw new Error('Expected the durable Feature snapshot');
+            }
+            await loadContextSnapshot({ context: second, snapshot: featureSnapshot });
+
+            const mainBacking = firstRepository.getDoc('branch_main');
+            if (!mainBacking) {
+                throw new Error('Expected the Main backing document');
+            }
+            void first.queue.runCrdtPersistenceOperation({
+                type: 'root-lineage-transition',
+                from: 'feature',
+                to: 'main',
+            });
+            firstRepository.replaceDoc('branch_feature', cloneDoc(firstRepository.getDoc('root')!));
+            firstRepository.replaceDoc('root', cloneDoc(mainBacking));
+            firstRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.mainAfterSwitch = true;
+            });
+
+            const switchedMainPersist = first.queue.runCrdtPersistenceOperation('compact');
+            const switchedMainTransaction = await persistence.waitForTransaction('readwrite', 3);
+            switchedMainTransaction.complete();
+            await switchedMainPersist;
+
+            second.repository.automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+                doc.staleFeatureEdit = true;
+            });
+            const stalePersist = second.queue.runCrdtPersistenceOperation(operation);
+            const attempt = await finishConflictAttempt({
+                persistence,
+                operation: stalePersist,
+                conflictOccurrence: 4,
+            });
+
+            expect(attempt.error).toMatchObject({ _tag: 'CrdtPersistenceRootLineageConflict' });
+            expect(attempt.unexpectedWrites).toEqual([]);
+            const writeCountAfterConflict = persistence.getTransactions('readwrite').length;
+            await expect(second.queue.runCrdtPersistenceOperation('compact')).rejects.toMatchObject({
+                _tag: 'CrdtPersistenceRootLineageConflict',
+            });
+            expect(persistence.getTransactions('readwrite')).toHaveLength(writeCountAfterConflict);
+
+            const durableMain = await first.snapshot.loadPersistenceSnapshotFromIdb();
+            if (!durableMain?.bundle) {
+                throw new Error('Expected the durable Main snapshot');
+            }
+            await loadContextSnapshot({ context: second, snapshot: durableMain });
+            expect(second.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                sharedBeforeFork: true,
+                mainAfterSwitch: true,
+            });
+            expect(second.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty(
+                'staleFeatureEdit'
+            );
+
+            const reload = await importContext();
+            await reload.repository.automergeRepository.loadAll({
+                bundle: durableMain.bundle,
+                shouldCommit: () => true,
+            });
+            expect(reload.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+                sharedBeforeFork: true,
+                mainAfterSwitch: true,
+            });
+            expect(reload.repository.automergeRepository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty(
+                'staleFeatureEdit'
+            );
+        }
+    );
+
+    it('serializes back-to-back lineage transitions after the first full snapshot commits', async () => {
+        const context = await importContext();
+        const repository = context.repository.automergeRepository;
+
+        repository.createProject('project');
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mainBeforeFeature = true;
+        });
+        const mainDoc = repository.getDoc('root');
+        if (!mainDoc) {
+            throw new Error('Expected the Main root');
+        }
+        const mainSnapshot = cloneDoc(mainDoc);
+
+        const mainPersist = context.queue.runCrdtPersistenceOperation('compact');
+        const mainTransaction = await persistence.waitForTransaction('readwrite', 1);
+        mainTransaction.complete();
+        await mainPersist;
+
+        await context.queue.runCrdtPersistenceOperation({
+            type: 'root-lineage-transition',
+            from: 'main',
+            to: 'feature',
+        });
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.featureEdit = true;
+        });
+        const featurePersist = context.queue.runCrdtPersistenceOperation('compact');
+        const featureTransaction = await persistence.waitForTransaction('readwrite', 2);
+
+        // IndexedDB has committed Feature, but its promise continuation has not
+        // yet adopted that authority when the user immediately returns to Main.
+        featureTransaction.complete();
+        await context.queue.runCrdtPersistenceOperation({
+            type: 'root-lineage-transition',
+            from: 'feature',
+            to: 'main',
+        });
+        repository.replaceDoc('root', cloneDoc(mainSnapshot));
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.mainAfterReturn = true;
+        });
+        const returnToMainPersist = context.queue.runCrdtPersistenceOperation('compact');
+        await featurePersist;
+
+        const returnToMainTransaction = await persistence.waitForTransaction('readwrite', 3);
+        expect(returnToMainTransaction.writes.some((write) => write.kind === 'put' && write.key === 'root')).toBe(true);
+        returnToMainTransaction.complete();
+        await returnToMainPersist;
+
+        const durableMain = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        expect(durableMain?.authority.rootLineage).toBe('main');
+        if (!durableMain?.bundle) {
+            throw new Error('Expected the durable Main bundle');
+        }
+        repository.reset();
+        await repository.loadAll({ bundle: durableMain.bundle, shouldCommit: () => true });
+        expect(repository.getDoc<Record<string, unknown>>('root')).toMatchObject({
+            mainBeforeFeature: true,
+            mainAfterReturn: true,
+        });
+        expect(repository.getDoc<Record<string, unknown>>('root')).not.toHaveProperty('featureEdit');
+    });
+
+    it('migrates a legacy authority to conservative Main in the next atomic full snapshot', async () => {
+        const context = await importContext();
+        const repository = context.repository.automergeRepository;
+        repository.createProject('legacy-project');
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.legacyContent = true;
+        });
+        const legacyBundle = repository.saveAll();
+        const legacyRoot = legacyBundle.get('root');
+        if (!legacyRoot) {
+            throw new Error('Expected the legacy root bytes');
+        }
+        persistence.seed('root', legacyRoot);
+        persistence.seed(
+            PERSISTENCE_AUTHORITY_KEY,
+            new TextEncoder().encode(JSON.stringify({ version: 1, epoch: 'legacy-project', revision: 7 }))
+        );
+        repository.reset();
+
+        const legacySnapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        expect(legacySnapshot?.authority).toEqual({
+            epoch: 'legacy-project',
+            revision: 7,
+            rootLineage: 'main',
+        });
+        if (!legacySnapshot?.bundle) {
+            throw new Error('Expected the legacy persistence bundle');
+        }
+        await loadContextSnapshot({ context, snapshot: legacySnapshot });
+        repository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.afterMigration = true;
+        });
+
+        const migrationPersist = context.queue.runCrdtPersistenceOperation('compact');
+        const migrationTransaction = await persistence.waitForTransaction('readwrite', 1);
+        const authorityWrite = migrationTransaction.writes.find(
+            (write) => write.kind === 'put' && write.key === PERSISTENCE_AUTHORITY_KEY
+        );
+        expect(authorityWrite).toBeDefined();
+        expect(JSON.parse(new TextDecoder().decode(authorityWrite?.value))).toMatchObject({
+            version: 2,
+            epoch: 'legacy-project',
+            revision: 8,
+            rootLineage: 'main',
+        });
+        migrationTransaction.complete();
+        await migrationPersist;
+
+        const migratedSnapshot = await context.snapshot.loadPersistenceSnapshotFromIdb();
+        expect(migratedSnapshot?.authority).toEqual({
+            epoch: 'legacy-project',
+            revision: 8,
+            rootLineage: 'main',
         });
     });
 

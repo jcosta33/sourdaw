@@ -194,9 +194,12 @@ describe('crdtPersistence repository', () => {
     });
 
     describe('saveAllToIdb', () => {
-        it('should return early if DB fails to open', async () => {
+        it('should return early with the requested authority transition if DB fails to open', async () => {
             vi.mocked(openDatabase).mockResolvedValue(null);
-            await saveAllToIdb(new Map());
+            await expect(saveAllToIdb(new Map(), { nextRootLineage: 'feature' })).resolves.toEqual({
+                status: 'committed',
+                authority: { epoch: '', revision: 1, rootLineage: 'feature' },
+            });
             expect(mockDb.transaction).not.toHaveBeenCalled();
         });
 
@@ -251,12 +254,14 @@ describe('crdtPersistence repository', () => {
         it('detects a stale full bundle inside the IDB transaction instead of clearing newer records', async () => {
             vi.mocked(openDatabase).mockResolvedValue(mockDb);
             const bundle = new Map([['doc1', new Uint8Array([1])]]);
-            const authority = { epoch: '', revision: 0 };
+            const authority = { epoch: '', revision: 0, rootLineage: 'main' };
             let authorityReadCount = 0;
             mockStore.get.mockImplementation(() => {
                 const request = {
                     result:
-                        authorityReadCount++ === 0 ? undefined : encodePersistenceAuthority({ epoch: '', revision: 1 }),
+                        authorityReadCount++ === 0
+                            ? undefined
+                            : encodePersistenceAuthority({ epoch: '', revision: 1, rootLineage: 'main' }),
                     onsuccess: null as (() => void) | null,
                     onerror: null as (() => void) | null,
                     error: null as Error | null,
@@ -279,7 +284,7 @@ describe('crdtPersistence repository', () => {
             await Promise.resolve();
             expect(mockStore.get).toHaveBeenCalledTimes(2);
             expect(mockStore.get.mock.results[1]?.value.result).toEqual(
-                encodePersistenceAuthority({ epoch: '', revision: 1 })
+                encodePersistenceAuthority({ epoch: '', revision: 1, rootLineage: 'main' })
             );
             mockTx.oncomplete();
 

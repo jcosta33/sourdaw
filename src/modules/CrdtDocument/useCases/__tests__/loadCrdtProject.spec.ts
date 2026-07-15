@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadCrdtProject } from '../loadCrdtProject';
 
 type TestPersistenceSnapshot = {
-    authority: { epoch: string; revision: number };
+    authority: { epoch: string; revision: number; rootLineage: string };
     bundle: Map<string, Uint8Array> | null;
 };
 
@@ -42,7 +42,7 @@ describe('loadCrdtProject', () => {
         vi.clearAllMocks();
         mocks.loadAll.mockResolvedValue(true);
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle: null,
         });
     });
@@ -50,7 +50,7 @@ describe('loadCrdtProject', () => {
     it('should load from IDB and update the repository', async () => {
         const mockBundle = new Map<string, Uint8Array>();
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle: mockBundle,
         });
 
@@ -61,7 +61,7 @@ describe('loadCrdtProject', () => {
         expect(loadInput?.bundle).toBe(mockBundle);
         expect(loadInput?.shouldCommit).toEqual(expect.any(Function));
         expect(mocks.adoptSnapshot).toHaveBeenCalledWith({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle: mockBundle,
         });
     });
@@ -92,7 +92,7 @@ describe('loadCrdtProject', () => {
             ['branch_feat', olderBranchSnapshot],
         ]);
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle,
         });
 
@@ -105,7 +105,7 @@ describe('loadCrdtProject', () => {
 
     it('does not restore branch state when repository commit is canceled', async () => {
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle: new Map<string, Uint8Array>(),
         });
         mocks.loadAll.mockResolvedValue(false);
@@ -122,7 +122,7 @@ describe('loadCrdtProject', () => {
     it('does not restore branch state when authority is revoked after repository commit', async () => {
         let shouldCommit = true;
         mocks.loadPersistenceSnapshotFromIdb.mockResolvedValue({
-            authority: { epoch: 'test-project', revision: 1 },
+            authority: { epoch: 'test-project', revision: 1, rootLineage: 'main' },
             bundle: new Map<string, Uint8Array>(),
         });
         mocks.loadAll.mockImplementationOnce(() => {
