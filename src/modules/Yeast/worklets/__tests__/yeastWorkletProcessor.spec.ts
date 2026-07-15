@@ -140,6 +140,7 @@ describe('YeastWorkletProcessor', () => {
         const command = { processorId: 'cm-1', type: 'chordMemory.clear' } as const;
         harness.port.postMessage({
             type: 'setProjection',
+            projectionId: 0,
             processors: [{ id: 'cm-1', type: 'chordMemory', bypassed: false, params: {} }],
         });
 
@@ -168,6 +169,66 @@ describe('YeastWorkletProcessor', () => {
             commandId: 7,
             accepted: true,
         });
+    });
+
+    it('reports projection execution failures with the correlated projection id', () => {
+        const harness = createWorkletPortHarness();
+        const error = new Error('projection failed');
+        vi.spyOn(harness.processor._rack, 'replaceProjection').mockImplementation(() => {
+            throw error;
+        });
+        const messages: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+        };
+
+        harness.port.postMessage({
+            type: 'setProjection',
+            projectionId: 7,
+            processors: [],
+        });
+
+        expect(messages).toEqual([
+            {
+                type: 'projectionError',
+                projectionId: 7,
+                error: error.message,
+            },
+        ]);
+    });
+
+    it('acknowledges a successful projection after rack execution and note-offs', () => {
+        const harness = createWorkletPortHarness();
+        const messages: unknown[] = [];
+        harness.port.onmessage = ({ data }: MessageEvent<unknown>) => {
+            messages.push(data);
+        };
+
+        harness.port.postMessage({
+            type: 'setProjection',
+            projectionId: 0,
+            processors: [{ id: 'filter-1', type: 'filter', bypassed: false, params: {} }],
+        });
+        messages.length = 0;
+        harness.processor._rack.processBlock(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            0,
+            128,
+            {} as TransportInfo
+        );
+        harness.port.postMessage({
+            type: 'setProjection',
+            projectionId: 8,
+            processors: [],
+        });
+
+        expect(messages).toEqual([
+            {
+                type: 'notesOff',
+                events: [{ timeSamples: 128, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+            },
+            { type: 'projectionAck', projectionId: 8 },
+        ]);
     });
 
     it('emits exactly one negative acknowledgement without an error when the rack rejects', () => {

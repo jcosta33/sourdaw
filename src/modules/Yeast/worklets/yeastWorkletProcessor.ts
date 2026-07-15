@@ -6,6 +6,8 @@
  *
  * Port protocol (this.port.onmessage):
  *   ← { type: 'setProjection', processors }
+ *   → { type: 'projectionAck', projectionId }
+ *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
  *   → { type: 'commandAck', commandId, accepted, error? }
@@ -22,16 +24,14 @@ import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
-type YeastMsg =
-    | { type: 'setProjection'; processors: YeastProcessorProjectionItem[] }
-    | {
-          type: 'processBlock';
-          requestId: number;
-          events: MidiEvent[];
-          blockStart: number;
-          blockEnd: number;
-          transport: TransportInfo;
-      };
+type YeastMsg = {
+    type: 'processBlock';
+    requestId: number;
+    events: MidiEvent[];
+    blockStart: number;
+    blockEnd: number;
+    transport: TransportInfo;
+};
 
 type ParsedExecuteCommand = {
     commandId: number;
@@ -39,6 +39,7 @@ type ParsedExecuteCommand = {
 };
 
 const INVALID_EXECUTE_COMMAND_ERROR = 'Invalid executeCommand message';
+const INVALID_SET_PROJECTION_ERROR = 'Invalid setProjection message';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -50,6 +51,56 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isCommandId(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isProcessorType(value: unknown): value is YeastProcessorProjectionItem['type'] {
+    switch (value) {
+        case 'arpeggiator':
+        case 'chord':
+        case 'chordMemory':
+        case 'scale':
+        case 'harmonizer':
+        case 'repeater':
+        case 'velocity':
+        case 'humanizer':
+        case 'filter':
+        case 'transposer':
+        case 'groove':
+        case 'ccGenerator':
+        case 'euclidean':
+        case 'markov':
+        case 'mutation':
+            return true;
+        default:
+            return false;
+    }
+}
+
+function isProjectionItem(value: unknown): value is YeastProcessorProjectionItem {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    if (
+        typeof value.id !== 'string' ||
+        !isProcessorType(value.type) ||
+        typeof value.bypassed !== 'boolean' ||
+        !isPlainObject(value.params)
+    ) {
+        return false;
+    }
+    return Object.values(value.params).every((param) => typeof param === 'number' && Number.isFinite(param));
+}
+
+function parseSetProjection(
+    value: unknown
+): { projectionId: number; processors: YeastProcessorProjectionItem[]; error?: string } | undefined {
+    if (!isPlainObject(value) || value.type !== 'setProjection' || !isCommandId(value.projectionId)) {
+        return undefined;
+    }
+    if (!Array.isArray(value.processors) || !value.processors.every(isProjectionItem)) {
+        return { projectionId: value.projectionId, processors: [], error: INVALID_SET_PROJECTION_ERROR };
+    }
+    return { projectionId: value.projectionId, processors: value.processors };
 }
 
 function parseAllNotesOff(value: unknown): { panicId: number; nowSamples: number } | undefined {
@@ -126,6 +177,35 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                 return;
             }
 
+            if (data.type === 'setProjection') {
+                const parsed = parseSetProjection(data);
+                if (!parsed) {
+                    return;
+                }
+                if (parsed.error) {
+                    this.port.postMessage({
+                        type: 'projectionError',
+                        projectionId: parsed.projectionId,
+                        error: parsed.error,
+                    });
+                    return;
+                }
+                try {
+                    const offs = this._rack.replaceProjection(parsed.processors, createProcessor, currentFrame);
+                    if (offs.length > 0) {
+                        this.port.postMessage({ type: 'notesOff', events: offs });
+                    }
+                    this.port.postMessage({ type: 'projectionAck', projectionId: parsed.projectionId });
+                } catch (error: unknown) {
+                    this.port.postMessage({
+                        type: 'projectionError',
+                        projectionId: parsed.projectionId,
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                }
+                return;
+            }
+
             if (data.type === 'allNotesOff') {
                 const parsed = parseAllNotesOff(data);
                 if (!parsed) {
@@ -149,25 +229,13 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
             }
 
             const message = data as YeastMsg;
-            switch (message.type) {
-                case 'setProjection': {
-                    const offs = this._rack.replaceProjection(message.processors, createProcessor, currentFrame);
-                    if (offs.length > 0) {
-                        this.port.postMessage({ type: 'notesOff', events: offs });
-                    }
-                    break;
-                }
-                case 'processBlock': {
-                    const processed = this._rack.processBlock(
-                        message.events,
-                        message.blockStart,
-                        message.blockEnd,
-                        message.transport
-                    );
-                    this.port.postMessage({ type: 'processed', requestId: message.requestId, events: processed });
-                    break;
-                }
-            }
+            const processed = this._rack.processBlock(
+                message.events,
+                message.blockStart,
+                message.blockEnd,
+                message.transport
+            );
+            this.port.postMessage({ type: 'processed', requestId: message.requestId, events: processed });
         };
     }
 

@@ -14,25 +14,26 @@ vi.mock('../YeastWorkletNode', () => ({
 type Deferred<T> = {
     promise: Promise<T>;
     resolve: (value: T) => void;
+    reject: (reason?: unknown) => void;
 };
 
 function deferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void;
-    const promise = new Promise<T>((resolve) => {
+    let rejectDeferred!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
         resolveDeferred = resolve;
+        rejectDeferred = reject;
     });
-    return { promise, resolve: resolveDeferred };
+    return { promise, resolve: resolveDeferred, reject: rejectDeferred };
 }
 
 function makeNode(context: BaseAudioContext) {
     return {
         context,
-        processBlock: (
-            _events: readonly MidiEvent[],
-            _blockStart: number,
-            _blockEnd: number,
-            _transport: TransportInfo
-        ) => Promise.resolve([]),
+        processBlock: vi.fn(
+            (_events: readonly MidiEvent[], _blockStart: number, _blockEnd: number, _transport: TransportInfo) =>
+                Promise.resolve([])
+        ),
         setProjection: vi.fn(),
         sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         allNotesOff: vi.fn(),
@@ -73,6 +74,56 @@ describe('yeastRuntime', () => {
         await expect(initialization).resolves.toBe(node);
         expect(node.setProjection).toHaveBeenCalledTimes(1);
         expect(node.setProjection).toHaveBeenCalledWith(projectionB);
+    });
+
+    it('does not publish ready before projection execution is acknowledged', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const pendingProjection = deferred<void>();
+        const node = makeNode(context);
+        node.setProjection.mockReturnValueOnce(pendingProjection.promise);
+        createNode.mockResolvedValueOnce(node);
+
+        const initialization = runtime.ensureYeastRuntime({ context, projection: projectionA });
+        let settled = false;
+        void initialization.then(() => {
+            settled = true;
+            return undefined;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(settled).toBe(false);
+        expect(runtime.getYeastRuntimeStatus()).toBe('initializing');
+
+        pendingProjection.resolve();
+        await expect(initialization).resolves.toBe(node);
+        expect(runtime.getYeastRuntimeStatus()).toBe('ready');
+    });
+
+    it('invalidates the current runtime and releases notes when a dynamic projection rejects', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const projectionUpdate = deferred<void>();
+        const error = new Error('projection acknowledgement failed');
+        void projectionUpdate.promise.catch(() => undefined);
+        createNode.mockResolvedValueOnce(node);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        node.setProjection.mockReturnValueOnce(projectionUpdate.promise);
+
+        runtime.setYeastRuntimeProjection(projectionB);
+        projectionUpdate.reject(error);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(node.destroy).toHaveBeenCalledTimes(1);
+        expect(onNotesOff).toHaveBeenCalledTimes(1);
+        expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+        expect(runtime.getYeastRuntimeError()).toBe(error.message);
     });
 
     it('releases downstream notes when projection delivery fails', async () => {
@@ -210,7 +261,7 @@ describe('yeastRuntime', () => {
         expect(runtime.getYeastRuntimeError()).toBe(error.message);
     });
 
-    it('releases downstream notes once when a panic becomes stale during runtime replacement', async () => {
+    it('does not release stale panic fallback notes into a replacement runtime', async () => {
         const runtime = await loadRuntime();
         const contextA = {} as BaseAudioContext;
         const contextB = {} as BaseAudioContext;
@@ -230,8 +281,30 @@ describe('yeastRuntime', () => {
 
         await expect(panic).resolves.toBeUndefined();
         await expect(replacement).resolves.toBe(nodeB);
-        expect(onNotesOff).toHaveBeenCalledTimes(1);
-        expect(onNotesOff).toHaveBeenCalledWith(Array.from({ length: 128 }, (_, note) => note));
+        expect(onNotesOff).not.toHaveBeenCalled();
+    });
+
+    it('does not let a stale panic fallback kill the replacement generation', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const pendingAck = deferred<void>();
+        const onNotesOff = vi.fn();
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        nodeA.allNotesOff.mockReturnValueOnce(pendingAck.promise);
+        const panic = runtime.sendYeastRuntimeAllNotesOff(512);
+
+        await expect(runtime.ensureYeastRuntime({ context: contextB, projection: projectionB })).resolves.toBe(nodeB);
+        pendingAck.resolve();
+        await expect(panic).resolves.toBeUndefined();
+
+        expect(onNotesOff).not.toHaveBeenCalled();
+        expect(nodeB.destroy).not.toHaveBeenCalled();
     });
 
     it('settles lazy initialization as unavailable and does not replay an uncertain queued panic', async () => {
@@ -433,5 +506,39 @@ describe('yeastRuntime', () => {
         });
         expect(nodeA.sendCommand).toHaveBeenCalledTimes(1);
         expect(nodeB.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it('does not return late processed events from an old generation', async () => {
+        const runtime = await loadRuntime();
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const lateResult = deferred<readonly MidiEvent[]>();
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+
+        await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+        nodeA.processBlock.mockReturnValueOnce(lateResult.promise);
+
+        const processing = runtime.processYeastRuntimeBlock({
+            context: contextA,
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport: {
+                isPlaying: true,
+                bpm: 120,
+                timeSignature: [4, 4],
+            },
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(nodeA.processBlock).toHaveBeenCalledTimes(1);
+
+        await expect(runtime.ensureYeastRuntime({ context: contextB, projection: projectionB })).resolves.toBe(nodeB);
+        lateResult.resolve([]);
+
+        await expect(processing).rejects.toThrow(/runtime changed/);
+        expect(nodeB.processBlock).not.toHaveBeenCalled();
     });
 });

@@ -16,9 +16,9 @@ const yeastStore = vi.hoisted(() => ({
     set: vi.fn(),
 }));
 
-const ensureRuntime = vi.hoisted(() => vi.fn(async () => ({ context: {} })));
-const processRuntimeBlock = vi.hoisted(() => vi.fn(async () => []));
-const setProjection = vi.hoisted(() => vi.fn());
+const ensureRuntime = vi.hoisted(() => vi.fn(() => Promise.resolve({ context: {} })));
+const processRuntimeBlock = vi.hoisted(() => vi.fn(() => Promise.resolve([])));
+const applyProjection = vi.hoisted(() => vi.fn(() => Promise.resolve(undefined)));
 const runtimeStatus = vi.hoisted(() => vi.fn(() => 'ready' as const));
 const runtimeError = vi.hoisted(() => vi.fn(() => undefined));
 
@@ -30,11 +30,11 @@ vi.mock('../../../stores/yeastStore', () => ({
 }));
 
 vi.mock('../../../engine/yeastRuntime', () => ({
+    applyYeastRuntimeProjection: applyProjection,
     ensureYeastRuntime: ensureRuntime,
     getYeastRuntimeError: runtimeError,
     getYeastRuntimeStatus: runtimeStatus,
     processYeastRuntimeBlock: processRuntimeBlock,
-    setYeastRuntimeProjection: setProjection,
 }));
 
 const { processYeastMidi } = await import('../processYeastMidi');
@@ -75,7 +75,7 @@ describe('processYeastMidi — worklet-only runtime', () => {
             })
         ).resolves.toEqual([{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } }]);
 
-        expect(setProjection).toHaveBeenCalledWith([
+        expect(applyProjection).toHaveBeenCalledWith([
             {
                 id: 'arp-1',
                 type: 'arpeggiator',

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../YeastWorkletNode';
+import { createYeastWorkletNode, type YeastWorkletNodeResult, YEAST_WORKLET_DEADLINE_MS } from '../YeastWorkletNode';
 
 import type { TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
@@ -85,6 +85,14 @@ function replyRawAllNotesOffAck(port: FakePort, data: unknown): void {
     port.onmessage?.({ data } as MessageEvent);
 }
 
+function replyProjectionAck(port: FakePort, projectionId: number): void {
+    port.onmessage?.({ data: { type: 'projectionAck', projectionId } } as MessageEvent);
+}
+
+function replyProjectionError(port: FakePort, projectionId: number, error: string): void {
+    port.onmessage?.({ data: { type: 'projectionError', projectionId, error } } as MessageEvent);
+}
+
 describe('createYeastWorkletNode — processBlock lifecycle', () => {
     it('resolves processBlock when the worklet replies with a matching requestId', async () => {
         const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
@@ -105,9 +113,23 @@ describe('createYeastWorkletNode — processBlock lifecycle', () => {
         // rejection is always observed (no unhandled-rejection noise).
         const assertion = expect(promise).rejects.toThrow(/timed out/);
 
-        await vi.advanceTimersByTimeAsync(5000);
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
 
         await assertion;
+    });
+
+    it('rejects processBlock within the scheduler-safe deadline', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const promise = node.processBlock([], 0, 128, transport);
+        let rejection: unknown;
+        void promise.catch((error: unknown) => {
+            rejection = error;
+        });
+
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+
+        expect(rejection).toBeInstanceOf(Error);
+        expect(String((rejection as Error).message)).toMatch(/timed out/);
     });
 
     it('clears the timeout on a normal reply so it does not reject afterwards', async () => {
@@ -161,12 +183,56 @@ describe('createYeastWorkletNode — projection protocol', () => {
             },
         ];
 
-        node.setProjection(projection);
+        const result = Promise.resolve(node.setProjection(projection));
+
+        replyProjectionAck(lastPort(), 0);
+        await expect(result).resolves.toBeUndefined();
 
         expect(lastPort().postMessage).toHaveBeenCalledWith({
             type: 'setProjection',
+            projectionId: 0,
             processors: projection,
         });
+    });
+
+    it('validates projection identity and ignores duplicate and late acknowledgements', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+
+        const first = Promise.resolve(node.setProjection([]));
+        replyProjectionAck(lastPort(), 99);
+        replyProjectionAck(lastPort(), 0);
+        replyProjectionError(lastPort(), 0, 'late error');
+        await expect(first).resolves.toBeUndefined();
+
+        const second = Promise.resolve(node.setProjection([]));
+        replyProjectionAck(lastPort(), 0);
+        replyProjectionAck(lastPort(), 1);
+        await expect(second).resolves.toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('rejects a projection when execution acknowledgement times out', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const result = Promise.resolve(node.setProjection([]));
+        let rejection: unknown;
+        void result.catch((error: unknown) => {
+            rejection = error;
+        });
+
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+
+        expect(rejection).toBeInstanceOf(Error);
+        expect(String((rejection as Error).message)).toMatch(/projection acknowledgement timed out/);
+    });
+
+    it('rejects a pending projection when destroyed and clears its timer', async () => {
+        const node = await createYeastWorkletNode(makeContextWithAddModule(() => Promise.resolve()));
+        const result = Promise.resolve(node.setProjection([]));
+
+        node.destroy();
+
+        await expect(result).rejects.toThrow(/destroyed before projection acknowledgement/);
+        expect(vi.getTimerCount()).toBe(0);
     });
 
     it('delivers worklet note-offs to the registered listener', async () => {
@@ -389,6 +455,20 @@ describe('createYeastWorkletNode — command acknowledgement lifecycle', () => {
 });
 
 describe('ensureWorkletRegistered — failed addModule is retried', () => {
+    it('rejects a hung addModule within the scheduler-safe deadline', async () => {
+        const pending = new Promise<void>(() => {});
+        let rejection: unknown;
+        void createYeastWorkletNode(makeContextWithAddModule(() => pending)).catch((error: unknown) => {
+            rejection = error;
+        });
+
+        await vi.advanceTimersByTimeAsync(YEAST_WORKLET_DEADLINE_MS);
+
+        expect(rejection).toBeInstanceOf(Error);
+        expect(String((rejection as Error).message)).toMatch(/addModule timed out/);
+        expect(installedPorts).toHaveLength(0);
+    });
+
     it('does not cache a rejected addModule; a later call retries', async () => {
         const spy = vi.fn<() => Promise<void>>();
         // First call rejects (e.g. CSP), second resolves.

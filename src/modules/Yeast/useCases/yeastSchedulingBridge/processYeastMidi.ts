@@ -1,9 +1,9 @@
 import {
+    applyYeastRuntimeProjection,
     ensureYeastRuntime,
     getYeastRuntimeError,
     getYeastRuntimeStatus,
     processYeastRuntimeBlock,
-    setYeastRuntimeProjection,
 } from '../../engine/yeastRuntime';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
@@ -48,14 +48,14 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
         return [...input.events];
     }
 
-    setYeastRuntimeProjection(projection);
-    const node = await ensureYeastRuntime({ context: input.context, projection });
-    publishRuntimeStatus();
-    if (!node) {
-        return [...input.events];
-    }
-
     try {
+        await applyYeastRuntimeProjection(projection);
+        const node = await ensureYeastRuntime({ context: input.context, projection });
+        publishRuntimeStatus();
+        if (!node) {
+            return [...input.events];
+        }
+
         const processed = await processYeastRuntimeBlock(input);
         publishRuntimeStatus();
         return processed ?? [...input.events];

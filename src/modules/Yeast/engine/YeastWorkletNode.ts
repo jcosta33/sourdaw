@@ -24,7 +24,15 @@ const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
  * unresolved Promise — and any caller awaiting it — for the lifetime of the
  * page.
  */
-const PROCESS_BLOCK_TIMEOUT_MS = 5000;
+// Transport schedules 100 ms ahead and ticks every 10 ms. Reserve one tick
+// grain for the remaining scheduler work so Yeast cannot hold the scheduler
+// past the current look-ahead window.
+const SCHEDULER_LOOKAHEAD_MS = 100;
+const SCHEDULER_GRAIN_MS = 10;
+export const YEAST_WORKLET_DEADLINE_MS = SCHEDULER_LOOKAHEAD_MS - SCHEDULER_GRAIN_MS;
+const ADD_MODULE_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
+const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
+const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKLET_DEADLINE_MS;
 const COMMAND_ACK_TIMEOUT_MS = 1000;
 const ALL_NOTES_OFF_ACK_TIMEOUT_MS = 1000;
 
@@ -50,6 +58,7 @@ type ParsedAllNotesOffAck = {
 
 const INVALID_COMMAND_ACK_ERROR = 'Invalid YeastWorkletNode command acknowledgement';
 const INVALID_ALL_NOTES_OFF_ACK_ERROR = 'Invalid YeastWorkletNode allNotesOff acknowledgement';
+const INVALID_PROJECTION_ACK_ERROR = 'Invalid YeastWorkletNode projection acknowledgement';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -175,6 +184,40 @@ function toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error));
 }
 
+function withDeadline<TValue>(promise: Promise<TValue>, timeoutMs: number, message: string): Promise<TValue> {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            reject(new Error(message));
+        }, timeoutMs);
+
+        void promise.then(
+            (value) => {
+                if (settled) {
+                    return undefined;
+                }
+                settled = true;
+                clearTimeout(timer);
+                resolve(value);
+                return undefined;
+            },
+            (error: unknown) => {
+                if (settled) {
+                    return undefined;
+                }
+                settled = true;
+                clearTimeout(timer);
+                reject(toError(error));
+                return undefined;
+            }
+        );
+    });
+}
+
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
     let param = workletRegistrations.get(ctx);
     if (!param) {
@@ -182,7 +225,17 @@ async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
         // so a later call retries instead of replaying the same rejection.
         // Without this, a single transient failure leaves the worklet path
         // dead until a full page reload.
-        param = ctx.audioWorklet.addModule(yeastWorkletProcessorUrl).catch((error: unknown) => {
+        let registration: Promise<void>;
+        try {
+            registration = withDeadline(
+                ctx.audioWorklet.addModule(yeastWorkletProcessorUrl),
+                ADD_MODULE_TIMEOUT_MS,
+                `YeastWorkletNode.addModule timed out after ${ADD_MODULE_TIMEOUT_MS}ms`
+            );
+        } catch (error: unknown) {
+            registration = Promise.reject(toError(error));
+        }
+        param = registration.catch((error: unknown) => {
             if (workletRegistrations.get(ctx) === param) {
                 workletRegistrations.delete(ctx);
             }
@@ -202,7 +255,7 @@ export type YeastWorkletNodeResult = {
         transport: TransportInfo
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
-    setProjection: (projection: readonly YeastProcessorProjectionItem[]) => void;
+    setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
     allNotesOff: (nowSamples: number) => Promise<void>;
     /**
      * Register a listener for Note Offs a projection change left hanging in the
@@ -225,6 +278,7 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     let nextRequestId = 0;
     let nextCommandId = 0;
     let nextPanicId = 0;
+    let nextProjectionId = 0;
     let destroyed = false;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
@@ -244,6 +298,12 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         timer: ReturnType<typeof setTimeout>;
     };
     const pendingPanics = new Map<number, PendingPanicEntry>();
+    type PendingProjectionEntry = {
+        resolve: () => void;
+        reject: (err: Error) => void;
+        timer: ReturnType<typeof setTimeout>;
+    };
+    const pendingProjections = new Map<number, PendingProjectionEntry>();
     const settle = (requestId: number): PendingEntry | undefined => {
         const entry = pending.get(requestId);
         if (entry) {
@@ -266,6 +326,15 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
         const entry = pendingPanics.get(panicId);
         if (entry) {
             pendingPanics.delete(panicId);
+            clearTimeout(entry.timer);
+        }
+        return entry;
+    };
+
+    const settleProjection = (projectionId: number): PendingProjectionEntry | undefined => {
+        const entry = pendingProjections.get(projectionId);
+        if (entry) {
+            pendingProjections.delete(projectionId);
             clearTimeout(entry.timer);
         }
         return entry;
@@ -302,6 +371,24 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                 entry.resolve();
             } else {
                 entry.reject(new Error(parsed.ack.error ?? INVALID_ALL_NOTES_OFF_ACK_ERROR));
+            }
+            return;
+        }
+        if (event.data.type === 'projectionAck' || event.data.type === 'projectionError') {
+            const value = event.data;
+            if (!isCommandId(value.projectionId)) {
+                return;
+            }
+            const entry = settleProjection(value.projectionId);
+            if (!entry) {
+                return;
+            }
+            if (value.type === 'projectionAck' && value.error === undefined) {
+                entry.resolve();
+            } else if (value.type === 'projectionError' && typeof value.error === 'string') {
+                entry.reject(new Error(value.error));
+            } else {
+                entry.reject(new Error(INVALID_PROJECTION_ACK_ERROR));
             }
             return;
         }
@@ -392,18 +479,43 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
             }
         });
 
+    const setProjection = (projection: readonly YeastProcessorProjectionItem[]): Promise<void> =>
+        new Promise((resolve, reject) => {
+            if (destroyed) {
+                reject(new Error('YeastWorkletNode is destroyed'));
+                return;
+            }
+
+            const projectionId = nextProjectionId++;
+            const timer = setTimeout(() => {
+                if (settleProjection(projectionId)) {
+                    reject(
+                        new Error(
+                            `YeastWorkletNode projection acknowledgement timed out (projectionId ${projectionId})`
+                        )
+                    );
+                }
+            }, PROJECTION_ACK_TIMEOUT_MS);
+            pendingProjections.set(projectionId, { resolve, reject, timer });
+            try {
+                node.port.postMessage({
+                    type: 'setProjection',
+                    projectionId,
+                    processors: projection.map((processor) => ({
+                        ...processor,
+                        params: { ...processor.params },
+                    })),
+                });
+            } catch (error: unknown) {
+                settleProjection(projectionId)?.reject(toError(error));
+            }
+        });
+
     return {
         context: ctx,
         processBlock,
         sendCommand,
-        setProjection: (projection) =>
-            node.port.postMessage({
-                type: 'setProjection',
-                processors: projection.map((processor) => ({
-                    ...processor,
-                    params: { ...processor.params },
-                })),
-            }),
+        setProjection,
         allNotesOff,
         onNotesOff: (handler) => {
             notesOffHandlers.add(handler);
@@ -432,9 +544,15 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
                     new Error('YeastWorkletNode destroyed before allNotesOff acknowledgement')
                 );
             }
+            for (const projectionId of [...pendingProjections.keys()]) {
+                settleProjection(projectionId)?.reject(
+                    new Error('YeastWorkletNode destroyed before projection acknowledgement')
+                );
+            }
             pending.clear();
             pendingCommands.clear();
             pendingPanics.clear();
+            pendingProjections.clear();
             notesOffHandlers.clear();
             try {
                 node.port.close();
