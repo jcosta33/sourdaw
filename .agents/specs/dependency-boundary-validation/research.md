@@ -14,9 +14,24 @@ sources:
 
 # Research: dependency boundary validation
 
+## Promoted evidence provenance
+
+The substantive evidence from these promotion inputs is preserved in this research.
+Their transient workspace paths are intentionally omitted.
+
+| Source ID and name | Date or capture | Status at promotion |
+| --- | --- | --- |
+| `INV-depcruiser-no-orphans-overexclusion-2026-06-30` — Dependency-cruiser no-orphans over-exclusion inventory | 2026-06-30 | current |
+| `TASK-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate | capture 2026-07-15 | blocked |
+| `REVIEW-depcruiser-no-orphans-decision-gate` — Depcruiser No-Orphans Decision Gate review | capture 2026-07-15 | blocked |
+| `FINDING-depcruiser-laundering-gaps` — dep-cruiser enforces value edges, not laundering paths — gaps an adversarial review proved | 2026-06-16 | accepted |
+| `FINDING-depcruiser-warn-backlog` — Two dependency-cruiser rules landed at warn pending a real cleanup pass | 2026-06-16 | accepted |
+| `INV-deadcode` — Dead-code map (knip) inventory | 2026-06-13 | open |
+
 ## Promotion-time evidence
 
-The promotion-time checkout was verified on 2026-07-15. `pnpm deps:validate`
+The promotion-time checkout was verified on 2026-07-15. This current graph capture
+is distinct from the historical raw count below. `pnpm deps:validate`
 reported four exact error baselines and five visible warnings:
 
 ```text
@@ -101,6 +116,14 @@ placeholders, not evidence for the real ONNX acceptance criteria in
 
 The following findings are dated evidence, not current warning counts or automatic
 deletion decisions.
+
+### 2026-06-16 raw no-orphans count (pre-triage)
+
+`FINDING-depcruiser-warn-backlog` recorded `~107` raw `no-orphans` modules before
+later exact exceptions and classification. This dated pre-triage evidence is the
+historical 107-count, not the current graph result, not a current exact baseline,
+and not a deletion decision. The current promotion capture independently verifies
+only the five warning paths listed above.
 
 ### 2026-06-30 no-orphans probe
 

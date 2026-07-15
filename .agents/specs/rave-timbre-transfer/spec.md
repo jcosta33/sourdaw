@@ -188,16 +188,13 @@ whenever monitor mode is active.
 
 Verify with: `pnpm test:run -- RavePanel`
 
-### AC-024 — Prototype transforms do not satisfy ONNX acceptance
+### AC-024 — Pure functions remain a model-free fallback for CI
 
-Until spec-governed replacement or retirement, the current pure `encodeAudio`,
-`decodeLatent`, `interpolateLatent`, and `timbreTransfer` helpers MUST remain classified
-as test-only heuristic placeholders. They MUST NOT be used as a production or model-free
-fallback, counted as evidence for AC-001 through AC-003, or cosmetically wired only to
-clear a `no-orphans` warning. Real RAVE work MUST replace them with model-backed transforms
-or explicitly retire the exact paths under this spec.
+The existing pure `encodeAudio`, `decodeLatent`, and `timbreTransfer` functions must remain
+usable as a model-free fallback path when no model is loaded, so tests and CI can run the
+pipeline end-to-end without downloading model weights.
 
-Verify with: `pnpm test:run -- rave` and `pnpm deps:validate`
+Verify with: `pnpm test:run -- rave`
 
 ### AC-025 — Live monitoring rehydrates at boot
 
@@ -207,26 +204,31 @@ merely round-trip the assignment data.
 
 Verify with: `pnpm test:run -- rave`
 
-## Dormant prototype ownership
+## Current-state ownership
 
-This spec owns the four current `no-orphans` paths:
+The four current `no-orphans` helpers are heuristic/test-only today and do not prove
+model-backed AC-001 through AC-003:
 
 - `src/modules/AudioEngine/useCases/rave/encodeAudio.ts`
 - `src/modules/AudioEngine/useCases/rave/decodeLatent.ts`
 - `src/modules/AudioEngine/useCases/rave/interpolateLatent.ts`
 - `src/modules/AudioEngine/useCases/rave/timbreTransfer.ts`
 
-Their sibling tests cover deterministic heuristics only; they do not satisfy the real
-ONNX acceptance criteria. Replacement must satisfy the model-backed requirements above,
-and retirement must name the exact paths. Adding imports, barrel exports, or runtime
-registrations solely to make dependency validation green is out of scope.
+Their sibling tests cover deterministic heuristics only. AC-024 intentionally owns the
+future model-free fallback use of its named `encodeAudio`, `decodeLatent`, and
+`timbreTransfer` helpers; this promotion preserves that durable decision and neither
+reverses nor narrows it. It does not silently authorize deleting any of these four helpers
+or forbid the specified fallback. `interpolateLatent` remains a current heuristic/test-only
+helper owned by this spec, but is not named in AC-024's fallback contract.
 
 ## Constraints
 
 - **Model-path resolution under Vite** — the `modelPath` strings in `FACTORY_MODELS` are
   relative (e.g. `models/rave/strings.onnx`) and must be resolved against
-  `import.meta.env.BASE_URL` (fixed in `downloadModel.ts`) so model fetches work under a
-  non-root deploy base; a raw relative path that ignores `BASE_URL` is a defect.
+  `import.meta.env.BASE_URL` by the future model-download implementation so model fetches
+  work under a non-root deploy base; `downloadModel.ts` does not exist at promotion SHA
+  `078dfc3383760a01d219a04d735c7e8f74a0f820`, so this is an unimplemented requirement, not
+  a completed fix.
 - **Model buffer memory management** — decoded audio buffers (≈5.3 MB per 30 s stereo at
   44.1 kHz) are the large objects in this pipeline and must be managed through the existing
   `audioBufferCache` LRU rather than retained unboundedly.

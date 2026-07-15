@@ -188,18 +188,24 @@ Verify with: `pnpm test:run -- PushHardware`
 - [ ] Q-002 — Tauri-desktop transport bindings (native USB/MIDI plugins) vs browser APIs —
   which is the primary target for v1?
 - [ ] Q-003 — Which function buttons get explicit maps in v1 vs a generic `button-press`?
-- [ ] Q-004 — Generic controller-profile scripting ownership and security boundary.
-  This is the durable owner for generic controller-profile scripting, including the
-  current `src/modules/MIDI/workers/controllerScriptingWorker.ts` warning: validation
-  found a worker-shaped `self.onmessage` body but no launcher, static import,
-  string/path reference, or test. Before any implementation, decide the trust and
-  permission model, the sandbox boundary, and the typed action bridge through which a
-  profile may request DAW or MIDI changes. A Web Worker alone is not proof of a secure
-  sandbox, and this spec does not authorize arbitrary `new Function` execution. Keep
-  the warning visible until this question is resolved by real product behavior or the
-  exact file is explicitly retired. The Push 2 driver remains one hardcoded profile
-  until this generic ownership decision is made; the per-note expression-lane
-  (timbre/pressure/pitch in the Piano Roll) remains MPE-editor scope.
+- [ ] Q-004 — Auto-mapped controller-profile scripting API (deferred-gap from
+  intake/implementation-gaps.md §5.5 "Deep MPE Editing & Hardware Scripting").
+  Non-blocking. The Push 2 driver in this spec is one hardcoded profile; the larger gap is
+  to expand the scripting API so hardware controller profiles auto-map for multiple devices
+  (named examples: Push, Launchpad), with community sharing of those profiles. Decide whether
+  the `PushHardware` driver should be authored against a generic controller-profile/scripting
+  abstraction now (so Launchpad and others can be added without a bespoke module each) or
+  shipped as a standalone Push module first and generalised later. Note: the per-note
+  expression-lane (timbre/pressure/pitch in the Piano Roll) half of §5.5 is MPE-editor scope,
+  not part of this Push-integration spec.
+  This is also the durable owner for the current
+  `src/modules/MIDI/workers/controllerScriptingWorker.ts` warning: validation found a
+  worker-shaped `self.onmessage` body but no launcher, static import, string/path reference,
+  or test. Before implementation, decide the trust and permission model, sandbox boundary,
+  and typed action bridge through which a profile may request DAW or MIDI changes. A Web
+  Worker alone is not proof of a secure sandbox, and this spec does not authorize arbitrary
+  `new Function` execution. Keep the warning visible until this question is resolved by real
+  product behavior or the exact file is explicitly retired.
 - [ ] Q-005 — DAW-level controller-learning (MIDI-learn) registry (deferred-gap from
   intake/implementation-gaps.md §7.8d "Controller Learning, Routing Visualization").
   Non-blocking for the Push driver, but it overlaps this spec's encoder/pad mapping. The gap
