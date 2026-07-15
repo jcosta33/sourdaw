@@ -227,6 +227,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
     const activeGestureTokenRef = useRef(0);
     const activeGestureFinalizerRef = useRef<(() => void) | null>(null);
+    const gestureDeviceIdRef = useRef(deviceId);
     const patchSnapshotRef = useRef(patchSnapshot);
     const acceptedPatchSnapshotRef = useRef<string | null>(null);
 
@@ -269,15 +270,23 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     };
 
     useLayoutEffect(() => {
+        const previousDeviceId = gestureDeviceIdRef.current;
+        gestureDeviceIdRef.current = deviceId;
         const previousPatchSnapshot = patchSnapshotRef.current;
         patchSnapshotRef.current = patchSnapshot;
+        if (previousDeviceId !== deviceId) {
+            acceptedPatchSnapshotRef.current = null;
+            activeGestureFinalizerRef.current = null;
+            advanceGestureOwner();
+            return;
+        }
         const acceptedPatch = acceptedPatchSnapshotRef.current === patchSnapshot;
         acceptedPatchSnapshotRef.current = null;
         if (previousPatchSnapshot !== patchSnapshot && !acceptedPatch) {
             activeGestureFinalizerRef.current = null;
             advanceGestureOwner();
         }
-    }, [patchSnapshot]);
+    }, [deviceId, patchSnapshot]);
 
     const handlePatchChange: ProofPatchChange = (edit) => {
         if (edit.isTransient !== true) {

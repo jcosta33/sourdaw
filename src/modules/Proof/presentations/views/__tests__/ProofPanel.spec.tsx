@@ -40,6 +40,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 const DEVICE_ID = 'proof-test-device';
+const OTHER_DEVICE_ID = 'proof-test-device-b';
 
 type RotaryEndGesture = (knob: HTMLElement, unmount: () => void) => void;
 
@@ -330,6 +331,67 @@ describe('ProofPanel', () => {
         expect(getProofState(DEVICE_ID).patch.eqBands[2]?.freq).toBe(previewBand?.freq);
         expect(getProofState(DEVICE_ID).patch.eqBands[2]?.gain).toBe(previewBand?.gain);
         expect(getProofState(DEVICE_ID).patch.target).toBe('broadcast');
+    });
+
+    it('cancels stale rotary authority when the panel switches devices with an identical patch snapshot', () => {
+        const bridgeA = makeBridge();
+        const bridgeB = makeBridge();
+        bridges.set(DEVICE_ID, bridgeA);
+        bridges.set(OTHER_DEVICE_ID, bridgeB);
+        seedState({ uiLevel: 4 });
+
+        const { rerender } = render(<ProofPanel deviceId={DEVICE_ID} />);
+        const staleKnob = screen.getByRole('slider', { name: 'Input gain' });
+        const initialGain = getProofState(DEVICE_ID).patch.inputGain;
+
+        fireEvent.pointerDown(staleKnob, { button: 0, pointerId: 66, clientY: 100 });
+        fireEvent.pointerMove(staleKnob, { pointerId: 66, clientY: 70 });
+
+        const previewPatch = getProofState(DEVICE_ID).patch;
+        expect(previewPatch.inputGain).not.toBe(initialGain);
+        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+
+        act(() => {
+            proofStore.set({
+                ...(proofStore.value ?? {}),
+                [OTHER_DEVICE_ID]: {
+                    ...getProofState(OTHER_DEVICE_ID),
+                    uiLevel: 4,
+                    patch: { ...previewPatch },
+                },
+            });
+        });
+        expect(getProofState(OTHER_DEVICE_ID).patch).toEqual(previewPatch);
+        expect(getProofState(OTHER_DEVICE_ID).patch).not.toBe(previewPatch);
+        rerender(<ProofPanel deviceId={OTHER_DEVICE_ID} />);
+
+        fireEvent.pointerUp(staleKnob, { pointerId: 66 });
+
+        expect(persistDevicePatchMock).not.toHaveBeenCalled();
+        expect(persistedProjectPatches.has(DEVICE_ID)).toBe(false);
+        expect(persistedProjectPatches.has(OTHER_DEVICE_ID)).toBe(false);
+        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
+        expect(bridgeB.setParam).not.toHaveBeenCalled();
+
+        const freshKnob = screen.getByRole('slider', { name: 'Input gain' });
+        const initialDeviceBGain = getProofState(OTHER_DEVICE_ID).patch.inputGain;
+        fireEvent.pointerDown(freshKnob, { button: 0, pointerId: 67, clientY: 100 });
+        fireEvent.pointerMove(freshKnob, { pointerId: 67, clientY: 70 });
+        const finalDeviceBGain = getProofState(OTHER_DEVICE_ID).patch.inputGain;
+        fireEvent.pointerUp(freshKnob, { pointerId: 67 });
+
+        expect(finalDeviceBGain).not.toBe(initialDeviceBGain);
+        expect(persistDevicePatchMock).toHaveBeenCalledOnce();
+        expect(persistDevicePatchMock).toHaveBeenCalledWith(OTHER_DEVICE_ID, {
+            input_gain: finalDeviceBGain,
+        });
+        expect(bridgeA.setParam).toHaveBeenCalledTimes(1);
+        expect(bridgeB.setParam).toHaveBeenCalledOnce();
+        expect(bridgeB.setParam).toHaveBeenCalledWith('input_gain', finalDeviceBGain);
+        expect(persistedProjectPatches.get(OTHER_DEVICE_ID)).toEqual({
+            input_gain: finalDeviceBGain,
+        });
     });
 
     it('finalizes a Level 2 rotary preview before a module bypass commit', () => {
