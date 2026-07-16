@@ -55,13 +55,16 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    barrel is rejected outright by the architecture checker (0/34 modules have a root `index.ts`).
 
 5. **`from`-scope exclusions.** A cross-module rule scoped `from: ^src/modules/` never inspects an
-   importer that lives *outside* that prefix (`src/app`, `src/routes`, `src/infra`, `src/utils`,
-   `src/shared`, `src/helpers`, `application/`) but still reaches module internals.
+   importer that lives *outside* that prefix (`src/app`, `src/components`, `src/routes`,
+   `src/infra`, `src/utils`, `src/helpers`) but still reaches module internals.
    → **Closed by** a dedicated origin rule per non-module root, all carried into the types cruise:
-   `external-module-contracts-only` (`^src/(app|components|routes)/`, barrels only),
-   `application-to-modules-public-surface-only` (`^application/`), and the total-ban
-   `infra-no-module-imports`, `utils-no-module-imports`, `shared-no-module-imports`,
-   `helpers-no-module-imports`.
+   `external-module-contracts-only` (`^src/(app|components|routes)/`, barrels only) and the
+   total-ban `infra-no-module-imports`, `utils-no-module-imports`, `helpers-no-module-imports`.
+   Two further origin rules — `application-to-modules-public-surface-only` (`^application/`) and
+   `shared-no-module-imports` (`^src/shared/`) — are **provisioned but dormant**: those directories
+   do not exist in the current tree (see the "FORWARD-LOOKING RULES" block in
+   `.dependency-cruiser.cjs`), so they enforce nothing today and only guard that layout the moment
+   it is added. Do not cite a dormant rule as an active closure.
 
 6. **Violation classes with no rule at all.** The contract-barrel rule only checks that the import
    *path* is a barrel — it says nothing about layering *direction* or write-surface breadth. A
