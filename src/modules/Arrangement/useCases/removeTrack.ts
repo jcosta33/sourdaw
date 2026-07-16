@@ -55,19 +55,19 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 }
             }
 
-            // Tear down the engine strips for this track/bus. Without this the
+            // Tear down the engine strips for this track. Without this the
             // BusNode/TrackNode survives in the live graph, still summing and
-            // processing (a leaked node). Folder/master tracks own no strip.
-            // A bus owns BOTH: ensureTrackStrips skips only 'folder', so buses
-            // also get a TrackNode (devices, sends/sidechains sourced from the
-            // bus). Tear the TrackNode down first — it sweeps routing keyed on
-            // this id as the source — then dispose the BusNode, which sweeps
-            // sends targeting the bus. Both engine methods no-op when absent.
+            // processing (a leaked node). ensureTrackStrips skips only 'folder',
+            // so audio, midi, master AND bus tracks all own a TrackNode; a bus
+            // owns a BusNode on top. Tear the TrackNode down first — it sweeps
+            // routing keyed on this id as the source — then dispose the BusNode,
+            // which sweeps sends targeting the bus. Both engine methods no-op
+            // when the node is absent.
+            if (track.kind !== 'folder') {
+                removeTrackStrip(trackId);
+            }
             if (track.kind === 'bus') {
-                removeTrackStrip(trackId);
                 removeBusStrip(trackId);
-            } else if (track.kind === 'audio' || track.kind === 'midi') {
-                removeTrackStrip(trackId);
             }
             void eventBus.emit('track.removed', { trackId });
         }
