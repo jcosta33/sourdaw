@@ -4,7 +4,6 @@ import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide
 
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { Button } from '#/components/ui/button';
-import { removeTask } from '#/modules/AiGeneration/useCases';
 
 type AiTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
 
@@ -21,6 +20,11 @@ type AiTaskResultView = {
     durationMs?: number;
 };
 
+type AiTaskResultCardProps = {
+    task: AiTaskResultView;
+    onRemove: (taskId: string) => void;
+};
+
 const getTaskIcon = (type: AiTaskResultView['type']): ReactElement => {
     if (type === 'midi-generation') {
         return <Music4 className="size-3 text-[var(--color-accent-mint)]" />;
@@ -31,7 +35,7 @@ const getTaskIcon = (type: AiTaskResultView['type']): ReactElement => {
     return <AudioWaveform className="size-3 text-[var(--color-accent-lavender)]" />;
 };
 
-export const AiTaskResultCard = ({ task }: { task: AiTaskResultView }): ReactElement => (
+export const AiTaskResultCard = ({ task, onRemove }: AiTaskResultCardProps): ReactElement => (
     <div className="group rounded-md border border-border/40 bg-surface-raised p-2 text-xs transition-colors hover:border-[var(--color-accent-lavender)]/40">
         <DawUtilityListRow
             className="px-0 py-0"
@@ -42,7 +46,7 @@ export const AiTaskResultCard = ({ task }: { task: AiTaskResultView }): ReactEle
                     variant="ghost"
                     size="icon-xs"
                     className="h-5 w-5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
-                    onClick={() => removeTask(task.id)}
+                    onClick={() => onRemove(task.id)}
                     aria-label="Remove task"
                 >
                     <X className="size-3" />
