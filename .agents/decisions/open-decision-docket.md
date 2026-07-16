@@ -302,6 +302,16 @@ source citation.
   for dense MIDI nor out for long arrangements. Options: widen/adaptive bounds
   vs keep. Blocks code: no. Source:
   `src/modules/Arrangement/stores/timelineViewStore.ts:26`.
+- **Presentation hooks own undo entries.** `useTimelineInteractions.ts` authors
+  undo directly from presentation (9 `pushUndoEntry` call sites, lines
+  ~559-901) and `usePianoRollInteractions.ts` does the same; the inline-MIDI
+  commits were already extracted to use cases (`commitInlineMidiNote*`).
+  Options: extract the drag/resize/split commit paths the same way so use
+  cases own their undo entries vs keep undo authored in the hook. Blocks code:
+  no (M refactor). Source:
+  `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:559-901`,
+  `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts`,
+  `src/modules/Arrangement/useCases/timelineInteractions/commitInlineMidiNote{Create,Delete,Move}.ts`.
 
 ## AudioEngine
 
