@@ -1,24 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
-    "to": "src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts",
-    "rule": {
-      "severity": "error",
-      "name": "business-no-presentations"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
-    "to": "src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts",
-    "rule": {
-      "severity": "error",
-      "name": "business-no-presentations"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
     "to": "src/modules/Arrangement/useCases/index.ts",
     "rule": {
