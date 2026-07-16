@@ -18,8 +18,6 @@ import {
     Clock,
 } from 'lucide-react';
 
-import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import {
     newProject,
@@ -29,9 +27,9 @@ import {
     loadRecentProject,
     pickAndImportDawProject,
 } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { importDroppedLaunchFiles } from '../../useCases/importDroppedLaunchFiles';
 import { SourdawLogo } from '../components/SourdawLogo';
 
 import { TemplatePreviewThumb } from './TemplatePreviewThumb';
@@ -310,42 +308,14 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
-        // Fire-and-forget: a drop handler returns void; per-file decode
-        // failures are caught and reported inline within the loop below.
+        const files = Array.from(e.dataTransfer.files);
+        // Fire-and-forget: a drop handler returns void; the use-case result
+        // carries the per-file failures that this view renders to the user.
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            newProject();
-            for (const file of Array.from(e.dataTransfer.files)) {
-                const ext = file.name.toLowerCase().split('.').pop() ?? '';
-                if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
-                    await importMidiFile(file);
-                    continue;
-                }
-                const isAudio =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
-                if (!isAudio) {
-                    continue;
-                }
-                const track = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                if (!track) {
-                    continue;
-                }
-                try {
-                    const { id: bufferId, buffer } = await decodeAudioFile(file);
-                    const tempo = transportStore.value?.tempo ?? 120;
-                    const beats = Math.max(4, Math.ceil((buffer.duration / 60) * tempo));
-                    addClip({
-                        trackId: track.id,
-                        startBeat: 0,
-                        endBeat: beats,
-                        name: file.name.replace(/\.[^.]+$/, ''),
-                        type: 'audio',
-                        audioBufferId: bufferId,
-                    });
-                } catch {
-                    notifyUser(`Failed to import "${file.name}"`, 'error');
-                }
+            const result = await importDroppedLaunchFiles({ files });
+            for (const fileName of result.failedFileNames) {
+                notifyUser(`Failed to import "${fileName}"`, 'error');
             }
         })();
     };

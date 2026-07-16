@@ -4,17 +4,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LaunchScreen } from '../LaunchScreen';
 
 const mocks = vi.hoisted(() => ({
-    addClip: vi.fn(),
-    addTrack: vi.fn(),
     createFromTemplate: vi.fn(),
-    decodeAudioFile: vi.fn(),
     executeAppAction: vi.fn(),
     getRecentProjects: vi.fn(() => []),
     getPreviewLoop: vi.fn(() => undefined),
     getTemplates: vi.fn(() => []),
-    importMidiFile: vi.fn(),
+    importDroppedLaunchFiles: vi.fn(),
     loadRecentProject: vi.fn(),
     newProject: vi.fn(),
+    notifyUser: vi.fn(),
     pickAndImportDawProject: vi.fn(),
 }));
 
@@ -32,35 +30,21 @@ vi.mock('#/modules/Project/useCases', () => ({
     pickAndImportDawProject: mocks.pickAndImportDawProject,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    decodeAudioFile: mocks.decodeAudioFile,
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    addClip: mocks.addClip,
-    addTrack: mocks.addTrack,
-    importMidiFile: mocks.importMidiFile,
-}));
-
-vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { value: { tempo: 120 } },
+vi.mock('../../../useCases/importDroppedLaunchFiles', () => ({
+    importDroppedLaunchFiles: mocks.importDroppedLaunchFiles,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
-    notifyUser: vi.fn(),
+    notifyUser: mocks.notifyUser,
 }));
 
 describe('LaunchScreen', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.addTrack.mockReturnValue({ id: 'track-1' });
         mocks.createFromTemplate.mockResolvedValue(undefined);
-        mocks.decodeAudioFile.mockResolvedValue({
-            id: 'buffer-1',
-            buffer: { duration: 4 },
-        });
         mocks.getRecentProjects.mockReturnValue([]);
         mocks.getTemplates.mockReturnValue([]);
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ failedFileNames: [] });
         mocks.loadRecentProject.mockResolvedValue(true);
         mocks.pickAndImportDawProject.mockResolvedValue(true);
     });
@@ -132,9 +116,10 @@ describe('LaunchScreen', () => {
         await waitFor(() => expect(mocks.pickAndImportDawProject).toHaveBeenCalledTimes(1));
     });
 
-    it('imports dropped MIDI and audio files into a new project', async () => {
+    it('dispatches dropped files and renders import failures', async () => {
         const midiFile = new File(['midi'], 'melody.mid', { type: 'audio/midi' });
         const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ failedFileNames: ['drums.wav'] });
 
         render(<LaunchScreen exiting={false} />);
         fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
@@ -142,17 +127,8 @@ describe('LaunchScreen', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.newProject).toHaveBeenCalledTimes(1);
-            expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
-            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
-            expect(mocks.addClip).toHaveBeenCalledWith({
-                trackId: 'track-1',
-                startBeat: 0,
-                endBeat: 8,
-                name: 'drums',
-                type: 'audio',
-                audioBufferId: 'buffer-1',
-            });
+            expect(mocks.importDroppedLaunchFiles).toHaveBeenCalledWith({ files: [midiFile, audioFile] });
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to import "drums.wav"', 'error');
         });
     });
 });
