@@ -43,4 +43,4 @@ Verify with: `test "$(rg -l '^\[profile\.' Cargo.toml crates src-tauri --glob 'C
 The workspace-root Cargo config MUST be the only Cargo config that declares
 shared Rust flags; nested config contains no competing flags.
 
-Verify with: `test "$(rg -l '^rustflags' .cargo src-tauri/.cargo)" = '.cargo/config.toml'`
+Verify with: `test "$(git ls-files --cached --others --exclude-standard ':(glob)**/.cargo/config.toml' -z | xargs -0 rg -l '^rustflags' | sort)" = '.cargo/config.toml'`
