@@ -64,60 +64,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/audioFeatures.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/audioToMidi.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/detectOnsets.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/pitchDetection.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioAnalysis/useCases/index.ts",
-    "to": "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AudioEngine/engine/AdjustmentBusNode.ts",
     "to": "src/modules/AudioEngine/repositories/devices/types.ts",
     "rule": {
