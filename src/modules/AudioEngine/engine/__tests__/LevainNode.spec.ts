@@ -73,3 +73,60 @@ describe('createLevainNode runtime-fault notification', () => {
         expect(onFault).not.toHaveBeenCalled();
     });
 });
+
+// Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
+// controller.allNotesOff() (the Levain worklet's message handler dispatches it
+// to the WASM instance even while the processor is muted). setBypass itself
+// only posts the bypass mute — no in-node allNotesOff, or the release burst
+// suppression path would run twice per bypass entry.
+describe('createLevainNode bypass and allNotesOff surfaces', () => {
+    let postMessage: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        postMessage = vi.fn();
+        const node = { port: { postMessage, onmessage: null as ((e: MessageEvent) => void) | null } };
+        class FakeWorkletNode {
+            port = node.port;
+            connect = vi.fn();
+            disconnect = vi.fn();
+        }
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('allNotesOff posts the silent release message the worklet honors', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.allNotesOff();
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+    });
+
+    it('setBypass posts only the bypass mute — release is TrackNode-owned', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.setBypass(true);
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: true });
+    });
+
+    it('un-bypass posts only the bypass unmute', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.setBypass(false);
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: false });
+    });
+});

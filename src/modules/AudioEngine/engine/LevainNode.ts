@@ -126,6 +126,12 @@ export async function createLevainNode(
     };
 
     const setBypass = (b: boolean): void => {
+        // Mutes the processor (process() short-circuits while bypassed) and
+        // gates new noteOn. Releasing voices already held on bypass entry is
+        // owned by TrackNode.updateBypass via controller.allNotesOff (wired
+        // above) — the worklet's message handler dispatches allNotesOff to the
+        // WASM instance even while muted, so the release lands regardless of
+        // arrival order.
         bypassed = b;
         node.port.postMessage({ type: 'bypass', bypassed: b });
     };

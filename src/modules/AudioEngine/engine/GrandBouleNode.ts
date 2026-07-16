@@ -157,6 +157,9 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
             post({ type: 'allNotesOff' });
         },
         setBypass(state: boolean) {
+            // Only gates *new* noteOn. Releasing voices already held on bypass
+            // entry is owned by TrackNode.updateBypass via controller.allNotesOff
+            // (wired above) — no in-node post, or the release would run twice.
             bypassed = state;
         },
         connect(dest: AudioNode) {

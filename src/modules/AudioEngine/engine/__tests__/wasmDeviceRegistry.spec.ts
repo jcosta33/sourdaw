@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
+import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
+import { type FermenterNodeResult } from '../FermenterNode';
 import { type ProofNodeResult } from '../ProofNode';
 import { findWasmDescriptor } from '../wasmDeviceRegistry';
 
@@ -21,6 +23,23 @@ const proofNodeMocks = vi.hoisted(() => ({
 vi.mock('../ProofNode', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../ProofNode')>();
     return { ...actual, createProofNode: proofNodeMocks.createProofNode };
+});
+
+const fermenterNodeMocks = vi.hoisted(() => ({
+    createFermenterNode: vi.fn(),
+    allNotesOff: vi.fn(),
+    destroy: vi.fn(),
+    noteOff: vi.fn(),
+    noteOn: vi.fn(),
+    onTelemetry: vi.fn(),
+    setBypass: vi.fn(),
+    setParam: vi.fn(),
+    setPatch: vi.fn(),
+}));
+
+vi.mock('../FermenterNode', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../FermenterNode')>();
+    return { ...actual, createFermenterNode: fermenterNodeMocks.createFermenterNode };
 });
 
 const REGISTERED_WASM_DEVICE_TYPES = [
@@ -212,6 +231,36 @@ describe('findWasmDescriptor', () => {
         expect(syncProofPatch).toHaveBeenCalledTimes(1);
         expect(syncProofPatch).toHaveBeenCalledWith('proof-1');
     });
+
+    it('wires the Fermenter allNotesOff surface into the loaded controller (TrackNode bypass coverage)', async () => {
+        // TrackNode.updateBypass releases held voices via controller.allNotesOff
+        // on bypass entry. Without this wiring the mechanism silently skips
+        // Fermenter and held voices keep sounding through bypass.
+        const onLoaded = vi.fn();
+        fermenterNodeMocks.createFermenterNode.mockResolvedValue(createFermenterNodeResult());
+
+        const desc = findWasmDescriptor('fermenter');
+        if (!desc) {
+            throw new Error('Expected fermenter descriptor to be registered');
+        }
+
+        const { loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'ferm-1',
+            deviceType: 'fermenter',
+            onLoaded,
+        });
+
+        await loadPromise;
+
+        expect(onLoaded).toHaveBeenCalledTimes(1);
+        const loadedNode = onLoaded.mock.calls[0]![0] as BuiltinDeviceNode;
+        if (!loadedNode.controller?.allNotesOff) {
+            throw new Error('Expected loaded fermenter controller to expose allNotesOff');
+        }
+        loadedNode.controller.allNotesOff();
+        expect(fermenterNodeMocks.allNotesOff).toHaveBeenCalledTimes(1);
+    });
 });
 
 function createRegistryAudioContext(): AudioContext {
@@ -234,6 +283,23 @@ function createProofNodeResult(): ProofNodeResult {
         resetIntegrated: proofNodeMocks.resetIntegrated,
         setBypass: proofNodeMocks.setBypass,
         setParam: proofNodeMocks.setParam,
+        workletNode: createRegistryAudioWorkletNode(),
+    };
+}
+
+function createFermenterNodeResult(): FermenterNodeResult {
+    return {
+        allNotesOff: fermenterNodeMocks.allNotesOff,
+        connect: vi.fn(),
+        destroy: fermenterNodeMocks.destroy,
+        disconnect: vi.fn(),
+        noteOff: fermenterNodeMocks.noteOff,
+        noteOn: fermenterNodeMocks.noteOn,
+        onTelemetry: fermenterNodeMocks.onTelemetry,
+        ready: Promise.resolve({}),
+        setBypass: fermenterNodeMocks.setBypass,
+        setParam: fermenterNodeMocks.setParam,
+        setPatch: fermenterNodeMocks.setPatch,
         workletNode: createRegistryAudioWorkletNode(),
     };
 }

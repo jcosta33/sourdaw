@@ -15,6 +15,7 @@ export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
+    allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
@@ -88,6 +89,13 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         noteOff(note: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', note, sampleFrame });
         },
+        allNotesOff() {
+            // Single-message voice release the Fermenter worklet honors: drops
+            // queued notes and releases all held voices. Called by the
+            // transport-stop path and by TrackNode.updateBypass on bypass entry
+            // (TrackNode owns bypass-entry release semantics).
+            node.port.postMessage({ type: 'allNotesOff' });
+        },
         setParam(name: string, value: number | number[], sampleFrame?: number) {
             if (Array.isArray(value) || Number.isFinite(value)) {
                 node.port.postMessage({ type: 'param', name, value, sampleFrame });
@@ -97,6 +105,8 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             node.port.postMessage({ type: 'patch', patch });
         },
         setBypass(state: boolean) {
+            // Only gates *new* noteOn. Releasing voices already held on bypass
+            // entry is owned by TrackNode.updateBypass via controller.allNotesOff.
             bypassed = state;
         },
         onTelemetry(cb: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) {
