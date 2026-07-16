@@ -157,15 +157,10 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
             post({ type: 'allNotesOff' });
         },
         setBypass(state: boolean) {
+            // Only gates *new* noteOn. Releasing voices already held on bypass
+            // entry is owned by TrackNode.updateBypass via controller.allNotesOff
+            // (wired above) — no in-node post, or the release would run twice.
             bypassed = state;
-            if (state) {
-                // Entering bypass must release voices already held: the engine
-                // Worker keeps rendering into the SAB ring the worklet copies
-                // out (bypass only gates *new* noteOn above), so held voices
-                // would keep sounding. Route through the same silent
-                // allNotesOff the transport-stop path uses.
-                post({ type: 'allNotesOff' });
-            }
         },
         connect(dest: AudioNode) {
             node.connect(dest);

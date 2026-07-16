@@ -144,4 +144,61 @@ describe('audioBufferToWav', () => {
         expect(view.getFloat32(dataOffset + 4, true)).toBe(-0.25);
         expect(view.getFloat32(dataOffset + 8, true)).toBe(0.75);
     });
+
+    it('does not let an Infinity sample poison the peak scan (gain=0 would zero the export)', async () => {
+        // Regression: peak scan seeded with abs>peak let a single ±Infinity
+        // sample set peak=Infinity → gain=1/Infinity=0 → whole file silently
+        // zeroed. Non-finite samples must be excluded from the scan and
+        // degraded per-sample at write time (Infinity → full scale).
+        const buffer = createMockAudioBuffer(1, 4, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = 0.5;
+        data[1] = Number.POSITIVE_INFINITY;
+        data[2] = -0.25;
+        data[3] = Number.NEGATIVE_INFINITY;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBe(0.5); // finite peak 0.5 ≤ 1 → unchanged
+        expect(view.getFloat32(dataOffset + 4, true)).toBe(1); // +Infinity → clamped full scale
+        expect(view.getFloat32(dataOffset + 8, true)).toBe(-0.25);
+        expect(view.getFloat32(dataOffset + 12, true)).toBe(-1); // -Infinity → clamped full scale
+    });
+
+    it('degrades a NaN sample to silence without affecting other samples', async () => {
+        const buffer = createMockAudioBuffer(1, 3, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = 0.5;
+        data[1] = Number.NaN;
+        data[2] = -0.75;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBe(0.5);
+        expect(view.getFloat32(dataOffset + 4, true)).toBe(0); // NaN → silence
+        expect(view.getFloat32(dataOffset + 8, true)).toBe(-0.75);
+    });
+
+    it('normalizes by the finite peak when a hot mix also contains an Infinity sample', async () => {
+        const buffer = createMockAudioBuffer(1, 3, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = 2.0; // finite peak → gain 0.5
+        data[1] = Number.POSITIVE_INFINITY;
+        data[2] = -1.0;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBeCloseTo(1.0, 6); // 2.0 * 0.5
+        expect(view.getFloat32(dataOffset + 4, true)).toBe(1); // Infinity survives gain, clamps
+        expect(view.getFloat32(dataOffset + 8, true)).toBeCloseTo(-0.5, 6); // -1.0 * 0.5
+    });
 });

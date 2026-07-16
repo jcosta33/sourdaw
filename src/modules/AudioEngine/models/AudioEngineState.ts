@@ -68,6 +68,7 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
+        allNotesOff: () => void;
         setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
         setPatch?: (patch: Record<string, unknown>) => void;
         setBypass: (bypassed: boolean) => void;

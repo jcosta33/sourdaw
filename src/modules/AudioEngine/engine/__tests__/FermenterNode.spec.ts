@@ -24,12 +24,13 @@ vi.mock('../workletInitShared', () => ({
 
 vi.mock('../../services/fermenterProcessor.ts?worker&url', () => ({ default: 'fermenter-processor-url' }));
 
-// Entering bypass must release any voices already held. The Fermenter worklet
-// keeps running while bypassed (setBypass only gates *new* noteOn), so without
-// an explicit release the held voices keep sounding. Mirror the transport-stop
-// path (createWebAudioEngine.stopAllScheduled), which posts a single
-// `allNotesOff` the Fermenter worklet honors by releasing all voices.
-describe('createFermenterNode bypass releases held voices', () => {
+// Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
+// `controller.allNotesOff()` when entering bypass. The node must therefore
+// expose an `allNotesOff` surface posting the single worklet message the
+// Fermenter processor honors (same message the transport-stop path posts) —
+// without it, TrackNode's mechanism cannot cover Fermenter and held voices
+// keep sounding through bypass.
+describe('createFermenterNode allNotesOff surface', () => {
     let postMessage: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
@@ -48,23 +49,23 @@ describe('createFermenterNode bypass releases held voices', () => {
         vi.clearAllMocks();
     });
 
-    it('posts allNotesOff when entering bypass', async () => {
+    it('posts the allNotesOff worklet message', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createFermenterNode(ctx);
         postMessage.mockClear(); // drop the init postMessage
 
-        result.setBypass(true);
+        result.allNotesOff();
 
         expect(postMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
     });
 
-    it('does not post allNotesOff when leaving bypass', async () => {
+    it('setBypass only gates new notes — release is TrackNode-owned, no in-node post', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createFermenterNode(ctx);
         postMessage.mockClear();
 
-        result.setBypass(false);
+        result.setBypass(true);
 
-        expect(postMessage).not.toHaveBeenCalledWith({ type: 'allNotesOff' });
+        expect(postMessage).not.toHaveBeenCalled();
     });
 });

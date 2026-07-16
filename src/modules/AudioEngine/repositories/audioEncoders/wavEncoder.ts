@@ -51,16 +51,38 @@ export async function audioBufferToWav(
         return Math.random() - Math.random();
     }
 
-    // Peak-normalization scan. Find the largest absolute sample across every
-    // channel so a hot mix can be scaled to full scale instead of hard-clipped
-    // to a flat top. Only attenuate when the peak exceeds full scale (peak > 1);
-    // sub-full-scale material keeps its authored level (it is never boosted up).
+    /**
+     * Degrade a non-finite sample so it can never poison the file:
+     * ±Infinity becomes full scale, NaN becomes silence. Finite samples
+     * pass through untouched.
+     */
+    function sanitizeSample(value: number): number {
+        if (Number.isFinite(value)) {
+            return value;
+        }
+        if (value === Number.POSITIVE_INFINITY) {
+            return 1;
+        }
+        if (value === Number.NEGATIVE_INFINITY) {
+            return -1;
+        }
+        return 0;
+    }
+
+    // Peak-normalization scan. Find the largest absolute FINITE sample across
+    // every channel so a hot mix can be scaled to full scale instead of
+    // hard-clipped to a flat top. Only attenuate when the peak exceeds full
+    // scale (peak > 1); sub-full-scale material keeps its authored level (it
+    // is never boosted up). Non-finite samples are excluded from the scan —
+    // a single ±Infinity sample would otherwise set gain = 1/Infinity = 0 and
+    // silently zero the entire export; they degrade per-sample at write time
+    // via sanitizeSample instead.
     let peak = 0;
     for (let ch = 0; ch < numChannels; ch++) {
         const data = channels[ch]!;
         for (let index = 0; index < buffer.length; index++) {
             const abs = Math.abs(data[index]!);
-            if (abs > peak) {
+            if (Number.isFinite(abs) && abs > peak) {
                 peak = abs;
             }
         }
@@ -79,7 +101,7 @@ export async function audioBufferToWav(
         const data = channels[ch]!;
         let offset = dataOffset + 8 + ch * bytesPerSample;
         for (let index = 0; index < buffer.length; index++) {
-            const sample = data[index]! * gain;
+            const sample = sanitizeSample(data[index]! * gain);
             if (bitDepth === 16) {
                 const dithered = sample + tpdfDither() / 0x8000;
                 const clamped = Math.max(-1, Math.min(1, dithered));

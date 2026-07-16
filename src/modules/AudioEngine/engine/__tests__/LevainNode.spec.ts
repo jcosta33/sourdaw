@@ -74,11 +74,12 @@ describe('createLevainNode runtime-fault notification', () => {
     });
 });
 
-// Entering bypass must release held voices at the source. The Levain worklet
-// gates output while `_bypassed`, but the WASM voices stay allocated and resume
-// audibly on un-bypass unless explicitly released. allNotesOff must precede the
-// bypass mute so the release is processed before the processor goes silent.
-describe('createLevainNode bypass releases held voices', () => {
+// Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
+// controller.allNotesOff() (the Levain worklet's message handler dispatches it
+// to the WASM instance even while the processor is muted). setBypass itself
+// only posts the bypass mute — no in-node allNotesOff, or the release burst
+// suppression path would run twice per bypass entry.
+describe('createLevainNode bypass and allNotesOff surfaces', () => {
     let postMessage: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
@@ -97,27 +98,35 @@ describe('createLevainNode bypass releases held voices', () => {
         vi.clearAllMocks();
     });
 
-    it('posts allNotesOff before the bypass mute when entering bypass', async () => {
+    it('allNotesOff posts the silent release message the worklet honors', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.allNotesOff();
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+    });
+
+    it('setBypass posts only the bypass mute — release is TrackNode-owned', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);
         postMessage.mockClear();
 
         result.setBypass(true);
 
-        expect(postMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+        expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: true });
-        const types = postMessage.mock.calls.map((call) => (call[0] as { type: string }).type);
-        expect(types.indexOf('allNotesOff')).toBeLessThan(types.indexOf('bypass'));
     });
 
-    it('does not post allNotesOff when leaving bypass', async () => {
+    it('un-bypass posts only the bypass unmute', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createLevainNode(ctx);
         postMessage.mockClear();
 
         result.setBypass(false);
 
-        expect(postMessage).not.toHaveBeenCalledWith({ type: 'allNotesOff' });
+        expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: false });
     });
 });

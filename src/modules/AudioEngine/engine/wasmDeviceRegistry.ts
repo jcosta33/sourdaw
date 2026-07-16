@@ -66,6 +66,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
+            allNotesOff: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
@@ -97,6 +98,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setPatch: result.setPatch,
                         setBypass: result.setBypass,
@@ -106,6 +108,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setPatch: result.setPatch,
                         setBypass: result.setBypass,

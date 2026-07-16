@@ -24,11 +24,12 @@ vi.mock('../pluginHostingErrors', () => ({ requireSharedArrayBuffer: vi.fn() }))
 
 vi.mock('../../services/grandBouleProcessor.ts?worker&url', () => ({ default: 'grand-boule-processor-url' }));
 
-// Grand Boule routes MIDI/control to its engine Worker, not the worklet. On
-// bypass, held voices must be released at the source; setBypass only gates new
-// noteOn, so without an explicit allNotesOff the Worker keeps rendering held
-// voices into the SAB ring the worklet copies out.
-describe('createGrandBouleNode bypass releases held voices', () => {
+// Grand Boule routes MIDI/control to its engine Worker, not the worklet.
+// Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
+// controller.allNotesOff() — this surface must post to the engine Worker, and
+// setBypass itself must stay a flag flip (no in-node post, or the release
+// would run twice per bypass entry).
+describe('createGrandBouleNode allNotesOff surface', () => {
     let workerPostMessage: ReturnType<typeof vi.fn>;
     let ctx: BaseAudioContext;
 
@@ -60,21 +61,21 @@ describe('createGrandBouleNode bypass releases held voices', () => {
         vi.clearAllMocks();
     });
 
-    it('posts allNotesOff to the engine worker when entering bypass', async () => {
+    it('posts allNotesOff to the engine worker', async () => {
+        const result = await createGrandBouleNode(ctx);
+        workerPostMessage.mockClear();
+
+        result.allNotesOff();
+
+        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
+    });
+
+    it('setBypass only gates new notes — release is TrackNode-owned, no in-node post', async () => {
         const result = await createGrandBouleNode(ctx);
         workerPostMessage.mockClear();
 
         result.setBypass(true);
 
-        expect(workerPostMessage).toHaveBeenCalledWith({ type: 'allNotesOff' });
-    });
-
-    it('does not post allNotesOff when leaving bypass', async () => {
-        const result = await createGrandBouleNode(ctx);
-        workerPostMessage.mockClear();
-
-        result.setBypass(false);
-
-        expect(workerPostMessage).not.toHaveBeenCalledWith({ type: 'allNotesOff' });
+        expect(workerPostMessage).not.toHaveBeenCalled();
     });
 });
