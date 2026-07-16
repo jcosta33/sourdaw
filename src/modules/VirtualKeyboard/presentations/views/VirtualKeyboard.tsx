@@ -27,6 +27,7 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
@@ -47,6 +48,14 @@ const BLACK_KEY_H_RATIO = 0.62;
  * note to the currently selected track (see AudioEngine/useCases/triggerLiveNoteOn.ts).
  */
 const OMNI_CHANNEL = 0;
+
+type LiveNoteOperation = 'on' | 'off';
+
+const handleLiveNotePromise = (operation: LiveNoteOperation, promise: Promise<void>): void => {
+    void promise.catch((error: unknown) => {
+        logger.warn(`[MIDI] Virtual keyboard note-${operation} failed:`, error);
+    });
+};
 
 /** Number of white keys per octave */
 const WHITES_PER_OCT = 7;
@@ -231,7 +240,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         if (midiNote < 0 || midiNote > 127) {
             return;
         }
-        triggerLiveNoteOn(OMNI_CHANNEL, midiNote, velocity);
+        handleLiveNotePromise('on', triggerLiveNoteOn(OMNI_CHANNEL, midiNote, velocity));
         setPressed((prev) => {
             if (prev.has(midiNote)) {
                 return prev;
@@ -243,7 +252,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     };
 
     const triggerNoteOff = (midiNote: number) => {
-        triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+        handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
         setPressed((prev) => {
             if (!prev.has(midiNote)) {
                 return prev;
@@ -424,7 +433,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         heldKeys.current.clear();
         heldKeyNotes.current.clear();
         for (const midiNote of pressedNotesRef.current) {
-            triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+            handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
         }
         if (pressedNotesRef.current.size > 0) {
             setPressed(() => new Set());
@@ -454,7 +463,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             window.removeEventListener('blur', releaseAllHeldNotes);
             // Final teardown: silence anything still sounding so unmount cannot leave a hung note.
             for (const midiNote of pressedNotesRef.current) {
-                triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+                handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
             }
         };
     }, []);
