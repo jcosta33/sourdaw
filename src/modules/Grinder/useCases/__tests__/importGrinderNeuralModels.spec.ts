@@ -117,4 +117,35 @@ describe('importGrinderNeuralModels', () => {
 
         expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
     });
+
+    it('should reject an overlapping import as a no-op and keep the flag true until the first settles', async () => {
+        // The importing flag is a single shared boolean, not a refcount, so a second
+        // overlapping call (double-click, second panel instance) must early-return without
+        // opening another picker — otherwise its finally would flip the flag false while
+        // the first import is still in flight.
+        let resolve_pick: (files: File[] | null) => void = () => {};
+        pick_files_mock.mockReturnValue(
+            new Promise((resolve) => {
+                resolve_pick = resolve;
+            })
+        );
+
+        const first_import = importGrinderNeuralModels();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        const overlapping_entries = await importGrinderNeuralModels();
+
+        expect(overlapping_entries).toEqual([]);
+        expect(pickFiles).toHaveBeenCalledTimes(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        resolve_pick([make_nam_file({ file_name: 'lead-boost.nam', display_name: 'Lead Boost' })]);
+        const first_entries = await first_import;
+
+        expect(first_entries).toHaveLength(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.entries.map((entry) => entry.sourceFileName)).toEqual([
+            'lead-boost.nam',
+        ]);
+    });
 });

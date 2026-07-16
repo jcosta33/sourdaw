@@ -1733,6 +1733,7 @@ function ControlDeck({
                             type="button"
                             className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-[11px] font-medium text-[var(--color-accent-cyan)]"
                             onClick={() => void importNeuralModels()}
+                            disabled={is_importing_models}
                         >
                             {is_importing_models ? 'Importing…' : 'Import NAM'}
                         </button>

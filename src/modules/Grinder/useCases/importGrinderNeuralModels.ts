@@ -14,9 +14,18 @@ import {
 
 export async function importGrinderNeuralModels(): Promise<GrinderImportedNeuralModel[]> {
     // The store owns the in-flight status so every panel instance observes the same
-    // 'importing' flag and an unmount mid-import cannot strand a component-local one. The
-    // finally guarantees the flag settles on every exit — cancel, all-failed, success, or
-    // an unexpected throw from the picker/parser/persistence path.
+    // 'importing' flag and an unmount mid-import cannot strand a component-local one.
+    // The flag is a single shared boolean, not a refcount, so an overlapping call
+    // (double-click, second panel instance) is rejected as a silent no-op — otherwise
+    // its finally below would flip the flag false while the first import is still in
+    // flight. The trigger button is disabled while importing, so a rejected re-entry
+    // matches the visible UX. Within a single run the finally settles the flag on
+    // every exit — cancel, all-failed, success, or an unexpected throw from the
+    // picker/parser/persistence path.
+    if (grinderNeuralLibraryStore.value?.importing) {
+        return [];
+    }
+
     setGrinderNeuralLibraryState({ loading: true, importing: true, error: null });
 
     try {
