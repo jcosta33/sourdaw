@@ -71,7 +71,29 @@ describe('resolveInstrumentTrack', () => {
 
         const result = resolveInstrumentTrack(create_track_state([parent_track, child_track]), 'child-track');
 
-        expect(result).toBe(parent_track);
+        expect(result).toEqual({
+            instrumentTrack: parent_track,
+            toasterChildPad: 0,
+        });
+    });
+
+    it('returns the child pad index from the same toaster-parent resolution', () => {
+        const parent_track = create_track({
+            id: 'parent-track',
+            devices: [create_device({ id: 'toaster-1', type: 'toaster' })],
+        });
+        const first_child = create_track({ id: 'first-child', parent_id: 'parent-track' });
+        const target_child = create_track({ id: 'target-child', parent_id: 'parent-track' });
+
+        const result = resolveInstrumentTrack(
+            create_track_state([parent_track, first_child, target_child]),
+            'target-child'
+        );
+
+        expect(result).toEqual({
+            instrumentTrack: parent_track,
+            toasterChildPad: 1,
+        });
     });
 
     it('keeps the target track when the parent is not a toaster host', () => {
@@ -80,6 +102,9 @@ describe('resolveInstrumentTrack', () => {
 
         const result = resolveInstrumentTrack(create_track_state([parent_track, child_track]), 'child-track');
 
-        expect(result).toBe(child_track);
+        expect(result).toEqual({
+            instrumentTrack: child_track,
+            toasterChildPad: null,
+        });
     });
 });

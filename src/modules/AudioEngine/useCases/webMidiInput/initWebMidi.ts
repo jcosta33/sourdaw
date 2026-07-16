@@ -44,7 +44,15 @@ function subscribeToYeastNotesOff(): void {
 
     const eventBus = Container.get(WebMidiEventBus);
     eventBus.on('yeast.notesOff', ({ trackId, noteOffs }) => {
-        routeYeastNoteOffsForTargetTrack(resolveInstrumentTrack(trackStore.value, trackId), noteOffs, {
+        const resolvedInstrument = resolveInstrumentTrack(trackStore.value, trackId);
+        const instrumentTrack = resolvedInstrument?.instrumentTrack;
+        const instrumentSnapshot = instrumentTrack
+            ? {
+                  id: instrumentTrack.id,
+                  devices: instrumentTrack.devices.map(({ id, type }) => ({ id, type })),
+              }
+            : null;
+        routeYeastNoteOffsForTargetTrack(instrumentSnapshot, noteOffs, {
             emitGrandBouleEvent: (deviceId, midiNote) => {
                 void eventBus.emit('midi.noteOff', { deviceId, midiNote });
             },

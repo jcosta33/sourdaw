@@ -1,7 +1,7 @@
-export type WebMidiInstrumentTrack = {
+export type WebMidiInstrumentTrack = Readonly<{
     id: string;
-    devices: readonly {
+    devices: readonly Readonly<{
         id: string;
         type: string;
-    }[];
-};
+    }>[];
+}>;

@@ -1,11 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type InstrumentSnapshot = Readonly<{
+    id: string;
+    devices: readonly Readonly<{ id: string; type: string }>[];
+}>;
+
+type RouteYeastNoteOffs = (
+    instrumentTrack: InstrumentSnapshot | null,
+    noteOffs: readonly { channel: number; note: number }[],
+    options: { emitGrandBouleEvent: (deviceId: string, midiNote: number) => void }
+) => void;
+
 const initializeWebMidiMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const setMidiInputTrackMock = vi.hoisted(() => vi.fn());
-const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn());
+const routeYeastNoteOffsMock = vi.hoisted(() => vi.fn<RouteYeastNoteOffs>());
 const trackStoreSubscribeMock = vi.hoisted(() => vi.fn());
 const eventBusOnMock = vi.hoisted(() => vi.fn());
 const eventBusEmitMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const arrangementTrack = vi.hoisted(() => ({
+    id: 'track-a',
+    kind: 'midi',
+    devices: [{ id: 'fermenter-a', type: 'fermenter', parameterValues: { gain: 0.5 } }],
+}));
 
 vi.mock('#/infra/di/Container', () => ({
     Container: {
@@ -20,7 +36,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         subscribe: trackStoreSubscribeMock,
         value: {
-            tracks: [{ id: 'track-a', kind: 'midi', devices: [] }],
+            tracks: [arrangementTrack],
             selectedTrackId: null,
         },
     },
@@ -83,10 +99,16 @@ describe('initWebMidi', () => {
             noteOffs: [{ channel: 0, note: 60 }],
         });
         expect(routeYeastNoteOffsMock).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'track-a' }),
+            {
+                id: 'track-a',
+                devices: [{ id: 'fermenter-a', type: 'fermenter' }],
+            },
             [{ channel: 0, note: 60 }],
             expect.any(Object)
         );
+        const instrumentSnapshot = routeYeastNoteOffsMock.mock.calls[0]?.[0];
+        expect(instrumentSnapshot).not.toBe(arrangementTrack);
+        expect(instrumentSnapshot?.devices).not.toBe(arrangementTrack.devices);
 
         const routeInput = routeYeastNoteOffsMock.mock.calls[0]?.[2] as {
             emitGrandBouleEvent: (deviceId: string, midiNote: number) => void;
