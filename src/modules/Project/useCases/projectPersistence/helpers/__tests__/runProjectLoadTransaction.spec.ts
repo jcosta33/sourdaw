@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
+import { captureProjectTransitionAuthority } from '../../captureProjectTransitionAuthority';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { runProjectLoadTransaction } from '../runProjectLoadTransaction';
 
@@ -34,6 +35,20 @@ describe('runProjectLoadTransaction', () => {
         expect(first.activate()).toBe(false);
         expect(second.activate()).toBe(true);
         expect(first.isCurrent()).toBe(false);
+    });
+
+    it('invalidates captured authority when a second transition prepares', async () => {
+        const first = runProjectLoadTransaction();
+        await first.prepare();
+        expect(first.activate()).toBe(true);
+        const authority = captureProjectTransitionAuthority();
+
+        expect(authority.isCurrent()).toBe(true);
+
+        const second = runProjectLoadTransaction();
+        await second.prepare();
+
+        expect(authority.isCurrent()).toBe(false);
     });
 
     it('should reject activation when collaboration shutdown fails', async () => {

@@ -1,6 +1,6 @@
-import { addClip, addTrack, importMidiFile } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { newProject } from '#/modules/Project/useCases';
+import { addClip, addTrack, importMidiFile, removeTrack } from '#/modules/Arrangement/useCases';
+import { cacheAudioBuffer, decodeAudioFileBuffer } from '#/modules/AudioEngine/useCases';
+import { captureProjectTransitionAuthority, newProject } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 const AUDIO_FILE_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'];
@@ -15,6 +15,7 @@ type ImportDroppedLaunchFilesInput = {
 type ImportDroppedLaunchFilesOutput =
     | { status: 'unsupported' }
     | { status: 'activation-failed' }
+    | { status: 'superseded' }
     | { status: 'completed'; failedFileNames: string[] };
 
 type SupportedDroppedFile = {
@@ -63,23 +64,42 @@ export async function importDroppedLaunchFiles({
     if (!(await newProject())) {
         return { status: 'activation-failed' };
     }
+    const authority = captureProjectTransitionAuthority();
 
     for (const { file, kind } of supportedFiles) {
+        if (!authority.isCurrent()) {
+            return { status: 'superseded' };
+        }
         if (kind === 'midi') {
             await importMidiFile(file);
+            if (!authority.isCurrent()) {
+                return { status: 'superseded' };
+            }
             continue;
         }
 
         const name = getFileNameWithoutExtension(file);
+        let createdTrackId: string | null = null;
         try {
-            const { id: bufferId, buffer } = await decodeAudioFile(file);
+            const buffer = await decodeAudioFileBuffer(file);
+            if (!authority.isCurrent()) {
+                return { status: 'superseded' };
+            }
+
+            const bufferId = `audio-${crypto.randomUUID()}`;
             const track = addTrack({ name, kind: 'audio' });
             if (!track) {
                 continue;
             }
+            createdTrackId = track.id;
+            if (!authority.isCurrent()) {
+                removeTrack(track.id);
+                return { status: 'superseded' };
+            }
+
             const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO;
             const beats = Math.max(MINIMUM_AUDIO_CLIP_BEATS, Math.ceil((buffer.duration / 60) * tempo));
-            addClip({
+            const clip = addClip({
                 trackId: track.id,
                 startBeat: 0,
                 endBeat: beats,
@@ -87,7 +107,22 @@ export async function importDroppedLaunchFiles({
                 type: 'audio',
                 audioBufferId: bufferId,
             });
+            if (!clip) {
+                removeTrack(track.id);
+                createdTrackId = null;
+                continue;
+            }
+            if (!authority.isCurrent()) {
+                removeTrack(track.id);
+                return { status: 'superseded' };
+            }
+
+            cacheAudioBuffer({ buffer, bufferId });
+            createdTrackId = null;
         } catch {
+            if (createdTrackId) {
+                removeTrack(createdTrackId);
+            }
             failedFileNames.push(file.name);
         }
     }

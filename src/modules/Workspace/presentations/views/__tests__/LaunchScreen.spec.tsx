@@ -193,4 +193,17 @@ describe('LaunchScreen', () => {
             expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
         });
     });
+
+    it('leaves a superseded drop to the newer project transition', async () => {
+        const audioFile = new File(['audio'], 'slow.wav', { type: 'audio/wav' });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ status: 'superseded' });
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
+            dataTransfer: { files: [audioFile] },
+        });
+
+        await waitFor(() => expect(mocks.importDroppedLaunchFiles).toHaveBeenCalledWith({ files: [audioFile] }));
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
 });

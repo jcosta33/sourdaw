@@ -19,23 +19,29 @@ function createDeferred<T>(): Deferred<T> {
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
-    decodeAudioFile: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
+    decodeAudioFileBuffer: vi.fn(),
     getTransportState: vi.fn<() => { tempo: number } | null>(() => ({ tempo: 120 })),
     importMidiFile: vi.fn(),
+    isProjectTransitionCurrent: vi.fn(),
     newProject: vi.fn(),
+    removeTrack: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
     importMidiFile: mocks.importMidiFile,
+    removeTrack: mocks.removeTrack,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    decodeAudioFile: mocks.decodeAudioFile,
+    cacheAudioBuffer: mocks.cacheAudioBuffer,
+    decodeAudioFileBuffer: mocks.decodeAudioFileBuffer,
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: () => ({ isCurrent: mocks.isProjectTransitionCurrent }),
     newProject: mocks.newProject,
 }));
 
@@ -50,12 +56,11 @@ vi.mock('#/modules/Transport/stores', () => ({
 describe('importDroppedLaunchFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.addClip.mockReturnValue({ id: 'clip-1' });
         mocks.addTrack.mockReturnValue({ id: 'track-1' });
-        mocks.decodeAudioFile.mockResolvedValue({
-            id: 'buffer-1',
-            buffer: { duration: 4 },
-        });
+        mocks.decodeAudioFileBuffer.mockResolvedValue({ duration: 4 });
         mocks.getTransportState.mockReturnValue({ tempo: 90 });
+        mocks.isProjectTransitionCurrent.mockReturnValue(true);
         mocks.newProject.mockResolvedValue(true);
     });
 
@@ -71,9 +76,9 @@ describe('importDroppedLaunchFiles', () => {
         expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'drums', kind: 'audio' });
-        expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
-        expect(mocks.decodeAudioFile.mock.invocationCallOrder[0]).toBeLessThan(
+        expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledTimes(1);
+        expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(audioFile);
+        expect(mocks.decodeAudioFileBuffer.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.addTrack.mock.invocationCallOrder[0]!
         );
         expect(mocks.addClip).toHaveBeenCalledWith({
@@ -82,7 +87,11 @@ describe('importDroppedLaunchFiles', () => {
             endBeat: 6,
             name: 'drums',
             type: 'audio',
-            audioBufferId: 'buffer-1',
+            audioBufferId: expect.stringMatching(/^audio-/),
+        });
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
+            buffer: { duration: 4 },
+            bufferId: expect.stringMatching(/^audio-/),
         });
         expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
@@ -94,7 +103,7 @@ describe('importDroppedLaunchFiles', () => {
 
         expect(mocks.newProject).not.toHaveBeenCalled();
         expect(mocks.importMidiFile).not.toHaveBeenCalled();
-        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFileBuffer).not.toHaveBeenCalled();
         expect(result).toEqual({ status: 'unsupported' });
     });
 
@@ -108,14 +117,14 @@ describe('importDroppedLaunchFiles', () => {
         await Promise.resolve();
 
         expect(mocks.importMidiFile).not.toHaveBeenCalled();
-        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFileBuffer).not.toHaveBeenCalled();
         expect(mocks.addTrack).not.toHaveBeenCalled();
 
         activation.resolve(true);
         const result = await importPromise;
 
         expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+        expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(audioFile);
         expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
 
@@ -125,7 +134,7 @@ describe('importDroppedLaunchFiles', () => {
 
         const result = await importDroppedLaunchFiles({ files: [audioFile] });
 
-        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFileBuffer).not.toHaveBeenCalled();
         expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(result).toEqual({ status: 'activation-failed' });
     });
@@ -134,10 +143,7 @@ describe('importDroppedLaunchFiles', () => {
         const midiFile = new File(['midi'], 'sequence.bin', { type: 'audio/midi' });
         const audioFile = new File(['audio'], 'voice.bin', { type: 'audio/webm' });
         mocks.getTransportState.mockReturnValue(null);
-        mocks.decodeAudioFile.mockResolvedValue({
-            id: 'buffer-2',
-            buffer: { duration: 1 },
-        });
+        mocks.decodeAudioFileBuffer.mockResolvedValue({ duration: 1 });
 
         const result = await importDroppedLaunchFiles({ files: [midiFile, audioFile] });
 
@@ -145,7 +151,7 @@ describe('importDroppedLaunchFiles', () => {
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 endBeat: 4,
-                audioBufferId: 'buffer-2',
+                audioBufferId: expect.stringMatching(/^audio-/),
             })
         );
         expect(result).toEqual({ status: 'completed', failedFileNames: [] });
@@ -157,30 +163,71 @@ describe('importDroppedLaunchFiles', () => {
 
         const result = await importDroppedLaunchFiles({ files: [audioFile] });
 
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+        expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(audioFile);
         expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(result).toEqual({ status: 'completed', failedFileNames: [] });
+    });
+
+    it('rolls back a created track when clip creation cannot complete', async () => {
+        const audioFile = new File(['audio'], 'orphan.wav', { type: 'audio/wav' });
+        mocks.addClip.mockReturnValue(null);
+
+        const result = await importDroppedLaunchFiles({ files: [audioFile] });
+
+        expect(mocks.removeTrack).toHaveBeenCalledWith('track-1');
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'completed', failedFileNames: [] });
+    });
+
+    it('does not commit a deferred decode after a second project transition starts', async () => {
+        const audioFile = new File(['audio'], 'slow.wav', { type: 'audio/wav' });
+        const decode = createDeferred<{ duration: number }>();
+        mocks.decodeAudioFileBuffer.mockReturnValue(decode.promise);
+
+        const importPromise = importDroppedLaunchFiles({ files: [audioFile] });
+        await vi.waitFor(() => expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(audioFile));
+
+        mocks.isProjectTransitionCurrent.mockReturnValue(false);
+        decode.resolve({ duration: 4 });
+
+        await expect(importPromise).resolves.toEqual({ status: 'superseded' });
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('removes a partial track if project authority changes during the audio commit', async () => {
+        const audioFile = new File(['audio'], 'interrupted.wav', { type: 'audio/wav' });
+        mocks.isProjectTransitionCurrent.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValue(false);
+
+        const result = await importDroppedLaunchFiles({ files: [audioFile] });
+
+        expect(result).toEqual({ status: 'superseded' });
+        expect(mocks.removeTrack).toHaveBeenCalledWith('track-1');
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
     it('returns audio import failures and continues importing later files', async () => {
         const failedFile = new File(['bad'], 'broken.wav', { type: 'audio/wav' });
         const importedFile = new File(['good'], 'working.wav', { type: 'audio/wav' });
         mocks.addTrack.mockReturnValue({ id: 'track-good' });
-        mocks.decodeAudioFile
+        mocks.decodeAudioFileBuffer
             .mockRejectedValueOnce(new Error('decode failed'))
-            .mockResolvedValueOnce({ id: 'buffer-good', buffer: { duration: 4 } });
+            .mockResolvedValueOnce({ duration: 4 });
 
         const result = await importDroppedLaunchFiles({ files: [failedFile, importedFile] });
 
         expect(result).toEqual({ status: 'completed', failedFileNames: ['broken.wav'] });
-        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(importedFile);
+        expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(importedFile);
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'working', kind: 'audio' });
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackId: 'track-good',
                 name: 'working',
-                audioBufferId: 'buffer-good',
+                audioBufferId: expect.stringMatching(/^audio-/),
             })
         );
     });

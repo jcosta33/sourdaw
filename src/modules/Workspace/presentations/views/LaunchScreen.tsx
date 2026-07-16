@@ -334,6 +334,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                 setView('home');
                 return;
             }
+            if (result.status === 'superseded') {
+                return;
+            }
             for (const fileName of result.failedFileNames) {
                 notifyUser(`Failed to import "${fileName}"`, 'error');
             }
