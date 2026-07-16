@@ -1,5 +1,12 @@
-import type { WebMidiInstrumentTrack } from './instrumentTrackPort';
 import type { TrackChannelStrip } from '../../models/AudioEngineState';
+
+export type WebMidiInstrumentTrack = Readonly<{
+    id: string;
+    devices: readonly Readonly<{
+        id: string;
+        type: string;
+    }>[];
+}>;
 
 type YeastInstrumentDeviceNode = Pick<
     TrackChannelStrip['deviceNodes'][number],

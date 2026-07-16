@@ -9,9 +9,7 @@
 
 import { audioEngine } from '../createWebAudioEngine';
 
-import { routeYeastNoteOffToInstrument } from './routeYeastNoteOffToInstrument';
-
-import type { WebMidiInstrumentTrack } from './instrumentTrackPort';
+import { routeYeastNoteOffToInstrument, type WebMidiInstrumentTrack } from './routeYeastNoteOffToInstrument';
 
 type RoutedYeastNoteOff = {
     channel: number;
