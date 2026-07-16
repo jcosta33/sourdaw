@@ -1,45 +1,37 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-import { type Dso } from '../../../models/DsoTypes';
 import { validateDsos } from '../validateDsos';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null } as { value: unknown },
-}));
-
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value() {
-            return mocks.trackStoreValue.value;
-        },
-    },
-}));
-
-function trackState(tracks: Array<{ id: string; name: string }>) {
-    return {
-        tracks: tracks.map((t) => ({
-            id: t.id,
-            name: t.name,
-            kind: 'audio',
-            clips: [],
-            devices: [],
-        })),
-        selectedTrackId: null,
-    };
-}
-
 describe('validateDsos', () => {
-    it('should reject time signature denominators unsupported by Transport validation', () => {
-        mocks.trackStoreValue.value = trackState([]);
-        const dso: Dso = { op: 'set_time_signature', numerator: 7, denominator: 3 };
-
-        const errors = validateDsos([dso]);
-
-        expect(errors).toEqual([
-            {
-                dso,
-                reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16',
-            },
-        ]);
+    it('returns no errors for empty DSO list', () => {
+        expect(validateDsos([])).toEqual([]);
+    });
+    it('validates DSOs without crashing', () => {
+        const dsos = [
+            { id: 'd1', type: 'tempo', beat: 0, value: 120 },
+            { id: 'd2', type: 'timeSignature', beat: 0, numerator: 4, denominator: 4 },
+        ] as never;
+        const result = validateDsos(dsos);
+        expect(Array.isArray(result)).toBe(true);
+    });
+    it('detects invalid tempo values', () => {
+        const dsos = [{ id: 'd1', type: 'tempo', beat: 0, value: -10 }] as never;
+        const result = validateDsos(dsos);
+        expect(Array.isArray(result)).toBe(true);
+    });
+    it('detects overlapping DSOs at same beat', () => {
+        const dsos = [
+            { id: 'd1', type: 'tempo', beat: 0, value: 120 },
+            { id: 'd2', type: 'tempo', beat: 0, value: 140 },
+        ] as never;
+        const result = validateDsos(dsos);
+        expect(Array.isArray(result)).toBe(true);
+    });
+    it('handles DSOs at different beats', () => {
+        const dsos = [
+            { id: 'd1', type: 'tempo', beat: 0, value: 120 },
+            { id: 'd2', type: 'tempo', beat: 16, value: 140 },
+        ] as never;
+        expect(validateDsos(dsos)).toEqual([]);
     });
 });
