@@ -1,23 +1,23 @@
-/**
- * Solo engine logic — applies SIP (Solo In Place) or PFL (Pre-Fader Listen)
- * mute/gain changes to the audio engine based on which tracks are soloed.
- *
- * Shared by muteTrack, soloTrack, clearSolos, soloTrackExclusive, toggleSoloSafe.
- */
-
-import { setTrackMute as engineSetTrackMute, setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
-
 import { type Track } from '../models/Track';
-import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
-const savedGains = new Map<string, number>();
+export type SoloMode = 'sip' | 'afl' | 'pfl';
 
-export function resetSoloLogic(): void {
-    savedGains.clear();
-}
+export type SoloLogicAction =
+    | { type: 'setGain'; trackId: string; gain: number }
+    | { type: 'setMute'; trackId: string; muted: boolean };
 
-function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new Set<string>()): boolean {
+export type ApplySoloLogicInput = {
+    tracks: readonly Track[];
+    soloMode: SoloMode;
+    savedGains: ReadonlyMap<string, number>;
+};
+
+export type ApplySoloLogicOutput = {
+    actions: SoloLogicAction[];
+    savedGains: ReadonlyMap<string, number>;
+};
+
+function isRoutedToSoloedTrack(track: Track, allTracks: readonly Track[], visited = new Set<string>()): boolean {
     if (track.outputId === 'master') {
         return false;
     }
@@ -25,7 +25,7 @@ function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new S
         return false;
     }
     visited.add(track.id);
-    const outputTrack = allTracks.find((time) => time.id === track.outputId);
+    const outputTrack = allTracks.find((candidate) => candidate.id === track.outputId);
     if (!outputTrack) {
         return false;
     }
@@ -35,47 +35,48 @@ function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new S
     return isRoutedToSoloedTrack(outputTrack, allTracks, visited);
 }
 
-export function applySoloLogic(): void {
-    const state = getTrackStoreState();
-    if (!state) {
-        return;
-    }
+export function applySoloLogic({ tracks, soloMode, savedGains }: ApplySoloLogicInput): ApplySoloLogicOutput {
+    const nextSavedGains = new Map(savedGains);
+    const actions: SoloLogicAction[] = [];
+    const anySoloed = tracks.some((track) => track.soloed);
 
-    const soloMode = workspaceStore.value?.soloMode ?? 'sip';
-    const anySoloed = state.tracks.some((time) => time.soloed);
-
-    for (const track of state.tracks) {
+    for (const track of tracks) {
         if (track.kind === 'folder' || track.kind === 'master') {
             continue;
         }
 
         if (!anySoloed) {
-            if (soloMode === 'pfl' && savedGains.has(track.id)) {
-                engineSetTrackGain(track.id, savedGains.get(track.id)!);
-                savedGains.delete(track.id);
+            if (soloMode === 'pfl' && nextSavedGains.has(track.id)) {
+                const savedGain = nextSavedGains.get(track.id);
+                if (savedGain !== undefined) {
+                    actions.push({ type: 'setGain', trackId: track.id, gain: savedGain });
+                }
+                nextSavedGains.delete(track.id);
             }
-            engineSetTrackMute(track.id, track.muted);
+            actions.push({ type: 'setMute', trackId: track.id, muted: track.muted });
             continue;
         }
 
         if (track.soloSafe) {
-            engineSetTrackMute(track.id, track.muted);
+            actions.push({ type: 'setMute', trackId: track.id, muted: track.muted });
             continue;
         }
 
-        const routedToSoloed = isRoutedToSoloedTrack(track, state.tracks);
+        const routedToSoloed = isRoutedToSoloedTrack(track, tracks);
 
         if (soloMode === 'pfl' && track.soloed) {
-            if (!savedGains.has(track.id)) {
-                savedGains.set(track.id, track.gain);
+            if (!nextSavedGains.has(track.id)) {
+                nextSavedGains.set(track.id, track.gain);
             }
-            engineSetTrackGain(track.id, 1.0);
-            engineSetTrackMute(track.id, false);
+            actions.push({ type: 'setGain', trackId: track.id, gain: 1.0 });
+            actions.push({ type: 'setMute', trackId: track.id, muted: false });
         } else if (soloMode === 'pfl' && !track.soloed) {
-            engineSetTrackMute(track.id, !routedToSoloed);
+            actions.push({ type: 'setMute', trackId: track.id, muted: !routedToSoloed });
         } else {
             const shouldMute = !track.soloed && !routedToSoloed;
-            engineSetTrackMute(track.id, shouldMute || track.muted);
+            actions.push({ type: 'setMute', trackId: track.id, muted: shouldMute || track.muted });
         }
     }
+
+    return { actions, savedGains: nextSavedGains };
 }

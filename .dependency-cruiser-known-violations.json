@@ -1,51 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
-    "to": "src/modules/Arrangement/useCases/getTrackStoreState.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
-    "to": "src/modules/AudioEngine/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/services/applySoloLogic.ts",
-    "to": "src/modules/Workspace/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts",
-    "to": "src/modules/AudioEngine/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts",
-    "to": "src/modules/Transport/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "services-must-stay-pure"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Arrangement/useCases/initTimelineRenderer.ts",
     "to": "src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts",
     "rule": {
