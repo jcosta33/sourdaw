@@ -389,6 +389,42 @@ describe('playhead scheduler tick', () => {
         }
     });
 
+    it('logs when punch-in audio recording fails to start', async () => {
+        const recordingError = new Error('microphone unavailable');
+        harness.track_store.value = {
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+        };
+        transportStore.value = {
+            ...playingTransport,
+            punchInEnabled: true,
+            punchInBeat: 0.05,
+            punchOutBeat: 4,
+        };
+        harness.start_recording.mockReturnValue([]);
+        harness.start_audio_recording.mockRejectedValueOnce(recordingError);
+
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+
+        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function));
+
+        // The `.catch` on startAudioRecording must surface the rejection as an
+        // Error whose message names the punch-in path and whose cause is the
+        // original rejection.
+        await vi.waitFor(() =>
+            expect(harness.logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }))
+        );
+        const loggedError = harness.logger.error.mock.calls
+            .map((call): unknown => call[0])
+            .find((arg): arg is Error => arg instanceof Error && arg.cause === recordingError);
+        if (!(loggedError instanceof Error)) {
+            throw new Error('Expected the punch-in failure to be logged as an Error');
+        }
+        expect(loggedError.message).toBe('Punch-in audio recording failed to start');
+        expect(loggedError.cause).toBe(recordingError);
+    });
+
     it('disposePlayheadScheduler terminates the worker and clears the audio-clip pool (regression: §B fix 5)', async () => {
         startPlayheadScheduler();
         const worker = harness.workers[harness.workers.length - 1]!;

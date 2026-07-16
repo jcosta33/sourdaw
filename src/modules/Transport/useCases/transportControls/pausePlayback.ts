@@ -34,6 +34,13 @@ export function pausePlayback(): void {
             logger.error(new Error('Recording teardown failed before pausing playback', { cause: error }));
         })
         .then(() => {
+            // A play pressed during the recording flush starts a fresh
+            // scheduler session (startPlayback's re-entry guard only checks
+            // `isPlaying`). That new session now owns the scheduler, so this
+            // stale pause continuation must not tear it down.
+            if (getTransportState()?.isPlaying) {
+                return undefined;
+            }
             panicYeastRuntime();
             stopPlayheadScheduler();
             stopAllScheduled();

@@ -56,9 +56,13 @@ describe('pausePlayback', () => {
     });
 
     it('should pause transport and tear down scheduling when state exists', async () => {
-        const update = vi.fn<typeof updateTransportState>();
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true });
-        vi.mocked(updateTransportState).mockImplementation(update);
+        // Model the real flow: pausePlayback flips isPlaying:false via
+        // updateTransportState, so the deferred continuation observes it.
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
 
         pausePlayback();
 
@@ -66,12 +70,15 @@ describe('pausePlayback', () => {
         expect(stopAllScheduled).toHaveBeenCalled();
         expect(resetMidiState).toHaveBeenCalled();
         expect(yeastPanic).toHaveBeenCalledWith(48000);
-        expect(update).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
+        expect(updateTransportState).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
     });
 
     it('should wait for recording teardown before stopping the scheduler', async () => {
         const order: string[] = [];
-        const update = vi.fn<typeof updateTransportState>().mockImplementation((patch) => {
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
             if (patch.isPlaying === false) {
                 order.push('isPlaying:false');
             }
@@ -79,8 +86,6 @@ describe('pausePlayback', () => {
         vi.mocked(stopPlayheadScheduler).mockImplementation(() => {
             order.push('stopPlayheadScheduler');
         });
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true });
-        vi.mocked(updateTransportState).mockImplementation(update);
         let finishRecordingStop: (() => void) | undefined;
         vi.mocked(stopActiveRecording).mockReturnValueOnce(
             new Promise<void>((resolve) => {
@@ -105,15 +110,13 @@ describe('pausePlayback', () => {
     });
 
     it('should cancel a pending count-in via stopActiveRecording even when not recording', async () => {
-        const update = vi.fn<typeof updateTransportState>();
         // During count-in isRecording is still false; the count-in timer must
         // still be cleared so it cannot fire beginActualRecording after pause.
-        vi.mocked(getTransportState).mockReturnValue({
-            ...defaultTransportState,
-            isPlaying: true,
-            isRecording: false,
+        const liveState = { ...defaultTransportState, isPlaying: true, isRecording: false };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
         });
-        vi.mocked(updateTransportState).mockImplementation(update);
 
         pausePlayback();
 
@@ -122,10 +125,12 @@ describe('pausePlayback', () => {
     });
 
     it('should report a recording teardown rejection and still finish pausing', async () => {
-        const update = vi.fn<typeof updateTransportState>();
         const recordingError = new Error('recording flush failed');
-        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true });
-        vi.mocked(updateTransportState).mockImplementation(update);
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
         vi.mocked(stopActiveRecording).mockRejectedValueOnce(recordingError);
 
         pausePlayback();
@@ -135,6 +140,43 @@ describe('pausePlayback', () => {
         expect(loggerMock.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }));
         expect(stopPlayheadScheduler).toHaveBeenCalledOnce();
         expect(stopAllScheduled).toHaveBeenCalledOnce();
+    });
+
+    it('should not tear down the scheduler when playback is restarted during the recording flush', async () => {
+        // A play pressed during the flush window starts a fresh scheduler
+        // session; startPlayback's re-entry guard only checks isPlaying, so the
+        // stale pause continuation must not tear the new session down.
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        let finishRecordingStop: (() => void) | undefined;
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingStop = resolve;
+            })
+        );
+
+        pausePlayback();
+
+        // Restart: a fresh startPlayback flips isPlaying back to true while the
+        // recording flush is still pending.
+        liveState.isPlaying = true;
+
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected recorder teardown to be pending');
+        }
+        finish();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(stopPlayheadScheduler).not.toHaveBeenCalled();
+        expect(stopAllScheduled).not.toHaveBeenCalled();
+        expect(resetMidiState).not.toHaveBeenCalled();
+        expect(yeastPanic).not.toHaveBeenCalled();
     });
 
     it('should no-op when transport state is missing', () => {

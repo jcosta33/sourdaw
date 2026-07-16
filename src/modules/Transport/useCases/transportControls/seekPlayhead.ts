@@ -36,7 +36,11 @@ export function seekPlayhead(beat: number): void {
         // and re-starting the scheduler re-arms a fresh automation session for the
         // remainder. Recording stays committed/closed so the lane is split at the
         // seek rather than re-armed on every jump.
-        if (wasPlaying) {
+        // Gate the restart on live state, not the `wasPlaying` captured before
+        // the recording flush await. A stop/pause landing during the flush wins;
+        // do not resurrect the scheduler for a transport that is no longer
+        // playing.
+        if (wasPlaying && getTransportState()?.isPlaying === true) {
             startPlayheadScheduler();
         }
     }

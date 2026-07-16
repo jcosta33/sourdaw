@@ -176,6 +176,39 @@ describe('seekPlayhead', () => {
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
     });
 
+    it('should not restart the scheduler when playback is stopped during the recording flush', async () => {
+        // wasPlaying is captured before the stopActiveRecording await. If a stop
+        // (or pause) lands during the flush window, the deferred finishSeek must
+        // not resurrect the scheduler for a transport that is no longer playing.
+        const update = vi.fn();
+        const liveState = { ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 1 };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        let finishRecordingStop: (() => void) | undefined;
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingStop = resolve;
+            })
+        );
+
+        seekPlayhead(3);
+
+        // A stop lands during the recording flush window.
+        liveState.isPlaying = false;
+
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected recorder teardown to be pending');
+        }
+        finish();
+        await vi.waitFor(() => expect(update).toHaveBeenCalledWith({ playheadPosition: 3 }));
+
+        // Position is still committed, but the scheduler is not restarted.
+        expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
+        expect(startPlayheadScheduler).not.toHaveBeenCalled();
+    });
+
     it('should panic Yeast even when seeking while already stopped', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,

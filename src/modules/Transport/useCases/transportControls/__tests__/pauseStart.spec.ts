@@ -66,7 +66,14 @@ describe('Pause/Start Playback', () => {
 
     describe('pausePlayback', () => {
         it('stops scheduler, engine nodes, and updates state', async () => {
-            mocks.getTransportState.mockReturnValue({ isPlaying: true });
+            // Model the real flow: pausePlayback commits isPlaying:false via
+            // updateTransportState, so the deferred teardown continuation
+            // observes the paused state rather than a stale isPlaying:true.
+            const liveState: Record<string, unknown> = { isPlaying: true };
+            mocks.getTransportState.mockReturnValue(liveState);
+            mocks.updateTransportState.mockImplementation((...args) => {
+                Object.assign(liveState, args[0]);
+            });
 
             pausePlayback();
 
