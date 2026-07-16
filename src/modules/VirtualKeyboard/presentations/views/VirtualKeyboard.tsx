@@ -266,7 +266,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     next.delete(midiNote);
                     return next;
                 });
-                // The delegated handler may have registered the note before an awaited step failed.
+                // Defense in depth: the engine un-registers a note whose awaited processing
+                // rejected, but a synchronous failure after registration would still leak it.
                 handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
                 setLiveNoteStatus((current) => current ?? LIVE_NOTE_FAILURE_MESSAGE);
             }

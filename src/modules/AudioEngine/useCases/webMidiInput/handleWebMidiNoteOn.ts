@@ -74,16 +74,27 @@ export const handleWebMidiNoteOn = inject({
             const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
             if (hasYeast) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
-                const processedEvents = await deps.processRealtimeMidiInput({
-                    context: engine.context,
-                    trackId: instrumentTrackId,
-                    note,
-                    velocity,
-                    channel,
-                    isNoteOn: true,
-                    sampleTime,
-                    sampleRate: engine.context.sampleRate,
-                });
+                let processedEvents;
+                try {
+                    processedEvents = await deps.processRealtimeMidiInput({
+                        context: engine.context,
+                        trackId: instrumentTrackId,
+                        note,
+                        velocity,
+                        channel,
+                        isNoteOn: true,
+                        sampleTime,
+                        sampleRate: engine.context.sampleRate,
+                    });
+                } catch (error: unknown) {
+                    // The note was registered before this awaited step; un-register it so a
+                    // rejected note-on leaves no phantom active note behind.
+                    activeNotes.delete(noteKey);
+                    if (channelToNote.get(channel) === noteKey) {
+                        channelToNote.delete(channel);
+                    }
+                    throw error;
+                }
                 for (const event of processedEvents) {
                     if (event.kind.type === 'noteOn') {
                         const eventNote = event.kind.note;
