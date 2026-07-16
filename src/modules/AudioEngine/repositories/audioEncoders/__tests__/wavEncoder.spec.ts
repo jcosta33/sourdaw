@@ -201,4 +201,46 @@ describe('audioBufferToWav', () => {
         expect(view.getFloat32(dataOffset + 4, true)).toBe(1); // Infinity survives gain, clamps
         expect(view.getFloat32(dataOffset + 8, true)).toBeCloseTo(-0.5, 6); // -1.0 * 0.5
     });
+
+    it('keeps gain at 1 when the buffer contains no finite sample (no 1/0 or NaN gain)', async () => {
+        // With nothing finite the peak scan finds nothing: peak stays 0, gain
+        // must stay 1 (never 1/0 = Infinity or NaN), and every sample degrades
+        // to its sanitized value.
+        const buffer = createMockAudioBuffer(1, 3, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = Number.POSITIVE_INFINITY;
+        data[1] = Number.NaN;
+        data[2] = Number.NEGATIVE_INFINITY;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBe(1); // +Infinity → full scale
+        expect(view.getFloat32(dataOffset + 4, true)).toBe(0); // NaN → silence
+        expect(view.getFloat32(dataOffset + 8, true)).toBe(-1); // -Infinity → full scale
+    });
+
+    it('normalizes globally when the peak sits in a non-first channel', async () => {
+        // Pins that the peak scan spans ALL channels and one global gain is
+        // applied through the channel-outer interleave loop — per-channel
+        // normalization would leave channel 0 unscaled and skew the stereo image.
+        const buffer = createMockAudioBuffer(2, 2, 48000);
+        buffer.getChannelData(0)[0] = 0.5;
+        buffer.getChannelData(0)[1] = -0.25;
+        buffer.getChannelData(1)[0] = 2.0; // global peak lives in channel 1
+        buffer.getChannelData(1)[1] = 1.0;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        // Interleaved frames: [ch0[0], ch1[0], ch0[1], ch1[1]], gain = 1/2.
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBeCloseTo(0.25, 6); // 0.5 * 0.5
+        expect(view.getFloat32(dataOffset + 4, true)).toBeCloseTo(1.0, 6); // 2.0 * 0.5
+        expect(view.getFloat32(dataOffset + 8, true)).toBeCloseTo(-0.125, 6); // -0.25 * 0.5
+        expect(view.getFloat32(dataOffset + 12, true)).toBeCloseTo(0.5, 6); // 1.0 * 0.5
+    });
 });

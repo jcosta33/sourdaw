@@ -726,15 +726,18 @@ class AutomergeRepository {
             const incoming = load<AnyDoc>(bytes);
             const local = this.docs.get(id);
             if (local) {
-                // Compact through a save→load round-trip, exactly as the worker
-                // path does (crdtWorker.processMerge saves every doc; mergeBundle
-                // then loads the compacted bytes — see line ~706). A bare
-                // in-place merge keeps both operation histories live in WASM
-                // memory and grows unbounded across repeated sync merges.
-                this.docs.set(id, load<AnyDoc>(save(merge(local, incoming))));
+                // Bare merge() is deliberate — no load(save()) round-trip.
+                // Automerge v3 merge() already returns a canonical doc: the
+                // "fix 4: misdiagnosed" block in
+                // __tests__/automergeRepository.transact.spec.ts pins that
+                // save(merge(...)) is byte-identical to the worker path's
+                // compacted output (the worker's save→load exists only because
+                // a live WASM Doc cannot cross postMessage). mergeRemoteDoc
+                // relies on the same property.
+                this.docs.set(id, merge(local, incoming));
                 result.mergedDocIds.push(id);
             } else {
-                this.docs.set(id, load<AnyDoc>(save(incoming)));
+                this.docs.set(id, incoming);
                 result.newDocIds.push(id);
             }
         }
