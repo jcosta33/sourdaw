@@ -20,6 +20,8 @@ sources:
     - ../../../.dependency-cruiser-known-violations-types.json
     - ../../../.dependency-cruiser-known-violations-tests.json
     - ../../../package.json
+    - ../../../tsconfig.json
+    - ../../../tsconfig.test.json
 ---
 
 # Dependency boundary validation
@@ -136,6 +138,14 @@ prose-only, or future-intent ADR is not retirement authority.
 
 Verify with: the accepted ADR and ledger entry, the same-change source/test/spec diff, focused
 exact-path search, and `pnpm deps:validate`
+
+### AC-009 — Test typechecking scope is explicit
+
+The repository MUST record the files covered by `pnpm typecheck:test` and the
+spec/test files outside that scope, so `pnpm typecheck` is not treated as
+evidence that excluded tests are type-checked.
+
+Verify with: `pnpm typecheck:test` and the `include`/`exclude` entries in `tsconfig.json` and `tsconfig.test.json`
 
 ## Open questions
 

@@ -5,8 +5,7 @@ title: Ableton Link commands are defined but not registered in Tauri
 status: fixed
 owner: The Sourdaw team
 sources:
-  - "Transient finding: project-health-audit-2026-06-27"
-  - SPEC-ableton-link-sync
+    - SPEC-ableton-link-sync
 ---
 
 # Bug: Ableton Link commands are defined but not registered in Tauri
