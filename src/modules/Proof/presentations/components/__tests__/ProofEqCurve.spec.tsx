@@ -518,4 +518,84 @@ describe('ProofEqCurve', () => {
             expect(edits[2]).toMatchObject({ key: 'eqBands', value: edits[1]?.value });
         });
     });
+
+    describe('keyboard band handles', () => {
+        const getBandSliders = (container: HTMLElement): HTMLElement[] =>
+            Array.from(container.querySelectorAll('[role="slider"]'));
+
+        it('exposes one focusable slider per EQ band', () => {
+            const { container } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} gestureOwner={0} onPatchChange={vi.fn()} />
+            );
+            const sliders = getBandSliders(container);
+            expect(sliders).toHaveLength(DEFAULT_PATCH.eqBands.length);
+            expect(sliders.every((slider) => slider.getAttribute('tabindex') === '0')).toBe(true);
+        });
+
+        it('nudges frequency right on ArrowRight and commits a non-transient edit', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
+            );
+            // Band index 2 of DEFAULT_PATCH is a peak at 250 Hz.
+            fireEvent.keyDown(getBandSliders(container)[2]!, { key: 'ArrowRight' });
+
+            expect(onPatchChange).toHaveBeenCalledTimes(1);
+            const edit = onPatchChange.mock.calls[0]?.[0] as Extract<ProofPatchEdit, { key: 'eqBands' }>;
+            expect(edit).toMatchObject({
+                key: 'eqBands',
+                isTransient: false,
+                changedParams: [{ bandIndex: 2, field: 'freq' }],
+            });
+            // 250 * 1.05 = 262.5, rounded to 263 Hz; gain untouched.
+            expect(edit.value[2]).toMatchObject({ freq: 263, gain: 0 });
+        });
+
+        it('nudges gain up on ArrowUp for a peak band', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
+            );
+            fireEvent.keyDown(getBandSliders(container)[2]!, { key: 'ArrowUp' });
+
+            expect(onPatchChange).toHaveBeenCalledTimes(1);
+            const edit = onPatchChange.mock.calls[0]?.[0] as Extract<ProofPatchEdit, { key: 'eqBands' }>;
+            expect(edit).toMatchObject({
+                key: 'eqBands',
+                isTransient: false,
+                changedParams: [{ bandIndex: 2, field: 'gain' }],
+            });
+            // 0 + 0.5 dB step; frequency untouched.
+            expect(edit.value[2]).toMatchObject({ freq: 250, gain: 0.5 });
+        });
+
+        it('ignores vertical arrow keys on HP/LP bands (no gain axis)', () => {
+            const onPatchChange = vi.fn();
+            const { container } = render(
+                <ProofEqCurve
+                    patch={DEFAULT_PATCH}
+                    width={200}
+                    height={100}
+                    gestureOwner={0}
+                    onPatchChange={onPatchChange}
+                />
+            );
+            // Band index 0 of DEFAULT_PATCH is a high-pass filter — vertical nudge is a no-op.
+            expect(DEFAULT_PATCH.eqBands[0]!.type).toBe(EQ_HIGH_PASS);
+            fireEvent.keyDown(getBandSliders(container)[0]!, { key: 'ArrowUp' });
+            expect(onPatchChange).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -12,7 +12,7 @@ unilaterally. Promoted from `.agents/findings/inventory-decisions-backlog.md`
 `.agents/findings/overview-open-decisions.md` (also retired). Citations and
 premises were fully re-audited against `main` on 2026-07-16 after three
 review rounds — every item re-checked, drifted citations corrected, resolved
-premises dropped (111 bullets: 108 decision items + 3 investigation
+premises dropped (112 bullets: 109 decision items + 3 investigation
 meta-items). Decisions already made are **not** here — they are ADRs (0006
 contract-folder barrels, 0007 command relocation, 0008 recent-projects
 Option A, 0009 pattern-morph determinism).
@@ -585,6 +585,21 @@ source citation.
   still startup work). Blocks code: no. Source:
   `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:101-108`,
   `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:94`.
+
+## SoundLibrary
+
+- **Delete the orphaned module or revive it (human call).** SoundLibrary is
+  fully orphaned since commit e4b31ed8b (2026-06-30) routed the sample-search
+  action to SampleLibrary — zero files outside `src/modules/SoundLibrary/`
+  import it (`grep -rn "modules/SoundLibrary" src/ | grep -v
+  "src/modules/SoundLibrary/"` returns nothing; the only residual mention is a
+  stale doc-comment in
+  `src/modules/Arrangement/repositories/presets/factoryPresets.ts:95`). Its
+  `stores/`, `events/`, and `useCases/` barrels have no external consumers.
+  Options: delete the whole module vs revive it behind a real surface —
+  deleting an entire module is a human decision, not an agent one. Blocks
+  code: no (dormant). Source: `src/modules/SoundLibrary/` (orphaned tree),
+  commit e4b31ed8b.
 
 ## AiGeneration
 

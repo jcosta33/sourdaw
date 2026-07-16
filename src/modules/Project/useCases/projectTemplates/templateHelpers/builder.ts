@@ -275,7 +275,7 @@ type CreateVcaInput = {
 };
 
 export function createVca(input: CreateVcaInput): VcaGroupHandle {
-    const id = `vca-${crypto.randomUUID().slice(0, 8)}`;
+    const id = `vca-${crypto.randomUUID()}`;
     const handle: VcaGroupHandle = {
         id,
         name: input.name,
@@ -323,7 +323,7 @@ export function setChordProgression(input: SetChordProgressionInput): void {
         const chord = input.chords[progressionIndex % input.chords.length]!;
         const duration = Math.min(chord.duration, input.repeatUntilBeat - beat);
         events.push({
-            id: `chord-${crypto.randomUUID().slice(0, 8)}`,
+            id: `chord-${crypto.randomUUID()}`,
             beat,
             root: chord.root % 12,
             quality: chord.quality,

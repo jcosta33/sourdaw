@@ -1,1 +1,0 @@
-export const RULER_HEIGHT = 0;

@@ -196,6 +196,22 @@ export const ExpressionPanel = ({
 
                     <div className="flex flex-col items-center gap-0">
                         <RotaryKnob
+                            value={expression.vibratoRateMin}
+                            onChange={(v) => onChangeExp({ vibratoRateMin: v })}
+                            min={2}
+                            max={7}
+                            step={0.1}
+                            defaultValue={4}
+                            size="md"
+                            tone="amber"
+                        />
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Min</span>
+                        <span className="text-[6px] text-muted-foreground/40 tabular-nums">
+                            {expression.vibratoRateMin.toFixed(1)}Hz
+                        </span>
+                    </div>
+                    <div className="flex flex-col items-center gap-0">
+                        <RotaryKnob
                             value={expression.vibratoRateMax}
                             onChange={(v) => onChangeExp({ vibratoRateMax: v })}
                             min={2}
@@ -205,7 +221,7 @@ export const ExpressionPanel = ({
                             size="md"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate</span>
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Max</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoRateMax.toFixed(1)}Hz
                         </span>

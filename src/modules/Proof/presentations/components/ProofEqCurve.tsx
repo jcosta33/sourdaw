@@ -19,6 +19,26 @@ const DB_RANGE = 18;
 const BAND_COLORS = ['#6BAACE', '#52BA46', '#E0AA2A', '#FF5F80', '#4CB8B8', '#954EB2', '#6BAACE', '#52BA46'];
 const CHANNEL_INDICATORS: Record<number, string> = { 0: '', 1: 'M', 2: 'S' };
 
+// Keyboard nudge steps for the focusable band handles. Frequency moves
+// multiplicatively so each press covers a constant distance on the log axis
+// (the axis the curve is drawn on); gain moves in 0.5 dB steps, matching the
+// drag quantization below.
+const FREQ_NUDGE_RATIO = 1.05;
+const GAIN_NUDGE_DB = 0.5;
+
+/** Human-readable band-type names for the keyboard slider aria-labels. */
+const BAND_TYPE_LABELS: Record<number, string> = {
+    0: 'peak',
+    1: 'low shelf',
+    2: 'high shelf',
+    3: 'high pass',
+    4: 'low pass',
+};
+
+const clampFreq = (freq: number): number => Math.round(Math.max(MIN_FREQ, Math.min(MAX_FREQ, freq)));
+
+const clampGain = (gain: number): number => Math.round(Math.max(-DB_RANGE, Math.min(DB_RANGE, gain)) * 2) / 2;
+
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
@@ -581,18 +601,118 @@ export const ProofEqCurve = ({
         finalizeDragRef.current();
     };
 
+    // Commit a discrete keyboard nudge as a non-transient edit (mirrors the
+    // pointer finalize commit, minus the gesture-ownership handshake — a
+    // keypress is already a complete gesture).
+    const commitBandNudge = (bandIndex: number, nextFreq: number, nextGain: number): void => {
+        const band = patch.eqBands[bandIndex];
+        if (!band) {
+            return;
+        }
+        const usesGain = bandUsesGain(band.type);
+        const freqChanged = nextFreq !== band.freq;
+        const gainChanged = usesGain && nextGain !== band.gain;
+        if (!freqChanged && !gainChanged) {
+            return;
+        }
+        const value = patch.eqBands.map((existing, index) => {
+            if (index !== bandIndex) {
+                return existing;
+            }
+            const nextBand = { ...existing, freq: nextFreq };
+            if (usesGain) {
+                nextBand.gain = nextGain;
+            }
+            return nextBand;
+        });
+        const changedParams: Array<{ bandIndex: number; field: keyof ProofPatch['eqBands'][number] }> = [];
+        if (freqChanged) {
+            changedParams.push({ bandIndex, field: 'freq' });
+        }
+        if (gainChanged) {
+            changedParams.push({ bandIndex, field: 'gain' });
+        }
+        onPatchChange({ key: 'eqBands', value, changedParams, isTransient: false });
+    };
+
+    const handleBandKeyDown = (bandIndex: number, e: React.KeyboardEvent): void => {
+        const band = patch.eqBands[bandIndex];
+        if (!band) {
+            return;
+        }
+        const usesGain = bandUsesGain(band.type);
+        let nextFreq = band.freq;
+        let nextGain = band.gain;
+        switch (e.key) {
+            case 'ArrowLeft':
+                nextFreq = clampFreq(band.freq / FREQ_NUDGE_RATIO);
+                break;
+            case 'ArrowRight':
+                nextFreq = clampFreq(band.freq * FREQ_NUDGE_RATIO);
+                break;
+            case 'ArrowDown':
+                if (!usesGain) {
+                    return;
+                }
+                nextGain = clampGain(band.gain - GAIN_NUDGE_DB);
+                break;
+            case 'ArrowUp':
+                if (!usesGain) {
+                    return;
+                }
+                nextGain = clampGain(band.gain + GAIN_NUDGE_DB);
+                break;
+            default:
+                return;
+        }
+        e.preventDefault();
+        commitBandNudge(bandIndex, nextFreq, nextGain);
+    };
+
     return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height, cursor: 'crosshair' }}
-            className="rounded border border-border/20"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onLostPointerCapture={handlePointerUp}
-            onBlur={handleFocusLoss}
-            aria-label="8-band parametric EQ frequency response"
-        />
+        <div style={{ position: 'relative', width, height }}>
+            <canvas
+                ref={canvasRef}
+                style={{ width, height, cursor: 'crosshair' }}
+                className="rounded border border-border/20"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onLostPointerCapture={handlePointerUp}
+                onBlur={handleFocusLoss}
+                aria-label="8-band parametric EQ frequency response"
+            />
+            {/* Keyboard-operable band handles layered over the canvas. Pointer
+                drag stays on the canvas; these DOM sliders add focus + arrow-key
+                control, mirroring the SliceOverlay marker a11y pattern. */}
+            <div className="pointer-events-none absolute inset-0">
+                {patch.eqBands.map((band, b) => {
+                    const usesGain = bandUsesGain(band.type);
+                    const dotDb = usesGain
+                        ? band.gain
+                        : eqBandMag({ type: band.type, f: band.freq, fc: band.freq, gainDb: band.gain, Q: band.q });
+                    const left = freqToX(band.freq, width);
+                    const top = gainToY(dotDb, height);
+                    const roundedFreq = Math.round(band.freq);
+                    const valueText = usesGain ? `${roundedFreq} Hz, ${band.gain} dB` : `${roundedFreq} Hz`;
+                    return (
+                        <div
+                            key={b}
+                            role="slider"
+                            tabIndex={0}
+                            aria-label={`EQ band ${b + 1} ${BAND_TYPE_LABELS[band.type] ?? 'peak'}`}
+                            aria-valuemin={MIN_FREQ}
+                            aria-valuemax={MAX_FREQ}
+                            aria-valuenow={roundedFreq}
+                            aria-valuetext={valueText}
+                            className="pointer-events-auto absolute rounded-full focus:outline focus:outline-1 focus:outline-white/80"
+                            style={{ left: left - 7, top: top - 7, width: 14, height: 14 }}
+                            onKeyDown={(e) => handleBandKeyDown(b, e)}
+                        />
+                    );
+                })}
+            </div>
+        </div>
     );
 };

@@ -85,4 +85,23 @@ describe('ExpressionPanel', () => {
 
         expect(onChangeExp).toHaveBeenCalledWith({ vibratoDepthMax: 33 });
     });
+
+    it('forwards the edited vibrato rate-min value through onChangeExp', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onChangeExp = vi.fn();
+
+        render(
+            <ExpressionPanel
+                expression={patch.expression}
+                legato={patch.legato}
+                onChangeExp={onChangeExp}
+                onChangeLeg={vi.fn()}
+            />
+        );
+
+        // The vibrato rate-min knob is the only one with max=7 (rate-max uses max=9).
+        fireEvent.change(screen.getByTestId('knob-max-7'), { target: { value: '5' } });
+
+        expect(onChangeExp).toHaveBeenCalledWith({ vibratoRateMin: 5 });
+    });
 });
