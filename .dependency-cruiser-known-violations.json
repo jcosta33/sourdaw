@@ -25,14 +25,5 @@
       "severity": "error",
       "name": "repositories-no-business"
     }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
-    "to": "src/modules/AudioEngine/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-access"
-    }
   }
 ]
