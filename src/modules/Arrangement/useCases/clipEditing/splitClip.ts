@@ -3,8 +3,8 @@ import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { snapSplitBeatToZeroCrossing } from '../../services/snapSplitBeatToZeroCrossing';
 import { type Clip } from '../../stores/trackStore';
+import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 export function splitClip(clipId: string, splitBeat: number): string | null {
     const state = getTrackState();
@@ -22,7 +22,7 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             return time;
         }
 
-        const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
+        const adjustedSplitBeat = snapToZeroCrossing(clip, splitBeat);
 
         if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
             return time;
