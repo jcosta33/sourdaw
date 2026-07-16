@@ -19,24 +19,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx",
-    "to": "src/modules/AiGeneration/stores/aiStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx",
-    "to": "src/modules/AiGeneration/useCases/actions/removeTask.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx",
     "to": "src/modules/AiGeneration/stores/aiStore.ts",
     "rule": {

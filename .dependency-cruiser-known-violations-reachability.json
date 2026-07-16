@@ -1,15 +1,6 @@
 [
   {
     "type": "reachability-causal",
-    "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
-    "to": "src/modules/AiGeneration/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-transitively"
-    }
-  },
-  {
-    "type": "reachability-causal",
     "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
     "to": "src/modules/AudioEngine/useCases/index.ts",
     "rule": {
