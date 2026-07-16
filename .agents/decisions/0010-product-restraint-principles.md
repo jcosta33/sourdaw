@@ -112,13 +112,13 @@ below is resolved against.
   other in-flight PRs and is intentionally not touched here); parked here in the
   meantime:
   - **I-25** — Proof vs `Plugin/ProofChamber` duplication. Product decision;
-    surface to the maintainer, do not delete code.
+    surface to the maintainer, do not delete code. (Now tracked in `open-decision-docket.md`.)
   - **I-28** — `LocalStorageKeys` legacy keys. File header requires legal
-    review; out of scope for an agent.
+    review; out of scope for an agent. (Now tracked in `open-decision-docket.md`.)
   - **DJ mode / VCV Rack integration** — niche ideas from
     `intake/research-killer-features.md` (DJ mode missing; VCV Rack integration
     and AI-generated modulation patches missing while CV/Gate exists). One line:
-    keep or drop.
+    keep or drop. (Now tracked in `open-decision-docket.md`.)
 
 ## Status
 
