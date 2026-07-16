@@ -6,7 +6,9 @@ import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
@@ -137,7 +139,14 @@ export const ArrangementSelector = (): ReactElement | null => {
                                     )}
                                     onClick={() => {
                                         if (!isEditing) {
-                                            void switchArrangement(arr.id);
+                                            void switchArrangement(arr.id).catch((error: unknown) => {
+                                                logger.error(
+                                                    new Error(`Failed to switch arrangement "${arr.id}"`, {
+                                                        cause: error,
+                                                    })
+                                                );
+                                                notifyUser(`Failed to switch to "${arr.name}"`, 'error');
+                                            });
                                         }
                                     }}
                                 >

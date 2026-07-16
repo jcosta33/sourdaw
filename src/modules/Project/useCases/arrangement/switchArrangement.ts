@@ -59,14 +59,27 @@ export async function switchArrangement(id: string): Promise<void> {
         return;
     }
 
+    // A shutdown failure aborts the switch before target buffers or state are published.
+    await stopPlayback();
+
+    const currentStateAfterStop = arrangementStore.value;
+    const currentTargetAfterStop = currentStateAfterStop?.arrangements.find((arrangement) => arrangement.id === id);
+    if (
+        request !== latestSwitchRequest ||
+        sourceProjectLoadEpoch !== projectLoadEpoch.current ||
+        currentStateAfterStop?.activeArrangementId !== sourceArrangementId ||
+        !currentTargetAfterStop
+    ) {
+        return;
+    }
+
     preparedBuffers.publish();
-    stopPlayback(); // Stop playback to avoid glitches
 
     // Save current
     syncCurrentArrangementToStore();
 
     // Load target
-    loadSnapshot(currentTarget);
+    loadSnapshot(currentTargetAfterStop);
 
     // Clear undo history because IDs might have been reused or destroyed
     clearUndoHistory();

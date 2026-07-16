@@ -54,7 +54,7 @@ describe('switchArrangement', () => {
         expect(markDirty).not.toHaveBeenCalled();
     });
 
-    it('publishes target audio before switching to a saved arrangement', async () => {
+    it('waits for playback to stop before publishing and switching to a saved arrangement', async () => {
         const state = structuredClone(defaultArrangementStoreState);
         const target = structuredClone(state.arrangements[0]!);
         target.id = 'target';
@@ -96,17 +96,144 @@ describe('switchArrangement', () => {
         ];
         state.arrangements.push(target);
         arrangementStore.set(state);
+        const setArrangement = vi.spyOn(arrangementStore, 'set');
 
-        await switchArrangement(target.id);
+        let completeStop: (() => void) | undefined;
+        const stopCompletion = new Promise<void>((resolve) => {
+            completeStop = resolve;
+        });
+        vi.mocked(stopPlayback).mockReturnValueOnce(stopCompletion);
+
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(stopPlayback).toHaveBeenCalledTimes(1));
 
         expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledWith(
             expect.objectContaining({ bufferIds: ['target-buffer'] })
         );
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(setArrangement).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+
+        completeStop?.();
+        await switching;
+
         expect(publishPreparedBuffers).toHaveBeenCalledTimes(1);
-        expect(publishPreparedBuffers.mock.invocationCallOrder[0]).toBeLessThan(
-            vi.mocked(stopPlayback).mock.invocationCallOrder[0]!
+        expect(vi.mocked(stopPlayback).mock.invocationCallOrder[0]).toBeLessThan(
+            publishPreparedBuffers.mock.invocationCallOrder[0]!
         );
+        expect(setArrangement).toHaveBeenCalledTimes(2);
         expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
+    });
+
+    it('propagates a playback stop failure without mutating the arrangement', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        const stopError = new Error('recording flush failed');
+        vi.mocked(stopPlayback).mockRejectedValueOnce(stopError);
+
+        await expect(switchArrangement(target.id)).rejects.toBe(stopError);
+
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+    });
+
+    it('cancels a switch that becomes stale while playback is stopping', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        let completeStop: (() => void) | undefined;
+        const stopCompletion = new Promise<void>((resolve) => {
+            completeStop = resolve;
+        });
+        vi.mocked(stopPlayback).mockReturnValueOnce(stopCompletion);
+
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(stopPlayback).toHaveBeenCalledTimes(1));
+        await switchArrangement(state.activeArrangementId);
+
+        completeStop?.();
+        await switching;
+
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+    });
+
+    it('cancels a switch when a project load activates while playback is stopping', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+        const setArrangement = vi.spyOn(arrangementStore, 'set');
+
+        vi.mocked(stopPlayback).mockImplementationOnce(async () => {
+            const newerLoad = runProjectLoadTransaction();
+            await newerLoad.prepare();
+            newerLoad.activate();
+        });
+        // Ignore store writes from setup and the project-load transaction; only switch writes matter.
+        setArrangement.mockClear();
+
+        await switchArrangement(target.id);
+
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(setArrangement).not.toHaveBeenCalled();
+        expect(markDirty).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+    });
+
+    it('cancels a switch when the active arrangement changes while playback is stopping', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        vi.mocked(stopPlayback).mockImplementationOnce(async () => {
+            await Promise.resolve();
+            arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'switched-elsewhere' });
+        });
+
+        await switchArrangement(target.id);
+
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(markDirty).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe('switched-elsewhere');
+    });
+
+    it('cancels a switch when the target arrangement is removed while playback is stopping', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        vi.mocked(stopPlayback).mockImplementationOnce(async () => {
+            await Promise.resolve();
+            arrangementStore.set({
+                ...arrangementStore.value!,
+                arrangements: arrangementStore.value!.arrangements.filter(
+                    (arrangement) => arrangement.id !== target.id
+                ),
+            });
+        });
+
+        await switchArrangement(target.id);
+
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(markDirty).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+        expect(arrangementStore.value?.arrangements.some((arrangement) => arrangement.id === target.id)).toBe(false);
     });
 
     it('cancels a pending switch when another project load activates', async () => {
