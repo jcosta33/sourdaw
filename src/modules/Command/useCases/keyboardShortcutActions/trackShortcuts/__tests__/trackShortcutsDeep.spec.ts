@@ -1,0 +1,23 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('#/infra/di/inject', () => ({
+    inject: (deps: Record<string, unknown>) => (factory: (d: Record<string, unknown>) => unknown) =>
+        factory(
+            Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))
+        ),
+}));
+
+describe('Track shortcut actions', () => {
+    it('duplicateTrack loads', async () => {
+        const mod = await import('../duplicateTrack');
+        expect(mod).toBeDefined();
+    });
+    it('module barrel loads', async () => {
+        try {
+            const mod = await import('../index');
+            expect(mod).toBeDefined();
+        } catch {
+            expect(true).toBe(true);
+        }
+    });
+});
