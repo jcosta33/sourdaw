@@ -8,9 +8,24 @@ import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } fro
 import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
+import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { newProject } from '../newProject';
+
+type Deferred<T> = {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+    let resolveDeferred!: (value: T) => void;
+    const promise = new Promise<T>((resolve) => {
+        resolveDeferred = resolve;
+    });
+
+    return { promise, resolve: resolveDeferred };
+}
 
 vi.mock('#/modules/Transport/useCases/transportControls/stopPlayback', () => ({
     stopPlayback: vi.fn(),
@@ -56,6 +71,12 @@ describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            name: 'Existing Project',
+            loading: false,
+            initialized: true,
+        });
     });
 
     it('should forward to injected collaborators in fresh-project order', async () => {
@@ -80,5 +101,46 @@ describe('newProject injectable', () => {
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
+    });
+
+    it('clears loading when the current activation fails', async () => {
+        vi.mocked(createCrdtProject).mockRejectedValueOnce(new Error('CRDT setup failed'));
+
+        const activated = await newProject('Broken Project');
+
+        expect(activated).toBe(false);
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            initialized: true,
+        });
+    });
+
+    it('does not clear loading when an older activation is superseded', async () => {
+        const playbackStop = createDeferred<void>();
+        let isCurrent = true;
+        vi.mocked(runProjectLoadTransaction).mockReturnValueOnce({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: () => isCurrent,
+            isCurrent: () => isCurrent,
+        });
+        vi.mocked(stopPlayback).mockReturnValueOnce(playbackStop.promise);
+
+        const activation = newProject('Older Project');
+        await vi.waitFor(() => expect(stopPlayback).toHaveBeenCalledTimes(1));
+
+        isCurrent = false;
+        const newerLoadingState = {
+            ...projectStore.value!,
+            name: 'Newer Project',
+            loading: true,
+            initialized: false,
+        };
+        projectStore.set(newerLoadingState);
+        playbackStop.resolve(undefined);
+
+        await expect(activation).resolves.toBe(false);
+        expect(projectStore.value).toBe(newerLoadingState);
     });
 });

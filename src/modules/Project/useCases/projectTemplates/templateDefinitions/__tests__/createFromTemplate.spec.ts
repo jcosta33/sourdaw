@@ -47,4 +47,10 @@ describe('createFromTemplate', () => {
         expect(mocks.createPopSongTemplate).toHaveBeenCalledTimes(1);
         expect(created).toBe(true);
     });
+
+    it('converts a rejected template setup to a failed outcome', async () => {
+        mocks.createPopSongTemplate.mockRejectedValue(new Error('device setup failed'));
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+    });
 });
