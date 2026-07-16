@@ -70,8 +70,10 @@ vi.mock('#/components/daw/DawDisplaySurface', () => ({
 }));
 
 vi.mock('#/components/daw/DawInlineHint', () => ({
-    DawInlineHint: ({ children }: { children: React.ReactNode }) => (
-        <span data-testid="daw-inline-hint">{children}</span>
+    DawInlineHint: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+        <div data-testid="daw-inline-hint" {...props}>
+            {children}
+        </div>
     ),
 }));
 
@@ -247,17 +249,65 @@ describe('VirtualKeyboard', () => {
             expect(onMock).toHaveBeenCalledWith(0, 60, 40);
         });
 
-        it('handles a note-on rejection without delaying the pressed state', async () => {
-            const error = new Error('note-on failed');
-            onMock.mockRejectedValueOnce(error);
+        it('rolls back rejected note-ons and announces one visible failure status', async () => {
+            const firstError = new Error('first note-on failed');
+            const secondError = new Error('second note-on failed');
+            onMock.mockRejectedValueOnce(firstError).mockRejectedValueOnce(secondError);
             render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
 
             fireEvent.keyDown(panel(), { code: 'KeyA' });
 
-            expect(screen.getByLabelText('C4 (MIDI 60)')).toHaveAttribute('aria-pressed', 'true');
+            expect(c4).toHaveAttribute('aria-pressed', 'true');
             await waitFor(() => {
-                expect(loggerWarn).toHaveBeenCalledWith('[MIDI] Virtual keyboard note-on failed:', error);
+                expect(c4).toHaveAttribute('aria-pressed', 'false');
             });
+            expect(offMock).toHaveBeenCalledWith(0, 60);
+
+            const status = screen.getByRole('status');
+            expect(status).toHaveAttribute('aria-live', 'polite');
+            expect(status).toHaveAttribute('aria-atomic', 'true');
+            expect(status).toHaveTextContent('Note could not be played.');
+            expect(status).not.toHaveClass('hidden');
+
+            fireEvent.keyDown(panel(), { code: 'KeyS' });
+
+            await waitFor(() => {
+                expect(screen.getByLabelText('MIDI 62')).toHaveAttribute('aria-pressed', 'false');
+            });
+            expect(offMock).toHaveBeenCalledWith(0, 62);
+            expect(screen.getAllByRole('status')).toHaveLength(1);
+            expect(screen.getAllByText('Note could not be played.')).toHaveLength(1);
+            expect(loggerWarn).toHaveBeenNthCalledWith(1, '[MIDI] Virtual keyboard note-on failed:', firstError);
+            expect(loggerWarn).toHaveBeenNthCalledWith(2, '[MIDI] Virtual keyboard note-on failed:', secondError);
+        });
+
+        it('does not let a stale note-on rejection roll back a newer press', async () => {
+            const staleError = new Error('stale note-on failed');
+            let rejectStaleNoteOn!: (reason?: unknown) => void;
+            onMock
+                .mockImplementationOnce(
+                    () =>
+                        new Promise<void>((_resolve, reject) => {
+                            rejectStaleNoteOn = reject;
+                        })
+                )
+                .mockResolvedValueOnce(undefined);
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            fireEvent.keyUp(panel(), { code: 'KeyA' });
+            offMock.mockClear();
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            rejectStaleNoteOn(staleError);
+
+            await waitFor(() => {
+                expect(loggerWarn).toHaveBeenCalledWith('[MIDI] Virtual keyboard note-on failed:', staleError);
+            });
+            expect(c4).toHaveAttribute('aria-pressed', 'true');
+            expect(offMock).not.toHaveBeenCalled();
+            expect(screen.getByRole('status')).not.toHaveTextContent('Note could not be played.');
         });
 
         it('handles a note-off rejection without delaying the released state', async () => {
