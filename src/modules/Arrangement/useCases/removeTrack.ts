@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { removeBusStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
@@ -54,6 +55,20 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 }
             }
 
+            // Tear down the engine strips for this track. Without this the
+            // BusNode/TrackNode survives in the live graph, still summing and
+            // processing (a leaked node). ensureTrackStrips skips only 'folder',
+            // so audio, midi, master AND bus tracks all own a TrackNode; a bus
+            // owns a BusNode on top. Tear the TrackNode down first — it sweeps
+            // routing keyed on this id as the source — then dispose the BusNode,
+            // which sweeps sends targeting the bus. Both engine methods no-op
+            // when the node is absent.
+            if (track.kind !== 'folder') {
+                removeTrackStrip(trackId);
+            }
+            if (track.kind === 'bus') {
+                removeBusStrip(trackId);
+            }
             void eventBus.emit('track.removed', { trackId });
         }
 );

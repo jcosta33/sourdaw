@@ -15,7 +15,7 @@ import {
     setTrackPan,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { ensureBusStrip, setBusGain, setSend } from '#/modules/Routing/useCases';
+import { ensureBusStrip, setBusGain, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 export function ensureTrackStrips(): void {
     const tracks = trackStore.value?.tracks;
@@ -57,6 +57,12 @@ export function ensureTrackStrips(): void {
         }
     }
 
+    // Re-wire persisted sidechain routes now that every track/bus strip and its
+    // devices exist in the engine. Without this, a project saved with sidechain
+    // routing loads with the routes in the store but never wired into the graph,
+    // so the compression is silently absent. The engine ignores routes whose
+    // target strip/device is missing, so this must run after the loop above.
+    wireSidechainRoutes();
     // Apply solo state: if any track is soloed, mute all non-soloed tracks.
     // This ensures solo set before pressing play takes effect immediately.
     const anySoloed = tracks.some((time) => time.soloed && time.kind !== 'folder');

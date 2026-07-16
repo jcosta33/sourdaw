@@ -593,6 +593,79 @@ describe('AudioEngine', () => {
         });
     });
 
+    // ── PR #312: sidechain replay is idempotent and drops unresolvable routes ────
+    //
+    // wireSidechainRoutes (Routing) replays every persisted route on each
+    // ensureTrackStrips run — before every playback/record start — so the engine
+    // paths it exercises must be safe to re-run: a route that is already wired
+    // must not double-connect (the `sidechainConnections.has(key)` dedupe), and
+    // a route whose target strip/device does not exist must be dropped without
+    // throwing (applySidechainRoute's guards), never crashing strip setup.
+    describe('sidechain replay idempotency and missing-target drop', () => {
+        function pushSidechainDevice(targetStrip: { deviceNodes: unknown[] }, deviceId: string) {
+            targetStrip.deviceNodes.push({
+                deviceId,
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+        }
+
+        it('wiring the same route twice creates exactly one sidechain connection', () => {
+            const tgtStrip = engine.ensureTrackStrip('scTgt');
+            const srcStrip = engine.ensureTrackStrip('scSrc');
+            pushSidechainDevice(tgtStrip, 'dev1');
+
+            const createGainBefore = mockCtx.createGain.mock.calls.length;
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            // First wire builds exactly one sidechain GainNode off the source tap.
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore + 1);
+            const connectCallsAfterFirst = (srcStrip.analyserNode.connect as Mock).mock.calls.length;
+
+            // Replay (second wire of the identical route) must hit the
+            // `sidechainConnections.has(key)` dedupe: no new GainNode, no new
+            // connection off the source tap — a pure no-op.
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore + 1);
+            expect((srcStrip.analyserNode.connect as Mock).mock.calls.length).toBe(connectCallsAfterFirst);
+        });
+
+        it('drops a route whose target strip is absent without throwing or building nodes', () => {
+            engine.ensureTrackStrip('scSrc');
+
+            const createGainBefore = mockCtx.createGain.mock.calls.length;
+            expect(() => engine.wireSidechainRoute('scSrc', 'missing-target', 'dev1')).not.toThrow();
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
+        });
+
+        it('drops a route whose source strip is absent without throwing or building nodes', () => {
+            const tgtStrip = engine.ensureTrackStrip('scTgt');
+            pushSidechainDevice(tgtStrip, 'dev1');
+
+            const createGainBefore = mockCtx.createGain.mock.calls.length;
+            expect(() => engine.wireSidechainRoute('missing-source', 'scTgt', 'dev1')).not.toThrow();
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
+        });
+
+        it('drops a route whose target device is absent (or not a sidechain compressor) without throwing', () => {
+            engine.ensureTrackStrip('scSrc');
+            const tgtStrip = engine.ensureTrackStrip('scTgt');
+
+            // No device at all on the target strip.
+            const createGainBefore = mockCtx.createGain.mock.calls.length;
+            expect(() => engine.wireSidechainRoute('scSrc', 'scTgt', 'missing-dev')).not.toThrow();
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
+
+            // A device with the right id but the wrong type is also rejected.
+            tgtStrip.deviceNodes.push({
+                deviceId: 'not-a-compressor',
+                type: 'builtin-gain',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            expect(() => engine.wireSidechainRoute('scSrc', 'scTgt', 'not-a-compressor')).not.toThrow();
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
+        });
+    });
+
     // ── Fix 3: pre/post-fader send-tap toggle crossfades (no silence gap) ────────
     //
     // Toggling a live send between the pre- and post-fader tap used to hard

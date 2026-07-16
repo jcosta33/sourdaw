@@ -8,3 +8,4 @@ export { removeSidechainRoute } from './sidechain/removeSidechainRoute';
 export { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTrack';
 export { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
 export { setSidechainRoutes } from './sidechain/setSidechainRoutes';
+export { wireSidechainRoutes } from './sidechain/wireSidechainRoutes';
