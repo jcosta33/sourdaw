@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/AudioEngine/useCases';
@@ -12,9 +12,15 @@ const workspaceState = {
     virtualKeyboardVelocity: 100,
 };
 
+const loggerWarn = vi.hoisted(() => vi.fn());
+
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => workspaceState),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: loggerWarn },
 }));
 
 // Mock the SAME barrel module-ids the component imports from
@@ -31,8 +37,8 @@ vi.mock('#/infra/store/useStore', () => ({
 // the only consumer of these barrels in this spec's module graph, so a minimal surface is
 // sufficient and keeps the test deterministic.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    triggerLiveNoteOn: vi.fn(),
-    triggerLiveNoteOff: vi.fn(),
+    triggerLiveNoteOn: vi.fn(() => Promise.resolve()),
+    triggerLiveNoteOff: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
@@ -64,8 +70,10 @@ vi.mock('#/components/daw/DawDisplaySurface', () => ({
 }));
 
 vi.mock('#/components/daw/DawInlineHint', () => ({
-    DawInlineHint: ({ children }: { children: React.ReactNode }) => (
-        <span data-testid="daw-inline-hint">{children}</span>
+    DawInlineHint: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+        <div data-testid="daw-inline-hint" {...props}>
+            {children}
+        </div>
     ),
 }));
 
@@ -239,6 +247,103 @@ describe('VirtualKeyboard', () => {
             render(<VirtualKeyboard />);
             fireEvent.keyDown(panel(), { code: 'KeyA' });
             expect(onMock).toHaveBeenCalledWith(0, 60, 40);
+        });
+
+        it('rolls back rejected note-ons and announces one visible failure status', async () => {
+            const firstError = new Error('first note-on failed');
+            const secondError = new Error('second note-on failed');
+            onMock.mockRejectedValueOnce(firstError).mockRejectedValueOnce(secondError);
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+
+            expect(c4).toHaveAttribute('aria-pressed', 'true');
+            await waitFor(() => {
+                expect(c4).toHaveAttribute('aria-pressed', 'false');
+            });
+            expect(offMock).toHaveBeenCalledWith(0, 60);
+
+            const status = screen.getByRole('status');
+            expect(status).toHaveAttribute('aria-live', 'polite');
+            expect(status).toHaveAttribute('aria-atomic', 'true');
+            expect(status).toHaveTextContent('Note could not be played.');
+            expect(status).not.toHaveClass('hidden');
+
+            fireEvent.keyDown(panel(), { code: 'KeyS' });
+
+            await waitFor(() => {
+                expect(screen.getByLabelText('MIDI 62')).toHaveAttribute('aria-pressed', 'false');
+            });
+            expect(offMock).toHaveBeenCalledWith(0, 62);
+            expect(screen.getAllByRole('status')).toHaveLength(1);
+            expect(screen.getAllByText('Note could not be played.')).toHaveLength(1);
+            expect(loggerWarn).toHaveBeenNthCalledWith(1, '[MIDI] Virtual keyboard note-on failed:', firstError);
+            expect(loggerWarn).toHaveBeenNthCalledWith(2, '[MIDI] Virtual keyboard note-on failed:', secondError);
+        });
+
+        // A failure banner is not permanent: once the engine recovers and a later note-on
+        // resolves, the status must fall back to the keyboard-shortcut hint — otherwise the
+        // error text shadows the hint for the rest of the component's lifetime.
+        it('clears the failure status once a later note-on succeeds', async () => {
+            onMock.mockRejectedValueOnce(new Error('note-on failed'));
+            render(<VirtualKeyboard />);
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' }); // C4 = 60, rejected
+
+            await waitFor(() => {
+                expect(screen.getByRole('status')).toHaveTextContent('Note could not be played.');
+            });
+
+            fireEvent.keyDown(panel(), { code: 'KeyS' }); // D4 = 62, resolves
+
+            await waitFor(() => {
+                expect(screen.getByRole('status')).not.toHaveTextContent('Note could not be played.');
+            });
+            expect(screen.getByRole('status')).toHaveTextContent('Z/X octave');
+        });
+
+        it('does not let a stale note-on rejection roll back a newer press', async () => {
+            const staleError = new Error('stale note-on failed');
+            let rejectStaleNoteOn!: (reason?: unknown) => void;
+            onMock
+                .mockImplementationOnce(
+                    () =>
+                        new Promise<void>((_resolve, reject) => {
+                            rejectStaleNoteOn = reject;
+                        })
+                )
+                .mockResolvedValueOnce(undefined);
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            fireEvent.keyUp(panel(), { code: 'KeyA' });
+            offMock.mockClear();
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            rejectStaleNoteOn(staleError);
+
+            await waitFor(() => {
+                expect(loggerWarn).toHaveBeenCalledWith('[MIDI] Virtual keyboard note-on failed:', staleError);
+            });
+            expect(c4).toHaveAttribute('aria-pressed', 'true');
+            expect(offMock).not.toHaveBeenCalled();
+            expect(screen.getByRole('status')).not.toHaveTextContent('Note could not be played.');
+        });
+
+        it('handles a note-off rejection without delaying the released state', async () => {
+            const error = new Error('note-off failed');
+            render(<VirtualKeyboard />);
+            const note = screen.getByLabelText('C4 (MIDI 60)');
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            offMock.mockRejectedValueOnce(error);
+            fireEvent.keyUp(panel(), { code: 'KeyA' });
+
+            expect(note).toHaveAttribute('aria-pressed', 'false');
+            await waitFor(() => {
+                expect(loggerWarn).toHaveBeenCalledWith('[MIDI] Virtual keyboard note-off failed:', error);
+            });
         });
     });
 

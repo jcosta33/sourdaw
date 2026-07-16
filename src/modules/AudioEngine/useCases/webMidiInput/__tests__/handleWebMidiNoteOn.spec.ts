@@ -211,4 +211,26 @@ describe('handleWebMidiNoteOn', () => {
         expect(activeNotes.get(createWebMidiNoteKey(3, 62))?.note).toBe(62);
         expect(channelToNote.get(3)).toBe(createWebMidiNoteKey(3, 62));
     });
+
+    it('removes the registered note when Yeast realtime processing rejects', async () => {
+        mpe_enabled.value = true;
+        const error = new Error('yeast worklet failed');
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'yeast-1', type: 'yeast' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async () => {
+                    throw error;
+                },
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await expect(fn(1, 60, 100)).rejects.toBe(error);
+
+        expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
+        expect(channelToNote.has(1)).toBe(false);
+    });
 });

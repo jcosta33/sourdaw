@@ -27,6 +27,7 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
@@ -47,6 +48,15 @@ const BLACK_KEY_H_RATIO = 0.62;
  * note to the currently selected track (see AudioEngine/useCases/triggerLiveNoteOn.ts).
  */
 const OMNI_CHANNEL = 0;
+const LIVE_NOTE_FAILURE_MESSAGE = 'Note could not be played.';
+
+type LiveNoteOperation = 'on' | 'off';
+
+const handleLiveNotePromise = (operation: LiveNoteOperation, promise: Promise<void>): void => {
+    void promise.catch((error: unknown) => {
+        logger.warn(`[MIDI] Virtual keyboard note-${operation} failed:`, error);
+    });
+};
 
 /** Number of white keys per octave */
 const WHITES_PER_OCT = 7;
@@ -184,6 +194,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set());
+    const [liveNoteStatus, setLiveNoteStatus] = useState<string | null>(null);
     /**
      * Latest pressedNotes, mirrored into a ref so teardown handlers (unmount cleanup,
      * visibilitychange→hidden, window.blur) release the notes that are actually held now
@@ -214,6 +225,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
      * is held does not leak the original noteOn by computing a noteOff at the new octave.
      */
     const heldKeyNotes = useRef<Map<string, number>>(new Map());
+    // Prevent a late rejection from rolling back a newer press of the same MIDI note.
+    const pendingNoteOnAttemptsRef = useRef<Map<number, symbol>>(new Map());
 
     // Scroll to current octave on mount and when octave changes
     useLayoutEffect(() => {
@@ -231,7 +244,37 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         if (midiNote < 0 || midiNote > 127) {
             return;
         }
-        triggerLiveNoteOn(OMNI_CHANNEL, midiNote, velocity);
+        const attempt = Symbol();
+        pendingNoteOnAttemptsRef.current.set(midiNote, attempt);
+        void (async () => {
+            try {
+                await triggerLiveNoteOn(OMNI_CHANNEL, midiNote, velocity);
+                if (pendingNoteOnAttemptsRef.current.get(midiNote) === attempt) {
+                    pendingNoteOnAttemptsRef.current.delete(midiNote);
+                }
+                // A note played: the engine has recovered, so clear any lingering failure
+                // banner and restore the keyboard-shortcut hint.
+                setLiveNoteStatus(null);
+            } catch (error: unknown) {
+                logger.warn('[MIDI] Virtual keyboard note-on failed:', error);
+                if (pendingNoteOnAttemptsRef.current.get(midiNote) !== attempt) {
+                    return;
+                }
+                pendingNoteOnAttemptsRef.current.delete(midiNote);
+                setPressed((prev) => {
+                    if (!prev.has(midiNote)) {
+                        return prev;
+                    }
+                    const next = new Set(prev);
+                    next.delete(midiNote);
+                    return next;
+                });
+                // Defense in depth: the engine un-registers a note whose awaited processing
+                // rejected, but a synchronous failure after registration would still leak it.
+                handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
+                setLiveNoteStatus((current) => current ?? LIVE_NOTE_FAILURE_MESSAGE);
+            }
+        })();
         setPressed((prev) => {
             if (prev.has(midiNote)) {
                 return prev;
@@ -243,7 +286,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     };
 
     const triggerNoteOff = (midiNote: number) => {
-        triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+        pendingNoteOnAttemptsRef.current.delete(midiNote);
+        handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
         setPressed((prev) => {
             if (!prev.has(midiNote)) {
                 return prev;
@@ -423,8 +467,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const releaseAllHeldNotes = () => {
         heldKeys.current.clear();
         heldKeyNotes.current.clear();
+        pendingNoteOnAttemptsRef.current.clear();
         for (const midiNote of pressedNotesRef.current) {
-            triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+            handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
         }
         if (pressedNotesRef.current.size > 0) {
             setPressed(() => new Set());
@@ -442,6 +487,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     // switches and app focus loss; the cleanup covers unmount. Empty deps: the handler reads
     // live state through pressedNotesRef, so it never needs to re-subscribe.
     useEffect(() => {
+        const pendingNoteOnAttempts = pendingNoteOnAttemptsRef.current;
         const releaseOnHidden = () => {
             if (document.visibilityState === 'hidden') {
                 releaseAllHeldNotes();
@@ -452,9 +498,10 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         return () => {
             document.removeEventListener('visibilitychange', releaseOnHidden);
             window.removeEventListener('blur', releaseAllHeldNotes);
+            pendingNoteOnAttempts.clear();
             // Final teardown: silence anything still sounding so unmount cannot leave a hung note.
             for (const midiNote of pressedNotesRef.current) {
-                triggerLiveNoteOff(OMNI_CHANNEL, midiNote);
+                handleLiveNotePromise('off', triggerLiveNoteOff(OMNI_CHANNEL, midiNote));
             }
         };
     }, []);
@@ -499,8 +546,18 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     ) : null
                 }
             >
-                <DawInlineHint className="hidden bg-black/[0.2] font-mono text-white/30 md:inline-flex">
-                    A…; white · W E T Y U O P black · Z/X octave
+                <DawInlineHint
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className={cn(
+                        'font-mono',
+                        liveNoteStatus === null
+                            ? 'hidden bg-black/[0.2] text-white/30 md:inline-flex'
+                            : 'inline-flex bg-[var(--color-state-danger)]/10 text-[var(--color-state-danger)]'
+                    )}
+                >
+                    {liveNoteStatus ?? 'A…; white · W E T Y U O P black · Z/X octave'}
                 </DawInlineHint>
             </DawHeaderBand>
 

@@ -10,6 +10,6 @@
  */
 import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
 
-export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): void {
-    handleWebMidiNoteOff(channel, note, releaseVelocity);
+export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): Promise<void> {
+    return handleWebMidiNoteOff(channel, note, releaseVelocity);
 }
