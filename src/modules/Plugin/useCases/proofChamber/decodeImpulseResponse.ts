@@ -1,4 +1,4 @@
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFileBuffer } from '#/modules/AudioEngine/useCases';
 
 type DecodedImpulseResponse = {
     data: Float32Array;
@@ -8,8 +8,7 @@ type DecodedImpulseResponse = {
 };
 
 export async function decodeImpulseResponse(file: File): Promise<DecodedImpulseResponse> {
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await getAudioContext().decodeAudioData(arrayBuffer);
+    const audioBuffer = await decodeAudioFileBuffer(file);
     const channels = audioBuffer.numberOfChannels;
     const frameCount = audioBuffer.length;
     const sampleRate = audioBuffer.sampleRate;
