@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { removeBusStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
@@ -54,6 +55,14 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 }
             }
 
+            // Tear down the engine strip for this track/bus. Without this the
+            // BusNode/TrackNode survives in the live graph, still summing and
+            // processing (a leaked node). Folder/master tracks own no strip.
+            if (track.kind === 'bus') {
+                removeBusStrip(trackId);
+            } else if (track.kind === 'audio' || track.kind === 'midi') {
+                removeTrackStrip(trackId);
+            }
             void eventBus.emit('track.removed', { trackId });
         }
 );

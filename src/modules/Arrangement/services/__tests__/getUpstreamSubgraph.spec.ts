@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { logger } from '#/infra/logger/appLogger';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { getUpstreamSubgraph } from '../getUpstreamSubgraph';
 
 describe('getUpstreamSubgraph', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
     it('should include tracks that output directly to the target track', () => {
         const tracks = [
             TrackDummy.create({ id: 'target' }),
@@ -82,5 +87,36 @@ describe('getUpstreamSubgraph', () => {
         const result = getUpstreamSubgraph('target', tracks, []);
 
         expect([...result].sort()).toEqual(['upstream-a', 'upstream-b']);
+    });
+
+    it('should warn when a routing cycle is detected upstream of the target', () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        const tracks = [
+            TrackDummy.create({ id: 'target', outputId: 'upstream-a' }),
+            TrackDummy.create({ id: 'upstream-a', outputId: 'upstream-b' }),
+            TrackDummy.create({ id: 'upstream-b', outputId: 'target' }),
+        ];
+
+        getUpstreamSubgraph('target', tracks, []);
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(String(warnSpy.mock.calls[0]![0])).toContain('cycle');
+    });
+
+    it('should not warn for an acyclic diamond graph', () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        const tracks = [
+            TrackDummy.create({ id: 'target' }),
+            TrackDummy.create({ id: 'left', outputId: 'target' }),
+            TrackDummy.create({ id: 'right', outputId: 'target' }),
+            TrackDummy.create({ id: 'shared', outputId: 'left' }),
+            TrackDummy.create({ id: 'shared-2', outputId: 'right' }),
+        ];
+        // 'shared' also feeds 'right' via a send — a diamond join, not a cycle.
+        tracks[3]!.sends = [{ busId: 'right', level: 0.5, preFader: false }];
+
+        getUpstreamSubgraph('target', tracks, []);
+
+        expect(warnSpy).not.toHaveBeenCalled();
     });
 });

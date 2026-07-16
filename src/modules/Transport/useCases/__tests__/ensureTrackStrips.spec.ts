@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     ensureBusStrip: vi.fn(),
     setBusGain: vi.fn(),
     setSend: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
 }));
 
 // Mock the store file directly
@@ -66,6 +67,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStrip,
     setBusGain: mocks.setBusGain,
     setSend: mocks.setSend,
+    wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
 describe('ensureTrackStrips', () => {
@@ -108,5 +110,22 @@ describe('ensureTrackStrips', () => {
         expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('t1');
         expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.8);
         expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
+    });
+
+    it('wires persisted sidechain routes into the engine after strips exist', () => {
+        mocks.trackStoreValue.value = {
+            selectedTrackId: null,
+            tracks: [
+                {
+                    ...createTrack({ id: 't1', name: 't1', kind: 'audio' }),
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        };
+
+        ensureTrackStrips();
+
+        expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
     });
 });

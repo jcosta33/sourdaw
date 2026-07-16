@@ -10,6 +10,8 @@ import { removeTrack } from '../removeTrack';
 const ownerUseCases = vi.hoisted(() => ({
     removeAutomationLanesForTrack: vi.fn(),
     removeMidiClipData: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    removeBusStrip: vi.fn(),
 }));
 
 vi.mock('../../repositories/track/getTrackState', () => ({
@@ -28,6 +30,11 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     removeMidiClipData: ownerUseCases.removeMidiClipData,
+}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    removeTrackStrip: ownerUseCases.removeTrackStrip,
+    removeBusStrip: ownerUseCases.removeBusStrip,
 }));
 vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
@@ -49,6 +56,8 @@ describe('removeTrack', () => {
         mockEventBus.emit.mockReset();
         ownerUseCases.removeAutomationLanesForTrack.mockReset();
         ownerUseCases.removeMidiClipData.mockReset();
+        ownerUseCases.removeTrackStrip.mockReset();
+        ownerUseCases.removeBusStrip.mockReset();
     });
 
     it('should return early when track state is missing', () => {
@@ -94,6 +103,30 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeAutomationLanesForTrack).toHaveBeenCalledWith('t1');
         expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['c1', 'c2', 'c3']);
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 't1' });
+        // The engine strip for the deleted track must be torn down, otherwise its
+        // node keeps processing in the live graph (leaked node).
+        expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
+        expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
+    });
+
+    it('should remove the engine bus strip when a bus track is deleted', () => {
+        const bus = {
+            id: 'bus-1',
+            name: 'Reverb Bus',
+            kind: 'bus' as const,
+            clips: [],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [bus as never],
+            selectedTrackId: null,
+        } as unknown as ReturnType<typeof getTrackState>);
+        vi.mocked(getTrackById).mockReturnValue(bus as never);
+
+        removeTrack('bus-1');
+
+        expect(ownerUseCases.removeBusStrip).toHaveBeenCalledWith('bus-1');
+        expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'bus-1' });
     });
 
     it('should clean active clip MIDI for a legacy track without alternatives', () => {
