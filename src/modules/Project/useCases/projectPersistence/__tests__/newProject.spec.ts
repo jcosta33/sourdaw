@@ -59,10 +59,9 @@ describe('newProject injectable', () => {
     });
 
     it('should forward to injected collaborators in fresh-project order', async () => {
-        newProject('Test');
+        const activated = await newProject('Test');
 
-        await vi.waitFor(() => expect(startCrdtAutoSave).toHaveBeenCalledTimes(1));
-
+        expect(activated).toBe(true);
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);

@@ -28,7 +28,7 @@ export const templates: ProjectTemplate[] = [
         description: 'A blank canvas — no tracks, no devices.',
         category: 'empty',
         create: () => {
-            newProject('Untitled');
+            void newProject('Untitled');
         },
     },
     {

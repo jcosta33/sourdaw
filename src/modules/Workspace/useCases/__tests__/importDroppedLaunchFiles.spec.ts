@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { importDroppedLaunchFiles } from '../importDroppedLaunchFiles';
 
+type Deferred<T> = {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+    let resolveDeferred!: (value: T) => void;
+    const promise = new Promise<T>((resolve) => {
+        resolveDeferred = resolve;
+    });
+
+    return { promise, resolve: resolveDeferred };
+}
+
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
@@ -42,6 +56,7 @@ describe('importDroppedLaunchFiles', () => {
             buffer: { duration: 4 },
         });
         mocks.getTransportState.mockReturnValue({ tempo: 90 });
+        mocks.newProject.mockResolvedValue(true);
     });
 
     it('resets the project and imports supported files by extension', async () => {
@@ -58,6 +73,9 @@ describe('importDroppedLaunchFiles', () => {
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'drums', kind: 'audio' });
         expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+        expect(mocks.decodeAudioFile.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.addTrack.mock.invocationCallOrder[0]!
+        );
         expect(mocks.addClip).toHaveBeenCalledWith({
             trackId: 'track-1',
             startBeat: 0,
@@ -66,6 +84,37 @@ describe('importDroppedLaunchFiles', () => {
             type: 'audio',
             audioBufferId: 'buffer-1',
         });
+        expect(result).toEqual({ failedFileNames: [] });
+    });
+
+    it('waits for new-project activation before importing any files', async () => {
+        const activation = createDeferred<boolean>();
+        const midiFile = new File(['midi'], 'melody.mid', { type: 'audio/midi' });
+        const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
+        mocks.newProject.mockReturnValue(activation.promise);
+
+        const importPromise = importDroppedLaunchFiles({ files: [midiFile, audioFile] });
+        await Promise.resolve();
+
+        expect(mocks.importMidiFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
+
+        activation.resolve(true);
+        await importPromise;
+
+        expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+    });
+
+    it('does not import files when new-project activation is not committed', async () => {
+        const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
+        mocks.newProject.mockResolvedValue(false);
+
+        const result = await importDroppedLaunchFiles({ files: [audioFile] });
+
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(result).toEqual({ failedFileNames: [] });
     });
 
@@ -90,13 +139,13 @@ describe('importDroppedLaunchFiles', () => {
         expect(result).toEqual({ failedFileNames: [] });
     });
 
-    it('silently skips audio files when a track cannot be created', async () => {
+    it('silently skips clip creation when a track cannot be created', async () => {
         const audioFile = new File(['audio'], 'orphan.wav', { type: 'audio/wav' });
         mocks.addTrack.mockReturnValue(null);
 
         const result = await importDroppedLaunchFiles({ files: [audioFile] });
 
-        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(result).toEqual({ failedFileNames: [] });
     });
@@ -104,7 +153,7 @@ describe('importDroppedLaunchFiles', () => {
     it('returns audio import failures and continues importing later files', async () => {
         const failedFile = new File(['bad'], 'broken.wav', { type: 'audio/wav' });
         const importedFile = new File(['good'], 'working.wav', { type: 'audio/wav' });
-        mocks.addTrack.mockReturnValueOnce({ id: 'track-bad' }).mockReturnValueOnce({ id: 'track-good' });
+        mocks.addTrack.mockReturnValue({ id: 'track-good' });
         mocks.decodeAudioFile
             .mockRejectedValueOnce(new Error('decode failed'))
             .mockResolvedValueOnce({ id: 'buffer-good', buffer: { duration: 4 } });
@@ -113,6 +162,8 @@ describe('importDroppedLaunchFiles', () => {
 
         expect(result).toEqual({ failedFileNames: ['broken.wav'] });
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(importedFile);
+        expect(mocks.addTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'working', kind: 'audio' });
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackId: 'track-good',

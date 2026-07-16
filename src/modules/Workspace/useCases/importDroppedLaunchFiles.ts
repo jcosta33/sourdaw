@@ -36,7 +36,9 @@ export async function importDroppedLaunchFiles({
     files,
 }: ImportDroppedLaunchFilesInput): Promise<ImportDroppedLaunchFilesOutput> {
     const failedFileNames: string[] = [];
-    newProject();
+    if (!(await newProject())) {
+        return { failedFileNames };
+    }
 
     for (const file of files) {
         const extension = getFileExtension(file);
@@ -49,13 +51,12 @@ export async function importDroppedLaunchFiles({
         }
 
         const name = getFileNameWithoutExtension(file);
-        const track = addTrack({ name, kind: 'audio' });
-        if (!track) {
-            continue;
-        }
-
         try {
             const { id: bufferId, buffer } = await decodeAudioFile(file);
+            const track = addTrack({ name, kind: 'audio' });
+            if (!track) {
+                continue;
+            }
             const tempo = transportStore.value?.tempo ?? DEFAULT_TEMPO;
             const beats = Math.max(MINIMUM_AUDIO_CLIP_BEATS, Math.ceil((buffer.duration / 60) * tempo));
             addClip({

@@ -247,7 +247,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleNewProject = (): void => {
         setLoadingName('New Project');
         setView('loading');
-        newProject();
+        void newProject();
     };
 
     const handleImportDawProject = (): void => {

@@ -19,21 +19,21 @@ type ActivateNewProjectInput = {
     transaction: ProjectLoadTransaction;
 };
 
-async function activateNewProject({ name, transaction }: ActivateNewProjectInput): Promise<void> {
+async function activateNewProject({ name, transaction }: ActivateNewProjectInput): Promise<boolean> {
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
-            return;
+            return false;
         }
 
         await stopPlayback();
         if (!transaction.isCurrent()) {
-            return;
+            return false;
         }
         resetAudioGraph();
 
         await createCrdtProject(name);
         if (!transaction.isCurrent()) {
-            return;
+            return false;
         }
         projectActionHistoryToStore();
         resetModuleStoresToDefault();
@@ -60,16 +60,18 @@ async function activateNewProject({ name, transaction }: ActivateNewProjectInput
 
         stopActiveAutoSave();
         setAutoSaveHandle(startCrdtAutoSave());
+        return true;
     } catch (error) {
         logger.warn('[newProject] Failed to activate project:', error);
+        return false;
     }
 }
 
-export function newProject(name = 'Untitled Project'): void {
+export function newProject(name = 'Untitled Project'): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     const currentProject = projectStore.value;
     if (currentProject) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
-    void activateNewProject({ name, transaction });
+    return activateNewProject({ name, transaction });
 }
