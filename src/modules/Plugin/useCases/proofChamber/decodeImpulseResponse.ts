@@ -22,13 +22,15 @@ export async function decodeImpulseResponse(file: File): Promise<DecodedImpulseR
     }
 
     const mono = audioBuffer.getChannelData(0);
-    const points = 200;
-    const samplesPerPoint = Math.floor(mono.length / points);
+    const pointCount = Math.min(200, mono.length);
+    const samplesPerPoint = pointCount === 0 ? 1 : Math.floor(mono.length / pointCount);
     const waveform: number[] = [];
-    for (let point = 0; point < points; point++) {
+    for (let point = 0; point < pointCount; point++) {
         let peak = 0;
-        for (let sample = 0; sample < samplesPerPoint; sample++) {
-            const value = Math.abs(mono[point * samplesPerPoint + sample] ?? 0);
+        const start = point * samplesPerPoint;
+        const end = point === pointCount - 1 ? mono.length : start + samplesPerPoint;
+        for (let sample = start; sample < end; sample++) {
+            const value = Math.abs(mono[sample] ?? 0);
             if (value > peak) {
                 peak = value;
             }

@@ -32,6 +32,17 @@ function makeAudioBuffer(): AudioBuffer {
     } as AudioBuffer;
 }
 
+function makeMonoAudioBuffer(samples: number[]): AudioBuffer {
+    const mono = new Float32Array(samples);
+
+    return {
+        numberOfChannels: 1,
+        length: mono.length,
+        sampleRate: 48_000,
+        getChannelData: () => mono,
+    } as AudioBuffer;
+}
+
 describe('decodeImpulseResponse', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -58,5 +69,22 @@ describe('decodeImpulseResponse', () => {
         mocks.decodeAudioFileBuffer.mockRejectedValue(error);
 
         await expect(decodeImpulseResponse(makeFile())).rejects.toBe(error);
+    });
+
+    it('includes every frame in the waveform when the impulse response has fewer than 200 frames', async () => {
+        mocks.decodeAudioFileBuffer.mockResolvedValue(makeMonoAudioBuffer([-0.25, 0.75, -0.5]));
+
+        const result = await decodeImpulseResponse(makeFile());
+
+        expect(result.waveform).toEqual([0.25, 0.75, 0.5]);
+    });
+
+    it('returns an empty waveform when the decoded impulse response has no frames', async () => {
+        mocks.decodeAudioFileBuffer.mockResolvedValue(makeMonoAudioBuffer([]));
+
+        const result = await decodeImpulseResponse(makeFile());
+
+        expect(result.data).toHaveLength(0);
+        expect(result.waveform).toEqual([]);
     });
 });
