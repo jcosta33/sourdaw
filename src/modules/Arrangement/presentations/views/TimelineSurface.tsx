@@ -13,8 +13,8 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
+import { createTimelineRenderer } from '../renderers/createTimelineRenderer';
 
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
@@ -266,7 +266,7 @@ export const TimelineSurface = (): ReactElement => {
         const unsubTakeLanes = takeLaneStore.subscribe(markDirty);
 
         const initRenderer = async () => {
-            const renderer = await initTimelineRenderer(canvas);
+            const renderer = await createTimelineRenderer(canvas);
 
             if (disposed) {
                 renderer.dispose();
