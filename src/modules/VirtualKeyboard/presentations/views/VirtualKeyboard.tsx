@@ -252,6 +252,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                 if (pendingNoteOnAttemptsRef.current.get(midiNote) === attempt) {
                     pendingNoteOnAttemptsRef.current.delete(midiNote);
                 }
+                // A note played: the engine has recovered, so clear any lingering failure
+                // banner and restore the keyboard-shortcut hint.
+                setLiveNoteStatus(null);
             } catch (error: unknown) {
                 logger.warn('[MIDI] Virtual keyboard note-on failed:', error);
                 if (pendingNoteOnAttemptsRef.current.get(midiNote) !== attempt) {

@@ -282,6 +282,27 @@ describe('VirtualKeyboard', () => {
             expect(loggerWarn).toHaveBeenNthCalledWith(2, '[MIDI] Virtual keyboard note-on failed:', secondError);
         });
 
+        // A failure banner is not permanent: once the engine recovers and a later note-on
+        // resolves, the status must fall back to the keyboard-shortcut hint — otherwise the
+        // error text shadows the hint for the rest of the component's lifetime.
+        it('clears the failure status once a later note-on succeeds', async () => {
+            onMock.mockRejectedValueOnce(new Error('note-on failed'));
+            render(<VirtualKeyboard />);
+
+            fireEvent.keyDown(panel(), { code: 'KeyA' }); // C4 = 60, rejected
+
+            await waitFor(() => {
+                expect(screen.getByRole('status')).toHaveTextContent('Note could not be played.');
+            });
+
+            fireEvent.keyDown(panel(), { code: 'KeyS' }); // D4 = 62, resolves
+
+            await waitFor(() => {
+                expect(screen.getByRole('status')).not.toHaveTextContent('Note could not be played.');
+            });
+            expect(screen.getByRole('status')).toHaveTextContent('Z/X octave');
+        });
+
         it('does not let a stale note-on rejection roll back a newer press', async () => {
             const staleError = new Error('stale note-on failed');
             let rejectStaleNoteOn!: (reason?: unknown) => void;
