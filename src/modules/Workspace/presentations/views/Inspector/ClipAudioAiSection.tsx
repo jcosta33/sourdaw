@@ -40,9 +40,17 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
         : false;
 
     const handleDenoise = async (): Promise<void> => {
+        // Key the denoise on the clip's audioBufferId: the handler treats its
+        // argument as a cache bufferId (source lookup + `${id}-denoised` write),
+        // and the `hasDenoised` A/B check above reads `${clip.audioBufferId}-denoised`.
+        // Passing clip.id would orphan the result in the cache.
+        if (!clip.audioBufferId) {
+            notifyUser('Denoise failed', 'error');
+            return;
+        }
         setIsDenoising(true);
         try {
-            await handleAiDenoiseClip(clip.id, denoiseStrength / 100);
+            await handleAiDenoiseClip(clip.audioBufferId, denoiseStrength / 100);
             setAbMode('processed');
             notifyAiChange('Denoise complete', [
                 `Applied ${denoiseStrength}% noise reduction`,

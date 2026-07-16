@@ -597,5 +597,22 @@ describe('ProofEqCurve', () => {
             fireEvent.keyDown(getBandSliders(container)[0]!, { key: 'ArrowUp' });
             expect(onPatchChange).not.toHaveBeenCalled();
         });
+
+        it('keeps every handle pointer-transparent so canvas drag still receives clicks', () => {
+            // The handles sit exactly over the band dots. The canvas owns all
+            // pointer interaction; a pointer-events-auto handle would swallow
+            // the pointerdown aimed at the dot beneath it and silently break
+            // drag for every band. jsdom does not simulate CSS stacking or
+            // pointer hit-testing (fireEvent dispatches straight to the canvas,
+            // bypassing the overlay), so a real click-through cannot be asserted
+            // here — assert the class contract that guarantees it instead.
+            const { container } = render(
+                <ProofEqCurve patch={DEFAULT_PATCH} width={200} height={100} gestureOwner={0} onPatchChange={vi.fn()} />
+            );
+            const sliders = getBandSliders(container);
+            expect(sliders).toHaveLength(DEFAULT_PATCH.eqBands.length);
+            expect(sliders.every((slider) => slider.classList.contains('pointer-events-none'))).toBe(true);
+            expect(sliders.some((slider) => slider.classList.contains('pointer-events-auto'))).toBe(false);
+        });
     });
 });

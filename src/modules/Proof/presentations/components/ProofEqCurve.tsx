@@ -683,9 +683,12 @@ export const ProofEqCurve = ({
                 onBlur={handleFocusLoss}
                 aria-label="8-band parametric EQ frequency response"
             />
-            {/* Keyboard-operable band handles layered over the canvas. Pointer
-                drag stays on the canvas; these DOM sliders add focus + arrow-key
-                control, mirroring the SliceOverlay marker a11y pattern. */}
+            {/* Keyboard-operable band handles layered over the canvas. Unlike
+                SliceOverlay (whose markers own their drag logic), the canvas owns
+                ALL pointer interaction here — so the handles must be
+                pointer-events-none or they would swallow clicks aimed at the band
+                dots beneath them. Keyboard focus via tabIndex is unaffected by
+                pointer-events; the handles add focus + arrow-key control only. */}
             <div className="pointer-events-none absolute inset-0">
                 {patch.eqBands.map((band, b) => {
                     const usesGain = bandUsesGain(band.type);
@@ -706,7 +709,7 @@ export const ProofEqCurve = ({
                             aria-valuemax={MAX_FREQ}
                             aria-valuenow={roundedFreq}
                             aria-valuetext={valueText}
-                            className="pointer-events-auto absolute rounded-full focus:outline focus:outline-1 focus:outline-white/80"
+                            className="pointer-events-none absolute rounded-full focus:outline focus:outline-1 focus:outline-white/80"
                             style={{ left: left - 7, top: top - 7, width: 14, height: 14 }}
                             onKeyDown={(e) => handleBandKeyDown(b, e)}
                         />
