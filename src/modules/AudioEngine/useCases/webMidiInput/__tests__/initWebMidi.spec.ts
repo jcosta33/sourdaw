@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type InstrumentSnapshot = Readonly<{
     id: string;
@@ -54,16 +54,22 @@ vi.mock('../setMidiInputTrack', () => ({
     setMidiInputTrack: setMidiInputTrackMock,
 }));
 
+import { disposeWebMidiSubscriptions } from '../disposeWebMidiSubscriptions';
 import * as subject from '../initWebMidi';
 
 describe('initWebMidi', () => {
     beforeEach(() => {
+        disposeWebMidiSubscriptions();
         initializeWebMidiMock.mockClear();
         setMidiInputTrackMock.mockClear();
         routeYeastNoteOffsMock.mockClear();
         trackStoreSubscribeMock.mockReset();
         eventBusOnMock.mockReset();
         eventBusEmitMock.mockClear();
+    });
+
+    afterEach(() => {
+        disposeWebMidiSubscriptions();
     });
 
     it('owns idempotent track and Yeast subscriptions around repository initialization', async () => {
@@ -115,5 +121,53 @@ describe('initWebMidi', () => {
         };
         routeInput.emitGrandBouleEvent('device-a', 60);
         expect(eventBusEmitMock).toHaveBeenCalledWith('midi.noteOff', { deviceId: 'device-a', midiNote: 60 });
+    });
+
+    it('disposes stale handlers before reinitializing subscriptions', async () => {
+        const activeTrackSubscriptions = new Set<(state: unknown) => void>();
+        const activeYeastSubscriptions = new Set<(payload: unknown) => void>();
+        const trackDisposers: Array<ReturnType<typeof vi.fn>> = [];
+        const yeastDisposers: Array<ReturnType<typeof vi.fn>> = [];
+
+        trackStoreSubscribeMock.mockImplementation((callback: (state: unknown) => void) => {
+            activeTrackSubscriptions.add(callback);
+            const dispose = vi.fn(() => activeTrackSubscriptions.delete(callback));
+            trackDisposers.push(dispose);
+            return dispose;
+        });
+        eventBusOnMock.mockImplementation((_event: string, handler: (payload: unknown) => void) => {
+            activeYeastSubscriptions.add(handler);
+            const dispose = vi.fn(() => activeYeastSubscriptions.delete(handler));
+            yeastDisposers.push(dispose);
+            return dispose;
+        });
+
+        await subject.initWebMidi();
+        disposeWebMidiSubscriptions();
+        disposeWebMidiSubscriptions();
+        await subject.initWebMidi();
+
+        expect(trackDisposers[0]).toHaveBeenCalledTimes(1);
+        expect(yeastDisposers[0]).toHaveBeenCalledTimes(1);
+        expect(trackStoreSubscribeMock).toHaveBeenCalledTimes(2);
+        expect(eventBusOnMock).toHaveBeenCalledTimes(2);
+        expect(activeTrackSubscriptions.size).toBe(1);
+        expect(activeYeastSubscriptions.size).toBe(1);
+
+        for (const subscription of activeTrackSubscriptions) {
+            subscription({
+                selectedTrackId: 'track-a',
+                tracks: [{ id: 'track-a', kind: 'midi', devices: [] }],
+            });
+        }
+        for (const subscription of activeYeastSubscriptions) {
+            subscription({
+                trackId: 'track-a',
+                noteOffs: [{ channel: 0, note: 60 }],
+            });
+        }
+
+        expect(setMidiInputTrackMock).toHaveBeenCalledTimes(1);
+        expect(routeYeastNoteOffsMock).toHaveBeenCalledTimes(1);
     });
 });
