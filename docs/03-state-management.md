@@ -88,11 +88,17 @@ export const useWorkspacePreferences = (): WorkspacePreferences => {
 
 Pass a storage adapter into `createStore` when persistence is required (see `#/infra/store/storage/*`). Prefer project patterns already used by Workspace/Arrangement stores over ad-hoc `localStorage` access.
 
+Persisted blobs must hydrate through a validator: pass `createStore({ sanitize })` so a stored value is re-validated on load and rewritten if it has drifted. The dangerous case is a **present-but-invalid** blob, not a missing one -- an empty store simply seeds `initialData`, but a blob whose shape no longer matches the current schema will hydrate straight into live state unless `sanitize` narrows or discards it first.
+
 ### 4. Update the store through the owning write path
 
 Prefer owner use cases / `executeAppAction` for meaningful writes. Same-module code may update the store directly when that is the established pattern; foreign modules must not `store.set`.
 
 Use `set` directly when you are replacing the value wholesale (e.g., loading from persistence), and `clear()` to remove it entirely.
+
+A mutate-and-persist is **one operation**, not two: never write state through a path that silently skips the store's persistence wiring, or the in-memory value and the persisted blob diverge across a reload. Route the change through `set` / `update` on the persisted store (or the owning use case) so the mutation and its persistence stay a single step.
+
+Prefer `store.update(updater)` over reading a snapshot and calling `.set()` when the new value derives from the current one -- especially across an `await`. A snapshot-then-`set` read-modify-write can be interleaved by another writer during the gap, clobbering their change; `update` applies the updater against the live value in one synchronous step and closes that race.
 
 ### 5. Use React Context with `use()` (React 19)
 

@@ -1,4 +1,4 @@
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../../models/LibraryTypes';
 import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
@@ -105,7 +105,7 @@ export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
     for (let i = 0; i < samples.length; i += CHUNK) {
         const end = Math.min(i + CHUNK, samples.length);
         for (let j = i; j < end; j++) {
-            audioBufferCache.set(samples[j]!.id, samples[j]!.buffer);
+            cacheAudioBuffer({ buffer: samples[j]!.buffer, bufferId: samples[j]!.id });
         }
         if (end < samples.length) {
             await yieldToEventLoop();
