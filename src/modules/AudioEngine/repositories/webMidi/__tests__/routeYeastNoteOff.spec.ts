@@ -1,8 +1,8 @@
 /**
  * The AudioEngine half of the hung-note fix (MAJOR-B): the offs a removed Yeast
  * processor emits via `yeast.notesOff` must actually reach the live instrument.
- * `routeYeastNoteOffsForTargetTrack` resolves the target track's instrument and
- * delivers each Note Off to its device node.
+ * `routeYeastNoteOffsForTargetTrack` delivers each Note Off to a resolved
+ * instrument track's device node.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +19,6 @@ vi.mock('../../createWebAudioEngine', () => ({
     audioEngine: { getTrackStrip: get_track_strip },
 }));
 
-const { resolveInstrumentTrack } = await import('../resolveInstrumentTrack');
 const { routeYeastNoteOffsForTargetTrack } = await import('../routeYeastNoteOff');
 const { routeYeastNoteOffToInstrument } = await import('../routeYeastNoteOffToInstrument');
 
@@ -114,8 +113,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             ],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-a', [{ channel: 0, note: 60 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(track_state.tracks[0]!, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -130,21 +128,17 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         const track_state = create_track_state({
             tracks: [create_track({ id: 'track-1', devices: [create_device({ id: 'ferm-1', type: 'fermenter' })] })],
         });
-        const get_track_store_state = vi.fn(() => track_state);
-
         routeYeastNoteOffsForTargetTrack(
-            'track-1',
+            track_state.tracks[0]!,
             [
                 { channel: 0, note: 60 },
                 { channel: 0, note: 64 },
             ],
             {
-                getTrackStoreState: get_track_store_state,
                 emitGrandBouleEvent: noop_emit,
             }
         );
 
-        expect(get_track_store_state).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledWith('track-1');
         expect(fermenter_note_off.mock.calls.map((call) => call[0])).toEqual([60, 64]);
@@ -159,14 +153,13 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         });
 
         routeYeastNoteOffsForTargetTrack(
-            'track-1',
+            track_state.tracks[0]!,
             [
                 { channel: 1, note: 60 },
                 { channel: 2, note: 60 },
                 { channel: 2, note: 60 },
             ],
             {
-                getTrackStoreState: () => track_state,
                 emitGrandBouleEvent: noop_emit,
             }
         );
@@ -183,8 +176,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         });
         const emit_grand_boule_event = vi.fn<(deviceId: string, midiNote: number) => void>();
 
-        routeYeastNoteOffsForTargetTrack('track-2', [{ channel: 0, note: 72 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(track_state.tracks[0]!, [{ channel: 0, note: 72 }], {
             emitGrandBouleEvent: emit_grand_boule_event,
         });
 
@@ -200,8 +192,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             tracks: [create_track({ id: 'track-3', devices: [create_device({ id: 'lev-1', type: 'levain' })] })],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-3', [{ channel: 0, note: 74 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(track_state.tracks[0]!, [{ channel: 0, note: 74 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -209,8 +200,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     });
 
     it('should be a no-op when there is no target track', () => {
-        routeYeastNoteOffsForTargetTrack('', [{ channel: 0, note: 60 }], {
-            getTrackStoreState: () => null,
+        routeYeastNoteOffsForTargetTrack(null, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -219,40 +209,10 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     });
 
     it('should be a no-op for an empty off list', () => {
-        routeYeastNoteOffsForTargetTrack('track-1', [], {
-            getTrackStoreState: () => create_track_state({ tracks: [] }),
+        routeYeastNoteOffsForTargetTrack(null, [], {
             emitGrandBouleEvent: noop_emit,
         });
         expect(get_track_strip).not.toHaveBeenCalled();
-    });
-});
-
-describe('resolveInstrumentTrack', () => {
-    it('should resolve a child target to its toaster parent instrument track', () => {
-        const parent_track = create_track({
-            id: 'parent-track',
-            devices: [create_device({ id: 'toaster-1', type: 'toaster' })],
-        });
-        const child_track = create_track({ id: 'child-track', parent_id: 'parent-track' });
-
-        const result = resolveInstrumentTrack(
-            create_track_state({ tracks: [parent_track, child_track] }),
-            'child-track'
-        );
-
-        expect(result).toBe(parent_track);
-    });
-
-    it('should resolve the target track when the parent is not a toaster host', () => {
-        const parent_track = create_track({ id: 'parent-track' });
-        const child_track = create_track({ id: 'child-track', parent_id: 'parent-track' });
-
-        const result = resolveInstrumentTrack(
-            create_track_state({ tracks: [parent_track, child_track] }),
-            'child-track'
-        );
-
-        expect(result).toBe(child_track);
     });
 });
 

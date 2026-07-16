@@ -1,7 +1,6 @@
-import type { TrackStoreState } from '#/modules/Arrangement/stores';
+import type { WebMidiInstrumentTrack } from './instrumentTrackPort';
 import type { TrackChannelStrip } from '../../models/AudioEngineState';
 
-type Track = NonNullable<TrackStoreState['tracks']>[number];
 type YeastInstrumentDeviceNode = Pick<
     TrackChannelStrip['deviceNodes'][number],
     'type' | 'fermenterControls' | 'grandBouleControls' | 'levainControls'
@@ -20,7 +19,7 @@ type YeastInstrumentStrip = { deviceNodes: YeastInstrumentDeviceNode[] };
  * rack-routed path.
  */
 export function routeYeastNoteOffToInstrument(
-    instrumentTrack: Track,
+    instrumentTrack: WebMidiInstrumentTrack,
     strip: YeastInstrumentStrip | undefined,
     note: number,
     releaseVelocity: number,

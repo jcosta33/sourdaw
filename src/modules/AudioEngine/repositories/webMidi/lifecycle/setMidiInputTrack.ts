@@ -1,5 +1,5 @@
 import { setTargetTrackId } from '../setTargetTrackId';
 
-export function setMidiInputTrack(trackId: string): void {
+export function setMidiInputTrack(trackId: string | null): void {
     setTargetTrackId(trackId);
 }

@@ -73,15 +73,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/webMidi/lifecycle/initWebMidi.ts",
-    "to": "src/modules/Arrangement/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
     "to": "src/modules/AudioEngine/useCases/index.ts",
     "rule": {
