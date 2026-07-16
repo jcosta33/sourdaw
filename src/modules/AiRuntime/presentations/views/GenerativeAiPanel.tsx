@@ -18,6 +18,7 @@ import {
     handleGenerateAudioFallback,
     handleStemSeparationPreview,
     cancelProcessingTask,
+    removeTask,
 } from '#/modules/AiGeneration/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
@@ -495,7 +496,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                         >
                             <div className="space-y-1.5">
                                 {state.tasks.map((task: GenerativeTaskResult) => (
-                                    <AiTaskResultCard key={task.id} task={task} />
+                                    <AiTaskResultCard key={task.id} task={task} onRemove={removeTask} />
                                 ))}
                             </div>
                         </DawUtilitySection>
