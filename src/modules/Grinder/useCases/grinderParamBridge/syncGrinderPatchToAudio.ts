@@ -143,6 +143,38 @@ function findFirstPedal(pedals: readonly GrinderPedal[], types: readonly string[
     return pedals.find((pedal) => types.includes(pedal.type));
 }
 
+// The engine exposes a single overdrive-family slot (getAudioParamKeyForPedal maps both
+// 'overdrive' and 'boost' onto the 'Overdrive' params), so the two pedal types contend
+// for it. Selection is deterministic by pedal identity rather than chain array order:
+// an enabled pedal always outranks a bypassed one (never silently drop the pedal the user
+// turned on), and within the same enabled-state the native 'overdrive' outranks the
+// 'boost' that borrows the slot. A patch carrying both pedals therefore drives the slot
+// the same way regardless of how the chain is ordered.
+const OVERDRIVE_FAMILY_TYPES: readonly string[] = ['overdrive', 'boost'];
+
+function selectOverdriveFamilyPedal(pedals: readonly GrinderPedal[]): GrinderPedal | undefined {
+    let selected: GrinderPedal | undefined;
+    let selectedRank = Number.POSITIVE_INFINITY;
+    for (const pedal of pedals) {
+        const typeRank = OVERDRIVE_FAMILY_TYPES.indexOf(pedal.type);
+        if (typeRank < 0) {
+            continue;
+        }
+
+        // Lower rank wins. Enabled pedals occupy ranks 0–1, bypassed ones 2–3; within each
+        // band the native 'overdrive' (typeRank 0) precedes the 'boost' (typeRank 1).
+        // Strict comparison keeps the first pedal among equal ranks, so chain order only
+        // breaks exact ties.
+        const rank = (pedal.enabled ? 0 : 2) + typeRank;
+        if (rank < selectedRank) {
+            selected = pedal;
+            selectedRank = rank;
+        }
+    }
+
+    return selected;
+}
+
 function sendPatchToDevice(
     input: Pick<SyncGrinderPatchToAudioInput, 'ref' | 'update_device_patch'>,
     patch: GrinderNeuralAudioPatch
@@ -170,7 +202,7 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
     }
 
     const preCompressor = findFirstPedal(patch.prePedals, ['compressor']);
-    const preOverdrive = findFirstPedal(patch.prePedals, ['overdrive', 'boost']);
+    const preOverdrive = selectOverdriveFamilyPedal(patch.prePedals);
     const preDistortion = findFirstPedal(patch.prePedals, ['distortion']);
     const preFuzz = findFirstPedal(patch.prePedals, ['fuzz']);
     sendNumericParamToDevice(input, 'preCompressorEnabled', preCompressor?.enabled ? 1 : 0);
@@ -232,7 +264,7 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
     sendNumericParamToDevice(input, 'preFuzzLevel', preFuzz?.params.level ?? DEFAULT_GRINDER_PEDAL_PARAMS.fuzz.level);
 
     const postCompressor = findFirstPedal(patch.postPedals, ['compressor']);
-    const postOverdrive = findFirstPedal(patch.postPedals, ['overdrive', 'boost']);
+    const postOverdrive = selectOverdriveFamilyPedal(patch.postPedals);
     const postDistortion = findFirstPedal(patch.postPedals, ['distortion']);
     const postFuzz = findFirstPedal(patch.postPedals, ['fuzz']);
     sendNumericParamToDevice(input, 'postCompressorEnabled', postCompressor?.enabled ? 1 : 0);

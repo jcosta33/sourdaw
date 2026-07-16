@@ -94,4 +94,27 @@ describe('importGrinderNeuralModels', () => {
             loading: false,
         });
     });
+
+    it('should own the importing flag in the store for the lifetime of the import', async () => {
+        // The importing flag lives in the shared store (not component-local state) so every
+        // panel instance sees the same in-flight status and an unmount mid-import cannot
+        // strand a stale local flag. It flips true synchronously before the first await and
+        // resets to false once the operation settles.
+        let resolve_pick: (files: File[] | null) => void = () => {};
+        pick_files_mock.mockReturnValue(
+            new Promise((resolve) => {
+                resolve_pick = resolve;
+            })
+        );
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+
+        const in_flight = importGrinderNeuralModels();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        resolve_pick([]);
+        await in_flight;
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+    });
 });
