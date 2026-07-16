@@ -1,15 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx",
-    "to": "src/modules/AiGeneration/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-access"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Arrangement/services/applySoloLogic.ts",
     "to": "src/modules/Arrangement/useCases/getTrackStoreState.ts",
     "rule": {

@@ -3,10 +3,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { GenerativeAiPanel } from '../GenerativeAiPanel';
 
+const { removeTaskMock } = vi.hoisted(() => ({ removeTaskMock: vi.fn() }));
+
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, defaultValue) => defaultValue),
 }));
+
+vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AiGeneration/useCases')>();
+
+    return {
+        ...actual,
+        removeTask: removeTaskMock,
+    };
+});
 
 vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
@@ -49,8 +60,21 @@ vi.mock('#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview', (
     handleStemSeparationPreview: vi.fn(),
 }));
 
+type MockAiTask = {
+    id: string;
+};
+
+type MockAiTaskResultCardProps = {
+    task: MockAiTask;
+    onRemove: (taskId: string) => void;
+};
+
 vi.mock('../../components/AiTaskResultCard', () => ({
-    AiTaskResultCard: ({ task }: any) => <div data-testid="task-card">{task.id}</div>,
+    AiTaskResultCard: ({ task, onRemove }: MockAiTaskResultCardProps) => (
+        <button type="button" data-testid="task-card" onClick={() => onRemove(task.id)}>
+            Remove task {task.id}
+        </button>
+    ),
 }));
 
 vi.mock('../../components/GenerativeParamGrids', () => ({
@@ -79,7 +103,14 @@ const { useStore } = await import('#/infra/store/useStore');
 const { isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases');
 
 // Mock store states
-const mockAiState = { isPanelOpen: true, tasks: [] };
+type MockAiTaskState = {
+    id: string;
+    type: 'audio-generation';
+    status: 'success';
+    timestamp: number;
+};
+
+const mockAiState: { isPanelOpen: boolean; tasks: MockAiTaskState[] } = { isPanelOpen: true, tasks: [] };
 const mockWorkspaceState = { selectedClipId: null };
 const mockTrackState = { tracks: [] };
 
@@ -109,6 +140,15 @@ describe('GenerativeAiPanel', () => {
     it('should render without crashing when panel is open', () => {
         const { container } = render(<GenerativeAiPanel />);
         expect(container.firstChild).toBeTruthy();
+    });
+
+    it('should route task removal through the owning use case', () => {
+        mockAiState.tasks = [{ id: 'task-1', type: 'audio-generation', status: 'success', timestamp: 1 }];
+        render(<GenerativeAiPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove task task-1' }));
+
+        expect(removeTaskMock).toHaveBeenCalledWith('task-1');
     });
 
     it('should return null when panel is closed', () => {
