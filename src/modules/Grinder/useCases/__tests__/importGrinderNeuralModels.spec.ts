@@ -94,4 +94,94 @@ describe('importGrinderNeuralModels', () => {
             loading: false,
         });
     });
+
+    it('should own the importing flag in the store for the lifetime of the import', async () => {
+        // The importing flag lives in the shared store (not component-local state) so every
+        // panel instance sees the same in-flight status and an unmount mid-import cannot
+        // strand a stale local flag. It flips true synchronously before the first await and
+        // resets to false once the operation settles.
+        let resolve_pick: (files: File[] | null) => void = () => {};
+        pick_files_mock.mockReturnValue(
+            new Promise((resolve) => {
+                resolve_pick = resolve;
+            })
+        );
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+
+        const in_flight = importGrinderNeuralModels();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        resolve_pick([]);
+        await in_flight;
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+    });
+
+    it('should reject an overlapping import as a no-op and keep the flag true until the first settles', async () => {
+        // The importing flag is a single shared boolean, not a refcount, so a second
+        // overlapping call (double-click, second panel instance) must early-return without
+        // opening another picker — otherwise its finally would flip the flag false while
+        // the first import is still in flight.
+        let resolve_pick: (files: File[] | null) => void = () => {};
+        pick_files_mock.mockReturnValue(
+            new Promise((resolve) => {
+                resolve_pick = resolve;
+            })
+        );
+
+        const first_import = importGrinderNeuralModels();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        const overlapping_entries = await importGrinderNeuralModels();
+
+        expect(overlapping_entries).toEqual([]);
+        expect(pickFiles).toHaveBeenCalledTimes(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(true);
+
+        resolve_pick([make_nam_file({ file_name: 'lead-boost.nam', display_name: 'Lead Boost' })]);
+        const first_entries = await first_import;
+
+        expect(first_entries).toHaveLength(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.entries.map((entry) => entry.sourceFileName)).toEqual([
+            'lead-boost.nam',
+        ]);
+    });
+
+    it('should settle the importing flag false and surface the error when every selected file fails to parse', async () => {
+        pick_files_mock.mockResolvedValue([new File(['not-a-nam-payload'], 'broken.nam')]);
+
+        const imported_entries = await importGrinderNeuralModels();
+
+        expect(imported_entries).toEqual([]);
+        expect(persistGrinderNeuralLibrary).not.toHaveBeenCalled();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.loading).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.error).toBeTruthy();
+    });
+
+    it('should settle the importing flag false and keep the entries when persistence fails', async () => {
+        pick_files_mock.mockResolvedValue([
+            make_nam_file({ file_name: 'tight-rhythm.nam', display_name: 'Tight Rhythm' }),
+        ]);
+        persist_library_mock.mockResolvedValue({
+            ok: false,
+            error: { code: 'quota_exceeded', message: 'Neural library payload exceeds the storage budget.' },
+        });
+
+        const imported_entries = await importGrinderNeuralModels();
+
+        expect(imported_entries).toHaveLength(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.error).toMatch(/storage is full/i);
+    });
+
+    it('should settle the importing flag false when the import rejects mid-flight', async () => {
+        pick_files_mock.mockRejectedValue(new Error('picker exploded'));
+
+        await expect(importGrinderNeuralModels()).rejects.toThrow('picker exploded');
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+    });
 });

@@ -1263,7 +1263,7 @@ function ControlDeck({
                   ...imported_neural_entries,
               ]
             : imported_neural_entries;
-    const [is_importing_models, set_is_importing_models] = useState(false);
+    const is_importing_models = neural_library_state.importing;
     let engineModeText = 'Hybrid loaded';
     if (patch.engineMode === 'circuit') {
         engineModeText = 'Circuit first';
@@ -1292,15 +1292,13 @@ function ControlDeck({
     }
 
     async function importNeuralModels(): Promise<void> {
-        set_is_importing_models(true);
-        try {
-            const imported_entries = await importGrinderNeuralModels();
-            const first_entry = imported_entries[0];
-            if (first_entry) {
-                selectImportedNeuralModel(first_entry);
-            }
-        } finally {
-            set_is_importing_models(false);
+        // The in-flight status is owned by importGrinderNeuralModels via the shared store,
+        // so this handler stays free of component-local flag bookkeeping (and the unmount
+        // hazard that came with resetting local state in an async finally).
+        const imported_entries = await importGrinderNeuralModels();
+        const first_entry = imported_entries[0];
+        if (first_entry) {
+            selectImportedNeuralModel(first_entry);
         }
     }
 
@@ -1735,6 +1733,7 @@ function ControlDeck({
                             type="button"
                             className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-[11px] font-medium text-[var(--color-accent-cyan)]"
                             onClick={() => void importNeuralModels()}
+                            disabled={is_importing_models}
                         >
                             {is_importing_models ? 'Importing…' : 'Import NAM'}
                         </button>

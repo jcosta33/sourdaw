@@ -5,6 +5,7 @@ import { type GrinderImportedNeuralModel } from '../models/GrinderPatch';
 export type GrinderNeuralLibraryState = {
     hydrated: boolean;
     loading: boolean;
+    importing: boolean;
     error: string | null;
     entries: GrinderImportedNeuralModel[];
 };
@@ -12,6 +13,7 @@ export type GrinderNeuralLibraryState = {
 export const DEFAULT_GRINDER_NEURAL_LIBRARY_STATE: GrinderNeuralLibraryState = {
     hydrated: false,
     loading: false,
+    importing: false,
     error: null,
     entries: [],
 };
@@ -38,6 +40,7 @@ export function upsertGrinderNeuralLibraryEntries(entries: readonly GrinderImpor
     grinderNeuralLibraryStore.set({
         hydrated: true,
         loading: false,
+        importing: current.importing,
         error: null,
         entries: [...next_by_id.values()].sort((left, right) => right.importedAt - left.importedAt),
     });
@@ -49,6 +52,7 @@ export function removeGrinderNeuralLibraryEntry(entry_id: string): GrinderImport
     grinderNeuralLibraryStore.set({
         hydrated: true,
         loading: false,
+        importing: current.importing,
         error: null,
         entries: next_entries,
     });

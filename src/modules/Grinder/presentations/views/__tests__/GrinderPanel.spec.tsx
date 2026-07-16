@@ -21,6 +21,7 @@ describe('GrinderPanel', () => {
         grinderNeuralLibraryStore.set({
             hydrated: true,
             loading: false,
+            importing: false,
             error: null,
             entries: [],
         });
@@ -91,6 +92,7 @@ describe('GrinderPanel', () => {
         grinderNeuralLibraryStore.set({
             hydrated: true,
             loading: false,
+            importing: false,
             error: null,
             entries: [],
         });
@@ -297,5 +299,41 @@ describe('GrinderPanel', () => {
             'aria-pressed',
             'true'
         );
+    });
+
+    it('should disable the Import NAM trigger while the shared store reports an import in flight', () => {
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: true,
+            importing: true,
+            error: null,
+            entries: [],
+        });
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'neural',
+                    engineMode: 'capture',
+                    neuralEnabled: true,
+                },
+            },
+        });
+
+        const importing_view = render(<GrinderPanel deviceId={device_id} />);
+        const importing_button = within(importing_view.container).getByRole('button', { name: 'Importing…' });
+        expect(importing_button).toBeDisabled();
+        importing_view.unmount();
+
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: false,
+            importing: false,
+            error: null,
+            entries: [],
+        });
+
+        const idle_view = render(<GrinderPanel deviceId={device_id} />);
+        expect(within(idle_view.container).getByRole('button', { name: 'Import NAM' })).toBeEnabled();
     });
 });
