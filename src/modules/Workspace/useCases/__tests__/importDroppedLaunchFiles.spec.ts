@@ -7,6 +7,11 @@ type Deferred<T> = {
     resolve: (value: T) => void;
 };
 
+type ImportMidiFileMock = (
+    file: File,
+    options?: { shouldContinue?: () => boolean }
+) => Promise<'completed' | 'superseded'>;
+
 function createDeferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void;
     const promise = new Promise<T>((resolve) => {
@@ -22,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     cacheAudioBuffer: vi.fn(),
     decodeAudioFileBuffer: vi.fn(),
     getTransportState: vi.fn<() => { tempo: number } | null>(() => ({ tempo: 120 })),
-    importMidiFile: vi.fn(),
+    importMidiFile: vi.fn<ImportMidiFileMock>(),
     isProjectTransitionCurrent: vi.fn(),
     newProject: vi.fn(),
     removeTrack: vi.fn(),
@@ -53,6 +58,12 @@ vi.mock('#/modules/Transport/stores', () => ({
     },
 }));
 
+function expectMidiImportWithAuthority(file: File): void {
+    const call = mocks.importMidiFile.mock.calls[0];
+    expect(call?.[0]).toBe(file);
+    expect(call?.[1]?.shouldContinue?.()).toBe(true);
+}
+
 describe('importDroppedLaunchFiles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -60,6 +71,7 @@ describe('importDroppedLaunchFiles', () => {
         mocks.addTrack.mockReturnValue({ id: 'track-1' });
         mocks.decodeAudioFileBuffer.mockResolvedValue({ duration: 4 });
         mocks.getTransportState.mockReturnValue({ tempo: 90 });
+        mocks.importMidiFile.mockResolvedValue('completed');
         mocks.isProjectTransitionCurrent.mockReturnValue(true);
         mocks.newProject.mockResolvedValue(true);
     });
@@ -73,7 +85,7 @@ describe('importDroppedLaunchFiles', () => {
 
         expect(mocks.newProject).toHaveBeenCalledTimes(1);
         expect(mocks.importMidiFile).toHaveBeenCalledTimes(1);
-        expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
+        expectMidiImportWithAuthority(midiFile);
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'drums', kind: 'audio' });
         expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledTimes(1);
@@ -123,7 +135,7 @@ describe('importDroppedLaunchFiles', () => {
         activation.resolve(true);
         const result = await importPromise;
 
-        expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
+        expectMidiImportWithAuthority(midiFile);
         expect(mocks.decodeAudioFileBuffer).toHaveBeenCalledWith(audioFile);
         expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
@@ -147,7 +159,7 @@ describe('importDroppedLaunchFiles', () => {
 
         const result = await importDroppedLaunchFiles({ files: [midiFile, audioFile] });
 
-        expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
+        expectMidiImportWithAuthority(midiFile);
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 endBeat: 4,
@@ -195,6 +207,21 @@ describe('importDroppedLaunchFiles', () => {
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.addTrack).not.toHaveBeenCalled();
         expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('returns superseded when the owning MIDI import loses project authority', async () => {
+        const midiFile = new File(['midi'], 'slow.mid', { type: 'audio/midi' });
+        const midiImport = createDeferred<'completed' | 'superseded'>();
+        mocks.importMidiFile.mockReturnValue(midiImport.promise);
+
+        const importPromise = importDroppedLaunchFiles({ files: [midiFile] });
+        await vi.waitFor(() => expect(mocks.importMidiFile).toHaveBeenCalledTimes(1));
+        expectMidiImportWithAuthority(midiFile);
+
+        mocks.isProjectTransitionCurrent.mockReturnValue(false);
+        midiImport.resolve('superseded');
+
+        await expect(importPromise).resolves.toEqual({ status: 'superseded' });
     });
 
     it('removes a partial track if project authority changes during the audio commit', async () => {

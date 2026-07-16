@@ -8,6 +8,20 @@ import { importMidiFile } from '../importMidiFile';
 
 type PushUndoEntry = (label: string, undo: () => void, redo: () => unknown) => void;
 
+type Deferred<T> = {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+    let resolveDeferred!: (value: T) => void;
+    const promise = new Promise<T>((resolve) => {
+        resolveDeferred = resolve;
+    });
+
+    return { promise, resolve: resolveDeferred };
+}
+
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
     pushUndoEntry: vi.fn<PushUndoEntry>(),
@@ -174,7 +188,7 @@ describe('importMidiFile', () => {
         const midiStateBefore = getMidiStoreState();
         mocks.readMidiFile.mockRejectedValue(new Error('invalid MIDI'));
 
-        await expect(importMidiFile(new File([], 'broken.mid'))).resolves.toBeUndefined();
+        await expect(importMidiFile(new File([], 'broken.mid'))).resolves.toBe('completed');
 
         expect(trackStore.value).toBe(trackStateBefore);
         expect(getMidiStoreState()).toBe(midiStateBefore);
@@ -185,6 +199,57 @@ describe('importMidiFile', () => {
         );
     });
 
+    it('commits nothing when a deferred parse is superseded by another project transition', async () => {
+        const parsedTracks = [{ name: 'Imported', notes: [importedNote], endTick: 960 }];
+        const parse = createDeferred<typeof parsedTracks>();
+        const trackStateBefore = trackStore.value;
+        const midiStateBefore = getMidiStoreState();
+        let isCurrent = true;
+        mocks.readMidiFile.mockReturnValue(parse.promise);
+
+        const importPromise = importMidiFile(new File([], 'slow.mid'), {
+            shouldContinue: () => isCurrent,
+        });
+        await vi.waitFor(() => expect(mocks.readMidiFile).toHaveBeenCalledTimes(1));
+
+        isCurrent = false;
+        parse.resolve(parsedTracks);
+
+        await expect(importPromise).resolves.toBe('superseded');
+        expect(trackStore.value).toBe(trackStateBefore);
+        expect(getMidiStoreState()).toBe(midiStateBefore);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('commits nothing when superseded immediately before the state batch', async () => {
+        const trackStateBefore = trackStore.value;
+        const midiStateBefore = getMidiStoreState();
+        const shouldContinue = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+
+        const result = await importMidiFile(new File([], 'import.mid'), { shouldContinue });
+
+        expect(result).toBe('superseded');
+        expect(trackStore.value).toBe(trackStateBefore);
+        expect(getMidiStoreState()).toBe(midiStateBefore);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the state batch when superseded before undo registration', async () => {
+        shouldInjectConcurrentTrack = false;
+        const trackStateBefore = trackStore.value;
+        const midiStateBefore = getMidiStoreState();
+        const shouldContinue = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValue(false);
+
+        const result = await importMidiFile(new File([], 'import.mid'), { shouldContinue });
+
+        expect(result).toBe('superseded');
+        expect(trackStore.value).toEqual(trackStateBefore);
+        expect(getMidiStoreState()).toEqual(midiStateBefore);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
     it('rolls back MIDI when the track write fails', async () => {
         shouldInjectConcurrentTrack = false;
         const midiStateBefore = getMidiStoreState();
@@ -192,7 +257,7 @@ describe('importMidiFile', () => {
             throw new Error('track write failed');
         });
 
-        await expect(importMidiFile(new File([], 'import.mid'))).resolves.toBeUndefined();
+        await expect(importMidiFile(new File([], 'import.mid'))).resolves.toBe('completed');
 
         expect(trackStore.value?.tracks).toEqual([]);
         expect(getMidiStoreState()).toEqual(midiStateBefore);

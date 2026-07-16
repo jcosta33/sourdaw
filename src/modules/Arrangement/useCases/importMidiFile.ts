@@ -21,6 +21,12 @@ type ImportedTrackIdentities = {
     clipIds: ReadonlySet<string>;
 };
 
+type ImportMidiFileOptions = {
+    shouldContinue?: () => boolean;
+};
+
+type ImportMidiFileOutput = 'completed' | 'superseded';
+
 function getImportedTrackIdentities(tracks: readonly Track[]): ImportedTrackIdentities | null {
     const trackIds = new Set<string>();
     const clipIds = new Set<string>();
@@ -82,21 +88,27 @@ function removeImportedTracks(identities: ImportedTrackIdentities): void {
     });
 }
 
-export async function importMidiFile(file: File): Promise<void> {
+export async function importMidiFile(
+    file: File,
+    { shouldContinue }: ImportMidiFileOptions = {}
+): Promise<ImportMidiFileOutput> {
     let parsedTracks: Awaited<ReturnType<typeof readMidiFile>>;
     try {
         parsedTracks = await readMidiFile(file);
     } catch {
         notifyUser(`Failed to import "${file.name}" - invalid or corrupt MIDI file`, 'error');
-        return;
+        return 'completed';
+    }
+    if (shouldContinue?.() === false) {
+        return 'superseded';
     }
     if (parsedTracks.length === 0) {
-        return;
+        return 'completed';
     }
 
     const state = getTrackStoreState();
     if (!state) {
-        return;
+        return 'completed';
     }
 
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
@@ -132,7 +144,10 @@ export async function importMidiFile(file: File): Promise<void> {
     const identities = getImportedTrackIdentities(tracksWithClips);
     if (!identities || !canApplyImportedTracks(identities)) {
         notifyUser(`Failed to import "${file.name}" - generated track or clip IDs conflict with the project`, 'error');
-        return;
+        return 'completed';
+    }
+    if (shouldContinue?.() === false) {
+        return 'superseded';
     }
 
     let midiChange: ReturnType<typeof mergeImportedMidiClipNotes>;
@@ -158,7 +173,15 @@ export async function importMidiFile(file: File): Promise<void> {
         });
     } catch {
         notifyUser(`Failed to import "${file.name}" - project state could not be updated`, 'error');
-        return;
+        return 'completed';
+    }
+
+    if (shouldContinue?.() === false) {
+        batchStoreUpdates(() => {
+            removeImportedTracks(identities);
+            midiChange.undo();
+        });
+        return 'superseded';
     }
 
     const importedName =
@@ -205,4 +228,6 @@ export async function importMidiFile(file: File): Promise<void> {
             });
         }
     );
+
+    return 'completed';
 }

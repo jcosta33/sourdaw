@@ -71,8 +71,8 @@ export async function importDroppedLaunchFiles({
             return { status: 'superseded' };
         }
         if (kind === 'midi') {
-            await importMidiFile(file);
-            if (!authority.isCurrent()) {
+            const outcome = await importMidiFile(file, { shouldContinue: authority.isCurrent });
+            if (outcome === 'superseded' || !authority.isCurrent()) {
                 return { status: 'superseded' };
             }
             continue;
