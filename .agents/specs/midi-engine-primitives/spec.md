@@ -6,6 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - intake/implementation-gaps.md
+  - intake/audit-deferred-fixes.md
 ---
 
 # MIDI engine primitives — probability, MPE allocator, MIDI clock
@@ -57,6 +58,18 @@ Verify with: `cargo test -p daw-engine midi_clock_jitter`
 
 - [ ] (non-blocking) Where the RNG seed is persisted so probability is reproducible across
   reload. Default: stored in the arrangement.
+- [ ] (deferred-gap from intake/audit-deferred-fixes.md, "Group G — Recording and
+  sequencer") This group was tracked as covered here, but its content is not present in
+  the ACs above; recorded now as an open gap. **G2 (sequencer sample-accurate `fire()`,
+  I-21):** the step sequencer is still `setTimeout`-based — `sequencerPlayback.ts`'s own
+  docstring reads "Uses setTimeout with AudioContext clock correction to avoid setInterval
+  drift" and `scheduleSequencerFire.ts` fires via `setTimeout(...)`; it does not compute a
+  `sampleFrame` and pass it through `triggerToasterPad`, so pad triggers are not aligned to
+  the AudioContext sample grid. **G1 (stereo recording, I-29):** the `Track` model
+  (`src/modules/Arrangement/models/Track.ts`) has no `inputChannelCount: 1 | 2` field (its
+  `channelCount` lives inside `renderSettings`, i.e. freeze/render, not the record input),
+  and `startAudioRecording.ts` does not read a per-track input channel count. Both remain
+  unbuilt; carry forward or fold into the relevant recording/sequencer feature.
 
 ## Affected areas
 

@@ -211,6 +211,15 @@ Verify with: `pnpm test:run -- SamplePlayer`
 - [ ] Q-001 — Which SFZ opcode subset is v1 (full coverage is large)?
 - [ ] Q-002 — Disk-streaming vs full-RAM threshold for large multisample libraries.
 - [ ] Q-003 — Round-robin / random sample selection in v1?
+- [ ] Q-004 — SFZ scope reduction (product-owner call). Intake `implementation-gaps.md`
+  §"SFZ" scoped a native Rust `daw-sfz` crate (or inside `daw-dsp`), `creek`-backed disk
+  streaming, an OPFS-backed streaming path for the web build (2 GB pack → first playable
+  note ≤500 ms), and a per-file opcode compatibility-report generator
+  (supported/partial/unsupported). This spec is JS/TS, AudioWorklet, in-RAM-only (full-RAM
+  load; disk-streaming and round-robin already deferred behind Q-002/Q-003), with no Rust
+  crate, no OPFS streaming, and no compatibility report. Is the JS in-RAM reduction an
+  accepted cut, or should the Rust/creek/OPFS/compat-report plan be reopened? Not decided
+  here — product-owner call.
 
 ## Affected areas
 

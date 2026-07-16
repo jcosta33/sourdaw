@@ -6,6 +6,7 @@ status: draft
 owner: The Sourdaw team
 sources:
   - intake/implementation-gaps.md
+  - intake/full-spec.md
 ---
 
 # Offline export encoders and signal integrity
@@ -70,7 +71,7 @@ Verify with: `cargo test -p daw-io sidechain_aware_stem_export`
 - [ ] (non-blocking) Browser lossy path: `wasm-media-encoders` vs `libflacjs` where the
   native path is not applicable — resolve per format during implementation.
 - [ ] (deferred-gap from intake/full-spec.md) Inter-track dependency rendering for stem
-  export beyond sidechain: the current `exportStems.ts` renders each track in isolation
+  export beyond sidechain: the current `src/modules/AudioEngine/useCases/exportStems.ts` renders each track in isolation
   via `renderOffline.ts`, which also breaks send effects and bus processing. Build a
   dependency-aware render sequence: (a) build a dependency graph from sidechain routes
   queried from the Routing store (`src/modules/Routing/`, `addSidechainRoute`/
