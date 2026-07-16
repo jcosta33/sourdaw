@@ -32,9 +32,9 @@ import {
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { TemplatePreviewThumb } from '../views/TemplatePreviewThumb';
+import { SourdawLogo } from '../components/SourdawLogo';
 
-import { SourdawLogo } from './SourdawLogo';
+import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 // ─────────────────────────────────────────────────────────────
 // Constants & metadata

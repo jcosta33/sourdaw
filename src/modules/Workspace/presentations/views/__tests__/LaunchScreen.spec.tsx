@@ -1,0 +1,158 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { LaunchScreen } from '../LaunchScreen';
+
+const mocks = vi.hoisted(() => ({
+    addClip: vi.fn(),
+    addTrack: vi.fn(),
+    createFromTemplate: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    executeAppAction: vi.fn(),
+    getRecentProjects: vi.fn(() => []),
+    getPreviewLoop: vi.fn(() => undefined),
+    getTemplates: vi.fn(() => []),
+    importMidiFile: vi.fn(),
+    loadRecentProject: vi.fn(),
+    newProject: vi.fn(),
+    pickAndImportDawProject: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+}));
+
+vi.mock('#/modules/Project/useCases', () => ({
+    createFromTemplate: mocks.createFromTemplate,
+    getRecentProjects: mocks.getRecentProjects,
+    getPreviewLoop: mocks.getPreviewLoop,
+    getTemplates: mocks.getTemplates,
+    loadRecentProject: mocks.loadRecentProject,
+    newProject: mocks.newProject,
+    pickAndImportDawProject: mocks.pickAndImportDawProject,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    decodeAudioFile: mocks.decodeAudioFile,
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addClip: mocks.addClip,
+    addTrack: mocks.addTrack,
+    importMidiFile: mocks.importMidiFile,
+}));
+
+vi.mock('#/modules/Transport/stores', () => ({
+    transportStore: { value: { tempo: 120 } },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
+describe('LaunchScreen', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.addTrack.mockReturnValue({ id: 'track-1' });
+        mocks.createFromTemplate.mockResolvedValue(undefined);
+        mocks.decodeAudioFile.mockResolvedValue({
+            id: 'buffer-1',
+            buffer: { duration: 4 },
+        });
+        mocks.getRecentProjects.mockReturnValue([]);
+        mocks.getTemplates.mockReturnValue([]);
+        mocks.loadRecentProject.mockResolvedValue(true);
+        mocks.pickAndImportDawProject.mockResolvedValue(true);
+    });
+
+    it('should render the launch dialog with primary actions', () => {
+        render(<LaunchScreen exiting={false} />);
+        expect(screen.getByRole('dialog', { name: /Sourdaw — start a project/ })).toBeInTheDocument();
+        expect(screen.getByText('Sourdaw')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+    });
+
+    it('starts a new project in the click handler before shortcuts can run', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
+
+        expect(mocks.newProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('should dispatch a payloadless export action from the export click', () => {
+        render(<LaunchScreen exiting={false} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Export \.dawproject/ }));
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'exportDawProject' });
+    });
+
+    it('opens the template grid and creates the selected template', async () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'demo', name: 'Demo Session', description: 'A demo', category: 'demo' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+
+        expect(screen.getByRole('button', { name: /Basic Band/ })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Basic Band/ }));
+
+        await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('basic-band'));
+    });
+
+    it('filters the demo grid to demo templates', () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'demo', name: 'Demo Session', description: 'A demo', category: 'demo' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Demos/ }));
+
+        expect(screen.getByRole('button', { name: /Demo Session/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
+    });
+
+    it('loads a selected recent project', async () => {
+        mocks.getRecentProjects.mockReturnValue([{ key: 'recent-1', name: 'Recent Mix', updatedAt: Date.now() }]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Open recent project Recent Mix' }));
+
+        await waitFor(() => expect(mocks.loadRecentProject).toHaveBeenCalledWith('recent-1'));
+    });
+
+    it('imports a selected DAWproject', async () => {
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Import \.dawproject/ }));
+
+        await waitFor(() => expect(mocks.pickAndImportDawProject).toHaveBeenCalledTimes(1));
+    });
+
+    it('imports dropped MIDI and audio files into a new project', async () => {
+        const midiFile = new File(['midi'], 'melody.mid', { type: 'audio/midi' });
+        const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
+            dataTransfer: { files: [midiFile, audioFile] },
+        });
+
+        await waitFor(() => {
+            expect(mocks.newProject).toHaveBeenCalledTimes(1);
+            expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
+            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+            expect(mocks.addClip).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                startBeat: 0,
+                endBeat: 8,
+                name: 'drums',
+                type: 'audio',
+                audioBufferId: 'buffer-1',
+            });
+        });
+    });
+});

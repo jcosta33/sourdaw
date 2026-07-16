@@ -1396,51 +1396,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
-    "to": "#/modules/Arrangement",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
-    "to": "src/modules/Project/useCases/projectPersistence/newProject.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
-    "to": "src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
-    "to": "src/modules/Project/useCases/projectTemplates/templateDefinitions/getTemplates.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/presentations/components/__tests__/LaunchScreen.spec.tsx",
-    "to": "src/modules/Transport/stores/transportStore.ts",
-    "rule": {
-      "severity": "error",
-      "name": "cross-module-index-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Workspace/presentations/views/__tests__/AppShell.spec.tsx",
     "to": "../../hooks/useTimelineCoordinates",
     "rule": {
