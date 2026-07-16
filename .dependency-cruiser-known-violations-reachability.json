@@ -10,15 +10,6 @@
   },
   {
     "type": "reachability-causal",
-    "from": "src/modules/Plugin/presentations/components/IrBrowser.tsx",
-    "to": "src/modules/AudioEngine/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "components-no-usecase-transitively"
-    }
-  },
-  {
-    "type": "reachability-causal",
     "from": "src/modules/Workspace/presentations/components/ConfirmDialog.tsx",
     "to": "src/modules/Workspace/useCases/onConfirmation.ts",
     "rule": {

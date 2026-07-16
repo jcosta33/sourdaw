@@ -1,24 +1,30 @@
 /**
  * IrBrowser — impulse response file loader with drag-and-drop.
  *
- * Drop zone accepts WAV/AIFF files. Decodes the file through the shared
- * AudioContext, shows the IR waveform, and hands the decoded interleaved
- * samples to the `onIrLoaded` callback. Routing that data into the reverb
- * engine is the caller's responsibility — this component does not touch the
- * engine itself.
+ * Drop zone accepts WAV/AIFF files. The owning Plugin view supplies the
+ * decoded interleaved samples and waveform preview, while this component
+ * handles the drop interaction and presentation. Routing that data into the
+ * reverb engine is the caller's responsibility.
  */
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
 
 import { Upload } from 'lucide-react';
 
 import { logger } from '#/infra/logger/appLogger';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+
+type IrBrowserDecodeResult = {
+    data: Float32Array;
+    channels: number;
+    sampleRate: number;
+    waveform: number[];
+};
 
 type IrBrowserProps = {
+    onFileDrop: (file: File) => Promise<IrBrowserDecodeResult>;
     onIrLoaded: (data: Float32Array, channels: number, sampleRate: number) => void;
 };
 
-export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
+export const IrBrowser = ({ onFileDrop, onIrLoaded }: IrBrowserProps): ReactElement => {
     const [irName, setIrName] = useState<string | null>(null);
     const [waveform, setWaveform] = useState<number[] | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -40,43 +46,10 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
         }
 
         try {
-            const arrayBuffer = await file.arrayBuffer();
-            // §179.1 — decode through the shared AudioContext instead of
-            // instantiating an orphaned OfflineAudioContext that was never
-            // started or cleaned up.
-            const audioBuffer = await getAudioContext().decodeAudioData(arrayBuffer);
-
-            const channels = audioBuffer.numberOfChannels;
-            const frameCount = audioBuffer.length;
-            const sampleRate = audioBuffer.sampleRate;
-
-            // Interleave
-            const data = new Float32Array(frameCount * channels);
-            for (let ch = 0; ch < channels; ch++) {
-                const channelData = audioBuffer.getChannelData(ch);
-                for (let index = 0; index < frameCount; index++) {
-                    data[index * channels + ch] = channelData[index] ?? 0;
-                }
-            }
+            const { data, channels, sampleRate, waveform: preview } = await onFileDrop(file);
 
             setIrName(file.name);
             onIrLoaded(data, channels, sampleRate);
-
-            // Generate waveform preview (downsample to 200 points)
-            const mono = audioBuffer.getChannelData(0);
-            const points = 200;
-            const samplesPerPoint = Math.floor(mono.length / points);
-            const preview: number[] = [];
-            for (let param = 0; param < points; param++) {
-                let peak = 0;
-                for (let state = 0; state < samplesPerPoint; state++) {
-                    const val = Math.abs(mono[param * samplesPerPoint + state] ?? 0);
-                    if (val > peak) {
-                        peak = val;
-                    }
-                }
-                preview.push(peak);
-            }
             setWaveform(preview);
         } catch (error) {
             logger.warn('[ProofChamber] Failed to decode IR:', error);
