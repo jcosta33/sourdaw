@@ -18,8 +18,6 @@ import {
     Clock,
 } from 'lucide-react';
 
-import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import {
     newProject,
@@ -29,12 +27,12 @@ import {
     loadRecentProject,
     pickAndImportDawProject,
 } from '#/modules/Project/useCases';
-import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { TemplatePreviewThumb } from '../views/TemplatePreviewThumb';
+import { importDroppedLaunchFiles } from '../../useCases/importDroppedLaunchFiles';
+import { SourdawLogo } from '../components/SourdawLogo';
 
-import { SourdawLogo } from './SourdawLogo';
+import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 // ─────────────────────────────────────────────────────────────
 // Constants & metadata
@@ -154,6 +152,8 @@ const AmbientGlows = (): ReactElement => (
 type RecentProject = ReturnType<typeof getRecentProjects>[number];
 
 const RECENT_PROJECTS_LIMIT = 5;
+const PROJECT_ACTIVATION_FAILURE_MESSAGE = 'Failed to create a new project.';
+const UNSUPPORTED_DROP_MESSAGE = 'No supported audio or MIDI files were dropped.';
 
 const formatRelativeTime = (timestamp: number): string => {
     const diff = Date.now() - timestamp;
@@ -249,7 +249,12 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleNewProject = (): void => {
         setLoadingName('New Project');
         setView('loading');
-        newProject();
+        void (async () => {
+            if (!(await newProject())) {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+            }
+        })();
     };
 
     const handleImportDawProject = (): void => {
@@ -296,11 +301,14 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
-        // Fire-and-forget: a click handler returns void; createFromTemplate
-        // surfaces its own failures, so there is nothing to await here.
+        // Fire-and-forget: the click handler returns void; activation failure
+        // is rendered here after the template owner reports its outcome.
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 80));
-            await createFromTemplate(template.id);
+            if (!(await createFromTemplate(template.id))) {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+            }
         })();
     };
 
@@ -310,42 +318,27 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
-        // Fire-and-forget: a drop handler returns void; per-file decode
-        // failures are caught and reported inline within the loop below.
+        const files = Array.from(e.dataTransfer.files);
+        // Fire-and-forget: a drop handler returns void; the use-case result
+        // carries the per-file failures that this view renders to the user.
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            newProject();
-            for (const file of Array.from(e.dataTransfer.files)) {
-                const ext = file.name.toLowerCase().split('.').pop() ?? '';
-                if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
-                    await importMidiFile(file);
-                    continue;
-                }
-                const isAudio =
-                    file.type.startsWith('audio/') ||
-                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
-                if (!isAudio) {
-                    continue;
-                }
-                const track = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
-                if (!track) {
-                    continue;
-                }
-                try {
-                    const { id: bufferId, buffer } = await decodeAudioFile(file);
-                    const tempo = transportStore.value?.tempo ?? 120;
-                    const beats = Math.max(4, Math.ceil((buffer.duration / 60) * tempo));
-                    addClip({
-                        trackId: track.id,
-                        startBeat: 0,
-                        endBeat: beats,
-                        name: file.name.replace(/\.[^.]+$/, ''),
-                        type: 'audio',
-                        audioBufferId: bufferId,
-                    });
-                } catch {
-                    notifyUser(`Failed to import "${file.name}"`, 'error');
-                }
+            const result = await importDroppedLaunchFiles({ files });
+            if (result.status === 'unsupported') {
+                notifyUser(UNSUPPORTED_DROP_MESSAGE, 'warning');
+                setView('home');
+                return;
+            }
+            if (result.status === 'activation-failed') {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+                return;
+            }
+            if (result.status === 'superseded') {
+                return;
+            }
+            for (const fileName of result.failedFileNames) {
+                notifyUser(`Failed to import "${fileName}"`, 'error');
             }
         })();
     };
