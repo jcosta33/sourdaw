@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { ClipAudioAiSection } from '../ClipAudioAiSection';
@@ -218,6 +219,17 @@ describe('ClipAudioAiSection', () => {
         expect(getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1-denoised' });
         expect(screen.queryByRole('button', { name: 'Listen to original audio' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Listen to denoised audio' })).not.toBeInTheDocument();
+    });
+
+    it('denoises the buffer the A/B controls read back: key round-trip on audioBufferId', () => {
+        // The A/B `hasDenoised` check reads `${clip.audioBufferId}-denoised`
+        // (asserted above), so Apply Denoise must key the write on the same
+        // audioBufferId — not clip.id — or the result is orphaned in the cache.
+        render(<ClipAudioAiSection {...defaultProps} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Apply Denoise/ }));
+
+        expect(handleAiDenoiseClip).toHaveBeenCalledWith('buffer-1', 0.7);
     });
 
     it('should render separate stems button', () => {

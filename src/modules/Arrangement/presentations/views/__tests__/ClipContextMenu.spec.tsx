@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 
 import { ClipContextMenu } from '../ClipContextMenu';
@@ -28,6 +29,14 @@ vi.mock('../../../stores/trackStore', async (importOriginal) => ({
                             startBeat: 0,
                             endBeat: 4,
                         },
+                        {
+                            id: 'clip2',
+                            name: 'Test With Buffer',
+                            type: 'audio',
+                            startBeat: 4,
+                            endBeat: 8,
+                            audioBufferId: 'buffer-2',
+                        },
                     ],
                 },
             ],
@@ -53,6 +62,18 @@ vi.mock('../../../useCases/clipEditing/renameClip', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
+}));
+
+vi.mock('#/modules/AiGeneration/useCases', () => ({
+    handleAiDenoiseClip: vi.fn(),
+}));
+
+// Invoke the action immediately so the denoise dispatch is observable.
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    runAiActionWithToast: vi.fn((action: () => unknown) => {
+        void action();
+        return Promise.resolve();
+    }),
 }));
 
 // Mock UI components
@@ -103,5 +124,25 @@ describe('ClipContextMenu', () => {
 
         render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={8} onClose={mockOnClose} />);
         expect(screen.getByText('3 clips selected')).toBeInTheDocument();
+    });
+
+    it('dispatches denoise keyed on the clip audioBufferId', () => {
+        // handleAiDenoiseClip treats its argument as a cache bufferId (writes
+        // `${id}-denoised`); the Inspector A/B reads `${clip.audioBufferId}-denoised`.
+        render(<ClipContextMenu x={100} y={100} clipId="clip2" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Denoise' }));
+
+        expect(handleAiDenoiseClip).toHaveBeenCalledWith('buffer-2', 0.7);
+    });
+
+    it('does not dispatch denoise for a clip without an audioBufferId', () => {
+        // clip1 has no audioBufferId: there is no cache entry to denoise and no
+        // key the consumer could reconstruct — the entry must no-op.
+        render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Denoise' }));
+
+        expect(handleAiDenoiseClip).not.toHaveBeenCalled();
     });
 });

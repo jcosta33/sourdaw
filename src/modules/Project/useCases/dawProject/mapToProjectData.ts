@@ -36,7 +36,7 @@ function normalizeDeviceType(raw: string): ProjectDevice {
     const lowered = raw.toLowerCase();
     if (PASS_THROUGH_DEVICE_TYPES.has(lowered)) {
         return {
-            id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+            id: `dev-${crypto.randomUUID()}`,
             name: lowered,
             type: lowered,
             bypassed: false,
@@ -44,7 +44,7 @@ function normalizeDeviceType(raw: string): ProjectDevice {
         };
     }
     return {
-        id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+        id: `dev-${crypto.randomUUID()}`,
         name: raw || 'External Device',
         type: 'builtin-gain',
         bypassed: false,
@@ -54,7 +54,7 @@ function normalizeDeviceType(raw: string): ProjectDevice {
 
 function mapNote(note: { pitch: number; startBeat: number; duration: number; velocity: number }): ProjectMidiNote {
     return {
-        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        id: `note-${crypto.randomUUID()}`,
         pitch: note.pitch,
         startBeat: note.startBeat,
         duration: note.duration,
@@ -129,7 +129,7 @@ function mapTrack(
         parsed.kind === 'midi' && parsed.deviceTypes.length === 0
             ? [
                   {
-                      id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+                      id: `dev-${crypto.randomUUID()}`,
                       name: 'Synth',
                       type: 'builtin-synth',
                       bypassed: false,
@@ -233,7 +233,7 @@ export function mapToProjectData(input: MapToProjectDataInput): ProjectData {
     const automation: ProjectAutomation = { lanes: [] };
     const midi: ProjectMidi = { notesByClipId, ccByClipId: {}, pitchBendByClipId: {} };
     const markers: ProjectMarker[] = parsed.markers.map((marker, index) => ({
-        id: `marker-${String(index)}-${crypto.randomUUID().slice(0, 8)}`,
+        id: `marker-${String(index)}-${crypto.randomUUID()}`,
         beat: marker.beat,
         name: marker.name,
         color: '#f59e0b',

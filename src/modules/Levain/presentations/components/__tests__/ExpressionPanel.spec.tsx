@@ -85,4 +85,63 @@ describe('ExpressionPanel', () => {
 
         expect(onChangeExp).toHaveBeenCalledWith({ vibratoDepthMax: 33 });
     });
+
+    it('forwards the edited vibrato rate-min value through onChangeExp', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onChangeExp = vi.fn();
+
+        render(
+            <ExpressionPanel
+                expression={patch.expression}
+                legato={patch.legato}
+                onChangeExp={onChangeExp}
+                onChangeLeg={vi.fn()}
+            />
+        );
+
+        // The vibrato rate-min knob is the only one with max=7 (rate-max uses max=9).
+        fireEvent.change(screen.getByTestId('knob-max-7'), { target: { value: '5' } });
+
+        expect(onChangeExp).toHaveBeenCalledWith({ vibratoRateMin: 5 });
+    });
+
+    it('clamps rate-min to the current rate-max so the pair can never invert', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onChangeExp = vi.fn();
+
+        render(
+            <ExpressionPanel
+                expression={{ ...patch.expression, vibratoRateMax: 4 }}
+                legato={patch.legato}
+                onChangeExp={onChangeExp}
+                onChangeLeg={vi.fn()}
+            />
+        );
+
+        // Pushing rate-min (knob-max-7) to 6 Hz while rate-max is 4 Hz must
+        // clamp to 4 — an inverted [min, max] sweep range is nonsensical.
+        fireEvent.change(screen.getByTestId('knob-max-7'), { target: { value: '6' } });
+
+        expect(onChangeExp).toHaveBeenCalledWith({ vibratoRateMin: 4 });
+    });
+
+    it('clamps rate-max to the current rate-min so the pair can never invert', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onChangeExp = vi.fn();
+
+        render(
+            <ExpressionPanel
+                expression={patch.expression}
+                legato={patch.legato}
+                onChangeExp={onChangeExp}
+                onChangeLeg={vi.fn()}
+            />
+        );
+
+        // Default rate-min is 4 Hz; dragging rate-max (knob-max-9) down to 3 Hz
+        // must clamp up to 4.
+        fireEvent.change(screen.getByTestId('knob-max-9'), { target: { value: '3' } });
+
+        expect(onChangeExp).toHaveBeenCalledWith({ vibratoRateMax: 4 });
+    });
 });

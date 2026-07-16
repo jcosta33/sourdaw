@@ -5,7 +5,6 @@ import { getTrackAtY } from './getTrackAtY';
 
 export type ClipEdge = 'left' | 'right' | 'body';
 
-const RULER_HEIGHT = 0;
 const EDGE_THRESHOLD_PX = 10;
 
 export function hitTestClipEdge(
@@ -18,7 +17,7 @@ export function hitTestClipEdge(
         return null;
     }
 
-    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const contentY = Math.max(0, canvasY + (viewState.scrollY ?? 0));
     const hit = getTrackAtY(model.tracks, contentY);
     if (!hit) {
         return null;

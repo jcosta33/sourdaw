@@ -14,8 +14,6 @@ export type AutomationSubLaneHit = {
     beat: number;
 };
 
-const RULER_HEIGHT = 0;
-
 export function hitTestAutomationSubLane(canvasX: number, canvasY: number): AutomationSubLaneHit | null {
     const viewState = timelineViewStore.value;
     const trackState = trackStore.value;
@@ -24,7 +22,7 @@ export function hitTestAutomationSubLane(canvasX: number, canvasY: number): Auto
         return null;
     }
 
-    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const contentY = Math.max(0, canvasY + (viewState.scrollY ?? 0));
 
     const subLaneMap = workspace.automationSubLanes;
     const model = buildTimelineRenderModel();

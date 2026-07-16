@@ -194,10 +194,31 @@ export const ExpressionPanel = ({
                         </span>
                     </div>
 
+                    {/* Rate Min/Max form an ordered pair (engine sweeps CC2 across
+                        [rate_min, rate_max]); clamp each knob against the other at
+                        the gesture receiver so an inverted range can never be
+                        written — same normalize-on-receipt pattern as Transport's
+                        setLoopRegion for loopStart/loopEnd. */}
+                    <div className="flex flex-col items-center gap-0">
+                        <RotaryKnob
+                            value={expression.vibratoRateMin}
+                            onChange={(v) => onChangeExp({ vibratoRateMin: Math.min(v, expression.vibratoRateMax) })}
+                            min={2}
+                            max={7}
+                            step={0.1}
+                            defaultValue={4}
+                            size="md"
+                            tone="amber"
+                        />
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Min</span>
+                        <span className="text-[6px] text-muted-foreground/40 tabular-nums">
+                            {expression.vibratoRateMin.toFixed(1)}Hz
+                        </span>
+                    </div>
                     <div className="flex flex-col items-center gap-0">
                         <RotaryKnob
                             value={expression.vibratoRateMax}
-                            onChange={(v) => onChangeExp({ vibratoRateMax: v })}
+                            onChange={(v) => onChangeExp({ vibratoRateMax: Math.max(v, expression.vibratoRateMin) })}
                             min={2}
                             max={9}
                             step={0.1}
@@ -205,7 +226,7 @@ export const ExpressionPanel = ({
                             size="md"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate</span>
+                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Max</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoRateMax.toFixed(1)}Hz
                         </span>

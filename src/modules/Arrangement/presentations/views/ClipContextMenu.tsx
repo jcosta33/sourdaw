@@ -162,7 +162,15 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() => {
-                    void runAiActionWithToast(() => handleAiDenoiseClip(clipId, 0.7), {
+                    // handleAiDenoiseClip keys the cache on a bufferId (source
+                    // lookup + `${id}-denoised` write); the Inspector A/B reads
+                    // `${clip.audioBufferId}-denoised` — pass the audioBufferId,
+                    // not the clip id, and gate like Detect Tempo/Key above.
+                    if (!clip?.audioBufferId) {
+                        return;
+                    }
+                    const audioBufferId = clip.audioBufferId;
+                    void runAiActionWithToast(() => handleAiDenoiseClip(audioBufferId, 0.7), {
                         startMsg: 'Denoising audio…',
                         successMsg: 'Audio denoised',
                         successDetails: ['Noise reduction applied to clip'],
