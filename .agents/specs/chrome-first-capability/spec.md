@@ -305,10 +305,15 @@ authority from native-owned project/output state. Command-level tests provide a
 divergent renderer path and prove that each command either rejects the request
 or accesses only the native-owned path, leaving the divergent path untouched.
 
-Verify with: `cargo test -p sourdaw --lib divergent_renderer_path_authority`
-The target runs
-`commands::collab::tests::rejects_divergent_renderer_path_authority` and
-`commands::audio_postprocess::tests::ignores_divergent_renderer_path_authority`.
+Verify with: the following fail-fast command.
+
+```sh
+rg -Uq '(?m)^[ \t]*#\[test\][ \t]*\r?\n[ \t]*fn rejects_divergent_renderer_path_authority\(\)[ \t]*\{' \
+  src-tauri/src/commands/collab.rs &&
+  rg -Uq '(?m)^[ \t]*#\[test\][ \t]*\r?\n[ \t]*fn ignores_divergent_renderer_path_authority\(\)[ \t]*\{' \
+    src-tauri/src/commands/audio_postprocess.rs &&
+  cargo test -p sourdaw --lib divergent_renderer_path_authority
+```
 
 ## Open questions
 
