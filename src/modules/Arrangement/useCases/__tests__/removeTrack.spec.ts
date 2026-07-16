@@ -109,7 +109,7 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
-    it('should remove the engine bus strip when a bus track is deleted', () => {
+    it('should remove BOTH the engine bus strip and track strip when a bus track is deleted', () => {
         const bus = {
             id: 'bus-1',
             name: 'Reverb Bus',
@@ -125,7 +125,10 @@ describe('removeTrack', () => {
         removeTrack('bus-1');
 
         expect(ownerUseCases.removeBusStrip).toHaveBeenCalledWith('bus-1');
-        expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
+        // ensureTrackStrips skips only 'folder', so a bus also owns a TrackNode
+        // (devices, sends/sidechains sourced from the bus). removeBusStrip only
+        // disposes the BusNode — the TrackNode must be torn down too or it leaks.
+        expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('bus-1');
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'bus-1' });
     });
 
