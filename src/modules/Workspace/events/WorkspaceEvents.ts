@@ -29,6 +29,27 @@ export type ConfirmPayload = {
     resolve: (ok: boolean) => void;
 };
 
+/**
+ * Payload for the async text-prompt dialog event.
+ *
+ * Sibling of {@link ConfirmPayload}: carries a correlation id and a resolver
+ * callback. The `PromptDialog` component subscribes to this event, renders a
+ * themed single-field input modal, and invokes `resolve(value)` with the
+ * trimmed text on submit or `null` on cancel/dismiss. The caller awaits a
+ * Promise that wraps this round-trip, so `window.prompt` (which blocks the JS
+ * event loop and is unavailable in some Tauri webviews) is never used.
+ */
+export type PromptPayload = {
+    id: string;
+    message: string;
+    title?: string;
+    initialValue?: string;
+    placeholder?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    resolve: (value: string | null) => void;
+};
+
 /** Payload for the zoom-to-selection event. */
 export type ZoomToSelectionPayload = { startBeat: number; endBeat: number };
 

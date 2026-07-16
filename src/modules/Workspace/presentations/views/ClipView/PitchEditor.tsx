@@ -3,7 +3,7 @@ import { type ReactElement, useEffect, useRef, useState, type PointerEvent } fro
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { commitPitchEditCommand } from '#/modules/Command/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { analyzeClipPitch } from '#/modules/Knead/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -237,7 +237,12 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         if (!contour || shifts.length === 0) {
             return;
         }
-        void commitPitchEditCommand(clipId, shifts, contour);
+        // Dispatch through the action layer so the pitch commit gets a real undo entry
+        // (handled by `handleCommitPitchEdit`). The handler notifies the user on render
+        // failure and rethrows, so swallow the rejection here to avoid an unhandled one.
+        void executeAppAction({ type: 'commitPitchEdit', payload: { clipId, segments: shifts, contour } }).catch(
+            () => {}
+        );
     };
 
     return (

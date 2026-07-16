@@ -12,6 +12,7 @@ import {
     type VoidPayload,
     type NotifyPayload,
     type ConfirmPayload,
+    type PromptPayload,
     type ZoomToSelectionPayload,
     type ToggleVoiceCommandPayload,
     type ImportMidiPayload,
@@ -80,6 +81,7 @@ export type AppEvents = {
     // Notifications
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
 
     // Shortcut engine
     'shortcut.fired': { action: string };

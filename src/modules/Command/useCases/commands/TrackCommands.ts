@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
+import { promptUser } from '#/utils/Notification/promptUser';
 
 import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -69,12 +70,21 @@ export const trackCommands: CallableCommandEntry[] = [
         category: 'Track',
         action: () => {
             const id = getSelectedTrackId();
-            if (id) {
-                const name = window.prompt('New track name:');
-                if (name) {
-                    void executeAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
-                }
+            if (!id) {
+                return;
             }
+            const track = trackStore.value?.tracks.find((candidate) => candidate.id === id);
+            void (async () => {
+                const name = await promptUser({
+                    title: 'Rename Track',
+                    message: 'New track name',
+                    initialValue: track?.name ?? '',
+                    confirmLabel: 'Rename',
+                });
+                if (name) {
+                    await executeAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
+                }
+            })();
         },
     },
     {

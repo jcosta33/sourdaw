@@ -1,55 +1,31 @@
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
-import { type PitchContour } from '#/modules/Knead/stores';
+import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { commitUndoEntry } from '../commitUndoEntry';
-import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
+import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '../../models/AppAction';
 
+import { findPitchEditClip } from './findPitchEditClip';
 import { getPitchEditDependencies } from './getPitchEditDependencies';
 
-type NoteSegment = {
-    start_time_ms: number;
-    end_time_ms: number;
-    shift_semitones: number;
+export type CommitPitchEditInput = {
+    clipId: string;
+    segments: PitchEditSegmentSnapshot[];
+    contour: PitchContourSnapshot;
 };
 
-type PitchEditClip = {
-    id: string;
-    type: 'audio';
-    fileId?: string;
-    audioBufferId?: string;
-};
-
-function findAudioClip(clipId: string): PitchEditClip | null {
-    const tracks = trackStore.value?.tracks ?? [];
-    for (const track of tracks) {
-        for (const clip of track.clips) {
-            const candidate: {
-                id: string;
-                type: 'audio' | 'midi';
-                fileId?: string;
-                audioBufferId?: string;
-            } = clip;
-            if (candidate.id === clipId && candidate.type === 'audio') {
-                return {
-                    id: candidate.id,
-                    type: 'audio',
-                    fileId: candidate.fileId,
-                    audioBufferId: candidate.audioBufferId,
-                };
-            }
-        }
-    }
-    return null;
-}
-
-export async function commitPitchEditCommand(
-    clipId: string,
-    segments: NoteSegment[],
-    contour: PitchContour
-): Promise<void> {
-    const targetClip = findAudioClip(clipId);
+/**
+ * Implementation behind the `commitPitchEdit` AppAction handler. Renders the manual
+ * pitch shift through the injected AudioEngine dependency and swaps the clip's file
+ * pointer to the rendered output.
+ *
+ * Undo is handled by the action layer: `handleCommitPitchEdit.describe()` emits a
+ * `restoreClipFileId` inverse, and `executeAppAction` pushes the real undo entry — so
+ * this function no longer creates its own callback undo entry. On render failure it
+ * notifies the user and rethrows, which makes `executeAppAction` skip the undo entry
+ * (nothing changed, so nothing to undo).
+ */
+export async function commitPitchEdit({ clipId, segments, contour }: CommitPitchEditInput): Promise<void> {
+    const targetClip = findPitchEditClip(clipId);
 
     if (!targetClip?.fileId) {
         return;
@@ -59,8 +35,8 @@ export async function commitPitchEditCommand(
     const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
 
     try {
-        const { commitPitchEdit } = getPitchEditDependencies();
-        await commitPitchEdit({
+        const { commitPitchEdit: renderPitchEdit } = getPitchEditDependencies();
+        await renderPitchEdit({
             inputAudioPath: originalFileId,
             outputAudioPath,
             audioBufferId: targetClip.audioBufferId,
@@ -68,33 +44,13 @@ export async function commitPitchEditCommand(
             contour,
         });
 
-        function setClipFileId(fileId: string): void {
-            updateClipInStore(clipId, (clip) => ({ ...clip, fileId }));
-        }
-
-        function undoFn() {
-            setClipFileId(originalFileId);
-        }
-
-        function redoFn() {
-            setClipFileId(outputAudioPath);
-        }
-
-        redoFn();
-
-        const entry = createCallbackUndoEntry({
-            label: 'Commit Pitch Edit',
-            undo: undoFn,
-            redo: redoFn,
-            source: 'manual',
-        });
-        commitUndoEntry(entry);
+        updateClipInStore(clipId, (clip) => ({ ...clip, fileId: outputAudioPath }));
     } catch (error) {
-        // Previously the failure was swallowed into `console.error` only, so a
-        // failed pitch commit looked like success to the user (no edit applied,
-        // no feedback). Surface it through the project `logger` facade (the rest
-        // of the module logs that way) and notify the user.
+        // Surface the failure so a failed pitch commit does not look like success:
+        // log through the project `logger` facade and notify the user. Rethrow so the
+        // dispatch layer records no undo entry for an edit that never landed.
         logger.error(error instanceof Error ? error : new Error(String(error)));
         notifyUser('Failed to commit pitch edit', 'error');
+        throw error;
     }
 }

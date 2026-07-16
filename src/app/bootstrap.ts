@@ -49,6 +49,7 @@ import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,
+    getPitchHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
     setActionHistoryMetadataPort,
@@ -241,6 +242,7 @@ registerHandlerMap(getPatternInstanceHandlers());
 registerHandlerMap(getMacroHandlers());
 registerHandlerMap(getUndoRedoHandlers());
 registerHandlerMap(getUndoTreeHandlers());
+registerHandlerMap(getPitchHandlers());
 registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());

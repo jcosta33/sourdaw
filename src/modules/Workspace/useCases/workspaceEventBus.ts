@@ -5,6 +5,7 @@ import type {
     ImportMidiPayload,
     MidiOutPayload,
     NotifyPayload,
+    PromptPayload,
     ShowDevicePanelGenericPayload,
     ShowDevicePanelPayload,
     ToggleVoiceCommandPayload,
@@ -42,6 +43,7 @@ type WorkspaceEvents = {
     'voice.toggle': ToggleVoiceCommandPayload;
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
 };
 
 export abstract class WorkspaceEventBus {

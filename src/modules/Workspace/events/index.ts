@@ -4,6 +4,7 @@ export type {
     VoidPayload,
     NotifyPayload,
     ConfirmPayload,
+    PromptPayload,
     ZoomToSelectionPayload,
     ToggleVoiceCommandPayload,
     ImportMidiPayload,
