@@ -1,12 +1,10 @@
 /**
  * The AudioEngine half of the hung-note fix (MAJOR-B): the offs a removed Yeast
  * processor emits via `yeast.notesOff` must actually reach the live instrument.
- * `routeYeastNoteOffsForTargetTrack` resolves the target track's instrument and
- * delivers each Note Off to its device node.
+ * `routeYeastNoteOffsForTargetTrack` delivers each Note Off to a resolved
+ * instrument track's device node.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { Device, Track, TrackStoreState } from '#/modules/Arrangement/stores';
 
 const { fermenter_note_off, grand_boule_note_off, levain_note_off, get_track_strip } = vi.hoisted(() => ({
     fermenter_note_off: vi.fn<(note: number) => void>(),
@@ -19,73 +17,32 @@ vi.mock('../../createWebAudioEngine', () => ({
     audioEngine: { getTrackStrip: get_track_strip },
 }));
 
-const { resolveInstrumentTrack } = await import('../resolveInstrumentTrack');
 const { routeYeastNoteOffsForTargetTrack } = await import('../routeYeastNoteOff');
 const { routeYeastNoteOffToInstrument } = await import('../routeYeastNoteOffToInstrument');
 
 type InstrumentStrip = NonNullable<Parameters<typeof routeYeastNoteOffToInstrument>[1]>;
 type InstrumentDeviceNode = InstrumentStrip['deviceNodes'][number];
+type InstrumentTrack = NonNullable<Parameters<typeof routeYeastNoteOffsForTargetTrack>[0]>;
+type InstrumentDevice = InstrumentTrack['devices'][number];
 
-type CreateTrackInput = {
+type CreateInstrumentTrackInput = {
     id: string;
-    devices?: Device[];
-    parent_id?: string | null;
+    devices?: readonly InstrumentDevice[];
 };
 
 function noop_emit(): void {}
 
-function create_device(input: { id: string; type: string }): Device {
+function create_device(input: { id: string; type: string }): InstrumentDevice {
     return {
         id: input.id,
-        name: input.type,
         type: input.type,
-        bypassed: false,
-        parameterValues: {},
     };
 }
 
-function create_track(input: CreateTrackInput): Track {
+function create_instrument_track(input: CreateInstrumentTrackInput): InstrumentTrack {
     return {
         id: input.id,
-        name: input.id,
-        kind: 'midi',
-        muted: false,
-        soloed: false,
-        armed: false,
-        gain: 1,
-        pan: 0,
-        color: '#ffffff',
-        clips: [],
         devices: input.devices ?? [],
-        sends: [],
-        midiFx: [],
-        frozen: false,
-        freezeState: { status: 'unfrozen' },
-        parentId: input.parent_id ?? null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 80,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        activeAlternativeId: 'alt-1',
-        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-    };
-}
-
-function create_track_state(input: { tracks: Track[] }): TrackStoreState {
-    return {
-        tracks: input.tracks,
-        selectedTrackId: null,
-        ghostClips: [],
     };
 }
 
@@ -107,15 +64,12 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         get_track_strip.mockReturnValue({
             deviceNodes: [{ type: 'fermenter', fermenterControls: { noteOff: fermenter_note_off } }],
         });
-        const track_state = create_track_state({
-            tracks: [
-                create_track({ id: 'track-a', devices: [create_device({ id: 'ferm-a', type: 'fermenter' })] }),
-                create_track({ id: 'track-b', devices: [create_device({ id: 'ferm-b', type: 'fermenter' })] }),
-            ],
+        const instrument_track = create_instrument_track({
+            id: 'track-a',
+            devices: [create_device({ id: 'ferm-a', type: 'fermenter' })],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-a', [{ channel: 0, note: 60 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -127,24 +81,21 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         get_track_strip.mockReturnValue({
             deviceNodes: [{ type: 'fermenter', fermenterControls: { noteOff: fermenter_note_off } }],
         });
-        const track_state = create_track_state({
-            tracks: [create_track({ id: 'track-1', devices: [create_device({ id: 'ferm-1', type: 'fermenter' })] })],
+        const instrument_track = create_instrument_track({
+            id: 'track-1',
+            devices: [create_device({ id: 'ferm-1', type: 'fermenter' })],
         });
-        const get_track_store_state = vi.fn(() => track_state);
-
         routeYeastNoteOffsForTargetTrack(
-            'track-1',
+            instrument_track,
             [
                 { channel: 0, note: 60 },
                 { channel: 0, note: 64 },
             ],
             {
-                getTrackStoreState: get_track_store_state,
                 emitGrandBouleEvent: noop_emit,
             }
         );
 
-        expect(get_track_store_state).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledTimes(1);
         expect(get_track_strip).toHaveBeenCalledWith('track-1');
         expect(fermenter_note_off.mock.calls.map((call) => call[0])).toEqual([60, 64]);
@@ -154,19 +105,19 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         get_track_strip.mockReturnValue({
             deviceNodes: [{ type: 'fermenter', fermenterControls: { noteOff: fermenter_note_off } }],
         });
-        const track_state = create_track_state({
-            tracks: [create_track({ id: 'track-1', devices: [create_device({ id: 'ferm-1', type: 'fermenter' })] })],
+        const instrument_track = create_instrument_track({
+            id: 'track-1',
+            devices: [create_device({ id: 'ferm-1', type: 'fermenter' })],
         });
 
         routeYeastNoteOffsForTargetTrack(
-            'track-1',
+            instrument_track,
             [
                 { channel: 1, note: 60 },
                 { channel: 2, note: 60 },
                 { channel: 2, note: 60 },
             ],
             {
-                getTrackStoreState: () => track_state,
                 emitGrandBouleEvent: noop_emit,
             }
         );
@@ -178,13 +129,13 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         get_track_strip.mockReturnValue({
             deviceNodes: [{ type: 'grand-boule', grandBouleControls: { noteOff: grand_boule_note_off } }],
         });
-        const track_state = create_track_state({
-            tracks: [create_track({ id: 'track-2', devices: [create_device({ id: 'gb-1', type: 'grand-boule' })] })],
+        const instrument_track = create_instrument_track({
+            id: 'track-2',
+            devices: [create_device({ id: 'gb-1', type: 'grand-boule' })],
         });
         const emit_grand_boule_event = vi.fn<(deviceId: string, midiNote: number) => void>();
 
-        routeYeastNoteOffsForTargetTrack('track-2', [{ channel: 0, note: 72 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 72 }], {
             emitGrandBouleEvent: emit_grand_boule_event,
         });
 
@@ -196,12 +147,12 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
         get_track_strip.mockReturnValue({
             deviceNodes: [{ type: 'levain', levainControls: { noteOff: levain_note_off } }],
         });
-        const track_state = create_track_state({
-            tracks: [create_track({ id: 'track-3', devices: [create_device({ id: 'lev-1', type: 'levain' })] })],
+        const instrument_track = create_instrument_track({
+            id: 'track-3',
+            devices: [create_device({ id: 'lev-1', type: 'levain' })],
         });
 
-        routeYeastNoteOffsForTargetTrack('track-3', [{ channel: 0, note: 74 }], {
-            getTrackStoreState: () => track_state,
+        routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 74 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -209,8 +160,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     });
 
     it('should be a no-op when there is no target track', () => {
-        routeYeastNoteOffsForTargetTrack('', [{ channel: 0, note: 60 }], {
-            getTrackStoreState: () => null,
+        routeYeastNoteOffsForTargetTrack(null, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
         });
 
@@ -219,46 +169,16 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     });
 
     it('should be a no-op for an empty off list', () => {
-        routeYeastNoteOffsForTargetTrack('track-1', [], {
-            getTrackStoreState: () => create_track_state({ tracks: [] }),
+        routeYeastNoteOffsForTargetTrack(null, [], {
             emitGrandBouleEvent: noop_emit,
         });
         expect(get_track_strip).not.toHaveBeenCalled();
     });
 });
 
-describe('resolveInstrumentTrack', () => {
-    it('should resolve a child target to its toaster parent instrument track', () => {
-        const parent_track = create_track({
-            id: 'parent-track',
-            devices: [create_device({ id: 'toaster-1', type: 'toaster' })],
-        });
-        const child_track = create_track({ id: 'child-track', parent_id: 'parent-track' });
-
-        const result = resolveInstrumentTrack(
-            create_track_state({ tracks: [parent_track, child_track] }),
-            'child-track'
-        );
-
-        expect(result).toBe(parent_track);
-    });
-
-    it('should resolve the target track when the parent is not a toaster host', () => {
-        const parent_track = create_track({ id: 'parent-track' });
-        const child_track = create_track({ id: 'child-track', parent_id: 'parent-track' });
-
-        const result = resolveInstrumentTrack(
-            create_track_state({ tracks: [parent_track, child_track] }),
-            'child-track'
-        );
-
-        expect(result).toBe(child_track);
-    });
-});
-
 describe('routeYeastNoteOffToInstrument', () => {
     it('should route to fermenter before lower-priority instruments', () => {
-        const instrument_track = create_track({
+        const instrument_track = create_instrument_track({
             id: 'instrument-track',
             devices: [
                 create_device({ id: 'ferm-1', type: 'fermenter' }),
@@ -284,7 +204,7 @@ describe('routeYeastNoteOffToInstrument', () => {
     });
 
     it('should still emit a Grand Boule event when the strip control is missing', () => {
-        const instrument_track = create_track({
+        const instrument_track = create_instrument_track({
             id: 'instrument-track',
             devices: [create_device({ id: 'gb-1', type: 'grand-boule' })],
         });

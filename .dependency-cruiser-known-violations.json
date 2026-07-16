@@ -1,15 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/webMidi/lifecycle/initWebMidi.ts",
-    "to": "src/modules/Arrangement/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Workspace/presentations/components/LaunchScreen.tsx",
     "to": "src/modules/Arrangement/useCases/index.ts",
     "rule": {

@@ -1,17 +1,12 @@
-import { Container } from '#/infra/di/Container';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { type MidiInputInfo } from '../../../models/WebMidiTypes';
 import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
-import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
-import { setTargetTrackId } from '../setTargetTrackId';
 import { setTauriMode } from '../setTauriMode';
-import { WebMidiEventBus } from '../webMidiEventBus';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
@@ -70,48 +65,6 @@ type InitWebMidiInput = {
 export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<boolean> {
     const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
     const state = getState();
-
-    // Subscribe to trackStore here (once, idempotent guard below) so that
-    // whenever selectedTrackId changes — app launch, project load, addTrack,
-    // user click — we automatically route MIDI to the correct MIDI track
-    // without having to patch every write-site.
-    type InitWebMidiWithSub = typeof initWebMidi & { _trackStoreSub?: boolean; _yeastNotesOffSub?: boolean };
-    // Route Yeast hung-note offs (mid-playback processor removal) to the live
-    // instrument. The Yeast rack emits this app event because it has no
-    // instrument downstream of its own; the AudioEngine owns instrument routing,
-    // so it subscribes here (once, for the MIDI-routing lifetime) and forwards
-    // each off to the event's originating track instrument.
-    if (!(initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub) {
-        (initWebMidi as InitWebMidiWithSub)._yeastNotesOffSub = true;
-        const eventBus = Container.get(WebMidiEventBus);
-        eventBus.on('yeast.notesOff', ({ trackId, noteOffs }) => {
-            routeYeastNoteOffsForTargetTrack(trackId, noteOffs, {
-                getTrackStoreState: () => trackStore.value,
-                emitGrandBouleEvent: (deviceId, midiNote) => {
-                    void eventBus.emit('midi.noteOff', { deviceId, midiNote });
-                },
-            });
-        });
-    }
-    if (!(initWebMidi as InitWebMidiWithSub)._trackStoreSub) {
-        (initWebMidi as InitWebMidiWithSub)._trackStoreSub = true;
-        let prevSelectedId: string | null = null;
-        trackStore.subscribe((trackState) => {
-            const id = trackState?.selectedTrackId ?? null;
-            if (id === prevSelectedId) {
-                return;
-            }
-            prevSelectedId = id;
-            if (!id) {
-                setTargetTrackId(null);
-                return;
-            }
-            const track = trackState?.tracks.find((time) => time.id === id);
-            if (track?.kind === 'midi') {
-                setTargetTrackId(id);
-            }
-        });
-    }
 
     if (!state.isSupported) {
         logger.warn('[MIDI] MIDI not supported');

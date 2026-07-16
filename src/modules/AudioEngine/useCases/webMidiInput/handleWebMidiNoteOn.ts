@@ -10,6 +10,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 
 export const handleWebMidiNoteOn = inject({
     ...midiMessageHandlerDependencies,
@@ -61,32 +62,10 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((candidate) => candidate.id === targetTrackId);
-
-            let instrumentTrackId = targetTrackId;
-            let instrumentTrack = track;
-            let toasterChildPad: number | null = null;
-
-            if (track && track.parentId && trackState) {
-                let parent: typeof track | undefined;
-                let padIndex = 0;
-                for (const candidate of trackState.tracks) {
-                    if (candidate.id === track.parentId) {
-                        parent = candidate;
-                    } else if (candidate.parentId === track.parentId) {
-                        if (candidate.id === track.id) {
-                            toasterChildPad = padIndex;
-                        }
-                        padIndex++;
-                    }
-                }
-                if (parent?.devices.some((device) => device.type === 'toaster')) {
-                    instrumentTrackId = parent.id;
-                    instrumentTrack = parent;
-                } else {
-                    toasterChildPad = null;
-                }
-            }
+            const resolvedInstrument = resolveInstrumentTrack(trackState, targetTrackId);
+            const instrumentTrack = resolvedInstrument?.instrumentTrack;
+            const instrumentTrackId = instrumentTrack?.id ?? targetTrackId;
+            const toasterChildPad = resolvedInstrument?.toasterChildPad ?? null;
 
             noteData.instrumentTrackId = instrumentTrackId;
 
