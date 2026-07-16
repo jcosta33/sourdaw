@@ -139,13 +139,18 @@ prose-only, or future-intent ADR is not retirement authority.
 Verify with: the accepted ADR and ledger entry, the same-change source/test/spec diff, focused
 exact-path search, and `pnpm deps:validate`
 
-### AC-009 — Test typechecking scope is explicit
+### AC-009 — Static typecheck scope is explicit
 
-The repository MUST record the files covered by `pnpm typecheck:test` and the
-spec/test files outside that scope, so `pnpm typecheck` is not treated as
-evidence that excluded tests are type-checked.
+The repository MUST describe the current static typecheck scope exactly, without
+presenting app typechecking as evidence for excluded specs.
 
-Verify with: `pnpm typecheck:test` and the `include`/`exclude` entries in `tsconfig.json` and `tsconfig.test.json`
+| Surface          | Current static coverage                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| App source       | `pnpm typecheck` includes `src` and `vite-env.d.ts`, excluding `src/**/*.spec.ts` and `src/**/*.spec.tsx`. |
+| Yeast processors | `pnpm typecheck:test` includes `src/modules/Yeast/workers/processors` and `vite-env.d.ts`.                 |
+| Other specs      | Outside static test typing.                                                                                |
+
+Verify with: compare this table with the `include` and `exclude` entries in `tsconfig.json` and `tsconfig.test.json`, then run `pnpm typecheck` and `pnpm typecheck:test`
 
 ## Open questions
 

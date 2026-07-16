@@ -1,7 +1,7 @@
 ---
 type: spec
 id: SPEC-native-build-reproducibility
-title: Native build reproducibility
+title: Native build configuration ownership
 status: draft
 owner: The Sourdaw team
 sources:
@@ -9,16 +9,15 @@ sources:
     - ../../../.cargo/config.toml
     - ../../../rust-toolchain.toml
     - ../../../src-tauri/.cargo/config.toml
-    - ../../../package.json
 ---
 
-# Native build reproducibility
+# Native build configuration ownership
 
 ## Intent
 
-Keep native Rust checks, tests, formatting, and release builds reproducible from
-the repository root by making the toolchain and workspace-owned build settings
-explicit.
+Keep ownership of the repository-declared Rust toolchain, release profiles, and
+shared Rust flags explicit. Successful or portable native builds are outside
+this spec.
 
 ## Requirements
 
@@ -29,14 +28,14 @@ The repository MUST declare an exact Rust toolchain in a root-owned
 (`rustfmt` and `clippy`), so root `cargo` commands do not depend on ambient
 developer toolchain selection.
 
-Verify with: `test -f rust-toolchain.toml && rg -n 'channel|components' rust-toolchain.toml && rustup show active-toolchain`
+Verify with: `declared="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" && active="$(rustup show active-toolchain)" && test -n "$declared" && test "${active#"$declared"-}" != "$active" && cargo +"$declared" fmt --version && cargo +"$declared" clippy --version`
 
 ### AC-002 - Workspace release profiles have one owner
 
 The workspace root MUST be the only Cargo manifest that defines release profile
 settings; member manifests contain no competing profile tables.
 
-Verify with: `test "$(rg -l '^\[profile\.' Cargo.toml crates src-tauri --glob 'Cargo.toml')" = 'Cargo.toml'`
+Verify with: `test "$(git ls-files --cached --others --exclude-standard ':(glob)**/Cargo.toml' -z | xargs -0 rg -l '^\[profile\.' | sort)" = 'Cargo.toml'`
 
 ### AC-003 - Shared Rust flags have one owner
 
