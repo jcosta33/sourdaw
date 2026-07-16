@@ -12,7 +12,7 @@ unilaterally. Promoted from `.agents/findings/inventory-decisions-backlog.md`
 `.agents/findings/overview-open-decisions.md` (also retired). Citations and
 premises were fully re-audited against `main` on 2026-07-16 after three
 review rounds — every item re-checked, drifted citations corrected, resolved
-premises dropped (112 bullets: 109 decision items + 3 investigation
+premises dropped (113 bullets: 110 decision items + 3 investigation
 meta-items). Decisions already made are **not** here — they are ADRs (0006
 contract-folder barrels, 0007 command relocation, 0008 recent-projects
 Option A, 0009 pattern-morph determinism).
