@@ -58,6 +58,7 @@ export { toggleDim } from './controlRoom/toggleDim';
 export { toggleMono } from './controlRoom/toggleMono';
 
 export { decodeAudioFile } from './decodeAudioFile';
+export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
 
 export { addDeviceToStrip } from './deviceControls/addDeviceToStrip';
 export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
