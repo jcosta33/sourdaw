@@ -6,10 +6,29 @@ import { setEditingTool, startToolSwap } from '#/modules/Workspace/useCases';
 
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
-const { getLastClipEndBeatMock, goToNextMarkerMock, goToPreviousMarkerMock } = vi.hoisted(() => ({
+const {
+    getLastClipEndBeatMock,
+    goToNextMarkerMock,
+    goToPreviousMarkerMock,
+    loggerMock,
+    shortcutStoreMock,
+    stopPlaybackMock,
+} = vi.hoisted(() => ({
     getLastClipEndBeatMock: vi.fn(() => 42),
     goToNextMarkerMock: vi.fn(),
     goToPreviousMarkerMock: vi.fn(),
+    loggerMock: { error: vi.fn() },
+    shortcutStoreMock: {
+        value: {
+            definitions: [] as Array<{
+                id: string;
+                defaultKeys: string[];
+                action: { type: 'callback'; id: string };
+            }>,
+            customMappings: {} as Record<string, string[]>,
+        },
+    },
+    stopPlaybackMock: vi.fn(() => Promise.resolve()),
 }));
 
 const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
@@ -34,7 +53,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
-    stopPlayback: vi.fn(),
+    stopPlayback: stopPlaybackMock,
     seekPlayhead: vi.fn(),
     setLoopRegion: vi.fn(),
     stopAllSlots: vi.fn(),
@@ -66,8 +85,9 @@ vi.mock('#/modules/Workspace/useCases', () => ({
 
 vi.mock('../../../../stores/shortcutStore', () => ({
     parseLoopStationPadCallbackId: vi.fn(() => null),
-    shortcutStore: { value: { definitions: [], customMappings: {} } },
+    shortcutStore: shortcutStoreMock,
 }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: loggerMock }));
 
 vi.mock('../../../executeAppAction', () => ({ executeAppAction: vi.fn() }));
 vi.mock('../../../pushUndoEntry', () => ({ pushUndoEntry: vi.fn() }));
@@ -86,8 +106,10 @@ function descriptor(overrides: Partial<KeyDescriptor> & { key: string }): KeyDes
 
 describe('handleKeydown', () => {
     beforeEach(() => {
-        injectDependencies(handleKeydown, { eventBus });
         vi.clearAllMocks();
+        shortcutStoreMock.value.definitions = [];
+        shortcutStoreMock.value.customMappings = {};
+        injectDependencies(handleKeydown, { eventBus });
     });
 
     it('emits voice.toggle active for a bare v and asks the caller to preventDefault', () => {
@@ -166,5 +188,30 @@ describe('handleKeydown', () => {
         expect(startOrder).toBeLessThan(selectOrder);
 
         performanceNow.mockRestore();
+    });
+
+    it('reports a rejected stopPlayback promise from the shortcut', async () => {
+        const flushError = new Error('recording flush failed');
+        stopPlaybackMock.mockRejectedValueOnce(flushError);
+        shortcutStoreMock.value.definitions = [
+            {
+                id: 'transport.stopPlayback',
+                defaultKeys: ['Escape'],
+                action: { type: 'callback', id: 'stopPlayback' },
+            },
+        ];
+
+        const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+        expect(prevent).toBe(false);
+        await vi.waitFor(() => expect(loggerMock.error).toHaveBeenCalledTimes(1));
+
+        expect(loggerMock.error).toHaveBeenCalledWith(expect.any(Error));
+        expect(loggerMock.error).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: 'Keyboard shortcut stop request failed',
+                cause: flushError,
+            })
+        );
     });
 });
