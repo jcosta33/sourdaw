@@ -52,4 +52,19 @@ describe('promptUser', () => {
         payload.resolve(null);
         await expect(promise).resolves.toBeNull();
     });
+
+    it('gives concurrent prompts distinct correlation ids', async () => {
+        const first = promptUser({ message: 'First?' });
+        const second = promptUser({ message: 'Second?' });
+
+        expect(emit).toHaveBeenCalledTimes(2);
+        const firstPayload = emit.mock.calls[0]![1] as { id: string; resolve: (value: string | null) => void };
+        const secondPayload = emit.mock.calls[1]![1] as { id: string; resolve: (value: string | null) => void };
+        expect(firstPayload.id).not.toBe(secondPayload.id);
+
+        firstPayload.resolve('a');
+        secondPayload.resolve('b');
+        await expect(first).resolves.toBe('a');
+        await expect(second).resolves.toBe('b');
+    });
 });
