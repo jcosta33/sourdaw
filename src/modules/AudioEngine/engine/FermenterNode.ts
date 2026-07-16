@@ -98,6 +98,15 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         },
         setBypass(state: boolean) {
             bypassed = state;
+            if (state) {
+                // Entering bypass must release voices already held: the worklet
+                // keeps running (bypass only gates *new* noteOn above), so held
+                // voices would keep sounding. Post the single `allNotesOff` the
+                // Fermenter worklet honors — the same message the transport-stop
+                // path (createWebAudioEngine.stopAllScheduled) uses — which
+                // releases all voices and drops queued notes.
+                node.port.postMessage({ type: 'allNotesOff' });
+            }
         },
         onTelemetry(cb: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) {
             telemetryListeners.add(cb);

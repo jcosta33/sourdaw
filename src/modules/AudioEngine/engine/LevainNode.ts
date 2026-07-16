@@ -127,6 +127,14 @@ export async function createLevainNode(
 
     const setBypass = (b: boolean): void => {
         bypassed = b;
+        if (b) {
+            // Release held voices at the source before muting the processor.
+            // The worklet gates output while `_bypassed`, but the WASM voices
+            // stay allocated and resume audibly on un-bypass unless released.
+            // Order matters: allNotesOff must arrive before the bypass mute so
+            // the release is processed before process() starts short-circuiting.
+            node.port.postMessage({ type: 'allNotesOff' });
+        }
         node.port.postMessage({ type: 'bypass', bypassed: b });
     };
 

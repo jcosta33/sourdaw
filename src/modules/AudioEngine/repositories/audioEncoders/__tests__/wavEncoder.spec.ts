@@ -106,4 +106,42 @@ describe('audioBufferToWav', () => {
         expect(result).toBeDefined();
         expect(onProgress).toHaveBeenCalledWith(1);
     });
+
+    it('normalizes down when the mix peak exceeds full scale', async () => {
+        // A hot mix (peak 2.0) must be scaled by 1/peak = 0.5 so peaks land at
+        // full scale — not hard-clamped to a flat top. Use 32-bit float so the
+        // written samples are read back exactly (no dither / quantization).
+        const buffer = createMockAudioBuffer(1, 4, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = 2.0;
+        data[1] = -1.0;
+        data[2] = 0.5;
+        data[3] = 0;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBeCloseTo(1.0, 6); // 2.0 * 0.5
+        expect(view.getFloat32(dataOffset + 4, true)).toBeCloseTo(-0.5, 6); // -1.0 * 0.5
+        expect(view.getFloat32(dataOffset + 8, true)).toBeCloseTo(0.25, 6); // 0.5 * 0.5
+    });
+
+    it('leaves sub-full-scale audio at its authored level (no upward normalization)', async () => {
+        const buffer = createMockAudioBuffer(1, 3, 48000);
+        const data = buffer.getChannelData(0);
+        data[0] = 0.5;
+        data[1] = -0.25;
+        data[2] = 0.75;
+
+        const promise = audioBufferToWav(buffer, 32);
+        vi.runAllTimers();
+        const view = new DataView(await promise);
+
+        const dataOffset = 46;
+        expect(view.getFloat32(dataOffset, true)).toBe(0.5);
+        expect(view.getFloat32(dataOffset + 4, true)).toBe(-0.25);
+        expect(view.getFloat32(dataOffset + 8, true)).toBe(0.75);
+    });
 });

@@ -51,12 +51,35 @@ export async function audioBufferToWav(
         return Math.random() - Math.random();
     }
 
-    let offset = dataOffset + 8;
-    const YIELD_INTERVAL = 32768;
+    // Peak-normalization scan. Find the largest absolute sample across every
+    // channel so a hot mix can be scaled to full scale instead of hard-clipped
+    // to a flat top. Only attenuate when the peak exceeds full scale (peak > 1);
+    // sub-full-scale material keeps its authored level (it is never boosted up).
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+        const data = channels[ch]!;
+        for (let index = 0; index < buffer.length; index++) {
+            const abs = Math.abs(data[index]!);
+            if (abs > peak) {
+                peak = abs;
+            }
+        }
+    }
+    const gain = peak > 1 ? 1 / peak : 1;
 
-    for (let index = 0; index < buffer.length; index++) {
-        for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, channels[ch]![index]!));
+    const YIELD_INTERVAL = 32768;
+    const totalSamples = buffer.length * numChannels || 1;
+    let processed = 0;
+
+    // Channel-outer / sample-inner: each channel's Float32Array is read
+    // sequentially (cache-friendly) rather than striding across N separate
+    // channel arrays every frame. Writes stride by blockAlign back into the
+    // same interleaved layout, so the emitted bytes are identical.
+    for (let ch = 0; ch < numChannels; ch++) {
+        const data = channels[ch]!;
+        let offset = dataOffset + 8 + ch * bytesPerSample;
+        for (let index = 0; index < buffer.length; index++) {
+            const sample = data[index]! * gain;
             if (bitDepth === 16) {
                 const dithered = sample + tpdfDither() / 0x8000;
                 const clamped = Math.max(-1, Math.min(1, dithered));
@@ -70,12 +93,13 @@ export async function audioBufferToWav(
             } else {
                 view.setFloat32(offset, sample, true);
             }
-            offset += bytesPerSample;
-        }
+            offset += blockAlign;
 
-        if (index > 0 && index % YIELD_INTERVAL === 0) {
-            onProgress?.(index / buffer.length);
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            processed++;
+            if (processed % YIELD_INTERVAL === 0) {
+                onProgress?.(processed / totalSamples);
+                await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            }
         }
     }
 
