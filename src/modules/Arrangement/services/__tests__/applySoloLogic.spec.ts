@@ -1,121 +1,101 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { setTrackMute, setTrackGain } from '#/modules/AudioEngine/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { describe, expect, it } from 'vitest';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { applySoloLogic, resetSoloLogic } from '../applySoloLogic';
-
-vi.mock('../../useCases/getTrackStoreState', () => ({
-    getTrackStoreState: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    setTrackMute: vi.fn(),
-    setTrackGain: vi.fn(),
-}));
-
-vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: { value: null },
-}));
+import { applySoloLogic } from '../applySoloLogic';
 
 describe('applySoloLogic', () => {
-    beforeEach(() => {
-        vi.resetAllMocks();
-        resetSoloLogic();
+    it('returns individual mute actions when no tracks are soloed', () => {
+        const tracks = [
+            TrackDummy.create({ id: 't1', muted: false, soloed: false }),
+            TrackDummy.create({ id: 't2', muted: true, soloed: false }),
+        ];
+
+        const result = applySoloLogic({
+            tracks,
+            soloMode: 'sip',
+            savedGains: new Map(),
+        });
+
+        expect(result.actions).toEqual([
+            { type: 'setMute', trackId: 't1', muted: false },
+            { type: 'setMute', trackId: 't2', muted: true },
+        ]);
     });
 
-    describe('SIP (Solo In Place) mode', () => {
-        beforeEach(() => {
-            workspaceStore.value = { soloMode: 'sip' } as any;
+    it('keeps solo-safe and routed tracks audible in SIP mode', () => {
+        const tracks = [
+            TrackDummy.create({ id: 'bus', kind: 'bus', soloed: true }),
+            TrackDummy.create({ id: 'src', outputId: 'bus' }),
+            TrackDummy.create({ id: 'safe', soloSafe: true }),
+            TrackDummy.create({ id: 'other' }),
+        ];
+
+        const result = applySoloLogic({
+            tracks,
+            soloMode: 'sip',
+            savedGains: new Map(),
         });
 
-        it('should follow individual mute states when no tracks are soloed', () => {
-            const tracks = [
-                TrackDummy.create({ id: 't1', muted: false, soloed: false }),
-                TrackDummy.create({ id: 't2', muted: true, soloed: false }),
-            ];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-            applySoloLogic();
-
-            expect(setTrackMute).toHaveBeenCalledWith('t1', false);
-            expect(setTrackMute).toHaveBeenCalledWith('t2', true);
-        });
-
-        it('should mute non-soloed tracks when at least one track is soloed', () => {
-            const tracks = [
-                TrackDummy.create({ id: 't1', muted: false, soloed: true }),
-                TrackDummy.create({ id: 't2', muted: false, soloed: false }),
-            ];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-            applySoloLogic();
-
-            expect(setTrackMute).toHaveBeenCalledWith('t1', false);
-            expect(setTrackMute).toHaveBeenCalledWith('t2', true);
-        });
-
-        it('should not mute solo-safe tracks even if other tracks are soloed', () => {
-            const tracks = [
-                TrackDummy.create({ id: 't1', muted: false, soloed: true }),
-                TrackDummy.create({ id: 't-safe', muted: false, soloed: false, soloSafe: true }),
-            ];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-            applySoloLogic();
-
-            expect(setTrackMute).toHaveBeenCalledWith('t1', false);
-            expect(setTrackMute).toHaveBeenCalledWith('t-safe', false);
-        });
-
-        it('should unmute tracks routed to a soloed track', () => {
-            const tracks = [
-                TrackDummy.create({ id: 'bus', muted: false, soloed: true }),
-                TrackDummy.create({ id: 'src', muted: false, soloed: false, outputId: 'bus' }),
-            ];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
-
-            applySoloLogic();
-
-            expect(setTrackMute).toHaveBeenCalledWith('bus', false);
-            expect(setTrackMute).toHaveBeenCalledWith('src', false);
-        });
+        expect(result.actions).toEqual([
+            { type: 'setMute', trackId: 'bus', muted: false },
+            { type: 'setMute', trackId: 'src', muted: false },
+            { type: 'setMute', trackId: 'safe', muted: false },
+            { type: 'setMute', trackId: 'other', muted: true },
+        ]);
     });
 
-    describe('PFL (Pre-Fader Listen) mode', () => {
-        beforeEach(() => {
-            workspaceStore.value = { soloMode: 'pfl' } as any;
+    it('terminates safely when routing contains a cycle', () => {
+        const tracks = [
+            TrackDummy.create({ id: 'solo', soloed: true }),
+            TrackDummy.create({ id: 'a', outputId: 'b' }),
+            TrackDummy.create({ id: 'b', outputId: 'a' }),
+        ];
+
+        const result = applySoloLogic({
+            tracks,
+            soloMode: 'sip',
+            savedGains: new Map(),
         });
 
-        it('should boost soloed track to 1.0 gain and save original gain', () => {
-            const tracks = [
-                TrackDummy.create({ id: 't1', gain: 0.5, soloed: true }),
-                TrackDummy.create({ id: 't2', gain: 0.8, soloed: false }),
-            ];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks } as any);
+        expect(result.actions).toEqual([
+            { type: 'setMute', trackId: 'solo', muted: false },
+            { type: 'setMute', trackId: 'a', muted: true },
+            { type: 'setMute', trackId: 'b', muted: true },
+        ]);
+    });
 
-            applySoloLogic();
+    it('saves and restores PFL gains without mutating the input state', () => {
+        const savedGains = new Map<string, number>();
+        const soloedTracks = [
+            TrackDummy.create({ id: 't1', gain: 0.5, soloed: true }),
+            TrackDummy.create({ id: 't2', gain: 0.8, muted: true }),
+        ];
 
-            expect(setTrackGain).toHaveBeenCalledWith('t1', 1.0);
-            expect(setTrackMute).toHaveBeenCalledWith('t1', false);
-            expect(setTrackMute).toHaveBeenCalledWith('t2', true);
+        const soloedResult = applySoloLogic({
+            tracks: soloedTracks,
+            soloMode: 'pfl',
+            savedGains,
         });
 
-        it('should restore original gain when solo is cleared', () => {
-            const t1 = TrackDummy.create({ id: 't1', gain: 0.5, soloed: true });
-            const tracksSoloed = [t1, TrackDummy.create({ id: 't2', soloed: false })];
+        expect(soloedResult.actions).toEqual([
+            { type: 'setGain', trackId: 't1', gain: 1.0 },
+            { type: 'setMute', trackId: 't1', muted: false },
+            { type: 'setMute', trackId: 't2', muted: true },
+        ]);
+        expect(savedGains).toEqual(new Map());
+        expect(soloedResult.savedGains).toEqual(new Map([['t1', 0.5]]));
 
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks: tracksSoloed } as any);
-            applySoloLogic();
-            expect(setTrackGain).toHaveBeenCalledWith('t1', 1.0);
-
-            const tracksUnsoloed = [{ ...t1, soloed: false }, TrackDummy.create({ id: 't2', soloed: false })];
-            vi.mocked(getTrackStoreState).mockReturnValue({ tracks: tracksUnsoloed } as any);
-
-            applySoloLogic();
-            expect(setTrackGain).toHaveBeenCalledWith('t1', 0.5);
+        const clearedResult = applySoloLogic({
+            tracks: soloedTracks.map((track) => ({ ...track, soloed: false })),
+            soloMode: 'pfl',
+            savedGains: soloedResult.savedGains,
         });
+
+        expect(clearedResult.actions).toEqual([
+            { type: 'setGain', trackId: 't1', gain: 0.5 },
+            { type: 'setMute', trackId: 't1', muted: false },
+            { type: 'setMute', trackId: 't2', muted: true },
+        ]);
+        expect(clearedResult.savedGains).toEqual(new Map());
     });
 });

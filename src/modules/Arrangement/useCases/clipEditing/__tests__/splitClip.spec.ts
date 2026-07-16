@@ -6,13 +6,13 @@ import type { Clip, Track } from '#/modules/Arrangement/models/Track';
 import type { getNextClipId as originalGetNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
 import type { getTrackState as originalGetTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
 import type { setTrackState as originalSetTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
-import type { snapSplitBeatToZeroCrossing as originalSnapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
+import type { snapToZeroCrossing as originalSnapToZeroCrossing } from '../../timelineInteractions/snapToZeroCrossing';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof originalGetTrackState>(),
     setTrackState: vi.fn<typeof originalSetTrackState>(),
     getNextClipId: vi.fn<typeof originalGetNextClipId>(() => 'new-clip-id'),
-    snapSplitBeatToZeroCrossing: vi.fn<typeof originalSnapSplitBeatToZeroCrossing>((clip, splitBeat) => splitBeat),
+    snapToZeroCrossing: vi.fn<typeof originalSnapToZeroCrossing>((clip, splitBeat) => splitBeat),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -27,8 +27,8 @@ vi.mock('#/modules/Arrangement/repositories/clipIdCounter', () => ({
     getNextClipId: mocks.getNextClipId,
 }));
 
-vi.mock('#/modules/Arrangement/services/snapSplitBeatToZeroCrossing', () => ({
-    snapSplitBeatToZeroCrossing: mocks.snapSplitBeatToZeroCrossing,
+vi.mock('../../timelineInteractions/snapToZeroCrossing', () => ({
+    snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
 
 describe('splitClip', () => {
