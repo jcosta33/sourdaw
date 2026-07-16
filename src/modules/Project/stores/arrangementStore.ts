@@ -320,20 +320,301 @@ export type ArrangementStoreState = {
 
 export const defaultArrangementId = 'default-arrangement';
 
-export const defaultArrangementStoreState: ArrangementStoreState = {
-    arrangements: [
-        {
-            id: defaultArrangementId,
-            name: 'Arrangement 1',
-            tracks: { tracks: [], selectedTrackId: null },
-            automation: { lanes: [] },
-            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-        },
-    ],
-    activeArrangementId: defaultArrangementId,
+function create_default_arrangement_store_state(): ArrangementStoreState {
+    return {
+        arrangements: [
+            {
+                id: defaultArrangementId,
+                name: 'Arrangement 1',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
+        activeArrangementId: defaultArrangementId,
+    };
+}
+
+export const defaultArrangementStoreState: ArrangementStoreState = create_default_arrangement_store_state();
+
+const ARRANGEMENT_STORE_STATE_KEYS = ['arrangements', 'activeArrangementId'] as const;
+const SNAPSHOT_REQUIRED_KEYS = ['id', 'name', 'tracks', 'automation', 'midi'] as const;
+const SNAPSHOT_OPTIONAL_KEYS = ['tempoMap', 'timeSignatureMap', 'markers', 'takeLanes'] as const;
+const TRACKS_SECTION_KEYS = ['tracks', 'selectedTrackId'] as const;
+const AUTOMATION_SECTION_KEYS = ['lanes'] as const;
+const MIDI_SECTION_KEYS = ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
+const CHANGES_SECTION_KEYS = ['changes'] as const;
+const MARKERS_SECTION_KEYS = ['markers', 'sections'] as const;
+const TAKE_LANES_SECTION_KEYS = ['lanes'] as const;
+
+type PlainObject = {
+    [key: string]: unknown;
 };
+
+type HasExactKeysInput = {
+    value: object;
+    required_keys: readonly string[];
+    optional_keys?: readonly string[];
+};
+
+function is_plain_object(value: unknown): value is PlainObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function has_exact_keys({ value, required_keys, optional_keys = [] }: HasExactKeysInput): boolean {
+    return (
+        required_keys.every((key) => Object.hasOwn(value, key)) &&
+        Object.keys(value).every((key) => required_keys.includes(key) || optional_keys.includes(key))
+    );
+}
+
+function is_string_or_null(value: unknown): value is string | null {
+    return value === null || typeof value === 'string';
+}
+
+function is_not_null<TValue>(value: TValue | null): value is TValue {
+    return value !== null;
+}
+
+/** Container-level row check — the hydration trust boundary for this store.
+ * The sanitizer validates the state/snapshot/section containers and each row's
+ * identity; deep per-field row validation is deliberately NOT duplicated here
+ * because the restore path already owns it: loadSnapshot() routes every
+ * snapshot section from `unknown` through the owning modules' sanitizers
+ * (sanitizeTrackSnapshot, restoreAutomationSnapshot, setMidiStoreState,
+ * restoreTimelineMapSnapshot, restoreArrangementMetadataSnapshot) before any
+ * row reaches a live store. */
+function is_identified_row(value: unknown): boolean {
+    return is_plain_object(value) && typeof value.id === 'string';
+}
+
+function is_row_array(value: unknown): boolean {
+    return Array.isArray(value) && value.every(is_identified_row);
+}
+
+function filter_identified_rows<TRow extends { id: string }>(value: unknown): TRow[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.filter((row): row is TRow => is_identified_row(row));
+}
+
+function is_exact_tracks_section(value: unknown): value is ProjectTrackStoreState {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: TRACKS_SECTION_KEYS }) &&
+        is_row_array(value.tracks) &&
+        is_string_or_null(value.selectedTrackId)
+    );
+}
+
+function normalize_tracks_section(value: unknown): ProjectTrackStoreState | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+    return {
+        tracks: filter_identified_rows<ProjectTrack>(value.tracks),
+        selectedTrackId: is_string_or_null(value.selectedTrackId) ? value.selectedTrackId : null,
+    };
+}
+
+function is_exact_automation_section(value: unknown): value is ProjectAutomationState {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: AUTOMATION_SECTION_KEYS }) &&
+        is_row_array(value.lanes)
+    );
+}
+
+function normalize_automation_section(value: unknown): ProjectAutomationState | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+    return { lanes: filter_identified_rows<ProjectAutomationLane>(value.lanes) };
+}
+
+function is_exact_midi_clip_map(value: unknown): boolean {
+    return is_plain_object(value) && Object.values(value).every((rows) => is_row_array(rows));
+}
+
+function normalize_midi_clip_map<TRow extends { id: string }>(value: unknown): Record<string, TRow[]> {
+    if (!is_plain_object(value)) {
+        return {};
+    }
+    const next: Record<string, TRow[]> = {};
+    for (const [clip_id, rows] of Object.entries(value)) {
+        if (Array.isArray(rows)) {
+            next[clip_id] = filter_identified_rows<TRow>(rows);
+        }
+    }
+    return next;
+}
+
+function is_exact_midi_section(value: unknown): value is ProjectMidiState {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: MIDI_SECTION_KEYS }) &&
+        is_exact_midi_clip_map(value.notesByClipId) &&
+        is_exact_midi_clip_map(value.ccByClipId) &&
+        is_exact_midi_clip_map(value.pitchBendByClipId)
+    );
+}
+
+function normalize_midi_section(value: unknown): ProjectMidiState | null {
+    if (!is_plain_object(value)) {
+        return null;
+    }
+    return {
+        notesByClipId: normalize_midi_clip_map<ProjectMidiNote>(value.notesByClipId),
+        ccByClipId: normalize_midi_clip_map<ProjectMidiCC>(value.ccByClipId),
+        pitchBendByClipId: normalize_midi_clip_map<ProjectMidiPitchBend>(value.pitchBendByClipId),
+    };
+}
+
+function is_exact_changes_section(value: unknown): boolean {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: CHANGES_SECTION_KEYS }) &&
+        is_row_array(value.changes)
+    );
+}
+
+function normalize_tempo_map(value: unknown): ProjectTempoMapState | undefined {
+    if (!is_plain_object(value)) {
+        return undefined;
+    }
+    return { changes: filter_identified_rows<ProjectTempoChange>(value.changes) };
+}
+
+function normalize_time_signature_map(value: unknown): ProjectTimeSignatureMapState | undefined {
+    if (!is_plain_object(value)) {
+        return undefined;
+    }
+    return { changes: filter_identified_rows<ProjectTimeSignatureChange>(value.changes) };
+}
+
+function is_exact_markers_section(value: unknown): boolean {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: MARKERS_SECTION_KEYS }) &&
+        is_row_array(value.markers) &&
+        is_row_array(value.sections)
+    );
+}
+
+function normalize_markers_section(value: unknown): ProjectMarkerState | undefined {
+    if (!is_plain_object(value)) {
+        return undefined;
+    }
+    return {
+        markers: filter_identified_rows<ProjectMarker>(value.markers),
+        sections: filter_identified_rows<ProjectArrangementSection>(value.sections),
+    };
+}
+
+function is_exact_take_lanes_section(value: unknown): boolean {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: TAKE_LANES_SECTION_KEYS }) &&
+        is_row_array(value.lanes)
+    );
+}
+
+function normalize_take_lanes_section(value: unknown): ProjectTakeLaneStoreState | undefined {
+    if (!is_plain_object(value)) {
+        return undefined;
+    }
+    return { lanes: filter_identified_rows<ProjectTakeLane>(value.lanes) };
+}
+
+function is_exact_snapshot(value: unknown): value is ArrangementSnapshot {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: SNAPSHOT_REQUIRED_KEYS, optional_keys: SNAPSHOT_OPTIONAL_KEYS }) &&
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        is_exact_tracks_section(value.tracks) &&
+        is_exact_automation_section(value.automation) &&
+        is_exact_midi_section(value.midi) &&
+        (!Object.hasOwn(value, 'tempoMap') || is_exact_changes_section(value.tempoMap)) &&
+        (!Object.hasOwn(value, 'timeSignatureMap') || is_exact_changes_section(value.timeSignatureMap)) &&
+        (!Object.hasOwn(value, 'markers') || is_exact_markers_section(value.markers)) &&
+        (!Object.hasOwn(value, 'takeLanes') || is_exact_take_lanes_section(value.takeLanes))
+    );
+}
+
+function normalize_snapshot(value: unknown): ArrangementSnapshot | null {
+    if (is_exact_snapshot(value)) {
+        return value;
+    }
+
+    if (!is_plain_object(value) || typeof value.id !== 'string' || typeof value.name !== 'string') {
+        return null;
+    }
+
+    const tracks = normalize_tracks_section(value.tracks);
+    const automation = normalize_automation_section(value.automation);
+    const midi = normalize_midi_section(value.midi);
+    if (!tracks || !automation || !midi) {
+        return null;
+    }
+
+    const snapshot: ArrangementSnapshot = { id: value.id, name: value.name, tracks, automation, midi };
+
+    const tempoMap = normalize_tempo_map(value.tempoMap);
+    if (tempoMap) {
+        snapshot.tempoMap = tempoMap;
+    }
+    const timeSignatureMap = normalize_time_signature_map(value.timeSignatureMap);
+    if (timeSignatureMap) {
+        snapshot.timeSignatureMap = timeSignatureMap;
+    }
+    const markers = normalize_markers_section(value.markers);
+    if (markers) {
+        snapshot.markers = markers;
+    }
+    const takeLanes = normalize_take_lanes_section(value.takeLanes);
+    if (takeLanes) {
+        snapshot.takeLanes = takeLanes;
+    }
+
+    return snapshot;
+}
+
+function is_exact_arrangement_store_state(value: unknown): value is ArrangementStoreState {
+    return (
+        is_plain_object(value) &&
+        has_exact_keys({ value, required_keys: ARRANGEMENT_STORE_STATE_KEYS }) &&
+        typeof value.activeArrangementId === 'string' &&
+        Array.isArray(value.arrangements) &&
+        value.arrangements.every((snapshot) => is_exact_snapshot(snapshot))
+    );
+}
+
+export function sanitize_arrangement_store_state(value: unknown): ArrangementStoreState {
+    if (is_exact_arrangement_store_state(value)) {
+        return value;
+    }
+
+    if (!is_plain_object(value)) {
+        return create_default_arrangement_store_state();
+    }
+
+    const default_state = create_default_arrangement_store_state();
+
+    return {
+        arrangements: Array.isArray(value.arrangements)
+            ? value.arrangements.map(normalize_snapshot).filter(is_not_null)
+            : default_state.arrangements,
+        activeArrangementId:
+            typeof value.activeArrangementId === 'string'
+                ? value.activeArrangementId
+                : default_state.activeArrangementId,
+    };
+}
 
 export const arrangementStore = createStore<ArrangementStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'arrangements'),
     initialData: defaultArrangementStoreState,
+    sanitize: sanitize_arrangement_store_state,
 });
