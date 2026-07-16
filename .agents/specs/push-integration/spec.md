@@ -10,7 +10,6 @@ sources:
     - ../../decisions/README.md
     - ../../../src/modules/Command/useCases/index.ts
     - ../../../src/modules/Command/useCases/executeAppAction.ts
-    - ../../../src/modules/Command/useCases/commandQueries.ts
     - ../../../src/modules/MIDI/models/ControllerProfile.ts
     - ../../../src/modules/MIDI/useCases/hardware/importHardwareMappings.ts
     - ../../../src/modules/MIDI/useCases/hardware/exportHardwareMappings.ts
