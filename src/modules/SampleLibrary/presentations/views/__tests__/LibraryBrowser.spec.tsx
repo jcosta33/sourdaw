@@ -177,6 +177,63 @@ describe('LibraryBrowser', () => {
         });
     });
 
+    it('should render a subfolder label by its Windows-native basename', () => {
+        const state = createLibraryState({
+            provider: 'tauri',
+            ext: 'wav',
+            rootRef: 'C:\\Users\\jose\\Samples',
+            relativePath: 'Drums\\Kits\\Kick.wav',
+            displayName: 'Kick',
+        });
+        // A Windows-native scan populates `folder` with backslash separators.
+        state.samples[0]!.folder = 'Drums\\Kits';
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        // The subfolder button must show only the leaf segment, not the full path.
+        expect(screen.getByRole('button', { name: /^Open folder Kits,/ })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /Drums\\Kits/ })).toBeNull();
+    });
+
+    it('should sort multiple subfolders by basename across slash, backslash, and mixed separators', () => {
+        const state = createLibraryState({
+            provider: 'tauri',
+            ext: 'wav',
+            rootRef: 'C:\\Users\\jose\\Samples',
+            relativePath: 'Drums\\Snares\\Snare.wav',
+            displayName: 'Snare',
+        });
+        const base = state.samples[0]!;
+        // Three sibling samples in three subfolders so the sort comparator runs:
+        // backslash-separated, plain, and mixed-separator (`C:\dir/sub\file.wav` style).
+        state.samples = [
+            { ...base, id: 'sample1', folder: 'Drums\\Snares' },
+            { ...base, id: 'sample2', displayName: 'Loop', relativePath: 'Loops/Loop.wav', folder: 'Loops' },
+            {
+                ...base,
+                id: 'sample3',
+                displayName: 'Vinyl',
+                relativePath: 'Kits\\Vinyl/808\\Vinyl.wav',
+                folder: 'Kits\\Vinyl',
+            },
+        ];
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        const names = screen
+            .getAllByRole('button', { name: /^Open folder / })
+            .map((btn) => btn.getAttribute('aria-label'));
+        // Sorted by leaf basename (Loops < Snares < Vinyl), not by the raw
+        // full-path strings (which would order Drums… < Kits… < Loops).
+        expect(names).toEqual([
+            'Open folder Loops, 0 files',
+            'Open folder Snares, 0 files',
+            'Open folder Vinyl, 0 files',
+        ]);
+    });
+
     it('should not show the browser risky-format warning in the native runtime', async () => {
         const file = new File(['audio'], 'Texture.flac', { type: 'audio/flac' });
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);

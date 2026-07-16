@@ -130,6 +130,13 @@ export type BuiltinDeviceNode = {
     };
 };
 
+/**
+ * The Toaster drum machine's runtime control surface, as attached to a loaded
+ * device node. Exposed as a named port so foreign modules (e.g. Toaster) can
+ * receive it from an AudioEngine use case without reaching into strip internals.
+ */
+export type ToasterDeviceControls = NonNullable<BuiltinDeviceNode['toasterControls']>;
+
 export type MidiFxNode = {
     id: string;
     type: 'arp' | 'velocity' | 'probability';
@@ -187,6 +194,7 @@ export type AudioEngine = {
     ensureTrackStrip(trackId: string): TrackChannelStrip;
     removeTrackStrip(trackId: string): void;
     getTrackStrip(trackId: string): TrackChannelStrip | undefined;
+    findToasterControls(deviceId: string): ToasterDeviceControls | undefined;
     setTrackGain(trackId: string, gain: number): void;
     setTrackPan(trackId: string, pan: number): void;
     setTrackMute(trackId: string, muted: boolean): void;

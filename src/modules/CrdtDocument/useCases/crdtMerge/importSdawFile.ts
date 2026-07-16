@@ -8,7 +8,17 @@ import { decodeSdawFile } from '../sdawFileFormat/decodeSdawFile';
 import { detectImportDecision } from './detectImportDecision';
 import { mergeDocumentBundleFromRepo } from './helpers';
 
-export async function importSdawFile(file: File): Promise<MergeResult | null> {
+/**
+ * Outcome of importing a `.sdaw` file. Discriminated so callers can tell the
+ * user's legitimate "open separately" decision apart from a genuine failure —
+ * both of which previously collapsed to a `null` return.
+ */
+export type ImportSdawResult =
+    | { status: 'merged'; result: MergeResult }
+    | { status: 'separate' }
+    | { status: 'error'; error: unknown };
+
+export async function importSdawFile(file: File): Promise<ImportSdawResult> {
     try {
         const arrayBuffer = await file.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
@@ -17,16 +27,16 @@ export async function importSdawFile(file: File): Promise<MergeResult | null> {
         const decision = detectImportDecision(bundle);
 
         if (decision === 'separate') {
-            return null;
+            return { status: 'separate' };
         }
 
         const result = await mergeDocumentBundleFromRepo(bundle);
         projectCrdtToStores();
 
         await persistCrdtProject();
-        return result;
+        return { status: 'merged', result };
     } catch (error) {
         logger.warn('[CrdtMerge] Failed to import .sdaw file:', error);
-        return null;
+        return { status: 'error', error };
     }
 }

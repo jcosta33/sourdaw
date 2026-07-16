@@ -15,6 +15,7 @@ import type {
     AudioEngineState,
     BusStrip,
     SendNode,
+    ToasterDeviceControls,
     TrackChannelStrip,
 } from '../models/AudioEngineState';
 
@@ -413,6 +414,18 @@ class AudioEngineImpl implements AudioEngine {
 
     public getTrackStrip(trackId: string): TrackChannelStrip | undefined {
         return this.trackNodes.get(trackId)?.strip;
+    }
+
+    public findToasterControls(deviceId: string): ToasterDeviceControls | undefined {
+        // Owns the strip/device-node traversal so foreign modules (Toaster) do not
+        // reach into strip internals to reach a loaded device's control surface.
+        for (const [, trackNode] of this.trackNodes) {
+            const deviceNode = trackNode.strip.deviceNodes.find((dn) => dn.deviceId === deviceId);
+            if (deviceNode?.toasterControls) {
+                return deviceNode.toasterControls;
+            }
+        }
+        return undefined;
     }
 
     public setTrackGain(trackId: string, gain: number): void {

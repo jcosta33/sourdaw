@@ -1,19 +1,10 @@
 import { type Logger } from '#/infra/logger/types';
-import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { getTrackStrip } from '#/modules/AudioEngine/useCases';
+import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
 
 import { toasterStore } from '../stores/toasterStore';
 
 import { disposeToasterDevice } from './disposeToasterDevice';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
-
-type DeviceNodeRef = {
-    deviceId: string;
-    toasterControls?: {
-        setParam: (n: string, v: number) => void;
-        setPadParam: (pad: number, n: string, v: number) => void;
-    };
-};
 
 type AudioDeviceLifecyclePayload = {
     deviceId: string;
@@ -48,16 +39,9 @@ export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscrib
             return;
         }
 
-        let foundStrip;
-        for (const track of getAllTracks()) {
-            if (track.devices.some((data) => data.id === deviceId)) {
-                foundStrip = getTrackStrip(track.id);
-                break;
-            }
-        }
-
-        const dn = foundStrip?.deviceNodes.find((data: DeviceNodeRef) => data.deviceId === deviceId);
-        const tControls = dn?.toasterControls;
+        // AudioEngine owns the strip/device-node traversal; Toaster receives only
+        // the narrow control surface for this device through the use-case port.
+        const tControls = getToasterDeviceControls(deviceId);
 
         if (!tControls) {
             return;

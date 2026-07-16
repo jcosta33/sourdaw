@@ -881,6 +881,42 @@ describe('AudioEngine', () => {
         });
     });
 
+    // ── findToasterControls: deviceId-keyed port for foreign modules (Toaster) ────
+    //
+    // Owns the strip/device-node traversal so Toaster resolves a loaded device's
+    // control surface without touching getTrackStrip(...).deviceNodes internals.
+    describe('findToasterControls', () => {
+        function pushDevice(eng: AudioEngine, trackId: string, deviceId: string, withControls: boolean) {
+            const strip = eng.ensureTrackStrip(trackId);
+            const controls = withControls ? { setParam: vi.fn(), setPadParam: vi.fn() } : undefined;
+            strip.deviceNodes.push({
+                deviceId,
+                type: withControls ? 'toaster' : 'builtin-eq',
+                nodes: [],
+                ...(controls ? { toasterControls: controls } : {}),
+            } as never);
+            return controls;
+        }
+
+        it('selects the matching device by deviceId across multiple tracks and devices', () => {
+            pushDevice(engine, 'tA', 'eq-1', false);
+            const controlsB = pushDevice(engine, 'tB', 'toast-b', true);
+            pushDevice(engine, 'tB', 'eq-2', false);
+            const controlsC = pushDevice(engine, 'tC', 'toast-c', true);
+
+            expect(engine.findToasterControls('toast-b')).toBe(controlsB);
+            expect(engine.findToasterControls('toast-c')).toBe(controlsC);
+        });
+
+        it('returns undefined for a missing device or a device without toaster controls', () => {
+            pushDevice(engine, 'tA', 'eq-1', false);
+
+            expect(engine.findToasterControls('nope')).toBeUndefined();
+            // deviceId exists but carries no toasterControls surface.
+            expect(engine.findToasterControls('eq-1')).toBeUndefined();
+        });
+    });
+
     // ── Fix 6: the transport SAB allocation is guarded by hasSharedArrayBuffer ────
     //
     // The module-level singleton constructs the engine at import time. The
