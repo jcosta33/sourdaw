@@ -12,12 +12,24 @@ describe('Track shortcut actions', () => {
         const mod = await import('../duplicateTrack');
         expect(mod).toBeDefined();
     });
-    it('module barrel loads', async () => {
-        try {
-            const mod = await import('../index');
-            expect(mod).toBeDefined();
-        } catch {
-            expect(true).toBe(true);
-        }
+    it('addTrack loads', async () => {
+        const mod = await import('../addTrack');
+        expect(mod).toBeDefined();
+    });
+    it('clearSolos loads', async () => {
+        const mod = await import('../clearSolos');
+        expect(mod).toBeDefined();
+    });
+    it('duplicateClip loads', async () => {
+        const mod = await import('../duplicateClip');
+        expect(mod).toBeDefined();
+    });
+    it('duplicateClipToNextBar loads', async () => {
+        const mod = await import('../duplicateClipToNextBar');
+        expect(mod).toBeDefined();
+    });
+    it('zoomTracksVertical loads', async () => {
+        const mod = await import('../zoomTracksVertical');
+        expect(mod).toBeDefined();
     });
 });
