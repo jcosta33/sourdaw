@@ -85,11 +85,20 @@ source citation.
   Blocks code: yes, for tempo-map edits. Source:
   `src/modules/Transport/useCases/setTempo.ts`, `models/TempoMap.ts`,
   `useCases/tempoMap/addTempoChange.ts`.
-- **punchRecording is a parallel dead feature.** 8 use cases with zero external
-  callers; the scheduler reads `transport.punchIn*/punchOut*`, not
-  punchRecordingStore. Options: converge on one punch system vs delete the
-  store-based one. Blocks code: no. Source:
-  `src/modules/Transport/useCases/punchRecording/`.
+- **Two coexisting punch systems — by design or to converge?** The scheduler
+  drives real punch-in/out from transportStore fields
+  (`punchInEnabled`/`punchInBeat`/`punchOutBeat`, persisted in ProjectData),
+  while the separately shipped background-capture model (punchRecordingStore +
+  `PunchRecordingControls`, rendered in TransportBar) is UI-wired — its nine
+  use cases write capture/region state only, with no audio-capture path behind
+  `startBackgroundCapture`/`commitPunchRegion`. Decide whether the two are
+  distinct features (auto-punch vs retroactive punch-from-capture, the latter
+  still needing engine wiring) or should converge on one model. Blocks code:
+  yes, for punch feature work. Source:
+  `src/modules/Transport/useCases/playheadScheduler.ts:281-323` (transportStore
+  punch), `useCases/punchRecording/startBackgroundCapture.ts` (state-only),
+  `presentations/views/PunchRecordingControls.tsx` (mounted at
+  `src/modules/Workspace/presentations/views/TransportBar.tsx:133`).
 - **Setlist–transport coordination contract.** `goToItem` only sets
   currentIndex and emits a programChange; no seek/tempo/timesig/project load;
   autoAdvance/countInBars/gapSeconds are read by nothing. Options: specify the
@@ -296,7 +305,9 @@ source citation.
   AudioContext + SAB at module import (tests/HMR/SSR all trigger it). Options:
   lazy init behind a getter vs accept eager boot. Blocks code: yes, for
   engine-lifecycle work. Source:
-  `src/modules/AudioEngine/repositories/createWebAudioEngine.ts:599`.
+  `src/modules/AudioEngine/repositories/createWebAudioEngine.ts:143-161`
+  (constructor: SAB + AudioContext setup) and `:983`
+  (`export const audioEngine = createAudioEngine()`).
 - **AdjustmentBus reverb param mapping**: Size→'rev-mix', Damping→'rev-lowcut'
   are misaligned, and the recommended remap is infeasible — the reverb device
   exposes only rev-mix/rev-predelay/rev-lowcut. Options: extend the device
