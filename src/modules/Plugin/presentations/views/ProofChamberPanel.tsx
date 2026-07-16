@@ -27,6 +27,7 @@ import {
     type SpaceType,
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
+import { decodeImpulseResponse } from '../../useCases/proofChamber/decodeImpulseResponse';
 import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
 import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
@@ -325,6 +326,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
 
                 <SectionCard title="IR tray" detail="Cabinet-free">
                     <IrBrowser
+                        onFileDrop={decodeImpulseResponse}
                         onIrLoaded={(data, channels) => {
                             logger.info(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
                         }}
