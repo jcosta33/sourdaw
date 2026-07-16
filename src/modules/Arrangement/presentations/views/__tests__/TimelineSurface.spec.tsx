@@ -59,8 +59,8 @@ const createReactiveStoreFixture = vi.hoisted(() => {
 });
 
 // Mock external dependencies
-vi.mock('../../../useCases/initTimelineRenderer', () => ({
-    initTimelineRenderer: vi.fn(() =>
+vi.mock('../../renderers/createTimelineRenderer', () => ({
+    createTimelineRenderer: vi.fn(() =>
         Promise.resolve({
             resize: vi.fn(),
             render: vi.fn(),
