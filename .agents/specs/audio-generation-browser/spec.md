@@ -231,7 +231,7 @@ Verify with: `pnpm test:run -- BrowserAi graphCapture`
 Capability detection must run on every cold start (not only first launch) so a WebView2/WebGPU
 regression is caught.
 
-Verify with: `pnpm test:run -- BrowserAi capabilityColdStart`
+Verify with: `pnpm test:run capabilityColdStart`
 
 ### AC-026 — Cache hits skip inference for identical inputs
 
@@ -262,7 +262,7 @@ Verify with: `pnpm test:run -- BrowserAi shardedModelLoading`
 The detected capability values must be attached to every render's provenance chip so a later
 support reader can attribute a bad render to a capability change.
 
-Verify with: `pnpm test:run -- BrowserAi capabilityColdStart`
+Verify with: `pnpm test:run capabilityColdStart`
 
 ### AC-031 — onnxruntime-web minimum version is 1.17+
 

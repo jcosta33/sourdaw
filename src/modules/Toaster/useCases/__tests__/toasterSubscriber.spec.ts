@@ -126,4 +126,23 @@ describe('initToasterSubscribers', () => {
         expect(setParam).toHaveBeenCalledWith('master_gain', kit.masterGain);
         expect(setPadParam).toHaveBeenCalledWith(0, 'volume', kit.pads[0]!.volume);
     });
+
+    it('skips hydration cleanly when the port finds no loaded device for the id', () => {
+        hydrationMocks.getToasterDeviceControls.mockReturnValue(undefined);
+        hydrationMocks.toasterStore.value = { 'toast-1': { kit: createDefaultKit() } };
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.on.mockReturnValue(vi.fn());
+        initToasterSubscribers({
+            eventBus,
+            logger: createMock<Logger>(),
+        });
+
+        // Not-found branch: the port is consulted, returns undefined, and the
+        // handler bails without throwing.
+        expect(() =>
+            handlerFor(eventBus, 'audioDevice.loaded')({ deviceId: 'toast-1', deviceType: 'toaster' })
+        ).not.toThrow();
+        expect(hydrationMocks.getToasterDeviceControls).toHaveBeenCalledWith('toast-1');
+    });
 });
