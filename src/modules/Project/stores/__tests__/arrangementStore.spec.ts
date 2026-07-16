@@ -148,13 +148,16 @@ describe('sanitize_arrangement_store_state', () => {
                     tracks: {
                         // A minimal identified row is repaired with the structural
                         // defaults buildProjectData() dereferences on EVERY
-                        // arrangement (including inactive ones): clips/alternatives
-                        // arrays and a freezeState object.
+                        // arrangement (including inactive ones): clips array, a
+                        // freezeState object, and the canonical ≥1-alternative
+                        // invariant (deterministic `${id}-alt-default`, mirroring
+                        // normalizeTrack()/hydrateTrack()).
                         tracks: [
                             {
                                 id: 'track-1',
                                 clips: [],
-                                alternatives: [],
+                                alternatives: [{ id: 'track-1-alt-default', name: 'Alternative 1', clips: [] }],
+                                activeAlternativeId: 'track-1-alt-default',
                                 freezeState: { status: 'unfrozen' },
                             },
                         ],
@@ -227,15 +230,71 @@ describe('sanitize_arrangement_store_state', () => {
         });
 
         expect(sanitized.arrangements[0]!.tracks.tracks).toEqual([
-            { id: 'bare', clips: [], alternatives: [], freezeState: { status: 'unfrozen' } },
-            { id: 'bad-shapes', clips: [], alternatives: [], freezeState: { status: 'unfrozen' } },
+            {
+                id: 'bare',
+                clips: [],
+                alternatives: [{ id: 'bare-alt-default', name: 'Alternative 1', clips: [] }],
+                activeAlternativeId: 'bare-alt-default',
+                freezeState: { status: 'unfrozen' },
+            },
+            {
+                id: 'bad-shapes',
+                clips: [],
+                alternatives: [{ id: 'bad-shapes-alt-default', name: 'Alternative 1', clips: [] }],
+                activeAlternativeId: 'bad-shapes-alt-default',
+                freezeState: { status: 'unfrozen' },
+            },
             {
                 id: 'bad-alt-clips',
                 clips: [{ id: 'clip-1' }],
                 alternatives: [{ id: 'alt-1', clips: [] }],
+                activeAlternativeId: 'alt-1',
                 freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
             },
         ]);
+    });
+
+    it('repairs empty or dangling alternatives to the canonical ≥1-alternative invariant', () => {
+        const sanitized = sanitize_arrangement_store_state({
+            arrangements: [
+                {
+                    ...createValidSnapshot('alpha-1'),
+                    tracks: {
+                        tracks: [
+                            // Present-but-empty alternatives array: `??` in the
+                            // canonical constructors will not heal this, so the
+                            // sanitizer must.
+                            {
+                                id: 'empty-alts',
+                                clips: [],
+                                alternatives: [],
+                                freezeState: { status: 'unfrozen' },
+                            },
+                            // Dangling activeAlternativeId: repointed at the first
+                            // surviving alternative.
+                            {
+                                id: 'dangling-active',
+                                clips: [],
+                                alternatives: ['corrupt', { id: 'alt-real', name: 'Alt', clips: [] }],
+                                activeAlternativeId: 'alt-gone',
+                                freezeState: { status: 'unfrozen' },
+                            },
+                        ],
+                        selectedTrackId: null,
+                    },
+                },
+            ],
+            activeArrangementId: 'alpha-1',
+        });
+
+        const [emptyAlts, danglingActive] = sanitized.arrangements[0]!.tracks.tracks;
+
+        // Exactly one canonical default alternative, and the active id points at it.
+        expect(emptyAlts!.alternatives).toEqual([{ id: 'empty-alts-alt-default', name: 'Alternative 1', clips: [] }]);
+        expect(emptyAlts!.activeAlternativeId).toBe('empty-alts-alt-default');
+
+        expect(danglingActive!.alternatives).toEqual([{ id: 'alt-real', name: 'Alt', clips: [] }]);
+        expect(danglingActive!.activeAlternativeId).toBe('alt-real');
     });
 
     it('never throws on adversarial shapes: null rows, arrays where objects expected, prototype-pollution keys', () => {

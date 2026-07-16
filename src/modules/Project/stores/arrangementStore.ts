@@ -382,9 +382,12 @@ function is_not_null<TValue>(value: TValue | null): value is TValue {
  * each row's identity (plain object + string `id`), and — because
  * buildProjectData() iterates EVERY arrangement (inactive ones never pass
  * through loadSnapshot()'s deep validators) — per-track structural shape:
- * `clips` is an array of identified rows, `alternatives` is an array of
- * identified rows each carrying a `clips` array of identified rows, and
- * `freezeState` is a plain object (defaulted to `{ status: 'unfrozen' }`,
+ * `clips` is an array of identified rows, `alternatives` is a NON-EMPTY array
+ * of identified rows each carrying a `clips` array of identified rows (empty
+ * or fully-dropped alternatives are repaired to the canonical
+ * `${id}-alt-default` alternative, with `activeAlternativeId` repointed at a
+ * real alternative when it dangles — mirroring normalizeTrack()/hydrateTrack()),
+ * and `freezeState` is a plain object (defaulted to `{ status: 'unfrozen' }`,
  * mirroring createTrack() in Arrangement models). Deep per-FIELD row
  * validation is deliberately NOT duplicated here: the restore path owns it —
  * loadSnapshot() routes every ACTIVE-arrangement section from `unknown`
@@ -436,6 +439,10 @@ function is_exact_track_row(value: unknown): value is ProjectTrack {
         typeof value.id === 'string' &&
         is_row_array(value.clips) &&
         Array.isArray(value.alternatives) &&
+        // Every canonical constructor guarantees ≥1 alternative; an empty
+        // array must not pass exact, or pass-by-reference would smuggle a
+        // track whose alternatives feature is silently broken.
+        value.alternatives.length > 0 &&
         value.alternatives.every((alternative) => is_exact_alternative_row(alternative)) &&
         is_plain_object(value.freezeState)
     );
@@ -448,10 +455,23 @@ function normalize_track_row(value: unknown): ProjectTrack | null {
     if (!is_plain_object(value) || typeof value.id !== 'string') {
         return null;
     }
+    const alternatives = normalize_alternative_rows(value.alternatives);
+    if (alternatives.length === 0) {
+        // Mirror normalizeTrack()/hydrateTrack(): every track carries at least
+        // one alternative, and its id is derived deterministically from the
+        // track id so CRDT re-hydration produces the same id each time.
+        alternatives.push({ id: `${value.id}-alt-default`, name: 'Alternative 1', clips: [] });
+    }
+    const active_alternative_id =
+        typeof value.activeAlternativeId === 'string' &&
+        alternatives.some((alternative) => alternative.id === value.activeAlternativeId)
+            ? value.activeAlternativeId
+            : alternatives[0]!.id;
     const repaired = {
         ...value,
         clips: filter_identified_rows<ProjectClip>(value.clips),
-        alternatives: normalize_alternative_rows(value.alternatives),
+        alternatives,
+        activeAlternativeId: active_alternative_id,
         freezeState: is_plain_object(value.freezeState) ? value.freezeState : { status: 'unfrozen' },
     };
     // The guard re-check narrows the repaired shape without a cast; it holds
