@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import {
     acceptGhostClip,
@@ -245,7 +246,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         stopAllSlots();
                         return true;
                     }
-                    stopPlayback();
+                    void stopPlayback().catch((error: unknown) => {
+                        logger.error(new Error('Keyboard shortcut stop request failed', { cause: error }));
+                    });
                     return false;
                 }
                 case 'zoomIn':
