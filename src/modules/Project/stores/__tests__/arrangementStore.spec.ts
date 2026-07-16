@@ -145,7 +145,21 @@ describe('sanitize_arrangement_store_state', () => {
             arrangements: [
                 {
                     ...createValidSnapshot('alpha-1'),
-                    tracks: { tracks: [{ id: 'track-1' }], selectedTrackId: null },
+                    tracks: {
+                        // A minimal identified row is repaired with the structural
+                        // defaults buildProjectData() dereferences on EVERY
+                        // arrangement (including inactive ones): clips/alternatives
+                        // arrays and a freezeState object.
+                        tracks: [
+                            {
+                                id: 'track-1',
+                                clips: [],
+                                alternatives: [],
+                                freezeState: { status: 'unfrozen' },
+                            },
+                        ],
+                        selectedTrackId: null,
+                    },
                     midi: {
                         notesByClipId: { 'clip-1': [midiNote] },
                         ccByClipId: {},
@@ -187,5 +201,82 @@ describe('sanitize_arrangement_store_state', () => {
                 stale: true,
             })
         ).toEqual({ arrangements: [valid], activeArrangementId: 'alpha-1' });
+    });
+
+    it('repairs track rows so save/export structural invariants hold (clips/alternatives arrays, freezeState object)', () => {
+        const sanitized = sanitize_arrangement_store_state({
+            arrangements: [
+                {
+                    ...createValidSnapshot('alpha-1'),
+                    tracks: {
+                        tracks: [
+                            { id: 'bare' },
+                            { id: 'bad-shapes', clips: 'corrupt', alternatives: 'corrupt', freezeState: 'corrupt' },
+                            {
+                                id: 'bad-alt-clips',
+                                clips: [{ id: 'clip-1' }],
+                                alternatives: [{ id: 'alt-1' }, 'corrupt'],
+                                freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+                            },
+                        ],
+                        selectedTrackId: null,
+                    },
+                },
+            ],
+            activeArrangementId: 'alpha-1',
+        });
+
+        expect(sanitized.arrangements[0]!.tracks.tracks).toEqual([
+            { id: 'bare', clips: [], alternatives: [], freezeState: { status: 'unfrozen' } },
+            { id: 'bad-shapes', clips: [], alternatives: [], freezeState: { status: 'unfrozen' } },
+            {
+                id: 'bad-alt-clips',
+                clips: [{ id: 'clip-1' }],
+                alternatives: [{ id: 'alt-1', clips: [] }],
+                freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            },
+        ]);
+    });
+
+    it('never throws on adversarial shapes: null rows, arrays where objects expected, prototype-pollution keys', () => {
+        // Null elements inside every row collection are dropped, not thrown on.
+        const withNulls = sanitize_arrangement_store_state({
+            arrangements: [
+                null,
+                {
+                    ...createValidSnapshot('alpha-1'),
+                    tracks: { tracks: [null, { id: 'track-1' }], selectedTrackId: null },
+                    automation: { lanes: [null] },
+                    midi: { notesByClipId: { 'clip-1': [null] }, ccByClipId: {}, pitchBendByClipId: {} },
+                    markers: { markers: [null], sections: [null] },
+                },
+            ],
+            activeArrangementId: 'alpha-1',
+        });
+        expect(withNulls.arrangements).toHaveLength(1);
+        expect(withNulls.arrangements[0]!.tracks.tracks.map((track) => track.id)).toEqual(['track-1']);
+        expect(withNulls.arrangements[0]!.automation.lanes).toEqual([]);
+        expect(withNulls.arrangements[0]!.midi.notesByClipId).toEqual({ 'clip-1': [] });
+        expect(withNulls.arrangements[0]!.markers).toEqual({ markers: [], sections: [] });
+
+        // Arrays where objects are expected are rejected, not dereferenced.
+        const withArrays = sanitize_arrangement_store_state({
+            arrangements: [
+                { ...createValidSnapshot('alpha-1'), midi: [] },
+                { ...createValidSnapshot('beta-2'), tracks: [] },
+            ],
+            activeArrangementId: [],
+        });
+        expect(withArrays.arrangements).toEqual([]);
+        expect(withArrays.activeArrangementId).toBe(defaultArrangementId);
+
+        // Prototype-pollution-style keys survive as plain data without polluting
+        // Object.prototype (JSON.parse produces an own __proto__ property).
+        const polluted = sanitize_arrangement_store_state(
+            JSON.parse('{"arrangements": [], "activeArrangementId": "alpha-1", "__proto__": {"polluted": true}}')
+        );
+        expect(polluted.arrangements).toEqual([]);
+        expect(polluted.activeArrangementId).toBe('alpha-1');
+        expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
     });
 });

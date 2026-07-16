@@ -377,13 +377,20 @@ function is_not_null<TValue>(value: TValue | null): value is TValue {
 }
 
 /** Container-level row check — the hydration trust boundary for this store.
- * The sanitizer validates the state/snapshot/section containers and each row's
- * identity; deep per-field row validation is deliberately NOT duplicated here
- * because the restore path already owns it: loadSnapshot() routes every
- * snapshot section from `unknown` through the owning modules' sanitizers
- * (sanitizeTrackSnapshot, restoreAutomationSnapshot, setMidiStoreState,
- * restoreTimelineMapSnapshot, restoreArrangementMetadataSnapshot) before any
- * row reaches a live store. */
+ * The sanitizer guarantees the structural invariants every consumer of this
+ * store assumes without re-validating: the state/snapshot/section containers,
+ * each row's identity (plain object + string `id`), and — because
+ * buildProjectData() iterates EVERY arrangement (inactive ones never pass
+ * through loadSnapshot()'s deep validators) — per-track structural shape:
+ * `clips` is an array of identified rows, `alternatives` is an array of
+ * identified rows each carrying a `clips` array of identified rows, and
+ * `freezeState` is a plain object (defaulted to `{ status: 'unfrozen' }`,
+ * mirroring createTrack() in Arrangement models). Deep per-FIELD row
+ * validation is deliberately NOT duplicated here: the restore path owns it —
+ * loadSnapshot() routes every ACTIVE-arrangement section from `unknown`
+ * through the owning modules' sanitizers (sanitizeTrackSnapshot,
+ * restoreAutomationSnapshot, setMidiStoreState, restoreTimelineMapSnapshot,
+ * restoreArrangementMetadataSnapshot) before any row reaches a live store. */
 function is_identified_row(value: unknown): boolean {
     return is_plain_object(value) && typeof value.id === 'string';
 }
@@ -399,11 +406,72 @@ function filter_identified_rows<TRow extends { id: string }>(value: unknown): TR
     return value.filter((row): row is TRow => is_identified_row(row));
 }
 
+function is_exact_alternative_row(value: unknown): value is ProjectTrackAlternative {
+    return is_plain_object(value) && typeof value.id === 'string' && is_row_array(value.clips);
+}
+
+function normalize_alternative_row(value: unknown): ProjectTrackAlternative | null {
+    if (is_exact_alternative_row(value)) {
+        return value;
+    }
+    if (!is_plain_object(value) || typeof value.id !== 'string') {
+        return null;
+    }
+    const repaired = { ...value, clips: filter_identified_rows<ProjectClip>(value.clips) };
+    // The guard re-check narrows the repaired shape without a cast; it holds
+    // by construction.
+    return is_exact_alternative_row(repaired) ? repaired : null;
+}
+
+function normalize_alternative_rows(value: unknown): ProjectTrackAlternative[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.map(normalize_alternative_row).filter(is_not_null);
+}
+
+function is_exact_track_row(value: unknown): value is ProjectTrack {
+    return (
+        is_plain_object(value) &&
+        typeof value.id === 'string' &&
+        is_row_array(value.clips) &&
+        Array.isArray(value.alternatives) &&
+        value.alternatives.every((alternative) => is_exact_alternative_row(alternative)) &&
+        is_plain_object(value.freezeState)
+    );
+}
+
+function normalize_track_row(value: unknown): ProjectTrack | null {
+    if (is_exact_track_row(value)) {
+        return value;
+    }
+    if (!is_plain_object(value) || typeof value.id !== 'string') {
+        return null;
+    }
+    const repaired = {
+        ...value,
+        clips: filter_identified_rows<ProjectClip>(value.clips),
+        alternatives: normalize_alternative_rows(value.alternatives),
+        freezeState: is_plain_object(value.freezeState) ? value.freezeState : { status: 'unfrozen' },
+    };
+    // The guard re-check narrows the repaired shape without a cast; it holds
+    // by construction.
+    return is_exact_track_row(repaired) ? repaired : null;
+}
+
+function normalize_track_rows(value: unknown): ProjectTrack[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.map(normalize_track_row).filter(is_not_null);
+}
+
 function is_exact_tracks_section(value: unknown): value is ProjectTrackStoreState {
     return (
         is_plain_object(value) &&
         has_exact_keys({ value, required_keys: TRACKS_SECTION_KEYS }) &&
-        is_row_array(value.tracks) &&
+        Array.isArray(value.tracks) &&
+        value.tracks.every((track) => is_exact_track_row(track)) &&
         is_string_or_null(value.selectedTrackId)
     );
 }
@@ -413,7 +481,7 @@ function normalize_tracks_section(value: unknown): ProjectTrackStoreState | null
         return null;
     }
     return {
-        tracks: filter_identified_rows<ProjectTrack>(value.tracks),
+        tracks: normalize_track_rows(value.tracks),
         selectedTrackId: is_string_or_null(value.selectedTrackId) ? value.selectedTrackId : null,
     };
 }
