@@ -301,11 +301,14 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
-        // Fire-and-forget: a click handler returns void; createFromTemplate
-        // surfaces its own failures, so there is nothing to await here.
+        // Fire-and-forget: the click handler returns void; activation failure
+        // is rendered here after the template owner reports its outcome.
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 80));
-            await createFromTemplate(template.id);
+            if (!(await createFromTemplate(template.id))) {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+            }
         })();
     };
 

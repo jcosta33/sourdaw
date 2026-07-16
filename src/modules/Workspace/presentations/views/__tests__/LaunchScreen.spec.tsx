@@ -41,7 +41,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 describe('LaunchScreen', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.createFromTemplate.mockResolvedValue(undefined);
+        mocks.createFromTemplate.mockResolvedValue(true);
         mocks.getRecentProjects.mockReturnValue([]);
         mocks.getTemplates.mockReturnValue([]);
         mocks.importDroppedLaunchFiles.mockResolvedValue({ status: 'completed', failedFileNames: [] });
@@ -98,6 +98,22 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Basic Band/ }));
 
         await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('basic-band'));
+    });
+
+    it('restores the home view when template project activation fails', async () => {
+        mocks.createFromTemplate.mockResolvedValue(false);
+        mocks.getTemplates.mockReturnValue([
+            { id: 'empty', name: 'Empty Project', description: 'A blank canvas', category: 'empty' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Empty Project/ }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to create a new project.', 'error');
+            expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+        });
     });
 
     it('filters the demo grid to demo templates', () => {

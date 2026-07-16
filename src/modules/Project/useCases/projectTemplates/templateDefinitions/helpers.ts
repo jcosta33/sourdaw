@@ -18,8 +18,13 @@ export type ProjectTemplate = {
     description: string;
     category: TemplateCategory;
     platform?: 'web' | 'native';
-    create: () => void | Promise<void>;
+    create: () => Promise<boolean>;
 };
+
+async function createSuccessfulTemplate(create: () => Promise<void>): Promise<boolean> {
+    await create();
+    return true;
+}
 
 export const templates: ProjectTemplate[] = [
     {
@@ -27,9 +32,7 @@ export const templates: ProjectTemplate[] = [
         name: 'Empty Project',
         description: 'A blank canvas — no tracks, no devices.',
         category: 'empty',
-        create: () => {
-            void newProject('Untitled');
-        },
+        create: () => newProject('Untitled'),
     },
     {
         id: 'pop-song',
@@ -37,7 +40,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '100 BPM C major. Drums folder, bass with kick sidechain, rhythm layer, vocal stack with Knead pitch correction, warm pad, plate/hall/tape-delay sends, drum and vocal buses, and a pop-tuned master chain.',
         category: 'music',
-        create: () => createPopSongTemplate(),
+        create: () => createSuccessfulTemplate(createPopSongTemplate),
     },
     {
         id: 'hiphop-trap',
@@ -45,7 +48,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '140 BPM F minor. Trap drum folder, 808 sub with heavy kick ducking, Rhodes/flute/pad melodies, lead + ad-lib + hook vocals through a broadcast vocal bus, plate/hall/tape-delay sends, and a trap-glue master chain.',
         category: 'music',
-        create: () => createHipHopTrapTemplate(),
+        create: () => createSuccessfulTemplate(createHipHopTrapTemplate),
     },
     {
         id: 'edm',
@@ -53,7 +56,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '128 BPM C minor, 128-beat arrangement with Intro/Build/Drop markers. Classic Kick→Bass and Kick→Pad sidechain, supersaw/pluck/Yeast-arp leads, fermenter atmos pad, parallel comp + plate/hall/delay sends, gluten + brickwall + proof master.',
         category: 'music',
-        create: () => createEdmTemplate(),
+        create: () => createSuccessfulTemplate(createEdmTemplate),
     },
     {
         id: 'rock-band',
@@ -61,7 +64,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '120 BPM E minor. Kick/snare/hat/overheads/tom drum folder into NY-comp drum bus, Grinder amp sims on panned rhythm + lead guitars through a room-IR guitar bus, vocal stack, plate/hall/tape sends, bacteria + gluten + brickwall master.',
         category: 'music',
-        create: () => createRockBandTemplate(),
+        create: () => createSuccessfulTemplate(createRockBandTemplate),
     },
     {
         id: 'lofi',
@@ -69,7 +72,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '80 BPM D Dorian with heavy MPC-60 swing. Lo-fi drum kit + vinyl crackle, sub bass, Rhodes/pluck/pad melodic folder, tape-hiss + wobble textures, spring reverb + tape delay + vinyl (bitcrush) bus, bitcrusher-warm master.',
         category: 'music',
-        create: () => createLofiTemplate(),
+        create: () => createSuccessfulTemplate(createLofiTemplate),
     },
     {
         id: 'cinematic',
@@ -77,7 +80,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '90 BPM D minor, 96 beats with a 6/8 bridge at beat 48 and tempo rall. at the coda. Levain strings/cello, brass lead + French horn, flute/clarinet winds, Grand Boule piano, timpani + percussion, hall/plate/delay sends, cinematic master.',
         category: 'film',
-        create: () => createCinematicTemplate(),
+        create: () => createSuccessfulTemplate(createCinematicTemplate),
     },
     {
         id: 'podcast',
@@ -85,7 +88,7 @@ export const templates: ProjectTemplate[] = [
         description:
             'Three mic tracks (host + 2 guests) with de-esser, broadcast EQ and compressor, into a voice bus with limiter. Host mic sidechain-ducks the music bus (intro/outro/sting). No reverb on voice. Gluten + limiter master targeting -16 LUFS.',
         category: 'podcast',
-        create: () => createPodcastTemplate(),
+        create: () => createSuccessfulTemplate(createPodcastTemplate),
     },
     {
         id: 'singer-songwriter',
@@ -93,7 +96,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '90 BPM G major. Lead + harmony vocal stack with Knead, acoustic guitar, Grand Boule piano, sub bass, plate short/long + slap delay sends, gentle gluten + proof-warm master.',
         category: 'music',
-        create: () => createSingerSongwriterTemplate(),
+        create: () => createSuccessfulTemplate(createSingerSongwriterTemplate),
     },
     {
         id: 'ambient',
@@ -101,7 +104,7 @@ export const templates: ProjectTemplate[] = [
         description:
             '60 BPM C Lydian, 128 beats. Three Fermenter drones, Levain + FM shimmer pads, DX bell / Grand Boule piano / Crumbs granular melodic layer, tape-hiss texture, 8-second Cathedral reverb + tape delay + spring sends.',
         category: 'music',
-        create: () => createAmbientTemplate(),
+        create: () => createSuccessfulTemplate(createAmbientTemplate),
     },
     {
         id: 'demo-nebula-drift',
@@ -109,6 +112,6 @@ export const templates: ProjectTemplate[] = [
         description:
             'A ~5-minute Tangerine Dream–style journey: Fermenter drones, pluck/grain textures, Levain lines, Naan Sitar lead, Pullman Organ lead, Rye Reese bass, and a full 16-pad Toaster kit (folder-hosted) with heavy automation and spatial FX.',
         category: 'demo',
-        create: () => demo5_NebulaDrift(),
+        create: () => createSuccessfulTemplate(demo5_NebulaDrift),
     },
 ];

@@ -3,16 +3,16 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { templates } from './helpers';
 
-export async function createFromTemplate(templateId: string): Promise<void> {
+export async function createFromTemplate(templateId: string): Promise<boolean> {
     const template = templates.find((time) => time.id === templateId);
     if (!template) {
-        return;
+        return false;
     }
     // Stop any in-flight playback and tear down the previous project's audio
     // graph before the template mutates stores or creates its own strips.
     // Non-demo templates call newProject() which also stops/resets, but both
     // operations are idempotent so the double-call is harmless.
-    stopPlayback();
+    await stopPlayback();
     resetAudioGraph();
-    await template.create();
+    return template.create();
 }
