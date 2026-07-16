@@ -38,7 +38,7 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                     if (!ok) {
                         return;
                     }
-                    newProject();
+                    void newProject();
                     window.location.reload();
                 })();
             }),

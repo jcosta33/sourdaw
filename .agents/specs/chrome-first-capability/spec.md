@@ -298,6 +298,23 @@ the degraded-mode state.
 
 Verify with: `pnpm test:run -- coiOffDegradedBoot`
 
+### AC-032 — Native file commands resolve path authority in native state
+
+Collaboration-bundle and generated-audio file commands must resolve filesystem
+authority from native-owned project/output state. Command-level tests provide a
+divergent renderer path and prove that each command either rejects the request
+or accesses only the native-owned path, leaving the divergent path untouched.
+
+Verify with: the following fail-fast command.
+
+```sh
+rg -Uq '(?m)^[ \t]*#\[test\][ \t]*\r?\n[ \t]*fn rejects_divergent_renderer_path_authority\(\)[ \t]*\{' \
+  src-tauri/src/commands/collab.rs &&
+  rg -Uq '(?m)^[ \t]*#\[test\][ \t]*\r?\n[ \t]*fn ignores_divergent_renderer_path_authority\(\)[ \t]*\{' \
+    src-tauri/src/commands/audio_postprocess.rs &&
+  cargo test -p sourdaw --lib divergent_renderer_path_authority
+```
+
 ## Open questions
 
 - [ ] (blocking) [CRITICAL] Which File System Access persistence strategy does

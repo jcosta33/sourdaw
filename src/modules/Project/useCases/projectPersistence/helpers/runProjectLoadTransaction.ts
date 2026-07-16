@@ -18,6 +18,9 @@ export const projectLoadEpoch = {
     get current(): number {
         return activeProjectTransitionId;
     },
+    isCurrent(epoch: number): boolean {
+        return epoch > 0 && epoch === activeProjectTransitionId && epoch === latestPreparedProjectTransitionId;
+    },
 };
 
 type RunProjectLoadTransactionOutput = ProjectLoadTransaction;

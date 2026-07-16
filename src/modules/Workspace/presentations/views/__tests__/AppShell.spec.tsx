@@ -98,7 +98,7 @@ vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
 }));
 
-vi.mock('../../components/LaunchScreen', () => ({
+vi.mock('../LaunchScreen', () => ({
     LaunchScreen: ({ exiting }: { exiting: boolean }) => (
         <div data-testid="launch-screen" data-exiting={String(exiting)}>
             Launch Screen

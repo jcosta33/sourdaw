@@ -92,7 +92,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleNewProject = () => {
         void saveProject();
-        newProject();
+        void newProject();
         setOpen(false);
     };
 

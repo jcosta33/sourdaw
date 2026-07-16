@@ -5,8 +5,7 @@ title: Plugin audio Tauri command contains raw prose in Rust code
 status: fixed
 owner: The Sourdaw team
 sources:
-  - "Transient finding: project-health-audit-2026-06-27"
-  - SPEC-plugin-hosting-clap
+    - SPEC-plugin-hosting-clap
 ---
 
 # Bug: Plugin audio Tauri command contains raw prose in Rust code

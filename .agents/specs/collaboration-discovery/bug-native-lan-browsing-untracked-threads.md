@@ -5,7 +5,6 @@ title: Native LAN discovery browsing can spawn untracked mDNS threads
 status: fixed
 owner: The Sourdaw team
 sources:
-  - "Transient finding: remaining-surface-audit-2026-06-27"
   - SPEC-collaboration-discovery
 ---
 

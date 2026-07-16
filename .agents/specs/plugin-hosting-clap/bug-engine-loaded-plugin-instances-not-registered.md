@@ -5,7 +5,6 @@ title: Engine-loaded CLAP instances are missing from plugin command state
 status: partial
 owner: The Sourdaw team
 sources:
-  - "Transient finding: remaining-surface-audit-2026-06-27"
   - SPEC-plugin-hosting-clap
 ---
 
