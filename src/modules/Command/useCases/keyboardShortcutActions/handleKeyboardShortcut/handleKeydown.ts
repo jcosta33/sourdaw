@@ -245,7 +245,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         stopAllSlots();
                         return true;
                     }
-                    stopPlayback();
+                    void stopPlayback();
                     return false;
                 }
                 case 'zoomIn':
