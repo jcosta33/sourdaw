@@ -682,12 +682,19 @@ source citation.
   Blocks code: no. Source:
   `src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts:14-20`,
   `src/modules/Command/models/AppAction.ts`.
-- **referenceMixComparison compares synthetic profiles** consumed by
-  generateLessons as real signal; is a real user reference-track buffer
-  intended (no such API exists)? Blocks code: yes, for mentor-lesson
-  credibility. Source:
-  `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/createReferenceAnalysis.ts`,
-  consumer `src/modules/AiRuntime/useCases/musicMentor/generateLessons.ts`.
+- **Mix analysis is synthetic, not measured** — is a real user reference-track
+  buffer intended (no such API exists)? `analyzeMix` estimates a profile from
+  track layout (kind/gain heuristics, default analysis values), yet two paths
+  consume it as real signal: musicMentor's `generateLessons` (via the
+  `analyzeMixFromTrackLayout` barrel alias) bases lessons on it, and
+  `compareToReference` (dispatched via its own `compareToReference` AppAction)
+  compares it against `createReferenceAnalysis`'s equally synthetic reference
+  profile. Blocks code: yes, for mentor-lesson and mix-comparison credibility.
+  Source:
+  `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/analyzeMix.ts`,
+  `analyzeMix/createReferenceAnalysis.ts` (consumed only by
+  `../compareToReference.ts:3-4`), lesson consumer
+  `src/modules/AiRuntime/useCases/musicMentor/generateLessons.ts:9,15,25`.
 
 ## Fermenter
 
