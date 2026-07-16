@@ -70,6 +70,7 @@ import { LaunchScreen } from './LaunchScreen';
 import { MixerPanel } from './MixerPanel';
 import { OnboardingTour } from './OnboardingTour';
 import { PreferencesDialog } from './PreferencesDialog';
+import { PromptDialog } from './PromptDialog';
 import { RoutingMatrix } from './RoutingMatrix';
 import { SessionView } from './SessionView';
 import { Sidebar } from './Sidebar';
@@ -832,6 +833,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <AiChangeToast />
                 <NotificationToast />
                 <ConfirmDialog />
+                <PromptDialog />
                 <AiActionHistoryPanel />
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />

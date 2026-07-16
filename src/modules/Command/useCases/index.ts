@@ -40,7 +40,7 @@ export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
-export { commitPitchEditCommand } from './pitch/commitPitchEdit';
+export { getPitchHandlers } from './getPitchHandlers';
 export { setPitchEditDependencies } from './pitch/pitchEditDependencies';
 
 export { setShortcutMapping } from './setShortcutMapping';

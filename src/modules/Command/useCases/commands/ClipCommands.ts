@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
+import { promptUser } from '#/utils/Notification/promptUser';
 
 import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -17,16 +18,24 @@ export const clipCommands: CallableCommandEntry[] = [
         category: 'Clip',
         action: () => {
             const clipId = getSelectedClipId();
-            if (clipId) {
-                const track = trackStore.value?.tracks.find((time) =>
-                    time.clips.some((context) => context.id === clipId)
-                );
-                const clip = track?.clips.find((context) => context.id === clipId);
-                const name = window.prompt('Rename clip:', clip?.name ?? '');
-                if (name !== null && name.trim()) {
-                    renameClip(clipId, name.trim());
-                }
+            if (!clipId) {
+                return;
             }
+            const track = trackStore.value?.tracks.find((candidate) =>
+                candidate.clips.some((clip) => clip.id === clipId)
+            );
+            const clip = track?.clips.find((candidate) => candidate.id === clipId);
+            void (async () => {
+                const name = await promptUser({
+                    title: 'Rename Clip',
+                    message: 'New clip name',
+                    initialValue: clip?.name ?? '',
+                    confirmLabel: 'Rename',
+                });
+                if (name) {
+                    renameClip(clipId, name);
+                }
+            })();
         },
     },
     {

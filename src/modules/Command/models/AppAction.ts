@@ -39,6 +39,31 @@ type CommandDocumentSnapshotEntry =
     | { readonly state: 'present'; readonly bytes: Uint8Array }
     | { readonly state: 'absent' };
 type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
+/** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
+ *  segment model (model isolation), so this specifies only the structural fields the
+ *  pitch render consumes. Kept assignable to Knead's mutable shape (plain arrays). */
+export type PitchEditSegmentSnapshot = {
+    start_time_ms: number;
+    end_time_ms: number;
+    shift_semitones: number;
+};
+/** A pitch-contour point carried by `commitPitchEdit`. Structural mirror of Knead's
+ *  `PitchPoint` — model isolation forbids importing the concrete model. */
+export type PitchContourPointSnapshot = {
+    time_ms: number;
+    frequency_hz: number;
+    confidence: number;
+    voiced: boolean;
+};
+/** The analysed pitch contour carried by `commitPitchEdit`. Structural mirror of Knead's
+ *  `PitchContour`; arrays stay mutable so the payload is assignable where the render
+ *  dependency expects Knead's concrete type. */
+export type PitchContourSnapshot = {
+    points: PitchContourPointSnapshot[];
+    sample_rate: number;
+    hop_size: number;
+    algorithm?: string;
+};
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
@@ -312,6 +337,23 @@ export type AppAction =
     | { type: 'scanPlugins'; payload?: undefined }
     | { type: 'loadExternalPlugin'; payload: { pluginId: string; trackId?: string } }
     | { type: 'audioToMidi'; payload: { clipId: string; trackId?: string; sensitivity?: number; mode?: string } }
+    | {
+          /** Applies a manual pitch-shift render to an audio clip and swaps the clip's
+           *  file pointer to the rendered output. Flows through `executeAppAction`; its
+           *  handler's `describe()` emits `restoreClipFileId` as the inverse. */
+          type: 'commitPitchEdit';
+          payload: {
+              clipId: string;
+              segments: PitchEditSegmentSnapshot[];
+              contour: PitchContourSnapshot;
+          };
+      }
+    | {
+          /** Inverse of `commitPitchEdit`. Restores a clip's audio file pointer to the
+           *  pre-edit path. Emitted only by the `commitPitchEdit` handler's `describe()`. */
+          type: 'restoreClipFileId';
+          payload: { clipId: string; fileId: string };
+      }
     | { type: 'muteClip'; payload: { clipId: string; muted: boolean } }
     | { type: 'clearSolos'; payload?: undefined }
     | { type: 'setTrackNotes'; payload: { trackId: string; notes: string } }

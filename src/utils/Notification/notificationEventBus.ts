@@ -1,10 +1,11 @@
 import { Container } from '#/infra/di/Container';
 
-import type { ConfirmPayload, NotifyPayload } from '#/modules/Workspace/events';
+import type { ConfirmPayload, NotifyPayload, PromptPayload } from '#/modules/Workspace/events';
 
 type NotificationEvents = {
     'ui.notify': NotifyPayload;
     'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
 };
 
 export abstract class NotificationEventBus {

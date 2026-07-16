@@ -1,42 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
-import { type PitchContour } from '#/modules/Knead/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { commitUndoEntry } from '../../commitUndoEntry';
-import { type createCallbackUndoEntry } from '../../createCallbackUndoEntry';
-import { commitPitchEditCommand } from '../commitPitchEdit';
+import { type AppAction } from '../../../models/AppAction';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '../../../stores';
+import { clearUndoHistory } from '../../clearUndoHistory';
+import { executeAppAction } from '../../executeAppAction';
+import { getPitchHandlers } from '../../getPitchHandlers';
+import { redo } from '../../redo';
+import { undo } from '../../undo';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
 
-const createCallbackUndoEntryCalls = vi.hoisted<{
-    inputs: Parameters<typeof createCallbackUndoEntry>[0][];
-}>(() => ({ inputs: [] }));
-
 vi.mock('#/infra/logger/appLogger', () => ({
-    logger: { error: vi.fn() },
-}));
-
-vi.mock('../../commitUndoEntry', () => ({
-    commitUndoEntry: vi.fn(),
-}));
-
-vi.mock('../../createCallbackUndoEntry', () => ({
-    createCallbackUndoEntry: vi.fn().mockImplementation((input: Parameters<typeof createCallbackUndoEntry>[0]) => {
-        createCallbackUndoEntryCalls.inputs.push(input);
-        const { label, undo, redo, source = 'manual' } = input;
-        return {
-            id: 'undo-test',
-            label,
-            undo,
-            redo,
-            timestamp: 1,
-            source,
-            kind: 'callback',
-        };
-    }),
+    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 const mockNotificationEventBus = {
@@ -118,15 +98,23 @@ function getFirstClipFileId(): string | undefined {
     return clip.fileId;
 }
 
-describe('commitPitchEditCommand', () => {
+const contour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
+const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
+
+function commitAction(clipId: string): Extract<AppAction, { type: 'commitPitchEdit' }> {
+    return { type: 'commitPitchEdit', payload: { clipId, segments, contour } };
+}
+
+describe('commitPitchEdit through action dispatch', () => {
     beforeEach(() => {
         injectDependencies(notifyUser, { eventBus: mockNotificationEventBus });
         vi.clearAllMocks();
-        setPitchEditDependencies({
-            commitPitchEdit: commitPitchEditMock,
-        });
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap(getPitchHandlers());
+        clearUndoHistory();
+        setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue(undefined);
-        createCallbackUndoEntryCalls.inputs = [];
 
         const state = {
             tracks: [
@@ -143,19 +131,21 @@ describe('commitPitchEditCommand', () => {
         trackStore.set(state);
     });
 
-    it('should ignore if clip is not found or not audio', async () => {
-        await commitPitchEditCommand('invalid-clip', [], {});
-        expect(commitPitchEditMock).not.toHaveBeenCalled();
-
-        await commitPitchEditCommand('c2', [], {});
-        expect(commitPitchEditMock).not.toHaveBeenCalled();
+    afterEach(() => {
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
     });
 
-    it('should delegate pitch rendering to AudioEngine and register undo command', async () => {
-        const contour: PitchContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
-        const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
+    it('describes a restoreClipFileId inverse that captures the pre-edit file pointer', () => {
+        expect(getPitchHandlers().commitPitchEdit.describe(commitAction('c1'))).toEqual({
+            label: 'Commit Pitch Edit',
+            inverseAction: { type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'test.wav' } },
+        });
+    });
 
-        await commitPitchEditCommand('c1', segments, contour);
+    it('dispatch renders the edit, swaps the file pointer, and pushes a real undo entry that undo restores', async () => {
+        await executeAppAction(commitAction('c1'));
 
         expect(commitPitchEditMock).toHaveBeenCalledWith({
             inputAudioPath: 'test.wav',
@@ -164,42 +154,56 @@ describe('commitPitchEditCommand', () => {
             segments,
             contour,
         });
-
-        expect(createCallbackUndoEntryCalls.inputs).toHaveLength(1);
-        expect(createCallbackUndoEntryCalls.inputs[0]?.label).toBe('Commit Pitch Edit');
-        expect(createCallbackUndoEntryCalls.inputs[0]?.source).toBe('manual');
-        expect(commitUndoEntry).toHaveBeenCalled();
-
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
 
-        const committedEntry = vi.mocked(commitUndoEntry).mock.calls[0][0];
-        if (committedEntry.kind !== 'callback') {
-            throw new Error('Expected callback undo entry');
-        }
+        expect(undoStore.value?.past).toHaveLength(1);
+        // Redo re-dispatches the forward action below, proving this is an action-kind
+        // entry that flows through executeAppAction (a callback swap would not re-render).
+        expect(undoStore.value?.past[0]?.label).toBe('Commit Pitch Edit');
+        expect(undoStore.value?.future).toHaveLength(0);
 
-        committedEntry.undo();
+        await undo();
+
         expect(getFirstClipFileId()).toBe('test.wav');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
 
-        committedEntry.redo();
+        await redo();
+
         expect(getFirstClipFileId()).toBe('test_pitch.wav');
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+        // Redo re-ran the forward render, confirming action-based (not callback) undo.
+        expect(commitPitchEditMock).toHaveBeenCalledTimes(2);
     });
 
-    it('should log and notify users when AudioEngine pitch rendering fails', async () => {
+    it('notifies the user and records no undo entry when the render fails', async () => {
         commitPitchEditMock.mockRejectedValueOnce(new Error('test error'));
 
-        await commitPitchEditCommand('c1', [], {});
+        await expect(executeAppAction(commitAction('c1'))).rejects.toThrow('test error');
 
         expect(logger.error).toHaveBeenCalledWith(new Error('test error'));
         expect(mockNotificationEventBus.emit).toHaveBeenCalledWith('ui.notify', {
             message: 'Failed to commit pitch edit',
             level: 'error',
         });
-        expect(commitUndoEntry).not.toHaveBeenCalled();
+        expect(getFirstClipFileId()).toBe('test.wav');
+        expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('should handle undefined tracks safely', async () => {
+    it('does not render for a non-audio clip', async () => {
+        await executeAppAction(commitAction('c2'));
+        expect(commitPitchEditMock).not.toHaveBeenCalled();
+    });
+
+    it('does not render for a missing clip', async () => {
+        await executeAppAction(commitAction('missing'));
+        expect(commitPitchEditMock).not.toHaveBeenCalled();
+    });
+
+    it('does not render when there are no tracks', async () => {
         trackStore.set(null);
-        await commitPitchEditCommand('c1', [], {});
+        await executeAppAction(commitAction('c1'));
         expect(commitPitchEditMock).not.toHaveBeenCalled();
     });
 });
