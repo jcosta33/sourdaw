@@ -14,6 +14,14 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: vi.fn() },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
 vi.mock('../../../stores/arrangementStore', () => ({
     arrangementStore: { name: 'arrangementStore', value: null },
     defaultArrangementStoreState: { arrangements: [], activeArrangementId: 'default-arrangement' },
@@ -80,11 +88,14 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
+const { logger } = await import('#/infra/logger/appLogger');
 const { switchArrangement } = await import('#/modules/Project/useCases/arrangement/switchArrangement');
+const { notifyUser } = await import('#/utils/Notification/notifyUser');
 
 describe('ArrangementSelector', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(switchArrangement).mockResolvedValue(undefined);
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             arrangements: [
                 { id: 'arr-1', name: 'Arrangement 1' },
@@ -137,6 +148,25 @@ describe('ArrangementSelector', () => {
         const arrangement2 = screen.getAllByTestId('picker-row')[1];
         fireEvent.click(arrangement2);
         expect(switchArrangement).toHaveBeenCalledWith('arr-2');
+    });
+
+    it('should surface switchArrangement failures', async () => {
+        const failure = new Error('recording flush failed');
+        vi.mocked(switchArrangement).mockRejectedValueOnce(failure);
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+
+        fireEvent.click(screen.getAllByTestId('picker-row')[1]);
+
+        await vi.waitFor(() => {
+            expect(logger.error).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Failed to switch arrangement "arr-2"',
+                    cause: failure,
+                })
+            );
+            expect(notifyUser).toHaveBeenCalledWith('Failed to switch to "Arrangement 2"', 'error');
+        });
     });
 
     it('should have New Arrangement button', () => {
