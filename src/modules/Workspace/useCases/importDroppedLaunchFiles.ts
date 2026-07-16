@@ -12,8 +12,14 @@ type ImportDroppedLaunchFilesInput = {
     files: readonly File[];
 };
 
-type ImportDroppedLaunchFilesOutput = {
-    failedFileNames: string[];
+type ImportDroppedLaunchFilesOutput =
+    | { status: 'unsupported' }
+    | { status: 'activation-failed' }
+    | { status: 'completed'; failedFileNames: string[] };
+
+type SupportedDroppedFile = {
+    file: File;
+    kind: 'audio' | 'midi';
 };
 
 function getFileExtension(file: File): string {
@@ -32,21 +38,35 @@ function isAudioFile(file: File, extension: string): boolean {
     return file.type.startsWith('audio/') || AUDIO_FILE_EXTENSIONS.includes(extension);
 }
 
-export async function importDroppedLaunchFiles({
-    files,
-}: ImportDroppedLaunchFilesInput): Promise<ImportDroppedLaunchFilesOutput> {
-    const failedFileNames: string[] = [];
-    if (!(await newProject())) {
-        return { failedFileNames };
-    }
-
+function getSupportedDroppedFiles(files: readonly File[]): SupportedDroppedFile[] {
+    const supportedFiles: SupportedDroppedFile[] = [];
     for (const file of files) {
         const extension = getFileExtension(file);
         if (isMidiFile(file, extension)) {
-            await importMidiFile(file);
-            continue;
+            supportedFiles.push({ file, kind: 'midi' });
+        } else if (isAudioFile(file, extension)) {
+            supportedFiles.push({ file, kind: 'audio' });
         }
-        if (!isAudioFile(file, extension)) {
+    }
+    return supportedFiles;
+}
+
+export async function importDroppedLaunchFiles({
+    files,
+}: ImportDroppedLaunchFilesInput): Promise<ImportDroppedLaunchFilesOutput> {
+    const supportedFiles = getSupportedDroppedFiles(files);
+    if (supportedFiles.length === 0) {
+        return { status: 'unsupported' };
+    }
+
+    const failedFileNames: string[] = [];
+    if (!(await newProject())) {
+        return { status: 'activation-failed' };
+    }
+
+    for (const { file, kind } of supportedFiles) {
+        if (kind === 'midi') {
+            await importMidiFile(file);
             continue;
         }
 
@@ -72,5 +92,5 @@ export async function importDroppedLaunchFiles({
         }
     }
 
-    return { failedFileNames };
+    return { status: 'completed', failedFileNames };
 }

@@ -152,6 +152,8 @@ const AmbientGlows = (): ReactElement => (
 type RecentProject = ReturnType<typeof getRecentProjects>[number];
 
 const RECENT_PROJECTS_LIMIT = 5;
+const PROJECT_ACTIVATION_FAILURE_MESSAGE = 'Failed to create a new project.';
+const UNSUPPORTED_DROP_MESSAGE = 'No supported audio or MIDI files were dropped.';
 
 const formatRelativeTime = (timestamp: number): string => {
     const diff = Date.now() - timestamp;
@@ -247,7 +249,12 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleNewProject = (): void => {
         setLoadingName('New Project');
         setView('loading');
-        void newProject();
+        void (async () => {
+            if (!(await newProject())) {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+            }
+        })();
     };
 
     const handleImportDawProject = (): void => {
@@ -314,6 +321,16 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
             const result = await importDroppedLaunchFiles({ files });
+            if (result.status === 'unsupported') {
+                notifyUser(UNSUPPORTED_DROP_MESSAGE, 'warning');
+                setView('home');
+                return;
+            }
+            if (result.status === 'activation-failed') {
+                notifyUser(PROJECT_ACTIVATION_FAILURE_MESSAGE, 'error');
+                setView('home');
+                return;
+            }
             for (const fileName of result.failedFileNames) {
                 notifyUser(`Failed to import "${fileName}"`, 'error');
             }

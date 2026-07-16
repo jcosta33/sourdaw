@@ -84,7 +84,18 @@ describe('importDroppedLaunchFiles', () => {
             type: 'audio',
             audioBufferId: 'buffer-1',
         });
-        expect(result).toEqual({ failedFileNames: [] });
+        expect(result).toEqual({ status: 'completed', failedFileNames: [] });
+    });
+
+    it('does not activate a project when no dropped files are supported', async () => {
+        const unsupportedFile = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+
+        const result = await importDroppedLaunchFiles({ files: [unsupportedFile] });
+
+        expect(mocks.newProject).not.toHaveBeenCalled();
+        expect(mocks.importMidiFile).not.toHaveBeenCalled();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'unsupported' });
     });
 
     it('waits for new-project activation before importing any files', async () => {
@@ -101,10 +112,11 @@ describe('importDroppedLaunchFiles', () => {
         expect(mocks.addTrack).not.toHaveBeenCalled();
 
         activation.resolve(true);
-        await importPromise;
+        const result = await importPromise;
 
         expect(mocks.importMidiFile).toHaveBeenCalledWith(midiFile);
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
+        expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
 
     it('does not import files when new-project activation is not committed', async () => {
@@ -115,7 +127,7 @@ describe('importDroppedLaunchFiles', () => {
 
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
         expect(mocks.addTrack).not.toHaveBeenCalled();
-        expect(result).toEqual({ failedFileNames: [] });
+        expect(result).toEqual({ status: 'activation-failed' });
     });
 
     it('classifies supported MIME types and applies the default tempo and minimum duration', async () => {
@@ -136,7 +148,7 @@ describe('importDroppedLaunchFiles', () => {
                 audioBufferId: 'buffer-2',
             })
         );
-        expect(result).toEqual({ failedFileNames: [] });
+        expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
 
     it('silently skips clip creation when a track cannot be created', async () => {
@@ -147,7 +159,7 @@ describe('importDroppedLaunchFiles', () => {
 
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(audioFile);
         expect(mocks.addClip).not.toHaveBeenCalled();
-        expect(result).toEqual({ failedFileNames: [] });
+        expect(result).toEqual({ status: 'completed', failedFileNames: [] });
     });
 
     it('returns audio import failures and continues importing later files', async () => {
@@ -160,7 +172,7 @@ describe('importDroppedLaunchFiles', () => {
 
         const result = await importDroppedLaunchFiles({ files: [failedFile, importedFile] });
 
-        expect(result).toEqual({ failedFileNames: ['broken.wav'] });
+        expect(result).toEqual({ status: 'completed', failedFileNames: ['broken.wav'] });
         expect(mocks.decodeAudioFile).toHaveBeenCalledWith(importedFile);
         expect(mocks.addTrack).toHaveBeenCalledTimes(1);
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'working', kind: 'audio' });

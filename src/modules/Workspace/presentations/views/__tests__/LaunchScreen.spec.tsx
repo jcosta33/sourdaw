@@ -44,8 +44,9 @@ describe('LaunchScreen', () => {
         mocks.createFromTemplate.mockResolvedValue(undefined);
         mocks.getRecentProjects.mockReturnValue([]);
         mocks.getTemplates.mockReturnValue([]);
-        mocks.importDroppedLaunchFiles.mockResolvedValue({ failedFileNames: [] });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ status: 'completed', failedFileNames: [] });
         mocks.loadRecentProject.mockResolvedValue(true);
+        mocks.newProject.mockResolvedValue(true);
         mocks.pickAndImportDawProject.mockResolvedValue(true);
     });
 
@@ -62,6 +63,18 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
 
         expect(mocks.newProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores the home view when direct new-project activation fails', async () => {
+        mocks.newProject.mockResolvedValue(false);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /New Project/ }));
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to create a new project.', 'error');
+            expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+        });
     });
 
     it('should dispatch a payloadless export action from the export click', () => {
@@ -119,7 +132,10 @@ describe('LaunchScreen', () => {
     it('dispatches dropped files and renders import failures', async () => {
         const midiFile = new File(['midi'], 'melody.mid', { type: 'audio/midi' });
         const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
-        mocks.importDroppedLaunchFiles.mockResolvedValue({ failedFileNames: ['drums.wav'] });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({
+            status: 'completed',
+            failedFileNames: ['drums.wav'],
+        });
 
         render(<LaunchScreen exiting={false} />);
         fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
@@ -129,6 +145,36 @@ describe('LaunchScreen', () => {
         await waitFor(() => {
             expect(mocks.importDroppedLaunchFiles).toHaveBeenCalledWith({ files: [midiFile, audioFile] });
             expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to import "drums.wav"', 'error');
+        });
+    });
+
+    it('restores the home view and reports an unsupported drop', async () => {
+        const unsupportedFile = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ status: 'unsupported' });
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
+            dataTransfer: { files: [unsupportedFile] },
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith('No supported audio or MIDI files were dropped.', 'warning');
+            expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
+        });
+    });
+
+    it('restores the home view when dropped-file project activation fails', async () => {
+        const audioFile = new File(['audio'], 'drums.wav', { type: 'audio/wav' });
+        mocks.importDroppedLaunchFiles.mockResolvedValue({ status: 'activation-failed' });
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.drop(screen.getByRole('dialog', { name: /Sourdaw — start a project/ }), {
+            dataTransfer: { files: [audioFile] },
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to create a new project.', 'error');
+            expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
         });
     });
 });
