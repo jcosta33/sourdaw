@@ -300,11 +300,15 @@ Verify with: `pnpm test:run -- coiOffDegradedBoot`
 
 ### AC-032 — Native file commands resolve path authority in native state
 
-Collaboration-bundle and generated-audio file commands must resolve path
-authority from native-owned project/output state; renderer-provided path strings
-alone do not authorize filesystem access.
+Collaboration-bundle and generated-audio file commands must resolve filesystem
+authority from native-owned project/output state. Command-level tests provide a
+divergent renderer path and prove that each command either rejects the request
+or accesses only the native-owned path, leaving the divergent path untouched.
 
-Verify with: `pnpm deps:validate`
+Verify with: `cargo test -p sourdaw --lib divergent_renderer_path_authority`
+The target runs
+`commands::collab::tests::rejects_divergent_renderer_path_authority` and
+`commands::audio_postprocess::tests::ignores_divergent_renderer_path_authority`.
 
 ## Open questions
 
