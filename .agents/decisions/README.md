@@ -19,3 +19,10 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0003](0003-engine-owned-plugin-runtime-owner.md) | Give engine-owned native plugins a non-RT runtime owner         |
 | [0004](0004-plugin-hosting-security-policy.md)    | Make native plugin-hosting security policy explicit             |
 | [0005](0005-public-sample-asset-distribution.md)  | Treat large public samples as an explicit distribution artifact |
+| [0006](0006-contract-folder-barrels-no-module-root-index.md) | Contract-folder barrels are the only cross-module surface; no module-root index.ts |
+| [0007](0007-command-definitions-out-of-models.md) | Command definitions live in useCases/commands, not models/      |
+| [0008](0008-recent-projects-load-backend.md)      | Recent-projects load uses flat-JSON snapshots (Option A)        |
+| [0009](0009-toaster-pattern-morph-determinism.md) | Toaster pattern-morph is deterministic at a 0.5 activation threshold |
+
+Genuinely open decisions that are not yet ADRs live in the
+[open-decision docket](open-decision-docket.md).
