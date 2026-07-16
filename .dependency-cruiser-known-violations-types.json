@@ -136,33 +136,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/webMidi/resolveInstrumentTrack.ts",
-    "to": "src/modules/Arrangement/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/webMidi/routeYeastNoteOff.ts",
-    "to": "src/modules/Arrangement/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/webMidi/routeYeastNoteOffToInstrument.ts",
-    "to": "src/modules/Arrangement/stores/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business-type-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AudioEngine/repositories/webMidi/webMidiEventBus.ts",
     "to": "src/modules/Workspace/events/index.ts",
     "rule": {
