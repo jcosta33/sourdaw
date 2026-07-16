@@ -65,12 +65,12 @@ describe('Pause/Start Playback', () => {
     });
 
     describe('pausePlayback', () => {
-        it('stops scheduler, engine nodes, and updates state', () => {
+        it('stops scheduler, engine nodes, and updates state', async () => {
             mocks.getTransportState.mockReturnValue({ isPlaying: true });
 
             pausePlayback();
 
-            expect(mocks.stopPlayheadScheduler).toHaveBeenCalled();
+            await vi.waitFor(() => expect(mocks.stopPlayheadScheduler).toHaveBeenCalled());
             expect(mocks.stopAllScheduled).toHaveBeenCalled();
             expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
         });

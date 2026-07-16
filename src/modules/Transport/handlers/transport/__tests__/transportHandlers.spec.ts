@@ -96,8 +96,14 @@ describe('Transport Handlers', () => {
         expect(mocks.togglePlayback).toHaveBeenCalled();
     });
 
-    it('handleStopPlayback delegates to use case', () => {
-        void handleStopPlayback.execute({ type: 'stopPlayback', payload: {} });
+    it('handleStopPlayback delegates to use case and returns its completion', async () => {
+        const completion = Promise.resolve();
+        mocks.stopPlayback.mockReturnValueOnce(completion);
+
+        const execution = handleStopPlayback.execute({ type: 'stopPlayback', payload: {} });
+
+        expect(execution).toBe(completion);
+        await execution;
         expect(mocks.stopPlayback).toHaveBeenCalled();
     });
 
