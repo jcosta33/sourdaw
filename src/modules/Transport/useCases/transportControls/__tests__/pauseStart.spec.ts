@@ -65,12 +65,19 @@ describe('Pause/Start Playback', () => {
     });
 
     describe('pausePlayback', () => {
-        it('stops scheduler, engine nodes, and updates state', () => {
-            mocks.getTransportState.mockReturnValue({ isPlaying: true });
+        it('stops scheduler, engine nodes, and updates state', async () => {
+            // Model the real flow: pausePlayback commits isPlaying:false via
+            // updateTransportState, so the deferred teardown continuation
+            // observes the paused state rather than a stale isPlaying:true.
+            const liveState: Record<string, unknown> = { isPlaying: true };
+            mocks.getTransportState.mockReturnValue(liveState);
+            mocks.updateTransportState.mockImplementation((...args) => {
+                Object.assign(liveState, args[0]);
+            });
 
             pausePlayback();
 
-            expect(mocks.stopPlayheadScheduler).toHaveBeenCalled();
+            await vi.waitFor(() => expect(mocks.stopPlayheadScheduler).toHaveBeenCalled());
             expect(mocks.stopAllScheduled).toHaveBeenCalled();
             expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
         });

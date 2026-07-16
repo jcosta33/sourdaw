@@ -39,7 +39,7 @@ type TestRecordingClip = {
 
 type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
 
-type StartAudioRecordingMock = (trackId: string, onComplete: (buffer: AudioBuffer) => void) => void;
+type StartAudioRecordingMock = (trackId: string, onComplete: (buffer: AudioBuffer) => void) => Promise<boolean>;
 
 type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
 
@@ -47,10 +47,15 @@ type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) 
 // over it (vi.mock factories are hoisted above imports).
 const harness = vi.hoisted(() => ({
     clock: 0,
+    logger: {
+        error: vi.fn(),
+    },
     cache_audio_buffer: vi.fn<CacheAudioBufferMock>(({ bufferId }) => bufferId ?? 'generated-test-buffer'),
     setTransportInfo: vi.fn(),
-    start_audio_recording: vi.fn<StartAudioRecordingMock>(),
+    start_audio_recording: vi.fn<StartAudioRecordingMock>(() => Promise.resolve(true)),
     start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
+    stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    stop_recording: vi.fn<() => void>(),
     workers: [] as FakeWorker[],
     track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
     update_clip: vi.fn<UpdateClipMock>(),
@@ -77,7 +82,7 @@ vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
 vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({ addTakeLane: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases/comping/addTake', () => ({ addTake: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases/recording/startRecording', () => ({ startRecording: harness.start_recording }));
-vi.mock('#/modules/Arrangement/useCases/recording/stopRecording', () => ({ stopRecording: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases/recording/stopRecording', () => ({ stopRecording: harness.stop_recording }));
 vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({ updateClip: harness.update_clip }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
@@ -87,7 +92,10 @@ vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({ s
 vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () => ({
     startAudioRecording: harness.start_audio_recording,
 }));
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({ stopAudioRecording: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({
+    stopAudioRecording: harness.stop_audio_recording,
+}));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
 vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
     getAudioContext: vi.fn(() => ({
         get currentTime() {
@@ -216,6 +224,8 @@ describe('startPlayheadScheduler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         transportStore.value = null;
+        harness.start_audio_recording.mockResolvedValue(true);
+        harness.stop_audio_recording.mockResolvedValue();
     });
 
     it('does not start automation recording when transport state is missing', () => {
@@ -228,6 +238,8 @@ describe('startPlayheadScheduler', () => {
 describe('stopPlayheadScheduler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        harness.start_audio_recording.mockResolvedValue(true);
+        harness.stop_audio_recording.mockResolvedValue();
     });
 
     it('stops automation recording', () => {
@@ -377,6 +389,42 @@ describe('playhead scheduler tick', () => {
         }
     });
 
+    it('logs when punch-in audio recording fails to start', async () => {
+        const recordingError = new Error('microphone unavailable');
+        harness.track_store.value = {
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+        };
+        transportStore.value = {
+            ...playingTransport,
+            punchInEnabled: true,
+            punchInBeat: 0.05,
+            punchOutBeat: 4,
+        };
+        harness.start_recording.mockReturnValue([]);
+        harness.start_audio_recording.mockRejectedValueOnce(recordingError);
+
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+
+        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function));
+
+        // The `.catch` on startAudioRecording must surface the rejection as an
+        // Error whose message names the punch-in path and whose cause is the
+        // original rejection.
+        await vi.waitFor(() =>
+            expect(harness.logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }))
+        );
+        const loggedError = harness.logger.error.mock.calls
+            .map((call): unknown => call[0])
+            .find((arg): arg is Error => arg instanceof Error && arg.cause === recordingError);
+        if (!(loggedError instanceof Error)) {
+            throw new Error('Expected the punch-in failure to be logged as an Error');
+        }
+        expect(loggedError.message).toBe('Punch-in audio recording failed to start');
+        expect(loggedError.cause).toBe(recordingError);
+    });
+
     it('disposePlayheadScheduler terminates the worker and clears the audio-clip pool (regression: §B fix 5)', async () => {
         startPlayheadScheduler();
         const worker = harness.workers[harness.workers.length - 1]!;
@@ -438,6 +486,92 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.15;
         await fireTick();
         expect(vi.mocked(scheduleMidiNotes).mock.calls.length).toBeGreaterThan(midiCallsAfterFirst);
+    });
+
+    it('contains a rejected Yeast scheduling tick and allows the next tick to run', async () => {
+        const schedulingError = new Error('Yeast scheduling failed');
+        vi.mocked(scheduleMidiNotes).mockRejectedValueOnce(schedulingError);
+
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+
+        await vi.waitFor(() =>
+            expect(harness.logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: schedulingError }))
+        );
+        expect(scheduleMidiNotes).toHaveBeenCalledOnce();
+
+        harness.clock = 0.1;
+        await fireTick();
+        expect(scheduleMidiNotes).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits for punch-out recorder teardown before finalizing the recording', async () => {
+        const order: string[] = [];
+        let finishRecordingStop: (() => void) | undefined;
+        const recordingFlush = new Promise<void>((resolve) => {
+            finishRecordingStop = resolve;
+        });
+        harness.stop_audio_recording.mockReturnValueOnce(recordingFlush);
+        harness.stop_recording.mockImplementationOnce(() => {
+            order.push('stopRecording');
+        });
+        harness.track_store.value = {
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+        };
+        transportStore.value = {
+            ...playingTransport,
+            punchInEnabled: true,
+            punchInBeat: 0.05,
+            punchOutBeat: 4,
+        };
+
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+
+        transportStore.value = {
+            ...transportStore.value,
+            isRecording: true,
+            punchOutBeat: 0.15,
+        };
+        harness.clock = 0.1;
+        await fireTick();
+
+        expect(order).toEqual([]);
+        expect(harness.stop_audio_recording).toHaveBeenCalledOnce();
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected punch-out recorder teardown to be pending');
+        }
+        finish();
+        await vi.waitFor(() => expect(harness.stop_recording).toHaveBeenCalledOnce());
+        expect(order).toEqual(['stopRecording']);
+    });
+
+    it('reports a recorder rejection during scheduler teardown without leaving the session active', async () => {
+        const recordingError = new Error('scheduler recorder stop failed');
+        harness.track_store.value = {
+            tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
+        };
+        transportStore.value = {
+            ...playingTransport,
+            punchInEnabled: true,
+            punchInBeat: 0.05,
+            punchOutBeat: 4,
+        };
+
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+        harness.stop_audio_recording.mockRejectedValueOnce(recordingError);
+
+        stopPlayheadScheduler();
+
+        await vi.waitFor(() =>
+            expect(harness.logger.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }))
+        );
+        expect(harness.stop_recording).toHaveBeenCalledOnce();
     });
 
     it.each(['pause', 'stop', 'seek'])(

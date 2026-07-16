@@ -12,6 +12,10 @@ import { startPlayheadScheduler, stopPlayheadScheduler } from '../../playheadSch
 import { seekPlayhead } from '../seekPlayhead';
 import { stopActiveRecording } from '../stopActiveRecording';
 
+const loggerMock = vi.hoisted(() => ({
+    error: vi.fn(),
+}));
+
 vi.mock('../../playheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
     stopPlayheadScheduler: vi.fn(),
@@ -39,6 +43,7 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: loggerMock }));
 
 describe('seekPlayhead', () => {
     beforeEach(() => {
@@ -50,6 +55,7 @@ describe('seekPlayhead', () => {
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
+        loggerMock.error.mockClear();
         playheadPositionRef.current = 0;
     });
 
@@ -90,7 +96,7 @@ describe('seekPlayhead', () => {
         expect(startPlayheadScheduler).toHaveBeenCalled();
     });
 
-    it('should commit an in-progress recording before tearing down the scheduler', () => {
+    it('should wait for an in-progress recording before tearing down the scheduler', async () => {
         const update = vi.fn();
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -101,9 +107,13 @@ describe('seekPlayhead', () => {
         vi.mocked(updateTransportState).mockImplementation(update);
 
         const order: string[] = [];
-        vi.mocked(stopActiveRecording).mockImplementation(() => {
-            order.push('stopActiveRecording');
-        });
+        let finishRecordingStop: (() => void) | undefined;
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                order.push('stopActiveRecording');
+                finishRecordingStop = resolve;
+            })
+        );
         vi.mocked(stopPlayheadScheduler).mockImplementation(() => {
             order.push('stopPlayheadScheduler');
         });
@@ -113,12 +123,20 @@ describe('seekPlayhead', () => {
         // The recording must be committed while the engine is still live, i.e.
         // before the scheduler (and its automation/audio teardown) is stopped.
         expect(stopActiveRecording).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['stopActiveRecording']);
+        expect(stopPlayheadScheduler).not.toHaveBeenCalled();
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected recorder teardown to be pending');
+        }
+        finish();
+        await vi.waitFor(() => expect(stopPlayheadScheduler).toHaveBeenCalled());
         expect(order).toEqual(['stopActiveRecording', 'stopPlayheadScheduler']);
         expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
         expect(startPlayheadScheduler).toHaveBeenCalled();
     });
 
-    it('should commit an in-progress recording even when seeking while stopped', () => {
+    it('should commit an in-progress recording even when seeking while stopped', async () => {
         const update = vi.fn();
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
@@ -134,7 +152,61 @@ describe('seekPlayhead', () => {
         // Not playing, so the scheduler is neither stopped nor restarted.
         expect(stopPlayheadScheduler).not.toHaveBeenCalled();
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(update).toHaveBeenCalledWith({ playheadPosition: 5 }));
         expect(update).toHaveBeenCalledWith({ playheadPosition: 5 });
+    });
+
+    it('should report a recording teardown rejection and still complete the seek', async () => {
+        const update = vi.fn();
+        const recordingError = new Error('recording flush failed');
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: true,
+            playheadPosition: 1,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+        vi.mocked(stopActiveRecording).mockRejectedValueOnce(recordingError);
+
+        seekPlayhead(3);
+
+        await vi.waitFor(() => expect(startPlayheadScheduler).toHaveBeenCalled());
+
+        expect(loggerMock.error).toHaveBeenCalledWith(expect.objectContaining({ cause: recordingError }));
+        expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
+    });
+
+    it('should not restart the scheduler when playback is stopped during the recording flush', async () => {
+        // wasPlaying is captured before the stopActiveRecording await. If a stop
+        // (or pause) lands during the flush window, the deferred finishSeek must
+        // not resurrect the scheduler for a transport that is no longer playing.
+        const update = vi.fn();
+        const liveState = { ...defaultTransportState, isPlaying: true, isRecording: true, playheadPosition: 1 };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        let finishRecordingStop: (() => void) | undefined;
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                finishRecordingStop = resolve;
+            })
+        );
+
+        seekPlayhead(3);
+
+        // A stop lands during the recording flush window.
+        liveState.isPlaying = false;
+
+        const finish = finishRecordingStop;
+        if (!finish) {
+            throw new Error('Expected recorder teardown to be pending');
+        }
+        finish();
+        await vi.waitFor(() => expect(update).toHaveBeenCalledWith({ playheadPosition: 3 }));
+
+        // Position is still committed, but the scheduler is not restarted.
+        expect(update).toHaveBeenCalledWith({ playheadPosition: 3 });
+        expect(startPlayheadScheduler).not.toHaveBeenCalled();
     });
 
     it('should panic Yeast even when seeking while already stopped', () => {

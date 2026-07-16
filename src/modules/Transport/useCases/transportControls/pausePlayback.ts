@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
@@ -28,10 +29,25 @@ export function pausePlayback(): void {
     // `stopActiveRecording` clears the count-in timer and is a safe no-op when
     // nothing is recording (the audio recorder and clip finaliser both bail on
     // empty session/clip sets).
-    stopActiveRecording();
-
-    panicYeastRuntime();
-    stopPlayheadScheduler();
-    stopAllScheduled();
-    resetMidiState();
+    Promise.resolve(stopActiveRecording())
+        .catch((error: unknown) => {
+            logger.error(new Error('Recording teardown failed before pausing playback', { cause: error }));
+        })
+        .then(() => {
+            // A play pressed during the recording flush starts a fresh
+            // scheduler session (startPlayback's re-entry guard only checks
+            // `isPlaying`). That new session now owns the scheduler, so this
+            // stale pause continuation must not tear it down.
+            if (getTransportState()?.isPlaying) {
+                return undefined;
+            }
+            panicYeastRuntime();
+            stopPlayheadScheduler();
+            stopAllScheduled();
+            resetMidiState();
+            return undefined;
+        })
+        .catch((error: unknown) => {
+            logger.error(new Error('Playback pause cleanup failed', { cause: error }));
+        });
 }

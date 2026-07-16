@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { startRecording, stopRecording, addTakeLane, addTake, updateClip } from '#/modules/Arrangement/useCases';
 import {
@@ -292,23 +293,32 @@ export function startPlayheadScheduler(): void {
             for (const track of armedTracks) {
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
-                    void startAudioRecording(track.id, (buffer) => {
-                        const bufferId = `rec-${crypto.randomUUID()}`;
-                        cacheAudioBuffer({ buffer, bufferId });
-                        if (recClip) {
-                            // Route the cross-module write through Arrangement's own
-                            // use case rather than mutating trackStore directly (audit
-                            // row 9). updateClip locates the clip across all tracks and
-                            // applies the updater, preserving the prior behaviour.
-                            updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
-                        }
+                    Promise.resolve(
+                        startAudioRecording(track.id, (buffer) => {
+                            const bufferId = `rec-${crypto.randomUUID()}`;
+                            cacheAudioBuffer({ buffer, bufferId });
+                            if (recClip) {
+                                // Route the cross-module write through Arrangement's own
+                                // use case rather than mutating trackStore directly (audit
+                                // row 9). updateClip locates the clip across all tracks and
+                                // applies the updater, preserving the prior behaviour.
+                                updateClip(recClip.id, (clip) => ({ ...clip, audioBufferId: bufferId }));
+                            }
+                        })
+                    ).catch((error: unknown) => {
+                        logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
                     });
                 }
             }
         }
 
         if (schedulerSession.punchRecordingActive && current.punchInEnabled && newPosition >= current.punchOutBeat) {
-            stopAudioRecording();
+            await Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
+                logger.error(new Error('Punch-out audio recording failed to stop', { cause: error }));
+            });
+            if (!cancellation.isCurrent()) {
+                return;
+            }
             stopRecording();
             schedulerSession.punchRecordingActive = false;
             updateTransportState({ isRecording: false });
@@ -362,7 +372,9 @@ export function startPlayheadScheduler(): void {
         });
         schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
             if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'tick') {
-                void tick();
+                tick().catch((error: unknown) => {
+                    logger.error(new Error('Transport scheduler tick failed', { cause: error }));
+                });
             }
         };
     }
@@ -378,7 +390,9 @@ export function stopPlayheadScheduler(): void {
         schedulerSession.worker = null;
     }
     if (schedulerSession.punchRecordingActive) {
-        stopAudioRecording();
+        Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
+            logger.error(new Error('Scheduler recording teardown failed', { cause: error }));
+        });
         stopRecording();
         schedulerSession.punchRecordingActive = false;
     }
