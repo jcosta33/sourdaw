@@ -1,6 +1,7 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
-import { applySoloLogic } from '../../services/applySoloLogic';
+
+import { applySoloLogic } from './applySoloLogic';
 
 export function soloTrackExclusive(trackId: string): void {
     const state = getTrackState();

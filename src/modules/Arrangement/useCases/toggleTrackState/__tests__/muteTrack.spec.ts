@@ -17,7 +17,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackMute: mocks.engineSetTrackMute,
 }));
 
-vi.mock('#/modules/Arrangement/services/applySoloLogic', () => ({
+vi.mock('../applySoloLogic', () => ({
     applySoloLogic: mocks.applySoloLogic,
 }));
 
