@@ -16,7 +16,7 @@ vi.mock('#/modules/Arrangement/repositories/track/mapAllTracks', () => ({
     mapAllTracks: mocks.mapAllTracks,
 }));
 
-vi.mock('#/modules/Arrangement/services/applySoloLogic', () => ({
+vi.mock('../applySoloLogic', () => ({
     applySoloLogic: mocks.applySoloLogic,
 }));
 
