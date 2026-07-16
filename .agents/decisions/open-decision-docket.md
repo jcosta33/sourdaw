@@ -9,10 +9,13 @@ date: 2026-07-16
 Genuinely open product/architecture decisions that an agent cannot settle
 unilaterally. Promoted from `.agents/findings/inventory-decisions-backlog.md`
 (2026-06-19 inventory triage, since retired) and
-`.agents/findings/overview-open-decisions.md` (also retired), with citations
-re-verified against `main` on 2026-07-16. Decisions already made are **not**
-here — they are ADRs (0006 contract-folder barrels, 0007 command relocation,
-0008 recent-projects Option A, 0009 pattern-morph determinism).
+`.agents/findings/overview-open-decisions.md` (also retired). Citations and
+premises were fully re-audited against `main` on 2026-07-16 after three
+review rounds — every item re-checked, drifted citations corrected, resolved
+premises dropped (111 bullets: 108 decision items + 3 investigation
+meta-items). Decisions already made are **not** here — they are ADRs (0006
+contract-folder barrels, 0007 command relocation, 0008 recent-projects
+Option A, 0009 pattern-morph determinism).
 
 Item format: decision statement · options/tradeoff · blocks code work? ·
 source citation.
@@ -144,11 +147,12 @@ source citation.
 
 ## BrowserAi
 
-- **renderQueueStore lifecycle.** `markRenderComplete` keeps entries forever
-  and `cachedPhraseIds` (cacheKey-keyed) cannot answer "is this phrase's cached
-  audio still on disk?" (phraseId-keyed status map). Options: eviction +
-  unified keying vs accept unbounded session growth. Blocks code: no. Source:
-  `src/modules/BrowserAi/stores/renderQueueStore.ts:62-82`.
+- **renderQueueStore key mismatch.** `cachedPhraseIds` is keyed by cacheKey
+  while `phraseStatusMap` is keyed by phraseId, so there is no path to ask
+  "is this phrase's cached audio still on disk?". (The old unbounded-entries
+  premise is resolved: `markRenderComplete` now drops completed entries.)
+  Options: unify keying vs accept the split. Blocks code: no. Source:
+  `src/modules/BrowserAi/stores/renderQueueStore.ts:22-24,72-79`.
 - **Kokoro "time-stretch" is rate+pitch coupled** while docstring/UI promise
   pitch-preserving stretch. Options: real time-stretch (phase vocoder) vs
   relabel the control as rate. Blocks code: no. Source:
@@ -238,7 +242,7 @@ source citation.
   per-user assumption in revertAction UX / AiActionHistoryPanel. Options:
   per-user local history vs shared synced history by design. Blocks code:
   yes, for collaboration + undo-history work. Source:
-  `src/modules/CrdtDocument/stores/actionHistoryStore.ts:31`,
+  `src/modules/CrdtDocument/stores/actionHistoryStore.ts:21-22`,
   `src/modules/Collaboration/useCases/automergeSync.ts`.
 
 ## Workspace
@@ -247,10 +251,10 @@ source citation.
   `<RoutingMatrix/>`** — an 11th union value would route there unflagged.
   Options: exhaustive switch with `never` check vs keep the fallback. Blocks
   code: no. Source:
-  `src/modules/Workspace/presentations/views/AppShell.tsx:380-381`.
+  `src/modules/Workspace/presentations/views/AppShell.tsx:456-457`.
 - **Should bottomTab persist?** It is local `useState`, lost on reload.
   Options: move into workspaceStore vs session-only by design. Blocks code:
-  no. Source: `src/modules/Workspace/presentations/views/AppShell.tsx:139`.
+  no. Source: `src/modules/Workspace/presentations/views/AppShell.tsx:179-183`.
 - **SessionView slot launch plays nothing** — writes only sessionLaunchStore;
   no Transport/engine call (store documents engine wiring as deferred).
   Options: wire clip launch to the engine vs hide the surface until then.
@@ -264,14 +268,14 @@ source citation.
   filter would still say yes to everyone. Options: role-selection UX on join
   vs deliberate open-by-default. Blocks code: yes, for permissions work.
   Source:
-  `src/modules/Collaboration/useCases/collaboration/sessionManagement.ts:685`.
+  `src/modules/Collaboration/useCases/collaboration/sessionManagement.ts:531-532`.
 - **Role-revocation semantics undefined**: PermissionManager epoch increments
   on grant, last-writer-by-epoch wins, no revoke/reorder defined. Blocks code:
   yes, for permissions work. Source:
   `src/modules/Collaboration/useCases/permissions.ts:41-63,126-129`.
 - **Is manual SDP copy-paste signaling permanent or a placeholder** for a
   signaling server (SignalingMessage types exist)? Blocks code: no. Source:
-  `src/modules/Collaboration/models/CollaborationTypes.ts:43-49`.
+  `src/modules/Collaboration/models/CollaborationTypes.ts:51`.
 
 ## Levain
 
@@ -293,7 +297,7 @@ source citation.
   a 4-beat floor while addSection creates 16-beat sections. Options: one named
   constant + documented invariant vs intentional asymmetry. Blocks code: no.
   Source:
-  `src/modules/Arrangement/presentations/views/ArrangementBar.tsx:140-141,216-217`.
+  `src/modules/Arrangement/presentations/views/ArrangementBar.tsx:169,251-252`.
 - **Timeline zoom bounds**: pixelsPerBeat hardcoded to [2,80]; cannot zoom in
   for dense MIDI nor out for long arrangements. Options: widen/adaptive bounds
   vs keep. Blocks code: no. Source:
@@ -318,7 +322,7 @@ source citation.
   straight to destination with no compensation DelayNode (offline render does
   compensate). Options: build live PDC vs document the limitation. Blocks
   code: yes, for latency-compensation work. Source:
-  `src/modules/AudioEngine/engine/TrackNode.ts:195-208`.
+  `src/modules/AudioEngine/engine/TrackNode.ts:202` (routeOutput).
 - **NativePluginBridgeNode per-block IPC ceiling (architecture).** An async
   `tauriInvoke('process_plugin_audio')` per audio block means per-block IPC
   dominates the budget with many native plugins. Options: accept + cap
@@ -338,11 +342,11 @@ source citation.
 - **MidiPedalCcPayload is a non-discriminated `number|boolean` union**;
   consumers paper over with casts. Options: discriminated union vs split
   events. Blocks code: no. Source:
-  `src/modules/Workspace/events/WorkspaceEvents.ts:51`.
+  `src/modules/Workspace/events/WorkspaceEvents.ts:59`.
 - **SpectralWaterfall mutates the shared AnalyserNode** (`fftSize=512` on an
   AudioEngine-owned node). Options: per-view analyser vs documented shared
   config. Blocks code: no. Source:
-  `src/modules/GrandBoule/presentations/components/SpectralWaterfall.tsx:125`.
+  `src/modules/GrandBoule/presentations/components/SpectralWaterfall.tsx:141`.
 - **MIDI calibration never reaches the WASM engine** — calibration setters
   persist to store only, no `engine.setParam`. Options: wire the bridge vs
   declare calibration UI-only. Blocks code: yes, for calibration work.
@@ -351,14 +355,14 @@ source citation.
 - **Pedal handler drops CC1/CC11/CC74** on a handler subscribed to all
   `midi.pedalCc` (only CC64/66/67 handled). Options: handle or filter the
   subscription. Blocks code: no. Source:
-  `src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx:165-180`.
+  `src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx:208-213`.
 
 ## Gluten
 
 - **Per-module preset list by design?** GLUTEN_PRESETS + module-load-time
   CATEGORIES derivation vs deferring to an Arrangement preset library. Blocks
   code: no. Source: `src/modules/Gluten/useCases/glutenPresets.ts`,
-  `presentations/views/GlutenPanel.tsx:147`.
+  `presentations/views/GlutenPanel.tsx:153`.
 - **Meter-path validation + error boundary**: raw worklet meter numbers are
   written to the store unvalidated and rendered directly; no panel error
   boundary. Options: validate at the registry sink vs trust the worklet.
@@ -367,7 +371,7 @@ source citation.
   `src/modules/Gluten/stores/glutenStore.ts:70-85`.
 - **uiLevel (1..5) written but never read** — unfinished progressive
   disclosure? Options: build the disclosure UI vs delete the field. Blocks
-  code: no. Source: `src/modules/Gluten/stores/glutenStore.ts:17,49-53`.
+  code: no. Source: `src/modules/Gluten/stores/glutenStore.ts:20,73-76`.
 
 ## Crust
 
@@ -378,7 +382,7 @@ source citation.
   `src/modules/Workspace/presentations/components/ErrorBoundary.tsx`.
 - **Dither offered at 32-bit float is a no-op** the UI does not signal.
   Options: hide dither at 32-bit vs annotate. Blocks code: no. Source:
-  `src/modules/Crust/presentations/components/CrustControlZone.tsx:465`.
+  `src/modules/Crust/presentations/components/CrustControlZone.tsx:534-536`.
 
 ## Yeast
 
@@ -388,12 +392,6 @@ source citation.
   method. Blocks code: no. Source:
   `src/modules/Yeast/workers/MidiProcessor.ts:43`,
   `workers/BaseMidiProcessor.ts:54`.
-- **RT vs offline rack instances can share one singleton on worklet
-  fallback**, clobbering activeNotes/scheduled between live input and
-  playback. Options: per-context racks vs documented fallback limitation.
-  Blocks code: yes, for Yeast scheduling work. Source:
-  `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts`,
-  `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts`.
 - **`Harmonizer.timeOffsetSamples` is permanently 0** (used in arithmetic, no
   setParam case sets it); ship intent undecided. Options: expose the param vs
   delete the field. Blocks code: no. Source:
@@ -401,7 +399,7 @@ source citation.
 - **Is `loopStart === loopEnd` the intended loop-disabled convention?** Both
   bridge and offline paths infer loopEnabled as `loopStart < loopEnd`,
   unconfirmed against transportStore. Blocks code: no. Source:
-  `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:33`.
+  `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:42`.
 
 ## Toaster
 
@@ -419,16 +417,11 @@ source citation.
   operations? `events/index.ts` is empty (no toaster.* events for
   CRDT/persistence/AI). Blocks code: no. Source:
   `src/modules/Toaster/events/index.ts:1`.
-- **Are multiple Toaster instances per project supported?** The UI can create
-  unbounded instances while note-repeat/16-levels/getFirstToasterDeviceId are
-  global. Blocks code: yes, for multi-instance behavior. Source:
-  `src/modules/Workspace/presentations/views/Sidebar/InstrumentsTab.tsx:197-202`,
-  `src/modules/Toaster/useCases/loadToasterKit.ts:51`.
 - **Is exportPatternToTimeline meant to be lossy or full-fidelity?** Blocks
   code: no. Source: `src/modules/Toaster/useCases/exportPatternToTimeline.ts:30-69`.
 - **Is sequencer pause-and-resume a desired feature?** `stopSequencer` zeros
   playCount/currentStep so no playhead state survives a stop. Blocks code:
-  no. Source: `src/modules/Toaster/useCases/sequencerPlayback.ts:219,221`.
+  no. Source: `src/modules/Toaster/useCases/stopSequencer.ts:20-22`.
 - **ADR 0009 owner sign-off (pending)**: confirm the deterministic
   0.5-threshold pattern-morph contract with the product owner (vs a
   probabilistic morph relied on for generative variation). Blocks code: no.
@@ -449,8 +442,8 @@ source citation.
   Source: `src/modules/Bacteria/presentations/components/SpectrumAnalyzer.tsx`.
 - **Are morphX/morphY and snapshots[] meant to drive other parameters?** No
   use case reads them for morphing. Blocks code: no. Source:
-  `src/modules/Bacteria/models/BacteriaPatch.ts:168-176`,
-  `presentations/views/BacteriaPanel.tsx:403-404`.
+  `src/modules/Bacteria/models/BacteriaPatch.ts:141,188-198`,
+  `presentations/views/BacteriaPanel.tsx:457` (XYMorphPad mount).
   (Lab editors / ModulationDock drag-to-assign: see the cross-cutting
   audit-deferrals pointer above — the add path is gated on that same call.)
 
@@ -458,11 +451,11 @@ source citation.
 
 - **Focus contract is undiscoverable**: notes fire only when the tabIndex=0
   panel is focused; no ready/focused indicator. Blocks code: no. Source:
-  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:354,386`.
+  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:518-519,560`.
 - **Screen-reader accessibility**: `role="application"` panel with
   `role="button"` keys lacking tabIndex/keyboard activation. Options: proper
   ARIA/keyboard model vs declare pointer-only. Blocks code: no. Source:
-  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:359,500,540`.
+  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:523,680,721`.
 - **No VirtualKeyboard spec** — the prior audit's prescriptive layer
   (release-all-on-unmount/visibility, event.code mapping, velocity-from-y,
   octave range) was never lifted into a spec. Blocks code: no. Source:
@@ -470,7 +463,7 @@ source citation.
 - **triggerLiveNoteOff idempotency unverified**; no all-notes-off/panic use
   case exists for cleanup paths (StrictMode double-mount, onBlur+pointerup
   overlap). Blocks code: yes, for keyboard cleanup hardening. Source:
-  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:204,339`;
+  `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:274,290`;
   no panic use case under `src/modules/AudioEngine/useCases/`.
 
 ## Scoring
@@ -482,10 +475,10 @@ source citation.
   `useCases/setA4Reference.ts`, `useCases/setDisplayMode.ts`.
 - **a4Reference bounds 400–490 exclude historical tunings** (392/415/466/500
   Hz). Options: widen bounds vs document the range. Blocks code: no. Source:
-  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:121-123`.
+  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:162-163`.
 - **Raw DisplayMode literal rendered to users** (lowercase `detail={mode}`),
   inconsistent with human labels elsewhere. Blocks code: no. Source:
-  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:84,224`.
+  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:123,265`.
 
 ## AiRuntime
 
@@ -494,20 +487,15 @@ source citation.
   drift from payload types (systemic). Options: schema-derived validation
   (Zod per action) vs hand predicates + tests. Blocks code: yes, for action
   contract growth. Source:
-  `src/modules/AiRuntime/useCases/validateActionPayload.ts:402`.
+  `src/modules/AiRuntime/useCases/validateActionPayload.ts:121,477-478`.
 - **"Handler already validates trackId" is an unverified justification** for
   ~70% "unchecked" actions (removeAllTracks, exportDawProject, loadPreset,
   generate*, stemSeparate) — no test or compile-time linkage. Needs an
   investigation pass. Blocks code: no. Source:
-  `src/modules/AiRuntime/useCases/validateActionPayload.ts:196-401`.
+  `src/modules/AiRuntime/useCases/validateActionPayload.ts:477` (PAYLOAD_VALIDATORS, ~194 'unchecked' entries).
 
 ## Project
 
-- **Two divergent Tauri-detection paths in one module**:
-  `nativeProjectFiles/helpers.ts` uses legacy `window.__TAURI__` while the
-  canonical bridge uses `__TAURI_INTERNALS__`. Options: converge on
-  `#/utils/tauriBridge` vs justify the fork. Blocks code: no. Source:
-  `src/modules/Project/repositories/nativeProjectFiles/helpers.ts:4,13,20`.
 - **Are demo projects meant to be deterministic/regenerable from a seed?**
   They mutate global stores with interleaved async setup; rapid double-launch
   can race. Blocks code: no. Source:
@@ -516,28 +504,10 @@ source citation.
   legacy/oversized projects exceeding quota, and whether recentProjects should
   survive project deletion (newProject does not clear the list). Blocks code:
   no. Source:
-  `src/modules/Project/useCases/projectPersistence/newProject.ts:65`.
+  `src/modules/Project/useCases/projectPersistence/newProject.ts:75`.
 - **autoSaveVersion has no production caller** (only CRDT autosave is wired).
   Options: wire version-control autosave vs remove. Blocks code: no. Source:
   `src/modules/Project/useCases/versionControl/autoSaveVersion.ts:5`.
-- **`.sourdaw` round-trip: serialized-vs-runtime schema reconciliation.**
-  tempoMap/timeSignatureMap (serialized shape drops runtime `id`/`curve`) and
-  takeLanes need a schema decision — widen the serialized schema to carry
-  id/curve vs mint deterministic ids + default curve on import — before their
-  exported fields can be hydrated. Blocks code: yes, for round-trip fidelity.
-  Source:
-  `src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts`,
-  `models/ProjectData.ts:350-363,396-406`,
-  `src/modules/Transport/stores/tempoMapStore.ts`.
-- **`.sourdaw` round-trip: engine-coupled + structural hydrations.**
-  sidechainRoutes hydration requires live engine wiring
-  (`setSidechainRoutes` → `wireSidechainRoute`), and multi-arrangement import
-  collapses to a single snapshot (`ProjectArrangementSnapshot` members typed
-  `unknown`, need per-field validation). Options: build validated hydration
-  paths vs document export-only fields. Blocks code: yes, for import
-  fidelity. Source:
-  `src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts`,
-  `src/modules/Routing/useCases/sidechain/setSidechainRoutes.ts`.
 - **Recent-projects Option B migration** (per-project CRDT docs +
   `loadProject(id)`, retiring the flat-JSON snapshot surface) — the long-term
   direction left open by ADR 0008. Blocks code: no (Option A shipped). Source:
@@ -583,9 +553,9 @@ source citation.
   either way. Decide the owning module, whether the narrow persistence subset
   is intentional, and whether `originalPitchCenterCents` must be persisted.
   Blocks code: yes, for any Knead schema work. Source:
-  `src/modules/Knead/stores/kneadStore.ts:6-44`,
+  `src/modules/Knead/stores/kneadStore.ts:26-53`,
   `src/modules/Arrangement/models/Track.ts:125-139`,
-  `src/modules/Project/models/ProjectData.ts:333-347`,
+  `src/modules/Project/models/ProjectData.ts:397`,
   `src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts`.
 
 ## SampleLibrary
@@ -593,26 +563,28 @@ source citation.
 - **Library-root identity across reconnects**: path vs content hash vs seeded
   UUID (today a random `lib-<uuid>` per connect duplicates roots). Blocks
   code: yes, for library persistence. Source:
-  `src/modules/SampleLibrary/useCases/connectFolder/connectFolder.ts:17,51`.
+  `src/modules/SampleLibrary/useCases/connectFolder/connectFolder.ts:19,52`.
 - **Preview-stop ownership**: should stop-on-unmount/folder-change live in
   LibraryBrowser or Workspace.usePreviewAudio? Today audio keeps playing after
   the sample is no longer visible. Blocks code: no. Source:
   `src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx`.
-- **audioBufferCache owner + eviction policy**, and push-vs-pull for
-  SampleLibrary buffers. Blocks code: no. Source:
-  `src/modules/AudioEngine/stores/audioBufferCache.ts:37-53`,
-  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:80`.
+- **audioBufferCache ownership + push-vs-pull** for SampleLibrary buffers
+  (an LRU cap is now implemented in the store; the open call is which module
+  owns the cache contract and whether SampleLibrary pushes or pulls). Blocks
+  code: no. Source: `src/modules/AudioEngine/stores/audioBufferCache.ts:64-107`,
+  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:108`.
 - **Where does the audio-decoding pipeline live** (browser OfflineAudioContext
-  vs Tauri reads)? Currently split across drag-out and preview paths. Blocks
-  code: yes, for decode consolidation. Source:
-  `src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts:114-157`,
-  `src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx:155`.
-- **Is the factory library shipped or experimental?** Decides whether the
-  first-launch synthesis stall (hundreds of awaited main-thread createBuffer
-  calls in useAppInitialization) is a release blocker. Blocks code: no.
-  Source:
-  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:70-91`,
-  `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:88`.
+  vs Tauri reads)? Still split: timeline drag-in decodes via the AudioEngine
+  `decodeAudioFile` use case while sample preview decodes inline with
+  `ctx.decodeAudioData`. Blocks code: yes, for decode consolidation. Source:
+  `src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts:192`,
+  `src/modules/Workspace/presentations/hooks/usePreviewAudio.ts:106`.
+- **Is the factory library shipped or experimental?** Decides how much
+  first-launch cost is acceptable: factory samples are synthesized on the main
+  thread during app initialization (now chunked with event-loop yields, but
+  still startup work). Blocks code: no. Source:
+  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:101-108`,
+  `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:94`.
 
 ## AiGeneration
 
@@ -625,7 +597,7 @@ source citation.
   explicit pushUndoEntry — rollback depends on whether Command's diff
   middleware diffs trackStore or only midiStore. Needs verification then a
   contract decision. Blocks code: no. Source:
-  `src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts:63` (and
+  `src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts:95` (and
   sibling handlers).
 
 ## Proof
@@ -634,10 +606,10 @@ source citation.
   the unified-map store spreads the whole instances map per tick. Options: a
   sanctioned high-rate-telemetry store pattern (selectors/refs/SAB-read) vs
   accept. Blocks code: yes, for meter-heavy modules (Proof, Bacteria share
-  it). Source: `src/modules/Proof/stores/proofStore.ts:92-112`.
+  it). Source: `src/modules/Proof/stores/proofStore.ts:179-186`.
 - **Should uiLevel/abBypass persist in the project patch?** Session-scoped
   today, absent from ProofPatch. Blocks code: no. Source:
-  `src/modules/Proof/stores/proofStore.ts:32,46`.
+  `src/modules/Proof/stores/proofStore.ts:33,47`.
 - **Preset LUFS values need DSP review**: 'cd' targets −9 (CD practice is
   nearer −12), 'club' and 'loud' both land at loud targets (possible UI
   double-listing). Blocks code: no. Source:
@@ -655,7 +627,7 @@ source citation.
   the same parameterId cannot both be automated. Options: add deviceId to the
   lane model vs first-match by design. Blocks code: yes, for multi-device
   automation. Source:
-  `src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts:81-104`.
+  `src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts:81-126`.
 - **Action-contract coverage**: 9 handlers vs ~22+ use cases —
   selection/zoom/draw/modulation and several lane ops bypass
   undo/history/macro recording. Options: promote them into the action contract
@@ -676,12 +648,14 @@ source citation.
 
 ## AudioAnalysis
 
-- **handleAudioToMidi contract**: drops `targetPitch`/`minInterval`, silently
-  coerces `mode`; the AppAction advertises `mode?: string` instead of a
-  discriminated union. Options: honest narrow contract vs full param support.
-  Blocks code: no. Source:
+- **handleAudioToMidi contract**: the handler silently coerces `mode` via
+  `normalizeAudioToMidiMode`, and the AppAction advertises `mode?: string`
+  instead of a discriminated union (the once-advertised
+  `targetPitch`/`minInterval` params are gone from the payload type).
+  Options: honest narrow contract vs full param support. Blocks code: no.
+  Source:
   `src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts:14-20`,
-  `src/modules/Command/models/AppAction.ts`.
+  `src/modules/Command/models/AppAction.ts:314`.
 - **Mix analysis is synthetic, not measured** — is a real user reference-track
   buffer intended (no such API exists)? `analyzeMix` estimates a profile from
   track layout (kind/gain heuristics, default analysis values), yet two paths
