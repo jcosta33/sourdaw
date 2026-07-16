@@ -29,6 +29,10 @@ describe('storageManager deep', () => {
         const mod = await import('../resolveFileHandle');
         expect(mod).toBeDefined();
     });
+    it('requestPersistentStorage loads', async () => {
+        const mod = await import('../requestPersistentStorage');
+        expect(mod).toBeDefined();
+    });
     it('storageConstants loads', async () => {
         const mod = await import('../storageConstants');
         expect(mod).toBeDefined();
