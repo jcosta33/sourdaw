@@ -42,4 +42,4 @@ Verify with: `test "$(git ls-files ':(glob)**/Cargo.toml' -z | xargs -0 rg -l '^
 The workspace-root Cargo config MUST be the only Cargo config that declares
 shared Rust flags; nested config contains no competing flags.
 
-Verify with: `test "$(git ls-files ':(glob)**/.cargo/config.toml' ':(glob)**/.cargo/config' -z | xargs -0 rg -l '^rustflags' | sort)" = '.cargo/config.toml'`
+Verify with: `test "$(git ls-files ':(glob)**/.cargo/config.toml' ':(glob)**/.cargo/config' -z | xargs -0 rg -l '^[[:space:]]*rustflags[[:space:]]*=' | sort)" = '.cargo/config.toml'`
