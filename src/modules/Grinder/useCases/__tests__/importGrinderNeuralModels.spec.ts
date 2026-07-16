@@ -148,4 +148,40 @@ describe('importGrinderNeuralModels', () => {
             'lead-boost.nam',
         ]);
     });
+
+    it('should settle the importing flag false and surface the error when every selected file fails to parse', async () => {
+        pick_files_mock.mockResolvedValue([new File(['not-a-nam-payload'], 'broken.nam')]);
+
+        const imported_entries = await importGrinderNeuralModels();
+
+        expect(imported_entries).toEqual([]);
+        expect(persistGrinderNeuralLibrary).not.toHaveBeenCalled();
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.loading).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.error).toBeTruthy();
+    });
+
+    it('should settle the importing flag false and keep the entries when persistence fails', async () => {
+        pick_files_mock.mockResolvedValue([
+            make_nam_file({ file_name: 'tight-rhythm.nam', display_name: 'Tight Rhythm' }),
+        ]);
+        persist_library_mock.mockResolvedValue({
+            ok: false,
+            error: { code: 'quota_exceeded', message: 'Neural library payload exceeds the storage budget.' },
+        });
+
+        const imported_entries = await importGrinderNeuralModels();
+
+        expect(imported_entries).toHaveLength(1);
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+        expect(grinderNeuralLibraryStore.value?.error).toMatch(/storage is full/i);
+    });
+
+    it('should settle the importing flag false when the import rejects mid-flight', async () => {
+        pick_files_mock.mockRejectedValue(new Error('picker exploded'));
+
+        await expect(importGrinderNeuralModels()).rejects.toThrow('picker exploded');
+
+        expect(grinderNeuralLibraryStore.value?.importing).toBe(false);
+    });
 });

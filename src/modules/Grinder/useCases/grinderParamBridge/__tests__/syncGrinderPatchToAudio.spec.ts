@@ -118,4 +118,37 @@ describe('syncGrinderPatchToAudio', () => {
         expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'postOverdriveDrive', 7);
         expect(update_device_param).not.toHaveBeenCalledWith('track-1', 'device-1', 'postOverdriveDrive', 3);
     });
+
+    it('should keep the slot bypassed but sourced from the native overdrive when both family pedals are bypassed', () => {
+        // Same precedence band (both bypassed): the native 'overdrive' still outranks the
+        // 'boost', so the slot reports disabled while carrying the overdrive's stored
+        // params — deterministic regardless of chain order.
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                prePedals: [
+                    { id: 'boost1', type: 'boost', enabled: false, params: { drive: 3, tone: 2, level: 2 } },
+                    { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 8, tone: 6, level: 4 } },
+                ],
+            })
+        );
+
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveEnabled', 0);
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveDrive', 8);
+        expect(update_device_param).not.toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveDrive', 3);
+    });
+
+    it('should let a lone boost pedal drive the shared overdrive slot with its own params', () => {
+        run(
+            migrateGrinderPatch({
+                ...DEFAULT_PATCH,
+                prePedals: [{ id: 'boost1', type: 'boost', enabled: true, params: { drive: 2, tone: 9, level: 6 } }],
+            })
+        );
+
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveEnabled', 1);
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveDrive', 2);
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveTone', 9);
+        expect(update_device_param).toHaveBeenCalledWith('track-1', 'device-1', 'preOverdriveLevel', 6);
+    });
 });

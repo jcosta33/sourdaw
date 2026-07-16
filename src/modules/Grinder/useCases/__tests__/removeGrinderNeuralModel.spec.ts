@@ -13,6 +13,7 @@ describe('removeGrinderNeuralModel', () => {
         grinderNeuralLibraryStore.set({
             hydrated: true,
             loading: false,
+            importing: false,
             error: null,
             entries: [
                 {
