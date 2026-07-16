@@ -23,6 +23,11 @@ and relinks each mastering track to its originating mix session.
 - Streaming-target delivery presets as a general export feature (see
   `delivery-export-targets`) — the mastering page consumes them.
 - The loudness measurement engine (see `loudness-metering-ebur128`).
+- The mastering translation workflow — translation-curve monitoring (Car / Phone / Mono /
+  …) and A/B/C reference-track comparison. Intake `implementation-gaps.md` §5.6 ("Mastering
+  Translation Workflow") is realized in `effects-mastering-ui` **AC-012** (Proof's Route
+  tier), not on this page; the mastering page reaches it through the Proof instances it
+  hosts.
 - A new mastering module — this composes existing Arrangement, Proof, AudioAnalysis,
   and Project modules into a workspace view mode.
 

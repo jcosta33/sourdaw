@@ -95,17 +95,16 @@ Verify with: `pnpm test:run -- PressureLane SlideLane PitchBendLane`
   `phraseStore`? Default: alongside notes, keyed by clip id.
 - [ ] (non-blocking) Is "note role in texture" auto-computed or user-assigned at v1?
   Default: user-assigned, optional.
-- [ ] (non-blocking) (deferred-gap from intake/full-spec.md, item "0. Expression data
-  loss on paste") Paste root cause to verify against when implementing AC-001/AC-002:
-  `pasteNotes.ts` (around lines 24–25) and `pasteClip.ts` (around lines 50–51) in
-  `src/modules/Arrangement/useCases/clipboard/` route copied notes through
-  `createMidiNote()`, which accepts only 5 args (pitch, startBeat, duration, velocity)
-  and therefore strips `pressure`, `slide`, and `pitchBend`. The clipboard itself
-  preserves all fields (spread in `copySelectedNotes.ts`); only paste discards them.
-  The fix is to spread the source note (`{ ...n, id, startBeat }`) instead of calling
-  `createMidiNote`. Regression assertions belong in the existing `pasteNotes.spec.ts`
-  and `pasteClip.spec.ts`. This is a standalone data-loss bug to fix before other
-  feature work; AC-001/AC-002 already encode the requirement.
+- [x] (RESOLVED — commit `3cadd2c1f`, `fix(midi): preserve expression data (pressure,
+  slide, pitchBend) on note and clip paste`) (deferred-gap from intake/full-spec.md, item
+  "0. Expression data loss on paste") Paste dropped expression: `pasteNotes.ts` and
+  `pasteClip.ts` in `src/modules/Arrangement/useCases/clipboard/` routed copied notes
+  through `createMidiNote()`, which accepted only pitch/startBeat/duration/velocity and
+  therefore stripped `pressure`, `slide`, and `pitchBend`; the clipboard itself preserved
+  all fields (spread in `copySelectedNotes.ts`). Fixed on main: both paste paths now spread
+  the source note with a fresh id (see `pasteNotes.ts` lines 19–25, `pasteClip.ts` line 52)
+  instead of calling `createMidiNote`. Regression assertions live in `pasteNotes.spec.ts`
+  and `pasteClip.spec.ts`; AC-001/AC-002 already encode the requirement.
 - [ ] (non-blocking) (deferred-gap from intake/future-spec.md, item "Cross-feature: 1.
   canonical internal representation") The internal model must preserve a richer
   semantic model than any external transport format, with a fixed priority order when
