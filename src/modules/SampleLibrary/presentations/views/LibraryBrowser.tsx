@@ -16,6 +16,7 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { useStore } from '#/infra/store/useStore';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { basename_from_path } from '#/utils/path-basename';
 
 import { type FolderNode, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 import {
@@ -153,8 +154,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
             }
         }
         visibleSubfolders = [...subfolderSet].sort((a, b) => {
-            const aName = a.split('/').pop() ?? a;
-            const bName = b.split('/').pop() ?? b;
+            const aName = basename_from_path(a);
+            const bName = basename_from_path(b);
             return fileNameCollator.compare(aName, bName);
         });
     }
@@ -505,7 +506,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     {/* Unified list: subfolders then files */}
                     <div className="flex-1 overflow-y-auto px-1">
                         {visibleSubfolders.map((subPath) => {
-                            const name = subPath.split('/').pop() ?? subPath;
+                            const name = basename_from_path(subPath);
                             const count = countFilesIn(subPath);
                             return (
                                 <button

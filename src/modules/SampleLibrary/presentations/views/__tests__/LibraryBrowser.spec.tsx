@@ -177,6 +177,25 @@ describe('LibraryBrowser', () => {
         });
     });
 
+    it('should render a subfolder label by its Windows-native basename', () => {
+        const state = createLibraryState({
+            provider: 'tauri',
+            ext: 'wav',
+            rootRef: 'C:\\Users\\jose\\Samples',
+            relativePath: 'Drums\\Kits\\Kick.wav',
+            displayName: 'Kick',
+        });
+        // A Windows-native scan populates `folder` with backslash separators.
+        state.samples[0]!.folder = 'Drums\\Kits';
+        mocks.libraryState = state;
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        // The subfolder button must show only the leaf segment, not the full path.
+        expect(screen.getByRole('button', { name: /^Open folder Kits,/ })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /Drums\\Kits/ })).toBeNull();
+    });
+
     it('should not show the browser risky-format warning in the native runtime', async () => {
         const file = new File(['audio'], 'Texture.flac', { type: 'audio/flac' });
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(true);

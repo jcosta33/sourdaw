@@ -7,6 +7,20 @@ vi.mock('../disposeToasterDevice', () => ({
     disposeToasterDevice: vi.fn(),
 }));
 
+const hydrationMocks = vi.hoisted(() => ({
+    getToasterDeviceControls: vi.fn(),
+    toasterStore: { value: undefined as Record<string, { kit: unknown }> | undefined },
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getToasterDeviceControls: hydrationMocks.getToasterDeviceControls,
+}));
+
+vi.mock('../../stores/toasterStore', () => ({
+    toasterStore: hydrationMocks.toasterStore,
+}));
+
+import { createDefaultKit } from '../../models/ToasterKit';
 import { disposeToasterDevice } from '../disposeToasterDevice';
 import { initToasterSubscribers } from '../toasterSubscriber';
 
@@ -26,6 +40,7 @@ function handlerFor(eventBus: EventBusShape, event: string): (payload: unknown) 
 describe('initToasterSubscribers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        hydrationMocks.toasterStore.value = undefined;
     });
 
     it('subscribes to audioDevice.loaded and audioDevice.removed', () => {
@@ -87,5 +102,28 @@ describe('initToasterSubscribers', () => {
         handlerFor(eventBus, 'audioDevice.removed')({ deviceId: 'fermenter-1', deviceType: 'fermenter' });
 
         expect(disposeToasterDevice).not.toHaveBeenCalled();
+    });
+
+    it('hydrates a loaded toaster device through the AudioEngine control port, not strip internals', () => {
+        const setParam = vi.fn();
+        const setPadParam = vi.fn();
+        hydrationMocks.getToasterDeviceControls.mockReturnValue({ setParam, setPadParam });
+        const kit = createDefaultKit();
+        hydrationMocks.toasterStore.value = { 'toast-1': { kit } };
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.on.mockReturnValue(vi.fn());
+        initToasterSubscribers({
+            eventBus,
+            logger: createMock<Logger>(),
+        });
+
+        handlerFor(eventBus, 'audioDevice.loaded')({ deviceId: 'toast-1', deviceType: 'toaster' });
+
+        // The device is resolved through the AudioEngine use-case port keyed by
+        // deviceId — no getAllTracks / getTrackStrip / deviceNodes reach-in.
+        expect(hydrationMocks.getToasterDeviceControls).toHaveBeenCalledWith('toast-1');
+        expect(setParam).toHaveBeenCalledWith('master_gain', kit.masterGain);
+        expect(setPadParam).toHaveBeenCalledWith(0, 'volume', kit.pads[0]!.volume);
     });
 });
