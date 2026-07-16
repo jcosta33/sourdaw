@@ -12,7 +12,7 @@ unilaterally. Promoted from `.agents/findings/inventory-decisions-backlog.md`
 `.agents/findings/overview-open-decisions.md` (also retired). Citations and
 premises were fully re-audited against `main` on 2026-07-16 after three
 review rounds — every item re-checked, drifted citations corrected, resolved
-premises dropped (113 bullets: 110 decision items + 3 investigation
+premises dropped (123 bullets: 120 decision items + 3 investigation
 meta-items). Decisions already made are **not** here — they are ADRs (0006
 contract-folder barrels, 0007 command relocation, 0008 recent-projects
 Option A, 0009 pattern-morph determinism).
@@ -20,21 +20,41 @@ Option A, 0009 pattern-morph determinism).
 Item format: decision statement · options/tradeoff · blocks code work? ·
 source citation.
 
-## Cross-cutting: finish-or-remove subsystem calls
+## Unbuilt feature subsystems (finish-or-remove)
 
-- **Unbuilt-feature build-vs-remove calls are owned by the audit-deferrals
-  table** — SoundLibrary (ownership vs SampleLibrary, 14/15 dead use cases,
-  ship-vs-scaffolding), SampleLibrary embedding/Find-Similar, CrdtDocument
-  native Tauri backend + `.sdaw` import, GrandBoule sampled-attack, Toaster
-  16-Levels/Note-Repeat/Sound-Locks, Automation linked-lanes/envelope
-  modulator, Bacteria Lab editors/ModulationDock drag-to-assign, Scoring
-  PolyDisplay, Crumbs metering read-back/Warp-Mod-XY/automation-routing, plus
-  Extension, DDSP, RAVE, WAM, Push, MIDI hardware mappings, Collaboration
-  transport-permission scaffold, Yeast introspection UI, Synth CV/Gate UI.
-  Do not restate them here; make each ship-or-retire call against that table.
-  Blocks code: no (they are dormant). Source:
-  `.agents/findings/audit-remediation-deferrals.md` ("Unbuilt feature
-  subsystems — finish-or-remove" table; file is gitignored, main checkout).
+Whole subsystems that are **dead or dormant in production today** — each an
+honest *finish it* or *delete it* call (multi-file either way), not a cleanup
+fix. Left intact by the 2026-06-26 module-audit remediation under its explicit
+rule (*do not half-build a feature, do not unilaterally delete a parked
+subsystem*). The code is the live source of truth for each row's present state;
+citations were re-verified against `main` on 2026-07-16. Make each
+ship-or-retire call against this table; do not delete rows piecemeal. Blocks
+code: no (all dormant).
+
+| Subsystem | Module(s) | State today | Decision |
+|---|---|---|---|
+| **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module |
+| **DDSP synthesis pipeline** | BrowserAi | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt | Build the inference, or remove the pipeline |
+| **RAVE timbre-transfer** | AudioEngine | 9 `useCases/rave/*` dead (only `loadModel`/`setTransferBlend` wired); 4 currently flagged live as `no-orphans` warns | Wire the RAVE UI/flow, or remove the 9 use cases |
+| **WAM plugin host** | Plugin | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`) | Build host load/query + UI, or remove the host surface |
+| **Push hardware controller** | Plugin | No `repositories/` I/O; pads never driven by a device; O(n) hot path unexercised | Build the hardware I/O layer, or remove |
+| **MIDI hardware controller + scripting** | MIDI | `export/importHardwareMappings` dead; `controllerScriptingWorker` never instantiated (live `no-orphans` warn); profiles never populated | Build device wiring, or remove the subsystem |
+| **Native-Tauri CRDT backend + `.sdaw` import/merge** | CrdtDocument | `nativeCrdtPersistence/` parked; PR #110 fixed the misleading `getPersistenceBackend()` report so the active lifecycle reports browser/IndexedDB; `.sdaw` merge wired but no trigger | Build the native backend / `.sdaw` import UI, or remove |
+| **Toaster performance features** | Toaster | Note-Repeat / 16-Levels / Sound-Locks / Pattern-Morph / multi-pattern / polymetric — full impls, no UI/command entry; their sequencer reader branches are dead | Ship each (UI + command + e2e) or retire it with its branches |
+| **Yeast param-readback / introspection UI** | Yeast | StepPatternEditor edits never reach the Arpeggiator; all panel knobs uncontrolled; 12 introspection methods + reorder are unbuilt-feature groundwork. (`yeastPanic` is now wired via Transport `panicYeastRuntime` → Yeast `yeastPanic` — no longer part of this row) | Build the param-projection store + pattern/reorder wiring, or retire |
+| **SoundLibrary vs SampleLibrary** | SoundLibrary | Two modules own "the sample library"; only SampleLibrary has a UI; their `findSimilarSamples` return types are incompatible (`SampleEntry[]` vs `string[]`) | Decide the owner; retire or merge the other (cross-module model-merge is forbidden — an ownership/migration decision) |
+| **Collaboration transport-permission** | Collaboration | `canControlTransport`/`getRole`/`transport` capability + `transport-controller`/`viewer` roles never granted (only `editor` is) (`useCases/permissions.ts:93`) | Enforce transport perms + role-grant UI, or remove the scaffold |
+| **GrandBoule sampled-attack** | GrandBoule | Hybrid attack-clip pathway wired through types, no production caller | Wire the attack-clip load flow, or remove |
+| **Synth CV/Gate** | Synth | Convert+write path inert; only `addCvOutput` wired | Build the modular CV/Gate UI, or remove the convert/write ops |
+| **SampleLibrary embedding (Find-Similar / UMAP)** | SampleLibrary | `setEmbedding` never called (`stores/embeddingStore.ts:22`, zero callers) → embeddings map always empty → Find-Similar returns `[]`. The `presentations/views/LibraryBrowser.tsx:449` "Re-project UMAP" button is live but silently no-ops for the same reason — hide or wire it regardless of the finish-or-remove call | Build embedding population, or remove the G2/G3 controls |
+| **Smaller dormant features** | Crumbs (metering read-back, Warp/Mod-XY, automation→engine routing), Scoring (PolyDisplay), Automation (linked-lanes, envelope modulator), Bacteria (Lab-bench wiring) | each wired-but-dead | finish or remove per the per-module audit |
+
+- **DJ mode / VCV Rack integration — keep or drop (product line).** Niche
+  ideas surfaced during intake decomposition with no owning spec: DJ mode is
+  missing entirely; VCV Rack integration and AI-generated modulation patches are
+  missing while Synth CV/Gate exists. One line: keep or drop. Blocks code: no.
+  Migrated from ADR-0010 Open questions. Source:
+  `.agents/decisions/0010-product-restraint-principles.md` ("Open questions").
 
 ## Infra / store
 
@@ -44,6 +64,12 @@ source citation.
   Options: build a multi-key CRDT transaction vs document and accept the risk.
   Blocks code: no, but gates any feature relying on cross-store invariants.
   Source: `src/infra/store/createStore.ts:35-45`.
+- **`LocalStorageKeys` legacy-key legal review (I-28).** The file header
+  requires every key addition/deletion/change be reported to the legal
+  department for Cookie-Policy transparency — out of scope for an agent to alter
+  unilaterally. Decide the review/cleanup owner for the legacy keys. Blocks
+  code: no. Migrated from ADR-0010 Open questions. Source:
+  `src/infra/store/storage/LocalStorageKeys.ts:1-13`.
 
 ## Dependency-cruiser / lint governance
 
@@ -72,6 +98,35 @@ source citation.
   store + selectors) vs one-off relocation of the known instance. Blocks
   code: no. Source: `src/modules/MIDI/stores/duplicateClipNotes.ts:5`,
   exported via `src/modules/MIDI/stores/index.ts`.
+- **Close the main-cruise validator config gaps.** The main cruise
+  (`.dependency-cruiser.cjs`) does not set `tsPreCompilationDeps`, so type-only
+  imports are invisible to its rules — only the types
+  (`.dependency-cruiser.types.cjs:79`) and tests
+  (`.dependency-cruiser.tests.cjs:177`) cruises enable it; and the
+  `src/helpers/` shadow-layer exclusion anchor at `.dependency-cruiser.cjs:752`
+  (`^src/helpers/Store/Storage/AutomergeStorage\.ts$`) points at a retired file
+  location — the live file is `src/infra/store/storage/createAutomergeStorage.ts`.
+  Options: enable `tsPreCompilationDeps` on main + repoint/remove the stale
+  anchor vs accept the blind spots. Blocks code: no. Source:
+  `.dependency-cruiser.cjs:269,752,918`.
+- **Retire the live `no-orphans` warn backlog: 5 orphans remain.** The main
+  cruise reports exactly 5 `no-orphans` warnings — 4 RAVE use cases
+  (`src/modules/AudioEngine/useCases/rave/{timbreTransfer,interpolateLatent,encodeAudio,decodeLatent}.ts`,
+  tracked by the `.agents/specs/rave-timbre-transfer/` draft) and
+  `src/modules/MIDI/workers/controllerScriptingWorker.ts` (already a docket
+  trust-model item under MIDI). Wire or retire each; recorded here so the
+  warn-backlog finding can be retired without losing the list. Blocks code: no.
+  Source: `node scripts/check-dependency-boundaries.mjs` (main: 5 warnings).
+- **Tests cruise exempts same-module barrel imports, contradicting the written
+  same-module rule.** `.dependency-cruiser.tests.cjs` exempts same-module
+  targets via `pathNot: '^$1$2'` in both the `cross-module-index-only` and
+  `no-relative-cross-module-imports` rules, so a spec importing its own module's
+  contract barrel (`../index` from `__tests__/`) passes the gate while
+  contradicting CLAUDE.md's same-module rule (relative-to-file only, never the
+  module's own barrel). Options: extend the tests cruise to ban own-barrel
+  imports from specs vs amend the doc to permit it. Blocks code: no. Source:
+  `.dependency-cruiser.tests.cjs:63-75,83-93`; PR #330 review 4717538952 (two
+  merged specs used the pattern, gate stayed green).
 
 ## Transport
 
@@ -144,6 +199,15 @@ source citation.
   Source: `src/modules/Command/useCases/commands/TrackCommands.ts`,
   `useCases/commands/ClipCommands.ts` (paths post-ADR-0007),
   `src/modules/Workspace/presentations/views/Sidebar/MacrosPanel.tsx`.
+- **No global `unhandledrejection` handler for `executeAppAction`.** Nothing in
+  `src/` registers a `window.unhandledrejection` / `onunhandledrejection`
+  handler (grep-confirmed zero registrations), so a rejected promise escaping an
+  `executeAppAction` dispatch surfaces only as an unhandled rejection with no
+  app-level recovery or telemetry. Options: add a global handler (report +
+  user-facing recovery) vs accept silent rejections; the prior tracking artifact
+  was retired without replacement — recorded here. Blocks code: no. Source: grep
+  — zero `unhandledrejection` registrations under `src/`;
+  `src/modules/Command/useCases/executeAppAction.ts`.
 
 ## BrowserAi
 
@@ -261,6 +325,27 @@ source citation.
   Blocks code: yes, for session-view work. Source:
   `src/modules/Workspace/presentations/views/SessionView.tsx:33-41`,
   `stores/sessionLaunchStore.ts`.
+- **Thread `audioBufferId` (not `clip.id`) through `WaveformEditor`.**
+  `WaveformEditor` keys peaks, warp state, and AI-denoise on the `clipId` prop
+  (`presentations/views/ClipView/WaveformEditor.tsx:91,500`), which `ClipView`
+  passes as `selectedClip.id` (`ClipView.tsx:125`); the denoise pipeline now
+  keys on `clip.audioBufferId` (fixed in PR #315 for the Inspector +
+  context-menu entry points). The parent must thread `audioBufferId` — a
+  follow-up refactor (a `realClipId` reconciliation at
+  `WaveformEditor.tsx:366-369` already covers only normalize/reverse). Blocks
+  code: no. Source: `WaveformEditor.tsx:91,366-369,500`,
+  `src/modules/Workspace/presentations/views/ClipView.tsx:125`.
+- **Wire or retire Workspace `automationSubLanes`.** The sub-lane mutators
+  (`useCases/automationSubLanes/{addAutomationSubLane,removeAutomationSubLane,swapAutomationSubLaneParam}.ts`
+  + `helpers.setAutomationSubLanes`) have zero production callers and are not
+  exported from the Workspace `useCases` barrel, so `workspace.automationSubLanes`
+  can never be populated at runtime; the Arrangement reader
+  `hitTestAutomationSubLane` (wired via
+  `Arrangement/presentations/helpers/timelineTools.ts:133,173`) hit-tests an
+  always-empty map. Wire an add-sub-lane command/UI, or retire the feature.
+  Blocks code: no. Source:
+  `src/modules/Workspace/useCases/automationSubLanes/`,
+  `src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts:27`.
 
 ## Collaboration
 
@@ -454,8 +539,9 @@ source citation.
   use case reads them for morphing. Blocks code: no. Source:
   `src/modules/Bacteria/models/BacteriaPatch.ts:141,188-198`,
   `presentations/views/BacteriaPanel.tsx:457` (XYMorphPad mount).
-  (Lab editors / ModulationDock drag-to-assign: see the cross-cutting
-  audit-deferrals pointer above — the add path is gated on that same call.)
+  (Lab editors / ModulationDock drag-to-assign: see the "Unbuilt feature
+  subsystems (finish-or-remove)" table above — the add path is gated on that
+  same call.)
 
 ## VirtualKeyboard
 
@@ -503,6 +589,13 @@ source citation.
   generate*, stemSeparate) — no test or compile-time linkage. Needs an
   investigation pass. Blocks code: no. Source:
   `src/modules/AiRuntime/useCases/validateActionPayload.ts:477` (PAYLOAD_VALIDATORS, ~194 'unchecked' entries).
+- **Wire or retire `musicMentor.getMentorTip`.** The singular `getMentorTip`
+  query has zero non-test callers (referenced only by its own spec) — distinct
+  from the plural `getMentorTips` handler, which *is* wired
+  (`handlers/aiOrganization/handleGetMentorTips.ts`,
+  `src/modules/Command/useCases/commands/AiCommands.ts:203`). Wire the tip query
+  into a surface or delete it. Blocks code: no. Source:
+  `src/modules/AiRuntime/useCases/musicMentor/queries.ts:8`.
 
 ## Project
 
@@ -644,6 +737,19 @@ source citation.
   Options: adopt i18n vs English-only for now. Blocks code: no. Source:
   `src/modules/Proof/useCases/proofPresets.ts`; no i18n dependency in
   `package.json`.
+- **Unify the Proof persist + engine-write path (spec-level).** Rehydration is
+  fixed — `proofParamBridge/syncFullPatch.ts` `rehydrateRestoredPatch` restores
+  the full patch on reload — but there is still no single unified persist +
+  engine-write path: `proofParamBridge/setProofParam.ts` persists one param on a
+  separate path. Redesign to one source of truth + one write path. Blocks code:
+  no. Source: `src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts`,
+  `useCases/proofParamBridge/setProofParam.ts`.
+- **Proof vs `Plugin/proofChamber` duplication (I-25).** Two live surfaces
+  model "the proof chamber" — `src/modules/Proof/` and
+  `src/modules/Plugin/useCases/proofChamber/`. Product decision on the owner;
+  surface to the maintainer, do not delete code unilaterally. Blocks code: no.
+  Migrated from ADR-0010 Open questions. Source: `src/modules/Proof/`,
+  `src/modules/Plugin/useCases/proofChamber/`.
 
 ## Automation
 
