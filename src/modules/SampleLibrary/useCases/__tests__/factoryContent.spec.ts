@@ -63,15 +63,24 @@ vi.mock('../../repositories/libraryPersistence/persistSamples', () => ({
     persistSamples: mocks.persistSamples,
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        set: (id: string, buffer: AudioBuffer) => lru.set(id, buffer),
-    },
+// The seed routes buffer registration through the AudioEngine-owned
+// cacheAudioBuffer use case (not the raw audioBufferCache). The mock delegates
+// to the faithful LRU fixture above so eviction semantics stay under test, while
+// the spy proves the seed calls the use-case contract — a { buffer, bufferId }
+// object — rather than the raw positional cache.
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: vi.fn(({ buffer, bufferId }: { buffer: AudioBuffer; bufferId?: string }): string => {
+        const id = bufferId ?? `generated-${crypto.randomUUID()}`;
+        lru.set(id, buffer);
+        return id;
+    }),
 }));
 
 vi.mock('../buildFolderTree', () => ({
     buildFolderTree: mocks.buildFolderTree,
 }));
+
+import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { generateFactorySamples } from '../factoryContent/generateFactorySamples';
 import { seedFactoryLibrary } from '../factoryContent/seedFactoryLibrary';
@@ -172,7 +181,7 @@ describe('seedFactoryLibrary', () => {
         await seedFactoryLibrary(ctx);
 
         expect(mocks.addLibraryRoot).toHaveBeenCalledTimes(1);
-        expect(lru.set.mock.calls.length).toBeGreaterThanOrEqual(60);
+        expect(vi.mocked(cacheAudioBuffer).mock.calls.length).toBeGreaterThanOrEqual(60);
         expect(mocks.addSamples).toHaveBeenCalledTimes(1);
         expect(mocks.buildFolderTree).toHaveBeenCalledWith('factory');
         expect(localStorage.getItem(FACTORY_SEED_FLAG_KEY)).not.toBeNull();
@@ -185,8 +194,11 @@ describe('seedFactoryLibrary', () => {
         await seedFactoryLibrary(ctx);
 
         // The seed must attempt to cache every sample it generated — no fewer,
-        // no silent drops before reaching the cache.
-        expect(lru.set).toHaveBeenCalledTimes(sampleCount);
+        // no silent drops before reaching the cache — and it must route each
+        // buffer through the AudioEngine-owned use case, called with the
+        // { buffer, bufferId } contract rather than the raw positional cache.
+        expect(cacheAudioBuffer).toHaveBeenCalledTimes(sampleCount);
+        expect(cacheAudioBuffer).toHaveBeenCalledWith(expect.objectContaining({ bufferId: expect.any(String) }));
     });
 
     it('caches each sample under the same id that its SampleRecord carries', async () => {
@@ -195,7 +207,7 @@ describe('seedFactoryLibrary', () => {
 
         await seedFactoryLibrary(ctx);
 
-        const cachedIds = lru.set.mock.calls.map(([id]) => id);
+        const cachedIds = vi.mocked(cacheAudioBuffer).mock.calls.map(([{ bufferId }]) => bufferId);
         // Buffer cache keys must line up exactly with the generated sample ids,
         // otherwise lookups from the persisted SampleRecords would miss.
         expect(new Set(cachedIds)).toEqual(new Set(generatedIds));
@@ -243,7 +255,7 @@ describe('seedFactoryLibrary', () => {
         expect(localStorage.getItem(FACTORY_SEED_FLAG_KEY)).toBeNull();
         // The in-memory work up to the failed persist still happened.
         expect(mocks.addSamples).toHaveBeenCalledTimes(1);
-        expect(lru.set.mock.calls.length).toBeGreaterThanOrEqual(60);
+        expect(vi.mocked(cacheAudioBuffer).mock.calls.length).toBeGreaterThanOrEqual(60);
     });
 
     it('is idempotent — skips seeding when the flag is present', async () => {
@@ -253,7 +265,7 @@ describe('seedFactoryLibrary', () => {
 
         expect(mocks.addLibraryRoot).not.toHaveBeenCalled();
         expect(mocks.addSamples).not.toHaveBeenCalled();
-        expect(lru.set).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
     it('does not re-add the factory root if one already exists', async () => {
