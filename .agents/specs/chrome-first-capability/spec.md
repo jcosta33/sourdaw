@@ -298,6 +298,14 @@ the degraded-mode state.
 
 Verify with: `pnpm test:run -- coiOffDegradedBoot`
 
+### AC-032 — Native file commands resolve path authority in native state
+
+Collaboration-bundle and generated-audio file commands must resolve path
+authority from native-owned project/output state; renderer-provided path strings
+alone do not authorize filesystem access.
+
+Verify with: `pnpm deps:validate`
+
 ## Open questions
 
 - [ ] (blocking) [CRITICAL] Which File System Access persistence strategy does

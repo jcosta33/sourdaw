@@ -5,7 +5,6 @@ title: daw-engine scheduler contains compile-blocking stub code
 status: fixed
 owner: The Sourdaw team
 sources:
-  - "Transient finding: remaining-surface-audit-2026-06-27"
   - SPEC-plugin-hosting-clap
 ---
 
