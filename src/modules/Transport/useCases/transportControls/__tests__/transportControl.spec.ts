@@ -33,10 +33,9 @@ vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<Record<string, unknown>>()),
     stopAllScheduled: mocks.stopAllScheduled,
-}));
-vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
     resetMidiState: mocks.resetMidiState,
 }));
 

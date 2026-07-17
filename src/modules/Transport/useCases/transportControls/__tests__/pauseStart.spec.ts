@@ -37,20 +37,6 @@ vi.mock('#/modules/Transport/useCases/ensureTrackStrips', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
 }));
 
-// Mock the individual engine files exactly as imported in startPlayback.ts
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/resumeEngine', () => ({
-    resumeEngine: mocks.resumeEngine,
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({
-    stopAllScheduled: mocks.stopAllScheduled,
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
-    resetMidiState: mocks.resetMidiState,
-}));
-
-// ALSO mock the barrel re-export just in case
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),
     resumeEngine: mocks.resumeEngine,

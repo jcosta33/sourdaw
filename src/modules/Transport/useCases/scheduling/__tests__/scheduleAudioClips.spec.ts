@@ -19,7 +19,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
 }));
-vi.mock('../../stores/tempoMapStore', () => ({
+vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -60,7 +60,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 // clipTempo (tempo at clip.startBeat) is 120 -> clipBeatsPerSecond = 2. The
 // timeline tempo is passed to scheduleAudioClips directly, so the two diverge.
-vi.mock('../../models/TempoMap', () => ({
+vi.mock('../../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
 

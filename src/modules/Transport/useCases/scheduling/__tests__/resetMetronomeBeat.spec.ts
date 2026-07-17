@@ -6,20 +6,20 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { resetMetronomeBeat } from '../resetMetronomeBeat';
 import { scheduleMetronome } from '../scheduleMetronome';
 
-vi.mock('../../stores/tempoMapStore', () => ({
+vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
-vi.mock('../../stores/timeSignatureMapStore', () => ({
+vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
-vi.mock('../../models/TempoMap', () => ({
+vi.mock('../../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCurrentTime: vi.fn(() => 0),
     scheduleClick: vi.fn(),
 }));
-vi.mock('../../models/TimeSignatureMap', () => ({
+vi.mock('../../../models/TimeSignatureMap', () => ({
     getTimeSignatureAtBeat: vi.fn(() => ({ numerator: 4, denominator: 4 })),
 }));
 

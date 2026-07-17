@@ -12,7 +12,7 @@ vi.mock('../../../stores/punchRecordingStore', () => ({
     punchRecordingStore: mockPunchRecordingStore,
 }));
 
-vi.mock('../../repositories/punchRecordingIdCounter/getNextPunchId', () => ({
+vi.mock('../../../repositories/punchRecordingIdCounter/getNextPunchId', () => ({
     getNextPunchId: () => 'punch-1',
 }));
 

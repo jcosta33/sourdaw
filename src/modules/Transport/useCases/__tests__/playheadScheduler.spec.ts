@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { scheduleAdjustmentLayers } from '#/modules/AudioEngine/useCases/adjustmentLayer/scheduleAdjustmentLayers';
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
-import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
-import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
+import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -73,30 +71,25 @@ vi.mock('../../stores/tempoMapStore', () => ({
 vi.mock('../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,
-}));
-vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
     takeLaneStore: { value: { lanes: [] } },
 }));
-vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({ addTakeLane: vi.fn() }));
-vi.mock('#/modules/Arrangement/useCases/comping/addTake', () => ({ addTake: vi.fn() }));
-vi.mock('#/modules/Arrangement/useCases/recording/startRecording', () => ({ startRecording: harness.start_recording }));
-vi.mock('#/modules/Arrangement/useCases/recording/stopRecording', () => ({ stopRecording: harness.stop_recording }));
-vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({ updateClip: harness.update_clip }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addTakeLane: vi.fn(),
+    addTake: vi.fn(),
+    startRecording: harness.start_recording,
+    stopRecording: harness.stop_recording,
+    updateClip: harness.update_clip,
+}));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
 }));
-vi.mock('#/modules/AudioEngine/useCases/cacheAudioBuffer', () => ({ cacheAudioBuffer: harness.cache_audio_buffer }));
-vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({ stopAllScheduled: vi.fn() }));
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: harness.cache_audio_buffer,
+    stopAllScheduled: vi.fn(),
     startAudioRecording: harness.start_audio_recording,
-}));
-vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({
     stopAudioRecording: harness.stop_audio_recording,
-}));
-vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
     getAudioContext: vi.fn(() => ({
         get currentTime() {
             return harness.clock;
@@ -117,7 +110,9 @@ vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
             harness.setTransportInfo(...args);
         },
     },
+    scheduleAdjustmentLayers: vi.fn(),
 }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
 vi.mock('../scheduling/scheduleMetronome', () => ({
     scheduleMetronome: vi.fn(),
 }));
@@ -136,20 +131,11 @@ vi.mock('../scheduling/applyAutomation/applyVcaGains', () => ({
 vi.mock('../scheduling/applyAutomation/applyAutomation', () => ({
     applyAutomation: vi.fn(),
 }));
-vi.mock('#/modules/Automation/useCases/automationRecording/startAutomationRecording', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: vi.fn(),
-}));
-vi.mock('#/modules/Automation/useCases/automationRecording/stopAutomationRecording', () => ({
     stopAutomationRecording: vi.fn(),
-}));
-vi.mock('#/modules/Automation/useCases/modulation/applyModulation', () => ({
     applyModulation: vi.fn(),
-}));
-vi.mock('#/modules/Automation/useCases/modulation/applyModulationToEngine', () => ({
     applyModulationToEngine: vi.fn(),
-}));
-vi.mock('#/modules/AudioEngine/useCases/adjustmentLayer/scheduleAdjustmentLayers', () => ({
-    scheduleAdjustmentLayers: vi.fn(),
 }));
 vi.mock('../scheduling/scheduleMidiNotes', () => ({
     scheduleMidiNotes: vi.fn(() => Promise.resolve()),
