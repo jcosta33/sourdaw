@@ -10,13 +10,9 @@ const mocks = vi.hoisted(() => ({
     setSendEngine: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/ensureBusStrip', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStripEngine,
-}));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/setBusGain', () => ({
     setBusGain: mocks.setBusGainEngine,
-}));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/setSend', () => ({
     setSend: mocks.setSendEngine,
 }));
 

@@ -1,22 +1,35 @@
 import { describe, it, expect } from 'vitest';
 
-import { type Device, type Track, createTrack } from '#/modules/Arrangement/models/Track';
-
 import { createFindDeviceRef, encodeGlutenValue } from '../helpers';
 
-// Fix 5 — replace the `as never` fixtures with a real, typed Track factory.
-// `createTrack` produces a fully-typed Track; we attach the devices the test
-// needs without escaping the type system.
-function trackWithDevices(id: string, deviceIds: string[]): Track {
-    const base = createTrack({ id, name: id, kind: 'audio' });
-    const devices: Device[] = deviceIds.map((deviceId) => ({
+// Fix 5 — build tracks from a local, field-identical factory instead of
+// importing Arrangement's Track model across the module boundary. Tests use
+// contract barrels only; models stay private. `createFindDeviceRef` reads only
+// `track.id` and `track.devices[].id`, so these local shapes are faithful.
+type LocalDevice = {
+    id: string;
+    name: string;
+    type: string;
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
+};
+
+type LocalTrack = {
+    id: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+    devices: LocalDevice[];
+};
+
+function trackWithDevices(id: string, deviceIds: string[]): LocalTrack {
+    const devices: LocalDevice[] = deviceIds.map((deviceId) => ({
         id: deviceId,
         name: deviceId,
         type: 'gluten',
         bypassed: false,
         parameterValues: {},
     }));
-    return { ...base, devices };
+    return { id, name: id, kind: 'audio', devices };
 }
 
 describe('glutenParamBridge helpers', () => {

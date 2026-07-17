@@ -5,10 +5,6 @@ const mocks = vi.hoisted(() => ({
     trackStoreValue: null as unknown,
 }));
 
-vi.mock('#/modules/Workspace/useCases/workspaceState', () => ({
-    updateWorkspaceState: mocks.updateWorkspaceState,
-}));
-
 vi.mock('#/modules/Workspace/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Workspace/useCases')>('#/modules/Workspace/useCases');
     return { ...actual, updateWorkspaceState: mocks.updateWorkspaceState };

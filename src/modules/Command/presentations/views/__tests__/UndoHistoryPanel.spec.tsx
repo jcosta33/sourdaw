@@ -17,7 +17,7 @@ vi.mock('#/modules/Command/stores/undoStore', () => ({
     undoStore: { name: 'undoStore' },
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
+vi.mock('#/modules/Workspace/stores', () => ({
     workspaceStore: { name: 'workspaceStore' },
 }));
 

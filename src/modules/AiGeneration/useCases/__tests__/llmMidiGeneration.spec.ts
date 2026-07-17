@@ -1,27 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/filterTemplates';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
-    resolveBackend: () => 'none',
-    generateWebLlmCompletion: vi.fn(),
-    generateNativeCompletion: vi.fn(),
-    isNativeEngineReady: vi.fn(),
-    filterTemplates: vi.fn((pattern) => filterTemplates(pattern)),
-    PATTERN_TEMPLATES: [
-        {
-            name: 'Basic Beat',
-            category: 'drum',
-            tags: ['ambient pad'],
-            resolution: 1,
-            generate: () => [{ pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }],
-        },
-    ],
-}));
+vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        resolveBackend: () => 'none',
+        generateWebLlmCompletion: vi.fn(),
+        generateNativeCompletion: vi.fn(),
+        isNativeEngineReady: vi.fn(),
+        filterTemplates: vi.fn((pattern) => actual.filterTemplates(pattern)),
+        PATTERN_TEMPLATES: [
+            {
+                name: 'Basic Beat',
+                category: 'drum',
+                tags: ['ambient pad'],
+                resolution: 1,
+                generate: () => [{ pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }],
+            },
+        ],
+    };
+});
 
 const mockNotificationEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),

@@ -2,12 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { type Track } from '#/modules/Arrangement/models/Track';
-import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { addDeviceToStrip, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { createGrandBouleTrack } from '../createGrandBouleTrack';
 
+type Track = {
+    id: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
+    devices: Array<{
+        id: string;
+        name: string;
+        type: string;
+        bypassed: boolean;
+        parameterValues: Record<string, number>;
+    }>;
+};
 const mocks = vi.hoisted(() => ({
     trackStoreValue: null as unknown,
     appendTrack: vi.fn(),
@@ -28,7 +39,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     appendTrack: mocks.appendTrack,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/createTrack', () => ({
+vi.mock('#/modules/Arrangement/useCases', () => ({
     createTrack: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({

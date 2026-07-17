@@ -14,10 +14,14 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
 }));
 
-vi.mock('../../stores/chamberStore', () => ({
+vi.mock('../../../stores/chamberStore', () => ({
     chamberStore: { name: 'chamberStore' },
-    updateChamberEngine: vi.fn(),
+}));
+vi.mock('../../../useCases/proofChamber/registerChamberInstance', () => ({
     registerChamberInstance: vi.fn(),
+}));
+vi.mock('../../../useCases/proofChamber/updateChamberEngine', () => ({
+    updateChamberEngine: vi.fn(),
 }));
 
 // Replace the canvas-driven decay-EQ overlay with a button that surfaces its

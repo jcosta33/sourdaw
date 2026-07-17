@@ -8,7 +8,7 @@ const { mockUpdateDeviceParam, mockPersistDeviceParam, mockTrackStoreValue } = v
     mockTrackStoreValue: { value: null as unknown },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mockUpdateDeviceParam,
 }));
 

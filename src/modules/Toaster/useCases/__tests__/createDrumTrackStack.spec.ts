@@ -2,21 +2,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
+import { getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
 
 import { createDrumTrackStack } from '../createDrumTrackStack';
 
-vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
-    getTrackStoreState: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/useCases/setTrackStoreState', () => ({
-    setTrackStoreState: vi.fn(),
-}));
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip', () => ({
-    addDeviceToStrip: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        getTrackStoreState: vi.fn(),
+        setTrackStoreState: vi.fn(),
+    };
+});
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        addDeviceToStrip: vi.fn(),
+    };
+});
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;

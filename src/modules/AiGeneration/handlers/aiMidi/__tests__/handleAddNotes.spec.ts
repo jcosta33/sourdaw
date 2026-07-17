@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAddNotes } from '../handleAddNotes';
 
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({
+vi.mock('#/modules/MIDI/useCases', () => ({
     addMidiNote: vi.fn(),
 }));
 
@@ -12,7 +12,7 @@ describe('aiMidiHandlers', () => {
     });
 
     it('handleAddNotes forwards notes to addMidiNote', async () => {
-        const { addMidiNote } = await import('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote');
+        const { addMidiNote } = await import('#/modules/MIDI/useCases');
 
         void handleAddNotes.execute({
             type: 'addNotes',
