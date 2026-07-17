@@ -24,7 +24,6 @@ export { exportDawProject } from './dawProject/exportDawProject';
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
-export { getVersionControlHandlers } from './getVersionControlHandlers';
 export { getDawProjectHandlers } from './getDawProjectHandlers';
 
 export { getRecentProjects } from './recentProjects/helpers';
