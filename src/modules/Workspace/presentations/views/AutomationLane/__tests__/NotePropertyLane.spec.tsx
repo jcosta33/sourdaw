@@ -3,11 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { NotePropertyLane } from '../NotePropertyLane';
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { notesByClipId: {} } },
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: { value: { tracks: [] } },
 }));
 

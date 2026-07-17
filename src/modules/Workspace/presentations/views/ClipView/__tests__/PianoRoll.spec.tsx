@@ -21,9 +21,10 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => {
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const midiState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
     return {
+        ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
         midiStore: {
             get value() {
                 return midiState;
@@ -35,9 +36,10 @@ vi.mock('#/modules/MIDI/stores/midiStore', () => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => {
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const trackState = { tracks: [], selectedTrackId: null };
     return {
+        ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
         trackStore: {
             get value() {
                 return trackState;

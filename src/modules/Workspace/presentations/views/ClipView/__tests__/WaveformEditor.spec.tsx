@@ -137,8 +137,10 @@ vi.mock('#/utils/UI/resolveToken', () => ({
     resolveToken: vi.fn(() => '#151515'),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/getCachedAudioBufferWaveformPeaks', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
+    isTauri: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -169,15 +171,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     enableWarp: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/trackViewActions/decodeAudioFile', () => ({
-    decodeAudioFile: vi.fn(),
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip', () => ({
+vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AiGeneration/useCases')>()),
     handleAiDenoiseClip: vi.fn(),
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview', () => ({
     handleStemSeparationPreview: vi.fn(),
 }));
 
@@ -185,12 +181,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases/audioToMidi', () => ({
+vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>()),
     audioToMidi: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/isTauri', () => ({
-    isTauri: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/Knead/stores', () => {

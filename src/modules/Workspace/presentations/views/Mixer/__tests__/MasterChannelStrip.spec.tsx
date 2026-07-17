@@ -11,7 +11,8 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 // Mock useCases
-vi.mock('#/modules/Transport/useCases/setMasterGain', () => ({
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     setMasterGain: vi.fn<(gain: number) => void>(),
 }));
 
@@ -64,7 +65,7 @@ describe('MasterChannelStrip', () => {
         const fader = screen.getByTestId('fader');
         fireEvent.change(fader, { target: { value: '0.5' } });
 
-        const { setMasterGain } = await import('#/modules/Transport/useCases/setMasterGain');
+        const { setMasterGain } = await import('#/modules/Transport/useCases');
         expect(setMasterGain).toHaveBeenCalledWith(50);
     });
 

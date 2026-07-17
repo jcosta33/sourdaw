@@ -13,7 +13,8 @@ vi.mock('../NotePropertyLane', () => ({
     ),
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     setNoteVelocity: vi.fn(),
 }));
 

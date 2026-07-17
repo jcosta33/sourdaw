@@ -30,7 +30,8 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { pitchBendByClipId: {} } },
 }));
 
@@ -38,15 +39,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiEvent/addPitchBend', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     addPitchBend: vi.fn(() => ({ id: 'pb-1', value: 64, beat: 0 })),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiEvent/removePitchBend', () => ({
     removePitchBend: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiEvent/movePitchBend', () => ({
     movePitchBend: vi.fn(),
 }));
 

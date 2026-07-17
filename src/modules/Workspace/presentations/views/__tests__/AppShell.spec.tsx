@@ -37,29 +37,9 @@ vi.mock('../../hooks/useAppEventHandlers', () => ({
     useAppEventHandlers: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/presentations/hooks/useCommandShortcuts', () => ({
-    useCommandShortcuts: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/presentations/hooks/useCommandLifecycle', () => ({
-    useCommandLifecycle: vi.fn(),
-}));
-
-vi.mock('../../hooks/useTimelineCoordinates', () => ({
-    useTimelineCoordinates: vi.fn(() => ({
-        beatToX: vi.fn(),
-        trackIdToY: vi.fn(),
-        trackHeight: 100,
-    })),
-}));
-
 // Mock child components
 vi.mock('../TransportBar', () => ({
     TransportBar: () => <div data-testid="transport-bar">TransportBar</div>,
-}));
-
-vi.mock('#/modules/Collaboration/presentations/views/PresenceOverlay', () => ({
-    PresenceOverlay: () => <div data-testid="presence-overlay">PresenceOverlay</div>,
 }));
 
 vi.mock('../Sidebar', () => ({
@@ -82,16 +62,19 @@ vi.mock('#/modules/AudioEngine/presentations/views', () => ({
     ElasticEditorPanel: elasticEditorPanelMock,
 }));
 
-vi.mock('#/modules/AiRuntime/presentations/views/GenerativeAiPanel', () => ({
+vi.mock('#/modules/AiRuntime/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AiRuntime/presentations/views')>()),
     GenerativeAiPanel: () => <div data-testid="ai-panel">AI Panel</div>,
 }));
 
-vi.mock('#/modules/Project/presentations/views/RecentProjectsMenu', () => ({
+vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/presentations/views')>()),
     RecentProjectsMenu: () => <div data-testid="recent-projects">Recent Projects</div>,
 }));
 
 vi.mock('#/modules/Collaboration/presentations/views', () => ({
     CollaborationPanel: () => <div data-testid="collab-panel">Collaboration</div>,
+    PresenceOverlay: () => <div data-testid="presence-overlay">PresenceOverlay</div>,
 }));
 
 vi.mock('#/modules/CrdtDocument/presentations/views', () => ({

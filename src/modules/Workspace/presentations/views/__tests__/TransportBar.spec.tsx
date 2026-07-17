@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores';
-import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
+import { togglePlayback } from '#/modules/Transport/useCases';
 
 import { TransportBar } from '../TransportBar';
 
@@ -40,7 +40,8 @@ vi.mock('../../hooks/useTransportState', () => ({
     })),
 }));
 
-vi.mock('#/modules/Transport/useCases/transportControls/togglePlayback', () => ({
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     togglePlayback: vi.fn<typeof togglePlayback>(),
 }));
 

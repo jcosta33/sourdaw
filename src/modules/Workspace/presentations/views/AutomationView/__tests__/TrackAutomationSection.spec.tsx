@@ -71,19 +71,19 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({ lanes: [] })),
 }));
 
-vi.mock('#/modules/Automation/useCases/automationStore', () => ({
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
     automationStore: { value: { lanes: [] } },
 }));
 
-vi.mock('#/modules/Automation/useCases/automation/addAutomationLane', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     addAutomationLane: vi.fn(),
-}));
-
-vi.mock('#/modules/Automation/useCases/automation/toggleLaneCollapsed', () => ({
     toggleLaneCollapsed: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     setAutomationMode: vi.fn(),
 }));
 

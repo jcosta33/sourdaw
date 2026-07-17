@@ -16,62 +16,41 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
 }));
 
-vi.mock('#/modules/Arrangement/presentations/views/TimelineSurface', () => ({
-    TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/TimelineMinimap', () => ({
-    TimelineMinimap: () => <div data-testid="timeline-minimap">Timeline Minimap</div>,
-    MINIMAP_HEIGHT: 28,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/ArrangementBar', () => ({
-    ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
-    ARRANGEMENT_BAR_HEIGHT: 22,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/MarkerLane', () => ({
-    MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
-    MARKER_LANE_HEIGHT: 20,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/BeatRulerBar', () => ({
-    BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
-    BEAT_RULER_HEIGHT: 18,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/AdjustmentLayerStrip', () => ({
+vi.mock('#/modules/Arrangement/presentations/views', () => ({
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
     getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/TimelineChromeSurface', () => ({
+    TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
+    TimelineMinimap: () => <div data-testid="timeline-minimap">Timeline Minimap</div>,
+    MINIMAP_HEIGHT: 28,
+    ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
+    ARRANGEMENT_BAR_HEIGHT: 22,
+    MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
+    MARKER_LANE_HEIGHT: 20,
+    BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
+    BEAT_RULER_HEIGHT: 18,
     TimelineChromeSurface: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
         <div className={className}>{children}</div>
     ),
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/TrackListView', () => ({
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
     ),
 }));
 
-vi.mock('#/modules/Arrangement/stores/timelineViewStore', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     timelineViewStore: { value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true } },
     setScrollX: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
     markerStore: { value: { markers: [], sections: [] } },
 }));
 
-vi.mock('#/modules/MIDI/stores/chordTrackStore', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     chordTrackStore: { value: { enabled: false, events: [] } },
     defaultChordTrackState: { enabled: false, events: [] },
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { tempo: 120 } },
 }));
 

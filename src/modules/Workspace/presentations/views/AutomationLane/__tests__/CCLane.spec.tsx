@@ -30,7 +30,8 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { ccByClipId: {} } },
 }));
 
@@ -38,15 +39,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiEvent/addMidiCC', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     addMidiCC: vi.fn(() => ({ id: 'cc-1', controller: 1, value: 64, beat: 0 })),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiEvent/removeMidiCC', () => ({
     removeMidiCC: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiEvent/moveMidiCC', () => ({
     moveMidiCC: vi.fn(),
 }));
 
