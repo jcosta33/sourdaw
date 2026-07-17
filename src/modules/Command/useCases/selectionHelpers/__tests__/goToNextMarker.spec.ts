@@ -85,7 +85,7 @@ describe('goToNextMarker', () => {
             markers: [{ id: 'a', beat: 4, name: 'A', color: 'x' }],
             sections: [],
         });
-        mocks.getTransportState.mockReturnValue(undefined);
+        mocks.getTransportState.mockReturnValue(null);
 
         goToNextMarker();
 

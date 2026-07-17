@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
+import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { addTake } from '../addTake';
 import { addTakeLane } from '../addTakeLane';
 import { flattenComp } from '../flattenComp';
@@ -9,8 +9,12 @@ import { removeCompRegion } from '../removeCompRegion';
 import { selectTake } from '../selectTake';
 import { setCompRegion } from '../setCompRegion';
 
-const { pushUndoEntryMock } = vi.hoisted(() => ({
+const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
     pushUndoEntryMock: vi.fn(),
+    takeLaneStoreMock: {
+        value: null as TakeLaneStoreState | null,
+        set: vi.fn<(value: TakeLaneStoreState | null) => void>(),
+    },
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -18,7 +22,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
-    takeLaneStore: { value: null, set: vi.fn() },
+    takeLaneStore: takeLaneStoreMock,
 }));
 
 describe('comping undo entries', () => {
@@ -28,7 +32,7 @@ describe('comping undo entries', () => {
 
     it('addTake pushes undo with the take name', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [lane] };
         addTake('t1', 'clip-1', 'Take A', 0, 4);
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Add take: Take A');
@@ -36,13 +40,13 @@ describe('comping undo entries', () => {
 
     it('addTakeLane skips undo when the lane already exists', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [lane] };
         addTakeLane('t1');
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('addTakeLane pushes undo on creation', () => {
-        takeLaneStore.value = { lanes: [] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [] };
         addTakeLane('t1');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Add take lane');
@@ -51,7 +55,7 @@ describe('comping undo entries', () => {
     it('selectTake skips undo when the take is already selected', () => {
         const lane = createTakeLane('t1');
         const take = { id: 'tk', clipId: 'c', name: 'n', startBeat: 0, endBeat: 1, selected: true };
-        takeLaneStore.value = { lanes: [{ ...lane, takes: [take] }] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [take] }] };
         selectTake('t1', 'tk');
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
@@ -60,21 +64,21 @@ describe('comping undo entries', () => {
         const lane = createTakeLane('t1');
         const takeA = { id: 'a', clipId: 'c', name: 'A', startBeat: 0, endBeat: 1, selected: true };
         const takeB = { id: 'b', clipId: 'c', name: 'B', startBeat: 1, endBeat: 2, selected: false };
-        takeLaneStore.value = { lanes: [{ ...lane, takes: [takeA, takeB] }] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [takeA, takeB] }] };
         selectTake('t1', 'b');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Select take');
     });
 
     it('setCompRegion skips undo when no lane matches the track', () => {
-        takeLaneStore.value = { lanes: [] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [] };
         setCompRegion('missing', { startBeat: 0, endBeat: 4, takeId: 'x' });
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('setCompRegion pushes undo when region is applied', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [lane] };
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'x' });
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Set comp region');
@@ -82,7 +86,7 @@ describe('comping undo entries', () => {
 
     it('removeCompRegion skips undo when no matching region exists', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [lane] };
         removeCompRegion('t1', 0);
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
@@ -90,7 +94,7 @@ describe('comping undo entries', () => {
     it('removeCompRegion pushes undo when a region is removed', () => {
         const lane = createTakeLane('t1');
         const region = { startBeat: 0, endBeat: 4, takeId: 'x' };
-        takeLaneStore.value = { lanes: [{ ...lane, activeCompRegions: [region] }] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [{ ...lane, activeCompRegions: [region] }] };
         removeCompRegion('t1', 0);
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Remove comp region');
@@ -99,14 +103,14 @@ describe('comping undo entries', () => {
     it('flattenComp pushes a single undo entry covering the whole lane removal', () => {
         const laneA = createTakeLane('t1');
         const laneB = createTakeLane('t2');
-        takeLaneStore.value = { lanes: [laneA, laneB] } as TakeLaneStoreState;
+        takeLaneStoreMock.value = { lanes: [laneA, laneB] };
         flattenComp('t1');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Flatten comp');
 
         const [, undoFn] = pushUndoEntryMock.mock.calls[0]!;
         (undoFn as () => void)();
-        const restoredArgs = vi.mocked(takeLaneStore.set).mock.lastCall?.[0] as TakeLaneStoreState | undefined;
+        const restoredArgs = takeLaneStoreMock.set.mock.lastCall?.[0];
         expect(restoredArgs?.lanes).toHaveLength(2);
     });
 });

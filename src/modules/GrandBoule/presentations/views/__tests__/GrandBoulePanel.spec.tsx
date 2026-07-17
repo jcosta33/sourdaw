@@ -7,7 +7,7 @@ import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 const mockEventBus = {

@@ -2,12 +2,17 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { type Clip } from '../../models/Track';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
+
+const mocks = vi.hoisted(() => ({
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
+}));
 
 vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        value: null,
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -31,7 +36,7 @@ function testClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 
 describe('resolveClipsWithComping', () => {
     it('adds region bounds equal to clip bounds when lane store is empty', () => {
-        takeLaneStore.value = null;
+        mocks.takeLaneStoreValue.value = null;
 
         const clip = testClip({ id: 'a' });
         const out = resolveClipsWithComping('t1', [clip]);
@@ -42,7 +47,7 @@ describe('resolveClipsWithComping', () => {
     });
 
     it('adds region bounds equal to clip bounds when track has no lane', () => {
-        takeLaneStore.value = { lanes: [] } as TakeLaneStoreState;
+        mocks.takeLaneStoreValue.value = { lanes: [] };
 
         const clip = testClip({ id: 'b' });
         const out = resolveClipsWithComping('t1', [clip]);

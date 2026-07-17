@@ -48,8 +48,8 @@ describe('handleWebMidiCC', () => {
     });
 
     it('should complete MIDI learn and skip ordinary mapping while learning', () => {
-        const complete_midi_learn = vi.fn<void, [number, number]>();
-        const apply_midi_mappings = vi.fn<void, [number, number, number]>();
+        const complete_midi_learn = vi.fn<(channel: number, cc: number) => void>();
+        const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 getMidiLearnState: () => ({
@@ -72,7 +72,7 @@ describe('handleWebMidiCC', () => {
     });
 
     it('should dispatch ordinary CC values to MIDI learn mappings when not learning', () => {
-        const apply_midi_mappings = vi.fn<void, [number, number, number]>();
+        const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number) => void>();
         const fn = handleWebMidiCC._factory(
             make_dependencies({
                 applyMidiMappings: apply_midi_mappings,

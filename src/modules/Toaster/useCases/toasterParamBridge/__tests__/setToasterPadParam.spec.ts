@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 type DeviceRef = {
     trackId: string;
@@ -41,7 +41,7 @@ import { setToasterPadParam } from '../setToasterPadParam';
 
 describe('setToasterPadParam', () => {
     let rafCallbacks: FrameRequestCallback[];
-    let requestAnimationFrameSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'requestAnimationFrame'>>;
+    let requestAnimationFrameSpy: MockInstance<typeof requestAnimationFrame>;
     let setPadParam: ReturnType<typeof vi.fn<SetPadParam>>;
 
     function flushFrame(): void {

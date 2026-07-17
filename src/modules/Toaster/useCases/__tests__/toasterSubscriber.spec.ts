@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createMock } from '#/infra/di/testing/createMock';
+import { createMock, type MockObject } from '#/infra/di/testing/createMock';
 import { type Logger } from '#/infra/logger/types';
 
 vi.mock('../disposeToasterDevice', () => ({
@@ -24,17 +24,22 @@ import { createDefaultKit } from '../../models/ToasterKit';
 import { disposeToasterDevice } from '../disposeToasterDevice';
 import { initToasterSubscribers } from '../toasterSubscriber';
 
+type LifecyclePayload = { deviceId: string; deviceType: string };
+
 type EventBusShape = {
-    on: ReturnType<typeof vi.fn>;
+    on: (
+        event: 'audioDevice.loaded' | 'audioDevice.removed',
+        handler: (payload: LifecyclePayload) => void
+    ) => () => void;
 };
 
 /** Capture the handler the subscriber registered for a given event. */
-function handlerFor(eventBus: EventBusShape, event: string): (payload: unknown) => void {
+function handlerFor(eventBus: MockObject<EventBusShape>, event: string): (payload: LifecyclePayload) => void {
     const call = eventBus.on.mock.calls.find((c) => c[0] === event);
     if (!call) {
         throw new Error(`no subscription registered for ${event}`);
     }
-    return call[1] as (payload: unknown) => void;
+    return call[1];
 }
 
 describe('initToasterSubscribers', () => {
@@ -45,7 +50,7 @@ describe('initToasterSubscribers', () => {
 
     it('subscribes to audioDevice.loaded and audioDevice.removed', () => {
         const eventBus = createMock<EventBusShape>();
-        eventBus.on.mockReturnValue(vi.fn());
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
 
         initToasterSubscribers({
             eventBus,
@@ -58,8 +63,8 @@ describe('initToasterSubscribers', () => {
 
     it('returns a teardown that unsubscribes both subscriptions', () => {
         const eventBus = createMock<EventBusShape>();
-        const unsubLoaded = vi.fn();
-        const unsubRemoved = vi.fn();
+        const unsubLoaded = vi.fn<() => void>();
+        const unsubRemoved = vi.fn<() => void>();
         eventBus.on.mockReturnValueOnce(unsubLoaded).mockReturnValueOnce(unsubRemoved);
 
         const teardown = initToasterSubscribers({
@@ -78,7 +83,7 @@ describe('initToasterSubscribers', () => {
     // the Toaster useCases barrel directly (acyclic-boundary constraint).
     it('disposes the device on a toaster audioDevice.removed event', () => {
         const eventBus = createMock<EventBusShape>();
-        eventBus.on.mockReturnValue(vi.fn());
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
 
         initToasterSubscribers({
             eventBus,
@@ -92,7 +97,7 @@ describe('initToasterSubscribers', () => {
 
     it('ignores a non-toaster audioDevice.removed event', () => {
         const eventBus = createMock<EventBusShape>();
-        eventBus.on.mockReturnValue(vi.fn());
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
 
         initToasterSubscribers({
             eventBus,
@@ -112,7 +117,7 @@ describe('initToasterSubscribers', () => {
         hydrationMocks.toasterStore.value = { 'toast-1': { kit } };
 
         const eventBus = createMock<EventBusShape>();
-        eventBus.on.mockReturnValue(vi.fn());
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
         initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),
@@ -132,7 +137,7 @@ describe('initToasterSubscribers', () => {
         hydrationMocks.toasterStore.value = { 'toast-1': { kit: createDefaultKit() } };
 
         const eventBus = createMock<EventBusShape>();
-        eventBus.on.mockReturnValue(vi.fn());
+        eventBus.on.mockReturnValue(vi.fn<() => void>());
         initToasterSubscribers({
             eventBus,
             logger: createMock<Logger>(),

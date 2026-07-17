@@ -1,6 +1,7 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type CrdtPersistenceSnapshot } from '../../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { PERSISTENCE_AUTHORITY_KEY } from '../../repositories/crdtPersistence/persistenceAuthorityModel';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 
@@ -36,11 +37,6 @@ type ConflictAttempt = {
     unexpectedWrites: readonly import('../../testing/transactionalPersistence').TransactionWrite[];
 };
 
-type LoadedPersistenceSnapshot = {
-    authority: { epoch: string; revision: number; rootLineage: string };
-    bundle: Map<string, Uint8Array>;
-};
-
 async function importContext(): Promise<PersistenceContext> {
     vi.resetModules();
     const [operationQueue, loadQueue, repository, snapshot] = await Promise.all([
@@ -64,11 +60,15 @@ async function loadContextSnapshot({
     snapshot,
 }: {
     context: PersistenceContext;
-    snapshot: LoadedPersistenceSnapshot;
+    snapshot: CrdtPersistenceSnapshot;
 }): Promise<void> {
+    const bundle = snapshot.bundle;
+    if (!bundle) {
+        throw new Error('Expected a snapshot bundle to load');
+    }
     const loaded = await context.queue.runCrdtPersistenceLoad(async ({ shouldCommit }) => {
         const committed = await context.repository.automergeRepository.loadAll({
-            bundle: snapshot.bundle,
+            bundle,
             shouldCommit,
         });
         return { loaded: committed, snapshot };

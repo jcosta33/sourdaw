@@ -22,7 +22,11 @@ describe('soloTrack', () => {
         soloTrack('t1', true);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const call = mocks.updateTrack.mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateTrack to be called');
+        }
+        const updater = call[1];
         expect(updater({ soloed: false })).toEqual({ soloed: true });
 
         expect(mocks.applySoloLogic).toHaveBeenCalledTimes(1);

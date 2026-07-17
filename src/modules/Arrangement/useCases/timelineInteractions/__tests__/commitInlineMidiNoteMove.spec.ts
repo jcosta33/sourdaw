@@ -43,10 +43,14 @@ describe('commitInlineMidiNoteMove', () => {
             originalNotes[1],
         ]);
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-        expect(mocks.pushUndoEntry.mock.calls[0][0]).toBe('Move MIDI note');
+        const pushCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!pushCall) {
+            throw new Error('expected pushUndoEntry to have been called');
+        }
+        expect(pushCall[0]).toBe('Move MIDI note');
 
-        const undo = mocks.pushUndoEntry.mock.calls[0][1];
-        const redo = mocks.pushUndoEntry.mock.calls[0][2];
+        const undo = pushCall[1];
+        const redo = pushCall[2];
         undo();
         redo();
 

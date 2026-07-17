@@ -16,12 +16,12 @@ describe('handlePasteClip', () => {
     });
 
     it('executes pasteClip', () => {
-        void handlePasteClip.execute({ type: 'pasteClip', payload: {} });
+        void handlePasteClip.execute({ type: 'pasteClip' });
         expect(mocks.pasteClip).toHaveBeenCalledTimes(1);
     });
 
     it('provides a description', () => {
-        const desc = handlePasteClip.describe({ type: 'pasteClip', payload: {} });
+        const desc = handlePasteClip.describe({ type: 'pasteClip' });
         expect(desc.label).toBe('Paste clip');
     });
 

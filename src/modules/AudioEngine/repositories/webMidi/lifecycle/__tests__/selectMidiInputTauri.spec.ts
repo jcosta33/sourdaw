@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getTauriEventUnlistenMock = vi.hoisted(() => vi.fn<(() => void) | null, []>());
-const setTauriEventUnlistenMock = vi.hoisted(() => vi.fn<void, [(() => void) | null]>());
-const tauriInvokeMock = vi.hoisted(() => vi.fn<Promise<unknown>, [string, Record<string, unknown>?]>());
-const tauriListenMock = vi.hoisted(() => vi.fn<Promise<() => void>, [string, (event: unknown) => void]>());
+const getTauriEventUnlistenMock = vi.hoisted(() => vi.fn<() => (() => void) | null>());
+const setTauriEventUnlistenMock = vi.hoisted(() => vi.fn<(unlisten: (() => void) | null) => void>());
+const tauriInvokeMock = vi.hoisted(() =>
+    vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>()
+);
+const tauriListenMock = vi.hoisted(() =>
+    vi.fn<(event: string, handler: (event: unknown) => void) => Promise<() => void>>()
+);
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: () => true,
@@ -33,7 +37,7 @@ describe('selectMidiInputTauri', () => {
 
     it('should close any previous Tauri listener before opening the selected MIDI input', async () => {
         const previousUnlisten = vi.fn();
-        const onMidiMessageMock = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
         getTauriEventUnlistenMock.mockReturnValue(previousUnlisten);
 
         await selectMidiInputTauri({ portIndex: 2, onMidiMessage: onMidiMessageMock });
@@ -46,7 +50,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('should forward valid Tauri MIDI message bytes to the MIDI handler', async () => {
-        const onMidiMessageMock = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
 
@@ -58,7 +62,7 @@ describe('selectMidiInputTauri', () => {
     });
 
     it('should not forward malformed Tauri MIDI message payloads', async () => {
-        const onMidiMessageMock = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessageMock = vi.fn<(event: MIDIMessageEvent) => void>();
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: onMidiMessageMock });
 
@@ -73,8 +77,8 @@ describe('selectMidiInputTauri', () => {
 
     it('should register a new native listener callback after unlistening the previous one', async () => {
         const previousUnlisten = vi.fn();
-        const firstCallback = vi.fn<void, [MIDIMessageEvent]>();
-        const secondCallback = vi.fn<void, [MIDIMessageEvent]>();
+        const firstCallback = vi.fn<(event: MIDIMessageEvent) => void>();
+        const secondCallback = vi.fn<(event: MIDIMessageEvent) => void>();
         getTauriEventUnlistenMock.mockReturnValueOnce(null).mockReturnValueOnce(previousUnlisten);
 
         await selectMidiInputTauri({ portIndex: 1, onMidiMessage: firstCallback });

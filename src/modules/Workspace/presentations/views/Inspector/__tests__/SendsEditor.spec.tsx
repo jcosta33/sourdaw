@@ -19,7 +19,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-const mockUseTracks = vi.fn(() => ({ tracks: [] }));
+const mockUseTracks = vi.fn((): { tracks: Track[] } => ({ tracks: [] }));
 vi.mock('../../../hooks/useTracks', () => ({
     useTracks: () => mockUseTracks(),
 }));
@@ -99,8 +99,10 @@ describe('SendsEditor', () => {
         color: '#ff0000',
         clips: [],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',

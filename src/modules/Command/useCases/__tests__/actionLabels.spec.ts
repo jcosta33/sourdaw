@@ -76,12 +76,14 @@ describe('actionLabels', () => {
     });
 
     it('should include payload kind when no name branch matches', () => {
-        expect(
-            describeAction({
-                type: 'togglePlayback',
-                payload: { kind: 'aux' },
-            } as AppAction)
-        ).toBe('Play/pause (aux)');
+        // Off-contract payload: no AppAction member pairs `kind` without `name`,
+        // but persisted/legacy actions can carry drifted payload shapes, and the
+        // kind branch must still render them.
+        const offContractAction: { type: AppAction['type']; payload?: unknown } = {
+            type: 'togglePlayback',
+            payload: { kind: 'aux' },
+        };
+        expect(describeAction(offContractAction as AppAction)).toBe('Play/pause (aux)');
     });
 
     it('should append tool for setEditingTool', () => {

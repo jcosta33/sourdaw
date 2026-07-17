@@ -7,7 +7,7 @@ import { ProofChamberPanel } from '../ProofChamberPanel';
 
 // Mock dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({

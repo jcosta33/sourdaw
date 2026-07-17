@@ -196,10 +196,14 @@ describe('createNoiseBurst', () => {
         });
 
         expect(context.buffers).toHaveLength(1);
-        expect(context.buffers[0].numberOfChannels).toBe(1);
-        expect(context.buffers[0].length).toBe(3);
-        expect(context.buffers[0].sampleRate).toBe(44_100);
-        expect([...context.buffers[0].data]).toEqual([-1, -0.5, 1]);
+        const buffer = context.buffers[0];
+        if (!buffer) {
+            throw new Error('expected a created noise buffer');
+        }
+        expect(buffer.numberOfChannels).toBe(1);
+        expect(buffer.length).toBe(3);
+        expect(buffer.sampleRate).toBe(44_100);
+        expect([...buffer.data]).toEqual([-1, -0.5, 1]);
     });
 
     it('should route noise through filter and gain envelope with scheduled start and stop', () => {
@@ -220,11 +224,17 @@ describe('createNoiseBurst', () => {
             { from: 'filter-1', to: 'gain-1' },
             { from: 'gain-1', to: 'destination' },
         ]);
-        expect(context.filters[0].type).toBe('highpass');
-        expect(context.filters[0].frequency.value).toBe(2000);
-        expect(context.gains[0].gain.set_value_calls).toEqual([{ value: 0.6, time: 0.25 }]);
-        expect(context.gains[0].gain.ramp_calls).toEqual([{ value: 0.001, time: 0.4 }]);
-        expect(context.buffer_sources[0].start_times).toEqual([0.25]);
-        expect(context.buffer_sources[0].stop_times).toEqual([0.5]);
+        const filter = context.filters[0];
+        const gain = context.gains[0];
+        const source = context.buffer_sources[0];
+        if (!filter || !gain || !source) {
+            throw new Error('expected a filter, gain, and buffer source to be created');
+        }
+        expect(filter.type).toBe('highpass');
+        expect(filter.frequency.value).toBe(2000);
+        expect(gain.gain.set_value_calls).toEqual([{ value: 0.6, time: 0.25 }]);
+        expect(gain.gain.ramp_calls).toEqual([{ value: 0.001, time: 0.4 }]);
+        expect(source.start_times).toEqual([0.25]);
+        expect(source.stop_times).toEqual([0.5]);
     });
 });

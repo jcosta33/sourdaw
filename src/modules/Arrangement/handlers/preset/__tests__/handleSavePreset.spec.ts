@@ -57,7 +57,10 @@ describe('handleSavePreset', () => {
 
     it('provides a description reflecting the track name', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', name: 'Lead' }] });
-        const desc = handleSavePreset.describe({ type: 'savePreset', payload: { trackId: 't1', name: 'P' } });
+        const desc = handleSavePreset.describe({
+            type: 'savePreset',
+            payload: { trackId: 't1', name: 'P', category: 'Synth' },
+        });
         expect(desc.label).toBe('Save preset "P" from Lead');
     });
 

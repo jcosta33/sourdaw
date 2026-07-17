@@ -72,8 +72,12 @@ describe('deviceLayoutRegistry', () => {
             ] as DeviceLayoutProps['parameters'];
             const filtered = filterParams(params, ['gain', 'volume']);
             expect(filtered).toHaveLength(2);
-            expect(filtered[0].id).toBe('gain');
-            expect(filtered[1].id).toBe('volume');
+            const [firstParam, secondParam] = filtered;
+            if (!firstParam || !secondParam) {
+                throw new Error('expected two filtered params');
+            }
+            expect(firstParam.id).toBe('gain');
+            expect(secondParam.id).toBe('volume');
         });
 
         it('should return empty array when no IDs match', () => {

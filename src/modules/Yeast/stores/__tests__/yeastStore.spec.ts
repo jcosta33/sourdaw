@@ -45,7 +45,7 @@ describe('yeastStore', () => {
             uiLevel: 1,
         });
 
-        expect(yeastStore.value.processors[0]).toEqual({
+        expect(yeastStore.value?.processors[0]).toEqual({
             id: 'arp-1',
             type: 'arpeggiator',
             name: 'Arpeggiator',

@@ -31,7 +31,11 @@ describe('setLayerInsertionIndex', () => {
 
         setLayerInsertionIndex('l2', -3);
 
-        const layers = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers;
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const layers = setCall[0].layers;
         expect(layers[1].insertionIndex).toBe(0);
     });
 
@@ -42,6 +46,10 @@ describe('setLayerInsertionIndex', () => {
 
         setLayerInsertionIndex('l1', 2.9);
 
-        expect(mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].insertionIndex).toBe(2);
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        expect(setCall[0].layers[0].insertionIndex).toBe(2);
     });
 });

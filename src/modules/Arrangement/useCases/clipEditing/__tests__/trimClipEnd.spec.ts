@@ -19,7 +19,11 @@ describe('trimClipEnd', () => {
         trimClipEnd('c1', 15);
 
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
-        const updater = mocks.updateClip.mock.calls[0][1];
+        const updateCall = mocks.updateClip.mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateClip to have been called');
+        }
+        const updater = updateCall[1];
 
         const mockClip = { startBeat: 10, endBeat: 12 };
         const result = updater(mockClip);
@@ -29,7 +33,11 @@ describe('trimClipEnd', () => {
 
     it('ignores if new end is before startBeat', () => {
         trimClipEnd('c1', 5);
-        const updater = mocks.updateClip.mock.calls[0][1];
+        const updateCall = mocks.updateClip.mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateClip to have been called');
+        }
+        const updater = updateCall[1];
         const mockClip = { startBeat: 10, endBeat: 12 };
         const result = updater(mockClip);
 

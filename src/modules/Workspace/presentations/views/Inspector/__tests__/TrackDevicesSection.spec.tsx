@@ -63,7 +63,7 @@ vi.mock('#/modules/Workspace/useCases/panels/devicePanels/showDevicePanelForType
     },
 }));
 
-const mockUseStore = vi.fn(() => ({ scannedPlugins: [] }));
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown) => ({ scannedPlugins: [] }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
@@ -163,8 +163,10 @@ describe('TrackDevicesSection', () => {
         color: '#ff0000',
         clips: [],
         devices: mockDevices,
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',
@@ -211,7 +213,11 @@ describe('TrackDevicesSection', () => {
     it('should call onSelectDevice when device is clicked', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const choiceCards = screen.getAllByTestId('choice-card');
-        fireEvent.click(choiceCards[0]);
+        const firstCard = choiceCards[0];
+        if (!firstCard) {
+            throw new Error('expected a choice card');
+        }
+        fireEvent.click(firstCard);
         expect(mockOnSelectDevice).toHaveBeenCalledWith('device-1');
     });
 
@@ -260,6 +266,10 @@ describe('TrackDevicesSection', () => {
     it('should apply opacity to bypassed devices', () => {
         render(<TrackDevicesSection track={mockTrack} onSelectDevice={mockOnSelectDevice} />);
         const choiceCards = screen.getAllByTestId('choice-card');
-        expect(choiceCards[1].className).toContain('opacity-50');
+        const bypassedCard = choiceCards[1];
+        if (!bypassedCard) {
+            throw new Error('expected a bypassed choice card');
+        }
+        expect(bypassedCard.className).toContain('opacity-50');
     });
 });

@@ -4,11 +4,13 @@ import { type LoopStationState } from '../../../stores/loopStationStore';
 import { loopStationStore } from '../../../stores/loopStationStore';
 import { undoLastLayer } from '../undoLastLayer';
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: {
-        value: null as import('../../../stores/loopStationStore').LoopStationState | null,
-        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
-    },
+    loopStationStore: loopStationStoreMock,
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -28,7 +30,7 @@ describe('undoLastLayer', () => {
     });
 
     it('drops last layer and clears slot when no layers remain', () => {
-        loopStationStore.value = {
+        loopStationStoreMock.value = {
             ...emptyLoopState(),
             slots: [
                 {

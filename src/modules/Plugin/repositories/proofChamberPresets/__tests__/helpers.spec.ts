@@ -88,7 +88,11 @@ describe('user preset callers tolerate a non-array stored value', () => {
 
         const stored = getUserPresets();
         expect(stored).toHaveLength(1);
-        expect(stored[0].name).toBe('Mine');
+        const first = stored[0];
+        if (!first) {
+            throw new Error('expected one stored preset');
+        }
+        expect(first.name).toBe('Mine');
     });
 
     it('saveUserPreset should append to sanitized stored presets', () => {
@@ -101,8 +105,12 @@ describe('user preset callers tolerate a non-array stored value', () => {
 
         const stored = getUserPresets();
         expect(stored).toHaveLength(1);
-        expect(stored[0].name).toBe('Mine');
-        expect(stored[0].params).toEqual(DEFAULT_PARAMS);
+        const first = stored[0];
+        if (!first) {
+            throw new Error('expected one stored preset');
+        }
+        expect(first.name).toBe('Mine');
+        expect(first.params).toEqual(DEFAULT_PARAMS);
     });
 
     it('deleteUserPreset should not throw when storage holds a non-array object', () => {

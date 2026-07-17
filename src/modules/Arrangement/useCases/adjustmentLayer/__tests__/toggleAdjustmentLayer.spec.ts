@@ -27,12 +27,20 @@ describe('toggleAdjustmentLayer', () => {
         };
 
         toggleAdjustmentLayer('l1');
-        expect(mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].enabled).toBe(false);
+        const firstCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected first adjustmentLayerStore.set call');
+        }
+        expect(firstCall[0].layers[0]?.enabled).toBe(false);
 
         mocks.adjustmentLayerStoreValue.value = {
             layers: [{ id: 'l1', enabled: false } as Partial<AdjustmentLayer> as AdjustmentLayer],
         };
         toggleAdjustmentLayer('l1');
-        expect(mocks.adjustmentLayerStoreSet.mock.calls[1][0].layers[0].enabled).toBe(true);
+        const secondCall = mocks.adjustmentLayerStoreSet.mock.calls[1];
+        if (!secondCall) {
+            throw new Error('expected second adjustmentLayerStore.set call');
+        }
+        expect(secondCall[0].layers[0]?.enabled).toBe(true);
     });
 });

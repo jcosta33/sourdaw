@@ -5,7 +5,7 @@ import { getRemainingDuration } from '../getRemainingDuration';
 
 const mockSetlistStore = vi.hoisted(() => ({
     value: null as SetlistState | null,
-    set: vi.fn<[state: SetlistState | ((prev: SetlistState) => SetlistState)], void>(),
+    set: vi.fn<(state: SetlistState | ((prev: SetlistState) => SetlistState)) => void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({

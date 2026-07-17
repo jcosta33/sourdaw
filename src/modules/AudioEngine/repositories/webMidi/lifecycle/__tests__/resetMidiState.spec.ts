@@ -7,9 +7,10 @@ import { createWebMidiNoteKey, type ActiveNoteData, type WebMidiNoteKey } from '
 // the hardware all-notes-off send (getMidiAccess/getActiveInput → null).
 // Mock specifiers resolve from this test file: `../state` is `../../state`,
 // `../../createWebAudioEngine` is `../../../createWebAudioEngine`.
-const { activeNotes, channelToNote } = vi.hoisted(() => ({
+const { activeNotes, channelToNote, get_track_strip } = vi.hoisted(() => ({
     activeNotes: new Map<WebMidiNoteKey, ActiveNoteData>(),
     channelToNote: new Map<number, WebMidiNoteKey>(),
+    get_track_strip: vi.fn(),
 }));
 
 vi.mock('../../state', () => ({
@@ -28,12 +29,11 @@ vi.mock('../../getActiveInput', () => ({
 vi.mock('../../../createWebAudioEngine', () => ({
     audioEngine: {
         context: { currentTime: 5 },
-        getTrackStrip: vi.fn(),
+        getTrackStrip: get_track_strip,
     },
 }));
 
 const { resetMidiState } = await import('../resetMidiState');
-const { audioEngine } = await import('../../../createWebAudioEngine');
 
 function makeOscWithEnv() {
     const setTargetAtTime = vi.fn();
@@ -95,9 +95,9 @@ describe('resetMidiState — smooth release on active notes', () => {
     });
 
     it('releases each stored Toaster route exactly once before clearing it', () => {
-        const noteOffA = vi.fn<void, [number]>();
-        const noteOffB = vi.fn<void, [number]>();
-        vi.mocked(audioEngine.getTrackStrip).mockImplementation((trackId: string) => ({
+        const noteOffA = vi.fn<(pad: number) => void>();
+        const noteOffB = vi.fn<(pad: number) => void>();
+        get_track_strip.mockImplementation((trackId: string) => ({
             deviceNodes:
                 trackId === 'parent-a'
                     ? [{ deviceId: 'toaster-a', toasterControls: { noteOff: noteOffA } }]

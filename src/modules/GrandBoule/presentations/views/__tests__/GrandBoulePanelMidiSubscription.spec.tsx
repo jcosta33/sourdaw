@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Container } from '#/infra/di/Container';
 
 import { createGrandBouleStore, resetGrandBouleStores } from '../../../stores/grandBouleStore';
-import { setGrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
+import { setGrandBouleEventBus, type GrandBouleEventBus } from '../../../useCases/grandBouleEventBus';
 import { GrandBoulePanel } from '../GrandBoulePanel';
 
 // Render with the typed default so the panel mounts (and its subscription
@@ -24,21 +24,47 @@ vi.mock('#/infra/store/useStore', () => ({
  *     re-keyed panel writes the new device's store, not the stale one.
  */
 
-type TestHandler = (payload: unknown) => void | Promise<void>;
+type TestBusEvents = {
+    'track.added': import('#/modules/Arrangement/events').TrackAddedPayload;
+    'midi.noteOn': import('#/modules/Workspace/events').MidiNoteOnPayload;
+    'midi.noteOff': import('#/modules/Workspace/events').MidiNoteOffPayload;
+    'midi.pedalCc': import('#/modules/Workspace/events').MidiPedalCcPayload;
+};
 
-const handlers = new Map<string, Set<TestHandler>>();
-const testEventBus = {
-    emit: async (event: string, payload: unknown): Promise<void> => {
-        const eventHandlers = handlers.get(event);
-        if (eventHandlers === undefined) {
-            return;
-        }
+type TestBusHandler<TEventName extends keyof TestBusEvents> = (
+    payload: TestBusEvents[TEventName]
+) => void | Promise<void>;
+
+type TestBusHandlerSets = {
+    [K in keyof TestBusEvents]: Set<TestBusHandler<K>>;
+};
+
+function createHandlerSets(): TestBusHandlerSets {
+    return {
+        'track.added': new Set<TestBusHandler<'track.added'>>(),
+        'midi.noteOn': new Set<TestBusHandler<'midi.noteOn'>>(),
+        'midi.noteOff': new Set<TestBusHandler<'midi.noteOff'>>(),
+        'midi.pedalCc': new Set<TestBusHandler<'midi.pedalCc'>>(),
+    };
+}
+
+let handlers = createHandlerSets();
+
+function clearHandlers(): void {
+    handlers = createHandlerSets();
+}
+
+const testEventBus: GrandBouleEventBus = {
+    async emit<TEventName extends keyof TestBusEvents>(
+        event: TEventName,
+        payload: TestBusEvents[TEventName]
+    ): Promise<void> {
+        const eventHandlers = handlers[event];
         await Promise.all([...eventHandlers].map((handler) => Promise.resolve(handler(payload))));
     },
-    on: (event: string, handler: TestHandler): (() => void) => {
-        const eventHandlers = handlers.get(event) ?? new Set<TestHandler>();
+    on<TEventName extends keyof TestBusEvents>(event: TEventName, handler: TestBusHandler<TEventName>): () => void {
+        const eventHandlers = handlers[event];
         eventHandlers.add(handler);
-        handlers.set(event, eventHandlers);
         return () => {
             eventHandlers.delete(handler);
         };
@@ -48,7 +74,7 @@ const testEventBus = {
 describe('GrandBoulePanel MIDI pedal subscription', () => {
     beforeEach(() => {
         Container.clear();
-        handlers.clear();
+        clearHandlers();
         setGrandBouleEventBus(testEventBus);
         resetGrandBouleStores();
     });

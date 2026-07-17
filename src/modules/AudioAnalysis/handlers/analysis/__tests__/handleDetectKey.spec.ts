@@ -2,11 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleDetectKey } from '../handleDetectKey';
 
-const mocks = vi.hoisted(() => ({
-    detectKey: vi.fn(),
-    trackStore: { value: { tracks: [] } },
-    notifyUser: vi.fn(),
-}));
+type TestTrackState = {
+    tracks: Array<{ clips: Array<{ id: string; audioBufferId?: string }> }>;
+};
+
+const mocks = vi.hoisted(() => {
+    const trackStore: { value: TestTrackState } = { value: { tracks: [] } };
+    return {
+        detectKey: vi.fn(),
+        trackStore,
+        notifyUser: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,

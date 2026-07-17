@@ -29,6 +29,23 @@ vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
     },
 }));
 
+function make_media_stream_source(disconnect: () => void = vi.fn()): MediaStreamAudioSourceNode {
+    return {
+        context: {} as BaseAudioContext,
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        channelCount: 2,
+        channelCountMode: 'max',
+        channelInterpretation: 'speakers',
+        connect: vi.fn(),
+        disconnect,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true),
+        mediaStream: {} as MediaStream,
+    };
+}
+
 describe('startAudioRecording', () => {
     beforeEach(() => {
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
@@ -64,10 +81,7 @@ describe('startAudioRecording', () => {
             },
             configurable: true,
         });
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue({
-            connect: vi.fn(),
-            disconnect: vi.fn(),
-        } as MediaStreamAudioSourceNode);
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(make_media_stream_source());
         vi.stubGlobal('SharedArrayBuffer', ArrayBuffer);
         vi.stubGlobal(
             'Worker',

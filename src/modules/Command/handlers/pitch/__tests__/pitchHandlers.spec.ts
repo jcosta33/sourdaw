@@ -16,6 +16,24 @@ const contour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyi
 describe('Command Pitch Handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Clip has no declared `fileId`, but pitch handlers read it as a legacy extra
+        // property (see findPitchEditClip). Build the clip as a standalone value so the
+        // extra property survives without tripping excess-property checks.
+        const pitchClip = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Clip 1',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ff0000',
+            locked: false,
+            muted: false,
+            fileId: 'orig.wav',
+        };
         trackStore.set({
             tracks: [
                 {
@@ -28,23 +46,7 @@ describe('Command Pitch Handlers', () => {
                     gain: 0.8,
                     pan: 0,
                     color: '#ff0000',
-                    clips: [
-                        {
-                            id: 'c1',
-                            trackId: 't1',
-                            name: 'Clip 1',
-                            startBeat: 0,
-                            endBeat: 4,
-                            type: 'audio',
-                            fadeInBeats: 0,
-                            fadeOutBeats: 0,
-                            gain: 1,
-                            color: '#ff0000',
-                            locked: false,
-                            muted: false,
-                            fileId: 'orig.wav',
-                        },
-                    ],
+                    clips: [pitchClip],
                     devices: [],
                     sends: [],
                     midiFx: [],

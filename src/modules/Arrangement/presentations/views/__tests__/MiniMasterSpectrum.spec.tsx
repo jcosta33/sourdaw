@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { normalizeTrack } from '../../../models/Track';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
 import { MiniMasterSpectrum } from '../MiniMasterSpectrum';
@@ -38,7 +39,7 @@ describe('MiniMasterSpectrum', () => {
         // Reset mock to default state
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
-            tracks: [{ id: 'master', kind: 'master' }],
+            tracks: [normalizeTrack({ id: 'master', name: 'Master', kind: 'master' })],
             selectedTrackId: 'master',
         });
     });
@@ -51,7 +52,7 @@ describe('MiniMasterSpectrum', () => {
     it('should render null when no master track', () => {
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
-            tracks: [{ id: 'audio1', kind: 'audio' }],
+            tracks: [normalizeTrack({ id: 'audio1', name: 'Audio 1', kind: 'audio' })],
             selectedTrackId: null,
         });
         const { container } = renderWithTooltip(<MiniMasterSpectrum />);

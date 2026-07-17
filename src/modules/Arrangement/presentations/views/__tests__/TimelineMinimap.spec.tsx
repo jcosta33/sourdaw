@@ -16,7 +16,7 @@ const transportStoreMock = vi.hoisted(() => ({
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -123,7 +123,11 @@ describe('TimelineMinimap', () => {
         fireEvent.mouseDown(slider, { button: 0, clientX: 100 });
 
         expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
-        const [[scrollX]] = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls;
+        const firstScrollCall = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls[0];
+        if (!firstScrollCall) {
+            throw new Error('expected setTimelineMinimapScrollX to have been called');
+        }
+        const [scrollX] = firstScrollCall;
         expect(scrollX).toBeCloseTo(284, 6);
     });
 
@@ -136,7 +140,11 @@ describe('TimelineMinimap', () => {
         fireEvent.mouseMove(document, { clientX: 100 });
 
         expect(timelineMinimapUseCaseMocks.setTimelineMinimapScrollX).toHaveBeenCalledTimes(1);
-        const [[scrollX]] = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls;
+        const firstScrollCall = timelineMinimapUseCaseMocks.setTimelineMinimapScrollX.mock.calls[0];
+        if (!firstScrollCall) {
+            throw new Error('expected setTimelineMinimapScrollX to have been called');
+        }
+        const [scrollX] = firstScrollCall;
         expect(scrollX).toBeCloseTo(345.6, 6);
     });
 

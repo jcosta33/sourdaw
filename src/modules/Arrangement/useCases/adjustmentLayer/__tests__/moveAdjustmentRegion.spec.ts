@@ -36,7 +36,11 @@ describe('moveAdjustmentRegion', () => {
 
         moveAdjustmentRegion('r2', -5, 9);
 
-        const regions = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].regions;
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const regions = setCall[0].layers[0].regions;
         const r2 = regions.find((r: { id: string }) => r.id === 'r2');
         const r1 = regions.find((r: { id: string }) => r.id === 'r1');
         expect(r2).toMatchObject({ startBeat: 0, endBeat: 9 });
@@ -52,7 +56,11 @@ describe('moveAdjustmentRegion', () => {
 
         moveAdjustmentRegion('missing', 1, 2);
 
-        const regions = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].regions;
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const regions = setCall[0].layers[0].regions;
         expect(regions).toEqual([{ id: 'r1', startBeat: 0, endBeat: 4 }]);
     });
 });

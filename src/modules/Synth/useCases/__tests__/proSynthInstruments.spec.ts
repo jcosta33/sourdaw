@@ -26,6 +26,9 @@ describe('registerProSynthInstruments', () => {
             const [, dsp, params] = call;
             expect(typeof dsp).toBe('string');
             expect(dsp.length).toBeGreaterThan(0);
+            if (!params) {
+                throw new Error('Expected params to be provided for every pro instrument');
+            }
             expect(Array.isArray(params)).toBe(true);
             expect(params.length).toBeGreaterThan(0);
         }

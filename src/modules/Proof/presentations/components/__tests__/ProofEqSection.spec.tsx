@@ -16,6 +16,14 @@ describe('ProofEqSection', () => {
         const names = screen.getAllByRole('slider').map((control) => control.getAttribute('aria-label'));
 
         expect(names).toEqual([
+            'EQ band 1 high pass',
+            'EQ band 2 low shelf',
+            'EQ band 3 peak',
+            'EQ band 4 peak',
+            'EQ band 5 peak',
+            'EQ band 6 peak',
+            'EQ band 7 high shelf',
+            'EQ band 8 low pass',
             'EQ Low Cut frequency',
             'EQ Low Cut gain',
             'EQ Low Cut Q',

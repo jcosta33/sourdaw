@@ -25,7 +25,11 @@ describe('setInputMonitoring', () => {
         setInputMonitoring('t1', 'on');
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const call = mocks.updateTrack.mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateTrack to be called');
+        }
+        const updater = call[1];
         expect(updater({ inputMonitoring: 'off' })).toEqual({ inputMonitoring: 'on' });
 
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');

@@ -4,11 +4,13 @@ import { type LoopStationState } from '../../../stores/loopStationStore';
 import { loopStationStore } from '../../../stores/loopStationStore';
 import { toggleRecord } from '../toggleRecord';
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: {
-        value: null,
-        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
-    },
+    loopStationStore: loopStationStoreMock,
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -28,7 +30,7 @@ describe('toggleRecord', () => {
     });
 
     it('advances empty slot to recording', () => {
-        loopStationStore.value = {
+        loopStationStoreMock.value = {
             ...emptyLoopState(),
             slots: [
                 {

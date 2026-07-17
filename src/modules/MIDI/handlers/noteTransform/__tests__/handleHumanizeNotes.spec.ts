@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { handleHumanizeNotes } from '../handleHumanizeNotes';
 
+type HumanizeNotesAction = Parameters<typeof handleHumanizeNotes.execute>[0];
+
 function note(id: string) {
     return {
         id,
@@ -32,8 +34,8 @@ describe('handleHumanizeNotes — deterministic undo/redo (item #2)', () => {
     beforeEach(seedStore);
 
     it('captures the RNG seed into the action payload on first execute', () => {
-        const action = {
-            type: 'humanizeNotes' as const,
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
             payload: { clipId: 'clip1', amount: 0.5 },
         };
 
@@ -45,8 +47,8 @@ describe('handleHumanizeNotes — deterministic undo/redo (item #2)', () => {
     });
 
     it('reproduces identical offsets when the same action object is replayed (redo)', () => {
-        const action = {
-            type: 'humanizeNotes' as const,
+        const action: HumanizeNotesAction = {
+            type: 'humanizeNotes',
             payload: { clipId: 'clip1', amount: 0.5 },
         };
 
@@ -77,12 +79,12 @@ describe('handleHumanizeNotes — deterministic undo/redo (item #2)', () => {
         // Two independent first-executes (no captured seed) should almost always
         // diverge — this guards against the regression where the handler pinned
         // a constant seed and made every humanize identical.
-        const actionA = { type: 'humanizeNotes' as const, payload: { clipId: 'clip1', amount: 0.5 } };
+        const actionA: HumanizeNotesAction = { type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.5 } };
         void handleHumanizeNotes.execute(actionA);
         const resultA = snapshot();
 
         seedStore();
-        const actionB = { type: 'humanizeNotes' as const, payload: { clipId: 'clip1', amount: 0.5 } };
+        const actionB: HumanizeNotesAction = { type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.5 } };
         void handleHumanizeNotes.execute(actionB);
         const resultB = snapshot();
 

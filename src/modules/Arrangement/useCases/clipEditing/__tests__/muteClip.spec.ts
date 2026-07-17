@@ -15,7 +15,11 @@ describe('muteClip', () => {
 
     it('sets muted status', () => {
         muteClip('c1', true);
-        const updater = mocks.updateClip.mock.calls[0][1];
+        const call = mocks.updateClip.mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateClip to be called');
+        }
+        const updater = call[1];
         expect(updater({ muted: false })).toEqual({ muted: true });
     });
 });

@@ -46,7 +46,7 @@ describe('replaceAutomationLanePoints', () => {
     });
 
     it('replaces only the target lane points', () => {
-        const points = [{ beat: 4, value: 0.25, curve: 'linear', tension: 0 }];
+        const points: AutomationPoint[] = [{ beat: 4, value: 0.25, curve: 'linear', tension: 0 }];
 
         replaceAutomationLanePoints({ laneId: 'lane-a', points });
 
@@ -55,7 +55,7 @@ describe('replaceAutomationLanePoints', () => {
     });
 
     it('clones incoming points before storing them', () => {
-        const points = [{ beat: 4, value: 0.25, curve: 'linear', tension: 0 }];
+        const points: AutomationPoint[] = [{ beat: 4, value: 0.25, curve: 'linear', tension: 0 }];
 
         replaceAutomationLanePoints({ laneId: 'lane-a', points });
         points[0] = { beat: 9, value: 1, curve: 'linear', tension: 0 };

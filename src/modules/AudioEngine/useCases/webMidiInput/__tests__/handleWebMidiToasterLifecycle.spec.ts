@@ -125,10 +125,10 @@ function makeNoteOnDependencies(noteOff: (channel: number, note: number, velocit
 }
 
 function installToasterStrips() {
-    const toasterANoteOn = vi.fn<void, [number, number, number]>();
-    const toasterANoteOff = vi.fn<void, [number]>();
-    const toasterBNoteOn = vi.fn<void, [number, number, number]>();
-    const toasterBNoteOff = vi.fn<void, [number]>();
+    const toasterANoteOn = vi.fn<(pad: number, velocity: number, note: number) => void>();
+    const toasterANoteOff = vi.fn<(pad: number) => void>();
+    const toasterBNoteOn = vi.fn<(pad: number, velocity: number, note: number) => void>();
+    const toasterBNoteOff = vi.fn<(pad: number) => void>();
     const strips = new Map([
         [
             'parent-a',

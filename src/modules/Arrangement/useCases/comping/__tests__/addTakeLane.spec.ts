@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { addTakeLane } from '../addTakeLane';
+
+const mocks = vi.hoisted(() => ({
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
+}));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        value: null,
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -17,13 +23,13 @@ describe('addTakeLane', () => {
     });
 
     it('no-ops when store is empty', () => {
-        takeLaneStore.value = null as never;
+        mocks.takeLaneStoreValue.value = null;
         addTakeLane('t1');
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
     it('adds a lane when missing', () => {
-        takeLaneStore.value = { lanes: [] } as never;
+        mocks.takeLaneStoreValue.value = { lanes: [] };
         addTakeLane('t1');
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: unknown[] };
@@ -32,7 +38,7 @@ describe('addTakeLane', () => {
 
     it('does not duplicate an existing lane', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as never;
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
         addTakeLane('t1');
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });

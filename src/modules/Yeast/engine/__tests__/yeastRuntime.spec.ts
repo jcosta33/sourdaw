@@ -53,12 +53,19 @@ function makeNode(context: BaseAudioContext) {
     let notesOffHandler: ((notesOff: YeastNotesOffPayload[]) => void) | null = null;
     return {
         context,
-        processBlock: vi.fn(
-            (_events: readonly MidiEvent[], _blockStart: number, _blockEnd: number, _transport: TransportInfo) =>
-                Promise.resolve([])
-        ),
+        processBlock: vi.fn<
+            (
+                events: readonly MidiEvent[],
+                blockStart: number,
+                blockEnd: number,
+                transport: TransportInfo,
+                trackId: string
+            ) => Promise<MidiEvent[]>
+        >(() => Promise.resolve([])),
         setProjection: vi.fn(),
-        sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
+        sendCommand: vi.fn<(command: YeastProcessorCommand) => Promise<{ accepted: boolean; error?: string }>>(() =>
+            Promise.resolve({ accepted: true })
+        ),
         allNotesOff: vi.fn(),
         onNotesOff: vi.fn((handler: (notesOff: YeastNotesOffPayload[]) => void) => {
             notesOffHandler = handler;
@@ -1056,7 +1063,7 @@ describe('yeastRuntime', () => {
         const contextB = {} as BaseAudioContext;
         const nodeA = makeNode(contextA);
         const nodeB = makeNode(contextB);
-        const lateResult = deferred<readonly MidiEvent[]>();
+        const lateResult = deferred<MidiEvent[]>();
         createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
 
         await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
@@ -1071,7 +1078,15 @@ describe('yeastRuntime', () => {
             transport: {
                 isPlaying: true,
                 bpm: 120,
-                timeSignature: [4, 4],
+                sampleRate: 48000,
+                ppqPosition: 0,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
             },
         });
         await Promise.resolve();

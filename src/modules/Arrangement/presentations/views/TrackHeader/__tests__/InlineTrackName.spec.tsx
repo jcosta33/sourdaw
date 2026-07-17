@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TrackDummy } from '../../../../__tests__/TrackDummy';
 import { renameTrack } from '../../../../useCases/renameTrack';
 import { InlineTrackName } from '../InlineTrackName';
 
@@ -9,10 +10,7 @@ vi.mock('../../../../useCases/renameTrack', () => ({
     renameTrack: vi.fn(),
 }));
 
-const mockTrack = {
-    id: 'track1',
-    name: 'Test Track',
-};
+const mockTrack = TrackDummy.create({ id: 'track1', name: 'Test Track' });
 
 describe('InlineTrackName', () => {
     beforeEach(() => {

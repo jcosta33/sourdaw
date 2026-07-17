@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi, type Mock } from 'vitest';
 
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
@@ -18,11 +18,17 @@ function makeDeps(autoLoad: AutoLoad = vi.fn(() => Promise.resolve())) {
     };
 }
 
-function makeDevice(): LevainDevice & { setParam: ReturnType<typeof vi.fn>; handleCc: ReturnType<typeof vi.fn> } {
+type MockedLevainDevice = {
+    setParam: Mock<LevainDevice['setParam']>;
+    handleCc: Mock<LevainDevice['handleCc']>;
+    setInstrument: Mock<NonNullable<LevainDevice['setInstrument']>>;
+};
+
+function makeDevice(): MockedLevainDevice {
     return {
-        setParam: vi.fn(),
-        handleCc: vi.fn(),
-        setInstrument: vi.fn(),
+        setParam: vi.fn<LevainDevice['setParam']>(),
+        handleCc: vi.fn<LevainDevice['handleCc']>(),
+        setInstrument: vi.fn<NonNullable<LevainDevice['setInstrument']>>(),
     };
 }
 

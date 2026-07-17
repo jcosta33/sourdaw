@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../models/MidiEvent';
+import { type ProcessorType } from '../../models/ProcessorCatalog';
 import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { ChordMemory } from '../processors/ChordMemory';
@@ -165,7 +166,7 @@ describe('MidiRack', () => {
         it('restores removed NoteFilter overrides before projection replacement returns', () => {
             const rack = new MidiRack();
             rack.addProcessor(new NoteFilter('filter-1'), 'filter');
-            const createFilter = (_type: 'filter', id: string): MidiProcessor => new NoteFilter(id);
+            const createFilter = (_type: ProcessorType, id: string): MidiProcessor => new NoteFilter(id);
 
             rack.replaceProjection(
                 [{ id: 'filter-1', type: 'filter', bypassed: false, params: { note_min: 60 } }],
@@ -188,7 +189,7 @@ describe('MidiRack', () => {
         it('retains present overrides, restores omitted keys, and ignores unknown keys', () => {
             const rack = new MidiRack();
             rack.addProcessor(new NoteFilter('filter-1'), 'filter');
-            const createFilter = (_type: 'filter', id: string): MidiProcessor => new NoteFilter(id);
+            const createFilter = (_type: ProcessorType, id: string): MidiProcessor => new NoteFilter(id);
 
             rack.replaceProjection(
                 [
@@ -221,7 +222,7 @@ describe('MidiRack', () => {
             const rack = new MidiRack();
             const chordMemory = new ChordMemory('cm-1');
             rack.addProcessor(chordMemory, 'chordMemory');
-            const createChordMemory = (_type: 'chordMemory', id: string): MidiProcessor => new ChordMemory(id);
+            const createChordMemory = (_type: ProcessorType, id: string): MidiProcessor => new ChordMemory(id);
 
             expect(rack.executeCommand({ processorId: 'cm-1', type: 'chordMemory.learn' })).toBe(true);
             rack.processBlock([noteOn(0, 60), noteOn(0, 64), noteOn(0, 67)], 0, 128, transport, 'track-a');

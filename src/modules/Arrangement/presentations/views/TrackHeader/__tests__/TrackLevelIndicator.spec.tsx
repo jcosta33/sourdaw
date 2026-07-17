@@ -6,8 +6,6 @@ import { getTrackAnalyser } from '#/modules/AudioEngine/useCases';
 
 import { TrackLevelIndicator } from '../TrackLevelIndicator';
 
-import type { Track } from '#/modules/Arrangement/models/Track';
-
 // Mock external dependencies
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -22,11 +20,6 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
 
-const mockTrack = {
-    id: 'track1',
-    kind: 'audio',
-} as Partial<Track> as Track;
-
 describe('TrackLevelIndicator', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -35,7 +28,7 @@ describe('TrackLevelIndicator', () => {
 
     it('should render correctly', () => {
         vi.mocked(useStore).mockReturnValue({ isPlaying: true });
-        const { container } = render(<TrackLevelIndicator track={mockTrack} />);
+        const { container } = render(<TrackLevelIndicator trackId="track1" height={64} />);
         expect(container.firstChild).toBeTruthy();
     });
 
@@ -48,7 +41,7 @@ describe('TrackLevelIndicator', () => {
             },
         } as Partial<AnalyserNode> as AnalyserNode);
 
-        const { container } = render(<TrackLevelIndicator track={mockTrack} />);
+        const { container } = render(<TrackLevelIndicator trackId="track1" height={64} />);
 
         act(() => {
             vi.advanceTimersByTime(100);
@@ -64,7 +57,7 @@ describe('TrackLevelIndicator', () => {
         vi.mocked(useStore).mockReturnValue({ isPlaying: true });
         vi.mocked(getTrackAnalyser).mockReturnValue(null);
 
-        const { container } = render(<TrackLevelIndicator track={mockTrack} />);
+        const { container } = render(<TrackLevelIndicator trackId="track1" height={64} />);
         expect(container.firstChild).toBeTruthy();
     });
 });

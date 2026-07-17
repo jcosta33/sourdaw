@@ -94,6 +94,9 @@ describe('stopRecording', () => {
 
         expect(mocks.takeLaneStoreSet).toHaveBeenCalled();
         const newState = mocks.takeLaneStoreSet.mock.calls[0]![0];
+        if (!newState) {
+            throw new Error('expected takeLaneStore.set to receive a state');
+        }
         expect(newState.lanes[0]!.takes[0]!.endBeat).toBe(10);
     });
 });

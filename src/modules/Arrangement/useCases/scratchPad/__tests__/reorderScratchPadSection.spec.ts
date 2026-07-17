@@ -30,7 +30,11 @@ describe('reorderScratchPadSection', () => {
         reorderScratchPadSection('s1', 'right');
 
         expect(mocks.scratchPadStoreSet).toHaveBeenCalledTimes(1);
-        const sections = mocks.scratchPadStoreSet.mock.calls[0][0].sections;
+        const setCall = mocks.scratchPadStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected scratchPadStore.set to be called');
+        }
+        const sections = setCall[0].sections;
 
         // s2 should now be at 0, duration 16. End at 16.
         expect(sections[0].id).toBe('s2');

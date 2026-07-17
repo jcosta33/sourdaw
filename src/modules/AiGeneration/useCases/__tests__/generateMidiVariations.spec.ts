@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { streamCloudChatCompletionMock, resolveBackendMock } = vi.hoisted(() => ({
-    streamCloudChatCompletionMock: vi.fn<(...args: unknown[]) => unknown>(),
+    streamCloudChatCompletionMock: vi.fn<(messages: unknown, onToken: (token: string) => void) => Promise<void>>(),
     resolveBackendMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 

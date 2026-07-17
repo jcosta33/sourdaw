@@ -21,13 +21,13 @@ describe('Arrangement scratch pad handlers', () => {
     });
 
     it('should clear the scratch pad through Arrangement', () => {
-        handleClearScratchPad.execute({ type: 'clearScratchPad', payload: {} });
+        handleClearScratchPad.execute({ type: 'clearScratchPad' });
 
         expect(mocks.clearScratchPad).toHaveBeenCalledTimes(1);
     });
 
     it('should commit the scratch pad through Arrangement', () => {
-        handleCommitScratchPad.execute({ type: 'commitScratchPad', payload: {} });
+        handleCommitScratchPad.execute({ type: 'commitScratchPad' });
 
         expect(mocks.commitScratchPadToArrangement).toHaveBeenCalledTimes(1);
     });

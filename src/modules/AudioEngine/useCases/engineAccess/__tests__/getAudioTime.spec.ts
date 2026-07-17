@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { getAudioTime } from '../getAudioTime';
+
+const engine_context = vi.hoisted(() => ({ value: null as BaseAudioContext | null }));
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
-        context: { currentTime: 1.5 } as BaseAudioContext,
+        get context() {
+            return engine_context.value;
+        },
     },
 }));
 
 describe('getAudioTime', () => {
     beforeEach(() => {
-        vi.mocked(audioEngine).context = { currentTime: 1.5 } as BaseAudioContext;
+        engine_context.value = { currentTime: 1.5 } as BaseAudioContext;
     });
 
     it('should return the audio context currentTime when available', () => {
@@ -19,7 +22,7 @@ describe('getAudioTime', () => {
     });
 
     it('should return zero when context is missing', () => {
-        (audioEngine as any).context = null;
+        engine_context.value = null;
         expect(getAudioTime()).toBe(0);
     });
 });

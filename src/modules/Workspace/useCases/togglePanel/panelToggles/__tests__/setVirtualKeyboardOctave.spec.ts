@@ -11,6 +11,6 @@ describe('setVirtualKeyboardOctave', () => {
         expect(typeof setVirtualKeyboardOctave).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => setVirtualKeyboardOctave()).not.toThrow();
+        expect(() => setVirtualKeyboardOctave(4)).not.toThrow();
     });
 });

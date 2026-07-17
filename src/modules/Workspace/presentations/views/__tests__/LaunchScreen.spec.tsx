@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LaunchScreen } from '../LaunchScreen';
 
+type TemplateFixture = { id: string; name: string; description: string; category: string };
+type RecentProjectFixture = { key: string; name: string; updatedAt: number };
 const mocks = vi.hoisted(() => ({
     createFromTemplate: vi.fn(),
     executeAppAction: vi.fn(),
-    getRecentProjects: vi.fn(() => []),
+    getRecentProjects: vi.fn((): RecentProjectFixture[] => []),
     getPreviewLoop: vi.fn(() => undefined),
-    getTemplates: vi.fn(() => []),
+    getTemplates: vi.fn((): TemplateFixture[] => []),
     importDroppedLaunchFiles: vi.fn(),
     loadRecentProject: vi.fn(),
     newProject: vi.fn(),

@@ -30,12 +30,16 @@ describe('Grid', () => {
             [5, 'grid-cols-5'],
             [6, 'grid-cols-6'],
         ] as const)('should apply grid-cols-%i class', (cols, expectedClass) => {
-            render(<Grid cols={cols} data-testid="grid" />);
+            render(
+                <Grid cols={cols} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid')).toHaveClass(expectedClass);
         });
 
         it('should default to 1 column', () => {
-            render(<Grid data-testid="grid" />);
+            render(<Grid data-testid="grid">Content</Grid>);
             expect(screen.getByTestId('grid')).toHaveClass('grid-cols-1');
         });
     });
@@ -50,12 +54,16 @@ describe('Grid', () => {
             [6, 'gap-6'],
             [8, 'gap-8'],
         ] as const)('should apply gap-%i class', (gap, expectedClass) => {
-            render(<Grid gap={gap} data-testid="grid" />);
+            render(
+                <Grid gap={gap} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid')).toHaveClass(expectedClass);
         });
 
         it('should not apply gap class when undefined', () => {
-            render(<Grid data-testid="grid" />);
+            render(<Grid data-testid="grid">Content</Grid>);
             const classes = screen.getByTestId('grid').className;
             expect(classes).not.toMatch(/gap-/);
         });
@@ -71,7 +79,11 @@ describe('Grid', () => {
             [6, 'gap-x-6'],
             [8, 'gap-x-8'],
         ] as const)('should apply gap-x-%i class', (gapX, expectedClass) => {
-            render(<Grid gapX={gapX} data-testid="grid" />);
+            render(
+                <Grid gapX={gapX} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid')).toHaveClass(expectedClass);
         });
     });
@@ -86,7 +98,11 @@ describe('Grid', () => {
             [6, 'gap-y-6'],
             [8, 'gap-y-8'],
         ] as const)('should apply gap-y-%i class', (gapY, expectedClass) => {
-            render(<Grid gapY={gapY} data-testid="grid" />);
+            render(
+                <Grid gapY={gapY} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid')).toHaveClass(expectedClass);
         });
     });
@@ -96,12 +112,16 @@ describe('Grid', () => {
             ['row', 'grid-flow-row'],
             ['col', 'grid-flow-col'],
         ] as const)('should apply grid-flow-%s class', (flow, expectedClass) => {
-            render(<Grid flow={flow} data-testid="grid" />);
+            render(
+                <Grid flow={flow} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid')).toHaveClass(expectedClass);
         });
 
         it('should not apply flow class when undefined', () => {
-            render(<Grid data-testid="grid" />);
+            render(<Grid data-testid="grid">Content</Grid>);
             const classes = screen.getByTestId('grid').className;
             expect(classes).not.toMatch(/grid-flow-/);
         });
@@ -112,12 +132,16 @@ describe('Grid', () => {
             ['div', 'DIV'],
             ['section', 'SECTION'],
         ] as const)('should render as %s element', (as, expectedTag) => {
-            render(<Grid as={as} data-testid="grid" />);
+            render(
+                <Grid<typeof as> as={as} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(screen.getByTestId('grid').tagName).toBe(expectedTag);
         });
 
         it('should default to div', () => {
-            render(<Grid data-testid="grid" />);
+            render(<Grid data-testid="grid">Content</Grid>);
             expect(screen.getByTestId('grid').tagName).toBe('DIV');
         });
     });
@@ -125,14 +149,22 @@ describe('Grid', () => {
     describe('ref forwarding', () => {
         it('should forward ref to the element', () => {
             const ref = createRef<HTMLDivElement>();
-            render(<Grid ref={ref} data-testid="grid" />);
+            render(
+                <Grid ref={ref} data-testid="grid">
+                    Content
+                </Grid>
+            );
             expect(ref.current).toBe(screen.getByTestId('grid'));
         });
     });
 
     describe('className merging', () => {
         it('should merge custom className with default classes', () => {
-            render(<Grid className="custom-class" data-testid="grid" />);
+            render(
+                <Grid className="custom-class" data-testid="grid">
+                    Content
+                </Grid>
+            );
             const element = screen.getByTestId('grid');
             expect(element).toHaveClass('grid', 'grid-cols-1', 'custom-class');
         });
@@ -140,7 +172,11 @@ describe('Grid', () => {
 
     describe('HTML attributes', () => {
         it('should pass through arbitrary HTML attributes', () => {
-            render(<Grid data-testid="grid" id="test-id" title="Test Title" aria-label="Test Label" />);
+            render(
+                <Grid data-testid="grid" id="test-id" title="Test Title" aria-label="Test Label">
+                    Content
+                </Grid>
+            );
             const element = screen.getByTestId('grid');
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');

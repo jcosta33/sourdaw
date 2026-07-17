@@ -83,14 +83,24 @@ describe('freezeTrack', () => {
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
         // First call: sets status to 'freezing'
-        const freezingUpdater = vi.mocked(updateTrack).mock.calls[0][1] as any;
-        const freezingTrack = freezingUpdater(trackStore.value!.tracks[0]);
+        const freezingCall = vi.mocked(updateTrack).mock.calls[0];
+        if (!freezingCall) {
+            throw new Error('expected first updateTrack call');
+        }
+        const storedTrack = trackStore.value!.tracks[0];
+        if (!storedTrack) {
+            throw new Error('expected track in store');
+        }
+        const freezingTrack = freezingCall[1](storedTrack);
         expect(freezingTrack.freezeState.status).toBe('freezing');
         expect(freezingTrack.freezeState.renderProgress).toBe(0);
 
         // Second call: sets status to 'frozen'
-        const frozenUpdater = vi.mocked(updateTrack).mock.calls[1][1] as any;
-        const frozenTrack = frozenUpdater(trackStore.value!.tracks[0]);
+        const frozenCall = vi.mocked(updateTrack).mock.calls[1];
+        if (!frozenCall) {
+            throw new Error('expected second updateTrack call');
+        }
+        const frozenTrack = frozenCall[1](storedTrack);
 
         expect(frozenTrack.frozen).toBe(true);
         expect(frozenTrack.frozenBufferId).toBe(expectedBufferId);
@@ -131,8 +141,15 @@ describe('freezeTrack', () => {
 
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
-        const errorUpdater = vi.mocked(updateTrack).mock.calls[1][1] as any;
-        const errorTrack = errorUpdater(trackStore.value!.tracks[0]);
+        const errorCall = vi.mocked(updateTrack).mock.calls[1];
+        if (!errorCall) {
+            throw new Error('expected second updateTrack call');
+        }
+        const storedTrack = trackStore.value!.tracks[0];
+        if (!storedTrack) {
+            throw new Error('expected track in store');
+        }
+        const errorTrack = errorCall[1](storedTrack);
 
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');

@@ -74,6 +74,7 @@ describe('stopPlayback', () => {
         const order: string[] = [];
         vi.mocked(stopActiveRecording).mockImplementation(() => {
             order.push('stopActiveRecording');
+            return Promise.resolve();
         });
         vi.mocked(stopPlayheadScheduler).mockImplementation(() => {
             order.push('stopPlayheadScheduler');

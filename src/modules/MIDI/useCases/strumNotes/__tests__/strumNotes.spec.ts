@@ -30,7 +30,11 @@ describe('strumNotes', () => {
         strumNotes('c1', ['nHigh', 'nMid', 'nLow'], 0.1, 'up');
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
-        const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const setCall = mocks.midiStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('Expected midiStore.set call');
+        }
+        const updated = setCall[0].notesByClipId.c1;
 
         // Sort order for 'up': Low(60) -> Mid(64) -> High(72)
         // Offsets: Low: 0*0.1=0, Mid: 1*0.1=0.1, High: 2*0.1=0.2
@@ -52,7 +56,11 @@ describe('strumNotes', () => {
 
         strumNotes('c1', ['nHigh', 'nLow'], 0.05, 'down');
 
-        const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const setCall = mocks.midiStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('Expected midiStore.set call');
+        }
+        const updated = setCall[0].notesByClipId.c1;
         // Sort order for 'down': High(72) -> Low(60)
         // Offsets: High: 0, Low: 0.05
         const nHigh = updated.find((node: any) => node.id === 'nHigh');

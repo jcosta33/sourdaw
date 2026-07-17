@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ToasterPanel } from '../ToasterPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 describe('ToasterPanel', () => {
@@ -13,22 +13,22 @@ describe('ToasterPanel', () => {
     });
 
     it('should render without crashing', () => {
-        render(<ToasterPanel />);
+        render(<ToasterPanel deviceId="toaster-test" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        render(<ToasterPanel />);
+        render(<ToasterPanel deviceId="toaster-test" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<ToasterPanel />);
+        render(<ToasterPanel deviceId="toaster-test" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<ToasterPanel />);
+        render(<ToasterPanel deviceId="toaster-test" />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

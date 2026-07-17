@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
 import { saveTrackAsTemplate } from '../../../useCases/saveTrackAsTemplate';
 import { TrackContextMenu } from '../TrackContextMenu';
@@ -68,7 +69,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 
-const mockTrack = {
+const mockTrack = TrackDummy.create({
     id: 'track1',
     name: 'Test Track',
     kind: 'audio',
@@ -76,14 +77,14 @@ const mockTrack = {
     soloed: false,
     armed: false,
     frozen: false,
-    freezeState: { status: 'unfrozen' as const },
+    freezeState: { status: 'unfrozen' },
     soloSafe: false,
     color: '#ff0000',
     inputMonitoring: 'auto',
     inputId: null,
     parentId: null,
     height: 64,
-};
+});
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);

@@ -36,6 +36,14 @@ function createContour(algorithm: string) {
     };
 }
 
+function kneadState(): NonNullable<typeof kneadStore.value> {
+    const state = kneadStore.value;
+    if (!state) {
+        throw new Error('expected knead store to be initialised');
+    }
+    return state;
+}
+
 // Mock the AudioEngine boundary: this orchestrator's job is to feed whatever
 // contour the engine returns into ingestDspAnalysis. Knead -> AudioEngine is the
 // safe direction, so we stub the engine call rather than run real analysis.
@@ -86,9 +94,9 @@ describe('analyzeClipPitch', () => {
             onProgress: expect.any(Function),
         });
         expect(outcome.status).toBe('analyzed');
-        expect(kneadStore.value.contours.c1).toEqual(contour);
+        expect(kneadState().contours.c1).toEqual(contour);
 
-        const clipState = kneadStore.value.clips.c1;
+        const clipState = kneadState().clips.c1;
         expect(clipState).toBeDefined();
         expect(clipState?.blobs.length).toBeGreaterThan(0);
         // Each blob carries its pitch center so the worklet shift is well-defined.
@@ -106,7 +114,7 @@ describe('analyzeClipPitch', () => {
         const outcome = await analyzeClipPitch('c1');
 
         expect(outcome).toEqual({ status: 'no-buffer', reason: 'missing-clip-or-buffer' });
-        expect(kneadStore.value.clips.c1).toBeUndefined();
+        expect(kneadState().clips.c1).toBeUndefined();
         expect(kneadStore.value).toMatchObject({ isAnalyzing: false, analysisProgress: 0 });
         expect(setSpy).not.toHaveBeenCalled();
         setSpy.mockRestore();
@@ -157,10 +165,10 @@ describe('analyzeClipPitch', () => {
         }
 
         firstProgress(0.8);
-        expect(kneadStore.value.analysisProgress).toBe(0);
+        expect(kneadState().analysisProgress).toBe(0);
 
         secondProgress(0.4);
-        expect(kneadStore.value.analysisProgress).toBe(0.4);
+        expect(kneadState().analysisProgress).toBe(0.4);
 
         firstAnalysis.resolve(firstOutcome);
         await firstRun;
@@ -195,7 +203,7 @@ describe('analyzeClipPitch', () => {
         expect(kneadStore.value).toMatchObject({ isAnalyzing: true, analysisProgress: 0.3 });
 
         progressCallbacks.get('c1')?.(0.6);
-        expect(kneadStore.value.analysisProgress).toBe(0.6);
+        expect(kneadState().analysisProgress).toBe(0.6);
 
         firstAnalysis.resolve({ status: 'analyzed', contour: createContour('first') });
         await firstRun;
@@ -224,7 +232,7 @@ describe('analyzeClipPitch', () => {
             if (completionOrder === 'older-first') {
                 firstAnalysis.resolve(firstOutcome);
                 await firstRun;
-                expect(kneadStore.value.contours.c1).toBeUndefined();
+                expect(kneadState().contours.c1).toBeUndefined();
                 secondAnalysis.resolve(secondOutcome);
                 await secondRun;
             } else {
@@ -234,7 +242,7 @@ describe('analyzeClipPitch', () => {
                 await firstRun;
             }
 
-            expect(kneadStore.value.contours.c1?.algorithm).toBe('second');
+            expect(kneadState().contours.c1?.algorithm).toBe('second');
         }
     );
 });

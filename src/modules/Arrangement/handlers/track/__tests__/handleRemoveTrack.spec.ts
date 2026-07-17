@@ -245,25 +245,29 @@ describe('handleRemoveTrack', () => {
 
             expect(desc.label).toBe('Remove track');
             expect(desc.inverseAction).toBeDefined();
-            expect(desc.inverseAction?.type).toBe('restoreTrack');
 
-            const payload = desc.inverseAction?.payload;
-            expect(payload?.trackId).toBe('t1');
-            expect(payload?.trackSnapshot).toEqual(track);
-            expect(payload?.automationLaneSnapshots).toEqual([removedAutomationLane]);
-            expect(payload?.takeLaneSnapshots).toEqual([removedTakeLane]);
+            const inverseAction = desc.inverseAction;
+            if (!inverseAction || inverseAction.type !== 'restoreTrack') {
+                throw new Error('expected a restoreTrack inverse action');
+            }
 
-            expect(payload?.midiNotesByClipId).toEqual({
+            const payload = inverseAction.payload;
+            expect(payload.trackId).toBe('t1');
+            expect(payload.trackSnapshot).toEqual(track);
+            expect(payload.automationLaneSnapshots).toEqual([removedAutomationLane]);
+            expect(payload.takeLaneSnapshots).toEqual([removedTakeLane]);
+
+            expect(payload.midiNotesByClipId).toEqual({
                 c1: [noteC1],
                 c2: [noteC2],
                 c3: [noteC3],
             });
-            expect(payload?.midiCcByClipId).toEqual({
+            expect(payload.midiCcByClipId).toEqual({
                 c1: [ccC1],
                 c2: [ccC2],
                 c3: [ccC3],
             });
-            expect(payload?.midiPitchBendByClipId).toEqual({
+            expect(payload.midiPitchBendByClipId).toEqual({
                 c1: [pitchBendC1],
                 c2: [pitchBendC2],
                 c3: [pitchBendC3],

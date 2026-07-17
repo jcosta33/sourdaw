@@ -23,7 +23,7 @@ describe('handleConsolidateAllTracks', () => {
     it('bails if track store state is unavailable', async () => {
         mocks.getTrackStoreState.mockReturnValue(null);
 
-        await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: {} });
+        await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: undefined });
 
         expect(mocks.bounceInPlace).not.toHaveBeenCalled();
     });
@@ -38,7 +38,7 @@ describe('handleConsolidateAllTracks', () => {
             ],
         });
 
-        await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: {} });
+        await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: undefined });
 
         expect(mocks.bounceInPlace).toHaveBeenCalledTimes(2);
         expect(mocks.bounceInPlace).toHaveBeenCalledWith('t1');
@@ -46,7 +46,7 @@ describe('handleConsolidateAllTracks', () => {
     });
 
     it('provides a description', () => {
-        const desc = handleConsolidateAllTracks.describe({ type: 'consolidateAllTracks', payload: {} });
+        const desc = handleConsolidateAllTracks.describe({ type: 'consolidateAllTracks', payload: undefined });
         expect(desc.label).toBe('Consolidate all tracks');
     });
 

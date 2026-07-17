@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { makeMusicalKey, toBpm } from '../../models/LibraryTypes';
 import { performMusicalAnalysis } from '../../services/analysisService';
 import { libraryStore } from '../../stores/libraryStore';
 import { analyzeSample } from '../analyzeSample';
@@ -72,9 +73,13 @@ describe('analyzeSample', () => {
     }
 
     function resolve_analysis(): void {
+        const bpm = toBpm(125);
+        if (!bpm) {
+            throw new Error('Expected 125 to be a valid test BPM');
+        }
         vi.mocked(performMusicalAnalysis).mockResolvedValue({
-            bpm: 125,
-            key: 'Cm',
+            bpm,
+            key: makeMusicalKey('C', 'minor'),
             descriptors: { rms: 0.1 },
         });
     }

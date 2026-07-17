@@ -68,12 +68,12 @@ describe('AdjustmentBusNode', () => {
 
         const gainNodes = vi.mocked(ctx.createGain).mock.results.map((r) => r.value);
         const sawWetTarget = gainNodes.some((gainNode) =>
-            vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some((call) => call[0] === 0.7)
+            vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some((call: number[]) => call[0] === 0.7)
         );
         const sawDryTarget = gainNodes.some((gainNode) =>
             vi
                 .mocked(gainNode.gain.setTargetAtTime)
-                .mock.calls.some((call) => Math.abs((call[0] as number) - 0.3) < 1e-6)
+                .mock.calls.some((call: number[]) => Math.abs((call[0] ?? Number.NaN) - 0.3) < 1e-6)
         );
 
         expect(sawWetTarget).toBe(true);

@@ -5,7 +5,7 @@ import { Oscilloscope } from '../Oscilloscope';
 
 describe('Oscilloscope', () => {
     it('should render', () => {
-        const { container } = render(<Oscilloscope buffer={null} width={100} height={40} />);
+        const { container } = render(<Oscilloscope deviceId="device-1" width={100} height={40} />);
         expect(container.querySelector('canvas')).toBeTruthy();
     });
 });

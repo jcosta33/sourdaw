@@ -41,7 +41,7 @@ function create_track_state(track: Track): TrackState {
     };
 }
 
-function create_test_audio_buffer(channel_data: Float32Array): AudioBuffer {
+function create_test_audio_buffer(channel_data: Float32Array<ArrayBuffer>): AudioBuffer {
     const sample_rate = 100;
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {

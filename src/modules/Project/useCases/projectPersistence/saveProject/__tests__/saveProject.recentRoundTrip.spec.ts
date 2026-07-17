@@ -99,6 +99,12 @@ function makeProjectState(): ProjectStoreState {
     };
 }
 
+// Clearing through a helper keeps the test body free of a literal-null
+// assignment that would otherwise narrow the store value to `null`.
+function clearLiveProject(): void {
+    mocks.projectStoreValue.value = null;
+}
+
 function makeProjectData(): ProjectData {
     return {
         version: CURRENT_PROJECT_VERSION,
@@ -156,10 +162,13 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
         });
 
         const entry = getRecentProjects()[0];
+        if (!entry) {
+            throw new Error('expected a recent project entry');
+        }
         expect(entry.key).toBe(RECENT_KEY);
 
         // Clear the live project so a successful load is observable as a refill.
-        mocks.projectStoreValue.value = null;
+        clearLiveProject();
 
         const ok = await loadRecentProject(entry.key);
 

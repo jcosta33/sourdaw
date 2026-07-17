@@ -6,7 +6,7 @@ import { parseDawProject } from '../parseDawProject';
 import { serializeMetadataXml } from '../serializeMetadataXml';
 import { serializeProjectXml } from '../serializeProjectXml';
 
-function asRealmUint8(source: Uint8Array | ArrayLike<number>): Uint8Array {
+function asRealmUint8(source: Uint8Array | ArrayLike<number>): Uint8Array<ArrayBuffer> {
     const view = source instanceof Uint8Array ? source : new Uint8Array(source);
     const out = new Uint8Array(view.length);
     out.set(view);

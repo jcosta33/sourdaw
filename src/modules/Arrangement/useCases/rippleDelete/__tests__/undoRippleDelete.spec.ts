@@ -31,7 +31,11 @@ describe('undoRippleDelete', () => {
         });
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to be called');
+        }
+        const newState = setCall[0];
         const track = newState.tracks[0];
 
         expect(track.clips).toHaveLength(2);

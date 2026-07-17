@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
     asAudioNode,
@@ -10,7 +10,7 @@ import { createAdjustmentLayerRuntime, type TrackRerouteDeps } from '../Adjustme
 
 describe('AdjustmentLayerRuntime', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
-    let rerouteTrack: ReturnType<typeof vi.fn>;
+    let rerouteTrack: Mock<(trackId: string) => void>;
     let deps: TrackRerouteDeps;
     let trackOutputs: Map<string, AudioNode>;
     let trackDestinations: Map<string, AudioNode>;
@@ -19,7 +19,7 @@ describe('AdjustmentLayerRuntime', () => {
         ctx = createMockAudioContext();
         trackOutputs = new Map();
         trackDestinations = new Map();
-        rerouteTrack = vi.fn();
+        rerouteTrack = vi.fn<(trackId: string) => void>();
 
         deps = {
             getContext: () => asBaseAudioContext(ctx),

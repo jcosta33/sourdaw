@@ -7,6 +7,7 @@ import { swapAutomationSubLaneParam } from '../swapAutomationSubLaneParam';
 const mocks = vi.hoisted(() => ({
     getWorkspaceState: vi.fn(),
     setAutomationSubLanes: vi.fn(),
+    updateWorkspaceState: vi.fn(),
 }));
 
 vi.mock('../../../repositories/getWorkspaceState', () => ({

@@ -38,7 +38,11 @@ describe('handleCreateTrackAlternative', () => {
         });
 
         expect(mocks.setTrackStoreState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to be called');
+        }
+        const newState = firstCall[0];
         const track = newState.tracks[0];
 
         expect(track.alternatives).toHaveLength(2);
@@ -56,7 +60,11 @@ describe('handleCreateTrackAlternative', () => {
             payload: { trackId: 't1', name: 'Dupe', duplicateActive: true },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to be called');
+        }
+        const newState = firstCall[0];
         const track = newState.tracks[0];
 
         expect(track.alternatives).toHaveLength(2);

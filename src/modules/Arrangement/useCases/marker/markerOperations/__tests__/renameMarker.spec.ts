@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renameMarker } from '../renameMarker';
 
 const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { markers: [] } },
+    markerStoreValue: { value: { markers: [] as { id: string; name: string }[] } },
     markerStoreSet: vi.fn(),
 }));
 

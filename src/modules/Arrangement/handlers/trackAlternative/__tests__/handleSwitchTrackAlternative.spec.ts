@@ -48,13 +48,19 @@ describe('handleSwitchTrackAlternative', () => {
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        if (!newState) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
         const track = newState.tracks[0];
+        if (!track) {
+            throw new Error('expected a track in the new state');
+        }
         expect(track.activeAlternativeId).toBe('alt2');
         expect(track.clips).toEqual(alt2Clips);
 
         // Verify alt1 now contains the clips that were active
-        expect(track.alternatives[0].clips).toEqual([{ id: 'c1' }]);
+        expect(track.alternatives[0]?.clips).toEqual([{ id: 'c1' }]);
     });
 
     it('bails if switching to the already active alternative', () => {

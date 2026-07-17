@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setTrackGain } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
 
 import { applyAutomation } from '../applyAutomation/applyAutomation';
 import { applyVcaGains } from '../applyAutomation/applyVcaGains';
@@ -13,11 +12,15 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         trackStore: { value: { tracks: [] } },
     };
 });
+const automationStoreMock = vi.hoisted(() => ({
+    value: { lanes: [] } as import('#/modules/Automation/stores').AutomationStoreState | null,
+}));
+
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Automation/stores')>();
     return {
         ...mod,
-        automationStore: { value: { lanes: [] } },
+        automationStore: automationStoreMock,
     };
 });
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -54,7 +57,7 @@ describe('applyAutomation', () => {
     });
 
     it('does not touch the engine when automation state is missing', () => {
-        automationStore.value = null as unknown as import('#/modules/Automation/stores').AutomationStoreState;
+        automationStoreMock.value = null;
         applyAutomation(0);
         expect(setTrackGain).not.toHaveBeenCalled();
     });

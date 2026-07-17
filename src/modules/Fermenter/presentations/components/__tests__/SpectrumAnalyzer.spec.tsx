@@ -5,7 +5,7 @@ import { SpectrumAnalyzer } from '../SpectrumAnalyzer';
 
 describe('SpectrumAnalyzer (Fermenter)', () => {
     it('should render', () => {
-        const { container } = render(<SpectrumAnalyzer buffer={new Float32Array(64)} width={120} height={40} />);
+        const { container } = render(<SpectrumAnalyzer deviceId="device-1" width={120} height={40} />);
         expect(container.querySelector('canvas')).toBeTruthy();
     });
 });

@@ -15,7 +15,11 @@ const store = vi.hoisted(() => ({
     },
 }));
 
-const sendRuntimeCommand = vi.hoisted(() => vi.fn(() => Promise.resolve({ delivered: true as const })));
+type RuntimeDeliveryResult = { delivered: true } | { delivered: false; reason: string };
+
+const sendRuntimeCommand = vi.hoisted(() =>
+    vi.fn<(command: unknown) => Promise<RuntimeDeliveryResult>>(() => Promise.resolve({ delivered: true }))
+);
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../../engine/yeastRuntime', () => ({ sendYeastRuntimeCommand: sendRuntimeCommand }));

@@ -4,7 +4,7 @@ import { handleGenerateChordProgression } from '../handleGenerateChordProgressio
 
 const mocks = vi.hoisted(() => ({
     applyChordProgressionToTrack: vi.fn(),
-    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
+    resolveOrCreateMidiTrack: vi.fn<() => string | null>(() => 't1'),
     getPlayheadBeat: vi.fn(() => 4),
 }));
 

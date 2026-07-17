@@ -62,7 +62,7 @@ function makeAudioBuffer({
     channels,
     sampleRate = 48_000,
 }: {
-    channels: Float32Array[];
+    channels: Array<Float32Array<ArrayBuffer>>;
     sampleRate?: number;
 }): AudioBufferSlice {
     const firstChannel = channels[0];
@@ -74,7 +74,7 @@ function makeAudioBuffer({
         numberOfChannels: channels.length,
         length: firstChannel.length,
         sampleRate,
-        getChannelData(channelIndex: number): Float32Array {
+        getChannelData(channelIndex: number): Float32Array<ArrayBuffer> {
             const channel = channels[channelIndex];
             if (!channel) {
                 throw new Error(`Missing channel ${channelIndex}`);

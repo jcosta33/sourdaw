@@ -42,22 +42,25 @@ function create_deferred<ResultValue>() {
     return { promise, resolve: resolve_promise };
 }
 
-const mocks = vi.hoisted(() => ({
-    pluginScanStoreValue: {
+const mocks = vi.hoisted(() => {
+    const pluginScanStoreValue: { value: PluginScanState } = {
         value: {
-            scanPaths: [] as string[],
+            scanPaths: [],
             isScanning: false,
-            scannedPlugins: [] as ScannedPlugin[],
-            errors: [] as string[],
+            scannedPlugins: [],
+            errors: [],
             lastScanTime: null,
-        } satisfies PluginScanState,
-    },
-    pluginScanStoreSet: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.set>(),
-    pluginScanStoreUpdate: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.update>(),
-    scanPlugins: vi.fn<typeof import('../../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
-    getDefaultPluginPaths:
-        vi.fn<typeof import('../../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
-}));
+        },
+    };
+    return {
+        pluginScanStoreValue,
+        pluginScanStoreSet: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.set>(),
+        pluginScanStoreUpdate: vi.fn<typeof import('../../../../stores/pluginScanStore').pluginScanStore.update>(),
+        scanPlugins: vi.fn<typeof import('../../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
+        getDefaultPluginPaths:
+            vi.fn<typeof import('../../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
+    };
+});
 
 vi.mock('../../../../stores/pluginScanStore', () => ({
     pluginScanStore: {

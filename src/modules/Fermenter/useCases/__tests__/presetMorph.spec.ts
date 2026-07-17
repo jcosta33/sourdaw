@@ -4,15 +4,15 @@ vi.mock('../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
-import { type FermenterPatch } from '../../models/FermenterPatch';
+import { DEFAULT_PATCH, type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { setFermenterDependencies } from '../fermenterDependencies';
 import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
 import { bilinearPatch } from '../presetMorph/bilinearPatch';
 import { lerpPatch } from '../presetMorph/lerpPatch';
 
-function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch {
-    return { name, version: 1, gain: 0, threshold: 0, ratio: 1, ...overrides } as unknown as FermenterPatch;
+function patch(name: string, overrides: Partial<FermenterPatch> = {}): FermenterPatch {
+    return { ...DEFAULT_PATCH, name, ...overrides };
 }
 
 describe('presetMorph', () => {
@@ -55,12 +55,12 @@ describe('presetMorph', () => {
     });
 
     it('lerpPatch interpolates numeric fields linearly', () => {
-        const a = patch('A', { gain: 0, threshold: -20 });
-        const b = patch('B', { gain: 10, threshold: 0 });
+        const a = patch('A', { masterGain: 0, compThreshold: -20 });
+        const b = patch('B', { masterGain: 10, compThreshold: 0 });
 
         const mid = lerpPatch(a, b, 0.5);
-        expect(mid.gain).toBe(5);
-        expect(mid.threshold).toBe(-10);
+        expect(mid.masterGain).toBe(5);
+        expect(mid.compThreshold).toBe(-10);
     });
 
     it('lerpPatch picks discrete selectors from the nearest patch', () => {
@@ -83,25 +83,25 @@ describe('presetMorph', () => {
     });
 
     it('lerpPatch picks name based on which half t lands in', () => {
-        const a = patch('A', { gain: 0 });
-        const b = patch('B', { gain: 10 });
+        const a = patch('A', { masterGain: 0 });
+        const b = patch('B', { masterGain: 10 });
         expect(lerpPatch(a, b, 0.2).name).toBe('A');
         expect(lerpPatch(a, b, 0.8).name).toBe('B');
     });
 
     it('lerpPatch clamps t to [0, 1]', () => {
-        const a = patch('A', { gain: 0 });
-        const b = patch('B', { gain: 10 });
-        expect(lerpPatch(a, b, -1).gain).toBe(0);
-        expect(lerpPatch(a, b, 2).gain).toBe(10);
+        const a = patch('A', { masterGain: 0 });
+        const b = patch('B', { masterGain: 10 });
+        expect(lerpPatch(a, b, -1).masterGain).toBe(0);
+        expect(lerpPatch(a, b, 2).masterGain).toBe(10);
     });
 
     it('bilinearPatch interpolates between four corners', () => {
-        const tl = patch('TL', { gain: 0 });
-        const tr = patch('TR', { gain: 10 });
-        const bl = patch('BL', { gain: 20 });
-        const br = patch('BR', { gain: 30 });
-        expect(bilinearPatch(tl, tr, bl, br, 0.5, 0.5).gain).toBe(15);
+        const tl = patch('TL', { masterGain: 0 });
+        const tr = patch('TR', { masterGain: 10 });
+        const bl = patch('BL', { masterGain: 20 });
+        const br = patch('BR', { masterGain: 30 });
+        expect(bilinearPatch(tl, tr, bl, br, 0.5, 0.5).masterGain).toBe(15);
     });
 
     it('bilinearPatch keeps discrete selectors on one corner value', () => {
@@ -118,7 +118,7 @@ describe('presetMorph', () => {
     });
 
     it('applyMorphedPatch updates store immediately and forwards the patch to engine + persistence on the next frame', () => {
-        const p = patch('P', { gain: 5, threshold: -8 });
+        const p = patch('P', { masterGain: 5, compThreshold: -8 });
         applyMorphedPatch('d1', p);
 
         // Store write is synchronous; engine/persist are deferred to the rAF flush.
@@ -133,9 +133,9 @@ describe('presetMorph', () => {
     });
 
     it('applyMorphedPatch coalesces a rapid drag to one engine + persist flush with the latest patch', () => {
-        const a = patch('A', { gain: 1 });
-        const b = patch('B', { gain: 2 });
-        const c = patch('C', { gain: 3 });
+        const a = patch('A', { masterGain: 1 });
+        const b = patch('B', { masterGain: 2 });
+        const c = patch('C', { masterGain: 3 });
 
         applyMorphedPatch('d1', a);
         applyMorphedPatch('d1', b);

@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { removeSection } from '../removeSection';
 
-const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { sections: [] } },
-    markerStoreSet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    type MockSection = { id: string };
+    return {
+        markerStoreValue: { value: { sections: [] as MockSection[] } },
+        markerStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {

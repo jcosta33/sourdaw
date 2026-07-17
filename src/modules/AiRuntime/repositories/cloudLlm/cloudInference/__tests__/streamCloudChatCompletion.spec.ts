@@ -60,7 +60,11 @@ describe('streamCloudChatCompletion', () => {
         await streamCloudChatCompletion(messages, vi.fn(), { maxTokens: 1000 });
 
         expect(mocks.stream).toHaveBeenCalledTimes(1);
-        const args = mocks.stream.mock.calls[0][0];
+        const firstCall = mocks.stream.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        const args = firstCall[0];
 
         expect(args.system).toBe('You are a bot.');
         expect(args.max_tokens).toBe(1000);
@@ -90,7 +94,11 @@ describe('streamCloudChatCompletion', () => {
         expect(mocks.registerCloudStreamController).toHaveBeenCalledTimes(1);
         expect(mocks.unregisterCloudStreamController).toHaveBeenCalledTimes(1);
 
-        const requestOptions = mocks.stream.mock.calls[0][1];
+        const streamCall = mocks.stream.mock.calls[0];
+        if (!streamCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        const requestOptions = streamCall[1];
         expect(requestOptions.signal).toBeInstanceOf(AbortSignal);
     });
 

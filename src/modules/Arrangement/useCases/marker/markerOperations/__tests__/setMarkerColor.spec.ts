@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setMarkerColor } from '../setMarkerColor';
 
 const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { markers: [] } },
+    markerStoreValue: { value: { markers: [] as { id: string; color: string }[] } },
     markerStoreSet: vi.fn(),
 }));
 

@@ -6,7 +6,8 @@ import { TrackRoutingSection } from '../TrackRoutingSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockUseStore = vi.fn(() => ({ routes: [] }));
+type RouteFixture = { id: string; sourceId: string; destinationId: string; gain: number };
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { routes: RouteFixture[] } => ({ routes: [] }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
@@ -54,8 +55,10 @@ describe('TrackRoutingSection', () => {
         color: '#ff0000',
         clips: [],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',

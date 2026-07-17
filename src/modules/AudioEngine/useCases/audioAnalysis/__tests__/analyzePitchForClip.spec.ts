@@ -106,9 +106,13 @@ describe('analyzePitchForClip', () => {
     });
 
     it('should pass the audio buffer id to native analysis when file id is missing', async () => {
+        const currentTrackState = trackStore.value;
+        if (!currentTrackState) {
+            throw new Error('expected the track store to be seeded');
+        }
         trackStore.set({
-            ...trackStore.value,
-            tracks: trackStore.value.tracks.map((track) => ({
+            ...currentTrackState,
+            tracks: currentTrackState.tracks.map((track) => ({
                 ...track,
                 clips: track.clips.map((clip) => {
                     if (clip.id !== 'c1') {

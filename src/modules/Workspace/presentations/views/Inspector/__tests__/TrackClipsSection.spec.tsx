@@ -110,8 +110,10 @@ describe('TrackClipsSection', () => {
             },
         ],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',
@@ -166,7 +168,11 @@ describe('TrackClipsSection', () => {
     it('should call onSelectClip when clip is clicked', () => {
         render(<TrackClipsSection track={mockTrack} onSelectClip={mockOnSelectClip} />);
         const choiceCards = screen.getAllByTestId('choice-card');
-        fireEvent.click(choiceCards[0]);
+        const firstCard = choiceCards[0];
+        if (!firstCard) {
+            throw new Error('expected a choice card');
+        }
+        fireEvent.click(firstCard);
         expect(mockOnSelectClip).toHaveBeenCalledWith('clip-1');
     });
 
@@ -202,6 +208,10 @@ describe('TrackClipsSection', () => {
     it('should have dashed border for ghost clips', () => {
         render(<TrackClipsSection track={mockTrack} onSelectClip={mockOnSelectClip} />);
         const choiceCards = screen.getAllByTestId('choice-card');
-        expect(choiceCards[1].className).toContain('dashed');
+        const ghostCard = choiceCards[1];
+        if (!ghostCard) {
+            throw new Error('expected a ghost choice card');
+        }
+        expect(ghostCard.className).toContain('dashed');
     });
 });

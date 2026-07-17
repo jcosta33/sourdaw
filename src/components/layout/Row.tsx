@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, type ElementType, type ComponentPropsWithoutRef } from 'react';
+import { type ReactElement, type ReactNode, type ElementType, type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -8,7 +8,7 @@ type GapValue = 0 | 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 4 | 6 | 8;
 type AlignValue = 'start' | 'center' | 'end' | 'stretch' | 'baseline';
 type JustifyValue = 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
 
-type RowProps<Element extends RowElement = 'div'> = Omit<ComponentPropsWithoutRef<Element>, 'as'> & {
+type RowProps<Element extends RowElement = 'div'> = Omit<ComponentProps<Element>, 'as'> & {
     as?: Element;
     gap?: GapValue;
     align?: AlignValue;

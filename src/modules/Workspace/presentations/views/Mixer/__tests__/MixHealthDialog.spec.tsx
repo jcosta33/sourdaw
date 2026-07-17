@@ -9,17 +9,17 @@ describe('MixHealthDialog', () => {
     });
 
     it('should render without crashing', () => {
-        render(<MixHealthDialog />);
+        render(<MixHealthDialog open={false} onOpenChange={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<MixHealthDialog />);
+        render(<MixHealthDialog open={false} onOpenChange={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<MixHealthDialog />);
+        render(<MixHealthDialog open={false} onOpenChange={vi.fn()} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

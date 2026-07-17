@@ -5,7 +5,9 @@ import { deleteCompGroup } from '../deleteCompGroup';
 import type { GroupCompingState } from '../../../../stores/groupComping';
 
 const mocks = vi.hoisted(() => ({
-    groupCompingStoreValue: { value: { groups: [], activeGroupId: null } as GroupCompingState },
+    groupCompingStoreValue: {
+        value: { groups: [], activeGroupId: null, defaultCrossfade: 0.125 } as GroupCompingState,
+    },
     groupCompingStoreSet: vi.fn<(state: GroupCompingState) => void>(),
 }));
 

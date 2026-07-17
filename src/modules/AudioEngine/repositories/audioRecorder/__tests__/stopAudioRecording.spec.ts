@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 
 import { audioRecordingStore } from '../../../stores/audioRecordingStore';
 import { audioEngine } from '../../createWebAudioEngine';
@@ -50,16 +50,33 @@ class FakeAudioWorkletNode {
     }
 }
 
+function make_media_stream_source(disconnect: () => void = vi.fn()): MediaStreamAudioSourceNode {
+    return {
+        context: {} as BaseAudioContext,
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        channelCount: 2,
+        channelCountMode: 'max',
+        channelInterpretation: 'speakers',
+        connect: vi.fn(),
+        disconnect,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true),
+        mediaStream: {} as MediaStream,
+    };
+}
+
 describe('stopAudioRecording', () => {
     let media_track_stop: ReturnType<typeof vi.fn>;
-    let source_disconnect: ReturnType<typeof vi.fn>;
+    let source_disconnect: Mock<() => void>;
 
     beforeEach(() => {
         vi.useFakeTimers();
         FakeWorker.last = null;
         FakeAudioWorkletNode.last = null;
         media_track_stop = vi.fn();
-        source_disconnect = vi.fn();
+        source_disconnect = vi.fn<() => void>();
         audioRecordingStore.set({ isRecording: false, micPermissionGranted: false });
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: {
@@ -69,10 +86,9 @@ describe('stopAudioRecording', () => {
             },
             configurable: true,
         });
-        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue({
-            connect: vi.fn(),
-            disconnect: source_disconnect,
-        } as MediaStreamAudioSourceNode);
+        vi.mocked(audioEngine.context.createMediaStreamSource).mockReturnValue(
+            make_media_stream_source(source_disconnect)
+        );
         vi.stubGlobal('SharedArrayBuffer', ArrayBuffer);
         vi.stubGlobal('Worker', FakeWorker);
         vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);

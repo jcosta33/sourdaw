@@ -1,4 +1,4 @@
-import { change, init } from '@automerge/automerge';
+import { change, init, type Doc } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
 import { sanitizeIncomingCrdtDocument } from '../sanitizeIncomingCrdtDocument';
@@ -47,7 +47,9 @@ describe('sanitizeIncomingCrdtDocument', () => {
             };
         });
 
-        const sanitized = sanitizeIncomingCrdtDocument(document);
+        // sanitizeIncomingCrdtDocument returns Doc<unknown>; the input was built as
+        // Doc<IncomingDocument>, so re-affirming that shape here is sound.
+        const sanitized = sanitizeIncomingCrdtDocument(document) as Doc<IncomingDocument>;
 
         expect(sanitized.actionHistory).toEqual({
             entries: [

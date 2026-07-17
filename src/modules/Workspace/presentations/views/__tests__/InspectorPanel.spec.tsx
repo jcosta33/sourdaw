@@ -4,12 +4,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { InspectorPanel } from '../InspectorPanel';
 
 // Mock external dependencies
-const mockUseStore = vi.fn(() => ({ selectedClipId: null }));
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { selectedClipId: string | null } => ({
+    selectedClipId: null,
+}));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-const mockUseTracks = vi.fn(() => ({ tracks: [], selectedTrackId: null }));
+type TrackFixture = {
+    id: string;
+    name: string;
+    kind: string;
+    clips: { id: string; name: string }[];
+    devices: { id: string; name: string }[];
+};
+const mockUseTracks = vi.fn((): { tracks: TrackFixture[]; selectedTrackId: string | null } => ({
+    tracks: [],
+    selectedTrackId: null,
+}));
 vi.mock('../../hooks/useTracks', () => ({
     useTracks: () => mockUseTracks(),
 }));

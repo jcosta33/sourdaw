@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setWarpAlgorithm } from '../setWarpAlgorithm';
 
-import type { WarpState, ClipWarpSettings } from '#/modules/AudioEngine/stores/audioWarp';
+import type { ClipWarpSettings } from '#/modules/AudioEngine/stores/audioWarp';
 
 const mocks = vi.hoisted(() => ({
     audioWarpStoreValue: {

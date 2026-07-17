@@ -146,7 +146,9 @@ function makeMidi(): NonNullable<MidiStoreState> {
         notesByClipId: {
             'clip-1': [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
         },
-    } as NonNullable<MidiStoreState>;
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    };
 }
 
 async function runSchedule(): Promise<PendingWorkletEvent[]> {

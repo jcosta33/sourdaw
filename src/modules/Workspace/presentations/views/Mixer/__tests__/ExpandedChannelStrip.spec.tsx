@@ -52,17 +52,17 @@ describe('ExpandedChannelStrip', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} />);
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} />);
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} />);
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

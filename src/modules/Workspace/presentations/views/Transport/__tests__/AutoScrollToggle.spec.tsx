@@ -7,7 +7,7 @@ import { toggleTimelineAutoScroll } from '#/modules/Arrangement/useCases';
 import { AutoScrollToggle } from '../AutoScrollToggle';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({

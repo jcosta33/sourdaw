@@ -2,17 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiStoreState } from '../../../stores/midiStore';
 
-vi.mock('../../../stores/midiStore', () => {
-    const midiStore = {
-        value: null as MidiStoreState | null,
-        set: vi.fn<(state: MidiStoreState) => void>(),
-    };
-    midiStore.set.mockImplementation((state) => {
-        midiStore.value = state;
-    });
-
-    return { midiStore };
+const mocks = vi.hoisted(() => {
+    const state: { value: MidiStoreState | null } = { value: null };
+    return { state };
 });
+
+vi.mock('../../../stores/midiStore', () => ({
+    midiStore: {
+        get value() {
+            return mocks.state.value;
+        },
+        set: vi.fn((next: MidiStoreState | null) => {
+            mocks.state.value = next;
+        }),
+    },
+}));
 
 const { removeMidiClipData } = await import('../removeMidiClipData');
 const { midiStore } = await import('../../../stores/midiStore');
@@ -37,7 +41,7 @@ function createMidiState(): MidiStoreState {
 describe('removeMidiClipData', () => {
     beforeEach(() => {
         vi.mocked(midiStore.set).mockClear();
-        midiStore.value = createMidiState();
+        mocks.state.value = createMidiState();
     });
 
     it('removes matching data from all MIDI maps in one write and preserves unrelated entries', () => {
@@ -66,6 +70,9 @@ describe('removeMidiClipData', () => {
         removeMidiClipData(['clip-note-only']);
 
         const nextState = midiStore.value;
+        if (!nextState) {
+            throw new Error('Expected MIDI state after removal');
+        }
 
         expect(midiStore.set).toHaveBeenCalledTimes(1);
         expect(nextState.notesByClipId).not.toBe(state.notesByClipId);
@@ -76,7 +83,7 @@ describe('removeMidiClipData', () => {
     });
 
     it('does not write when the MIDI store is unavailable', () => {
-        midiStore.value = null;
+        mocks.state.value = null;
 
         removeMidiClipData(['clip-note-only']);
 

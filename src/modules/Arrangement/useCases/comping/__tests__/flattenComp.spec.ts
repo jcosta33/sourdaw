@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { flattenComp } from '../flattenComp';
+
+const mocks = vi.hoisted(() => ({
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
+}));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        value: null,
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -17,7 +23,7 @@ describe('flattenComp', () => {
     });
 
     it('no-ops when store is empty', () => {
-        takeLaneStore.value = null as never;
+        mocks.takeLaneStoreValue.value = null;
         flattenComp('t1');
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
@@ -25,7 +31,7 @@ describe('flattenComp', () => {
     it('removes the lane for the track', () => {
         const laneA = createTakeLane('t1');
         const laneB = createTakeLane('t2');
-        takeLaneStore.value = { lanes: [laneA, laneB] } as never;
+        mocks.takeLaneStoreValue.value = { lanes: [laneA, laneB] };
         flattenComp('t1');
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: unknown[] };

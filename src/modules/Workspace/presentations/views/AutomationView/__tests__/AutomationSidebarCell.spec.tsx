@@ -9,7 +9,7 @@ describe('AutomationSidebarCell', () => {
     });
 
     it('should render without crashing', () => {
-        render(<AutomationSidebarCell />);
+        render(<AutomationSidebarCell>cell</AutomationSidebarCell>);
         expect(document.body).toBeTruthy();
     });
 });

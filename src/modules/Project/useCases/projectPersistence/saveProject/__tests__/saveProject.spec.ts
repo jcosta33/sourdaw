@@ -60,7 +60,11 @@ describe('saveProject', () => {
         await vi.waitFor(() => {
             expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
         });
-        const [, key] = mocks.addToRecentProjects.mock.calls[0];
+        const first_call = mocks.addToRecentProjects.mock.calls[0];
+        if (!first_call) {
+            throw new Error('expected an addToRecentProjects call');
+        }
+        const [, key] = first_call;
         // A rename changes name but not createdAt; the key must be stable across it.
         expect(key).toBe('sourdaw:project:1700000000000');
         expect(key).not.toContain('My Song');

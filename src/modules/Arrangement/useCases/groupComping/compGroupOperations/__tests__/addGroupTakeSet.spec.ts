@@ -30,7 +30,11 @@ describe('addGroupTakeSet', () => {
         addGroupTakeSet('g1', 'Take 1');
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledTimes(1);
-        const group = mocks.groupCompingStoreSet.mock.calls[0][0].groups[0];
+        const setCall = mocks.groupCompingStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected groupCompingStore.set to be called');
+        }
+        const group = setCall[0].groups[0];
         expect(group.takeSets).toHaveLength(1);
         expect(group.takeSets[0]).toMatchObject({
             id: 'ts-123',

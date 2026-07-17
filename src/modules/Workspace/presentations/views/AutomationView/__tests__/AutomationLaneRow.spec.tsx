@@ -82,6 +82,7 @@ describe('AutomationLaneRow', () => {
             minValue: 0,
             maxValue: 1,
             points: [],
+            objects: [],
             visible: true,
             enabled: true,
             collapsed: false,

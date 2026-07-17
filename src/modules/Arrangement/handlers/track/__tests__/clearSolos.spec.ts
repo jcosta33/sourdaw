@@ -18,7 +18,6 @@ describe('handleClearSolos', () => {
     it('executes clearSolos', () => {
         void handleClearSolos.execute({
             type: 'clearSolos',
-            payload: {},
         });
 
         expect(mocks.clearSolos).toHaveBeenCalledTimes(1);
@@ -27,7 +26,6 @@ describe('handleClearSolos', () => {
     it('provides a description', () => {
         const desc = handleClearSolos.describe({
             type: 'clearSolos',
-            payload: {},
         });
         expect(desc.label).toBe('Clear all solos');
     });

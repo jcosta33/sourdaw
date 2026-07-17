@@ -9,7 +9,7 @@ vi.mock('../../repositories/track/updateClip', () => ({
 
 describe('clip stretch use case', () => {
     it('setClipStretchMode updates clip stretch mode', () => {
-        setClipStretchMode('c1', 'beats');
+        setClipStretchMode('c1', 'timestretch');
         expect(updateClip).toHaveBeenCalled();
     });
 });

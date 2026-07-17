@@ -74,7 +74,9 @@ type ArrangementState = {
     arrangements: {
         id: string;
         name: string;
-        trackIds: string[];
+        tracks: TrackState;
+        automation: { lanes: unknown[] };
+        midi: MidiState;
     }[];
     activeArrangementId: string;
 };

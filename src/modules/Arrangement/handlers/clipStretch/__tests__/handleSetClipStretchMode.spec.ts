@@ -18,18 +18,18 @@ describe('handleSetClipStretchMode', () => {
     it('executes setClipStretchMode with the provided payload', () => {
         void handleSetClipStretchMode.execute({
             type: 'setClipStretchMode',
-            payload: { clipId: 'c1', mode: 'paulstretch' },
+            payload: { clipId: 'c1', mode: 'timestretch' },
         });
 
-        expect(mocks.setClipStretchMode).toHaveBeenCalledWith('c1', 'paulstretch');
+        expect(mocks.setClipStretchMode).toHaveBeenCalledWith('c1', 'timestretch');
     });
 
     it('provides a description reflecting the mode', () => {
         const desc = handleSetClipStretchMode.describe({
             type: 'setClipStretchMode',
-            payload: { clipId: 'c1', mode: 'paulstretch' },
+            payload: { clipId: 'c1', mode: 'timestretch' },
         });
-        expect(desc.label).toBe('Set clip stretch mode to paulstretch');
+        expect(desc.label).toBe('Set clip stretch mode to timestretch');
     });
 
     it('is undoable', () => {

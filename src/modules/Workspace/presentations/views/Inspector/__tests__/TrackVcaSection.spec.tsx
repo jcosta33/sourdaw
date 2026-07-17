@@ -81,8 +81,10 @@ describe('TrackVcaSection', () => {
         color: '#ff0000',
         clips: [],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',
@@ -110,7 +112,7 @@ describe('TrackVcaSection', () => {
 
     const setVcaGroups = (groups: Array<{ id: string; name: string; trackIds: string[] }>): void => {
         mockGetVcaGroups.mockReturnValue(groups);
-        vcaGroupStore.set({ groups });
+        vcaGroupStore.set({ groups: groups.map((group) => ({ ...group, gain: 1, muted: false })) });
     };
 
     it('should render without crashing', () => {

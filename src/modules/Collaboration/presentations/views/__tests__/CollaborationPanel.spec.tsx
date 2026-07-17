@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CollaborationPanel } from '../CollaborationPanel';
 
 const mocks = vi.hoisted(() => ({
-    useStore: vi.fn((store: unknown, defaultValue: unknown) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
     closeCollaborationPanel: vi.fn(),
 }));
 

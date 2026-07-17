@@ -103,7 +103,7 @@ describe('trackStore', () => {
     });
 
     it('should drop malformed track rows while valid neighboring rows survive normalizeTrack defaults', () => {
-        const valid_track = { id: 'track-valid', name: 'Valid Track', kind: 'audio' };
+        const valid_track = { id: 'track-valid', name: 'Valid Track', kind: 'audio' as const };
         fake_doc.tracks = {
             tracks: [
                 'not-a-track',

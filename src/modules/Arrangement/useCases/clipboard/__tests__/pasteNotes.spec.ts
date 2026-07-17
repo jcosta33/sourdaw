@@ -63,7 +63,7 @@ describe('pasteNotes', () => {
             velocity: 90,
         };
         Reflect.set(laterNote, 'pressure', 'invalid-pressure');
-        const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('unused-uuid');
+        const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('unused-0000-0000-0000-0000');
         setNoteClipboard({ notes: [laterNote, earlierNote] });
 
         pasteNotes('destination-clip', 3);

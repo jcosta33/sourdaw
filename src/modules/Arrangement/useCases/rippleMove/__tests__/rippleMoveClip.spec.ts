@@ -45,7 +45,6 @@ describe('rippleMoveClip', () => {
         rippleMoveClip({
             trackId: 't1',
             clipId: 'c1',
-            oldStartBeat: 0,
             newStartBeat: 30,
             clipDuration: 4,
             plan,

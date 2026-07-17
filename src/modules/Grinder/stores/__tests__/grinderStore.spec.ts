@@ -21,6 +21,10 @@ describe('grinderStore', () => {
                     ...DEFAULT_PATCH,
                     prePedals: [],
                 },
+                basePatch: {
+                    ...DEFAULT_PATCH,
+                    prePedals: [],
+                },
             },
         });
     });

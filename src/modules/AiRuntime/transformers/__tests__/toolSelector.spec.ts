@@ -11,6 +11,11 @@ describe('toolSelector', () => {
             function: {
                 name,
                 description: '',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: [],
+                },
             },
         };
     }

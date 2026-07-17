@@ -12,7 +12,7 @@ describe('createHmrPersistentState', () => {
         // Each test starts with a fresh simulated `hot.data` so the
         // assertions are independent.
         if (import.meta.hot) {
-            import.meta.hot.data = {};
+            (import.meta.hot as { data: Record<string, unknown> }).data = {};
         }
     });
 

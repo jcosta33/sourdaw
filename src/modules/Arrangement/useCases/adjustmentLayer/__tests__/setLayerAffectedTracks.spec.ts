@@ -31,7 +31,11 @@ describe('setLayerAffectedTracks', () => {
 
         setLayerAffectedTracks('l1', ['t1', 't2', 't2']);
 
-        const layers = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers;
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to be called');
+        }
+        const layers = setCall[0].layers;
         expect(layers[0].affectedTrackIds).toEqual(['t1', 't2']);
         expect(layers[1].affectedTrackIds).toEqual(['tx']);
     });

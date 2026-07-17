@@ -63,7 +63,7 @@ const cachedBuffer: AudioBuffer = {
     copyFromChannel: vi.fn<(destination: Float32Array, channelNumber: number, bufferOffset?: number) => void>(),
     copyToChannel: vi.fn<(source: Float32Array, channelNumber: number, bufferOffset?: number) => void>(),
     duration: 0.5,
-    getChannelData: vi.fn<(channelNumber: number) => Float32Array>(() => new Float32Array(1)),
+    getChannelData: vi.fn<(channelNumber: number) => Float32Array<ArrayBuffer>>(() => new Float32Array(1)),
     length: 1,
     numberOfChannels: 1,
     sampleRate: 44100,

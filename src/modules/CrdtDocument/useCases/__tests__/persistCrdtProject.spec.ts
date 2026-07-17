@@ -595,9 +595,10 @@ describe('persistCrdtProject', () => {
     });
 
     it('does not let a superseded empty load strand reset authority or later autosaves', async () => {
-        let resolveEmptySnapshot:
-            | ((value: { authority: { epoch: string; revision: number; rootLineage: string }; bundle: null }) => void)
-            | null = null;
+        let resolveEmptySnapshot: (value: {
+            authority: { epoch: string; revision: number; rootLineage: string };
+            bundle: null;
+        }) => void = () => undefined;
         const emptySnapshot = new Promise<{
             authority: { epoch: string; revision: number; rootLineage: string };
             bundle: null;
@@ -626,7 +627,7 @@ describe('persistCrdtProject', () => {
             replacementSave.complete();
             await replacementCompaction;
 
-            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
+            resolveEmptySnapshot({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
             await expect(staleLoad).resolves.toBe(false);
 
             automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
@@ -650,7 +651,7 @@ describe('persistCrdtProject', () => {
                 afterSupersededLoad: true,
             });
         } finally {
-            resolveEmptySnapshot?.({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
+            resolveEmptySnapshot({ authority: { epoch: '', revision: 0, rootLineage: 'main' }, bundle: null });
             await staleLoad?.catch(() => undefined);
             await autosave?.catch(() => undefined);
             for (const transaction of persistence.getTransactions('readwrite')) {
@@ -948,7 +949,7 @@ describe('persistCrdtProject', () => {
             true
         );
 
-        let releaseMerge: (() => void) | null = null;
+        let releaseMerge: () => void = () => undefined;
         const mergeGate = new Promise<void>((resolve) => {
             releaseMerge = resolve;
         });
@@ -974,7 +975,7 @@ describe('persistCrdtProject', () => {
                 doc.replacementProject = true;
             });
             const replacementCompaction = queueAfterMigration.runCrdtPersistenceOperation('compact');
-            releaseMerge?.();
+            releaseMerge();
 
             const replacementSave = await persistence.waitForTransaction('readwrite', 3);
             replacementSave.complete();
@@ -996,7 +997,7 @@ describe('persistCrdtProject', () => {
                 'remoteBeforeReplacement'
             );
         } finally {
-            releaseMerge?.();
+            releaseMerge();
             vi.doUnmock('../../repositories/automergeRepository');
             vi.doUnmock('#/utils/HMR/createHmrPersistentState');
             vi.resetModules();

@@ -9,12 +9,12 @@ describe('SectionTitle', () => {
     });
 
     it('should render without crashing', () => {
-        render(<SectionTitle />);
+        render(<SectionTitle icon={<span />} title="Audio" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<SectionTitle />);
+        render(<SectionTitle icon={<span />} title="Audio" />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

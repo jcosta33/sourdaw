@@ -15,17 +15,17 @@ describe('ProjectName', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<ProjectName />);
+        renderWithTooltip(<ProjectName name="Untitled Project" dirty={false} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<ProjectName />);
+        renderWithTooltip(<ProjectName name="Untitled Project" dirty={false} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<ProjectName />);
+        renderWithTooltip(<ProjectName name="Untitled Project" dirty={false} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

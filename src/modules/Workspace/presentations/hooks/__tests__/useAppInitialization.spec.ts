@@ -67,7 +67,7 @@ describe('useAppInitialization — first-gesture engine resume', () => {
         vi.clearAllMocks();
         projectStoreMock.current = null;
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(false);
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
         } catch {
@@ -106,7 +106,7 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         vi.clearAllMocks();
         projectStoreMock.current = null;
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(false);
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
         } catch {
@@ -147,7 +147,7 @@ describe('useAppInitialization — autosave governed by preferences', () => {
         projectStoreMock.current = null;
         vi.useFakeTimers();
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(false);
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: true, autoSaveIntervalMs: 30_000 };
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -195,7 +195,7 @@ describe('useAppInitialization — Project loading boundary', () => {
             initialized: true,
         };
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(false);
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
         } catch {
@@ -249,7 +249,7 @@ describe('useAppInitialization — first-load shortcut hint', () => {
         projectStoreMock.current = null;
         mockPreferencesValueHolder.current = { uiScale: 1, autoSave: false, autoSaveIntervalMs: 30_000 };
         vi.mocked(resumeEngine).mockResolvedValue(undefined);
-        vi.mocked(requestMicPermission).mockResolvedValue(undefined);
+        vi.mocked(requestMicPermission).mockResolvedValue(false);
         try {
             localStorage.removeItem('wd:first-load-hint-shown');
         } catch {

@@ -17,7 +17,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-const mockUseStore = vi.fn(() => ({ lanes: [] }));
+type TakeFixture = { id: string; name: string; startBeat: number; endBeat: number; selected: boolean };
+type TakeLanesStateFixture = { lanes: { trackId: string; takes: TakeFixture[] }[] };
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): TakeLanesStateFixture => ({ lanes: [] }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));

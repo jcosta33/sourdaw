@@ -38,7 +38,7 @@ describe('getAudioDevices', () => {
         expect(devices).toHaveLength(3);
         expect(devices[0]).toEqual({ id: 'in1', label: 'Mic 1', kind: 'audioinput' });
         expect(devices[1]).toEqual({ id: 'out1', label: 'Speakers', kind: 'audiooutput' });
-        expect(devices[2].label).toBe('Device no-label');
+        expect(devices[2]?.label).toBe('Device no-label');
     });
 
     it('returns empty array and logs warning on error', async () => {

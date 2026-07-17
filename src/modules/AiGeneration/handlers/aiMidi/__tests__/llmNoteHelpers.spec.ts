@@ -1,6 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type InjectableFunction } from '#/infra/di/inject';
+
 import { notePitchToName, formatNotesForLlm, llmGenerateNotes } from '../llmNoteHelpers';
+
+// llmGenerateNotes expects a DI-injectable tool-call runner; stamp the injectable
+// metadata onto plain vi.fn mocks so they satisfy that contract.
+function asInjectable<TMock extends (...args: never[]) => unknown>(mockFn: TMock): TMock & InjectableFunction {
+    return Object.assign(mockFn, {
+        _isInjectable: true,
+        _deps: {},
+        _factory: () => mockFn,
+    });
+}
 
 describe('llmNoteHelpers', () => {
     describe('notePitchToName', () => {
@@ -42,14 +54,18 @@ describe('llmNoteHelpers', () => {
             ]);
 
             const result = await llmGenerateNotes(
-                mockRunToolCalls,
+                asInjectable(mockRunToolCalls),
                 'make a cool beat',
                 [{ pitch: 64, startBeat: 1, duration: 0.5, velocity: 90 }],
                 'clip-1'
             );
 
             expect(mockRunToolCalls).toHaveBeenCalledTimes(1);
-            const userMsg = mockRunToolCalls.mock.calls[0][1];
+            const call = mockRunToolCalls.mock.calls[0];
+            if (!call) {
+                throw new Error('Expected runToolCalls call');
+            }
+            const userMsg = call[1];
             expect(userMsg).toContain('make a cool beat');
             expect(userMsg).toContain('E4(1-1.5,v90)');
             expect(userMsg).toContain('clip-1');
@@ -60,7 +76,7 @@ describe('llmNoteHelpers', () => {
         it('returns empty array if LLM tool call has no notes or is not addNotes', async () => {
             const mockRunToolCalls = vi.fn().mockResolvedValue([{ name: 'otherTool', arguments: {} }]);
 
-            const result = await llmGenerateNotes(mockRunToolCalls, 'instruction', [], 'c1');
+            const result = await llmGenerateNotes(asInjectable(mockRunToolCalls), 'instruction', [], 'c1');
 
             expect(result).toEqual([]);
         });

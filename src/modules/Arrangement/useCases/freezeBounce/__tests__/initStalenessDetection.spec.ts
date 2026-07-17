@@ -75,8 +75,15 @@ describe('initStalenessDetection', () => {
         expect(computeTrackHash).toHaveBeenCalled();
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
 
-        const updater = vi.mocked(updateTrack).mock.calls[0][1] as any;
-        const track = trackStore.value!.tracks[0];
+        const call = vi.mocked(updateTrack).mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateTrack to be called');
+        }
+        const updater = call[1];
+        const track = trackStore.value?.tracks[0];
+        if (!track) {
+            throw new Error('expected a track in the store');
+        }
         const updatedTrack = updater(track);
 
         expect(updatedTrack.freezeState.status).toBe('stale');

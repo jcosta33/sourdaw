@@ -7,7 +7,7 @@ const { removeTaskMock } = vi.hoisted(() => ({ removeTaskMock: vi.fn() }));
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {

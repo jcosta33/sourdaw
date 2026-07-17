@@ -71,7 +71,11 @@ describe('StepSequencer', () => {
     it('should expose each step as a checkbox reflecting its active state', () => {
         const pads = [makePad(0)];
         const pattern = makePattern(1, 4);
-        pattern.tracks[0].steps[0] = { ...baseStep, active: true, velocity: 0.5 };
+        const firstTrack = pattern.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a seeded pattern track');
+        }
+        firstTrack.steps[0] = { ...baseStep, active: true, velocity: 0.5 };
 
         render(
             <StepSequencer
@@ -109,11 +113,16 @@ describe('StepSequencer', () => {
         );
 
         const cells = screen.getAllByRole('checkbox');
-        fireEvent.keyDown(cells[2], { key: 'Enter' });
+        const secondCell = cells[1];
+        const thirdCell = cells[2];
+        if (!secondCell || !thirdCell) {
+            throw new Error('Expected at least three step cells');
+        }
+        fireEvent.keyDown(thirdCell, { key: 'Enter' });
         expect(onToggleStep).toHaveBeenCalledWith(0, 2);
 
         onToggleStep.mockClear();
-        fireEvent.keyDown(cells[1], { key: ' ' });
+        fireEvent.keyDown(secondCell, { key: ' ' });
         expect(onToggleStep).toHaveBeenCalledWith(0, 1);
     });
 

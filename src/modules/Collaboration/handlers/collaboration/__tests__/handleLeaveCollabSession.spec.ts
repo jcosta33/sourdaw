@@ -16,7 +16,7 @@ describe('handleLeaveCollabSession', () => {
     it('delegates to leaveSession use case', () => {
         void handleLeaveCollabSession.execute({
             type: 'leaveCollabSession',
-            payload: {},
+            payload: undefined,
         });
         expect(mocks.leaveSession).toHaveBeenCalledTimes(1);
     });

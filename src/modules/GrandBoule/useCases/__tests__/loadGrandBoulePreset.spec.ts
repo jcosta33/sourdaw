@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
 import { findBuiltinGrandBoulePreset } from '../../repositories/findBuiltinGrandBoulePreset';
+import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { loadGrandBoulePreset } from '../loadGrandBoulePreset';
 
@@ -12,6 +13,28 @@ const gbStoreCell = vi.hoisted(() => ({
     value: null as GrandBouleState | null,
     set: vi.fn(),
 }));
+
+function fakeEngine(): { handle: GrandBouleEngineHandle; setParam: Mock<GrandBouleEngineHandle['setParam']> } {
+    const setParam = vi.fn<GrandBouleEngineHandle['setParam']>();
+    return {
+        setParam,
+        handle: {
+            noteOn: vi.fn(),
+            noteOnMidi2: vi.fn(),
+            noteOff: vi.fn(),
+            setParam,
+            setSustain: vi.fn(),
+            setUnaCorda: vi.fn(),
+            setSostenuto: vi.fn(),
+            setTemperament: vi.fn(),
+            loadAttackClip: vi.fn(),
+            allNotesOff: vi.fn(),
+            isReady: () => true,
+            getAnalyserNode: () => null,
+            sampleRate: () => 48000,
+        },
+    };
+}
 
 vi.mock('../../stores/grandBouleStore', () => ({
     grandBouleStore: gbStoreCell,
@@ -30,8 +53,8 @@ describe('loadGrandBoulePreset', () => {
     it('should return false when preset id is unknown', () => {
         vi.mocked(findBuiltinGrandBoulePreset).mockReturnValue(null);
 
-        const engine = { setParam: vi.fn() };
-        expect(loadGrandBoulePreset({ engine, store: gbStoreCell as never, presetId: 'nope' })).toBe(false);
+        const { handle } = fakeEngine();
+        expect(loadGrandBoulePreset({ engine: handle, store: gbStoreCell as never, presetId: 'nope' })).toBe(false);
         expect(gbStoreCell.set).not.toHaveBeenCalled();
     });
 
@@ -44,8 +67,8 @@ describe('loadGrandBoulePreset', () => {
             parameters: params,
         });
 
-        const engine = { setParam: vi.fn() };
-        expect(loadGrandBoulePreset({ engine, store: gbStoreCell as never, presetId: 'ok' })).toBe(false);
+        const { handle } = fakeEngine();
+        expect(loadGrandBoulePreset({ engine: handle, store: gbStoreCell as never, presetId: 'ok' })).toBe(false);
     });
 
     it('should load preset into store and engine when preset and store exist', () => {
@@ -67,10 +90,9 @@ describe('loadGrandBoulePreset', () => {
             temperament: 0,
         };
 
-        const setParam = vi.fn();
-        const engine = { setParam };
+        const { handle, setParam } = fakeEngine();
 
-        expect(loadGrandBoulePreset({ engine, store: gbStoreCell as never, presetId: 'ok' })).toBe(true);
+        expect(loadGrandBoulePreset({ engine: handle, store: gbStoreCell as never, presetId: 'ok' })).toBe(true);
 
         expect(gbStoreCell.set).toHaveBeenCalled();
         expect(setParam).toHaveBeenCalledWith({ name: 'hammer_hardness', value: params.hammerHardness });

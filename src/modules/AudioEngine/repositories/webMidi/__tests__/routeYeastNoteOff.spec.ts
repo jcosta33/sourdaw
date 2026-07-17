@@ -52,6 +52,56 @@ function create_strip(input: { device_nodes: InstrumentDeviceNode[] }): Instrume
     };
 }
 
+type FermenterControls = NonNullable<InstrumentDeviceNode['fermenterControls']>;
+type GrandBouleControls = NonNullable<InstrumentDeviceNode['grandBouleControls']>;
+type LevainControls = NonNullable<InstrumentDeviceNode['levainControls']>;
+
+function create_fermenter_controls(overrides: Partial<FermenterControls> = {}): FermenterControls {
+    return {
+        ready: true,
+        noteOn: () => {},
+        noteOff: () => {},
+        allNotesOff: () => {},
+        setParam: () => {},
+        setBypass: () => {},
+        destroy: () => {},
+        ...overrides,
+    };
+}
+
+function create_grand_boule_controls(overrides: Partial<GrandBouleControls> = {}): GrandBouleControls {
+    return {
+        ready: true,
+        noteOn: () => {},
+        noteOff: () => {},
+        setParam: () => {},
+        setSustain: () => {},
+        setUnaCorda: () => {},
+        setSostenuto: () => {},
+        noteOnMidi2: () => {},
+        setTemperament: () => {},
+        loadAttackClip: () => {},
+        allNotesOff: () => {},
+        setBypass: () => {},
+        destroy: () => {},
+        ...overrides,
+    };
+}
+
+function create_levain_controls(overrides: Partial<LevainControls> = {}): LevainControls {
+    return {
+        ready: true,
+        noteOn: () => {},
+        noteOff: () => {},
+        allNotesOff: () => {},
+        handleCc: () => {},
+        setParam: () => {},
+        setBypass: () => {},
+        destroy: () => {},
+        ...overrides,
+    };
+}
+
 beforeEach(() => {
     fermenter_note_off.mockReset();
     grand_boule_note_off.mockReset();
@@ -189,9 +239,12 @@ describe('routeYeastNoteOffToInstrument', () => {
         const emit_grand_boule_event = vi.fn<(deviceId: string, midiNote: number) => void>();
         const strip = create_strip({
             device_nodes: [
-                { type: 'fermenter', fermenterControls: { noteOff: fermenter_note_off } },
-                { type: 'grand-boule', grandBouleControls: { noteOff: grand_boule_note_off } },
-                { type: 'levain', levainControls: { noteOff: levain_note_off } },
+                { type: 'fermenter', fermenterControls: create_fermenter_controls({ noteOff: fermenter_note_off }) },
+                {
+                    type: 'grand-boule',
+                    grandBouleControls: create_grand_boule_controls({ noteOff: grand_boule_note_off }),
+                },
+                { type: 'levain', levainControls: create_levain_controls({ noteOff: levain_note_off }) },
             ],
         });
 

@@ -32,7 +32,11 @@ describe('createCompGroup', () => {
         createCompGroup('Drums', ['t1', 't2']);
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledTimes(1);
-        const newState = mocks.groupCompingStoreSet.mock.calls[0][0];
+        const setCall = mocks.groupCompingStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected groupCompingStore.set to be called');
+        }
+        const newState = setCall[0];
         expect(newState.groups).toHaveLength(1);
         expect(newState.groups[0]).toMatchObject({
             id: 'grp-123',

@@ -3,14 +3,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Device } from '../../../models/TrackViewTypes';
 import { FaustDeviceStrategy, createFaustStrategy } from '../FaustDeviceStrategy';
 
+type FaustNodeLike = ConstructorParameters<typeof FaustDeviceStrategy>[1];
+
+function make_audio_node(): AudioNode {
+    return {
+        context: {} as BaseAudioContext,
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 2,
+        channelCountMode: 'max',
+        channelInterpretation: 'speakers',
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => true),
+    };
+}
+
 describe('FaustDeviceStrategy', () => {
     it('should forward setParam to faustNode.setParamValue when present', () => {
         const setParamValue = vi.fn();
-        const faustNode = { setParamValue };
+        const faustNode = Object.assign(make_audio_node(), { setParamValue });
         const offlineNode = {
             inputNode: {} as AudioNode,
             outputNode: {} as AudioNode,
-            nodes: [faustNode as unknown as AudioNode],
+            nodes: [faustNode],
         };
         const strategy = new FaustDeviceStrategy(offlineNode, faustNode);
 
@@ -23,9 +41,9 @@ describe('FaustDeviceStrategy', () => {
         const offlineNode = {
             inputNode: {} as AudioNode,
             outputNode: {} as AudioNode,
-            nodes: [{} as AudioNode],
+            nodes: [make_audio_node()],
         };
-        const strategy = new FaustDeviceStrategy(offlineNode, {});
+        const strategy = new FaustDeviceStrategy(offlineNode, make_audio_node() as FaustNodeLike);
         expect(() => strategy.setParam('x', 1)).not.toThrow();
     });
 });

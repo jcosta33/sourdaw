@@ -55,8 +55,12 @@ describe('TrackNode', () => {
         expect(track.strip.preFaderTap.connect).toHaveBeenCalledWith(track.strip.faderNode);
         expect(track.strip.faderNode.connect).toHaveBeenCalledWith(track.strip.postFaderGain);
         expect(track.strip.postFaderGain.connect).toHaveBeenCalledWith(track.strip.panNode);
-        expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.meterNode);
-        expect(track.strip.meterNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
+        const meterNode = track.strip.meterNode;
+        if (!meterNode) {
+            throw new Error('expected the track meter node to be created');
+        }
+        expect(track.strip.panNode.connect).toHaveBeenCalledWith(meterNode);
+        expect(meterNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(deps.masterGainNode);
     });
 
@@ -200,6 +204,7 @@ describe('TrackNode', () => {
                 inputNode: outputNode,
                 outputNode,
                 controller,
+                bypassed: false,
             };
             track.strip.deviceNodes.push(dn as never);
             track.rebuildChain();

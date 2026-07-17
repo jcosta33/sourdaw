@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 const { mockFindDeviceRef, mockGetTrackStrip } = vi.hoisted(() => ({
     mockFindDeviceRef: vi.fn(() => null as { trackId: string; deviceId: string } | null),
@@ -34,7 +34,7 @@ describe('setToasterKitParam', () => {
 
 describe('setToasterKitParam rAF coalescing', () => {
     let rafCallbacks: FrameRequestCallback[];
-    let rafSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'requestAnimationFrame'>>;
+    let rafSpy: MockInstance<typeof requestAnimationFrame>;
     let setParam: ReturnType<typeof vi.fn>;
 
     function flushFrame(): void {

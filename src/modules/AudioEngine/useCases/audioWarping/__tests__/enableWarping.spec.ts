@@ -27,7 +27,7 @@ describe('enableWarping', () => {
         enableWarping('c1');
 
         expect(mocks.audioWarpStoreSet).toHaveBeenCalledTimes(1);
-        const newState = mocks.audioWarpStoreSet.mock.calls[0][0];
+        const newState = mocks.audioWarpStoreSet.mock.calls[0]?.[0];
         const settings = newState.clipSettings.get('c1');
         expect(settings.enabled).toBe(true);
         expect(settings.algorithm).toBe('beats');
@@ -39,7 +39,7 @@ describe('enableWarping', () => {
 
         enableWarping('c1');
 
-        const newState = mocks.audioWarpStoreSet.mock.calls[0][0];
+        const newState = mocks.audioWarpStoreSet.mock.calls[0]?.[0];
         const settings = newState.clipSettings.get('c1');
         expect(settings.enabled).toBe(true);
         expect(settings.algorithm).toBe('complex');

@@ -25,12 +25,12 @@ describe('setStretchRatio', () => {
 
     it('sets the stretch ratio clamped between 0.1 and 10', () => {
         setStretchRatio('c1', 2.0);
-        expect(mocks.audioWarpStoreSet.mock.calls[0][0].clipSettings.get('c1').stretchRatio).toBe(2.0);
+        expect(mocks.audioWarpStoreSet.mock.calls[0]?.[0].clipSettings.get('c1').stretchRatio).toBe(2.0);
 
         setStretchRatio('c1', 50);
-        expect(mocks.audioWarpStoreSet.mock.calls[1][0].clipSettings.get('c1').stretchRatio).toBe(10);
+        expect(mocks.audioWarpStoreSet.mock.calls[1]?.[0].clipSettings.get('c1').stretchRatio).toBe(10);
 
         setStretchRatio('c1', 0.001);
-        expect(mocks.audioWarpStoreSet.mock.calls[2][0].clipSettings.get('c1').stretchRatio).toBe(0.1);
+        expect(mocks.audioWarpStoreSet.mock.calls[2]?.[0].clipSettings.get('c1').stretchRatio).toBe(0.1);
     });
 });

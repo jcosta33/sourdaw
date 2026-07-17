@@ -21,7 +21,11 @@ describe('setupProjectionBridge docId hint', () => {
     function subscribeAndGetCallback(): (docId?: string) => void {
         setupProjectionBridge();
         expect(mocks.onChange).toHaveBeenCalledTimes(1);
-        return mocks.onChange.mock.calls[0][0] as (docId?: string) => void;
+        const firstCall = mocks.onChange.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected onChange to receive a subscription callback');
+        }
+        return firstCall[0] as (docId?: string) => void;
     }
 
     it('re-hydrates on a root-doc change', () => {

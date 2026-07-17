@@ -61,8 +61,10 @@ describe('TrackMidiOutputSection', () => {
         color: '#ff0000',
         clips: [],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',
@@ -120,7 +122,11 @@ describe('TrackMidiOutputSection', () => {
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: 'track-2' } });
         expect(mockUpdateTrack).toHaveBeenCalledWith('track-1', expect.any(Function));
-        const updater = mockUpdateTrack.mock.calls[0][1] as (t: Track) => Track;
+        const firstUpdateCall = mockUpdateTrack.mock.calls[0];
+        if (!firstUpdateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const updater = firstUpdateCall[1] as (t: Track) => Track;
         expect(updater(mockTrack).midiOutputTrackId).toBe('track-2');
     });
 
@@ -130,7 +136,11 @@ describe('TrackMidiOutputSection', () => {
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: '' } });
         expect(mockUpdateTrack).toHaveBeenCalledWith('track-1', expect.any(Function));
-        const updater = mockUpdateTrack.mock.calls[0][1] as (t: Track) => Track;
+        const firstUpdateCall = mockUpdateTrack.mock.calls[0];
+        if (!firstUpdateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const updater = firstUpdateCall[1] as (t: Track) => Track;
         expect(updater(trackWithOutput).midiOutputTrackId).toBe(null);
     });
 

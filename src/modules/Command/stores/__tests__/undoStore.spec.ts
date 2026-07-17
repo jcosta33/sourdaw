@@ -98,11 +98,15 @@ describe('undoStore / pushUndo', () => {
             'dso snapshot',
             {
                 type: 'restoreDsoSnapshot',
-                payload: { bundle: new Map([['root', new Uint8Array([1, 2, 3])]]) },
+                payload: {
+                    bundle: new Map([['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }]]),
+                },
             },
             {
                 type: 'restoreDsoSnapshot',
-                payload: { bundle: new Map([['root', new Uint8Array([4, 5, 6])]]) },
+                payload: {
+                    bundle: new Map([['root', { state: 'present' as const, bytes: new Uint8Array([4, 5, 6]) }]]),
+                },
             }
         );
 

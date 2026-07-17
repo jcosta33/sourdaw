@@ -11,6 +11,6 @@ describe('setSoloMode', () => {
         expect(typeof setSoloMode).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => setSoloMode()).not.toThrow();
+        expect(() => setSoloMode('sip')).not.toThrow();
     });
 });

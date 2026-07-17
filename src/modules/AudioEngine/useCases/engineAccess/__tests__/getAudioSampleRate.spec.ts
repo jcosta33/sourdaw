@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { getAudioSampleRate } from '../getAudioSampleRate';
+
+const engine_context = vi.hoisted(() => ({ value: null as AudioContext | null }));
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
-        context: { sampleRate: 48_000 } as AudioContext,
+        get context() {
+            return engine_context.value;
+        },
     },
 }));
 
 describe('getAudioSampleRate', () => {
     beforeEach(() => {
-        vi.mocked(audioEngine).context = { sampleRate: 48_000 } as AudioContext;
+        engine_context.value = { sampleRate: 48_000 } as AudioContext;
     });
 
     it('should return the context sample rate when available', () => {
@@ -19,7 +22,7 @@ describe('getAudioSampleRate', () => {
     });
 
     it('should fall back to 44100 when context is missing', () => {
-        (audioEngine as any).context = null;
+        engine_context.value = null;
         expect(getAudioSampleRate()).toBe(44_100);
     });
 });

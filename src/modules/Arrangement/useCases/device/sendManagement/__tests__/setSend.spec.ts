@@ -30,7 +30,11 @@ describe('setSend', () => {
         setSend('t1', 'bus1', 0.5, true);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const updateCall = mocks.updateTrack.mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const updater = updateCall[1];
         expect(updater({ sends: [] })).toEqual({ sends: [{ busId: 'bus1', level: 0.5, preFader: true }] });
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.5, true);
@@ -45,7 +49,11 @@ describe('setSend', () => {
         // Try to change level, passing false for preFader but it should stay true
         setSend('t1', 'bus1', 0.8, false);
 
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const updateCall = mocks.updateTrack.mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const updater = updateCall[1];
         expect(updater({ sends: [{ busId: 'bus1', preFader: true }] })).toEqual({
             sends: [{ busId: 'bus1', level: 0.8, preFader: true }],
         });

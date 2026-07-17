@@ -41,14 +41,24 @@ vi.mock('../../models/PresetActions/Registry', () => ({
 describe('fuzzySearch', () => {
     describe('getAvailablePresets', () => {
         it('returns only presets that match the current context', () => {
-            const context = { selectedTrackId: undefined, selectedClipId: undefined, selectedClipType: undefined };
+            const context = {
+                selectedTrackId: undefined,
+                selectedClipId: undefined,
+                selectedClipType: undefined,
+                trackCount: 0,
+            };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(1);
             expect(available[0]!.id).toBe('global-1');
         });
 
         it('returns track and global presets when a track is selected', () => {
-            const context = { selectedTrackId: 't1', selectedClipId: undefined, selectedClipType: undefined };
+            const context = {
+                selectedTrackId: 't1',
+                selectedClipId: undefined,
+                selectedClipType: undefined,
+                trackCount: 1,
+            };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(2);
             expect(available.map((alpha) => alpha.id)).toContain('global-1');
@@ -56,7 +66,12 @@ describe('fuzzySearch', () => {
         });
 
         it('returns audio clip presets when an audio clip is selected', () => {
-            const context = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'audio' as const };
+            const context = {
+                selectedTrackId: 't1',
+                selectedClipId: 'c1',
+                selectedClipType: 'audio' as const,
+                trackCount: 1,
+            };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(3); // Global, Track, ClipAudio
             expect(available.map((alpha) => alpha.id)).toContain('clip-1');
@@ -64,7 +79,12 @@ describe('fuzzySearch', () => {
         });
 
         it('returns midi clip presets when a midi clip is selected', () => {
-            const context = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'midi' as const };
+            const context = {
+                selectedTrackId: 't1',
+                selectedClipId: 'c1',
+                selectedClipType: 'midi' as const,
+                trackCount: 1,
+            };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(3); // Global, Track, ClipMidi
             expect(available.map((alpha) => alpha.id)).toContain('clip-midi-1');
@@ -72,7 +92,12 @@ describe('fuzzySearch', () => {
         });
 
         it('sorts presets by CATEGORY_ORDER', () => {
-            const context = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'audio' as const };
+            const context = {
+                selectedTrackId: 't1',
+                selectedClipId: 'c1',
+                selectedClipType: 'audio' as const,
+                trackCount: 1,
+            };
             const available = getAvailablePresets(context);
             // Track, Clip, Global
             expect(available[0]!.category).toBe('Track');
@@ -82,7 +107,12 @@ describe('fuzzySearch', () => {
     });
 
     describe('searchPresets', () => {
-        const fullContext = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'audio' as const };
+        const fullContext = {
+            selectedTrackId: 't1',
+            selectedClipId: 'c1',
+            selectedClipType: 'audio' as const,
+            trackCount: 1,
+        };
 
         it('returns all available presets if query is empty', () => {
             const results = searchPresets('', fullContext);
@@ -119,14 +149,24 @@ describe('fuzzySearch', () => {
         });
 
         it('filters out unavailable presets even if they match perfectly', () => {
-            const context = { selectedTrackId: undefined, selectedClipId: undefined, selectedClipType: undefined };
+            const context = {
+                selectedTrackId: undefined,
+                selectedClipId: undefined,
+                selectedClipType: undefined,
+                trackCount: 0,
+            };
             const results = searchPresets('delete track', context);
             expect(results.length).toBe(0);
         });
     });
 
     describe('findBestMatch', () => {
-        const fullContext = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'audio' as const };
+        const fullContext = {
+            selectedTrackId: 't1',
+            selectedClipId: 'c1',
+            selectedClipType: 'audio' as const,
+            trackCount: 1,
+        };
 
         it('returns null if query matches nothing', () => {
             expect(findBestMatch('nonsense', fullContext)).toBeNull();

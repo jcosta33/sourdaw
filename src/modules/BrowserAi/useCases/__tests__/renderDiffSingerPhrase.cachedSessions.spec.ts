@@ -23,7 +23,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Hoisted mocks for module-level collaborators ────────────────────────────
 const getLoadedOnnxSessions = vi.hoisted(() => vi.fn<() => Promise<string[]>>());
-const loadOnnxSession = vi.hoisted(() => vi.fn<() => Promise<void>>());
+const loadOnnxSession = vi.hoisted(() =>
+    vi.fn<(input: { modelId: string; modelData: ArrayBuffer }) => Promise<void>>()
+);
 const runDiffSingerPhrase = vi.hoisted(() => vi.fn());
 const readModel = vi.hoisted(() => vi.fn());
 const readRenderCache = vi.hoisted(() => vi.fn());
@@ -150,7 +152,7 @@ describe('renderDiffSingerPhrase — cached-session re-read skip (item #13)', ()
 
         expect(readModel).toHaveBeenCalledTimes(6);
         expect(loadOnnxSession).toHaveBeenCalledTimes(6);
-        const loadedKeys = loadOnnxSession.mock.calls.map((c) => (c[0] as { modelId: string }).modelId).sort();
+        const loadedKeys = loadOnnxSession.mock.calls.map((c) => c[0].modelId).sort();
         expect(loadedKeys).toEqual([...ALL_SESSION_KEYS].sort());
     });
 
@@ -164,6 +166,10 @@ describe('renderDiffSingerPhrase — cached-session re-read skip (item #13)', ()
         // Exactly the evicted vocoder is re-read + re-loaded; the five present skip.
         expect(readModel).toHaveBeenCalledTimes(1);
         expect(loadOnnxSession).toHaveBeenCalledTimes(1);
-        expect((loadOnnxSession.mock.calls[0]![0] as { modelId: string }).modelId).toBe('shared/vocoder');
+        const firstLoadCall = loadOnnxSession.mock.calls[0];
+        if (!firstLoadCall) {
+            throw new Error('expected loadOnnxSession to have been called');
+        }
+        expect(firstLoadCall[0].modelId).toBe('shared/vocoder');
     });
 });

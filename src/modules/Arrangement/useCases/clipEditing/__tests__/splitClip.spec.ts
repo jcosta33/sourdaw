@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof originalGetTrackState>(),
     setTrackState: vi.fn<typeof originalSetTrackState>(),
     getNextClipId: vi.fn<typeof originalGetNextClipId>(() => 'new-clip-id'),
-    snapToZeroCrossing: vi.fn<typeof originalSnapToZeroCrossing>((clip, splitBeat) => splitBeat),
+    snapToZeroCrossing: vi.fn<typeof originalSnapToZeroCrossing>((_clip, splitBeat) => splitBeat),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -53,7 +53,11 @@ describe('splitClip', () => {
         expect(rightId).toBe('new-clip-id');
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to have been called');
+        }
+        const newState = setCall[0];
         const track = newState.tracks[0]!;
 
         expect(track.clips).toHaveLength(2);

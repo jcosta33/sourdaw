@@ -50,8 +50,9 @@ describe('audioDeviceSelection injectables', () => {
     });
 
     it('should set sink id when supported and update store', async () => {
+        type AudioContextWithSinkId = AudioContext & { setSinkId(id: string): Promise<void> };
         await setOutputDevice('out-1');
 
-        expect(audioEngine.context.setSinkId).toHaveBeenCalledWith('out-1');
+        expect((audioEngine.context as AudioContextWithSinkId).setSinkId).toHaveBeenCalledWith('out-1');
     });
 });

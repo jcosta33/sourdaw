@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
 
+import { TrackDummy } from '../../../../__tests__/TrackDummy';
 import { LevainLoadingSpinner } from '../LevainLoadingSpinner';
 
 // Mock external dependencies
@@ -21,17 +22,17 @@ vi.mock('#/modules/Levain/stores', async (importOriginal) => ({
 
 const LEVAIN_DEVICE_ID = 'levain-device-1';
 
-const mockTrackWithLevain = {
+const mockTrackWithLevain = TrackDummy.create({
     id: 'track1',
     name: 'Levain Track',
-    devices: [{ id: LEVAIN_DEVICE_ID, type: 'levain' }],
-};
+    devices: [{ id: LEVAIN_DEVICE_ID, name: 'Levain', type: 'levain', bypassed: false, parameterValues: {} }],
+});
 
-const mockTrackWithoutLevain = {
+const mockTrackWithoutLevain = TrackDummy.create({
     id: 'track2',
     name: 'Regular Track',
-    devices: [{ id: 'other-device-1', type: 'other' }],
-};
+    devices: [{ id: 'other-device-1', name: 'Other', type: 'other', bypassed: false, parameterValues: {} }],
+});
 
 function loadingInstances(): Record<string, { sampleLoadProgress: number | null; engineReady: boolean }> {
     return { [LEVAIN_DEVICE_ID]: { sampleLoadProgress: 50, engineReady: false } };

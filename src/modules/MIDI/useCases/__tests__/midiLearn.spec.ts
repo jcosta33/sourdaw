@@ -12,28 +12,33 @@ import { scaleMidiValue } from '../midiLearn/scaleMidiValue';
 import { startMidiLearn } from '../midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
 
-vi.mock('../../stores/midiLearnStore', () => {
-    const midiLearnStore: {
-        value: MidiLearnState | null;
-        set: ReturnType<typeof vi.fn>;
-    } = {
+const mocks = vi.hoisted(() => {
+    const state: { value: MidiLearnState | null } = {
         value: {
             mappings: [],
             isLearning: false,
             learningTarget: null,
         },
-        set: vi.fn(),
     };
-    midiLearnStore.set.mockImplementation((next: MidiLearnState) => {
-        midiLearnStore.value = next;
+    const set = vi.fn<(next: MidiLearnState | null) => void>((next) => {
+        state.value = next;
     });
-    return { midiLearnStore };
+    return { state, set };
 });
+
+vi.mock('../../stores/midiLearnStore', () => ({
+    midiLearnStore: {
+        get value() {
+            return mocks.state.value;
+        },
+        set: mocks.set,
+    },
+}));
 
 describe('midiLearn injectables', () => {
     beforeEach(() => {
         vi.mocked(midiLearnStore.set).mockClear();
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -41,7 +46,7 @@ describe('midiLearn injectables', () => {
     });
 
     it('should not update store when startMidiLearn finds no store state', () => {
-        midiLearnStore.value = null;
+        mocks.state.value = null;
 
         const logger = createMock<Logger>();
         injectDependencies(startMidiLearn, { logger });
@@ -76,7 +81,7 @@ describe('midiLearn injectables', () => {
     });
 
     it('should clear learning state when stopMidiLearn runs', () => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [],
             isLearning: true,
             learningTarget: {
@@ -100,7 +105,7 @@ describe('midiLearn injectables', () => {
     });
 
     it('should not persist mapping when completeMidiLearn runs without active learning', () => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -115,7 +120,7 @@ describe('midiLearn injectables', () => {
     });
 
     it('should append a new mapping when completeMidiLearn runs while learning', () => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [],
             isLearning: true,
             learningTarget: {
@@ -146,7 +151,7 @@ describe('midiLearn injectables', () => {
     });
 
     it('should replace an existing mapping when completeMidiLearn targets same channel and cc', () => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [
                 {
                     id: 'midi-map-old',
@@ -172,7 +177,10 @@ describe('midiLearn injectables', () => {
 
         completeMidiLearn(1, 2);
 
-        const setCall = vi.mocked(midiLearnStore.set).mock.calls[0]![0];
+        const setCall = vi.mocked(midiLearnStore.set).mock.calls[0]?.[0];
+        if (!setCall) {
+            throw new Error('Expected midiLearnStore.set call');
+        }
         expect(setCall.mappings).toHaveLength(1);
         expect(setCall.mappings[0]).toEqual(
             expect.objectContaining({
@@ -187,7 +195,7 @@ describe('midiLearn injectables', () => {
 
 describe('midiLearn helpers', () => {
     beforeEach(() => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [],
             isLearning: false,
             learningTarget: null,
@@ -201,7 +209,7 @@ describe('midiLearn helpers', () => {
     });
 
     it('should return mapping for matching learning target', () => {
-        midiLearnStore.value = {
+        mocks.state.value = {
             mappings: [
                 {
                     id: 'm1',

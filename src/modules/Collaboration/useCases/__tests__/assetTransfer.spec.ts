@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { type PeerMessage } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../../models/SyncChannelConstants';
@@ -49,14 +49,14 @@ async function captureTransferMessages(blob: Blob, name: string): Promise<{ hash
 
 describe('AssetTransfer', () => {
     let peer: PeerConnectionManager;
-    let onAssetAvailable: ReturnType<typeof vi.fn>;
-    let onProgress: ReturnType<typeof vi.fn>;
+    let onAssetAvailable: Mock<(hash: string) => void>;
+    let onProgress: Mock<(hash: string, receivedChunks: number, totalChunks: number) => void>;
     let transfer: AssetTransfer;
 
     beforeEach(() => {
         peer = makePeerManager();
-        onAssetAvailable = vi.fn();
-        onProgress = vi.fn();
+        onAssetAvailable = vi.fn<(hash: string) => void>();
+        onProgress = vi.fn<(hash: string, receivedChunks: number, totalChunks: number) => void>();
         transfer = new AssetTransfer(peer, { onAssetAvailable, onProgress });
     });
 

@@ -42,8 +42,11 @@ describe('handleRenameTrackAlternative', () => {
             payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
-        expect(newState.tracks[0].alternatives[0].name).toBe('New');
-        expect(newState.tracks[0].alternatives[1].name).toBe('Other');
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        if (!newState) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        expect(newState.tracks[0]?.alternatives[0]?.name).toBe('New');
+        expect(newState.tracks[0]?.alternatives[1]?.name).toBe('Other');
     });
 });

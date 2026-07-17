@@ -15,17 +15,17 @@ describe('SoloModeSelector', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector soloMode="sip" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector soloMode="sip" />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<SoloModeSelector />);
+        renderWithTooltip(<SoloModeSelector soloMode="sip" />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

@@ -115,9 +115,11 @@ describe('pasteClip', () => {
 
         expect(mocks.readTransportState).toHaveBeenCalledTimes(1);
         expect(mocks.getTrackState).toHaveBeenCalledTimes(1);
-        expect(mocks.readTransportState.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.getTrackState.mock.invocationCallOrder[0]
-        );
+        const getTrackStateOrder = mocks.getTrackState.mock.invocationCallOrder[0];
+        if (getTrackStateOrder === undefined) {
+            throw new Error('expected getTrackState to have been invoked');
+        }
+        expect(mocks.readTransportState.mock.invocationCallOrder[0]).toBeLessThan(getTrackStateOrder);
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
@@ -238,15 +240,14 @@ describe('pasteClip', () => {
             ],
         ]);
         expect(uuidCallCountsAtOwner).toEqual([1, 3]);
-        expect(mocks.addClip.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.setNotesForClip.mock.invocationCallOrder[0]
-        );
-        expect(mocks.setNotesForClip.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.addClip.mock.invocationCallOrder[1]
-        );
-        expect(mocks.addClip.mock.invocationCallOrder[1]).toBeLessThan(
-            mocks.setNotesForClip.mock.invocationCallOrder[1]
-        );
+        const [addClipOrderFirst, addClipOrderSecond] = mocks.addClip.mock.invocationCallOrder;
+        const [setNotesOrderFirst, setNotesOrderSecond] = mocks.setNotesForClip.mock.invocationCallOrder;
+        if (addClipOrderSecond === undefined || setNotesOrderFirst === undefined || setNotesOrderSecond === undefined) {
+            throw new Error('expected two addClip and two setNotesForClip invocations');
+        }
+        expect(addClipOrderFirst).toBeLessThan(setNotesOrderFirst);
+        expect(setNotesOrderFirst).toBeLessThan(addClipOrderSecond);
+        expect(addClipOrderSecond).toBeLessThan(setNotesOrderSecond);
     });
 
     it('skips a clip when its target track is missing', () => {

@@ -23,15 +23,12 @@ describe('CrustControlZone', () => {
 
     // NOTE on the `setParam` per-key type-safety fix (widened Setter -> generic
     // `<K extends keyof CrustPatch>(key: K, value: CrustPatch[K])`):
-    // the defect is purely compile-time and has NO runtime manifestation. The
-    // only seam that could assert it is a type-level `@ts-expect-error`, but this
-    // repo never type-checks spec files — `tsconfig.json` excludes
-    // `src/**/*.spec.ts*` and `tsconfig.test.json` includes only the Yeast
-    // processors — so such a directive would be a dead, unverified test giving
-    // false confidence. The fix's guarantee therefore lives at the call site in
-    // CrustControlZone.tsx (where `setParam('algorithm', 7)` now fails to
-    // compile), not in this suite. The test below instead pins the runtime wiring
-    // — that each pill forwards the correctly-typed value to `setParam`.
+    // the defect is purely compile-time and has NO runtime manifestation. Its
+    // compile-time guarantee lives at the call site in CrustControlZone.tsx
+    // (where `setParam('algorithm', 7)` fails to compile) and is now enforced by
+    // the spec-inclusive `pnpm typecheck:test` gate. The test below instead pins
+    // the runtime wiring — that each pill forwards the correctly-typed value to
+    // `setParam`.
     it('forwards the algorithm id to setParam when a pill is clicked', () => {
         const setParam = vi.fn<(key: keyof CrustPatch, value: unknown) => void>();
         render(

@@ -33,7 +33,11 @@ describe('setLayerFades', () => {
 
         setLayerFades('r1', 1, 2);
 
-        const region = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].regions[0];
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const region = setCall[0].layers[0].regions[0];
         expect(region.fadeInBeats).toBe(1);
         expect(region.fadeOutBeats).toBe(2);
     });
@@ -45,7 +49,11 @@ describe('setLayerFades', () => {
 
         setLayerFades('r1', -1, -2);
 
-        const region = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].regions[0];
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const region = setCall[0].layers[0].regions[0];
         expect(region.fadeInBeats).toBe(0);
         expect(region.fadeOutBeats).toBe(0);
     });

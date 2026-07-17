@@ -11,6 +11,6 @@ describe('selectClip', () => {
         expect(typeof selectClip).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => selectClip()).not.toThrow();
+        expect(() => selectClip('clip-1')).not.toThrow();
     });
 });

@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleDetectTempo } from '../handleDetectTempo';
 
-const mocks = vi.hoisted(() => ({
-    detectTempoFromBuffer: vi.fn(),
-    detectProjectTempo: vi.fn(),
-    trackStore: { value: { tracks: [] } },
-    notifyUser: vi.fn(),
-}));
+type TestTrackState = {
+    tracks: Array<{ clips: Array<{ id: string; audioBufferId?: string }> }>;
+};
+
+const mocks = vi.hoisted(() => {
+    const trackStore: { value: TestTrackState } = { value: { tracks: [] } };
+    return {
+        detectTempoFromBuffer: vi.fn(),
+        detectProjectTempo: vi.fn(),
+        trackStore,
+        notifyUser: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,

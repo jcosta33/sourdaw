@@ -16,7 +16,7 @@ describe('handleZoomToSelection', () => {
     it('delegates to zoomToSelection use case', () => {
         void handleZoomToSelection.execute({
             type: 'zoomToSelection',
-            payload: {},
+            payload: undefined,
         });
         expect(mocks.zoomToSelection).toHaveBeenCalledTimes(1);
     });

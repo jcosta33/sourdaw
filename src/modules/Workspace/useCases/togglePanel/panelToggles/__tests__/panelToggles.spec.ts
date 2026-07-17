@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type * as getWs from '../../../../repositories/getWorkspaceState';
-import type * as updateWs from '../../../../repositories/updateWorkspaceState';
-
 const mocks = vi.hoisted(() => {
     const state = {
+        mode: 'arrange' as const,
         sidebarOpen: false,
         mixerOpen: false,
         inspectorOpen: false,
@@ -16,14 +14,43 @@ const mocks = vi.hoisted(() => {
         collaborationPanelOpen: false,
         branchManagerOpen: false,
         automationPanelOpen: false,
+        automationPanelWidth: 400,
         scratchPadOpen: false,
+        scratchPadHeight: 120,
+        activeTool: 'select' as const,
         selectedClipId: null as string | null,
         selectedClipIds: [] as string[],
-        editingTool: 'select' as string,
-        soloMode: 'sip' as string,
+        marqueeSelection: null,
+        soloMode: 'sip' as const,
         snapValue: 0.25,
         trackListWidth: 200,
+        sidebarWidth: 224,
+        inspectorWidth: 256,
+        mixerHeight: 208,
+        channelStripWidth: 'normal' as const,
+        timeDisplayMode: 'musical' as const,
+        chatPanelWidth: 320,
+        rippleEditing: false,
+        dualViewOpen: false,
+        sessionViewWidth: 320,
+        automationVisibility: 'hidden' as const,
+        automationSubLanes: {} as Record<string, string[]>,
+        aiPanelWidth: 340,
+        fermenterHeight: 320,
+        toasterHeight: 420,
+        levainHeight: 340,
+        glutenHeight: 300,
+        bacteriaHeight: 400,
+        grinderHeight: 380,
+        proofChamberHeight: 380,
+        proofHeight: 340,
+        scoringHeight: 300,
+        yeastHeight: 300,
+        crustHeight: 360,
+        samplerHeight: 400,
+        grandBouleHeight: 420,
         virtualKeyboardOctave: 4,
+        virtualKeyboardHeight: 128,
         virtualKeyboardVelocity: 100,
     };
     return {
@@ -51,9 +78,9 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../../../repositories/getWorkspaceState', () => ({ getWorkspaceState: mocks.getState }));
 vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: mocks.updateState }));
 
-import { closeUndoHistory } from '../closeUndoHistory';
 import { closeCollaborationPanel } from '../closeCollaborationPanel';
 import { closeCommandPalette } from '../closeCommandPalette';
+import { closeUndoHistory } from '../closeUndoHistory';
 import { openInspector } from '../openInspector';
 import { openMixer } from '../openMixer';
 import { openVirtualKeyboard } from '../openVirtualKeyboard';
@@ -71,6 +98,9 @@ import { toggleSidebar } from '../toggleSidebar';
 import { toggleTrackList } from '../toggleTrackList';
 import { toggleUndoHistory } from '../toggleUndoHistory';
 import { toggleVirtualKeyboard } from '../toggleVirtualKeyboard';
+
+import type * as getWs from '../../../../repositories/getWorkspaceState';
+import type * as updateWs from '../../../../repositories/updateWorkspaceState';
 
 describe('panel toggle functions', () => {
     beforeEach(() => {

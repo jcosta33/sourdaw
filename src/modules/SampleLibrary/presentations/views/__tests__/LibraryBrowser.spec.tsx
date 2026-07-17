@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { type LibraryState } from '../../../stores/libraryStore';
 import { LibraryBrowser } from '../LibraryBrowser';
@@ -10,8 +10,8 @@ type LibraryBrowserMocks = {
     notifyUser: ReturnType<typeof vi.fn>;
     preview: {
         playingId: string | null;
-        playFile: ReturnType<typeof vi.fn>;
-        stop: ReturnType<typeof vi.fn>;
+        playFile: Mock<(id: string, file: File) => Promise<void>>;
+        stop: Mock<() => void>;
     };
     projectSpatialMap: ReturnType<typeof vi.fn>;
     readTauriLibrarySampleFile: ReturnType<typeof vi.fn>;
@@ -24,8 +24,8 @@ const mocks = vi.hoisted(
         notifyUser: vi.fn(),
         preview: {
             playingId: null,
-            playFile: vi.fn(),
-            stop: vi.fn(),
+            playFile: vi.fn<(id: string, file: File) => Promise<void>>(),
+            stop: vi.fn<() => void>(),
         },
         projectSpatialMap: vi.fn(),
         readTauriLibrarySampleFile: vi.fn(),
@@ -93,8 +93,8 @@ function createLibraryState({
                 displayName,
                 ext,
                 folder: '',
-                sync: { exists: true, status: 'indexed' },
-                format: { durationSec: 1, sizeBytes: 4 },
+                sync: { exists: true, status: 'indexed', sizeBytes: 4 },
+                format: { durationSec: 1 },
                 tags: [],
                 favorite: false,
             },

@@ -15,8 +15,13 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: pushUndoEntryMock,
 }));
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: loopStationStoreMock,
 }));
 
 vi.mock('../../../repositories/loopStationIdCounter/getNextSlotId', () => ({
@@ -40,14 +45,14 @@ describe('loop station undo entries', () => {
     });
 
     it('createSlot pushes an undo entry whose undo restores the prior slot list', () => {
-        loopStationStore.value = emptyLoopState() as never;
+        loopStationStoreMock.value = emptyLoopState();
         createSlot('track-1', 0, 0);
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Create loop slot');
     });
 
     it('clearSlot pushes undo when the target slot exists', () => {
-        loopStationStore.value = {
+        loopStationStoreMock.value = {
             ...emptyLoopState(),
             slots: [
                 {
@@ -64,51 +69,51 @@ describe('loop station undo entries', () => {
                     fadeBeats: 0,
                 },
             ],
-        } as never;
+        };
         clearSlot('s1');
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Clear loop slot');
     });
 
     it('clearSlot does not push undo when slot is missing', () => {
-        loopStationStore.value = emptyLoopState() as never;
+        loopStationStoreMock.value = emptyLoopState();
         clearSlot('missing');
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('setFixedLoopLength is a no-op (no undo) when the value is unchanged', () => {
-        loopStationStore.value = { ...emptyLoopState(), fixedLoopLength: 8 } as never;
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 8 };
         setFixedLoopLength(8);
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('setFixedLoopLength pushes undo when the value changes', () => {
-        loopStationStore.value = { ...emptyLoopState(), fixedLoopLength: 4 } as never;
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 4 };
         setFixedLoopLength(8);
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Set loop length');
     });
 
     it('toggleArm pushes undo with a direction-specific label', () => {
-        loopStationStore.value = emptyLoopState() as never;
+        loopStationStoreMock.value = emptyLoopState();
         toggleArm();
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Arm loop station');
     });
 
     it('toggleSync pushes undo with a direction-specific label', () => {
-        loopStationStore.value = { ...emptyLoopState(), syncToTransport: true } as never;
+        loopStationStoreMock.value = { ...emptyLoopState(), syncToTransport: true };
         toggleSync();
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Disable loop sync');
     });
 
     it('undo callback restores the previous fixedLoopLength', () => {
-        loopStationStore.value = { ...emptyLoopState(), fixedLoopLength: 4 } as never;
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 4 };
         setFixedLoopLength(16);
 
         const [, undoFn] = pushUndoEntryMock.mock.calls[0]!;
-        loopStationStore.value = { ...emptyLoopState(), fixedLoopLength: 16 } as never;
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 16 };
         (undoFn as () => void)();
         const restored = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState | undefined;
         expect(restored?.fixedLoopLength).toBe(4);

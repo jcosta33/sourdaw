@@ -30,7 +30,11 @@ describe('addAdjustmentRegion', () => {
         addAdjustmentRegion('l1', 0, 8, 0.5);
 
         expect(mocks.adjustmentLayerStoreSet).toHaveBeenCalledTimes(1);
-        const regions = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].regions;
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to be called');
+        }
+        const regions = setCall[0].layers[0].regions;
         expect(regions).toHaveLength(2);
         expect(regions[0].id).toBe('reg-123');
         expect(regions[0].startBeat).toBe(0);

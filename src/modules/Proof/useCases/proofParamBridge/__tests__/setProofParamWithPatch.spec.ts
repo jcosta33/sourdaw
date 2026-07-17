@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
@@ -12,14 +12,15 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     persistDevicePatch: vi.fn(),
 }));
 
-function makeBridge(): ProofAudioBridge & {
-    setParam: ReturnType<typeof vi.fn>;
-    reorderModules: ReturnType<typeof vi.fn>;
-} {
+type MockedProofBridge = {
+    [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
+};
+
+function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn(),
-        reorderModules: vi.fn(),
-        resetIntegrated: vi.fn(),
+        setParam: vi.fn<ProofAudioBridge['setParam']>(),
+        reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
+        resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
 }
 

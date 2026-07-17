@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { workspaceStore } from '#/modules/Workspace/stores';
-
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { planRippleInsert } from '../planRippleInsert';
 
@@ -9,8 +7,16 @@ vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
 }));
 
+const mocks = vi.hoisted(() => ({
+    workspaceStoreValue: { value: null as { rippleEditing: boolean } | null },
+}));
+
 vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: { value: null },
+    workspaceStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
 }));
 
 describe('planRippleInsert', () => {
@@ -19,12 +25,12 @@ describe('planRippleInsert', () => {
     });
 
     it('should return null if ripple editing is disabled', () => {
-        workspaceStore.value = { rippleEditing: false } as any;
+        mocks.workspaceStoreValue.value = { rippleEditing: false };
         expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
     it('should return shifted clips forward in time from insert point', () => {
-        workspaceStore.value = { rippleEditing: true } as any;
+        mocks.workspaceStoreValue.value = { rippleEditing: true };
         (getTrackStoreState as any).mockReturnValue({
             tracks: [
                 {
@@ -44,7 +50,7 @@ describe('planRippleInsert', () => {
     });
 
     it('should return empty shifted clips if insertion point is at end', () => {
-        workspaceStore.value = { rippleEditing: true } as any;
+        mocks.workspaceStoreValue.value = { rippleEditing: true };
         (getTrackStoreState as any).mockReturnValue({
             tracks: [
                 {

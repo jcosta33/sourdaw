@@ -70,12 +70,9 @@ vi.mock('../../../stores/activeRecordingRef', () => ({
 
 function createClip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'trackId' | 'type'>): Clip {
     return {
-        id: overrides.id,
-        trackId: overrides.trackId,
         name: overrides.id,
         startBeat: 0,
         endBeat: 4,
-        type: overrides.type,
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1,

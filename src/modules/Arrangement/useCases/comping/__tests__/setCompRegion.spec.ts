@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { type TakeLaneStoreState, takeLaneStore } from '../../../stores/takeLaneStore';
 import { setCompRegion } from '../setCompRegion';
+
+const mocks = vi.hoisted(() => ({
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
+}));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        value: null,
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -17,14 +23,14 @@ describe('setCompRegion', () => {
     });
 
     it('no-ops when lane store is empty', () => {
-        takeLaneStore.value = null as never;
+        mocks.takeLaneStoreValue.value = null;
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'take-a' });
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
     it('appends a comp region for the matching track lane', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as never;
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'take-a' });
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: (typeof lane)[] };

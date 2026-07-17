@@ -130,10 +130,10 @@ describe('createNativePluginBridgeNode', () => {
     });
 
     it('should keep one audio block in flight and drop blocks while pending', async () => {
-        let resolveProcessing: ((bytes: Uint8Array) => void) | null = null;
+        const processing = { resolve: undefined as ((bytes: Uint8Array) => void) | undefined };
         vi.mocked(processAudioIPC).mockReturnValue(
             new Promise((resolve) => {
-                resolveProcessing = resolve;
+                processing.resolve = resolve;
             })
         );
         await createNativePluginBridgeNode(createAudioContext(), 'instance-1', 17);
@@ -144,7 +144,11 @@ describe('createNativePluginBridgeNode', () => {
 
         expect(processAudioIPC).toHaveBeenCalledTimes(1);
         const processedBytes = new Uint8Array([3]);
-        resolveProcessing?.(processedBytes);
+        const resolveProcessing = processing.resolve;
+        if (!resolveProcessing) {
+            throw new Error('expected a pending audio block');
+        }
+        resolveProcessing(processedBytes);
         await firstProcess;
 
         expect(node.port.postMessage).toHaveBeenCalledWith({ type: 'processed', audio: processedBytes.buffer }, [

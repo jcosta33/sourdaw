@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
+import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { createBuiltinDeviceNode } from '../createBuiltinDeviceNode';
 
 describe('createBuiltinDeviceNode', () => {
@@ -8,7 +8,7 @@ describe('createBuiltinDeviceNode', () => {
         const context = createMockAudioContext();
 
         const result = createBuiltinDeviceNode({
-            context,
+            context: asBaseAudioContext(context),
             deviceType: 'missing-device',
         });
 
@@ -19,7 +19,7 @@ describe('createBuiltinDeviceNode', () => {
         const context = createMockAudioContext();
 
         const result = createBuiltinDeviceNode({
-            context,
+            context: asBaseAudioContext(context),
             deviceType: 'builtin-gain',
         });
 

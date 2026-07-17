@@ -100,6 +100,13 @@ describe('newProject injectable', () => {
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];
         const clear_undo_history_order = vi.mocked(clearUndoHistory).mock.invocationCallOrder[0];
+        if (
+            remove_project_json_order === undefined ||
+            clear_audio_buffers_order === undefined ||
+            clear_undo_history_order === undefined
+        ) {
+            throw new Error('expected removeProjectJson, clearCachedAudioBuffers, and clearUndoHistory calls');
+        }
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);

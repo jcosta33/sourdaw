@@ -170,7 +170,7 @@ describe('handleStemSeparate', () => {
         await expect(
             handleStemSeparate.execute({
                 type: 'stemSeparate',
-                // @ts-expect-error — deliberately passing an invalid stem to exercise the runtime guard
+                // Deliberately passing an invalid stem to exercise the runtime guard
                 payload: { clipId: 'c1', stems: ['voccals'] },
             })
         ).rejects.toThrow(/unknown stem/i);

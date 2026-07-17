@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const getActiveInputMock = vi.hoisted(() => vi.fn<MIDIInput | null, []>());
-const setActiveInputMock = vi.hoisted(() => vi.fn<void, [MIDIInput | null]>());
+const getActiveInputMock = vi.hoisted(() => vi.fn<() => MIDIInput | null>());
+const setActiveInputMock = vi.hoisted(() => vi.fn<(input: MIDIInput | null) => void>());
 
 vi.mock('../../getActiveInput', () => ({
     getActiveInput: () => getActiveInputMock(),

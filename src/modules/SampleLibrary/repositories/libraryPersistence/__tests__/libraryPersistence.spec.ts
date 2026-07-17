@@ -5,7 +5,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
-import { addLibraryRoot, addSamples, type LibraryState, libraryStore } from '../../../stores/libraryStore';
+import { addLibraryRoot, addSamples, type LibraryState } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
@@ -13,8 +13,12 @@ import { persistSamples } from '../persistSamples';
 import { requestPermission } from '../requestPermission';
 import { restoreLibrary } from '../restoreLibrary';
 
+// Mutable stand-in for the store: the real `Store.value` is a readonly getter, so
+// tests drive state through this hoisted object instead of assigning through it.
+const mockLibraryStore = vi.hoisted(() => ({ value: null as LibraryState | null }));
+
 vi.mock('../../../stores/libraryStore', () => ({
-    libraryStore: { value: { roots: [], samples: [] } },
+    libraryStore: mockLibraryStore,
     addLibraryRoot: vi.fn(),
     addSamples: vi.fn(),
     updateLibraryRootStatus: vi.fn(),
@@ -175,7 +179,7 @@ describe('Library Persistence', () => {
     describe('persistLibraryRoots', () => {
         it('should do nothing if state is missing', async () => {
             vi.spyOn(helpers, 'openDb').mockRejectedValue(new Error('no db'));
-            vi.mocked(libraryStore).value = null as any;
+            mockLibraryStore.value = null;
             await persistLibraryRoots();
             expect(helpers.openDb).not.toHaveBeenCalled();
         });
@@ -184,7 +188,7 @@ describe('Library Persistence', () => {
     describe('persistSamples', () => {
         it('should do nothing if state is missing', async () => {
             vi.spyOn(helpers, 'openDb').mockRejectedValue(new Error('no db'));
-            vi.mocked(libraryStore).value = null as any;
+            mockLibraryStore.value = null;
             await persistSamples();
             expect(helpers.openDb).not.toHaveBeenCalled();
         });
@@ -241,7 +245,7 @@ describe('Library Persistence', () => {
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
 
             // Current in-memory truth: only r1 with sample s1 survives.
-            vi.mocked(libraryStore).value = {
+            mockLibraryStore.value = {
                 samples: [{ id: 's1', libraryRootId: 'r1' }],
                 roots: [{ id: 'r1' }],
                 activeRootId: 'r1',
@@ -273,14 +277,14 @@ describe('Library Persistence', () => {
             const db = createPersistenceDb({ roots: [root] });
             vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
             vi.mocked(isTauri).mockReturnValue(false);
-            vi.mocked(libraryStore).value = createLibraryState({
+            mockLibraryStore.value = createLibraryState({
                 roots: [root],
                 samples: [sample],
                 activeRootId: root.id,
             });
 
             await persistSamples();
-            vi.mocked(libraryStore).value = createLibraryState();
+            mockLibraryStore.value = createLibraryState();
 
             await restoreLibrary();
 
@@ -296,14 +300,14 @@ describe('Library Persistence', () => {
 
     describe('requestPermission', () => {
         it('should return false if root or handle missing', async () => {
-            vi.mocked(libraryStore).value = { roots: [] } as any;
+            mockLibraryStore.value = { roots: [] } as any;
             const res = await requestPermission('r1');
             expect(res).toBe(false);
         });
 
         it('should return true and update status if granted', async () => {
             const handle = { requestPermission: vi.fn().mockResolvedValue('granted') };
-            vi.mocked(libraryStore).value = { roots: [{ id: 'r1', handle }] } as any;
+            mockLibraryStore.value = { roots: [{ id: 'r1', handle }] } as any;
 
             const res = await requestPermission('r1');
             expect(res).toBe(true);

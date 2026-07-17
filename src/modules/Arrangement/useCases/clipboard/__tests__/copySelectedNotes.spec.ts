@@ -1,13 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { midiStore } from '#/modules/MIDI/stores';
-
 import { setNoteClipboard } from '../../../stores/clipboardStore';
 import { copySelectedNotes } from '../copySelectedNotes';
 
+const mocks = vi.hoisted(() => {
+    type MockNote = { id: string; pitch: number; velocity: number; startBeat: number; duration: number };
+    type MockMidiState = {
+        notesByClipId: Record<string, MockNote[]>;
+        ccByClipId: Record<string, unknown>;
+        pitchBendByClipId: Record<string, unknown>;
+    };
+    return {
+        midiStoreValue: { value: null as MockMidiState | null },
+    };
+});
+
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {
-        value: null,
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -22,7 +34,7 @@ describe('copySelectedNotes', () => {
     });
 
     it('writes selected notes to the note clipboard', () => {
-        midiStore.value = {
+        mocks.midiStoreValue.value = {
             notesByClipId: {
                 c1: [
                     { id: 'n1', pitch: 60, velocity: 100, startBeat: 0, duration: 0.25 },
@@ -31,7 +43,7 @@ describe('copySelectedNotes', () => {
             },
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as never;
+        };
 
         copySelectedNotes('c1', ['n2']);
 
@@ -42,7 +54,7 @@ describe('copySelectedNotes', () => {
     });
 
     it('no-ops when midi state is missing', () => {
-        midiStore.value = null as never;
+        mocks.midiStoreValue.value = null;
 
         copySelectedNotes('c1', ['n1']);
         expect(setNoteClipboard).not.toHaveBeenCalled();

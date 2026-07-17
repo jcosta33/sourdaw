@@ -101,7 +101,7 @@ async function loadWorker(): Promise<void> {
     Object.defineProperty(globalThis, 'self', {
         configurable: true,
         value: {
-            set onmessage(fn: (e: MessageEvent) => void) {
+            set onmessage(fn: ((e: MessageEvent) => void) | null) {
                 onmessageHolder.fn = fn;
             },
             get onmessage() {

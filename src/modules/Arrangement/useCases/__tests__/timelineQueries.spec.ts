@@ -1,11 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { markerStore } from '../../stores/markerStore';
 import { getMarkerState } from '../timelineQueries';
+
+import type { MarkerStoreState } from '../../stores/markerStore';
+
+const mocks = vi.hoisted(() => ({
+    markerStoreValue: { value: null as MarkerStoreState | null },
+}));
 
 vi.mock('../../stores/markerStore', () => ({
     markerStore: {
-        value: null,
+        get value() {
+            return mocks.markerStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -16,13 +23,13 @@ describe('getMarkerState', () => {
             markers: [],
             sections: [{ id: 's1', startBeat: 0, endBeat: 4, name: 'A', color: '#000' }],
         };
-        markerStore.value = state;
+        mocks.markerStoreValue.value = state;
 
         expect(getMarkerState()).toBe(state);
     });
 
     it('returns null when the store holds null', () => {
-        markerStore.value = null;
+        mocks.markerStoreValue.value = null;
 
         expect(getMarkerState()).toBeNull();
     });

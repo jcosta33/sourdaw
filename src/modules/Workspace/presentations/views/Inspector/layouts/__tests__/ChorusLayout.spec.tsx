@@ -31,7 +31,11 @@ describe('ChorusLayout', () => {
     it('should register layout for chorus, phaser, and flanger', async () => {
         await import('../ChorusLayout');
         expect(mockRegisterDeviceLayout).toHaveBeenCalled();
-        const [deviceTypes] = mockRegisterDeviceLayout.mock.calls[0];
+        const firstCall = mockRegisterDeviceLayout.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected registerDeviceLayout to have been called');
+        }
+        const [deviceTypes] = firstCall;
         expect(deviceTypes).toContain('builtin-chorus');
         expect(deviceTypes).toContain('builtin-phaser');
         expect(deviceTypes).toContain('builtin-flanger');

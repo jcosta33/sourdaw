@@ -124,11 +124,10 @@ describe('handleRemoveClip', () => {
         });
 
         it('cleans every ripple-removed clip in one MIDI owner call after the ripple mutation', () => {
-            const removedClips: TestClip[] = [
-                createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 }),
-                createTestClip({ id: 'c2', startBeat: 1, endBeat: 2 }),
-            ];
-            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [removedClips[0]] }] });
+            const clip1 = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            const clip2 = createTestClip({ id: 'c2', startBeat: 1, endBeat: 2 });
+            const removedClips: TestClip[] = [clip1, clip2];
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip1] }] });
             mocks.rippleDeleteClips.mockReturnValue({ removedClips, shiftedClips: [] });
 
             const result = handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });

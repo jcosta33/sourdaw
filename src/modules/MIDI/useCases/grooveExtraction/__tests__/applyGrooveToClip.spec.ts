@@ -37,7 +37,11 @@ describe('applyGrooveToClip', () => {
         applyGrooveToClip('c1', mockGroove as any, 1.0);
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
-        const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const setCall = mocks.midiStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('Expected midiStore.set call');
+        }
+        const updated = setCall[0].notesByClipId.c1;
 
         // Note 1 (step 0): offset 0.1, vel scale 1.2
         expect(updated[0].startBeat).toBeCloseTo(0.1);
@@ -58,7 +62,11 @@ describe('applyGrooveToClip', () => {
         // Apply at 50%
         applyGrooveToClip('c1', mockGroove as any, 0.5);
 
-        const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const setCall = mocks.midiStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('Expected midiStore.set call');
+        }
+        const updated = setCall[0].notesByClipId.c1;
         // timing: 0 + (0.2 * 0.5) = 0.1
         // velocity: 100 * (1 + (1.5 - 1) * 0.5) = 100 * 1.25 = 125
         expect(updated[0].startBeat).toBeCloseTo(0.1);

@@ -15,17 +15,17 @@ describe('UndoRedoButtons', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons canUndo={false} canRedo={false} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons canUndo={false} canRedo={false} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<UndoRedoButtons />);
+        renderWithTooltip(<UndoRedoButtons canUndo={false} canRedo={false} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

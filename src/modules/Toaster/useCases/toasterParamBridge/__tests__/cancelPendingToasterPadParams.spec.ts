@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 type DeviceRef = {
     trackId: string;
@@ -44,8 +44,8 @@ describe('cancelPendingToasterPadParams', () => {
     let nextRafId: number;
     let rafCallbacks: Map<number, FrameRequestCallback>;
     let canceledCallbacks: FrameRequestCallback[];
-    let requestAnimationFrameSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'requestAnimationFrame'>>;
-    let cancelAnimationFrameSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'cancelAnimationFrame'>>;
+    let requestAnimationFrameSpy: MockInstance<typeof requestAnimationFrame>;
+    let cancelAnimationFrameSpy: MockInstance<typeof cancelAnimationFrame>;
     let setPadParamDev: ReturnType<typeof vi.fn<SetPadParam>>;
     let setPadParamDevUnderscore: ReturnType<typeof vi.fn<SetPadParam>>;
     let setPadParamDev1: ReturnType<typeof vi.fn<SetPadParam>>;
