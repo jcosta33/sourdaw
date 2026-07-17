@@ -1,4 +1,5 @@
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type UndoSource } from '../models/UndoEntry';
 import { commitUndoEntry } from '../useCases/commitUndoEntry';
 import { createUndoEntry } from '../useCases/createUndoEntry';

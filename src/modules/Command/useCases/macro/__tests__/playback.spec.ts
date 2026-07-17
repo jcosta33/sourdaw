@@ -39,12 +39,12 @@ describe('playMacro', () => {
 
         expect(executeAppActionMock).toHaveBeenCalledTimes(2);
         const [firstAction, firstOptions] = executeAppActionMock.mock.calls[0] as [
-            import('../../executeAppAction').AppAction,
-            import('../../executeAppAction').ExecuteOptions | undefined,
+            import('#/utils/handlerContract').AppAction,
+            import('#/utils/handlerContract').ExecuteOptions | undefined,
         ];
         const [secondAction, secondOptions] = executeAppActionMock.mock.calls[1] as [
-            import('../../executeAppAction').AppAction,
-            import('../../executeAppAction').ExecuteOptions | undefined,
+            import('#/utils/handlerContract').AppAction,
+            import('#/utils/handlerContract').ExecuteOptions | undefined,
         ];
         expect(firstAction).toEqual({ type: 'togglePlayback' });
         expect(secondAction).toEqual({ type: 'toggleLoop' });

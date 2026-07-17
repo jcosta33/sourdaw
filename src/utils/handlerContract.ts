@@ -1,6 +1,11 @@
 /**
- * Pure discriminated action contract for Command. Snapshot payloads stay structural so
- * this model does not depend on concrete models owned by other modules.
+ * Neutral cross-module handler contract. Houses the pure `AppAction` discriminated
+ * union plus the `ActionHandler` / `HandlerDescribeResult` / `ExecuteOptions` types that
+ * `createHandler` and every `get<Module>Handlers` factory build against. Lives in
+ * `src/utils/` (not a domain module) so handler code across modules depends on this
+ * neutral surface rather than on a type-only entry point in `Command/useCases`.
+ * Snapshot payloads stay structural so this contract does not depend on concrete models
+ * owned by other modules.
  */
 export type TrackSnapshot = { readonly id: string };
 export type ClipSnapshot = {
@@ -185,7 +190,7 @@ export type AppAction =
            *  identity a lane is created under — because the generated lane id is not
            *  known when the inverse is captured (pre-execute). Emitted only by the
            *  `addAutomationLane` handler's `describe()`. Keep mirrored in
-           *  Command/models/AppAction.ts and AiRuntime/models/RuntimeAction.ts. */
+           *  src/utils/handlerContract.ts and AiRuntime/models/RuntimeAction.ts. */
           type: 'removeAutomationLane';
           payload: { trackId: string; parameterId: string };
       }
@@ -209,7 +214,7 @@ export type AppAction =
           type: 'humanizeNotes';
           // `seed`/`velocityAmount` are optional and captured by the handler on
           // first execute, replayed on redo — kept in sync with
-          // Command/models/AppAction.ts and AiRuntime/models/RuntimeAction.ts.
+          // src/utils/handlerContract.ts and AiRuntime/models/RuntimeAction.ts.
           payload: { clipId: string; amount: number; velocityAmount?: number; seed?: number };
       }
     | { type: 'invertNotes'; payload: { clipId: string } }
@@ -283,7 +288,7 @@ export type AppAction =
           /** Inverse of the automation transform handlers (reverse/scale/stretch/thin/
            *  quantize/invert). Restores a lane's `points` to a snapshot captured
            *  pre-execute. Emitted only by those handlers' `describe()` — not invoked
-           *  directly. Keep mirrored in Command/models/AppAction.ts and
+           *  directly. Keep mirrored in src/utils/handlerContract.ts and
            *  AiRuntime/models/RuntimeAction.ts. */
           type: 'restoreAutomationLanePoints';
           payload: { laneId: string; points: readonly AutomationPointSnapshot[] };
@@ -490,3 +495,31 @@ export type AppAction =
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 export type AppActionType = AppAction['type'];
+
+/** Result of a handler's `describe(action)` — the human label for the undo/history
+ *  entry plus the optional inverse action that redo/undo replays. */
+export type HandlerDescribeResult = {
+    label: string;
+    inverseAction?: AppAction | null;
+};
+
+/** One dispatchable action's handler. Built via `createHandler` and merged into a module
+ *  handler map by each `get<Module>Handlers` factory. */
+export type ActionHandler<Action extends AppAction = AppAction> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => HandlerDescribeResult;
+    undoable: boolean;
+};
+
+export type ExecuteOptions = {
+    groupId?: string;
+    groupLabel?: string;
+    source?: 'manual' | 'prompt' | 'voice' | 'ai';
+    /** When true, skip pushing an undo entry and action history entry.
+     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
+    skipUndo?: boolean;
+    /** Opaque owner for CRDT writes made synchronously by this action. */
+    snapshotTransaction?: object;
+    /** When true, do not capture this execution in an active macro recording. */
+    skipMacroRecording?: boolean;
+};

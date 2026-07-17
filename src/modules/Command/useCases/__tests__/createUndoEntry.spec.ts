@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { type AppAction } from '../../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { createUndoEntry } from '../createUndoEntry';
 
 describe('createUndoEntry', () => {

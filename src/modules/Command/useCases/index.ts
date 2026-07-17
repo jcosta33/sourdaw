@@ -7,13 +7,11 @@ export { setCommandEventBus } from './commandEventBus';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createUndoEntry } from './createUndoEntry';
 
-export type { AppAction, ActionHandler, HandlerDescribeResult } from './executeAppAction';
 export { generateGroupId } from './generateGroupId';
 
 export { executeAppAction } from './executeAppAction';
 export { createAppActionCommittedError } from './createAppActionCommittedError';
 export { isAppActionCommittedError } from './isAppActionCommittedError';
-export type { ExecuteOptions } from './executeAppAction';
 
 export { getMacroHandlers } from './getMacroHandlers';
 export { getUndoRedoHandlers } from './getUndoRedoHandlers';

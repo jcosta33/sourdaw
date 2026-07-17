@@ -6,7 +6,7 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 /** Targets `separateStems` accepts. The `stemSeparate` AppAction payload types
- *  `stems` as a bare `string[]` (see `Command/models/AppAction.ts`), so
+ *  `stems` as a bare `string[]` (see `src/utils/handlerContract.ts`), so
  *  this local allow-list is the only runtime guard — garbage like `['voccals']`
  *  is stopped here at the boundary. */
 const VALID_STEMS = ['all', 'vocals', 'drums', 'bass', 'other'] as const;

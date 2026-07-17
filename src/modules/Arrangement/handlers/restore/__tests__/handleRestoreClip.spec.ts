@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AppAction } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
 import { type undoRippleDelete } from '../../../useCases/rippleDelete/undoRippleDelete';

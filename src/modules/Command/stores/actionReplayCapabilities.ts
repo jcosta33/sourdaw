@@ -1,4 +1,4 @@
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { bumpActionReplayRevision } from './actionReplayRevisionStore';
 

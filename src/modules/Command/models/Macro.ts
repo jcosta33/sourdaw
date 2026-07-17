@@ -1,4 +1,4 @@
-import { type AppAction } from './AppAction';
+import { type AppAction } from '#/utils/handlerContract';
 
 export type Macro = {
     id: string;

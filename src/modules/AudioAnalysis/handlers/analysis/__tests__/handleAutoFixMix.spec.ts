@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { isAppActionCommittedError, type AppAction } from '#/modules/Command/useCases';
+import { isAppActionCommittedError } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { analyzeMix, type AnalyzeMixOutput } from '../../../useCases/analyzeMix';
 import { handleAutoFixMix } from '../handleAutoFixMix';

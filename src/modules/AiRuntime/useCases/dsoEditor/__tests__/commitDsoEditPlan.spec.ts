@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type AppAction } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { commitDsoEditPlan } from '../commitDsoEditPlan';
 

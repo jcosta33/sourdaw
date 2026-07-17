@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleApplyGroove } from '../handlers/generation/handleApplyGroove';
 import { handleExtractGroove } from '../handlers/generation/handleExtractGroove';

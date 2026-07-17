@@ -12,8 +12,9 @@ unilaterally. Promoted from `.agents/findings/inventory-decisions-backlog.md`
 `.agents/findings/overview-open-decisions.md` (also retired). Citations and
 premises were fully re-audited against `main` on 2026-07-16 after three
 review rounds — every item re-checked, drifted citations corrected, resolved
-premises dropped (124 bullets: 121 decision items + 3 investigation
-meta-items; one decision item added 2026-07-17, PR #351). Decisions already
+premises dropped (123 bullets: 120 decision items + 3 investigation
+meta-items; the handler-contract item added by PR #351 was resolved
+2026-07-17 — neutral utils home, #335). Decisions already
 made are **not** here — they are ADRs (0006
 contract-folder barrels, 0007 command relocation, 0008 recent-projects
 Option A, 0009 pattern-morph determinism).
@@ -128,23 +129,6 @@ code: no (all dormant).
   imports from specs vs amend the doc to permit it. Blocks code: no. Source:
   `.dependency-cruiser.tests.cjs:63-75,83-93`; PR #330 review 4717538952 (two
   merged specs used the pattern, gate stayed green).
-- **Handler-contract type home (Command `executeAppAction` types + utils
-  `createHandler`).** Two types-cruise baseline rows are retained escape-hatch
-  debt: `src/modules/Command/useCases/index.ts → useCases/executeAppAction.ts`
-  (`no-usecase-type-exports-on-index`) and `src/utils/createHandler.ts →
-  Command/useCases/index.ts` (`utils-no-module-imports-type-only`).
-  `AppAction`/`ActionHandler`/`HandlerDescribeResult`/`ExecuteOptions` are the
-  cross-module handler contract (~21 consumers). `AppAction`/`ExecuteOptions`
-  could ride `Parameters<typeof executeAppAction>`, but
-  `ActionHandler`/`HandlerDescribeResult` are independent generic contract
-  types consumed by 21 handler-map factories — not derivable, so the rows
-  cannot be fully retired without sanctioning a handler-contract home.
-  Options: Command `events/` payloads vs a models file vs an explicit
-  allowlist. Until decided, the 2 rows stay in
-  `.dependency-cruiser-known-violations-types.json`. Blocks code: no. Source:
-  `.dependency-cruiser-known-violations-types.json` (2 rows);
-  `src/modules/Command/useCases/executeAppAction.ts:20-44`;
-  `src/utils/createHandler.ts:1`; PR #351.
 
 ## Transport
 
@@ -190,13 +174,13 @@ code: no (all dormant).
 
 ## Command
 
-- **Retire or keep `models/AppAction.ts`.** After ADR 0007 the dispatch
-  contract lives in `models/AppAction.ts` (type-imported repo-wide, mirrored by
+- **Retire or keep the `AppAction` dispatch contract.** After ADR 0007 the
+  contract lives in `src/utils/handlerContract.ts` (type-imported repo-wide, mirrored by
   AiRuntime); whether it should be retired in favor of the registry/query
   surface is open, as is whether undo-tree branch switching should
   traverse/replay or stay bookkeeping. Options: keep AppAction as canonical
   contract vs migrate consumers. Blocks code: no, but shapes every new action.
-  Source: `src/modules/Command/models/AppAction.ts`,
+  Source: `src/utils/handlerContract.ts`,
   `useCases/undoTree/branchOperations/switchBranch.ts`; ADR 0007.
 - **Canvas-editor Delete routing for non-focusable editors.** The
   `data-canvas-editor` gate works for PianoRoll (focusable canvas) but cannot

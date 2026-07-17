@@ -1,6 +1,6 @@
 /** Data shape shared by command-palette entries. Callable actions are supplied by the use-case layer. */
 
-import { type AppAction } from './AppAction';
+import { type AppAction } from '#/utils/handlerContract';
 
 export type CommandEntry<Action = AppAction> = {
     id: string;

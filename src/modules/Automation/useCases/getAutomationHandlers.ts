@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddAutomationLane } from '../handlers/automation/handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handlers/automation/handleAddAutomationPoint';
