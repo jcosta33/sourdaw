@@ -1,4 +1,9 @@
-import { type AiChangeNotification } from './notifyAiChange';
+export type AiChangeNotification = {
+    id: string;
+    summary: string;
+    details: string[];
+    timestamp: number;
+};
 
 export type AiChangeNotificationListener = (change: AiChangeNotification) => void;
 

@@ -2,8 +2,12 @@ import { type ReactElement } from 'react';
 
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 
-import { type AppRouterContext } from '#/app/router';
+import { type queryClient } from '#/app/queryClient';
 import { AppShell } from '#/modules/Workspace/presentations/views';
+
+type AppRouterContext = {
+    queryClient: typeof queryClient;
+};
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
     component: RootLayout,

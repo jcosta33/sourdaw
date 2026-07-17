@@ -4,10 +4,6 @@ import { routeTree } from '#/routeTree.gen';
 
 import { queryClient } from './queryClient';
 
-export type AppRouterContext = {
-    queryClient: typeof queryClient;
-};
-
 export const router = createRouter({
     routeTree,
     defaultPreload: 'intent',
