@@ -1,16 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
 }));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 import { openMixer } from '../openMixer';
 
 describe('openMixer', () => {
-    it('is a function', () => {
-        expect(typeof openMixer).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => openMixer()).not.toThrow();
+
+    it('opens the mixer', () => {
+        openMixer();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ mixerOpen: true });
     });
 });

@@ -1,16 +1,54 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
-}));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { type WorkspaceState } from '../../../../models/WorkspaceState';
 import { cycleChannelStripWidth } from '../cycleChannelStripWidth';
 
+const mocks = vi.hoisted(() => ({
+    getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),
+    updateWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: mocks.getWorkspaceState,
+}));
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 describe('cycleChannelStripWidth', () => {
-    it('is a function', () => {
-        expect(typeof cycleChannelStripWidth).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => cycleChannelStripWidth()).not.toThrow();
+
+    it('does not update when workspace state is missing', () => {
+        mocks.getWorkspaceState.mockReturnValue(null);
+
+        cycleChannelStripWidth();
+
+        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
+    });
+
+    it('advances narrow to normal', () => {
+        mocks.getWorkspaceState.mockReturnValue({ channelStripWidth: 'narrow' });
+
+        cycleChannelStripWidth();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ channelStripWidth: 'normal' });
+    });
+
+    it('advances normal to wide', () => {
+        mocks.getWorkspaceState.mockReturnValue({ channelStripWidth: 'normal' });
+
+        cycleChannelStripWidth();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ channelStripWidth: 'wide' });
+    });
+
+    it('wraps wide back to narrow', () => {
+        mocks.getWorkspaceState.mockReturnValue({ channelStripWidth: 'wide' });
+
+        cycleChannelStripWidth();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ channelStripWidth: 'narrow' });
     });
 });

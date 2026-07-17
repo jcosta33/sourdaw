@@ -1,16 +1,46 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
-}));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { type WorkspaceState } from '../../../../models/WorkspaceState';
 import { toggleInspector } from '../toggleInspector';
 
+const mocks = vi.hoisted(() => ({
+    getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),
+    updateWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: mocks.getWorkspaceState,
+}));
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 describe('toggleInspector', () => {
-    it('is a function', () => {
-        expect(typeof toggleInspector).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => toggleInspector()).not.toThrow();
+
+    it('does not update when workspace state is missing', () => {
+        mocks.getWorkspaceState.mockReturnValue(null);
+
+        toggleInspector();
+
+        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
+    });
+
+    it('opens the inspector when it was closed', () => {
+        mocks.getWorkspaceState.mockReturnValue({ inspectorOpen: false });
+
+        toggleInspector();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ inspectorOpen: true });
+    });
+
+    it('closes the inspector when it was open', () => {
+        mocks.getWorkspaceState.mockReturnValue({ inspectorOpen: true });
+
+        toggleInspector();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ inspectorOpen: false });
     });
 });

@@ -1,16 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
 }));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 import { closeBranchManager } from '../closeBranchManager';
 
 describe('closeBranchManager', () => {
-    it('is a function', () => {
-        expect(typeof closeBranchManager).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => closeBranchManager()).not.toThrow();
+
+    it('closes the branch manager', () => {
+        closeBranchManager();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ branchManagerOpen: false });
     });
 });

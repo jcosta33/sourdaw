@@ -1,16 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
 }));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 import { closeCommandPalette } from '../closeCommandPalette';
 
 describe('closeCommandPalette', () => {
-    it('is a function', () => {
-        expect(typeof closeCommandPalette).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => closeCommandPalette()).not.toThrow();
+
+    it('closes the command palette', () => {
+        closeCommandPalette();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ commandPaletteOpen: false });
     });
 });
