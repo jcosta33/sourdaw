@@ -70,9 +70,9 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     };
 });
 
-// Mock Synth
-vi.mock('#/modules/Synth/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Synth/stores')>();
+// Mock CvGate
+vi.mock('#/modules/CvGate/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/CvGate/stores')>();
     return {
         ...actual,
         cvGateStore: mocks.cvGateStore,

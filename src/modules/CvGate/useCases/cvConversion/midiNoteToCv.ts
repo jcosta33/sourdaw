@@ -1,4 +1,4 @@
-import { cvGateStore } from '../../../stores/cvGate';
+import { cvGateStore } from '../../stores/cvGate';
 
 /**
  * Convert a MIDI note number to CV voltage.

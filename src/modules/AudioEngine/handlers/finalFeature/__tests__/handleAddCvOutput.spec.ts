@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { addCvOutput } from '#/modules/Synth/useCases';
+import { addCvOutput } from '#/modules/CvGate/useCases';
 
 import { handleAddCvOutput } from '../handleAddCvOutput';
 
-vi.mock('#/modules/Synth/useCases', () => ({ addCvOutput: vi.fn() }));
+vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
 
 describe('handleAddCvOutput', () => {
     beforeEach(() => {

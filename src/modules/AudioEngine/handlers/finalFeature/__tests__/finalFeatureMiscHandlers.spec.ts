@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { addCvOutput } from '#/modules/CvGate/useCases';
 import { connectPush, disconnectPush } from '#/modules/Plugin/useCases';
-import { addCvOutput } from '#/modules/Synth/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { setProtocol } from '../../../useCases/controlSurface/setProtocol';
@@ -14,7 +14,7 @@ import { handleLoadRaveModel } from '../handleLoadRaveModel';
 import { handleSetControlSurface } from '../handleSetControlSurface';
 import { handleSetRaveBlend } from '../handleSetRaveBlend';
 
-vi.mock('#/modules/Synth/useCases', () => ({ addCvOutput: vi.fn() }));
+vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ connectPush: vi.fn(), disconnectPush: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Project/useCases', () => ({

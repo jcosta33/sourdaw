@@ -1,4 +1,4 @@
-import { addCvOutput } from '#/modules/Synth/useCases';
+import { addCvOutput } from '#/modules/CvGate/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 // AudioEngine-local shape (AGENTS.md §95 — model isolation).

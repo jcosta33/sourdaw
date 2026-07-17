@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../stores/cvGate', () => ({
+vi.mock('../../stores/cvGate', () => ({
     cvGateStore: { value: { voltageStandard: '1v-per-octave' as const } },
 }));
 
-import { cvGateStore } from '../../../stores/cvGate';
+import { cvGateStore } from '../../stores/cvGate';
 import { midiNoteToCv } from '../cvConversion/midiNoteToCv';
 
 describe('cvConversion', () => {
