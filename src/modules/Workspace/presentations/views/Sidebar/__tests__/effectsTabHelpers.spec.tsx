@@ -2,10 +2,20 @@ import { render, screen } from '@testing-library/react';
 import { Music2 } from 'lucide-react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { PluginDummy } from '#/modules/Arrangement/__tests__/PluginDummy';
-import { type PluginDescriptor } from '#/modules/Arrangement/models/DeviceParameter';
-
 import { NavCard, EffectItem, UnimplementedBadge, SoonBadge } from '../effectsTabHelpers';
+
+import type { PluginDescriptorView as PluginDescriptor } from '../../../../models/PluginDescriptorViewTypes';
+
+const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
+    id: 'builtin-reverb',
+    name: 'Reverb',
+    vendor: 'Sourdaw',
+    format: 'builtin',
+    category: 'effect',
+    parameters: [],
+    hasCustomUI: false,
+    ...overrides,
+});
 
 describe('effectsTabHelpers components', () => {
     describe('NavCard', () => {
@@ -28,7 +38,7 @@ describe('effectsTabHelpers components', () => {
 
     describe('EffectItem', () => {
         it('should render correctly', () => {
-            const mockPlugin = PluginDummy.create({
+            const mockPlugin = createPlugin({
                 name: 'Test Effect',
                 parameters: [{}, {}] as unknown as PluginDescriptor['parameters'],
             });
