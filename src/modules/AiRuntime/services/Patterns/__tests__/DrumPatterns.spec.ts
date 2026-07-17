@@ -20,7 +20,7 @@ describe('DrumPatterns', () => {
     });
     it('every generate produces output', () => {
         for (const p of drumPatterns) {
-            const notes = p.generate({ key: 0, scale: p.scaleOverride ?? 'major', density: 5, complexity: 5 });
+            const notes = p.generate({ key: 'C', scale: p.scaleOverride ?? 'major', density: 5, complexity: 5 });
             expect(Array.isArray(notes)).toBe(true);
         }
     });

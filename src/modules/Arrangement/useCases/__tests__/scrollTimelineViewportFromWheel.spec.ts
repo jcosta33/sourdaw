@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { scrollTimeline, setScrollY, timelineViewStore } from '../../stores/timelineViewStore';
+import { scrollTimeline, setScrollY } from '../../stores/timelineViewStore';
 import { scrollTimelineViewportFromWheel } from '../scrollTimelineViewportFromWheel';
+
+const viewStoreMock = vi.hoisted(() => ({
+    state: {
+        scrollX: 0,
+        scrollY: 40,
+        pixelsPerBeat: 12,
+        autoScrollEnabled: true,
+    },
+}));
 
 vi.mock('../../stores/timelineViewStore', () => ({
     scrollTimeline: vi.fn(),
     setScrollY: vi.fn(),
     timelineViewStore: {
-        value: {
-            scrollX: 0,
-            scrollY: 40,
-            pixelsPerBeat: 12,
-            autoScrollEnabled: true,
+        get value() {
+            return viewStoreMock.state;
         },
     },
 }));
@@ -19,7 +25,7 @@ vi.mock('../../stores/timelineViewStore', () => ({
 describe('scrollTimelineViewportFromWheel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        timelineViewStore.value = {
+        viewStoreMock.state = {
             scrollX: 0,
             scrollY: 40,
             pixelsPerBeat: 12,

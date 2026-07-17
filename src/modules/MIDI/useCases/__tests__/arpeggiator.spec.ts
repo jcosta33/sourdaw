@@ -19,6 +19,37 @@ vi.mock('../../stores/midiStore', () => ({
     },
 }));
 
+type SetNotes = Partial<MidiNote>[];
+
+function notesFromSetCall(callIndex: number): SetNotes {
+    const call = mocks.midiStoreSet.mock.calls[callIndex];
+    if (!call) {
+        throw new Error(`Expected midiStore.set call at index ${String(callIndex)}`);
+    }
+    const notes = call[0].notesByClipId.c1;
+    if (!notes) {
+        throw new Error('Expected notes for clip c1');
+    }
+    return notes;
+}
+
+function noteAt(notes: SetNotes, index: number): Partial<MidiNote> {
+    const note = notes[index];
+    if (!note) {
+        throw new Error(`Expected note at index ${String(index)}`);
+    }
+    return note;
+}
+
+function idsFromSetCall(callIndex: number): string[] {
+    return notesFromSetCall(callIndex).map((node) => {
+        if (!node.id) {
+            throw new Error('Expected note id');
+        }
+        return node.id;
+    });
+}
+
 describe('arpeggiate', () => {
     beforeEach(() => vi.clearAllMocks());
 
@@ -37,17 +68,17 @@ describe('arpeggiate', () => {
         arpeggiate('c1', 'up', 8, 1, 100);
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
-        const newNotes = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const newNotes = notesFromSetCall(0);
         expect(newNotes).toHaveLength(8);
 
         // Up pattern on C (60), E (64), G (67)
-        expect(newNotes[0].pitch).toBe(60);
-        expect(newNotes[1].pitch).toBe(64);
-        expect(newNotes[2].pitch).toBe(67);
-        expect(newNotes[3].pitch).toBe(60);
+        expect(noteAt(newNotes, 0).pitch).toBe(60);
+        expect(noteAt(newNotes, 1).pitch).toBe(64);
+        expect(noteAt(newNotes, 2).pitch).toBe(67);
+        expect(noteAt(newNotes, 3).pitch).toBe(60);
 
-        expect(newNotes[0].startBeat).toBe(0);
-        expect(newNotes[1].startBeat).toBe(0.5);
+        expect(noteAt(newNotes, 0).startBeat).toBe(0);
+        expect(noteAt(newNotes, 1).startBeat).toBe(0.5);
     });
 
     it('expands octaves', () => {
@@ -59,21 +90,21 @@ describe('arpeggiate', () => {
         // 2 octaves.
         arpeggiate('c1', 'up', 4, 2);
 
-        const newNotes = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const newNotes = notesFromSetCall(0);
         // The loop is beat < maxBeat. 0 < 1. Only 1 note.
         // Wait, maxBeat is start + duration. 0 + 1 = 1.
         expect(newNotes).toHaveLength(1);
-        expect(newNotes[0].pitch).toBe(60);
+        expect(noteAt(newNotes, 0).pitch).toBe(60);
 
         // If duration was longer:
         mocks.midiStoreValue.value = {
             notesByClipId: { c1: [{ pitch: 60, startBeat: 0, duration: 2 }] },
         };
         arpeggiate('c1', 'up', 4, 2);
-        const notes2 = mocks.midiStoreSet.mock.calls[1][0].notesByClipId.c1;
+        const notes2 = notesFromSetCall(1);
         expect(notes2).toHaveLength(2);
-        expect(notes2[0].pitch).toBe(60);
-        expect(notes2[1].pitch).toBe(72); // +1 octave
+        expect(noteAt(notes2, 0).pitch).toBe(60);
+        expect(noteAt(notes2, 1).pitch).toBe(72); // +1 octave
     });
 
     it('mints globally unique note ids (no arp-${clipId}-${index} collisions)', () => {
@@ -84,7 +115,7 @@ describe('arpeggiate', () => {
         };
 
         arpeggiate('c1', 'up', 8, 1, 100);
-        const ids = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1.map((node) => node.id);
+        const ids = idsFromSetCall(0);
         // All ids unique within one run...
         expect(new Set(ids).size).toBe(ids.length);
         // ...and not the old deterministic positional scheme.
@@ -92,7 +123,7 @@ describe('arpeggiate', () => {
 
         // A second run on the same clip must not reuse the first run's ids.
         arpeggiate('c1', 'up', 8, 1, 100);
-        const ids2 = mocks.midiStoreSet.mock.calls[1][0].notesByClipId.c1.map((node) => node.id);
+        const ids2 = idsFromSetCall(1);
         expect(ids.some((id) => ids2.includes(id))).toBe(false);
     });
 
@@ -107,11 +138,11 @@ describe('arpeggiate', () => {
 
         mocks.midiStoreValue.value = { notesByClipId: { c1: chord } };
         arpeggiate('c1', 'random', 16, 1, 100, 'replace', 12345);
-        const first = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1.map((node) => node.pitch);
+        const first = notesFromSetCall(0).map((node) => node.pitch);
 
         mocks.midiStoreValue.value = { notesByClipId: { c1: chord } };
         arpeggiate('c1', 'random', 16, 1, 100, 'replace', 12345);
-        const second = mocks.midiStoreSet.mock.calls[1][0].notesByClipId.c1.map((node) => node.pitch);
+        const second = notesFromSetCall(1).map((node) => node.pitch);
 
         // Same seed -> identical sequence (regression: used to be Math.random).
         expect(first).toEqual(second);
@@ -122,12 +153,12 @@ describe('arpeggiate', () => {
 
         mocks.midiStoreValue.value = { notesByClipId: { c1: existing } };
         arpeggiate('c1', 'up', 8, 1, 100, 'replace');
-        const afterReplace = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
+        const afterReplace = notesFromSetCall(0);
         expect(afterReplace.some((node) => node.id === 'orig')).toBe(false);
 
         mocks.midiStoreValue.value = { notesByClipId: { c1: existing } };
         arpeggiate('c1', 'up', 8, 1, 100, 'merge');
-        const afterMerge = mocks.midiStoreSet.mock.calls[1][0].notesByClipId.c1;
+        const afterMerge = notesFromSetCall(1);
         expect(afterMerge.some((node) => node.id === 'orig')).toBe(true);
         expect(afterMerge.length).toBeGreaterThan(existing.length);
     });

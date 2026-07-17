@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 
 import { type Store } from '#/infra/store/types';
 
@@ -12,9 +12,9 @@ type NoteOnArg = { midiNote: number; velocity: number };
 
 function fakeEngine(overrides: Partial<GrandBouleEngineHandle> = {}): {
     handle: GrandBouleEngineHandle;
-    noteOn: ReturnType<typeof vi.fn>;
+    noteOn: Mock<GrandBouleEngineHandle['noteOn']>;
 } {
-    const noteOn = vi.fn();
+    const noteOn = vi.fn<GrandBouleEngineHandle['noteOn']>();
     return {
         noteOn,
         handle: {
@@ -40,6 +40,14 @@ function storeWith(value: GrandBouleState | null): Store<GrandBouleState> {
     return { value } as Store<GrandBouleState>;
 }
 
+function firstNoteOnArg(noteOn: Mock<GrandBouleEngineHandle['noteOn']>): NoteOnArg {
+    const call = noteOn.mock.calls[0];
+    if (!call) {
+        throw new Error('expected noteOn to have been called');
+    }
+    return call[0];
+}
+
 describe('triggerGrandBouleNote', () => {
     it('should export triggerGrandBouleNote', () => {
         expect(triggerGrandBouleNote).toBeDefined();
@@ -59,7 +67,7 @@ describe('triggerGrandBouleNote', () => {
         triggerGrandBouleNote({ engine: handle, store: storeWith(state), midiNote: 60, velocity: 0.5 });
 
         expect(noteOn).toHaveBeenCalledTimes(1);
-        expect((noteOn.mock.calls[0][0] as NoteOnArg).velocity).toBeCloseTo(0.25, 12);
+        expect(firstNoteOnArg(noteOn).velocity).toBeCloseTo(0.25, 12);
     });
 
     it('respects the calibration floor and ceiling', () => {
@@ -75,7 +83,7 @@ describe('triggerGrandBouleNote', () => {
         triggerGrandBouleNote({ engine: handle, store: storeWith(state), midiNote: 60, velocity: 0.5 });
 
         // 0.2 + 0.5 * (0.8 - 0.2) = 0.5
-        expect((noteOn.mock.calls[0][0] as NoteOnArg).velocity).toBeCloseTo(0.5, 12);
+        expect(firstNoteOnArg(noteOn).velocity).toBeCloseTo(0.5, 12);
     });
 
     // Regression: prior #23/#26/#42/#27/#24 — when the store has not hydrated,
@@ -84,11 +92,11 @@ describe('triggerGrandBouleNote', () => {
     it('clamps an out-of-range velocity even when the store is uninitialised', () => {
         const over = fakeEngine();
         triggerGrandBouleNote({ engine: over.handle, store: storeWith(null), midiNote: 60, velocity: 1.5 });
-        expect((over.noteOn.mock.calls[0][0] as NoteOnArg).velocity).toBe(1);
+        expect(firstNoteOnArg(over.noteOn).velocity).toBe(1);
 
         const under = fakeEngine();
         triggerGrandBouleNote({ engine: under.handle, store: storeWith(null), midiNote: 60, velocity: -0.2 });
-        expect((under.noteOn.mock.calls[0][0] as NoteOnArg).velocity).toBe(0);
+        expect(firstNoteOnArg(under.noteOn).velocity).toBe(0);
     });
 
     it('forwards the same shaped velocity whether the store is null or default-calibrated', () => {
@@ -103,9 +111,7 @@ describe('triggerGrandBouleNote', () => {
             velocity: 0.42,
         });
 
-        expect((nullStore.noteOn.mock.calls[0][0] as NoteOnArg).velocity).toBe(
-            (defaultStore.noteOn.mock.calls[0][0] as NoteOnArg).velocity
-        );
+        expect(firstNoteOnArg(nullStore.noteOn).velocity).toBe(firstNoteOnArg(defaultStore.noteOn).velocity);
     });
 
     it('does nothing when the engine is not ready', () => {

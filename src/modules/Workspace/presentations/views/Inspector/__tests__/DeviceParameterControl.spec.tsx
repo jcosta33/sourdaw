@@ -27,7 +27,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     };
 });
 
-const mockUseStore = vi.fn((store: any, defaultState: any) => defaultState);
+const mockUseStore = vi.fn((_store: unknown, defaultState: unknown) => defaultState);
 const mockMidiLearnRotaryKnob = vi.hoisted(() => vi.fn());
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
@@ -117,7 +117,7 @@ describe('DeviceParameterControl', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockUseStore.mockImplementation((store: any, defaultState: any) => defaultState);
+        mockUseStore.mockImplementation((_store: unknown, defaultState: unknown) => defaultState);
     });
 
     it('should render without crashing', () => {

@@ -1,24 +1,45 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ScannedPlugin } from '../../../models/ScannedPlugin';
 import { type PluginScanState } from '../../../stores/pluginScanStore';
 import { startPluginScan } from '../scanning/startPluginScan';
 
-const mocks = vi.hoisted(() => ({
-    pluginScanStoreValue: {
+const mocks = vi.hoisted(() => {
+    const pluginScanStoreValue: { value: PluginScanState } = {
         value: {
-            scanPaths: [] as string[],
+            scanPaths: [],
             isScanning: false,
-            scannedPlugins: [] as PluginScanState['scannedPlugins'],
-            errors: [] as string[],
+            scannedPlugins: [],
+            errors: [],
             lastScanTime: null,
-        } satisfies PluginScanState,
-    },
-    pluginScanStoreSet: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.set>(),
-    pluginScanStoreUpdate: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.update>(),
-    scanPlugins: vi.fn<typeof import('../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
-    getDefaultPluginPaths:
-        vi.fn<typeof import('../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
-}));
+        },
+    };
+    return {
+        pluginScanStoreValue,
+        pluginScanStoreSet: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.set>(),
+        pluginScanStoreUpdate: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.update>(),
+        scanPlugins: vi.fn<typeof import('../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
+        getDefaultPluginPaths:
+            vi.fn<typeof import('../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
+    };
+});
+
+function makeScannedPlugin(overrides: Partial<ScannedPlugin> = {}): ScannedPlugin {
+    return {
+        id: 'p1',
+        name: 'Synth',
+        vendor: 'Acme Audio',
+        format: 'VST3',
+        category: 'Instrument',
+        path: '/plugins/synth.vst3',
+        version: '1.0.0',
+        num_inputs: 0,
+        num_outputs: 2,
+        num_parameters: 8,
+        has_custom_ui: false,
+        ...overrides,
+    };
+}
 
 vi.mock('../../../stores/pluginScanStore', () => ({
     pluginScanStore: {
@@ -61,8 +82,8 @@ describe('startPluginScan', () => {
     });
 
     it('sets isScanning and then updates with results', async () => {
-        const mockPlugins = [{ id: 'p1', name: 'Synth' }];
-        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [] });
+        const mockPlugins = [makeScannedPlugin()];
+        mocks.scanPlugins.mockResolvedValue({ plugins: mockPlugins, errors: [], scan_duration_ms: 5 });
 
         await startPluginScan();
 
@@ -82,7 +103,7 @@ describe('startPluginScan', () => {
     it('merges existing paths with default paths', async () => {
         mocks.pluginScanStoreValue.value.scanPaths = ['/custom/path'];
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
-        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [] });
+        mocks.scanPlugins.mockResolvedValue({ plugins: [], errors: [], scan_duration_ms: 0 });
 
         await startPluginScan();
 

@@ -240,6 +240,9 @@ describe('generateDemoDrumBuffer', () => {
 
         expect(created_contexts).toHaveLength(1);
         const context = created_contexts[0];
+        if (!context) {
+            throw new Error('expected an OfflineAudioContext to be created');
+        }
         expect(context.numberOfChannels).toBe(2);
         expect(context.length).toBe(88_200);
         expect(context.sampleRate).toBe(44_100);
@@ -254,20 +257,28 @@ describe('generateDemoDrumBuffer', () => {
         await generateDemoDrumBuffer('electro-drum-buffer', 4, 120, 'electro');
 
         const context = created_contexts[0];
+        if (!context) {
+            throw new Error('expected an OfflineAudioContext to be created');
+        }
         expect(context.buffer_sources.map((source) => source.start_times)).toEqual([[0.5], [1.5]]);
         expect(context.filters.map((filter) => filter.type)).toEqual(['highpass', 'highpass']);
         expect(context.filters.map((filter) => filter.frequency.value)).toEqual([2000, 2000]);
 
         expect(context.oscillators).toHaveLength(4);
-        expect(context.oscillators[0].frequency.set_value_calls).toEqual([{ value: 120, time: 0 }]);
-        expect(context.oscillators[0].frequency.ramp_calls).toEqual([{ value: 30, time: 0.1 }]);
-        expect(context.oscillators[0].start_times).toEqual([0]);
-        expect(context.oscillators[0].stop_times).toEqual([0.3]);
+        const kickOscillator = context.oscillators[0];
+        const snareOscillator = context.oscillators[1];
+        if (!kickOscillator || !snareOscillator) {
+            throw new Error('expected at least two oscillators');
+        }
+        expect(kickOscillator.frequency.set_value_calls).toEqual([{ value: 120, time: 0 }]);
+        expect(kickOscillator.frequency.ramp_calls).toEqual([{ value: 30, time: 0.1 }]);
+        expect(kickOscillator.start_times).toEqual([0]);
+        expect(kickOscillator.stop_times).toEqual([0.3]);
 
-        expect(context.oscillators[1].type).toBe('triangle');
-        expect(context.oscillators[1].frequency.value).toBe(200);
-        expect(context.oscillators[1].start_times).toEqual([0.5]);
-        expect(context.oscillators[1].stop_times).toEqual([0.6]);
+        expect(snareOscillator.type).toBe('triangle');
+        expect(snareOscillator.frequency.value).toBe(200);
+        expect(snareOscillator.start_times).toEqual([0.5]);
+        expect(snareOscillator.stop_times).toEqual([0.6]);
     });
 
     it('should swallow render failures without caching a buffer', async () => {
@@ -276,7 +287,11 @@ describe('generateDemoDrumBuffer', () => {
         await expect(generateDemoDrumBuffer('failed-drum-buffer', 4, 120, 'kick')).resolves.toBeUndefined();
 
         expect(created_contexts).toHaveLength(1);
-        expect(created_contexts[0].start_render_count).toBe(1);
+        const failedContext = created_contexts[0];
+        if (!failedContext) {
+            throw new Error('expected an OfflineAudioContext to be created');
+        }
+        expect(failedContext.start_render_count).toBe(1);
         expect(mocks.cache_audio_buffer).not.toHaveBeenCalled();
     });
 });

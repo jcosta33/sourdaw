@@ -23,7 +23,7 @@ describe('handleRemoveAllTracks', () => {
     it('bails if track store state is unavailable', () => {
         mocks.getTrackStoreState.mockReturnValue(null);
 
-        void handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: {} });
+        void handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
 
         expect(mocks.removeTrack).not.toHaveBeenCalled();
     });
@@ -33,7 +33,7 @@ describe('handleRemoveAllTracks', () => {
             tracks: [{ id: 't1' }, { id: 't2' }],
         });
 
-        void handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: {} });
+        void handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: undefined });
 
         expect(mocks.removeTrack).toHaveBeenCalledTimes(2);
         expect(mocks.removeTrack).toHaveBeenCalledWith('t1');
@@ -41,7 +41,7 @@ describe('handleRemoveAllTracks', () => {
     });
 
     it('provides a description', () => {
-        const desc = handleRemoveAllTracks.describe({ type: 'removeAllTracks', payload: {} });
+        const desc = handleRemoveAllTracks.describe({ type: 'removeAllTracks', payload: undefined });
         expect(desc.label).toBe('Remove all tracks');
     });
 

@@ -267,6 +267,9 @@ describe('loadRecentProject', () => {
         // loaded project's non-device state is written over them.
         const resetOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
         const hydrateOrder = vi.mocked(hydrateModuleStoresFromProjectData).mock.invocationCallOrder[0];
+        if (resetOrder === undefined || hydrateOrder === undefined) {
+            throw new Error('expected both reset and hydration to have been called');
+        }
         expect(resetOrder).toBeLessThan(hydrateOrder);
     });
 

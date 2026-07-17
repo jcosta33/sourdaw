@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 
 // Import mocked functions
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { toggleFolderCollapse } from '../../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
@@ -62,7 +63,7 @@ vi.mock('../TrackHeader/LevainLoadingSpinner', () => ({
     LevainLoadingSpinner: () => null,
 }));
 
-const mockTrack = {
+const mockTrack = TrackDummy.create({
     id: 'track1',
     name: 'Test Track',
     kind: 'audio',
@@ -70,7 +71,7 @@ const mockTrack = {
     soloed: false,
     armed: false,
     frozen: false,
-    freezeState: { status: 'unfrozen' as const },
+    freezeState: { status: 'unfrozen' },
     collapsed: false,
     color: '#ff0000',
     inputMonitoring: 'auto',
@@ -78,9 +79,9 @@ const mockTrack = {
     parentId: null,
     height: 64,
     devices: [],
-};
+});
 
-const mockFolderTrack = {
+const mockFolderTrack = TrackDummy.create({
     id: 'folder1',
     name: 'Folder Track',
     kind: 'folder',
@@ -88,7 +89,7 @@ const mockFolderTrack = {
     soloed: false,
     armed: false,
     frozen: false,
-    freezeState: { status: 'unfrozen' as const },
+    freezeState: { status: 'unfrozen' },
     collapsed: false,
     color: '#00ff00',
     inputMonitoring: 'auto',
@@ -96,7 +97,7 @@ const mockFolderTrack = {
     parentId: null,
     height: 26,
     devices: [],
-};
+});
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);

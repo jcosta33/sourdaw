@@ -14,7 +14,11 @@ describe('scaleVelocities', () => {
     it('leaves missing clips unchanged', () => {
         scaleVelocities('missing-clip', 'linear');
 
-        expect(midiStore.value.notesByClipId).toEqual({});
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state');
+        }
+        expect(state.notesByClipId).toEqual({});
     });
 
     it('scales velocities with MIDI-owned curve math', () => {
@@ -31,6 +35,10 @@ describe('scaleVelocities', () => {
 
         scaleVelocities('clip1', 'compress', 10, 110);
 
-        expect(midiStore.value.notesByClipId.clip1?.map((note) => note.velocity)).toEqual([40, 80]);
+        const state = midiStore.value;
+        if (!state) {
+            throw new Error('Expected MIDI state');
+        }
+        expect(state.notesByClipId.clip1?.map((note) => note.velocity)).toEqual([40, 80]);
     });
 });

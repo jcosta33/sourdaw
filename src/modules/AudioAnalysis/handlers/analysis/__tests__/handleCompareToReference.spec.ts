@@ -26,7 +26,7 @@ describe('handleCompareToReference', () => {
             suggestions: [{ message: 'Nice balance' }],
         });
 
-        void handleCompareToReference.execute({ type: 'compareToReference', payload: {} });
+        void handleCompareToReference.execute({ type: 'compareToReference', payload: undefined });
 
         expect(mocks.compareToReference).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Mix comparison: 84% match — 1 suggestions', 'success');
@@ -38,13 +38,13 @@ describe('handleCompareToReference', () => {
             suggestions: [{ message: 'Too dark' }, { message: 'Low vocal' }],
         });
 
-        void handleCompareToReference.execute({ type: 'compareToReference', payload: {} });
+        void handleCompareToReference.execute({ type: 'compareToReference', payload: undefined });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Mix comparison: 62% match — 2 suggestions', 'warning');
     });
 
     it('should provide a description', () => {
-        const description = handleCompareToReference.describe({ type: 'compareToReference', payload: {} });
+        const description = handleCompareToReference.describe({ type: 'compareToReference', payload: undefined });
 
         expect(description.label).toBe('Compare to Reference Mix');
     });

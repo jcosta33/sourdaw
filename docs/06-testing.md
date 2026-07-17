@@ -660,10 +660,13 @@ Commands in `src-tauri/src/commands/` have in-crate `#[cfg(test)]` coverage in f
 | `pnpm test`              | Vitest in watch mode — use during development               |
 | `pnpm test:run`          | Vitest single run — use in CI                               |
 | `pnpm test:coverage`     | Vitest with **v8** coverage; HTML + `lcov` in `./coverage/` |
+| `pnpm typecheck:test`    | Spec-inclusive type check (`tsconfig.test.json`) — all of `src` **including** `*.spec.ts(x)` |
 | `cargo test --workspace` | Run all Rust crate tests                                    |
 | `cargo test -p daw-dsp`  | Run tests for a single Rust crate                           |
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
+
+Spec files are excluded from the base `pnpm typecheck` (`tsconfig.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
 
 ---
 

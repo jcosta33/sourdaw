@@ -16,12 +16,12 @@ describe('handleCutClip', () => {
     });
 
     it('executes cutSelectedClip', () => {
-        void handleCutClip.execute({ type: 'cutClip', payload: {} });
+        void handleCutClip.execute({ type: 'cutClip' });
         expect(mocks.cutSelectedClip).toHaveBeenCalledTimes(1);
     });
 
     it('provides a description', () => {
-        const desc = handleCutClip.describe({ type: 'cutClip', payload: {} });
+        const desc = handleCutClip.describe({ type: 'cutClip' });
         expect(desc.label).toBe('Cut clip');
     });
 

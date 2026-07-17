@@ -79,7 +79,11 @@ describe('reverseClip', () => {
         });
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
 
-        const updater = mocks.updateClip.mock.calls[0][1];
+        const call = mocks.updateClip.mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateClip to be called');
+        }
+        const updater = call[1];
         const result = updater(mockClip);
         expect(result.audioBufferId).toBe('reversed-buf1-12345');
         expect(result.name).toBe('Sample (reversed)');

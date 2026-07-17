@@ -5,7 +5,7 @@ import { renameSetlist } from '../renameSetlist';
 
 const mockSetlistStore = vi.hoisted(() => ({
     value: null as SetlistState | null,
-    set: vi.fn<[SetlistState], void>(),
+    set: vi.fn<(state: SetlistState) => void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({

@@ -77,15 +77,16 @@ describe('AudioEngine', () => {
     let engine: AudioEngine;
     let mockCtx: MockAudioContext;
 
+    class FakeWorkletNode {
+        port = { postMessage: vi.fn() };
+        connect = vi.fn();
+        disconnect = vi.fn();
+    }
+
     beforeEach(() => {
         vi.clearAllMocks();
         mockCtx = createMockAudioContext();
 
-        class FakeWorkletNode {
-            port = { postMessage: vi.fn() };
-            connect = vi.fn();
-            disconnect = vi.fn();
-        }
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal(
             'SharedArrayBuffer',
@@ -831,9 +832,7 @@ describe('AudioEngine', () => {
     describe('stopAllScheduled all-notes-off', () => {
         function pushSynth(eng: AudioEngine, trackId: string, controlsKey: string) {
             const strip = eng.ensureTrackStrip(trackId);
-            const workletNode = new (globalThis.AudioWorkletNode as new () => {
-                port: { postMessage: Mock };
-            })();
+            const workletNode = new FakeWorkletNode();
             strip.deviceNodes.push({
                 deviceId: `${controlsKey}-dev`,
                 type: controlsKey,
@@ -928,7 +927,6 @@ describe('AudioEngine', () => {
         it('constructs without throwing when SharedArrayBuffer is unavailable', () => {
             const savedSAB = globalThis.SharedArrayBuffer;
             // Remove the global the way a non-isolated page would.
-            // @ts-expect-error deleting a global for the duration of the test
             delete (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
             try {
                 let noSabEngine: AudioEngine | undefined;

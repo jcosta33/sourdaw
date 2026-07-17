@@ -37,7 +37,11 @@ describe('CompressorLayout', () => {
     it('should register layout for compressor variants', async () => {
         await import('../CompressorLayout');
         expect(mockRegisterDeviceLayout).toHaveBeenCalled();
-        const [deviceTypes] = mockRegisterDeviceLayout.mock.calls[0];
+        const firstRegisterCall = mockRegisterDeviceLayout.mock.calls[0];
+        if (!firstRegisterCall) {
+            throw new Error('expected registerDeviceLayout to have been called');
+        }
+        const [deviceTypes] = firstRegisterCall;
         expect(deviceTypes).toContain('builtin-compressor');
         expect(deviceTypes).toContain('builtin-sidechain-compressor');
     });

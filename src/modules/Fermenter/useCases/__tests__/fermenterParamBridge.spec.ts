@@ -20,7 +20,7 @@ describe('fermenterParamBridge', () => {
     });
 
     it('setFermenterParamWithAudio does not touch the engine when the device is unknown', () => {
-        setFermenterParamWithAudio('missing-device', 'inputGain', 0.5);
+        setFermenterParamWithAudio('missing-device', 'oscLevel', 0.5);
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(persistDeviceParam).not.toHaveBeenCalled();

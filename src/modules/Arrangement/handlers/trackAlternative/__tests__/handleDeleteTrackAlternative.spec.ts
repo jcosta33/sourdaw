@@ -39,7 +39,11 @@ describe('handleDeleteTrackAlternative', () => {
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        const newState = firstCall[0];
         expect(newState.tracks[0].alternatives).toHaveLength(1);
         expect(newState.tracks[0].alternatives[0].id).toBe('alt1');
     });
@@ -65,7 +69,11 @@ describe('handleDeleteTrackAlternative', () => {
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        const newState = firstCall[0];
         const track = newState.tracks[0];
         expect(track.alternatives).toHaveLength(1);
         expect(track.activeAlternativeId).toBe('alt2');
@@ -82,7 +90,11 @@ describe('handleDeleteTrackAlternative', () => {
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });
 
-        const newState = mocks.setTrackStoreState.mock.calls[0][0];
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        const newState = firstCall[0];
         expect(newState.tracks[0].alternatives).toHaveLength(1);
     });
 });

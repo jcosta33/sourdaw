@@ -25,15 +25,15 @@ describe('ChordPatterns', () => {
 
     it('every generate function runs without crash', () => {
         for (const p of chordPatterns) {
-            const notes = p.generate({ key: 0, scale: p.scaleOverride ?? 'major', density: 5, complexity: 5 });
+            const notes = p.generate({ key: 'C', scale: p.scaleOverride ?? 'major', density: 5, complexity: 5 });
             expect(Array.isArray(notes)).toBe(true);
         }
     });
 
     it('generate produces different note count for different density', () => {
         const pattern = chordPatterns[0]!;
-        const low = pattern.generate({ key: 0, scale: 'major', density: 1, complexity: 5 });
-        const high = pattern.generate({ key: 0, scale: 'major', density: 9, complexity: 5 });
+        const low = pattern.generate({ key: 'C', scale: 'major', density: 1, complexity: 5 });
+        const high = pattern.generate({ key: 'C', scale: 'major', density: 9, complexity: 5 });
         expect(low.length).not.toBe(high.length);
     });
 
@@ -50,8 +50,8 @@ describe('ChordPatterns', () => {
 
     it('complexity affects chord voicing', () => {
         const pattern = chordPatterns.find((p) => p.id === 'ch-1564')!;
-        const simple = pattern.generate({ key: 0, scale: 'major', density: 5, complexity: 1 });
-        const complex = pattern.generate({ key: 0, scale: 'major', density: 5, complexity: 9 });
+        const simple = pattern.generate({ key: 'C', scale: 'major', density: 5, complexity: 1 });
+        const complex = pattern.generate({ key: 'C', scale: 'major', density: 5, complexity: 9 });
         expect(simple.length).not.toBe(complex.length);
     });
 });

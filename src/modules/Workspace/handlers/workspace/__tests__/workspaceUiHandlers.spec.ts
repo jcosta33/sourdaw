@@ -31,32 +31,32 @@ describe('Workspace UI Handlers', () => {
     });
 
     it('handleToggleSidebar should delegate to toggleSidebar', () => {
-        void handleToggleSidebar.execute({ type: 'toggleSidebar', payload: {} });
+        void handleToggleSidebar.execute({ type: 'toggleSidebar' });
         expect(mocks.toggleSidebar).toHaveBeenCalled();
     });
 
     it('handleToggleInspector should delegate to toggleInspector', () => {
-        void handleToggleInspector.execute({ type: 'toggleInspector', payload: {} });
+        void handleToggleInspector.execute({ type: 'toggleInspector' });
         expect(mocks.toggleInspector).toHaveBeenCalled();
     });
 
     it('handleToggleChatPanel should delegate to toggleChatPanel', () => {
-        void handleToggleChatPanel.execute({ type: 'toggleChatPanel', payload: {} });
+        void handleToggleChatPanel.execute({ type: 'toggleChatPanel' });
         expect(mocks.toggleChatPanel).toHaveBeenCalled();
     });
 
     it('handleOpenMixer should delegate to toggleMixer', () => {
-        void handleOpenMixer.execute({ type: 'openMixer', payload: {} });
+        void handleOpenMixer.execute({ type: 'openMixer' });
         expect(mocks.toggleMixer).toHaveBeenCalled();
     });
 
     it('handleCloseMixer should delegate to toggleMixer', () => {
-        void handleCloseMixer.execute({ type: 'closeMixer', payload: {} });
+        void handleCloseMixer.execute({ type: 'closeMixer' });
         expect(mocks.toggleMixer).toHaveBeenCalled();
     });
 
     it('handleZoomToFit should delegate to zoomToFit', () => {
-        void handleZoomToFit.execute({ type: 'zoomToFit', payload: {} });
+        void handleZoomToFit.execute({ type: 'zoomToFit' });
         expect(mocks.zoomToFit).toHaveBeenCalled();
     });
 });

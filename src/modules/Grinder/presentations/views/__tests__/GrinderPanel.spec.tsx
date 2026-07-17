@@ -32,6 +32,7 @@ describe('GrinderPanel', () => {
                     uiSection: 'lab',
                     gateEnabled: true,
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
     });
@@ -57,6 +58,7 @@ describe('GrinderPanel', () => {
                         },
                     ],
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -76,6 +78,7 @@ describe('GrinderPanel', () => {
                     neuralModelName: 'Factory Voice A',
                     neuralModelFamily: 'NAM-compatible',
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -104,6 +107,7 @@ describe('GrinderPanel', () => {
                     engineMode: 'capture',
                     neuralEnabled: true,
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -150,6 +154,7 @@ describe('GrinderPanel', () => {
                         ],
                     },
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -179,6 +184,7 @@ describe('GrinderPanel', () => {
                         },
                     ],
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -196,6 +202,7 @@ describe('GrinderPanel', () => {
                     ...DEFAULT_PATCH,
                     uiSection: 'cab',
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -214,6 +221,7 @@ describe('GrinderPanel', () => {
                     cabIrId: '2x12-open',
                     routingMode: 'parallel',
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -235,6 +243,7 @@ describe('GrinderPanel', () => {
                     uiSection: 'cab',
                     mic2: { ...DEFAULT_PATCH.mic2, enabled: true },
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -249,6 +258,7 @@ describe('GrinderPanel', () => {
                     uiSection: 'cab',
                     mic2: { ...DEFAULT_PATCH.mic2, enabled: false },
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -264,6 +274,7 @@ describe('GrinderPanel', () => {
                     uiSection: 'drive',
                     prePedals: [],
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -285,6 +296,7 @@ describe('GrinderPanel', () => {
                     ],
                     activeSnapshot: 1,
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 
@@ -317,6 +329,7 @@ describe('GrinderPanel', () => {
                     engineMode: 'capture',
                     neuralEnabled: true,
                 },
+                basePatch: DEFAULT_PATCH,
             },
         });
 

@@ -35,7 +35,7 @@ describe('recordAction', () => {
             { type: 'undo' },
             { type: 'redo' },
             { type: 'startMacroRecording' },
-            { type: 'stopMacroRecording' },
+            { type: 'stopMacroRecording', payload: { name: 'Meta macro' } },
             { type: 'playMacro', payload: { macroId: 'm1' } },
             { type: 'deleteMacro', payload: { macroId: 'm1' } },
             { type: 'renameMacro', payload: { macroId: 'm1', name: 'New name' } },

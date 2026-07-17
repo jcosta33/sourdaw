@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { getTakeLaneForTrack } from '../getTakeLaneForTrack';
+
+import type { TakeLaneStoreState } from '../../../stores/takeLaneStore';
+
+const mocks = vi.hoisted(() => ({
+    takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
+}));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        value: null,
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: vi.fn(),
     },
 }));
@@ -17,13 +24,13 @@ describe('getTakeLaneForTrack', () => {
     });
 
     it('returns null when store is empty', () => {
-        takeLaneStore.value = null as never;
+        mocks.takeLaneStoreValue.value = null;
         expect(getTakeLaneForTrack('t1')).toBeNull();
     });
 
     it('returns the lane for the track id', () => {
         const lane = createTakeLane('t1');
-        takeLaneStore.value = { lanes: [lane] } as never;
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
         expect(getTakeLaneForTrack('t1')).toEqual(lane);
         expect(getTakeLaneForTrack('missing')).toBeNull();
     });

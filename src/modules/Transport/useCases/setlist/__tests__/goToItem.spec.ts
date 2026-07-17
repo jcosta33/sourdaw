@@ -11,18 +11,22 @@ type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;
 };
 
-vi.mock('../../../stores/setlistStore', () => {
-    const setlistStore: {
-        value: SetlistState | null;
+const setlistStoreMock = vi.hoisted(() => {
+    const store: {
+        value: import('../../../stores/setlistStore').SetlistState | null;
         set: ReturnType<typeof vi.fn>;
     } = {
         value: null,
-        set: vi.fn((next: SetlistState) => {
-            setlistStore.value = next;
+        set: vi.fn((next: import('../../../stores/setlistStore').SetlistState) => {
+            store.value = next;
         }),
     };
-    return { setlistStore };
+    return store;
 });
+
+vi.mock('../../../stores/setlistStore', () => ({
+    setlistStore: setlistStoreMock,
+}));
 
 function baseItem(overrides?: Partial<SetlistItem>): SetlistItem {
     return {
@@ -56,7 +60,7 @@ function baseState(items: SetlistItem[], currentIndex: number): SetlistState {
 describe('goToItem', () => {
     beforeEach(() => {
         vi.mocked(setlistStore.set).mockClear();
-        setlistStore.value = baseState([], 0);
+        setlistStoreMock.value = baseState([], 0);
     });
 
     it('should not change state or emit when index is out of range', () => {
@@ -76,7 +80,7 @@ describe('goToItem', () => {
                 programChange: { channel: 2, program: 10 },
             }),
         ];
-        setlistStore.value = baseState(items, 0);
+        setlistStoreMock.value = baseState(items, 0);
 
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);
@@ -95,7 +99,7 @@ describe('goToItem', () => {
 
     it('should not emit program change when item has no programChange', () => {
         const items = [baseItem({ programChange: null })];
-        setlistStore.value = baseState(items, 0);
+        setlistStoreMock.value = baseState(items, 0);
 
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);

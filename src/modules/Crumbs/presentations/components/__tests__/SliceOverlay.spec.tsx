@@ -10,7 +10,6 @@ describe('SliceOverlay', () => {
                 markers={[{ id: 'm1', framePosition: 100, label: 'A' }]}
                 totalFrames={1000}
                 activeSliceIndex={0}
-                width={200}
                 height={40}
                 onMarkerDrag={vi.fn()}
                 onSelectSlice={vi.fn()}

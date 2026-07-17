@@ -46,11 +46,19 @@ describe('moveClip', () => {
         moveClip('c1', 't2', 10);
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to have been called');
+        }
+        const newState = setCall[0];
 
-        expect(newState.tracks[0].clips).toHaveLength(0);
-        expect(newState.tracks[1].clips).toHaveLength(1);
-        expect(newState.tracks[1].clips[0]).toMatchObject({
+        const [sourceTrack, targetTrack] = newState.tracks;
+        if (!sourceTrack || !targetTrack) {
+            throw new Error('expected two tracks in new state');
+        }
+        expect(sourceTrack.clips).toHaveLength(0);
+        expect(targetTrack.clips).toHaveLength(1);
+        expect(targetTrack.clips[0]).toMatchObject({
             id: 'c1',
             trackId: 't2',
             startBeat: 10,

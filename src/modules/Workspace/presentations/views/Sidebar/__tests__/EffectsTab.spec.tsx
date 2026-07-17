@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { type PreviewHandle } from '../../../hooks/usePreviewAudio';
 import { EffectsTab } from '../EffectsTab';
 
 import type { PluginDescriptorView as PluginDescriptor } from '../../../../models/PluginDescriptorViewTypes';
@@ -37,13 +38,12 @@ describe('EffectsTab', () => {
         favorites: new Set<string>(),
         onToggleFavorite: vi.fn(),
         preview: {
-            play: vi.fn(),
-            stop: vi.fn(),
-            isPlaying: false,
-            currentUrl: null,
-            error: null,
-            isLoading: false,
-        },
+            playingId: null,
+            play: vi.fn<PreviewHandle['play']>(),
+            playTone: vi.fn<PreviewHandle['playTone']>(),
+            playFile: vi.fn<PreviewHandle['playFile']>().mockResolvedValue(undefined),
+            stop: vi.fn<PreviewHandle['stop']>(),
+        } satisfies PreviewHandle,
     };
 
     beforeEach(() => {

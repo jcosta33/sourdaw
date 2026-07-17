@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type InjectableFunction } from '#/infra/di/inject';
+
 import { CHORD_PROGRESSION_STYLES } from '../../../useCases/generateChordProgression/algorithm';
 import { DRUM_PATTERN_STYLES } from '../../../useCases/generateDrumPattern/algorithm';
 import { MELODY_STYLES, SCALE_TYPES } from '../../../useCases/generateMelody/algorithm';
@@ -19,6 +21,16 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
 }));
 
+// The deps contract expects DI-injectable use cases; stamp the injectable
+// metadata onto plain vi.fn mocks so they satisfy that contract.
+function asInjectable<TMock extends (...args: never[]) => unknown>(mockFn: TMock): TMock & InjectableFunction {
+    return Object.assign(mockFn, {
+        _isInjectable: true,
+        _deps: {},
+        _factory: () => mockFn,
+    });
+}
+
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: mocks.getTransportState,
 }));
@@ -30,8 +42,8 @@ describe('generationHandlerHelpers', () => {
 
     describe('resolveOrCreateMidiTrack', () => {
         const deps = {
-            addTrack: mocks.addTrack,
-            getTrackStoreState: mocks.getTrackStoreState,
+            addTrack: asInjectable(mocks.addTrack),
+            getTrackStoreState: asInjectable(mocks.getTrackStoreState),
         };
 
         it('returns provided trackId if given', () => {

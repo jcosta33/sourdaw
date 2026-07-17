@@ -40,8 +40,8 @@ const supported_report: CapabilityReport = {
 // probes as unsupported. Cold-start detection must surface this, not reuse a stale
 // first-launch report.
 const regressed_report: CapabilityReport = {
-    capability: 'unsupported',
-    webGpuTier: 'none',
+    capability: 'unsupported-browser',
+    webGpuTier: 'unavailable',
     sharedArrayBuffer: false,
     opfsAvailable: true,
     chromeVersion: 133,

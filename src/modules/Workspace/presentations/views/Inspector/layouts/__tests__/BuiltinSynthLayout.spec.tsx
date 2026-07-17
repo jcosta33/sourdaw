@@ -59,7 +59,11 @@ describe('BuiltinSynthLayout', () => {
     it('should register layout for builtin-synth variants', async () => {
         await import('../BuiltinSynthLayout');
         expect(mockRegisterDeviceLayout).toHaveBeenCalled();
-        const [deviceTypes] = mockRegisterDeviceLayout.mock.calls[0];
+        const firstRegisterCall = mockRegisterDeviceLayout.mock.calls[0];
+        if (!firstRegisterCall) {
+            throw new Error('expected registerDeviceLayout to have been called');
+        }
+        const [deviceTypes] = firstRegisterCall;
         expect(deviceTypes).toContain('builtin-synth');
         expect(deviceTypes).toContain('builtin-synth-mellotron');
     });

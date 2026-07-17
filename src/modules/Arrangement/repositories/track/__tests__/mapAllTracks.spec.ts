@@ -33,7 +33,11 @@ describe('mapAllTracks', () => {
 
         mapAllTracks((time) => ({ ...time, name: `${time.name}!` }));
 
-        expect(trackStore.value!.tracks[0].name).toBe('A!');
-        expect(trackStore.value!.tracks[1].name).toBe('B!');
+        const [first, second] = trackStore.value!.tracks;
+        if (!first || !second) {
+            throw new Error('expected two tracks in store');
+        }
+        expect(first.name).toBe('A!');
+        expect(second.name).toBe('B!');
     });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { clearCrdtIdb } from '../clearCrdtIdb';
 import { encodePersistenceAuthority } from '../encodePersistenceAuthority';
@@ -12,58 +12,60 @@ vi.mock('../helpers', () => ({
     openDatabase: vi.fn(),
 }));
 
+type MockIdbRequest = {
+    result: unknown;
+    onsuccess: (() => void) | null;
+    onerror: (() => void) | null;
+    error: Error | null;
+};
+
 type MockStore = {
-    clear: ReturnType<typeof vi.fn>;
-    get: ReturnType<typeof vi.fn>;
-    put: ReturnType<typeof vi.fn>;
-    add: ReturnType<typeof vi.fn>;
+    clear: Mock<() => void>;
+    get: Mock<() => MockIdbRequest>;
+    put: Mock<(value: unknown, key: string) => void>;
+    add: Mock<(value: unknown, key: string) => void>;
 };
 
 type MockTransaction = {
-    objectStore: ReturnType<typeof vi.fn>;
+    objectStore: Mock<() => MockStore>;
     oncomplete: (() => void) | null;
     onerror: (() => void) | null;
     onabort: (() => void) | null;
     error: Error | null;
-    abort: ReturnType<typeof vi.fn>;
-    complete: ReturnType<typeof vi.fn>;
+    abort: Mock<() => void>;
+    complete: Mock<() => void>;
 };
 
 function createMockStore(): MockStore {
-    const get = vi.fn().mockImplementation(() => {
-        const request: {
-            result: undefined;
-            onsuccess: (() => void) | null;
-            onerror: (() => void) | null;
-            error: Error | null;
-        } = { result: undefined, onsuccess: null, onerror: null, error: null };
+    const get = vi.fn<() => MockIdbRequest>().mockImplementation(() => {
+        const request: MockIdbRequest = { result: undefined, onsuccess: null, onerror: null, error: null };
         queueMicrotask(() => request.onsuccess?.());
         return request;
     });
     return {
-        clear: vi.fn(),
+        clear: vi.fn<() => void>(),
         get,
-        put: vi.fn(),
-        add: vi.fn(),
+        put: vi.fn<(value: unknown, key: string) => void>(),
+        add: vi.fn<(value: unknown, key: string) => void>(),
     };
 }
 
 function createMockTransaction(store: MockStore, error: Error | null = new Error('tx error')): MockTransaction {
     const transaction: MockTransaction = {
-        objectStore: vi.fn().mockReturnValue(store),
+        objectStore: vi.fn<() => MockStore>().mockReturnValue(store),
         oncomplete: null,
         onerror: null,
         onabort: null,
         error,
-        abort: vi.fn(),
-        complete: vi.fn(),
+        abort: vi.fn<() => void>(),
+        complete: vi.fn<() => void>(),
     };
     transaction.abort.mockImplementation(() => transaction.onabort?.());
     transaction.complete.mockImplementation(() => transaction.oncomplete?.());
     return transaction;
 }
 
-async function waitForRejection(promise: Promise<void>): Promise<unknown> {
+async function waitForRejection(promise: Promise<unknown>): Promise<unknown> {
     const timeoutError = new Error('transaction promise did not reject');
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {

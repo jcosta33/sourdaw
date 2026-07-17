@@ -11,6 +11,6 @@ describe('setSnapValue', () => {
         expect(typeof setSnapValue).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => setSnapValue()).not.toThrow();
+        expect(() => setSnapValue(0.25)).not.toThrow();
     });
 });

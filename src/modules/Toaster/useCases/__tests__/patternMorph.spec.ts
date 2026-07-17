@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { type Pattern } from '../../models/ToasterKit';
 import { morphPatterns } from '../patternMorph';
 
 const baseStep = {
@@ -12,7 +13,7 @@ const baseStep = {
     paramLocks: {},
 };
 
-function makePattern(id: string, velocities: number[]) {
+function makePattern(id: string, velocities: number[]): Pattern {
     return {
         id,
         name: id,
@@ -24,7 +25,7 @@ function makePattern(id: string, velocities: number[]) {
                 steps: velocities.map((value) => ({ ...baseStep, velocity: value })),
             },
         ],
-    } as never;
+    };
 }
 
 describe('morphPatterns', () => {

@@ -29,7 +29,7 @@ describe('moveWarpMarker', () => {
 
         moveWarpMarker('c1', 'm1', 4);
 
-        const markers = mocks.audioWarpStoreSet.mock.calls[0][0].clipSettings.get('c1').markers;
+        const markers = mocks.audioWarpStoreSet.mock.calls[0]?.[0].clipSettings.get('c1').markers;
         expect(markers[0].targetBeat).toBe(4);
     });
 
@@ -40,7 +40,7 @@ describe('moveWarpMarker', () => {
 
         moveWarpMarker('c1', 'm1', 4);
 
-        const markers = mocks.audioWarpStoreSet.mock.calls[0][0].clipSettings.get('c1').markers;
+        const markers = mocks.audioWarpStoreSet.mock.calls[0]?.[0].clipSettings.get('c1').markers;
         expect(markers[0].targetBeat).toBe(0);
     });
 });

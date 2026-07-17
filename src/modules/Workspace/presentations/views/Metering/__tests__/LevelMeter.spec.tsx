@@ -80,12 +80,12 @@ describe('LevelMeter', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<LevelMeter />);
+        renderWithTooltip(<LevelMeter trackId={null} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<LevelMeter />);
+        renderWithTooltip(<LevelMeter trackId={null} />);
         expect(document.body).toBeTruthy();
     });
 
@@ -95,7 +95,7 @@ describe('LevelMeter', () => {
         const fillRectSpy = vi.spyOn(canvasContext!, 'fillRect');
 
         mocks.getMasterPeakLevel.mockReturnValue(1);
-        renderWithTooltip(<LevelMeter />);
+        renderWithTooltip(<LevelMeter trackId={null} />);
 
         expect(mocks.scheduledTick).not.toBeNull();
         mocks.scheduledTick!(0, 16);

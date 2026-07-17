@@ -46,11 +46,20 @@ describe('workspace handlers', () => {
 
     it('handleRemoveAutomationPoint removes by lane and point index', () => {
         vi.mocked(getAutomationStoreState).mockReturnValue({
-            // @ts-expect-error — partial AutomationStoreState for test
             lanes: [
                 {
                     id: 'lane-1',
-                    points: [{ beat: 4, value: 0.5, curve: 'linear' as const, tension: 0 }],
+                    trackId: 'track-1',
+                    parameterId: 'volume',
+                    parameterName: 'Volume',
+                    points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: false,
+                    minValue: 0,
+                    maxValue: 1,
                 },
             ],
         });

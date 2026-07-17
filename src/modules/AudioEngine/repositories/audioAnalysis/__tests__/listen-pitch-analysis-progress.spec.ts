@@ -25,24 +25,31 @@ describe('listenPitchAnalysisProgress', () => {
 
         const onProgress = vi.fn();
         const unlisten = vi.fn();
-        let progressCallback: ProgressCallback | null = null;
+        const callbackHolder: { current: ProgressCallback | null } = { current: null };
 
         vi.mocked(listen).mockImplementation((_event, callback) => {
-            progressCallback = callback;
+            callbackHolder.current = callback;
             return Promise.resolve(unlisten);
         });
 
         const result = await listenPitchAnalysisProgress({ analysisId: 'analysis-1', onProgress });
-        progressCallback?.({
+        const progressCallback = callbackHolder.current;
+        if (!progressCallback) {
+            throw new Error('expected the progress listener to be registered');
+        }
+        progressCallback({
             event: 'pitch-analysis-progress',
             id: 1,
             payload: { analysisId: 'analysis-2', progress: 0.9 },
         });
-        progressCallback?.({
+        progressCallback({
             event: 'pitch-analysis-progress',
             id: 2,
             payload: { analysisId: 'analysis-1', progress: 0.42 },
         });
+        if (!result) {
+            throw new Error('expected an unlisten function');
+        }
         result();
 
         expect(listen).toHaveBeenCalledWith('pitch-analysis-progress', expect.any(Function));

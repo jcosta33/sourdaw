@@ -14,7 +14,15 @@ describe('mixAnalysisTransformers', () => {
                 masterLevels: { peakDb: -5, rmsDb: -20 },
                 bands: { sub: -40, bass: -40, lowMid: -40, mid: -40, highMid: -40, high: -40 },
                 trackLevels: [
-                    { trackId: 't1', trackName: 'Drums', peakDb: 1.5, rmsDb: -10, isClipping: true, isMuted: false },
+                    {
+                        trackId: 't1',
+                        trackName: 'Drums',
+                        peakDb: 1.5,
+                        rmsDb: -10,
+                        isClipping: true,
+                        isMuted: false,
+                        isSoloed: false,
+                    },
                 ],
             };
 
@@ -73,8 +81,24 @@ describe('mixAnalysisTransformers', () => {
                 masterLevels: { peakDb: -5, rmsDb: -15 },
                 bands: { sub: -40, bass: -40, lowMid: -40, mid: -40, highMid: -40, high: -40 },
                 trackLevels: [
-                    { trackId: 't1', trackName: 'Loud', peakDb: -5, rmsDb: -10, isClipping: false, isMuted: false },
-                    { trackId: 't2', trackName: 'Quiet', peakDb: -30, rmsDb: -40, isClipping: false, isMuted: false },
+                    {
+                        trackId: 't1',
+                        trackName: 'Loud',
+                        peakDb: -5,
+                        rmsDb: -10,
+                        isClipping: false,
+                        isMuted: false,
+                        isSoloed: false,
+                    },
+                    {
+                        trackId: 't2',
+                        trackName: 'Quiet',
+                        peakDb: -30,
+                        rmsDb: -40,
+                        isClipping: false,
+                        isMuted: false,
+                        isSoloed: false,
+                    },
                 ],
             };
 
@@ -91,7 +115,15 @@ describe('mixAnalysisTransformers', () => {
                 masterLevels: { peakDb: -5, rmsDb: -20 },
                 bands: { sub: -40, bass: -40, lowMid: -40, mid: -40, highMid: -40, high: -40 },
                 trackLevels: [
-                    { trackId: 't1', trackName: 'Drums', peakDb: 1.5, rmsDb: -10, isClipping: true, isMuted: false },
+                    {
+                        trackId: 't1',
+                        trackName: 'Drums',
+                        peakDb: 1.5,
+                        rmsDb: -10,
+                        isClipping: true,
+                        isMuted: false,
+                        isSoloed: false,
+                    },
                 ],
                 issues: [],
             };

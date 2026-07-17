@@ -36,7 +36,14 @@ describe('setLayerParameter', () => {
 
         setLayerParameter('l1', 'Freq', 50000); // Should clamp to 20000
 
-        const layer = mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0];
-        expect(layer.parameters[0].value).toBe(20000);
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to have been called');
+        }
+        const parameter = setCall[0].layers[0]?.parameters[0];
+        if (!parameter) {
+            throw new Error('expected parameter in set state');
+        }
+        expect(parameter.value).toBe(20000);
     });
 });

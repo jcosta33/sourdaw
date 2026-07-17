@@ -15,7 +15,11 @@ describe('renameClip', () => {
 
     it('sets the name', () => {
         renameClip('c1', 'New Name');
-        const updater = mocks.updateClip.mock.calls[0][1];
+        const call = mocks.updateClip.mock.calls[0];
+        if (!call) {
+            throw new Error('expected updateClip to be called');
+        }
+        const updater = call[1];
         expect(updater({ name: 'Old' })).toEqual({ name: 'New Name' });
     });
 });

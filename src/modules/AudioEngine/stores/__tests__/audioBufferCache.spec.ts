@@ -19,6 +19,49 @@ function createAudioBuffer({ length, sampleRate }: { length: number; sampleRate:
     };
 }
 
+function createTestContext(createBuffer: BaseAudioContext['createBuffer']): BaseAudioContext {
+    const unsupported = (member: string): never => {
+        throw new Error(`BaseAudioContext.${member} is not implemented in this test double`);
+    };
+    return {
+        createBuffer,
+        currentTime: 0,
+        onstatechange: null,
+        sampleRate: 48_000,
+        state: 'running',
+        get audioWorklet(): AudioWorklet {
+            return unsupported('audioWorklet');
+        },
+        get destination(): AudioDestinationNode {
+            return unsupported('destination');
+        },
+        get listener(): AudioListener {
+            return unsupported('listener');
+        },
+        createAnalyser: () => unsupported('createAnalyser'),
+        createBiquadFilter: () => unsupported('createBiquadFilter'),
+        createBufferSource: () => unsupported('createBufferSource'),
+        createChannelMerger: () => unsupported('createChannelMerger'),
+        createChannelSplitter: () => unsupported('createChannelSplitter'),
+        createConstantSource: () => unsupported('createConstantSource'),
+        createConvolver: () => unsupported('createConvolver'),
+        createDelay: () => unsupported('createDelay'),
+        createDynamicsCompressor: () => unsupported('createDynamicsCompressor'),
+        createGain: () => unsupported('createGain'),
+        createIIRFilter: () => unsupported('createIIRFilter'),
+        createOscillator: () => unsupported('createOscillator'),
+        createPanner: () => unsupported('createPanner'),
+        createPeriodicWave: () => unsupported('createPeriodicWave'),
+        createScriptProcessor: () => unsupported('createScriptProcessor'),
+        createStereoPanner: () => unsupported('createStereoPanner'),
+        createWaveShaper: () => unsupported('createWaveShaper'),
+        decodeAudioData: () => unsupported('decodeAudioData'),
+        addEventListener: () => unsupported('addEventListener'),
+        removeEventListener: () => unsupported('removeEventListener'),
+        dispatchEvent: () => unsupported('dispatchEvent'),
+    };
+}
+
 function encodeFloat32(values: number[]): string {
     const bytes = new Uint8Array(new Float32Array(values).buffer);
     let binary = '';
@@ -196,12 +239,12 @@ describe('audioBufferCache conversions', () => {
     });
 
     it('stages valid PCM until publish and rejects malformed or canceled candidates', async () => {
-        const context = {
-            createBuffer: vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
+        const context = createTestContext(
+            vi.fn((numberOfChannels: number, length: number, sampleRate: number) => {
                 expect(numberOfChannels).toBe(1);
                 return createAudioBuffer({ length, sampleRate });
-            }),
-        };
+            })
+        );
         const first = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
         const second = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.75])] };
 
@@ -251,11 +294,11 @@ describe('audioBufferCache conversions', () => {
             lastAccessed: 1,
             sizeInBytes: Float32Array.BYTES_PER_ELEMENT,
         });
-        const context = {
-            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
                 createAudioBuffer({ length, sampleRate })
-            ),
-        };
+            )
+        );
         const restored = await audioBufferCache.prepareFromIdb({ context, ids: ['shared'] });
         restored?.publish();
         const candidate = audioBufferCache.importBuffers({
@@ -320,11 +363,11 @@ describe('audioBufferCache conversions', () => {
                 return request;
             },
         });
-        const context = {
-            createBuffer: vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
                 createAudioBuffer({ length, sampleRate })
-            ),
-        };
+            )
+        );
         const first = audioBufferCache.importBuffers({
             context,
             buffers: {

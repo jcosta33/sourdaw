@@ -16,12 +16,12 @@ describe('handleCopyClip', () => {
     });
 
     it('executes copySelectedClip', () => {
-        void handleCopyClip.execute({ type: 'copyClip', payload: {} });
+        void handleCopyClip.execute({ type: 'copyClip' });
         expect(mocks.copySelectedClip).toHaveBeenCalledTimes(1);
     });
 
     it('provides a description', () => {
-        const desc = handleCopyClip.describe({ type: 'copyClip', payload: {} });
+        const desc = handleCopyClip.describe({ type: 'copyClip' });
         expect(desc.label).toBe('Copy clip');
     });
 

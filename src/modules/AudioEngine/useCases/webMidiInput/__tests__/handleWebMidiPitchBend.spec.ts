@@ -42,7 +42,7 @@ describe('handleWebMidiPitchBend', () => {
     });
 
     it('should store MPE pitch bend and retune only the note on the matching channel', () => {
-        const set_target_at_time = vi.fn<void, [number, number, number]>();
+        const set_target_at_time = vi.fn<(target: number, startTime: number, timeConstant: number) => void>();
         const matchingKey = createWebMidiNoteKey(2, 64);
         const otherKey = createWebMidiNoteKey(3, 64);
         activeNotes.set(matchingKey, {

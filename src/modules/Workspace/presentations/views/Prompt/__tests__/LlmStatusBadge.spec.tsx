@@ -9,17 +9,17 @@ describe('LlmStatusBadge', () => {
     });
 
     it('should render without crashing', () => {
-        render(<LlmStatusBadge />);
+        render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<LlmStatusBadge />);
+        render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<LlmStatusBadge />);
+        render(<LlmStatusBadge status={{ state: 'idle' }} onLoad={vi.fn()} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

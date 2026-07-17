@@ -3,6 +3,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { SpectrumAnalyzer } from '../SpectrumAnalyzer';
 
+type GetContext2d = (contextId: '2d', options?: CanvasRenderingContext2DSettings) => CanvasRenderingContext2D | null;
+
+function spyOnGetContext(ctx: CanvasRenderingContext2D): void {
+    const proto: { getContext: GetContext2d } = HTMLCanvasElement.prototype;
+    vi.spyOn(proto, 'getContext').mockReturnValue(ctx);
+}
+
 describe('SpectrumAnalyzer', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -28,7 +35,7 @@ describe('SpectrumAnalyzer', () => {
     it('paints an idle label when no fftData is provided', () => {
         const ctx = document.createElement('canvas').getContext('2d')!;
         const fillTextSpy = vi.spyOn(ctx, 'fillText');
-        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as RenderingContext);
+        spyOnGetContext(ctx);
 
         render(<SpectrumAnalyzer width={200} height={60} />);
 
@@ -39,7 +46,7 @@ describe('SpectrumAnalyzer', () => {
         const ctx = document.createElement('canvas').getContext('2d')!;
         const fillTextSpy = vi.spyOn(ctx, 'fillText');
         const fillRectSpy = vi.spyOn(ctx, 'fillRect');
-        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as RenderingContext);
+        spyOnGetContext(ctx);
 
         const fftData = new Float32Array(256).fill(0.5);
         render(<SpectrumAnalyzer width={200} height={60} fftData={fftData} />);

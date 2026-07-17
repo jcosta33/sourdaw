@@ -4,14 +4,20 @@ type TestMidiInput = Pick<MIDIInput, 'removeEventListener'> & {
     onmidimessage: MIDIInput['onmidimessage'];
 };
 
-const getMidiAccessMock = vi.hoisted(() => vi.fn<unknown, []>());
-const getActiveInputMock = vi.hoisted(() => vi.fn<TestMidiInput | null, []>());
-const getStateMock = vi.hoisted(() => vi.fn(() => ({ isSupported: true, inputs: [], selectedInputId: null })));
-const requestMidiAccessMock = vi.hoisted(() => vi.fn<Promise<unknown>, []>());
-const setActiveInputMock = vi.hoisted(() => vi.fn<void, [TestMidiInput | null]>());
-const setMidiAccessMock = vi.hoisted(() => vi.fn<void, [MIDIAccess]>());
-const setStateMock = vi.hoisted(() => vi.fn<void, [Record<string, unknown>]>());
-const setTauriModeMock = vi.hoisted(() => vi.fn<void, [boolean]>());
+const getMidiAccessMock = vi.hoisted(() => vi.fn<() => unknown>());
+const getActiveInputMock = vi.hoisted(() => vi.fn<() => TestMidiInput | null>());
+const getStateMock = vi.hoisted(() =>
+    vi.fn<() => { isSupported: boolean; inputs: unknown[]; selectedInputId: string | null }>(() => ({
+        isSupported: true,
+        inputs: [],
+        selectedInputId: null,
+    }))
+);
+const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
+const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess) => void>());
+const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
+const setTauriModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
 
 // Must stub before importing the subject
 vi.stubGlobal('navigator', {
@@ -73,7 +79,7 @@ describe('initWebMidi', () => {
     });
 
     it('should initialize via Web MIDI if supported', async () => {
-        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
         const input = { id: 'in-1', name: 'Keyboard' };
         const mockAccess = {
             inputs: new Map([['in-1', input]]),
@@ -94,7 +100,7 @@ describe('initWebMidi', () => {
     });
 
     it('should fallback to Tauri if Web MIDI fails', async () => {
-        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
         // Force failure of browser MIDI
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(true);
@@ -109,7 +115,7 @@ describe('initWebMidi', () => {
     });
 
     it('should return false if neither is supported', async () => {
-        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isTauri).mockReturnValue(false);
 
@@ -120,12 +126,12 @@ describe('initWebMidi', () => {
     });
 
     it('should remove the active event listener when the selected input disappears', async () => {
-        const onMidiMessage = vi.fn<void, [MIDIMessageEvent]>();
+        const onMidiMessage = vi.fn<(event: MIDIMessageEvent) => void>();
         const activeInput = {
             onmidimessage: null,
-            removeEventListener: vi.fn<void, [string, EventListener]>(),
+            removeEventListener: vi.fn<(type: string, listener: EventListener) => void>(),
         };
-        const activeListener = vi.fn<void, [Event]>();
+        const activeListener = vi.fn<(event: Event) => void>();
         const mockAccess = {
             inputs: new Map(),
             onstatechange: null as (() => void) | null,

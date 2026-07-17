@@ -11,6 +11,9 @@ describe('factoryPresets', () => {
     it('contains drum kit presets with correct properties', () => {
         expect(DRUM_KIT_PRESETS.length).toBeGreaterThan(0);
         const kit = DRUM_KIT_PRESETS[0];
+        if (!kit) {
+            throw new Error('expected at least one drum kit preset');
+        }
         expect(kit.id).toBeDefined();
         expect(kit.category).toBe('drums');
         expect(kit.trackKind).toBe('midi');

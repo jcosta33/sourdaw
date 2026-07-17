@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type TrackStoreState } from '../../stores/trackStore';
 import { trackStore } from '../../stores/trackStore';
 import { setTrackStoreState } from '../setTrackStoreState';
 

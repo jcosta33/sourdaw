@@ -58,11 +58,12 @@ describe('downloadProjectFile', () => {
         const mockHandle = {
             createWritable: vi.fn().mockResolvedValue(mockWritable),
         };
-        vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue(mockHandle));
+        const showSaveFilePicker = vi.fn().mockResolvedValue(mockHandle);
+        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
 
         await downloadProjectFile(projectData);
 
-        expect(global.showSaveFilePicker).toHaveBeenCalled();
+        expect(showSaveFilePicker).toHaveBeenCalled();
         expect(mockWritable.write).toHaveBeenCalled();
         expect(mockWritable.close).toHaveBeenCalled();
     });

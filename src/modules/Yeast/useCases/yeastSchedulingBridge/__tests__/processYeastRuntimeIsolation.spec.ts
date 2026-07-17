@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MidiEvent } from '../../../models/MidiEvent';
+
 const yeastStore = vi.hoisted(() => ({
     value: {
         processors: [
@@ -16,7 +18,9 @@ const yeastStore = vi.hoisted(() => ({
     set: vi.fn(),
 }));
 
-const processRuntimeTransaction = vi.hoisted(() => vi.fn(() => Promise.resolve([])));
+const processRuntimeTransaction = vi.hoisted(() =>
+    vi.fn<(input: unknown) => Promise<MidiEvent[] | null>>(() => Promise.resolve([]))
+);
 const runtimeStatus = vi.hoisted(() => vi.fn(() => 'ready' as const));
 const runtimeError = vi.hoisted(() => vi.fn(() => undefined));
 
@@ -97,6 +101,7 @@ describe('processYeastMidi — Worker-only runtime', () => {
         await expect(
             processYeastMidi({
                 context,
+                trackId: 'track-a',
                 events,
                 blockStartSamples: 0,
                 blockEndSamples: 128,

@@ -33,6 +33,10 @@ describe('updateTrack', () => {
 
         updateTrack('t1', (time) => ({ ...time, name: 'New' }));
 
-        expect(trackStore.value!.tracks[0].name).toBe('New');
+        const updated = trackStore.value?.tracks[0];
+        if (!updated) {
+            throw new Error('expected a track in the store');
+        }
+        expect(updated.name).toBe('New');
     });
 });

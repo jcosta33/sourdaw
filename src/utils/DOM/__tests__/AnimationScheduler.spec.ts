@@ -20,14 +20,18 @@ describe('animationScheduler', () => {
     });
 
     it('should invoke a registered callback with time and delta', async () => {
-        const fn = vi.fn(() => {
+        const fn = vi.fn((_time: number, _delta: number) => {
             animationScheduler.unregister('a');
         });
         animationScheduler.register('a', fn);
         await Promise.resolve();
         expect(fn).toHaveBeenCalledOnce();
-        expect(fn.mock.calls[0][0]).toBe(1000);
-        expect(fn.mock.calls[0][1]).toBe(0);
+        const firstCall = fn.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected the animation callback to have been invoked');
+        }
+        expect(firstCall[0]).toBe(1000);
+        expect(firstCall[1]).toBe(0);
     });
 
     it('should cancel the animation frame when the last callback unregisters', async () => {

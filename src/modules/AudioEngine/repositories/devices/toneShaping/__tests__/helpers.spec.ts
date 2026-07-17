@@ -14,7 +14,11 @@ describe('makeDistortionCurve', () => {
     it('should clamp drive to at least 0.1', () => {
         const low = makeDistortionCurve(0);
         const high = makeDistortionCurve(0.1);
-        expect(low[0]).toBeCloseTo(high[0], 5);
+        const high_first = high[0];
+        if (high_first === undefined) {
+            throw new Error('expected curve sample');
+        }
+        expect(low[0]).toBeCloseTo(high_first, 5);
     });
 });
 

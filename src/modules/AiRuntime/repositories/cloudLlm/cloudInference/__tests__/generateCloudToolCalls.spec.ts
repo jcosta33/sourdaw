@@ -47,7 +47,11 @@ describe('generateCloudToolCalls', () => {
         await generateCloudToolCalls('mock-state', 'add a track');
 
         expect(mocks.create).toHaveBeenCalledTimes(1);
-        const args = mocks.create.mock.calls[0][0];
+        const firstCall = mocks.create.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected the cloud client create call to have been recorded');
+        }
+        const args = firstCall[0];
 
         expect(args.model).toBeDefined();
         expect(args.system).toContain('professional music production AI');

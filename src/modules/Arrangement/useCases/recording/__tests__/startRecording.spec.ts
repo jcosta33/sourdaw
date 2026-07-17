@@ -64,16 +64,20 @@ describe('startRecording', () => {
         const newClips = startRecording();
 
         expect(newClips).toHaveLength(1);
-        expect(newClips[0]).toMatchObject({
+        const firstClip = newClips[0];
+        if (!firstClip) {
+            throw new Error('expected a recorded clip');
+        }
+        expect(firstClip).toMatchObject({
             trackId: 't1',
             startBeat: 4,
             type: 'audio',
         });
 
         expect(mocks.addTakeLane).toHaveBeenCalledWith('t1');
-        expect(mocks.addTake).toHaveBeenCalledWith('t1', newClips[0].id, expect.any(String), 4, 4);
+        expect(mocks.addTake).toHaveBeenCalledWith('t1', firstClip.id, expect.any(String), 4, 4);
         expect(mocks.setTrackState).toHaveBeenCalled();
-        expect(mocks.activeRecordingRef.current).toContain(newClips[0].id);
+        expect(mocks.activeRecordingRef.current).toContain(firstClip.id);
     });
 
     it('skips MIDI clip creation if overdubbing onto existing clip', () => {

@@ -2,26 +2,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiStoreState } from '../../../stores/midiStore';
 
-vi.mock('../../../stores/midiStore', () => {
-    const midiStore: {
-        value: MidiStoreState | null;
-        set: ReturnType<typeof vi.fn>;
-    } = {
-        value: {
-            notesByClipId: {},
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        },
-        set: vi.fn(),
-    };
-    midiStore.set.mockImplementation((next: MidiStoreState) => {
-        midiStore.value = next;
-    });
-    return { midiStore };
+const mocks = vi.hoisted(() => {
+    const state: { value: MidiStoreState | null } = { value: null };
+    return { state };
 });
+
+vi.mock('../../../stores/midiStore', () => ({
+    midiStore: {
+        get value() {
+            return mocks.state.value;
+        },
+        set: vi.fn((next: MidiStoreState | null) => {
+            mocks.state.value = next;
+        }),
+    },
+}));
 
 const { appendMidiNotes } = await import('../appendMidiNotes');
 const { midiStore } = await import('../../../stores/midiStore');
+
+// appendMidiNotes validates its input at runtime; widen the parameter type so the
+// deliberately-invalid fixtures below can exercise that runtime guard.
+const appendMidiNotesUnchecked = appendMidiNotes as (input: { clipId: string; notes: unknown[] }) => void;
 
 type TestAppendNote = {
     pitch: number;
@@ -80,7 +82,7 @@ describe('appendMidiNotes', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
-        midiStore.value = createState();
+        mocks.state.value = createState();
     });
 
     it('retains deliberately non-sorted existing order and appends generated IDs in one write', () => {
@@ -113,7 +115,7 @@ describe('appendMidiNotes', () => {
             duration: 0.25,
             velocity: 64,
         });
-        midiStore.value = createState({ 'clip-1': [existingLater, existingEarlier] });
+        mocks.state.value = createState({ 'clip-1': [existingLater, existingEarlier] });
         const randomUuid = vi
             .spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('12345678-aaaa-bbbb-cccc-dddddddddddd')
@@ -137,8 +139,8 @@ describe('appendMidiNotes', () => {
 
     it('reads the latest state synchronously when invoked', () => {
         const latestExisting = createStoredNote('note-latest', { pitch: 45 });
-        midiStore.value = createState({ 'clip-1': [createStoredNote('note-stale')] });
-        midiStore.value = createState({ 'clip-1': [latestExisting] });
+        mocks.state.value = createState({ 'clip-1': [createStoredNote('note-stale')] });
+        mocks.state.value = createState({ 'clip-1': [latestExisting] });
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('abcdef01-aaaa-bbbb-cccc-dddddddddddd');
 
         appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
@@ -152,7 +154,7 @@ describe('appendMidiNotes', () => {
 
     it('treats a missing destination clip list as an empty list', () => {
         const pasted = createAppendNote();
-        midiStore.value = createState({ 'other-clip': [createStoredNote('note-other')] });
+        mocks.state.value = createState({ 'other-clip': [createStoredNote('note-other')] });
         vi.spyOn(crypto, 'randomUUID').mockReturnValue('cafebabe-aaaa-bbbb-cccc-dddddddddddd');
 
         appendMidiNotes({ clipId: 'new-clip', notes: [pasted] });
@@ -177,7 +179,7 @@ describe('appendMidiNotes', () => {
     });
 
     it('does not write or allocate IDs when MIDI state is unavailable', () => {
-        midiStore.value = null;
+        mocks.state.value = null;
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
 
         appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote()] });
@@ -214,7 +216,7 @@ describe('appendMidiNotes', () => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
 
         expect(() =>
-            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
+            appendMidiNotesUnchecked({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
         ).toThrow('Invalid MIDI note batch');
 
         expect(randomUuid).not.toHaveBeenCalled();
@@ -232,7 +234,7 @@ describe('appendMidiNotes', () => {
         };
 
         expect(() =>
-            appendMidiNotes({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
+            appendMidiNotesUnchecked({ clipId: 'clip-1', notes: [createAppendNote({ pitch: 65 }), invalidNote] })
         ).toThrow('Invalid MIDI note batch');
 
         expect(randomUuid).not.toHaveBeenCalled();

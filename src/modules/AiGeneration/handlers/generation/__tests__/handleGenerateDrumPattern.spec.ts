@@ -4,7 +4,7 @@ import { handleGenerateDrumPattern } from '../handleGenerateDrumPattern';
 
 const mocks = vi.hoisted(() => ({
     applyDrumPatternToTrack: vi.fn(),
-    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
+    resolveOrCreateMidiTrack: vi.fn<() => string | null>(() => 't1'),
     getPlayheadBeat: vi.fn(() => 8),
 }));
 
@@ -58,7 +58,7 @@ describe('handleGenerateDrumPattern', () => {
         void handleGenerateDrumPattern.execute({
             type: 'generateDrumPattern',
             payload: {
-                // @ts-expect-error - Intentionally passing an invalid style to test fallback
+                // Intentionally passing an invalid style to exercise the runtime fallback
                 style: 'invalid-style',
                 bars: 4,
                 density: 0.5,

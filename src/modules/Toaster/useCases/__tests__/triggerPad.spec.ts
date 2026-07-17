@@ -25,7 +25,7 @@ describe('triggerToasterPad', () => {
     it('does not touch the strip when no toaster track exists', () => {
         vi.mocked(getAllTracks).mockReturnValue([]);
 
-        triggerToasterPad(0, 100);
+        triggerToasterPad('toaster-dev', 0, 100);
 
         expect(ensureTrackStrip).not.toHaveBeenCalled();
     });

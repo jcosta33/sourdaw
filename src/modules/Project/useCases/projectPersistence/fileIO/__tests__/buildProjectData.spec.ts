@@ -81,9 +81,15 @@ describe('buildProjectData', () => {
         const built = await buildProjectData();
 
         expect(built).not.toBeNull();
+        if (!built) {
+            throw new Error('expected buildProjectData to produce data');
+        }
         // The repaired row survived (not dropped) with safe structural defaults.
-        const inactive = built!.data.arrangements?.find((arr) => arr.id === 'inactive-arr');
+        const inactive = built.data.arrangements?.find((arr) => arr.id === 'inactive-arr');
         expect(inactive).toBeDefined();
-        expect(inactive!.tracks.tracks.map((track) => track.id)).toEqual(['track-only-id']);
+        if (!inactive?.tracks) {
+            throw new Error('expected the repaired inactive arrangement to keep its tracks');
+        }
+        expect(inactive.tracks.tracks.map((track) => track.id)).toEqual(['track-only-id']);
     });
 });

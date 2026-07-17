@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { trackStore } from '../../../stores/trackStore';
 import { splitClip } from '../../../useCases/clipEditing/splitClip';
 import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
@@ -33,8 +32,16 @@ vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteCreate', () 
 vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteDelete', () => ({
     commitInlineMidiNoteDelete: vi.fn(),
 }));
+type MockTrack = { id: string; kind: string; clips: Array<{ id: string; startBeat: number; endBeat: number }> };
+const trackStoreMock = vi.hoisted((): { state: { tracks: MockTrack[] } } => ({
+    state: { tracks: [] },
+}));
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { value: { tracks: [] } },
+    trackStore: {
+        get value() {
+            return trackStoreMock.state;
+        },
+    },
 }));
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: { value: { pixelsPerBeat: 100, scrollX: 0 } },
@@ -56,7 +63,7 @@ describe('timelineTools', () => {
         it('should call splitClip if a clip is hit', () => {
             vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1' } as any);
             const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }], kind: 'audio' };
-            vi.mocked(trackStore).value = { tracks: [track as any] };
+            trackStoreMock.state = { tracks: [track] };
 
             handleCutTool(10, 10, 4);
             expect(splitClip).toHaveBeenCalledWith('c1', 4);
@@ -67,7 +74,7 @@ describe('timelineTools', () => {
         it('should update drawDragRef and select track if track is hit', () => {
             vi.mocked(hitTestTrack).mockReturnValue('t1');
             const track = { id: 't1', kind: 'audio', clips: [] };
-            vi.mocked(trackStore).value = { tracks: [track as any] };
+            trackStoreMock.state = { tracks: [track] };
             const ref = { current: null };
 
             handleDrawTool(0, 10, 4.5, ref as any);

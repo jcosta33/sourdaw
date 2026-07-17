@@ -56,6 +56,7 @@ esac
 printf '%s\n' \
     'pnpm deps:validate' \
     'pnpm typecheck' \
+    'pnpm typecheck:test' \
     'pnpm lint --quiet' \
     > "$temp_root/expected-lint-failure.log"
 diff -u "$temp_root/expected-lint-failure.log" "$temp_root/lint-failure.log"
@@ -66,6 +67,7 @@ PATH="$fake_bin:$PATH" \
 printf '%s\n' \
     'pnpm deps:validate' \
     'pnpm typecheck' \
+    'pnpm typecheck:test' \
     'pnpm lint --quiet' \
     'pnpm test:run --reporter=dot --silent=passed-only' \
     'pnpm build' \

@@ -6,7 +6,6 @@ import { findClipById } from '../findClipById';
 
 function createClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
     return {
-        id: overrides.id,
         trackId: 'track-1',
         name: 'Test Clip',
         startBeat: 0,

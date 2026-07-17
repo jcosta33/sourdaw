@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { commitInlineAutomationPaint } from '../commitInlineAutomationPaint';
 
 const mocks = vi.hoisted(() => ({
@@ -40,7 +41,7 @@ describe('commitInlineAutomationPaint', () => {
     });
 
     it('should batch painted points through the automation use case and own undo', () => {
-        const points = [
+        const points: AutomationPoint[] = [
             { beat: 1, value: 0.25, curve: 'linear', tension: 0 },
             { beat: 2, value: 0.5, curve: 'linear', tension: 0 },
         ];
@@ -75,10 +76,14 @@ describe('commitInlineAutomationPaint', () => {
         expect(committed).toBe(true);
         expect(mocks.batchAddAutomationPoints).toHaveBeenCalledWith('lane-1', points);
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
-        expect(mocks.pushUndoEntry.mock.calls[0][0]).toBe('Draw 2 automation points');
+        const undoEntryCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoEntryCall) {
+            throw new Error('expected pushUndoEntry to have been called');
+        }
+        expect(undoEntryCall[0]).toBe('Draw 2 automation points');
 
-        const undo = mocks.pushUndoEntry.mock.calls[0][1];
-        const redo = mocks.pushUndoEntry.mock.calls[0][2];
+        const undo = undoEntryCall[1];
+        const redo = undoEntryCall[2];
         undo();
         redo();
 
@@ -122,8 +127,12 @@ describe('commitInlineAutomationPaint', () => {
 
         expect(committed).toBe(true);
 
-        const undo = mocks.pushUndoEntry.mock.calls[0][1];
-        const redo = mocks.pushUndoEntry.mock.calls[0][2];
+        const undoEntryCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoEntryCall) {
+            throw new Error('expected pushUndoEntry to have been called');
+        }
+        const undo = undoEntryCall[1];
+        const redo = undoEntryCall[2];
         undo();
         redo();
 
@@ -173,7 +182,11 @@ describe('commitInlineAutomationPaint', () => {
             { beat: 1, value: 0.25, curve: 'linear', tension: 0 },
         ]);
 
-        const undo = mocks.pushUndoEntry.mock.calls[0][1];
+        const undoEntryCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoEntryCall) {
+            throw new Error('expected pushUndoEntry to have been called');
+        }
+        const undo = undoEntryCall[1];
         undo();
 
         expect(mocks.removeAutomationLane).toHaveBeenCalledWith('lane-created');

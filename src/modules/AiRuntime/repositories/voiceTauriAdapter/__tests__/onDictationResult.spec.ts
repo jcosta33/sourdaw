@@ -11,7 +11,7 @@ vi.mock('#/utils/tauriBridge', () => ({
 describe('onDictationResult (voiceTauriAdapter)', () => {
     it('listens for dictation-result and extracts payload', async () => {
         const mockUnlisten = vi.fn();
-        vi.mocked(tauriListen).mockImplementation((event, handler) => {
+        vi.mocked(tauriListen).mockImplementation((_event, handler) => {
             // Immediately simulate the rust event firing
             handler({ payload: { text: 'hello world', duration_ms: 1500 } });
             return Promise.resolve(mockUnlisten);

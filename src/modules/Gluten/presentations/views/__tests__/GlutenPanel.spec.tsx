@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GlutenPanel } from '../GlutenPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 // deviceId is a required prop on GlutenPanel — render with a real one.

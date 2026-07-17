@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
                 { id: 'tempo-end', beat: 6, tempo: 130, curve: 'instant' },
                 { id: 'tempo-after', beat: 8, tempo: 140, curve: 'linear' },
             ],
-        },
+        } as import('../../../stores/tempoMapStore').TempoMapStoreState | null,
     },
     timeSignatureMapStoreValue: {
         value: {

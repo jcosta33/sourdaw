@@ -35,7 +35,8 @@ describe('stopActiveRecording', () => {
     it('should clear a pending count-in timer exactly once when stopping recording', () => {
         const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
         const countInCallback = vi.fn();
-        const timerId = setTimeout(countInCallback, 1000);
+        const startCountInTimer: (callback: () => void, ms: number) => ReturnType<typeof setTimeout> = setTimeout;
+        const timerId = startCountInTimer(countInCallback, 1000);
         recordingLifecycle.setCountInTimerId(timerId);
 
         void stopActiveRecording();

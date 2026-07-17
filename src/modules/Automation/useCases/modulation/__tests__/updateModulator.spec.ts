@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { modulationStore } from '../../../stores/modulationStore';
-import { updateModulator } from '../updateModulator';
+import { updateModulator, type ModulatorPatch } from '../updateModulator';
 
 describe('updateModulator', () => {
     beforeEach(() => {
@@ -29,7 +29,8 @@ describe('updateModulator', () => {
     });
 
     it('never allows the id to be overwritten', () => {
-        updateModulator('a', { id: 'hacker' });
+        // Simulate an untyped (JS / cast) caller smuggling an id through the patch.
+        updateModulator('a', { id: 'hacker', name: 'Renamed' } as ModulatorPatch);
         expect(modulationStore.value?.modulators[0]?.id).toBe('a');
     });
 

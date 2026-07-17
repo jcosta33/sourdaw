@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
 
+import type { Clip } from '../../../../models/TrackViewTypes';
+
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({
         title,
@@ -61,12 +63,18 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
 });
 
 describe('ClipMidiAiSection', () => {
-    const mockClip = {
+    const mockClip: Clip = {
         id: 'clip-1',
+        trackId: 'track-1',
         name: 'Test Clip',
         startBeat: 0,
         endBeat: 4,
-        type: 'midi' as const,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ff0000',
+        locked: false,
         muted: false,
     };
 

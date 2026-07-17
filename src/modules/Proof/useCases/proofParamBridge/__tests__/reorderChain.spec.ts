@@ -1,14 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
 import { getProofState, proofStore } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { reorderChain } from '../reorderChain';
 
-function makeBridge(): ProofAudioBridge & { reorderModules: ReturnType<typeof vi.fn> } {
+type MockedProofBridge = {
+    [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
+};
+
+function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn(),
-        reorderModules: vi.fn(),
-        resetIntegrated: vi.fn(),
+        setParam: vi.fn<ProofAudioBridge['setParam']>(),
+        reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
+        resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
 }
 

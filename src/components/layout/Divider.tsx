@@ -1,4 +1,4 @@
-import { type ReactElement, type ComponentPropsWithoutRef } from 'react';
+import { type ReactElement, type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -6,7 +6,7 @@ type DividerSpacing = 0 | 2 | 3 | 4;
 type DividerTone = 'subtle' | 'default' | 'strong';
 type DividerAxis = 'x' | 'y';
 
-type DividerProps = ComponentPropsWithoutRef<'div'> & {
+type DividerProps = ComponentProps<'div'> & {
     spacing?: DividerSpacing;
     tone?: DividerTone;
     axis?: DividerAxis;

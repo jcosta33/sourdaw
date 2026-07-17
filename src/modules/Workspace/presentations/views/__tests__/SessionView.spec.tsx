@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sessionLaunchStore } from '../../../stores/sessionLaunchStore';
 import { SessionView } from '../SessionView';
 
+import type { Clip, Track } from '../../../models/TrackViewTypes';
+
 // Mock hooks. Track.clips is a Clip[] array (TrackViewTypes.ts:104) — the
 // mock must use the real array shape, not an object map, so the view's
 // array-indexed slot mapping is exercised the way it runs in production.
@@ -15,6 +17,57 @@ vi.mock('../../hooks/useTracks', () => ({
         ],
     })),
 }));
+
+const makeClip = (id: string): Clip => ({
+    id,
+    trackId: 'track-1',
+    name: id,
+    startBeat: 0,
+    endBeat: 4,
+    type: 'midi',
+    fadeInBeats: 0,
+    fadeOutBeats: 0,
+    gain: 1,
+    color: '#ff0000',
+    locked: false,
+    muted: false,
+});
+
+const makeTrack = (overrides: Partial<Track> = {}): Track => ({
+    id: 'track-1',
+    name: 'Audio 1',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    armed: false,
+    gain: 1,
+    pan: 0,
+    color: '#ff0000',
+    clips: [],
+    devices: [],
+    midiFx: [],
+    sends: [],
+    frozen: false,
+    freezeState: { status: 'unfrozen' },
+    parentId: null,
+    collapsed: false,
+    inputMonitoring: 'auto',
+    hidden: false,
+    disabled: false,
+    height: 64,
+    outputId: 'master',
+    automationMode: 'read',
+    groupId: null,
+    soloSafe: false,
+    notes: '',
+    inputId: null,
+    activeAlternativeId: 'main',
+    alternatives: [],
+    vcaGroupId: null,
+    midiOutputTrackId: null,
+    followChordTrack: false,
+    ...overrides,
+});
 
 describe('SessionView', () => {
     beforeEach(() => {
@@ -55,7 +108,7 @@ describe('SessionView', () => {
 
     it('should show empty state when no tracks exist', async () => {
         const { useTracks } = await import('../../hooks/useTracks');
-        vi.mocked(useTracks).mockReturnValue({ tracks: [] });
+        vi.mocked(useTracks).mockReturnValue({ tracks: [], selectedTrackId: null });
 
         render(<SessionView />);
         expect(screen.getByText('No session tracks yet')).toBeInTheDocument();
@@ -70,13 +123,14 @@ describe('SessionView', () => {
         const { useTracks } = await import('../../hooks/useTracks');
         vi.mocked(useTracks).mockReturnValue({
             tracks: [
-                {
+                makeTrack({
                     id: 'track-1',
                     name: 'Audio 1',
                     color: '#ff0000',
-                    clips: [{ id: 'clip-a' }, { id: 'clip-b' }],
-                },
+                    clips: [makeClip('clip-a'), makeClip('clip-b')],
+                }),
             ],
+            selectedTrackId: null,
         });
 
         render(<SessionView />);

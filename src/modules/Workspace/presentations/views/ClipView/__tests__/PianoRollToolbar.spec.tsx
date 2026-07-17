@@ -146,6 +146,10 @@ describe('PianoRollToolbar', () => {
         onToggleLassoMode: vi.fn(),
         zoom: 1,
         onZoomChange: vi.fn(),
+        constrainToScale: false,
+        onToggleConstrainToScale: vi.fn(),
+        notePreviewEnabled: false,
+        onToggleNotePreview: vi.fn(),
     };
 
     beforeEach(() => {

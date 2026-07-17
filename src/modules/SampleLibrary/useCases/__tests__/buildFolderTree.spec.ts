@@ -34,7 +34,11 @@ describe('buildFolderTree', () => {
         buildFolderTree('r1');
 
         expect(mocks.setFolderTree).toHaveBeenCalledTimes(1);
-        const [rootId, tree] = mocks.setFolderTree.mock.calls[0];
+        const firstCall = mocks.setFolderTree.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected setFolderTree to be called with the built tree');
+        }
+        const [rootId, tree] = firstCall;
 
         expect(rootId).toBe('r1');
         expect(tree.name).toBe('My Samples');

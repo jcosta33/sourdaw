@@ -138,24 +138,7 @@ describe('drawClip (Coordinate Conventions)', () => {
             midiOffsetBeats: 0,
         } as any;
 
-        const model: TimelineRenderModel = {
-            tracks: [],
-            viewportStartBeat: 0,
-            viewportEndBeat: 16,
-            pixelsPerBeat: 25,
-            selectedClipIds: [],
-            selectedClipId: null,
-            theme: {
-                clipBorder: '#000',
-                clipText: '#000',
-                midiNote: '#000',
-                midiNoteBorder: '#000',
-                midiNoteActive: '#000',
-                selectionOverlay: '#000',
-                clipBackground: '#000',
-                shadowColor: '#000',
-            },
-        };
+        const model = create_test_model();
 
         const trackY = 100;
         const trackHeight = 10;

@@ -16,6 +16,7 @@ const descriptor: WAMDescriptor = {
 
 function mockInstance(id: string): WAMInstance {
     return {
+        instanceId: `instance-${id}`,
         descriptor,
         audioNode: {} as AudioNode,
         initialized: true,

@@ -11,6 +11,6 @@ describe('selectClipWithFocus', () => {
         expect(typeof selectClipWithFocus).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => selectClipWithFocus()).not.toThrow();
+        expect(() => selectClipWithFocus('clip-1')).not.toThrow();
     });
 });

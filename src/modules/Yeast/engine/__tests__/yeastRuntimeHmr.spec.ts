@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import type { YeastNotesOffPayload } from '../../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
@@ -34,7 +34,7 @@ type LegacyWorkletNode = {
     setProjection: (projection: YeastProcessorProjection) => Promise<void>;
     allNotesOff: (nowSamples: number) => Promise<void>;
     onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => () => void;
-    destroy: ReturnType<typeof vi.fn>;
+    destroy: Mock<() => void>;
 };
 
 type LegacyRuntimeSession = {
@@ -71,7 +71,7 @@ function makeLegacyNode(context: BaseAudioContext): LegacyWorkletNode {
         setProjection: vi.fn(() => Promise.resolve()),
         allNotesOff: vi.fn(() => Promise.resolve()),
         onNotesOff: vi.fn(() => () => {}),
-        destroy: vi.fn(),
+        destroy: vi.fn<() => void>(),
     };
 }
 
@@ -84,7 +84,7 @@ function makeWorker(context: BaseAudioContext) {
         allNotesOff: vi.fn(() => Promise.resolve()),
         onNotesOff: vi.fn(() => () => {}),
         onTerminalError: vi.fn(() => () => {}),
-        destroy: vi.fn(),
+        destroy: vi.fn<() => void>(),
     };
 }
 

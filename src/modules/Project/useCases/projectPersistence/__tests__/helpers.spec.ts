@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
@@ -8,6 +9,7 @@ import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferen
 
 const mocks = vi.hoisted(() => ({
     resetArrangementStoresForProject: vi.fn(),
+    trackStoreValue: { value: null as TrackStoreState | null },
     trackStoreSet: vi.fn(),
     transportStoreSet: vi.fn(),
     tempoMapStoreSet: vi.fn(),
@@ -25,7 +27,15 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return { ...actual, trackStore: { value: null, set: mocks.trackStoreSet } };
+    return {
+        ...actual,
+        trackStore: {
+            get value() {
+                return mocks.trackStoreValue.value;
+            },
+            set: mocks.trackStoreSet,
+        },
+    };
 });
 
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
@@ -90,10 +100,8 @@ describe('verifyAudioBufferReferences', () => {
         vi.clearAllMocks();
     });
 
-    it('warns when a referenced buffer is missing', async () => {
-        const { trackStore } = await import('#/modules/Arrangement/stores');
-
-        trackStore.value = {
+    it('warns when a referenced buffer is missing', () => {
+        mocks.trackStoreValue.value = {
             tracks: [
                 {
                     id: 'tr',
@@ -120,19 +128,34 @@ describe('verifyAudioBufferReferences', () => {
                     gain: 1,
                     pan: 0,
                     muted: false,
-                    solo: false,
+                    soloed: false,
                     armed: false,
                     disabled: false,
                     height: 48,
                     outputId: 'hw_out',
                     sends: [],
+                    midiFx: [],
+                    frozen: false,
                     parentId: null,
+                    collapsed: false,
+                    inputMonitoring: 'auto',
+                    hidden: false,
+                    automationMode: 'read',
+                    groupId: null,
+                    soloSafe: false,
+                    notes: '',
+                    inputId: null,
+                    activeAlternativeId: 'tr-alt',
+                    alternatives: [],
+                    vcaGroupId: null,
+                    midiOutputTrackId: null,
+                    followChordTrack: false,
                     color: '',
                     freezeState: { status: 'unfrozen' },
                 },
             ],
             selectedTrackId: null,
-        } as unknown as typeof trackStore.value;
+        };
 
         verifyAudioBufferReferences();
 

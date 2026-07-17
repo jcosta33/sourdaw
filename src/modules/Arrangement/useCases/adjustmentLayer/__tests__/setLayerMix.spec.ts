@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setLayerMix } from '../setLayerMix';
 
-import type { AdjustmentLayerState } from '../../../stores/adjustmentLayer';
+import type { AdjustmentLayer, AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 
-const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } },
-    adjustmentLayerStoreSet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const initialState: AdjustmentLayerState = { layers: [] };
+    return {
+        adjustmentLayerStoreValue: { value: initialState },
+        adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
+    };
+});
 
 vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
@@ -18,18 +21,41 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
     },
 }));
 
+function makeLayer(overrides: Partial<AdjustmentLayer> & Pick<AdjustmentLayer, 'id'>): AdjustmentLayer {
+    return {
+        name: 'Layer',
+        effectType: 'volume',
+        parameters: [],
+        affectedTrackIds: [],
+        insertionIndex: 0,
+        regions: [],
+        enabled: true,
+        mix: 1,
+        color: '#000',
+        ...overrides,
+    };
+}
+
 describe('setLayerMix', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('updates layer mix value clamped between 0 and 1', () => {
         mocks.adjustmentLayerStoreValue.value = {
-            layers: [{ id: 'l1', mix: 1 }],
-        } as unknown as AdjustmentLayerState;
+            layers: [makeLayer({ id: 'l1', mix: 1 })],
+        };
 
         setLayerMix('l1', 0.5);
-        expect(mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].mix).toBe(0.5);
+        const firstCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected first adjustmentLayerStore.set call');
+        }
+        expect(firstCall[0].layers[0]?.mix).toBe(0.5);
 
         setLayerMix('l1', 1.5);
-        expect(mocks.adjustmentLayerStoreSet.mock.calls[1][0].layers[0].mix).toBe(1);
+        const secondCall = mocks.adjustmentLayerStoreSet.mock.calls[1];
+        if (!secondCall) {
+            throw new Error('expected second adjustmentLayerStore.set call');
+        }
+        expect(secondCall[0].layers[0]?.mix).toBe(1);
     });
 });

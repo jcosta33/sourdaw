@@ -69,7 +69,7 @@ const projectXml = `<?xml version="1.0" encoding="UTF-8"?>
  * Uint8Array instances (e.g. the one returned by its own `strToU8`, which
  * uses TextEncoder). Copying into a node-realm buffer fixes the mismatch.
  */
-function asRealmUint8(source: Uint8Array | ArrayLike<number>): Uint8Array {
+function asRealmUint8(source: Uint8Array | ArrayLike<number>): Uint8Array<ArrayBuffer> {
     const view = source instanceof Uint8Array ? source : new Uint8Array(source);
     const out = new Uint8Array(view.length);
     out.set(view);

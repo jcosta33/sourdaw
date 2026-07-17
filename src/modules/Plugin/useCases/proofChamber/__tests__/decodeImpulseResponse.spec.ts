@@ -39,7 +39,7 @@ function makeMonoAudioBuffer(samples: number[]): AudioBuffer {
         numberOfChannels: 1,
         length: mono.length,
         sampleRate: 48_000,
-        getChannelData: () => mono,
+        getChannelData: (_channel: number) => mono,
     } as AudioBuffer;
 }
 

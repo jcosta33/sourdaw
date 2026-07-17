@@ -27,7 +27,7 @@ vi.mock('../updateTask', () => ({
     updateTask: updateTaskMock,
 }));
 
-const create_test_audio_buffer = (samples: Float32Array, sample_rate: number = 48_000): AudioBuffer => {
+const create_test_audio_buffer = (samples: Float32Array<ArrayBuffer>, sample_rate: number = 48_000): AudioBuffer => {
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
             destination.set(samples.subarray(start_in_channel, start_in_channel + destination.length));

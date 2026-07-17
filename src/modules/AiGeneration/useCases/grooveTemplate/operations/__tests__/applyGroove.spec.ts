@@ -20,6 +20,22 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setNotesForClip: mocks.setNotesForClip,
 }));
 
+function setNotesCall(index: number): [string, GrooveNote[]] {
+    const call = mocks.setNotesForClip.mock.calls[index];
+    if (!call) {
+        throw new Error(`Expected setNotesForClip call at index ${String(index)}`);
+    }
+    return call;
+}
+
+function noteAt(notes: GrooveNote[], index: number): GrooveNote {
+    const note = notes[index];
+    if (!note) {
+        throw new Error(`Expected note at index ${String(index)}`);
+    }
+    return note;
+}
+
 describe('applyGroove', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -29,17 +45,17 @@ describe('applyGroove', () => {
     });
 
     it('bails if the clip has no notes (store empty)', () => {
-        applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
+        applyGroove('c1', { id: 'g1', name: 'Groove', offsets: [], velocities: [], subdivisions: 16 }, 1);
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
     it('bails if clip has no notes', () => {
         mocks.notesByClipId = {};
-        applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
+        applyGroove('c1', { id: 'g1', name: 'Groove', offsets: [], velocities: [], subdivisions: 16 }, 1);
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
 
         mocks.notesByClipId = { c1: [] };
-        applyGroove('c1', { id: 'g1', offsets: [], velocities: [], subdivisions: 16 }, 1);
+        applyGroove('c1', { id: 'g1', name: 'Groove', offsets: [], velocities: [], subdivisions: 16 }, 1);
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
@@ -61,6 +77,7 @@ describe('applyGroove', () => {
 
         const template = {
             id: 'g1',
+            name: 'Groove',
             subdivisions: 4, // 4 steps in 4 beats = 1 beat per step
             offsets: [0.1, -0.1, 0.2, -0.2], // beat 0, 1, 2, 3
             velocities: [1.2, 0.8, 1.1, 0.9],
@@ -81,8 +98,8 @@ describe('applyGroove', () => {
         // newVel: 100 * 0.9 = 90
 
         expect(mocks.setNotesForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.setNotesForClip.mock.calls[0][0]).toBe('c1');
-        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
+        expect(setNotesCall(0)[0]).toBe('c1');
+        const updatedNotes = setNotesCall(0)[1];
 
         expect(updatedNotes[0]).toMatchObject({
             startBeat: 0.05,
@@ -101,11 +118,17 @@ describe('applyGroove', () => {
             c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
         };
 
-        const template = { id: 'g1', subdivisions: 4, offsets: [0.5, 0, 0, 0], velocities: [1, 1, 1, 1] };
+        const template = {
+            id: 'g1',
+            name: 'Groove',
+            subdivisions: 4,
+            offsets: [0.5, 0, 0, 0],
+            velocities: [1, 1, 1, 1],
+        };
         applyGroove('c1', template, 1);
 
-        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
-        expect(updatedNotes[0].startBeat).toBe(0.5);
+        const updatedNotes = setNotesCall(0)[1];
+        expect(noteAt(updatedNotes, 0).startBeat).toBe(0.5);
     });
 
     it('clamps resulting startBeats to positive and velocity to 1-127', () => {
@@ -113,11 +136,11 @@ describe('applyGroove', () => {
             c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 120 }],
         };
 
-        const template = { id: 'g1', subdivisions: 1, offsets: [-1], velocities: [2] };
+        const template = { id: 'g1', name: 'Groove', subdivisions: 1, offsets: [-1], velocities: [2] };
         applyGroove('c1', template, 1);
 
-        const updatedNotes = mocks.setNotesForClip.mock.calls[0][1];
-        expect(updatedNotes[0].startBeat).toBe(0); // 0 - 1 clamped to 0
-        expect(updatedNotes[0].velocity).toBe(127); // 120 * 2 clamped to 127
+        const updatedNotes = setNotesCall(0)[1];
+        expect(noteAt(updatedNotes, 0).startBeat).toBe(0); // 0 - 1 clamped to 0
+        expect(noteAt(updatedNotes, 0).velocity).toBe(127); // 120 * 2 clamped to 127
     });
 });

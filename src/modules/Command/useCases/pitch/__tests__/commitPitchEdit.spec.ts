@@ -117,13 +117,14 @@ describe('commitPitchEdit through action dispatch', () => {
         setPitchEditDependencies({ commitPitchEdit: commitPitchEditMock });
         commitPitchEditMock.mockResolvedValue(undefined);
 
+        const clipOverrides: Partial<PitchEditTestClip>[] = [
+            { id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' },
+            { id: 'c2', type: 'midi', fileId: undefined },
+        ];
         const state = {
             tracks: [
                 createTrack({
-                    clips: [
-                        { id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' },
-                        { id: 'c2', type: 'midi', fileId: undefined },
-                    ].map((clip) => createClip(clip)),
+                    clips: clipOverrides.map((clip) => createClip(clip)),
                 }),
             ],
             selectedTrackId: 't1',

@@ -37,7 +37,12 @@ describe('updateClipsOnAllTracks', () => {
 
         updateClipsOnAllTracks((context) => ({ ...context, muted: true }));
 
-        expect(trackStore.value!.tracks[0].clips[0].muted).toBe(true);
-        expect(trackStore.value!.tracks[1].clips[0].muted).toBe(true);
+        const clip1 = trackStore.value!.tracks[0]?.clips[0];
+        const clip2 = trackStore.value!.tracks[1]?.clips[0];
+        if (!clip1 || !clip2) {
+            throw new Error('expected stored clips');
+        }
+        expect(clip1.muted).toBe(true);
+        expect(clip2.muted).toBe(true);
     });
 });

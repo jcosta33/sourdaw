@@ -24,7 +24,7 @@ describe('removeYeastProcessor', () => {
     it('writes the remaining projection and sends one complete runtime snapshot', () => {
         removeYeastProcessor('arp-1');
 
-        expect(yeastStore.value.processors).toEqual([
+        expect(yeastStore.value?.processors).toEqual([
             { id: 'filter-1', type: 'filter', name: 'Note Filter', bypassed: false, params: {} },
         ]);
         expect(setProjection).toHaveBeenCalledWith([{ id: 'filter-1', type: 'filter', bypassed: false, params: {} }]);
@@ -33,7 +33,7 @@ describe('removeYeastProcessor', () => {
     it('does not write or issue a runtime command for an unknown id', () => {
         removeYeastProcessor('not-a-real-id');
 
-        expect(yeastStore.value.processors).toHaveLength(2);
+        expect(yeastStore.value?.processors).toHaveLength(2);
         expect(setProjection).not.toHaveBeenCalled();
     });
 });

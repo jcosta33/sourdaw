@@ -82,7 +82,11 @@ describe('removeClip', () => {
         expect(envelopeCleanupOrder).toBeLessThan(warpCleanupOrder);
         expect(warpCleanupOrder).toBeLessThan(automationCleanupOrder);
 
-        const updater = mocks.mapAllTracks.mock.calls[0][0];
+        const mapCall = mocks.mapAllTracks.mock.calls[0];
+        if (!mapCall) {
+            throw new Error('expected mapAllTracks to have been called');
+        }
+        const updater = mapCall[0];
 
         const mockTrack = { clips: [{ id: 'c1' }, { id: 'c2' }] };
         const updatedTrack = updater(mockTrack);
@@ -121,7 +125,11 @@ describe('removeClip', () => {
         removeClip('c1');
 
         expect(mocks.clipboardStore.set).toHaveBeenCalledTimes(1);
-        const next = mocks.clipboardStore.set.mock.calls[0][0];
+        const setCall = mocks.clipboardStore.set.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected clipboardStore.set to have been called');
+        }
+        const next = setCall[0];
         expect(next.clipClipboard).toEqual([{ clip: { id: 'c2' }, sourceTrackId: 't1' }]);
     });
 

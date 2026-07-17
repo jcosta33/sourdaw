@@ -4,11 +4,13 @@ import { type LoopStationState } from '../../../stores/loopStationStore';
 import { loopStationStore } from '../../../stores/loopStationStore';
 import { createSlot } from '../createSlot';
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: {
-        value: null as import('../../../stores/loopStationStore').LoopStationState | null,
-        set: vi.fn(),
-    },
+    loopStationStore: loopStationStoreMock,
 }));
 
 describe('createSlot', () => {
@@ -26,7 +28,7 @@ describe('createSlot', () => {
             fixedLoopLength: 0,
         };
 
-        loopStationStore.value = baseState;
+        loopStationStoreMock.value = baseState;
 
         createSlot('track-1', 0, 0);
 

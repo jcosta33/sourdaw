@@ -3,8 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loopStationStore, type LoopStationState } from '../../../stores/loopStationStore';
 import { triggerSlot } from '../triggerSlot';
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: loopStationStoreMock,
 }));
 
 function makeSlot(overrides: Partial<LoopStationState['slots'][number]> = {}): LoopStationState['slots'][number] {
@@ -41,16 +46,16 @@ describe('triggerSlot', () => {
     });
 
     it('does nothing for a slot with no layers', () => {
-        loopStationStore.value = {
+        loopStationStoreMock.value = {
             ...baseState(),
             slots: [makeSlot({ layers: [] })],
-        } as never;
+        };
         triggerSlot('s1');
         expect(loopStationStore.set).not.toHaveBeenCalled();
     });
 
     it('sets the slot to playing when layers exist', () => {
-        loopStationStore.value = {
+        loopStationStoreMock.value = {
             ...baseState(),
             slots: [
                 makeSlot({
@@ -58,14 +63,14 @@ describe('triggerSlot', () => {
                     state: 'stopped',
                 }),
             ],
-        } as never;
+        };
         triggerSlot('s1');
         const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
         expect(next.slots[0]!.state).toBe('playing');
     });
 
     it('no-ops for an unknown slot id', () => {
-        loopStationStore.value = baseState() as never;
+        loopStationStoreMock.value = baseState();
         triggerSlot('missing');
         expect(loopStationStore.set).not.toHaveBeenCalled();
     });

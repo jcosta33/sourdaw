@@ -6,11 +6,21 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { PanelToggles } from '../PanelToggles';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
+};
+
+const defaultProps = {
+    sidebarOpen: false,
+    inspectorOpen: false,
+    mixerOpen: false,
+    chatPanelOpen: false,
+    trackListOpen: false,
+    virtualKeyboardOpen: false,
+    dualViewOpen: false,
 };
 
 describe('PanelToggles', () => {
@@ -19,22 +29,22 @@ describe('PanelToggles', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<PanelToggles />);
+        renderWithTooltip(<PanelToggles {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        renderWithTooltip(<PanelToggles />);
+        renderWithTooltip(<PanelToggles {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<PanelToggles />);
+        renderWithTooltip(<PanelToggles {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<PanelToggles />);
+        renderWithTooltip(<PanelToggles {...defaultProps} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

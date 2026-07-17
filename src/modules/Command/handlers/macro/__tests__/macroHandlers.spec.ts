@@ -24,7 +24,7 @@ describe('Command Macro Handlers', () => {
     });
 
     it('handleStartMacroRecording should delegate to startMacroRecording', () => {
-        void handleStartMacroRecording.execute({ type: 'startMacroRecording', payload: {} });
+        void handleStartMacroRecording.execute({ type: 'startMacroRecording' });
         expect(startMacroRecording).toHaveBeenCalled();
     });
 

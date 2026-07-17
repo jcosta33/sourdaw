@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    automationStoreValue: {
+const mocks = vi.hoisted(() => {
+    const automationStoreValue: { value: AutomationStoreState | null } = {
         value: {
             lanes: [
                 {
@@ -26,9 +26,12 @@ const mocks = vi.hoisted(() => ({
                 },
             ],
         },
-    },
-    automationStoreSet: vi.fn(),
-}));
+    };
+    return {
+        automationStoreValue,
+        automationStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('../../../stores/automationStore', () => ({
     automationStore: {
@@ -39,6 +42,7 @@ vi.mock('../../../stores/automationStore', () => ({
     },
 }));
 
+import { type AutomationStoreState } from '../../../stores/automationStore';
 import { deleteAutomationTimeRange } from '../deleteAutomationTimeRange';
 
 describe('deleteAutomationTimeRange', () => {

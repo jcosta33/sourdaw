@@ -66,7 +66,7 @@ describe('handleWebMidiNoteOn', () => {
 
     it('should emit Yeast-routed Grand Boule note-on events with the device id', async () => {
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
-        const grand_boule_note_on = vi.fn<void, [number, number]>();
+        const grand_boule_note_on = vi.fn<(note: number, velocity: number) => void>();
         const fn = handleWebMidiNoteOn._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -110,7 +110,7 @@ describe('handleWebMidiNoteOn', () => {
     });
 
     it('should await the Yeast runtime before routing transformed note-ons', async () => {
-        const grand_boule_note_on = vi.fn<void, [number, number]>();
+        const grand_boule_note_on = vi.fn<(note: number, velocity: number) => void>();
         const fn = handleWebMidiNoteOn._factory(
             make_dependencies({
                 getTrackStoreState: () => ({

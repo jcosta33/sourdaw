@@ -224,12 +224,14 @@ describe('downloadModel — cancellation', () => {
 
     it('passes the AbortSignal through to fetch', async () => {
         const controller = new AbortController();
-        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)));
+        const fetchMock = vi.fn((_url: string, _init?: { signal?: AbortSignal }) =>
+            Promise.resolve(streamingResponse([new Uint8Array(30)], 30))
+        );
         vi.stubGlobal('fetch', fetchMock);
 
         await downloadModel({ spec: baseSpec, signal: controller.signal });
 
-        const init = fetchMock.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
+        const init = fetchMock.mock.calls[0]?.[1];
         expect(init?.signal).toBe(controller.signal);
     });
 });

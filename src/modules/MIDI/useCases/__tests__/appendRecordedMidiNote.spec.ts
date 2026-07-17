@@ -2,23 +2,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiStoreState } from '../../stores/midiStore';
 
-vi.mock('../../stores/midiStore', () => {
-    const midiStore: {
-        value: MidiStoreState | null;
-        set: ReturnType<typeof vi.fn>;
-    } = {
-        value: {
-            notesByClipId: {},
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        },
-        set: vi.fn(),
-    };
-    midiStore.set.mockImplementation((next: MidiStoreState) => {
-        midiStore.value = next;
-    });
-    return { midiStore };
+const mocks = vi.hoisted(() => {
+    const state: { value: MidiStoreState | null } = { value: null };
+    return { state };
 });
+
+vi.mock('../../stores/midiStore', () => ({
+    midiStore: {
+        get value() {
+            return mocks.state.value;
+        },
+        set: vi.fn((next: MidiStoreState | null) => {
+            mocks.state.value = next;
+        }),
+    },
+}));
 
 const { appendRecordedMidiNote } = await import('../appendRecordedMidiNote');
 const { midiStore } = await import('../../stores/midiStore');
@@ -26,7 +24,7 @@ const { midiStore } = await import('../../stores/midiStore');
 describe('appendRecordedMidiNote', () => {
     beforeEach(() => {
         vi.mocked(midiStore.set).mockClear();
-        midiStore.value = {
+        mocks.state.value = {
             notesByClipId: {
                 'clip-1': [
                     {
@@ -76,7 +74,7 @@ describe('appendRecordedMidiNote', () => {
     });
 
     it('should be a no-op when MIDI state is unavailable', () => {
-        midiStore.value = null;
+        mocks.state.value = null;
 
         appendRecordedMidiNote({
             clipId: 'clip-1',

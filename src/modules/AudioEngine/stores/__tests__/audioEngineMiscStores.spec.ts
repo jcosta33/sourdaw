@@ -94,7 +94,7 @@ describe('AudioEngine Misc Stores', () => {
 
         it('should expose FACTORY_MODELS', () => {
             expect(FACTORY_MODELS.length).toBeGreaterThan(0);
-            expect(FACTORY_MODELS[0].id).toBe('rave-strings');
+            expect(FACTORY_MODELS[0]?.id).toBe('rave-strings');
         });
 
         it('should update state', () => {

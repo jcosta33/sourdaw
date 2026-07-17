@@ -36,25 +36,25 @@ describe('controlRoomHandlers', () => {
     });
 
     it('should toggle dim monitoring', () => {
-        handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: {} });
+        handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: undefined });
 
         expect(toggleDim).toHaveBeenCalledTimes(1);
     });
 
     it('should toggle mono monitoring', () => {
-        handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: {} });
+        handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: undefined });
 
         expect(toggleMono).toHaveBeenCalledTimes(1);
     });
 
     it('should enable MPE input handling', () => {
-        handleEnableMpe.execute({ type: 'enableMpe', payload: {} });
+        handleEnableMpe.execute({ type: 'enableMpe', payload: undefined });
 
         expect(setMpeEnabled).toHaveBeenCalledWith(true);
     });
 
     it('should disable MPE input handling', () => {
-        handleDisableMpe.execute({ type: 'disableMpe', payload: {} });
+        handleDisableMpe.execute({ type: 'disableMpe', payload: undefined });
 
         expect(setMpeEnabled).toHaveBeenCalledWith(false);
     });
@@ -63,10 +63,11 @@ describe('controlRoomHandlers', () => {
         vi.mocked(getLatencyReport).mockReturnValue({
             maxLatencyMs: 15.5,
             contextBaseLatencyMs: 10,
+            contextOutputLatencyMs: 0,
             tracks: [{ trackId: 't1', deviceLatencyMs: 5.5, totalLatencyMs: 15.5 }],
         });
 
-        handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
+        handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: undefined });
 
         expect(notifyUser).toHaveBeenCalledWith('Latency Report: Max: 15.5ms, Base: 10.0ms — t1: 15.5ms');
     });

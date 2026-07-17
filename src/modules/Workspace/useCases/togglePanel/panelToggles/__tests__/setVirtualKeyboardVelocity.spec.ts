@@ -11,6 +11,6 @@ describe('setVirtualKeyboardVelocity', () => {
         expect(typeof setVirtualKeyboardVelocity).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => setVirtualKeyboardVelocity()).not.toThrow();
+        expect(() => setVirtualKeyboardVelocity(100)).not.toThrow();
     });
 });

@@ -23,7 +23,7 @@ describe('handleGenerateAllTransitions', () => {
     it('executes generateAllTransitionFills and notifies success if fills are generated', () => {
         mocks.generateAllTransitionFills.mockReturnValue([{}, {}]);
 
-        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
+        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: undefined });
 
         expect(mocks.generateAllTransitionFills).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Generated 2 transition fills across arrangement', 'success');
@@ -32,13 +32,13 @@ describe('handleGenerateAllTransitions', () => {
     it('notifies warning if no fills are generated', () => {
         mocks.generateAllTransitionFills.mockReturnValue([]);
 
-        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
+        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: undefined });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('No section boundaries found — add sections first', 'warning');
     });
 
     it('provides a description', () => {
-        const desc = handleGenerateAllTransitions.describe({ type: 'generateAllTransitions', payload: {} });
+        const desc = handleGenerateAllTransitions.describe({ type: 'generateAllTransitions', payload: undefined });
         expect(desc.label).toBe('Generate All Transitions');
     });
 

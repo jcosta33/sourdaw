@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getActiveLayersAtBeat } from '../getActiveLayersAtBeat';
 
 const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } },
+    adjustmentLayerStoreValue: { value: { layers: [] } as { layers: unknown[] } | null },
 }));
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({

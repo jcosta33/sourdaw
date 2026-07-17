@@ -166,12 +166,13 @@ describe('createAutomergeStorage', () => {
     });
 
     it('should hydrate through JSON stripping, fromCrdt normalization, and partial CRDT merge', () => {
-        const fromCrdt = vi.fn(
-            (value: { count: number; dropped?: undefined }): { count: number; normalized: boolean } => {
-                expect(Object.hasOwn(value, 'dropped')).toBe(false);
-                return { count: value.count + 1, normalized: true };
-            }
-        );
+        type HydratedState = { count: number; local: string; normalized?: boolean };
+        // At runtime hydrate hands fromCrdt the stripped CRDT slot (count only);
+        // the spread keeps the mock total over the declared TData contract.
+        const fromCrdt = vi.fn((value: HydratedState): HydratedState => {
+            expect(Object.hasOwn(value, 'dropped')).toBe(false);
+            return { ...value, count: value.count + 1, normalized: true };
+        });
         const { port } = createTestPort({
             initialDoc: {
                 state: {
@@ -182,14 +183,10 @@ describe('createAutomergeStorage', () => {
         });
         configureAutomergeStoragePort(port);
 
-        const storage = createAutomergeStorage<{ count: number; local: string; normalized?: boolean }>(
-            'root',
-            'state',
-            {
-                fromCrdt,
-                toCrdt: (value) => ({ count: value.count }),
-            }
-        );
+        const storage = createAutomergeStorage<HydratedState>('root', 'state', {
+            fromCrdt,
+            toCrdt: (value) => ({ count: value.count }),
+        });
 
         storage.set({ count: 1, local: 'kept' });
 

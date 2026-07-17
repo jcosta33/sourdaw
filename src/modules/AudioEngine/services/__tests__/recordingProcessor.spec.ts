@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
 // Mock AudioWorkletProcessor and registerProcessor which are available in worklet global scope
-global.AudioWorkletProcessor = class {
+class FakeAudioWorkletProcessor {
     port = {
-        onmessage: null as any,
+        onmessage: null as ((event: MessageEvent) => void) | null,
         postMessage: vi.fn(),
     };
-};
+}
+vi.stubGlobal('AudioWorkletProcessor', FakeAudioWorkletProcessor);
 const processors = new Map();
 global.registerProcessor = (name: string, proc: any) => processors.set(name, proc);
 
@@ -25,7 +26,7 @@ beforeAll(async () => {
 
 describe('RecordingWorkletProcessor', () => {
     // Re-implementation of the class logic for testing in Node/Vitest
-    class RecordingWorkletProcessorMock extends global.AudioWorkletProcessor {
+    class RecordingWorkletProcessorMock extends FakeAudioWorkletProcessor {
         _writeHead: Int32Array | null = null;
         _ring: Float32Array | null = null;
         _ringSize = 0;
@@ -56,7 +57,7 @@ describe('RecordingWorkletProcessor', () => {
             }
         }
 
-        process(inputs: any[][][]) {
+        process(inputs: Float32Array[][]) {
             if (!this._active || !this._ring || !this._writeHead) {
                 return true;
             }
@@ -68,7 +69,7 @@ describe('RecordingWorkletProcessor', () => {
             const head = Atomics.load(this._writeHead, 0);
             const ringSize = this._ringSize;
             for (let index = 0; index < input.length; index++) {
-                this._ring[(head + index) % ringSize] = input[index];
+                this._ring[(head + index) % ringSize] = input[index] ?? 0;
             }
             Atomics.add(this._writeHead, 0, input.length);
             return true;

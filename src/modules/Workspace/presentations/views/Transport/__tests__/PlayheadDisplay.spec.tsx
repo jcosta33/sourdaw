@@ -6,12 +6,18 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { PlayheadDisplay } from '../PlayheadDisplay';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
+
+const defaultProps = {
+    tempo: 120,
+    numerator: 4,
+    timeDisplayMode: 'musical',
+} as const;
 
 describe('PlayheadDisplay', () => {
     beforeEach(() => {
@@ -19,22 +25,22 @@ describe('PlayheadDisplay', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
-        renderWithTooltip(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(<PlayheadDisplay />);
+        renderWithTooltip(<PlayheadDisplay {...defaultProps} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

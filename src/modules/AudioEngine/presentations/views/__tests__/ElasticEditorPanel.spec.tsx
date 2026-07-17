@@ -7,10 +7,10 @@ const mocks = vi.hoisted(() => {
         callOrder,
         setElasticTool: vi.fn(),
         setElasticSensitivity: vi.fn(),
-        detectTransientsForClip: vi.fn(() => {
+        detectTransientsForClip: vi.fn((..._args: unknown[]) => {
             callOrder.push('detect');
         }),
-        markElasticDetectionComplete: vi.fn(() => {
+        markElasticDetectionComplete: vi.fn((..._args: unknown[]) => {
             callOrder.push('mark');
         }),
         selectElasticMarkers: vi.fn(),
@@ -22,22 +22,22 @@ const mocks = vi.hoisted(() => {
         updateWarpMarkerBeat: vi.fn(),
         commitWarpMarkerBeatDrag: vi.fn(),
         setDefaultAlgorithm: vi.fn(),
-        getWaveformPeaks: vi.fn(() => new Float32Array(200).fill(0.3)),
+        getWaveformPeaks: vi.fn((..._args: unknown[]) => new Float32Array(200).fill(0.3)),
         trackStoreValue: {
             tracks: [
                 {
                     id: 't1',
-                    clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
+                    clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' as string | undefined }],
                 },
             ],
             selectedTrackId: 't1',
         },
         workspaceStoreValue: {
-            selectedClipId: 'c1',
+            selectedClipId: 'c1' as string | null,
             snapValue: 0.25,
         },
         elasticStoreValue: {
-            openClipId: 'c1',
+            openClipId: 'c1' as string | null,
             tool: 'select' as const,
             sensitivity: 0.5,
             selectedMarkerIds: [],
@@ -416,7 +416,7 @@ describe('ElasticEditorPanel', () => {
 
     it('shows an empty state when the selected clip is not audio', () => {
         mocks.trackStoreValue = {
-            tracks: [{ id: 't1', clips: [{ id: 'cmidi', type: 'midi' }] }],
+            tracks: [{ id: 't1', clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined }] }],
             selectedTrackId: 't1',
         };
         mocks.workspaceStoreValue = { selectedClipId: 'cmidi', snapValue: 0.25 };

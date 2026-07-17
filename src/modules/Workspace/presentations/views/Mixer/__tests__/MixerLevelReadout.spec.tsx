@@ -9,7 +9,7 @@ describe('MixerLevelReadout', () => {
     });
 
     it('should render without crashing', () => {
-        render(<MixerLevelReadout />);
+        render(<MixerLevelReadout trackId={null} control={null} value={null} />);
         expect(document.body).toBeTruthy();
     });
 });

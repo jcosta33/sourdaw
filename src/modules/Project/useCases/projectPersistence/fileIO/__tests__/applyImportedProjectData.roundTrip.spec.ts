@@ -334,6 +334,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
         );
         const publicationStates: boolean[] = [];
         const unsubscribe = trackStore.subscribe((state) => {
+            if (!state) {
+                return;
+            }
             if (state.tracks.some((track) => track.id === 'track-audio')) {
                 publicationStates.push(buffersRestored);
             }
@@ -860,7 +863,11 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
 
-        expect(arrangementStore.value?.arrangements[0].automation.lanes[0]).toMatchObject({
+        const hydratedArrangement = arrangementStore.value?.arrangements[0];
+        if (!hydratedArrangement) {
+            throw new Error('expected a hydrated arrangement');
+        }
+        expect(hydratedArrangement.automation.lanes[0]).toMatchObject({
             points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
             objects: [],
             visible: true,

@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { type GrinderImportedNeuralModel } from '../../../models/GrinderPatch';
 import { ImportedNeuralLibraryCard } from '../ImportedNeuralLibraryCard';
 
-const base_entry = {
+const base_entry: GrinderImportedNeuralModel = {
     id: 'imported-tight-rhythm',
     source: 'imported' as const,
     name: 'Tight Rhythm',

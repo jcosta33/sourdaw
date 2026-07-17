@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { type AppAction } from '#/utils/handlerContract';
+
 import { describeAction, ACTION_LABELS } from '../actionLabels';
 
 describe('ACTION_LABELS', () => {
@@ -42,6 +44,17 @@ describe('describeAction', () => {
     it('appends semitones with sign', () => {
         expect(describeAction({ type: 'transposeNotes', payload: { semitones: 5 } } as never)).toBe('Transpose: +5st');
         expect(describeAction({ type: 'transposeNotes', payload: { semitones: -3 } } as never)).toBe('Transpose: -3st');
+    });
+
+    it('should include payload kind when no name branch matches', () => {
+        // Off-contract payload: no AppAction member pairs `kind` without `name`,
+        // but persisted/legacy actions can carry drifted payload shapes, and the
+        // kind branch must still render them.
+        const offContractAction: { type: AppAction['type']; payload?: unknown } = {
+            type: 'togglePlayback',
+            payload: { kind: 'aux' },
+        };
+        expect(describeAction(offContractAction as AppAction)).toBe('Play/pause (aux)');
     });
 
     it('appends gain as percentage', () => {

@@ -9,17 +9,17 @@ describe('TemplateChooser', () => {
     });
 
     it('should render without crashing', () => {
-        render(<TemplateChooser />);
+        render(<TemplateChooser open={false} onClose={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        render(<TemplateChooser />);
+        render(<TemplateChooser open={false} onClose={vi.fn()} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        render(<TemplateChooser />);
+        render(<TemplateChooser open={false} onClose={vi.fn()} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

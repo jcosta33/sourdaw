@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { loopStationStore, type LoopStationState } from '../../../stores/loopStationStore';
+import { type LoopStationState } from '../../../stores/loopStationStore';
 import { triggerPad } from '../triggerPad';
 
 const { getAllTracksMock, toggleRecordMock, triggerSlotMock } = vi.hoisted(() => ({
@@ -21,8 +21,13 @@ vi.mock('../triggerSlot', () => ({
     triggerSlot: triggerSlotMock,
 }));
 
+const loopStationStoreMock = vi.hoisted(() => ({
+    value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+    set: vi.fn(),
+}));
+
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: loopStationStoreMock,
 }));
 
 function baseState(): LoopStationState {
@@ -54,7 +59,7 @@ describe('triggerPad', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         getAllTracksMock.mockReturnValue([{ id: 't-alpha', name: 'Alpha' }]);
-        loopStationStore.value = baseState() as never;
+        loopStationStoreMock.value = baseState();
     });
 
     it('routes plain press to triggerSlot', () => {

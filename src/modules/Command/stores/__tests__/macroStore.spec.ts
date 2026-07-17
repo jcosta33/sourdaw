@@ -202,7 +202,7 @@ describe('macroStore', () => {
     });
 
     it('should cap the persisted macro list at MAX_MACROS (100)', async () => {
-        const macros: Macro[] = Array.from({ length: 130 }, (length, index) => ({
+        const macros: Macro[] = Array.from({ length: 130 }, (_item, index) => ({
             id: `m${index}`,
             name: `macro ${index}`,
             actions: [],

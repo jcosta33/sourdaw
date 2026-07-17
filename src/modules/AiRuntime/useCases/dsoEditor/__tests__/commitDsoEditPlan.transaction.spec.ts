@@ -6,14 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import {
-    type ActionHandler,
-    type AppAction,
-    clearUndoHistory,
-    executeAppAction,
-    redo,
-    undo,
-} from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -22,6 +15,7 @@ import {
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { commitDsoEditPlan } from '../commitDsoEditPlan';
 

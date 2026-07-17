@@ -87,7 +87,7 @@ describe('handleWebMidiNoteOff', () => {
             velocity: 100,
         };
         const create_midi_note = vi.fn(() => recorded_note);
-        const append_recorded_midi_note = vi.fn<void, [{ clipId: string; note: typeof recorded_note }]>();
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: typeof recorded_note }) => void>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 createMidiNote: create_midi_note,
@@ -113,7 +113,7 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('should route Yeast note-off events through the rack to the instrument', async () => {
-        const fermenter_note_off = vi.fn<void, [number]>();
+        const fermenter_note_off = vi.fn<(note: number) => void>();
         const process_realtime_midi_input = vi.fn(
             async (): Promise<TestMidiEvent[]> => [{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } }]
         );
@@ -156,7 +156,7 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('releases a Yeast note on its originating track after selection changes', async () => {
-        const fermenter_note_off = vi.fn<void, [number]>();
+        const fermenter_note_off = vi.fn<(note: number) => void>();
         const process_realtime_midi_input = vi.fn(
             async (): Promise<TestMidiEvent[]> => [{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } }]
         );
@@ -201,9 +201,9 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('should release a live synth oscillator through its envelope', async () => {
-        const set_target_at_time = vi.fn<void, [number, number, number]>();
-        const cancel_scheduled_values = vi.fn<void, [number]>();
-        const stop = vi.fn<void, [number]>();
+        const set_target_at_time = vi.fn<(target: number, startTime: number, timeConstant: number) => void>();
+        const cancel_scheduled_values = vi.fn<(cancelTime: number) => void>();
+        const stop = vi.fn<(when: number) => void>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -240,7 +240,7 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('should pass Grand Boule release velocity to controls and event payloads', async () => {
-        const grand_boule_note_off = vi.fn<void, [number, number | undefined, number]>();
+        const grand_boule_note_off = vi.fn<(note: number, pad: number | undefined, releaseVelocity: number) => void>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
@@ -283,8 +283,8 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('releases same-pitch notes on two channels through their original tracks', async () => {
-        const note_off_a = vi.fn<void, [number]>();
-        const note_off_b = vi.fn<void, [number]>();
+        const note_off_a = vi.fn<(note: number) => void>();
+        const note_off_b = vi.fn<(note: number) => void>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({

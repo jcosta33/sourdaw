@@ -37,14 +37,14 @@ describe('Automation Point Use Cases', () => {
             lanes: [{ id: 'l1', points: [{ beat: 10, value: 0.5 }] }],
         } as any;
 
-        addAutomationPoint('l1', { beat: 5, value: 0.2, curve: 0 });
+        addAutomationPoint('l1', { beat: 5, value: 0.2, curve: 'linear', tension: 0 });
 
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({
             lanes: [
                 {
                     id: 'l1',
                     points: [
-                        { beat: 5, value: 0.2, curve: 0 },
+                        { beat: 5, value: 0.2, curve: 'linear', tension: 0 },
                         { beat: 10, value: 0.5 },
                     ],
                 },

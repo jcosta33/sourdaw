@@ -25,7 +25,7 @@ describe('chatStore', () => {
 
     describe('appendChatMessage', () => {
         it('appends a new message to the list', () => {
-            const msg = { id: 'm1', role: 'user' as const, content: 'Hello' };
+            const msg = { id: 'm1', role: 'user' as const, content: 'Hello', timestamp: 1 };
             appendChatMessage(msg);
             expect(chatStore.value!.messages).toHaveLength(1);
             expect(chatStore.value!.messages[0]).toEqual(msg);
@@ -34,7 +34,7 @@ describe('chatStore', () => {
 
     describe('updateChatMessage', () => {
         it('updates an existing message', () => {
-            const msg = { id: 'm1', role: 'assistant' as const, content: 'Hi', isStreaming: true };
+            const msg = { id: 'm1', role: 'assistant' as const, content: 'Hi', isStreaming: true, timestamp: 1 };
             appendChatMessage(msg);
 
             updateChatMessage('m1', { content: 'Hi there', isStreaming: false });
@@ -45,7 +45,7 @@ describe('chatStore', () => {
         });
 
         it('does nothing if the message is not found', () => {
-            const msg = { id: 'm1', role: 'user' as const, content: 'Hi' };
+            const msg = { id: 'm1', role: 'user' as const, content: 'Hi', timestamp: 1 };
             appendChatMessage(msg);
 
             updateChatMessage('missing', { content: 'test' });
@@ -66,7 +66,7 @@ describe('chatStore', () => {
 
     describe('clearChatMessages', () => {
         it('clears messages and resets isGenerating', () => {
-            appendChatMessage({ id: 'm1', role: 'user', content: 'test' });
+            appendChatMessage({ id: 'm1', role: 'user', content: 'test', timestamp: 1 });
             setChatGenerating(true);
 
             clearChatMessages();

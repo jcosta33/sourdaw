@@ -183,7 +183,11 @@ describe('TrackHeaderSection', () => {
     it('should call setTrackColor when color is selected', () => {
         render(<TrackHeaderSection track={mockTrack} />);
         const colorButtons = screen.getAllByLabelText(/Set color/i);
-        fireEvent.click(colorButtons[1]);
+        const secondColorButton = colorButtons[1];
+        if (!secondColorButton) {
+            throw new Error('expected a second color preset button');
+        }
+        fireEvent.click(secondColorButton);
         expect(mockSetTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
     });
 });

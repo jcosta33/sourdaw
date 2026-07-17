@@ -87,7 +87,9 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = null;
         (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
-        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) => clips);
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
+        );
         vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
         vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });
@@ -146,7 +148,7 @@ describe('scheduleMidiNotes', () => {
 
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
-                trackId: track.id,
+                trackId: 'track-1',
             })
         );
 
@@ -209,10 +211,10 @@ describe('scheduleMidiNotes', () => {
         // Record the noteOn sample positions the Worker sees per call. The
         // processor echoes its input back so we observe per-iteration placement.
         const seenNoteOnSamples: number[][] = [];
-        const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
+        const processYeast = vi.fn<typeof processYeastMidi>(async (input) => {
             const events = input.events;
             seenNoteOnSamples.push(events.filter((e) => e.kind.type === 'noteOn').map((e) => e.timeSamples));
-            return events;
+            return [...events];
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
@@ -242,9 +244,9 @@ describe('scheduleMidiNotes', () => {
         };
 
         let seenNoteOnSample: number | undefined;
-        const processYeast = vi.fn(async (input: { events: { timeSamples: number; kind: { type: string } }[] }) => {
+        const processYeast = vi.fn<typeof processYeastMidi>(async (input) => {
             seenNoteOnSample = input.events.find((e) => e.kind.type === 'noteOn')?.timeSamples;
-            return input.events;
+            return [...input.events];
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
@@ -272,21 +274,15 @@ describe('scheduleMidiNotes', () => {
                 { id: 'tempo-1', beat: 4, tempo: 240, curve: 'instant' },
             ],
         };
-        const retained: Array<{ timeSamples: number; kind: { type: string } }> = [];
-        const processYeast = vi.fn(
-            async (input: {
-                events: Array<{ timeSamples: number; kind: { type: string } }>;
-                blockStartSamples: number;
-                blockEndSamples: number;
-                transport: { bpm: number; ppqPosition: number };
-            }) => {
-                retained.push(...input.events);
-                const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
-                const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
-                retained.splice(0, retained.length, ...future);
-                return due as Awaited<ReturnType<typeof processYeastMidi>>;
-            }
-        );
+        type YeastMidiEvent = Awaited<ReturnType<typeof processYeastMidi>>[number];
+        const retained: YeastMidiEvent[] = [];
+        const processYeast = vi.fn<typeof processYeastMidi>(async (input) => {
+            retained.push(...input.events);
+            const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
+            const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
+            retained.splice(0, retained.length, ...future);
+            return due;
+        });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         await scheduleMidiNotes(3, 6, 3, -1, [], defaultTransportState, 120);
@@ -323,15 +319,10 @@ describe('scheduleMidiNotes', () => {
         };
 
         let seenTransport: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number } | undefined;
-        const processYeast = vi.fn(
-            (input: {
-                transport: { barIndex: number; beatInBar: number; timeSigNum: number; timeSigDen: number };
-                events: unknown[];
-            }) => {
-                seenTransport = input.transport;
-                return Promise.resolve([]);
-            }
-        );
+        const processYeast = vi.fn<typeof processYeastMidi>((input) => {
+            seenTransport = input.transport;
+            return Promise.resolve([]);
+        });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         // Block starts at beat 6 — bar 3 (index 2), beat 1 in 3/4. Flat 4/4 (buggy)

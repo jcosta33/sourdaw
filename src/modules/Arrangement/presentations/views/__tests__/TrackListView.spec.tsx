@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { normalizeTrack } from '../../../models/Track';
 import { setScrollY } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
@@ -133,8 +134,22 @@ describe('TrackListView', () => {
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
             tracks: [
-                { id: 't1', name: 'Track 1', kind: 'audio', parentId: null, collapsed: false, height: 64 },
-                { id: 't2', name: 'Track 2', kind: 'midi', parentId: null, collapsed: false, height: 64 },
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
             ],
             selectedTrackId: 't1',
         });
@@ -186,8 +201,22 @@ describe('TrackListView', () => {
         const mockedUseTracks = vi.mocked(useTracks);
         mockedUseTracks.mockReturnValue({
             tracks: [
-                { id: 't1', name: 'Track 1', kind: 'audio', parentId: null, collapsed: false, height: 64 },
-                { id: 't2', name: 'Track 2', kind: 'midi', parentId: null, collapsed: false, height: 64 },
+                normalizeTrack({
+                    id: 't1',
+                    name: 'Track 1',
+                    kind: 'audio',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+                normalizeTrack({
+                    id: 't2',
+                    name: 'Track 2',
+                    kind: 'midi',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
             ],
             selectedTrackId: 't2', // Start from t2 so ArrowUp can select t1
         });

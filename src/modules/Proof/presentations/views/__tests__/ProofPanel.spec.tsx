@@ -1,5 +1,5 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
 import { proofStore, getProofState, type ProofState } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../../../useCases/proofParamBridge/helpers';
@@ -9,7 +9,7 @@ import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
 // Mock it so the latency readout assertion can pin a known, non-44100 rate.
-const sampleRateMock = vi.fn<[], number>(() => 48_000);
+const sampleRateMock = vi.fn<() => number>(() => 48_000);
 const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
     const persistedProjectPatches = new Map<string, Record<string, unknown>>();
     return {
@@ -101,15 +101,15 @@ const PROOF_ROTARY_REPLACEMENT_CASES = EQ_ROTARY_ENDINGS.flatMap(([end, endGestu
     )
 );
 
-function makeBridge(): ProofAudioBridge & {
-    setParam: ReturnType<typeof vi.fn>;
-    reorderModules: ReturnType<typeof vi.fn>;
-    resetIntegrated: ReturnType<typeof vi.fn>;
-} {
+type MockedProofBridge = {
+    [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
+};
+
+function makeBridge(): MockedProofBridge {
     return {
-        setParam: vi.fn(),
-        reorderModules: vi.fn(),
-        resetIntegrated: vi.fn(),
+        setParam: vi.fn<ProofAudioBridge['setParam']>(),
+        reorderModules: vi.fn<ProofAudioBridge['reorderModules']>(),
+        resetIntegrated: vi.fn<ProofAudioBridge['resetIntegrated']>(),
     };
 }
 
@@ -141,7 +141,7 @@ describe('ProofPanel', () => {
         expect(compareToggle).toHaveAttribute('aria-pressed', String(getProofState(DEVICE_ID).abBypass));
     });
 
-    it.each([
+    it.each<{ uiLevel: ProofState['uiLevel']; expectedNames: string[] }>([
         {
             uiLevel: 1,
             expectedNames: ['Mission limiter ceiling', 'Master limiter ceiling'],
@@ -260,6 +260,9 @@ describe('ProofPanel', () => {
             target_lufs: -23,
         });
         const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        if (paramPersistOrder === undefined || targetPersistOrder === undefined) {
+            throw new Error('expected two persistDevicePatch calls');
+        }
         expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
 
         fireEvent.pointerUp(knob, { pointerId: 61 });
@@ -323,6 +326,9 @@ describe('ProofPanel', () => {
             target_lufs: -23,
         });
         const [paramPersistOrder, targetPersistOrder] = persistDevicePatchMock.mock.invocationCallOrder;
+        if (paramPersistOrder === undefined || targetPersistOrder === undefined) {
+            throw new Error('expected two persistDevicePatch calls');
+        }
         expect(paramPersistOrder).toBeLessThan(targetPersistOrder);
 
         fireEvent.pointerUp(canvas, { pointerId: 62 });

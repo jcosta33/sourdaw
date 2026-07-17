@@ -5,7 +5,7 @@ import { runUndoRedoExclusive } from '../undoRedo';
 describe('runUndoRedoExclusive', () => {
     it('should serialize overlapping mutation operations', async () => {
         const events: string[] = [];
-        let releaseFirst = () => undefined;
+        let releaseFirst: () => void = () => undefined;
         const firstGate = new Promise<void>((resolve) => {
             releaseFirst = resolve;
         });

@@ -11,6 +11,6 @@ describe('setTrackListWidth', () => {
         expect(typeof setTrackListWidth).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => setTrackListWidth()).not.toThrow();
+        expect(() => setTrackListWidth(240)).not.toThrow();
     });
 });

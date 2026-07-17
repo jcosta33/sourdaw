@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CommandPalette } from '../CommandPalette';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store, defaultValue) => defaultValue),
 }));
 
 describe('CommandPalette', () => {

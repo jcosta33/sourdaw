@@ -4,17 +4,17 @@ type TestMidiInput = Pick<MIDIInput, 'removeEventListener'> & {
     onmidimessage: MIDIInput['onmidimessage'];
 };
 
-const getActiveInputMock = vi.hoisted(() => vi.fn<TestMidiInput | null, []>());
-const getMidiAccessMock = vi.hoisted(() => vi.fn<MIDIAccess | null, []>());
-const getTauriEventUnlistenMock = vi.hoisted(() => vi.fn<(() => void) | null, []>());
-const getTauriModeMock = vi.hoisted(() => vi.fn<boolean, []>());
-const setActiveInputMock = vi.hoisted(() => vi.fn<void, [TestMidiInput | null]>());
-const setMidiAccessMock = vi.hoisted(() => vi.fn<void, [MIDIAccess | null]>());
-const setStateMock = vi.hoisted(() => vi.fn<void, [Record<string, unknown>]>());
-const setTargetTrackIdMock = vi.hoisted(() => vi.fn<void, [string | null]>());
-const setTauriEventUnlistenMock = vi.hoisted(() => vi.fn<void, [(() => void) | null]>());
-const setTauriModeMock = vi.hoisted(() => vi.fn<void, [boolean]>());
-const tauriInvokeMock = vi.hoisted(() => vi.fn<Promise<unknown>, [string]>());
+const getActiveInputMock = vi.hoisted(() => vi.fn<() => TestMidiInput | null>());
+const getMidiAccessMock = vi.hoisted(() => vi.fn<() => MIDIAccess | null>());
+const getTauriEventUnlistenMock = vi.hoisted(() => vi.fn<() => (() => void) | null>());
+const getTauriModeMock = vi.hoisted(() => vi.fn<() => boolean>());
+const setActiveInputMock = vi.hoisted(() => vi.fn<(input: TestMidiInput | null) => void>());
+const setMidiAccessMock = vi.hoisted(() => vi.fn<(access: MIDIAccess | null) => void>());
+const setStateMock = vi.hoisted(() => vi.fn<(next: Record<string, unknown>) => void>());
+const setTargetTrackIdMock = vi.hoisted(() => vi.fn<(trackId: string | null) => void>());
+const setTauriEventUnlistenMock = vi.hoisted(() => vi.fn<(unlisten: (() => void) | null) => void>());
+const setTauriModeMock = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
+const tauriInvokeMock = vi.hoisted(() => vi.fn<(command: string) => Promise<unknown>>());
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: () => false,
@@ -80,10 +80,10 @@ describe('destroyWebMidi', () => {
     });
 
     it('should remove the installed browser MIDI event listener', () => {
-        const activeListener = vi.fn<void, [Event]>();
+        const activeListener = vi.fn<(event: Event) => void>();
         const activeInput = {
             onmidimessage: null,
-            removeEventListener: vi.fn<void, [string, EventListener]>(),
+            removeEventListener: vi.fn<(type: string, listener: EventListener) => void>(),
         };
         webMidiRuntime.midiMessageListener = activeListener;
         getActiveInputMock.mockReturnValue(activeInput);

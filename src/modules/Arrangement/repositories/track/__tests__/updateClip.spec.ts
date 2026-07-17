@@ -35,6 +35,10 @@ describe('updateClip', () => {
 
         updateClip('c1', (context) => ({ ...context, name: 'New' }));
 
-        expect(trackStore.value!.tracks[0].clips[0].name).toBe('New');
+        const storedClip = trackStore.value!.tracks[0]?.clips[0];
+        if (!storedClip) {
+            throw new Error('expected stored clip');
+        }
+        expect(storedClip.name).toBe('New');
     });
 });

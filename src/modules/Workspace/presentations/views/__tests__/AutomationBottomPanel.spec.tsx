@@ -7,7 +7,7 @@ import { type Track } from '../../../models/TrackViewTypes';
 import { AutomationBottomPanel } from '../AutomationBottomPanel';
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { value: { tracks: [], selectedTrackId: null } },
+    trackStore: { value: { tracks: [] as Track[], selectedTrackId: null as string | null } },
     timelineViewStore: {
         value: {
             scrollX: 0,

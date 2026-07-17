@@ -4,8 +4,6 @@ import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngin
 import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
-import { tempoMapStore } from '../../stores/tempoMapStore';
-import { transportStore } from '../../stores/transportStore';
 import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
@@ -58,17 +56,24 @@ const harness = vi.hoisted(() => ({
     stop_recording: vi.fn<() => void>(),
     workers: [] as FakeWorker[],
     track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
+    transport_store: {
+        value: null as import('../../stores/transportStore').TransportState | null,
+        set: vi.fn(),
+    },
+    tempo_map_store: {
+        value: { changes: [] } as import('../../stores/tempoMapStore').TempoMapStoreState,
+    },
     update_clip: vi.fn<UpdateClipMock>(),
 }));
 
 vi.mock('../../stores/transportStore', () => ({
-    transportStore: { value: null, set: vi.fn() },
+    transportStore: harness.transport_store,
 }));
 vi.mock('../../stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
 }));
 vi.mock('../../stores/tempoMapStore', () => ({
-    tempoMapStore: { value: { changes: [] } },
+    tempoMapStore: harness.tempo_map_store,
 }));
 vi.mock('../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
@@ -211,7 +216,7 @@ function create_test_audio_buffer(): AudioBuffer {
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        transportStore.value = null;
+        harness.transport_store.value = null;
         harness.start_audio_recording.mockResolvedValue(true);
         harness.stop_audio_recording.mockResolvedValue();
     });
@@ -242,8 +247,8 @@ describe('playhead scheduler tick', () => {
         vi.clearAllMocks();
         harness.clock = 0;
         playheadPositionRef.current = 0;
-        tempoMapStore.value = { changes: [] };
-        transportStore.value = { ...playingTransport };
+        harness.tempo_map_store.value = { changes: [] };
+        harness.transport_store.value = { ...playingTransport };
         harness.track_store.value = { tracks: [] };
         disposePlayheadScheduler();
     });
@@ -279,7 +284,7 @@ describe('playhead scheduler tick', () => {
         const stopCallsBefore = vi.mocked(stopAllScheduled).mock.calls.length;
 
         // A mid-playback tempo edit replaces the changes array reference.
-        tempoMapStore.value = { changes: [{ id: 't1', beat: 0, tempo: 90, curve: 'instant' }] };
+        harness.tempo_map_store.value = { changes: [{ id: 't1', beat: 0, tempo: 90, curve: 'instant' }] };
         harness.clock = 0.1;
         await fireTick();
 
@@ -296,7 +301,7 @@ describe('playhead scheduler tick', () => {
         const stopCallsBefore = vi.mocked(stopAllScheduled).mock.calls.length;
 
         // Move the loop region without wrapping.
-        transportStore.value = { ...playingTransport, loopStart: 2, loopEnd: 6 };
+        harness.transport_store.value = { ...playingTransport, loopStart: 2, loopEnd: 6 };
         harness.clock = 0.1;
         await fireTick();
 
@@ -337,7 +342,7 @@ describe('playhead scheduler tick', () => {
         harness.track_store.value = {
             tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
         };
-        transportStore.value = {
+        harness.transport_store.value = {
             ...playingTransport,
             punchInEnabled: true,
             punchInBeat: 0.05,
@@ -382,7 +387,7 @@ describe('playhead scheduler tick', () => {
         harness.track_store.value = {
             tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
         };
-        transportStore.value = {
+        harness.transport_store.value = {
             ...playingTransport,
             punchInEnabled: true,
             punchInBeat: 0.05,
@@ -507,7 +512,7 @@ describe('playhead scheduler tick', () => {
         harness.track_store.value = {
             tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
         };
-        transportStore.value = {
+        harness.transport_store.value = {
             ...playingTransport,
             punchInEnabled: true,
             punchInBeat: 0.05,
@@ -518,8 +523,12 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        transportStore.value = {
-            ...transportStore.value,
+        const currentTransport = harness.transport_store.value;
+        if (!currentTransport) {
+            throw new Error('Expected transport state to be initialized');
+        }
+        harness.transport_store.value = {
+            ...currentTransport,
             isRecording: true,
             punchOutBeat: 0.15,
         };
@@ -542,7 +551,7 @@ describe('playhead scheduler tick', () => {
         harness.track_store.value = {
             tracks: [{ id: 'track-audio-1', kind: 'audio', armed: true }],
         };
-        transportStore.value = {
+        harness.transport_store.value = {
             ...playingTransport,
             punchInEnabled: true,
             punchInBeat: 0.05,

@@ -18,10 +18,70 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => notifyUser(...args),
 }));
 
-import { type TrackStoreState } from '#/modules/Arrangement/stores';
+import { type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { verifyAudioBufferReferences } from '../verifyAudioBufferReferences';
+
+function makeClip(overrides: Partial<Clip>): Clip {
+    return {
+        id: 'clip',
+        trackId: 'track',
+        name: 'Clip',
+        startBeat: 0,
+        endBeat: 1,
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#fff',
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
+}
+
+function makeTrack(overrides: Partial<Track>): Track {
+    return {
+        id: 'track',
+        name: 'Track',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#fff',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        ...overrides,
+    };
+}
+
+function makeTrackState(tracks: Track[]): TrackStoreState {
+    return { tracks, selectedTrackId: null };
+}
 
 describe('verifyAudioBufferReferences', () => {
     beforeEach(() => {
@@ -46,14 +106,9 @@ describe('verifyAudioBufferReferences', () => {
             sampleRate: 48000,
         };
         vi.mocked(getCachedAudioBuffer).mockReturnValue(cached_buffer);
-        trackStoreMock.value = {
-            tracks: [
-                {
-                    freezeState: { status: 'unfrozen' },
-                    clips: [{ type: 'audio', name: 'ok', audioBufferId: 'buf-1' }],
-                },
-            ],
-        } as TrackStoreState;
+        trackStoreMock.value = makeTrackState([
+            makeTrack({ clips: [makeClip({ name: 'ok', audioBufferId: 'buf-1' })] }),
+        ]);
 
         verifyAudioBufferReferences();
 
@@ -63,14 +118,9 @@ describe('verifyAudioBufferReferences', () => {
 
     it('should notify with clip names when an audio clip references a missing buffer', () => {
         vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        trackStoreMock.value = {
-            tracks: [
-                {
-                    freezeState: { status: 'unfrozen' },
-                    clips: [{ type: 'audio', name: 'missing-clip', audioBufferId: 'gone' }],
-                },
-            ],
-        } as TrackStoreState;
+        trackStoreMock.value = makeTrackState([
+            makeTrack({ clips: [makeClip({ name: 'missing-clip', audioBufferId: 'gone' })] }),
+        ]);
 
         verifyAudioBufferReferences();
 
@@ -81,15 +131,12 @@ describe('verifyAudioBufferReferences', () => {
 
     it('should notify with frozen track names when a frozen track references a missing buffer', () => {
         vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        trackStoreMock.value = {
-            tracks: [
-                {
-                    name: 'Frozen Piano',
-                    freezeState: { status: 'frozen', frozenBufferId: 'frozen-gone' },
-                    clips: [],
-                },
-            ],
-        } as TrackStoreState;
+        trackStoreMock.value = makeTrackState([
+            makeTrack({
+                name: 'Frozen Piano',
+                freezeState: { status: 'frozen', frozenBufferId: 'frozen-gone' },
+            }),
+        ]);
 
         verifyAudioBufferReferences();
 
@@ -100,19 +147,16 @@ describe('verifyAudioBufferReferences', () => {
 
     it('should summarize when more than three clips are missing buffers', () => {
         vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
-        trackStoreMock.value = {
-            tracks: [
-                {
-                    freezeState: { status: 'unfrozen' },
-                    clips: [
-                        { type: 'audio', name: 'a', audioBufferId: '1' },
-                        { type: 'audio', name: 'b', audioBufferId: '2' },
-                        { type: 'audio', name: 'c', audioBufferId: '3' },
-                        { type: 'audio', name: 'd', audioBufferId: '4' },
-                    ],
-                },
-            ],
-        } as TrackStoreState;
+        trackStoreMock.value = makeTrackState([
+            makeTrack({
+                clips: [
+                    makeClip({ id: 'clip-a', name: 'a', audioBufferId: '1' }),
+                    makeClip({ id: 'clip-b', name: 'b', audioBufferId: '2' }),
+                    makeClip({ id: 'clip-c', name: 'c', audioBufferId: '3' }),
+                    makeClip({ id: 'clip-d', name: 'd', audioBufferId: '4' }),
+                ],
+            }),
+        ]);
 
         verifyAudioBufferReferences();
 

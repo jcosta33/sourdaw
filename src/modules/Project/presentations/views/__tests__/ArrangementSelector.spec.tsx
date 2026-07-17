@@ -146,6 +146,9 @@ describe('ArrangementSelector', () => {
         const button = screen.getByLabelText(/Arrangement selector/i);
         fireEvent.click(button);
         const arrangement2 = screen.getAllByTestId('picker-row')[1];
+        if (!arrangement2) {
+            throw new Error('expected a second picker row');
+        }
         fireEvent.click(arrangement2);
         expect(switchArrangement).toHaveBeenCalledWith('arr-2');
     });
@@ -156,7 +159,11 @@ describe('ArrangementSelector', () => {
         render(<ArrangementSelector />);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
 
-        fireEvent.click(screen.getAllByTestId('picker-row')[1]);
+        const failingRow = screen.getAllByTestId('picker-row')[1];
+        if (!failingRow) {
+            throw new Error('expected a second picker row');
+        }
+        fireEvent.click(failingRow);
 
         await vi.waitFor(() => {
             expect(logger.error).toHaveBeenCalledWith(

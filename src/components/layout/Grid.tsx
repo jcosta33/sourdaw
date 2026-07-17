@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, type ElementType, type ComponentPropsWithoutRef } from 'react';
+import { type ReactElement, type ReactNode, type ElementType, type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
@@ -8,7 +8,7 @@ type ColsValue = 1 | 2 | 3 | 4 | 5 | 6;
 type GapValue = 0 | 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 4 | 6 | 8;
 type FlowValue = 'row' | 'col';
 
-type GridProps<Element extends GridElement = 'div'> = Omit<ComponentPropsWithoutRef<Element>, 'as'> & {
+type GridProps<Element extends GridElement = 'div'> = Omit<ComponentProps<Element>, 'as'> & {
     as?: Element;
     cols?: ColsValue;
     gap?: GapValue;

@@ -1,11 +1,11 @@
-import { type ReactElement, type ComponentPropsWithoutRef } from 'react';
+import { type ReactElement, type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
 type SpacerSize = 1 | 2 | 3 | 4 | 6 | 8 | 12 | 16;
 type SpacerAxis = 'x' | 'y';
 
-type SpacerProps = ComponentPropsWithoutRef<'div'> & {
+type SpacerProps = ComponentProps<'div'> & {
     size: SpacerSize;
     axis?: SpacerAxis;
 };

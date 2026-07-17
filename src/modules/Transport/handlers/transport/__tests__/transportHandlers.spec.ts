@@ -92,7 +92,7 @@ describe('Transport Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('handleTogglePlayback delegates to use case', () => {
-        void handleTogglePlayback.execute({ type: 'togglePlayback', payload: {} });
+        void handleTogglePlayback.execute({ type: 'togglePlayback', payload: undefined });
         expect(mocks.togglePlayback).toHaveBeenCalled();
     });
 
@@ -100,7 +100,7 @@ describe('Transport Handlers', () => {
         const completion = Promise.resolve();
         mocks.stopPlayback.mockReturnValueOnce(completion);
 
-        const execution = handleStopPlayback.execute({ type: 'stopPlayback', payload: {} });
+        const execution = handleStopPlayback.execute({ type: 'stopPlayback', payload: undefined });
 
         expect(execution).toBe(completion);
         await execution;
@@ -113,7 +113,7 @@ describe('Transport Handlers', () => {
     });
 
     it('handleToggleLoop delegates to use case', () => {
-        void handleToggleLoop.execute({ type: 'toggleLoop', payload: {} });
+        void handleToggleLoop.execute({ type: 'toggleLoop', payload: undefined });
         expect(mocks.toggleLoop).toHaveBeenCalled();
     });
 
@@ -169,32 +169,32 @@ describe('Transport Handlers', () => {
     });
 
     it('handleToggleCountIn delegates to use case', () => {
-        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: {} });
+        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: undefined });
         expect(mocks.toggleCountIn).toHaveBeenCalled();
     });
 
     it('handleToggleMetronome delegates to use case', () => {
-        void handleToggleMetronome.execute({ type: 'toggleMetronome', payload: {} });
+        void handleToggleMetronome.execute({ type: 'toggleMetronome', payload: undefined });
         expect(mocks.toggleMetronome).toHaveBeenCalled();
     });
 
     it('handleTogglePreRoll delegates to use case', () => {
-        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: {} });
+        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: undefined });
         expect(mocks.togglePreRoll).toHaveBeenCalled();
     });
 
     it('handleTogglePunch delegates to use case', () => {
-        void handleTogglePunch.execute({ type: 'togglePunch', payload: {} });
+        void handleTogglePunch.execute({ type: 'togglePunch', payload: undefined });
         expect(mocks.togglePunchEnabled).toHaveBeenCalled();
     });
 
     it('handleToggleRecording delegates to use case', () => {
-        void handleToggleRecording.execute({ type: 'toggleRecording', payload: {} });
+        void handleToggleRecording.execute({ type: 'toggleRecording', payload: undefined });
         expect(mocks.toggleRecording).toHaveBeenCalled();
     });
 
     it('handleTogglePunchRecording delegates to use case and notifies the user', () => {
-        handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: {} });
+        handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: undefined });
         expect(mocks.togglePunchRecording).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Punch recording toggled');
     });
@@ -210,12 +210,12 @@ describe('Transport Handlers', () => {
     });
 
     it('handleNextSetlistItem delegates to use case', () => {
-        handleNextSetlistItem.execute({ type: 'nextSetlistItem', payload: {} });
+        handleNextSetlistItem.execute({ type: 'nextSetlistItem', payload: undefined });
         expect(mocks.nextItem).toHaveBeenCalledTimes(1);
     });
 
     it('handlePreviousSetlistItem delegates to use case', () => {
-        handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: {} });
+        handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: undefined });
         expect(mocks.previousItem).toHaveBeenCalledTimes(1);
     });
 });

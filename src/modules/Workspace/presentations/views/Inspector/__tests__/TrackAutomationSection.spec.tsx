@@ -28,7 +28,16 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
     };
 });
 
-const mockUseStore = vi.fn(() => ({ lanes: [] }));
+type AutomationLaneFixture = {
+    id: string;
+    trackId: string;
+    parameterId: string;
+    parameterName: string;
+    visible: boolean;
+};
+const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { lanes: AutomationLaneFixture[] } => ({
+    lanes: [],
+}));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
@@ -86,8 +95,10 @@ describe('TrackAutomationSection', () => {
         color: '#ff0000',
         clips: [],
         devices: [],
+        midiFx: [],
         sends: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: null,
         collapsed: false,
         inputMonitoring: 'auto',

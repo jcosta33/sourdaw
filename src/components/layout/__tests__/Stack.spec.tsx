@@ -31,7 +31,11 @@ describe('Stack', () => {
             [6, 'gap-6'],
             [8, 'gap-8'],
         ] as const)('should apply gap-%i class', (gap, expectedClass) => {
-            render(<Stack gap={gap} data-testid="stack" />);
+            render(
+                <Stack gap={gap} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass(expectedClass);
         });
     });
@@ -43,12 +47,16 @@ describe('Stack', () => {
             ['end', 'items-end'],
             ['stretch', 'items-stretch'],
         ] as const)('should apply %s alignment', (align, expectedClass) => {
-            render(<Stack align={align} data-testid="stack" />);
+            render(
+                <Stack align={align} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass(expectedClass);
         });
 
         it('should default to stretch alignment', () => {
-            render(<Stack data-testid="stack" />);
+            render(<Stack data-testid="stack">Content</Stack>);
             expect(screen.getByTestId('stack')).toHaveClass('items-stretch');
         });
     });
@@ -60,38 +68,58 @@ describe('Stack', () => {
             ['end', 'justify-end'],
             ['between', 'justify-between'],
         ] as const)('should apply %s justification', (justify, expectedClass) => {
-            render(<Stack justify={justify} data-testid="stack" />);
+            render(
+                <Stack justify={justify} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass(expectedClass);
         });
     });
 
     describe('grow prop', () => {
         it('should apply flex-1 when true', () => {
-            render(<Stack grow data-testid="stack" />);
+            render(
+                <Stack grow data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass('flex-1');
         });
 
         it('should not apply flex-1 when false', () => {
-            render(<Stack grow={false} data-testid="stack" />);
+            render(
+                <Stack grow={false} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).not.toHaveClass('flex-1');
         });
     });
 
     describe('shrink prop', () => {
         it('should not apply shrink-0 when shrink is true (default)', () => {
-            render(<Stack data-testid="stack" />);
+            render(<Stack data-testid="stack">Content</Stack>);
             expect(screen.getByTestId('stack')).not.toHaveClass('shrink-0');
         });
 
         it('should apply shrink-0 when shrink is false', () => {
-            render(<Stack shrink={false} data-testid="stack" />);
+            render(
+                <Stack shrink={false} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass('shrink-0');
         });
     });
 
     describe('wrap prop', () => {
         it('should apply flex-wrap when true', () => {
-            render(<Stack wrap data-testid="stack" />);
+            render(
+                <Stack wrap data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack')).toHaveClass('flex-wrap');
         });
     });
@@ -107,12 +135,16 @@ describe('Stack', () => {
             ['main', 'MAIN'],
             ['nav', 'NAV'],
         ] as const)('should render as %s element', (as, expectedTag) => {
-            render(<Stack as={as} data-testid="stack" />);
+            render(
+                <Stack<typeof as> as={as} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(screen.getByTestId('stack').tagName).toBe(expectedTag);
         });
 
         it('should default to div', () => {
-            render(<Stack data-testid="stack" />);
+            render(<Stack data-testid="stack">Content</Stack>);
             expect(screen.getByTestId('stack').tagName).toBe('DIV');
         });
     });
@@ -120,14 +152,22 @@ describe('Stack', () => {
     describe('ref forwarding', () => {
         it('should forward ref to the element', () => {
             const ref = createRef<HTMLDivElement>();
-            render(<Stack ref={ref} data-testid="stack" />);
+            render(
+                <Stack ref={ref} data-testid="stack">
+                    Content
+                </Stack>
+            );
             expect(ref.current).toBe(screen.getByTestId('stack'));
         });
     });
 
     describe('className merging', () => {
         it('should merge custom className with default classes', () => {
-            render(<Stack className="custom-class" data-testid="stack" />);
+            render(
+                <Stack className="custom-class" data-testid="stack">
+                    Content
+                </Stack>
+            );
             const element = screen.getByTestId('stack');
             expect(element).toHaveClass('flex', 'flex-col', 'custom-class');
         });
@@ -135,7 +175,11 @@ describe('Stack', () => {
 
     describe('HTML attributes', () => {
         it('should pass through arbitrary HTML attributes', () => {
-            render(<Stack data-testid="stack" id="test-id" title="Test Title" aria-label="Test Label" />);
+            render(
+                <Stack data-testid="stack" id="test-id" title="Test Title" aria-label="Test Label">
+                    Content
+                </Stack>
+            );
             const element = screen.getByTestId('stack');
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');

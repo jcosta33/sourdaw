@@ -5,7 +5,7 @@ import { updateCapturePosition } from '../updateCapturePosition';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
     value: null as PunchRecordingState | null,
-    set: vi.fn<[state: PunchRecordingState | ((prev: PunchRecordingState) => PunchRecordingState)], void>(),
+    set: vi.fn<(state: PunchRecordingState | ((prev: PunchRecordingState) => PunchRecordingState)) => void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({

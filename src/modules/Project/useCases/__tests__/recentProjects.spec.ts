@@ -115,7 +115,7 @@ describe('recentProjects injectables', () => {
     });
 
     it('should return false and warn when loadRecentProject finds no stored JSON', async () => {
-        vi.mocked(readNamedProjectJson).mockReturnValue(null);
+        vi.mocked(readNamedProjectJson).mockResolvedValue(null);
 
         const ok = await loadRecentProject('missing-key');
 

@@ -32,7 +32,11 @@ describe('bypassDevice', () => {
         bypassDevice('d1', true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalled();
-        const updater = mocks.mapAllTracks.mock.calls[0][0];
+        const call = mocks.mapAllTracks.mock.calls[0];
+        if (!call) {
+            throw new Error('expected mapAllTracks to be called');
+        }
+        const updater = call[0];
         expect(updater({ devices: [{ id: 'd1', bypassed: false }] })).toEqual({
             devices: [{ id: 'd1', bypassed: true }],
         });

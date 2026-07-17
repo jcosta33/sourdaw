@@ -36,7 +36,11 @@ describe('updateTracks', () => {
             (time) => ({ ...time, muted: true })
         );
 
-        expect(trackStore.value!.tracks[0].muted).toBe(true);
-        expect(trackStore.value!.tracks[1].muted).toBe(false);
+        const [first, second] = trackStore.value!.tracks;
+        if (!first || !second) {
+            throw new Error('expected two tracks in store');
+        }
+        expect(first.muted).toBe(true);
+        expect(second.muted).toBe(false);
     });
 });

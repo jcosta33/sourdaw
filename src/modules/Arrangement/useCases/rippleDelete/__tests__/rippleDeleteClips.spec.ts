@@ -37,7 +37,11 @@ describe('rippleDeleteClips', () => {
         const result = rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
+        const setCall = mocks.setTrackState.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected setTrackState to be called');
+        }
+        const newState = setCall[0];
         expect(newState.tracks[0].clips).toEqual([{ id: 'c2' }]);
         expect(result).toEqual({ removedClips: [{ id: 'c1' }], shiftedClips: [] });
     });

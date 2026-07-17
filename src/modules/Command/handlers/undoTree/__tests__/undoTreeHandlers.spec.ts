@@ -14,7 +14,7 @@ describe('Command Undo Tree Handlers', () => {
     });
 
     it('handleToggleUndoTree should delegate to toggleUndoTree', () => {
-        void handleToggleUndoTree.execute({ type: 'toggleUndoTree', payload: {} });
+        void handleToggleUndoTree.execute({ type: 'toggleUndoTree' });
         expect(toggleUndoTree).toHaveBeenCalled();
     });
 

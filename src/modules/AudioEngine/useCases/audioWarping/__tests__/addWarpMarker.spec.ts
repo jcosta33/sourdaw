@@ -33,7 +33,7 @@ describe('addWarpMarker', () => {
         addWarpMarker('c1', 5, 4);
 
         expect(mocks.audioWarpStoreSet).toHaveBeenCalledTimes(1);
-        const markers = mocks.audioWarpStoreSet.mock.calls[0][0].clipSettings.get('c1').markers;
+        const markers = mocks.audioWarpStoreSet.mock.calls[0]?.[0].clipSettings.get('c1').markers;
         expect(markers).toHaveLength(2);
         expect(markers[0].sourceSec).toBe(5);
         expect(markers[1].id).toBe('m1');

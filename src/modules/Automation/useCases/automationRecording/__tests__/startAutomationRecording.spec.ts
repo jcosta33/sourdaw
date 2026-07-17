@@ -14,7 +14,7 @@ const { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSn
         const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
         const touchActive = new Set<string>();
         const automationSnapshot: {
-            value: { lanes: Array<{ trackId: string; parameterId: string }> } | null;
+            value: { lanes: Array<import('../../../models/Automation').AutomationLane> } | null;
         } = { value: null };
         const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
         const transportSnapshot: { value: { playheadPosition: number } | null } = { value: null };

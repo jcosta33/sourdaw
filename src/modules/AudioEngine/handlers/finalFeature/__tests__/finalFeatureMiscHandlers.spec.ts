@@ -41,7 +41,7 @@ describe('finalFeatureMiscHandlers', () => {
     });
 
     it('handleDisconnectPush should delegate to disconnectPush', () => {
-        void handleDisconnectPush.execute({ type: 'disconnectPush', payload: {} });
+        void handleDisconnectPush.execute({ type: 'disconnectPush', payload: undefined });
         expect(disconnectPush).toHaveBeenCalled();
     });
 

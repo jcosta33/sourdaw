@@ -11,6 +11,6 @@ describe('toggleClipInSelection', () => {
         expect(typeof toggleClipInSelection).toBe('function');
     });
     it('runs without crash', () => {
-        expect(() => toggleClipInSelection()).not.toThrow();
+        expect(() => toggleClipInSelection('clip-1')).not.toThrow();
     });
 });
