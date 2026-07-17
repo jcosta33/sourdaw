@@ -12,10 +12,13 @@ const mocks = vi.hoisted(() => {
         default: vi.fn(),
         decode_audio_bytes: vi.fn(),
     };
-    return { decoded, wasmModule };
+    const loadWasmDecoderModule = vi.fn();
+    return { decoded, wasmModule, loadWasmDecoderModule };
 });
 
-vi.mock('/wasm/daw-wasm-decoder/daw_wasm_decoder.js', () => mocks.wasmModule);
+vi.mock('../loadWasmDecoderModule', () => ({
+    loadWasmDecoderModule: mocks.loadWasmDecoderModule,
+}));
 
 async function loadSubject() {
     vi.resetModules();
@@ -32,6 +35,7 @@ describe('decodeAudioBytesWasm', () => {
         mocks.decoded.take_samples.mockReturnValue(new Float32Array(200));
         mocks.wasmModule.default.mockResolvedValue(undefined);
         mocks.wasmModule.decode_audio_bytes.mockReturnValue(mocks.decoded);
+        mocks.loadWasmDecoderModule.mockResolvedValue(mocks.wasmModule);
     });
 
     it('should load module and decode bytes', async () => {

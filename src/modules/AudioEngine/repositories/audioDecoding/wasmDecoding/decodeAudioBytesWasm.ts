@@ -1,15 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 
-import type { WasmDecodedAudio } from './helpers';
+import { loadWasmDecoderModule } from './loadWasmDecoderModule';
 
-type WasmDecoded = {
-    readonly sample_rate: number;
-    readonly channels: number;
-    readonly total_frames: number;
-    /** Consumes the instance — do not call `.free()` or access getters after. */
-    take_samples: () => Float32Array;
-    free: () => void;
-};
+import type { WasmDecodedAudio } from './helpers';
+import type { WasmDecoded, WasmDecoderModule } from './loadWasmDecoderModule';
 
 /**
  * Browser-side audio decoder powered by the `daw-wasm-decoder` crate (symphonia).
@@ -22,21 +16,14 @@ type WasmDecoded = {
  * on the main thread, so it should not be the primary path for common formats.
  */
 
-type WasmModule = {
-    default: () => Promise<unknown>;
-    decode_audio_bytes: (bytes: Uint8Array) => WasmDecoded;
-};
+let modulePromise: Promise<WasmDecoderModule | null> | null = null;
 
-const WASM_JS_URL = '/wasm/daw-wasm-decoder/daw_wasm_decoder.js';
-
-let modulePromise: Promise<WasmModule | null> | null = null;
-
-async function loadWasmModule(): Promise<WasmModule | null> {
+async function loadWasmModule(): Promise<WasmDecoderModule | null> {
     const initialization =
         modulePromise ??
         (modulePromise = (async () => {
             try {
-                const mod = (await import(/* @vite-ignore */ WASM_JS_URL)) as WasmModule;
+                const mod = await loadWasmDecoderModule();
                 await mod.default();
                 return mod;
             } catch (error) {

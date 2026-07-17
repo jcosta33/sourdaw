@@ -28,15 +28,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/__tests__/decodeAudioBytesWasm.spec.ts",
-    "to": "/wasm/daw-wasm-decoder/daw_wasm_decoder.js",
-    "rule": {
-      "severity": "error",
-      "name": "test-dependencies-must-resolve"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Command/presentations/views/__tests__/UndoHistoryPanel.spec.tsx",
     "to": "src/modules/Workspace/stores/workspaceStore.ts",
     "rule": {
