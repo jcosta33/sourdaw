@@ -16,6 +16,10 @@ vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
     return {
         ...actual,
         removeTask: removeTaskMock,
+        toggleAiPanel: vi.fn(),
+        handleGenerateMidiPrompt: vi.fn(),
+        handleGenerateAudioFallback: vi.fn(),
+        handleStemSeparationPreview: vi.fn(),
     };
 });
 
@@ -28,36 +32,24 @@ vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/AiGeneration/stores/aiStore', () => ({
+vi.mock('#/modules/AiGeneration/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AiGeneration/stores')>()),
     aiStore: { name: 'aiStore' },
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
+vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Workspace/stores')>()),
     workspaceStore: { name: 'workspaceStore' },
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: { name: 'trackStore' },
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { tempo: 120 } },
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/toggleAiPanel', () => ({
-    toggleAiPanel: vi.fn(),
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/handleGenerateMidiPrompt', () => ({
-    handleGenerateMidiPrompt: vi.fn(),
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/handleGenerateAudioFallback', () => ({
-    handleGenerateAudioFallback: vi.fn(),
-}));
-
-vi.mock('#/modules/AiGeneration/useCases/actions/handleStemSeparationPreview', () => ({
-    handleStemSeparationPreview: vi.fn(),
 }));
 
 type MockAiTask = {
@@ -210,7 +202,7 @@ describe('GenerativeAiPanel', () => {
     });
 
     it('should close panel when X button is clicked', async () => {
-        const { toggleAiPanel } = await import('#/modules/AiGeneration/useCases/actions/toggleAiPanel');
+        const { toggleAiPanel } = await import('#/modules/AiGeneration/useCases');
         render(<GenerativeAiPanel />);
         const closeButton = screen.getAllByRole('button')[0];
         fireEvent.click(closeButton!);

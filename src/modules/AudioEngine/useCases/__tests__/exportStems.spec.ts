@@ -67,11 +67,11 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('../stores/audioBufferCache', () => ({
+vi.mock('../../stores/audioBufferCache', () => ({
     audioBufferCache: offlineRenderMocks.audioBufferCache,
 }));
 
-vi.mock('./buildDeviceChain', () => ({
+vi.mock('../buildDeviceChain', () => ({
     buildDeviceChain: offlineRenderMocks.buildDeviceChain,
 }));
 
@@ -83,7 +83,7 @@ vi.mock('#/modules/AudioEngine/services/deviceResolution', () => ({
     resolveDrumKit: offlineRenderMocks.resolveDrumKit,
 }));
 
-vi.mock('../repositories/offlineScheduler/automationScheduling', () => ({
+vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
     scheduleTrackAutomation: offlineRenderMocks.scheduleTrackAutomation,
 }));
 

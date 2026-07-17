@@ -10,7 +10,7 @@ vi.mock('#/modules/Routing/stores', async (importOriginal) => ({
 }));
 // Pin the sample rate so the sidechain-compressor latency is deterministic
 // (128 / 48000 * 1000 ms) without touching the real Web Audio engine.
-vi.mock('../../engineAccess/getAudioContext', () => ({
+vi.mock('../../../engineAccess/getAudioContext', () => ({
     getAudioContext: () => ({ sampleRate: 48000 }),
 }));
 

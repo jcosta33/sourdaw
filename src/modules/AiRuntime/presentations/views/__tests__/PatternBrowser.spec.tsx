@@ -43,27 +43,29 @@ vi.mock('../../../useCases/aiRuntimeQueries/filterTemplates', () => ({
     }),
 }));
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: { value: { tracks: [], selectedTrackId: null } },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clip/addClip', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addClip: vi.fn(() => ({ id: 'clip1', name: 'New Clip' })),
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     addMidiNote: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/batchAddMidiNotes', () => ({
     batchAddMidiNotes: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/useCases/transportQueries/getTransportState', () => ({
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/selectClip', () => ({
+vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
     selectClip: vi.fn(),
 }));
 
