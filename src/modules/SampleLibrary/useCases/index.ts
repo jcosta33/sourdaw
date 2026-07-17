@@ -7,5 +7,4 @@ export { searchSamples } from './searchSamples';
 export { analyzeSample } from './analyzeSample';
 export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
-export { generateFactorySamples } from './factoryContent/generateFactorySamples';
-export { seedFactoryLibrary } from './factoryContent/seedFactoryLibrary';
+export { seedFactoryLibrary } from './seedFactoryLibrary';

@@ -1,11 +1,11 @@
-import { createMono, createStereo, toAudioBufferStereo } from '../../services/factorySynthesis/bufferCreation';
-import { SAMPLE_RATE } from '../../services/factorySynthesis/constants';
-import { normalizeStereo, softClipStereo } from '../../services/factorySynthesis/dynamics';
-import { feedbackDelay } from '../../services/factorySynthesis/effects';
-import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
-import { biquad } from '../../services/factorySynthesis/filters';
-import { mixMono, mixMonoIntoStereo } from '../../services/factorySynthesis/mixing';
-import { renderNoise, renderSine, renderTriangle } from '../../services/factorySynthesis/oscillators';
+import { createMono, createStereo, toAudioBufferStereo } from '../services/bufferCreation';
+import { SAMPLE_RATE } from '../services/constants';
+import { normalizeStereo, softClipStereo } from '../services/dynamics';
+import { feedbackDelay } from '../services/effects';
+import { applyEnvelope, renderEnvelope } from '../services/envelopes';
+import { biquad } from '../services/filters';
+import { mixMono, mixMonoIntoStereo } from '../services/mixing';
+import { renderNoise, renderSine, renderTriangle } from '../services/oscillators';
 
 import { type FactorySample } from './types';
 

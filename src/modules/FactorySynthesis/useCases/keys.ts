@@ -1,16 +1,10 @@
-import { createMono, toAudioBufferMono } from '../../services/factorySynthesis/bufferCreation';
-import { normalize, softClip } from '../../services/factorySynthesis/dynamics';
-import { feedbackDelay } from '../../services/factorySynthesis/effects';
-import { applyEnvelope, renderEnvelope } from '../../services/factorySynthesis/envelopes';
-import { biquad } from '../../services/factorySynthesis/filters';
-import { mixMono } from '../../services/factorySynthesis/mixing';
-import {
-    midiToFreq,
-    renderFmOscillator,
-    renderSaw,
-    renderSine,
-    renderTriangle,
-} from '../../services/factorySynthesis/oscillators';
+import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { normalize, softClip } from '../services/dynamics';
+import { feedbackDelay } from '../services/effects';
+import { applyEnvelope, renderEnvelope } from '../services/envelopes';
+import { biquad } from '../services/filters';
+import { mixMono } from '../services/mixing';
+import { midiToFreq, renderFmOscillator, renderSaw, renderSine, renderTriangle } from '../services/oscillators';
 
 import { type FactorySample } from './types';
 
