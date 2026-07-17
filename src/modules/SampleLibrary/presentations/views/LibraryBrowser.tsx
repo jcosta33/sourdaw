@@ -33,7 +33,6 @@ import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLi
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { isNativeSampleLibraryRuntimeAvailable } from '../../useCases/isNativeSampleLibraryRuntimeAvailable';
-import { projectSpatialMap } from '../../useCases/projectSpatialMap';
 import { readTauriLibrarySampleFile } from '../../useCases/readTauriLibrarySampleFile';
 import { requestPermission } from '../../useCases/requestPermission';
 import { toggleFavorite } from '../../useCases/toggleFavorite';
@@ -56,6 +55,11 @@ type LibraryBrowserProps = {
 // Numeric-aware collator so file lists order "Kick 1, Kick 2, … Kick 10" rather
 // than the lexicographic "Kick 1, Kick 10, Kick 2". Created once at module scope.
 const fileNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+// The embedding pipeline that feeds this projection is not wired in this build
+// (no producer writes sample embeddings via setEmbedding), so re-projection is
+// inert. Surface the control as unavailable instead of a button that no-ops.
+const UMAP_UNAVAILABLE_LABEL = 'Timbral proximity re-projection is not available in this build';
 
 /** Recursive file count for every folder path in a tree, rolled up once. */
 function buildFileCountIndex(tree: FolderNode | undefined): Map<string, number> {
@@ -265,10 +269,6 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
     };
 
-    const handleProjectMap = (): void => {
-        void projectSpatialMap();
-    };
-
     const handleFindSimilar = (sampleId: string): void => {
         const similarIds = findSimilarSamples(sampleId);
         if (similarIds.length > 0) {
@@ -443,8 +443,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     Timbral Proximity Map
                                 </span>
                                 <button
-                                    className="text-[8px] text-accent-cyan hover:underline"
-                                    onClick={handleProjectMap}
+                                    type="button"
+                                    disabled
+                                    className="text-[8px] text-muted-foreground/40 cursor-not-allowed"
+                                    title={UMAP_UNAVAILABLE_LABEL}
+                                    aria-label={`Re-project UMAP unavailable: ${UMAP_UNAVAILABLE_LABEL}`}
                                 >
                                     Re-project UMAP
                                 </button>
