@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleExportDawProject } from '../handlers/dawProject/handleExportDawProject';
 import { handleImportDawProject } from '../handlers/dawProject/handleImportDawProject';

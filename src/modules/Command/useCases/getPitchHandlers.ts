@@ -1,8 +1,7 @@
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+
 import { handleCommitPitchEdit } from '../handlers/pitch/handleCommitPitchEdit';
 import { handleRestoreClipFileId } from '../handlers/pitch/handleRestoreClipFileId';
-import { type AppAction } from '../models/AppAction';
-
-import { type ActionHandler } from './executeAppAction';
 
 type PitchAppAction =
     | Extract<AppAction, { type: 'commitPitchEdit' }>

@@ -1,4 +1,5 @@
-import { type AppAction } from '../../../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { macroStore } from '../../../stores/macroStore';
 
 /** Actions that should NOT be recorded inside a macro (meta-actions). */

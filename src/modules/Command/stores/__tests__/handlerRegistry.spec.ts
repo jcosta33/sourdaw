@@ -1,7 +1,7 @@
 import { describe, it, expect, expectTypeOf, beforeEach } from 'vitest';
 
-import { type AppAction } from '../../models/AppAction';
-import { type ActionHandler } from '../../useCases/executeAppAction';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+
 import { clearHandlerRegistry, getHandler, getHandlerMap, registerHandlerMap } from '../handlerRegistry';
 
 // A minimal stub handler; the registry never invokes it in these tests.

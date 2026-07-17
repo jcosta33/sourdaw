@@ -1,7 +1,7 @@
 import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { type AppAction } from '#/modules/Command/useCases';
 import { selectClipWithFocus } from '#/modules/Workspace/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getPlayheadBeat, resolveOrCreateMidiTrack } from './generationHandlerHelpers';

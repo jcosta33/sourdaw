@@ -1,8 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { updateClipInStore } from '#/modules/Arrangement/stores';
+import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '../../models/AppAction';
 
 import { findPitchEditClip } from './findPitchEditClip';
 import { getPitchEditDependencies } from './getPitchEditDependencies';

@@ -1,4 +1,5 @@
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type CommandEntry } from '../models/CommandEntry';
 import { searchCommands } from '../services/commandSearch';
 

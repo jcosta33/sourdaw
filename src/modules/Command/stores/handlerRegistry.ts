@@ -1,5 +1,4 @@
-import { type AppAction } from '../models/AppAction';
-import { type ActionHandler } from '../useCases/executeAppAction';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 /**
  * Action-handler registry shared across the app.

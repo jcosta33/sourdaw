@@ -1,7 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
-
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
 
 export type ShortcutAction = { type: 'appAction'; action: AppAction } | { type: 'callback'; id: string };
 

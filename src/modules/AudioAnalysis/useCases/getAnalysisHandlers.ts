@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAnalyzeMix } from '../handlers/analysis/handleAnalyzeMix';
 import { handleAudioToMidi } from '../handlers/analysis/handleAudioToMidi';

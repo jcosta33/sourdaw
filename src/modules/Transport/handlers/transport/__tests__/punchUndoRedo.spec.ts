@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo, type AppAction } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
 import { getTransportHandlers } from '../../../useCases/getTransportHandlers';

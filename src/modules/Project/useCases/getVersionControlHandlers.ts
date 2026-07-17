@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleCreateProjectVersion } from '../handlers/versionControl/handleCreateProjectVersion';
 import { handleCreateVersionBranch } from '../handlers/versionControl/handleCreateVersionBranch';

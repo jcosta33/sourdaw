@@ -3,7 +3,7 @@
  * AiActionHistoryPanel to display previews and history entries.
  */
 
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
 
 export const ACTION_LABELS: Record<string, string> = {
     addTrack: 'Add track',

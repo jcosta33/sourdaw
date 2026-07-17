@@ -1,4 +1,5 @@
-import { type AppAction } from '../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type ActionUndoEntry, type UndoSource } from '../models/UndoEntry';
 
 export function createUndoEntry(

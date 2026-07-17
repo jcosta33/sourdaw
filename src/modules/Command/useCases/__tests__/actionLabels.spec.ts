@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { type AppAction } from '../../models/AppAction';
+import { type AppAction } from '#/utils/handlerContract';
+
 import { describeAction, ACTION_LABELS } from '../actionLabels';
 
 describe('actionLabels', () => {

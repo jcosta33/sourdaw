@@ -5,9 +5,9 @@ import {
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
+import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
-import { type AppAction } from '../models/AppAction';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandler } from '../stores/handlerRegistry';
 
@@ -16,32 +16,6 @@ import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
-
-export type HandlerDescribeResult = {
-    label: string;
-    inverseAction?: AppAction | null;
-};
-
-export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (action: Action) => void | Promise<void>;
-    describe: (action: Action) => HandlerDescribeResult;
-    undoable: boolean;
-};
-
-export type { AppAction } from '../models/AppAction';
-
-export type ExecuteOptions = {
-    groupId?: string;
-    groupLabel?: string;
-    source?: 'manual' | 'prompt' | 'voice' | 'ai';
-    /** When true, skip pushing an undo entry and action history entry.
-     *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
-    skipUndo?: boolean;
-    /** Opaque owner for CRDT writes made synchronously by this action. */
-    snapshotTransaction?: object;
-    /** When true, do not capture this execution in an active macro recording. */
-    skipMacroRecording?: boolean;
-};
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
 

@@ -4,9 +4,9 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { type AppAction } from '../../../models/AppAction';
 import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
 import { undoStore } from '../../../stores/undo-store-facade';
 import { clearUndoHistory } from '../../clearUndoHistory';
