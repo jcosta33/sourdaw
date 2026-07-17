@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createTrack } from '#/modules/Arrangement/models/Track';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
-import type { TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+import type { TrackStoreState } from '#/modules/Arrangement/stores';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null as TrackStoreState | null },
@@ -19,15 +19,6 @@ const mocks = vi.hoisted(() => ({
     setBusGain: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
-}));
-
-// Mock the store file directly
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: {
-        get value() {
-            return mocks.trackStoreValue.value;
-        },
-    },
 }));
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components

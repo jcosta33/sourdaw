@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resumeEngine } from '#/modules/AudioEngine/useCases/engineAccess/resumeEngine';
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -17,7 +17,7 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/resumeEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({

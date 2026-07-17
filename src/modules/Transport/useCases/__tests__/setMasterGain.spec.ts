@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { setMasterGainValue } from '#/modules/AudioEngine/useCases/engineAccess/setMasterGainValue';
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
 
 import { defaultTransportState } from '../../models/TransportState';
 import { getTransportState } from '../../repositories/transport/getTransportState';
@@ -9,7 +9,7 @@ import { setMasterGain } from '../setMasterGain';
 
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/setMasterGainValue', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     setMasterGainValue: vi.fn(),
 }));
 
