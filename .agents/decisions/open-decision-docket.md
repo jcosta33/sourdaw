@@ -612,7 +612,7 @@ code: no (all dormant).
   `src/modules/Project/useCases/projectPersistence/newProject.ts:75`.
 - **autoSaveVersion has no production caller** (only CRDT autosave is wired).
   Options: wire version-control autosave vs remove. Blocks code: no. Source:
-  `src/modules/Project/useCases/versionControl/autoSaveVersion.ts:5`.
+  `src/modules/ProjectVersioning/useCases/versionControl/autoSaveVersion.ts:5`.
 - **Recent-projects Option B migration** (per-project CRDT docs +
   `loadProject(id)`, retiring the flat-JSON snapshot surface) — the long-term
   direction left open by ADR 0008. Blocks code: no (Option A shipped). Source:

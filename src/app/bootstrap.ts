@@ -83,10 +83,10 @@ import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
 import {
     markDirty,
     getSongStructureHandlers,
-    getVersionControlHandlers,
     getDawProjectHandlers,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
+import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
