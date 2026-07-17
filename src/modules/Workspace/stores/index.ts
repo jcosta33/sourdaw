@@ -8,7 +8,4 @@ export { workspaceStore, defaultWorkspaceState } from './workspaceStore';
 export type { WorkspaceState, EditingTool } from './workspaceStore';
 export { toolSwapStore } from './toolSwapStore';
 
-export { onboardingStore, defaultOnboardingState } from './onboardingStore';
-export type { OnboardingState } from './onboardingStore';
-
 export { alphaNoticeStore } from './alphaNoticeStore';

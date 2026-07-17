@@ -65,11 +65,3 @@ export { TRACK_HEIGHT_VALUES, defaultPreferences, TOOL_SHORTCUTS } from './works
 // ── Workspace State ───────────────────────────────────────────────────────────
 
 export { updateWorkspaceState } from './workspaceState';
-
-// ── Onboarding ───────────────────────────────────────────────────────────────
-
-export { startOnboardingTour } from './onboarding/startOnboardingTour';
-export { advanceOnboardingStep } from './onboarding/advanceOnboardingStep';
-export { regressOnboardingStep } from './onboarding/regressOnboardingStep';
-export { dismissOnboardingTour } from './onboarding/dismissOnboardingTour';
-export { isOnboardingCompleted } from './onboarding/isOnboardingCompleted';

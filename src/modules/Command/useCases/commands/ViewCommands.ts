@@ -1,4 +1,5 @@
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
+import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
@@ -7,7 +8,6 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
-    startOnboardingTour,
 } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../executeAppAction';

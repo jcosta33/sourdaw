@@ -3,9 +3,9 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { useStore } from '#/infra/store/useStore';
 
 import { defaultOnboardingState, onboardingStore } from '../../stores/onboardingStore';
-import { advanceOnboardingStep } from '../../useCases/onboarding/advanceOnboardingStep';
-import { dismissOnboardingTour } from '../../useCases/onboarding/dismissOnboardingTour';
-import { regressOnboardingStep } from '../../useCases/onboarding/regressOnboardingStep';
+import { advanceOnboardingStep } from '../../useCases/advanceOnboardingStep';
+import { dismissOnboardingTour } from '../../useCases/dismissOnboardingTour';
+import { regressOnboardingStep } from '../../useCases/regressOnboardingStep';
 
 type OnboardingAnchor =
     | 'transport-play'

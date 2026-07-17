@@ -9,15 +9,15 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => storeState),
 }));
 
-vi.mock('../../../useCases/onboarding/advanceOnboardingStep', () => ({
+vi.mock('../../../useCases/advanceOnboardingStep', () => ({
     advanceOnboardingStep: vi.fn(),
 }));
 
-vi.mock('../../../useCases/onboarding/dismissOnboardingTour', () => ({
+vi.mock('../../../useCases/dismissOnboardingTour', () => ({
     dismissOnboardingTour: vi.fn(),
 }));
 
-vi.mock('../../../useCases/onboarding/regressOnboardingStep', () => ({
+vi.mock('../../../useCases/regressOnboardingStep', () => ({
     regressOnboardingStep: vi.fn(),
 }));
 
@@ -44,21 +44,21 @@ describe('OnboardingTour', () => {
     it('should advance on ArrowRight', async () => {
         render(<OnboardingTour />);
         fireEvent.keyDown(window, { key: 'ArrowRight' });
-        const { advanceOnboardingStep } = await import('../../../useCases/onboarding/advanceOnboardingStep');
+        const { advanceOnboardingStep } = await import('../../../useCases/advanceOnboardingStep');
         expect(advanceOnboardingStep).toHaveBeenCalled();
     });
 
     it('should regress on ArrowLeft', async () => {
         render(<OnboardingTour />);
         fireEvent.keyDown(window, { key: 'ArrowLeft' });
-        const { regressOnboardingStep } = await import('../../../useCases/onboarding/regressOnboardingStep');
+        const { regressOnboardingStep } = await import('../../../useCases/regressOnboardingStep');
         expect(regressOnboardingStep).toHaveBeenCalled();
     });
 
     it('should dismiss on Escape', async () => {
         render(<OnboardingTour />);
         fireEvent.keyDown(window, { key: 'Escape' });
-        const { dismissOnboardingTour } = await import('../../../useCases/onboarding/dismissOnboardingTour');
+        const { dismissOnboardingTour } = await import('../../../useCases/dismissOnboardingTour');
         expect(dismissOnboardingTour).toHaveBeenCalled();
     });
 
@@ -71,7 +71,7 @@ describe('OnboardingTour', () => {
     it('should call dismissOnboardingTour when Skip tour is clicked', async () => {
         render(<OnboardingTour />);
         fireEvent.click(screen.getByRole('button', { name: /skip tour/i }));
-        const { dismissOnboardingTour } = await import('../../../useCases/onboarding/dismissOnboardingTour');
+        const { dismissOnboardingTour } = await import('../../../useCases/dismissOnboardingTour');
         expect(dismissOnboardingTour).toHaveBeenCalled();
     });
 });

@@ -1,4 +1,4 @@
-import { onboardingStore } from '../../stores/onboardingStore';
+import { onboardingStore } from '../stores/onboardingStore';
 
 import { ONBOARDING_COMPLETED_KEY } from './onboardingStorageKey';
 
