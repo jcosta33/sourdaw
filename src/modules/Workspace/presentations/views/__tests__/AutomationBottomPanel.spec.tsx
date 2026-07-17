@@ -66,26 +66,6 @@ vi.mock('#/components/daw/DawPanelSurface', () => ({
     ),
 }));
 
-vi.mock('#/modules/Arrangement/presentations/views/BeatRulerBar', () => ({
-    BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
-}));
-
-vi.mock('#/modules/Arrangement/presentations/views/TimelineChromeSurface', () => ({
-    TimelineChromeSurface: ({
-        children,
-        className,
-        tone,
-    }: {
-        children?: React.ReactNode;
-        className?: string;
-        tone?: string;
-    }) => (
-        <div className={className} data-tone={tone}>
-            {children}
-        </div>
-    ),
-}));
-
 vi.mock('#/modules/Arrangement/presentations/views', () => ({
     BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
     TimelineChromeSurface: ({

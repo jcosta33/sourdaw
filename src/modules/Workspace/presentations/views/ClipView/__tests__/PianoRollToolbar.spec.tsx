@@ -117,7 +117,8 @@ vi.mock('../../../helpers/pianoRollConstants', () => ({
     SCALE_ROOT_LABELS: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
 }));
 
-vi.mock('#/modules/MIDI/useCases/chordStamps/CHORD_TYPE_KEYS', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     CHORD_TYPE_KEYS: ['major', 'minor', 'dim', 'aug', '7', 'maj7', 'min7'],
 }));
 

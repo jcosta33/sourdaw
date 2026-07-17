@@ -25,27 +25,13 @@ vi.mock('../../../useCases/togglePanel/panelToggles/cycleChannelStripWidth', () 
     cycleChannelStripWidth: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/restoreMixerChannels', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     restoreMixerChannels: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/renameMixerSnapshot', () => ({
     renameMixerSnapshot: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/deleteMixerSnapshot', () => ({
     deleteMixerSnapshot: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/getMixerSnapshots', () => ({
     getMixerSnapshots: vi.fn(() => [{ id: 'snap-1', name: 'Snapshot 1' }]),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/recallMixerSnapshot', () => ({
     recallMixerSnapshot: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/saveMixerSnapshot', () => ({
     saveMixerSnapshot: vi.fn(),
 }));
 
@@ -93,8 +79,7 @@ describe('MixerPanel', () => {
         const saveButton = screen.getByLabelText('Save mixer snapshot');
         fireEvent.click(saveButton);
 
-        const { saveMixerSnapshot } =
-            await import('#/modules/Arrangement/useCases/mixerSnapshot/operations/saveMixerSnapshot');
+        const { saveMixerSnapshot } = await import('#/modules/Arrangement/useCases');
         expect(saveMixerSnapshot).toHaveBeenCalled();
     });
 

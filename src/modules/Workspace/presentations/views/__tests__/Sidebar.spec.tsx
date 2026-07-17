@@ -42,7 +42,7 @@ vi.mock('../Sidebar/MacrosPanel', () => ({
     MacrosPanel: () => <div data-testid="macros-panel">Macros</div>,
 }));
 
-vi.mock('#/modules/SampleLibrary/presentations/views/LibraryBrowser', () => ({
+vi.mock('#/modules/SampleLibrary/presentations/views', () => ({
     LibraryBrowser: () => <div data-testid="library-browser">Library Browser</div>,
 }));
 

@@ -94,12 +94,9 @@ vi.mock('../../../hooks/useTracks', () => ({
     useTracks: vi.fn(() => ({ tracks: [] })),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/addDevice', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addDevice: vi.fn(),
-}));
-
-vi.mock('#/modules/Knead/useCases/dspAnalysis', () => ({
-    ingestDspAnalysis: vi.fn(),
 }));
 
 describe('KneadEditor', () => {

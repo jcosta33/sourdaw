@@ -57,7 +57,8 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { playheadPosition: 0 } },
 }));
 
@@ -65,11 +66,9 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     workspaceStore: { value: { activeTool: 'pointer' } },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/automationQueries/getAutomationRegions', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getAutomationRegions: vi.fn(() => []),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/automationQueries/interpolateAutomationValue', () => ({
     interpolateAutomationValue: vi.fn(() => 0.5),
 }));
 

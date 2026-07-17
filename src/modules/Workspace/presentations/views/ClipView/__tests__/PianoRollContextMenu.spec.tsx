@@ -56,71 +56,32 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     addMidiNote: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/removeMidiNote', () => ({
     removeMidiNote: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/moveMidiNote', () => ({
     moveMidiNote: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity', () => ({
     setNoteVelocity: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteCrud/getNotesForClip', () => ({
     getNotesForClip: vi.fn(() => []),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes', () => ({
     humanizeNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteTransforms/quantizeNotes', () => ({
     quantizeNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiNoteTransforms/transposeNotes', () => ({
     transposeNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipboard/copySelectedNotes', () => ({
-    copySelectedNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipboard/pasteNotes', () => ({
-    pasteNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/strumNotes/restoreStrumOriginals', () => ({
     restoreStrumOriginals: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/strumNotes/strumNotes', () => ({
     strumNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/grooveExtraction/restoreGrooveOriginals', () => ({
     restoreGrooveOriginals: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/grooveExtraction/applyGrooveToClip', () => ({
     applyGrooveToClip: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases/grooveExtraction/extractGrooveFromClip', () => ({
     extractGrooveFromClip: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/isTauri', () => ({
-    isTauri: vi.fn(() => false),
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    copySelectedNotes: vi.fn(),
+    pasteNotes: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/generateMidiAI', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    isTauri: vi.fn(() => false),
     generateMidiAI: vi.fn(),
 }));
 
