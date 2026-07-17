@@ -36,7 +36,7 @@ vi.mock('../../device/setDeviceParameter/setDeviceParameter', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return { ...actual, addDeviceToStrip: vi.fn(), updateDeviceParam: vi.fn(), removeDeviceFromStrip: vi.fn() };
 });
 

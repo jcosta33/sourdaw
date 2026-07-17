@@ -7,7 +7,7 @@ import { type Track } from '../../../models/Track';
 import { selectTrack } from '../selectTrack';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return { ...actual, setMidiInputTrack: vi.fn() };
 });
 
