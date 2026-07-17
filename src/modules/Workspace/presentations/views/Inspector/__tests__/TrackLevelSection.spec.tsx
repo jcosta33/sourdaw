@@ -9,21 +9,16 @@ import type { Track } from '../../../../models/TrackViewTypes';
 const mockSetTrackGain = vi.fn();
 const mockSetTrackPan = vi.fn();
 
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackNotes', () => ({
-    setTrackNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
-    setTrackColor: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
-    setTrackPan: (...args: unknown[]) => mockSetTrackPan(...args),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
-    setTrackGain: (...args: unknown[]) => mockSetTrackGain(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        setTrackNotes: vi.fn(),
+        setTrackColor: vi.fn(),
+        setTrackPan: (...args: unknown[]) => mockSetTrackPan(...args),
+        setTrackGain: (...args: unknown[]) => mockSetTrackGain(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({ title }: { title?: string }) => <div data-testid="header-band">{title}</div>,

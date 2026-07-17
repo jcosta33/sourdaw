@@ -7,14 +7,15 @@ import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockAcceptGhostClip = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/clip/acceptGhostClip', () => ({
-    acceptGhostClip: (...args: unknown[]) => mockAcceptGhostClip(...args),
-}));
-
 const mockDismissGhostClip = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/clip/dismissGhostClip', () => ({
-    dismissGhostClip: (...args: unknown[]) => mockDismissGhostClip(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        acceptGhostClip: (...args: unknown[]) => mockAcceptGhostClip(...args),
+        dismissGhostClip: (...args: unknown[]) => mockDismissGhostClip(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
     DawEmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,

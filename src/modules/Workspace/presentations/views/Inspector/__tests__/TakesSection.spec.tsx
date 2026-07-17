@@ -5,19 +5,17 @@ import { TakesSection } from '../TakesSection';
 
 // Mock external dependencies
 const mockSelectTake = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/comping/selectTake', () => ({
-    selectTake: (...args: unknown[]) => mockSelectTake(...args),
-}));
-
 const mockSetCompRegion = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/comping/setCompRegion', () => ({
-    setCompRegion: (...args: unknown[]) => mockSetCompRegion(...args),
-}));
-
 const mockFlattenComp = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/comping/flattenComp', () => ({
-    flattenComp: (...args: unknown[]) => mockFlattenComp(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        selectTake: (...args: unknown[]) => mockSelectTake(...args),
+        setCompRegion: (...args: unknown[]) => mockSetCompRegion(...args),
+        flattenComp: (...args: unknown[]) => mockFlattenComp(...args),
+    };
+});
 
 const mockUseStore = vi.fn(() => ({ lanes: [] }));
 vi.mock('#/infra/store/useStore', () => ({

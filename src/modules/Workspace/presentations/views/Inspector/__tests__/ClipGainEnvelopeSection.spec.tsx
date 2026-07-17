@@ -82,25 +82,17 @@ vi.mock('../../../components/Inspector/MetaText', () => ({
     MetaText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/getClipGainEnvelope', () => ({
-    getClipGainEnvelope: vi.fn(() => ({ enabled: false, points: [] })),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/toggleClipGainEnvelope', () => ({
-    toggleClipGainEnvelope: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/addGainEnvelopePoint', () => ({
-    addGainEnvelopePoint: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/removeGainEnvelopePoint', () => ({
-    removeGainEnvelopePoint: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipGainEnvelope/resetClipGainEnvelope', () => ({
-    resetClipGainEnvelope: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getClipGainEnvelope: vi.fn(() => ({ enabled: false, points: [] })),
+        toggleClipGainEnvelope: vi.fn(),
+        addGainEnvelopePoint: vi.fn(),
+        removeGainEnvelopePoint: vi.fn(),
+        resetClipGainEnvelope: vi.fn(),
+    };
+});
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);

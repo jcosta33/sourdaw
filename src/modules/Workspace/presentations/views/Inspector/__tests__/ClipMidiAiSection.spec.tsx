@@ -40,17 +40,25 @@ vi.mock('#/components/ui/button', () => ({
     ),
 }));
 
-vi.mock('#/modules/AiGeneration/useCases/generateMidiVariations', () => ({
-    generateMidiVariations: vi.fn(),
-}));
+vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AiGeneration/useCases')>();
+    return {
+        ...actual,
+        generateMidiVariations: vi.fn(),
+    };
+});
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases/notifyAiChange', () => ({
-    notifyAiChange: vi.fn(),
-}));
+vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
+    return {
+        ...actual,
+        notifyAiChange: vi.fn(),
+    };
+});
 
 describe('ClipMidiAiSection', () => {
     const mockClip = {

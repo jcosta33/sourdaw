@@ -7,13 +7,14 @@ import { TrackLatencySection } from '../TrackLatencySection';
 const mockGetTrackLatency = vi.fn(() => ({ totalLatencyMs: 0, deviceLatencyMs: 0 }));
 const mockGetCompensationDelay = vi.fn(() => 0);
 
-vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay', () => ({
-    getCompensationDelay: () => mockGetCompensationDelay(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/getTrackLatency', () => ({
-    getTrackLatency: () => mockGetTrackLatency(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...actual,
+        getCompensationDelay: () => mockGetCompensationDelay(),
+        getTrackLatency: () => mockGetTrackLatency(),
+    };
+});
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
     DawEmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,

@@ -8,21 +8,16 @@ import type { Track } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetTrackNotes = vi.fn();
 
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
-    setTrackColor: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
-    setTrackPan: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
-    setTrackGain: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackNotes', () => ({
-    setTrackNotes: (...args: unknown[]) => mockSetTrackNotes(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        setTrackColor: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackNotes: (...args: unknown[]) => mockSetTrackNotes(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawCompactTextarea', () => ({
     DawCompactTextarea: ({

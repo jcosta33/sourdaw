@@ -8,14 +8,15 @@ import type { Track } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockUpdateTrack = vi.fn();
 
-vi.mock('#/modules/Arrangement/useCases/updateTrack', () => ({
-    updateTrack: (...args: unknown[]) => mockUpdateTrack(...args),
-}));
-
 const mockToggleChordTrackFollow = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow', () => ({
-    toggleChordTrackFollow: (...args: unknown[]) => mockToggleChordTrackFollow(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        updateTrack: (...args: unknown[]) => mockUpdateTrack(...args),
+        toggleChordTrackFollow: (...args: unknown[]) => mockToggleChordTrackFollow(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawCompactCheckbox', () => ({
     DawCompactCheckbox: ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (

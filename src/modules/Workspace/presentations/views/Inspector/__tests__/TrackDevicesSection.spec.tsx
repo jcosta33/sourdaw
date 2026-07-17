@@ -17,54 +17,44 @@ type TestPluginDescriptor = {
 
 // Mock external dependencies
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
-vi.mock('#/modules/Arrangement/useCases/device/bypassDevice', () => ({
-    bypassDevice: (deviceId: string, bypassed: boolean): void => {
-        mockBypassDevice(deviceId, bypassed);
-    },
-}));
-
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
-vi.mock('#/modules/Arrangement/useCases/device/removeDevice', () => ({
-    removeDevice: (deviceId: string): void => {
-        mockRemoveDevice(deviceId);
-    },
-}));
-
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
-vi.mock('#/modules/Arrangement/useCases/device/addDevice', () => ({
-    addDevice: (trackId: string, pluginName: string): void => {
-        mockAddDevice(trackId, pluginName);
-    },
-}));
-
 const mockAddExternalDevice = vi.fn<(trackId: string, pluginId: string, pluginName: string) => void>();
-vi.mock('#/modules/Arrangement/useCases/device/addExternalDevice', () => ({
-    addExternalDevice: (trackId: string, pluginId: string, pluginName: string): void => {
-        mockAddExternalDevice(trackId, pluginId, pluginName);
-    },
-}));
-
 const mockReorderDevices = vi.fn<(trackId: string, fromIndex: number, toIndex: number) => void>();
-vi.mock('#/modules/Arrangement/useCases/device/reorderDevices', () => ({
-    reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
-        mockReorderDevices(trackId, fromIndex, toIndex);
-    },
-}));
-
 const mockGetPlatformPlugins = vi.fn<() => TestPlatformPlugin[]>(() => []);
-vi.mock('#/modules/Arrangement/useCases/getPlatformPlugins', () => ({
-    getPlatformPlugins: () => mockGetPlatformPlugins(),
-}));
-
 const mockGetPluginById = vi.fn<(id: string) => TestPluginDescriptor>(() => null);
-vi.mock('#/modules/Arrangement/useCases/getPluginById', () => ({
-    getPluginById: (id: string) => mockGetPluginById(id),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        bypassDevice: (deviceId: string, bypassed: boolean): void => {
+            mockBypassDevice(deviceId, bypassed);
+        },
+        removeDevice: (deviceId: string): void => {
+            mockRemoveDevice(deviceId);
+        },
+        addDevice: (trackId: string, pluginName: string): void => {
+            mockAddDevice(trackId, pluginName);
+        },
+        addExternalDevice: (trackId: string, pluginId: string, pluginName: string): void => {
+            mockAddExternalDevice(trackId, pluginId, pluginName);
+        },
+        reorderDevices: (trackId: string, fromIndex: number, toIndex: number): void => {
+            mockReorderDevices(trackId, fromIndex, toIndex);
+        },
+        getPlatformPlugins: () => mockGetPlatformPlugins(),
+        getPluginById: (id: string) => mockGetPluginById(id),
+    };
+});
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
-vi.mock('#/modules/Plugin/useCases/pluginLifecycle/openPluginGui', () => ({
-    openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
-}));
+vi.mock('#/modules/Plugin/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Plugin/useCases')>();
+    return {
+        ...actual,
+        openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
+    };
+});
 
 const mockShowDevicePanelForType = vi.fn<(deviceType: string, deviceId: string) => void>();
 vi.mock('#/modules/Workspace/useCases/panels/devicePanels/showDevicePanelForType', () => ({
@@ -78,10 +68,14 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-vi.mock('#/modules/Plugin/stores/pluginScanStore', () => ({
-    pluginScanStore: {},
-    defaultPluginScanState: { scannedPlugins: [] },
-}));
+vi.mock('#/modules/Plugin/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Plugin/stores')>();
+    return {
+        ...actual,
+        pluginScanStore: {},
+        defaultPluginScanState: { scannedPlugins: [] },
+    };
+});
 
 vi.mock('#/utils/platformCapabilities', () => ({
     getPlatformCapabilities: () => ({ hasNativePlugins: false }),
