@@ -1,1 +1,1 @@
-export { ScoringPanel } from './ScoringPanel';
+export { TunerPanel } from './TunerPanel';

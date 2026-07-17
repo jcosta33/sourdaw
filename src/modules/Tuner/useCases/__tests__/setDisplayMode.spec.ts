@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../stores/scoringStore', () => ({
+vi.mock('../../stores/tunerStore', () => ({
     mergeDeviceState: vi.fn(),
 }));
 
-import { mergeDeviceState } from '../../stores/scoringStore';
+import { mergeDeviceState } from '../../stores/tunerStore';
 import { setDisplayMode } from '../setDisplayMode';
 
 describe('setDisplayMode', () => {

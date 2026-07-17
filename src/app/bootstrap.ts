@@ -89,7 +89,6 @@ import {
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
-import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
 import {
@@ -100,6 +99,7 @@ import {
     shiftTimelineMapsAfterBeat,
     stopPlayback,
 } from '#/modules/Transport/useCases';
+import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
 import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';

@@ -1,5 +1,5 @@
 /**
- * Scoring tuner state types.
+ * Tuner state types.
  */
 
 export type DisplayMode = 'needle' | 'strobe' | 'poly';

@@ -1,4 +1,4 @@
-import { mergeDeviceState } from '../stores/scoringStore';
+import { mergeDeviceState } from '../stores/tunerStore';
 
 export function setA4Reference(deviceId: string, hz: number): void {
     mergeDeviceState(deviceId, { a4Reference: hz });

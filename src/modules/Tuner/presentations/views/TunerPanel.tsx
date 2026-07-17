@@ -9,7 +9,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
 
-import { scoringStore, getScoringState, type DisplayMode } from '../../stores/scoringStore';
+import { tunerStore, getTunerState, type DisplayMode } from '../../stores/tunerStore';
 import { setA4Reference } from '../../useCases/setA4Reference';
 import { setDisplayMode } from '../../useCases/setDisplayMode';
 
@@ -65,11 +65,11 @@ function SectionCard({
     );
 }
 
-export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+export const TunerPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // Subscribe to this device's instance only — a whole-record subscription would
-    // re-render every mounted ScoringPanel on any device's telemetry tick (the
+    // re-render every mounted TunerPanel on any device's telemetry tick (the
     // producer polls via requestAnimationFrame, ~60/s on a 60 Hz display).
-    const state = useStoreSelector(scoringStore, (instances) => instances?.[deviceId] ?? getScoringState(deviceId));
+    const state = useStoreSelector(tunerStore, (instances) => instances?.[deviceId] ?? getTunerState(deviceId));
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
     // The worklet emits confidence in [0,1] by contract, but nothing between the SAB
