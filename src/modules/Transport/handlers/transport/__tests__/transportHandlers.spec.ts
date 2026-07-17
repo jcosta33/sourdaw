@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAddTimeSignatureChange } from '../handleAddTimeSignatureChange';
-import { handleNextSetlistItem } from '../handleNextSetlistItem';
-import { handlePreviousSetlistItem } from '../handlePreviousSetlistItem';
 import { handleRemoveTimeSignatureChange } from '../handleRemoveTimeSignatureChange';
 import { handleRestorePunchRegion } from '../handleRestorePunchRegion';
 import { handleSeekPlayhead } from '../handleSeekPlayhead';
@@ -25,9 +23,7 @@ import { handleToggleRecording } from '../handleToggleRecording';
 import { handleTriggerScene } from '../handleTriggerScene';
 
 const mocks = vi.hoisted(() => ({
-    nextItem: vi.fn(),
     notifyUser: vi.fn(),
-    previousItem: vi.fn(),
     togglePunchRecording: vi.fn(),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
@@ -51,8 +47,6 @@ const mocks = vi.hoisted(() => ({
     triggerScene: vi.fn(),
 }));
 
-vi.mock('../../../useCases/setlist/nextItem', () => ({ nextItem: mocks.nextItem }));
-vi.mock('../../../useCases/setlist/previousItem', () => ({ previousItem: mocks.previousItem }));
 vi.mock('../../../useCases/punchRecording/togglePunchRecording', () => ({
     togglePunchRecording: mocks.togglePunchRecording,
 }));
@@ -207,15 +201,5 @@ describe('Transport Handlers', () => {
     it('handleTriggerScene delegates to use case with column', () => {
         handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
         expect(mocks.triggerScene).toHaveBeenCalledWith(2);
-    });
-
-    it('handleNextSetlistItem delegates to use case', () => {
-        handleNextSetlistItem.execute({ type: 'nextSetlistItem', payload: undefined });
-        expect(mocks.nextItem).toHaveBeenCalledTimes(1);
-    });
-
-    it('handlePreviousSetlistItem delegates to use case', () => {
-        handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: undefined });
-        expect(mocks.previousItem).toHaveBeenCalledTimes(1);
     });
 });

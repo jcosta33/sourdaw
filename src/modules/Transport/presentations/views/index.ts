@@ -3,4 +3,3 @@
 
 export { LoopStationPanel } from './LoopStationPanel';
 export { PunchRecordingControls } from './PunchRecordingControls';
-export { SetlistPanel } from './SetlistPanel';

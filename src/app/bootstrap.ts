@@ -90,12 +90,12 @@ import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases'
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
+import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
 import {
     getTransportHandlers,
     getTransportState,
     deleteTimelineMapsTimeRange,
-    setSetlistEventBus,
     setStopPlaybackCallback,
     shiftTimelineMapsAfterBeat,
     stopPlayback,
@@ -234,6 +234,7 @@ configureAudioDeviceRuntimeSink({
 
 registerHandlerMap(getArrangementHandlers());
 registerHandlerMap(getTransportHandlers());
+registerHandlerMap(getSetlistHandlers());
 registerHandlerMap(getWorkspaceHandlers());
 registerHandlerMap(getAutomationHandlers());
 registerHandlerMap(getGenerationHandlers());
