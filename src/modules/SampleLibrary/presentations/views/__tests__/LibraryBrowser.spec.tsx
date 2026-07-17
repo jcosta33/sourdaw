@@ -13,6 +13,7 @@ type LibraryBrowserMocks = {
         playFile: ReturnType<typeof vi.fn>;
         stop: ReturnType<typeof vi.fn>;
     };
+    projectSpatialMap: ReturnType<typeof vi.fn>;
     readTauriLibrarySampleFile: ReturnType<typeof vi.fn>;
 };
 
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(
             playFile: vi.fn(),
             stop: vi.fn(),
         },
+        projectSpatialMap: vi.fn(),
         readTauriLibrarySampleFile: vi.fn(),
     })
 );
@@ -44,6 +46,15 @@ vi.mock('../../../useCases/isNativeSampleLibraryRuntimeAvailable', () => ({
 
 vi.mock('../../../useCases/readTauriLibrarySampleFile', () => ({
     readTauriLibrarySampleFile: mocks.readTauriLibrarySampleFile,
+}));
+
+vi.mock('../../../useCases/projectSpatialMap', () => ({
+    projectSpatialMap: mocks.projectSpatialMap,
+}));
+
+// Canvas-based renderer — irrelevant to these assertions and not jsdom-safe.
+vi.mock('../SpatialMapRenderer', () => ({
+    SpatialMapRenderer: () => <div data-testid="spatial-map-renderer" />,
 }));
 
 type CreateLibraryStateInput = {
@@ -257,5 +268,33 @@ describe('LibraryBrowser', () => {
             '"Texture" is a .flac file — your browser may not be able to preview it.',
             'warning'
         );
+    });
+
+    it('should render the Re-project UMAP control disabled with the unavailable label and never dispatch', () => {
+        mocks.libraryState = createLibraryState({
+            provider: 'tauri',
+            ext: 'wav',
+            rootRef: '/Users/jose/Samples',
+            relativePath: 'Drums/Kick.wav',
+            displayName: 'Kick',
+        });
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        // The map panel (and its button) only mounts once the MAP toggle is on.
+        fireEvent.click(screen.getByRole('button', { name: 'Timbral spatial map' }));
+
+        const reprojectButton = screen.getByRole('button', {
+            name: 'Re-project UMAP unavailable: Timbral proximity re-projection is not available in this build',
+        });
+        expect(reprojectButton).toHaveProperty('disabled', true);
+        expect(reprojectButton.getAttribute('title')).toBe(
+            'Timbral proximity re-projection is not available in this build'
+        );
+        expect(reprojectButton.textContent).toBe('Re-project UMAP');
+
+        // An interaction attempt must not reach the stubbed pipeline.
+        fireEvent.click(reprojectButton);
+        expect(mocks.projectSpatialMap).not.toHaveBeenCalled();
     });
 });
