@@ -107,6 +107,7 @@ import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { eventBus, logger } from './registerDependencies';
+import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 
 logCapabilities();
 
@@ -144,6 +145,13 @@ window.addEventListener('beforeunload', () => {
     teardownYeastRuntime();
     // Attempt GC on window close
     cleanupUnusedFreezeFiles().catch(() => {});
+});
+
+// Funnel otherwise-silent fire-and-forget promise rejections into the logger.
+// Disposer is wired to HMR so a hot reload does not stack duplicate handlers.
+const disposeGlobalErrorHandlers = registerGlobalErrorHandlers({ logger });
+import.meta.hot?.dispose(() => {
+    disposeGlobalErrorHandlers();
 });
 
 setFermenterDependencies({
