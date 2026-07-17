@@ -3,6 +3,3 @@
 
 export type { PluginScanState } from './pluginScanStore';
 export { pluginScanStore, defaultPluginScanState } from './pluginScanStore';
-
-export { chamberStore } from './chamberStore';
-export type { ChamberStoreState } from './chamberStore';
