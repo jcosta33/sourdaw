@@ -2,7 +2,6 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { aiActionHistoryStore } from '#/modules/AiRuntime/stores';
 import { actionReplayRevisionStore, clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     executeAppAction,
@@ -21,6 +20,7 @@ import {
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 
+import { aiActionHistoryStore } from '../../../stores/aiActionHistoryStore';
 import { AiActionHistoryPanel } from '../AiActionHistoryPanel';
 
 const no_action_history_metadata_port = {

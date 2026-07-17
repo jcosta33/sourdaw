@@ -10,8 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
-import { createDefaultGrandBouleState } from '../grandBouleStore';
-import { createGrandBouleStore, resetGrandBouleStores } from '../index';
+import { createDefaultGrandBouleState, createGrandBouleStore, resetGrandBouleStores } from '../grandBouleStore';
 
 describe('resetGrandBouleStores', () => {
     it('resets a per-device (non-default) store to default, not just the default singleton', () => {

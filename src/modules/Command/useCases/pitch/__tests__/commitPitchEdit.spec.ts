@@ -7,7 +7,8 @@ import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modul
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type AppAction } from '../../../models/AppAction';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '../../../stores';
+import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
+import { undoStore } from '../../../stores/undo-store-facade';
 import { clearUndoHistory } from '../../clearUndoHistory';
 import { executeAppAction } from '../../executeAppAction';
 import { getPitchHandlers } from '../../getPitchHandlers';

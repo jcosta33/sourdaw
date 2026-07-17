@@ -6,7 +6,7 @@ import { createEventBus } from '#/infra/events/createEventBus';
 import { type Clip, type Track, type TrackKind } from '../../models/Track';
 import { duplicateTrack } from '../duplicateTrack';
 
-import type { TrackAddedPayload } from '../../events';
+import type { TrackAddedPayload } from '../../events/TrackAddedEvent';
 import type { TrackState } from '../../repositories/track/getTrackState';
 
 type ClipCopy = { sourceClipId: string; targetClipId: string };
