@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { cvGateStore, type CvGateState } from '../../../../stores/cvGate';
+import { cvGateStore, type CvGateState } from '../../../stores/cvGate';
 import { addCvOutput } from '../addCvOutput';
 
 const baseState: CvGateState = {

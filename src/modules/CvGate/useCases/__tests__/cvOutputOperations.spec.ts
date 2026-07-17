@@ -36,7 +36,7 @@ const { setMock, mockStore } = vi.hoisted(() => {
     return { setMock, mockStore: ref };
 });
 
-vi.mock('#/modules/Synth/stores/cvGate', () => {
+vi.mock('../../stores/cvGate', () => {
     let counter = 0;
     return {
         cvGateStore: {

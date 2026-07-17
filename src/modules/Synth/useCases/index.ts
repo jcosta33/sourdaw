@@ -1,11 +1,6 @@
 export { scheduleNote } from './scheduleNote';
 export { getSynthParamsFromDevices } from './getSynthParamsFromDevices';
 export { scheduleNoteOffline } from './scheduleNoteOffline';
-export { addCvOutput } from './cvGate/cvOutputOperations/addCvOutput';
-export { removeCvOutput } from './cvGate/cvOutputOperations/removeCvOutput';
-export { setCvValue } from './cvGate/cvOutputOperations/setCvValue';
-export { setVoltageStandard } from './cvGate/cvOutputOperations/setVoltageStandard';
-export { setClockDivision } from './cvGate/cvOutputOperations/setClockDivision';
 export { scheduleKitNote } from './drumKitSynth';
 export { getDrumKitDefByIndex } from './drumSynthEngine/kitDefinitions/getDrumKitDefByIndex';
 export { scheduleDrumKitNote } from './drumSynthEngine/kitDefinitions/scheduleDrumKitNote';

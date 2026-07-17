@@ -1,4 +1,4 @@
-import { cvGateStore } from '../../../stores/cvGate';
+import { cvGateStore } from '../../stores/cvGate';
 
 export function setCvValue(outputIdVal: string, value: number): void {
     const state = cvGateStore.value;
