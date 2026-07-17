@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
-import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
+import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
+import { pickFiles } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
@@ -14,18 +13,16 @@ vi.mock('../../../useCases/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Automation/useCases/getAutomationStoreState', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationStoreState: vi.fn(),
-}));
-vi.mock('#/modules/Automation/useCases/automation/removeAutomationPoint', () => ({
     removeAutomationPoint: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement', () => ({
+vi.mock('#/modules/Arrangement/useCases', () => ({
     importMidiFile: vi.fn(),
 }));
 
-vi.mock('#/modules/Project/repositories/nativeFileDialog/pickFiles', () => ({
+vi.mock('#/modules/Project/useCases', () => ({
     pickFiles: vi.fn(),
 }));
 
