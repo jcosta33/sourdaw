@@ -29,8 +29,6 @@ describe('getTransportHandlers', () => {
             'togglePunchRecording',
             'toggleLoopRecord',
             'triggerScene',
-            'nextSetlistItem',
-            'previousSetlistItem',
         ] as const) {
             expect(map[key]).toBeDefined();
             expect(map[key].execute).toBeDefined();

@@ -12,8 +12,5 @@ export { timeSignatureMapStore } from './timeSignatureMapStore';
 export { transportStore, defaultTransportState } from './transportStore';
 export type { TransportState } from './transportStore';
 
-export { setlistStore } from './setlistStore';
-export type { SetlistItem, SetlistState } from './setlistStore';
-
 export { loopStationStore } from './loopStationStore';
 export type { LoopSlot, LoopSlotState, LoopLayer, LoopStationState } from './loopStationStore';

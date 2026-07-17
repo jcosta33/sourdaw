@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { loopStationStore } from '../loopStationStore';
 import { punchRecordingStore } from '../punchRecordingStore';
-import { setlistStore } from '../setlistStore';
 import { timeSignatureMapStore } from '../timeSignatureMapStore';
 
 describe('Transport Misc Stores', () => {
@@ -48,29 +47,6 @@ describe('Transport Misc Stores', () => {
         it('should update state', () => {
             punchRecordingStore.update((state) => ({ ...state!, enabled: true }));
             expect(punchRecordingStore.value?.enabled).toBe(true);
-        });
-    });
-
-    describe('setlistStore', () => {
-        beforeEach(() => {
-            setlistStore.set({
-                name: 'Untitled Setlist',
-                items: [],
-                currentIndex: 0,
-                autoAdvance: false,
-                countInBars: 1,
-                totalDuration: 0,
-            });
-        });
-
-        it('should have initial state', () => {
-            expect(setlistStore.value?.items).toHaveLength(0);
-            expect(setlistStore.value?.name).toBe('Untitled Setlist');
-        });
-
-        it('should update state', () => {
-            setlistStore.update((state) => ({ ...state!, name: 'Tour 2026' }));
-            expect(setlistStore.value?.name).toBe('Tour 2026');
         });
     });
 
