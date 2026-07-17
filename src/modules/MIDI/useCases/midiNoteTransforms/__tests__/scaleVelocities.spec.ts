@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { midiStore } from '#/modules/MIDI/stores';
 
+import { midiStore } from '../../../stores/midiStore';
 import { scaleVelocities } from '../scaleVelocities';
 
 describe('scaleVelocities', () => {

@@ -39,11 +39,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({ 'test-device': panelState })),
 }));
 
-vi.mock('../../../stores', () => ({
-    defaultLevainState: { patch: { instrumentId: 'violin-1' } },
-}));
-
 vi.mock('../../../stores/levainStore', () => ({
+    defaultLevainState: { patch: { instrumentId: 'violin-1' } },
     levainStore: { name: 'levainStore', value: null },
     setCurrentArticulation: vi.fn(),
     updateMicPosition: vi.fn(),
