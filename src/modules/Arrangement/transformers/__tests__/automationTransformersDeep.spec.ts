@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { rdpSimplify, interpolateAutomationValue, generateShapePoints } from '../automationTransformers';
 
-import type { AutomationPoint } from '../models/AutomationViewTypes';
+import type { AutomationPoint } from '../../models/AutomationViewTypes';
 
 const pt = (beat: number, value: number, curve: AutomationPoint['curve'] = 'linear'): AutomationPoint =>
     ({ beat, value, curve }) as AutomationPoint;
