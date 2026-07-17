@@ -2,14 +2,15 @@ import { render, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
-import { getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess/getTrackAnalyser';
+import { getTrackAnalyser } from '#/modules/AudioEngine/useCases';
 
 import { TrackLevelIndicator } from '../TrackLevelIndicator';
 
 import type { Track } from '#/modules/Arrangement/models/Track';
 
 // Mock external dependencies
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/getTrackAnalyser', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getTrackAnalyser: vi.fn(() => ({
         getFloatTimeDomainData: vi.fn((data: Float32Array) => {
             data.fill(0.5);

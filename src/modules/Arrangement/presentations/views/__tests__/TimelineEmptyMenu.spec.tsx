@@ -28,7 +28,8 @@ vi.mock('../../../stores/markerStore', () => ({
     defaultMarkerStoreState: { markers: [], sections: [] },
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: { value: { tempo: 120 } },
 }));
 

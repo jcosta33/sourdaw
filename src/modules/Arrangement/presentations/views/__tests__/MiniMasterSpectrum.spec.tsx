@@ -8,7 +8,8 @@ import { useTracks } from '../../hooks/useTracks';
 import { MiniMasterSpectrum } from '../MiniMasterSpectrum';
 
 // Mock external dependencies
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/getMasterAnalyser', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getMasterAnalyser: vi.fn(() => ({
         frequencyBinCount: 128,
         fftSize: 256,

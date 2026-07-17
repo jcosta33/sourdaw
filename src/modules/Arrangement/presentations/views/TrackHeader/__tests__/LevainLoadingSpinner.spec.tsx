@@ -10,7 +10,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
 
-vi.mock('#/modules/Levain/stores/levainStore', () => ({
+vi.mock('#/modules/Levain/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Levain/stores')>()),
     levainStore: {},
     // The component now imports the canonical defaultLevainState from the Levain
     // stores barrel (re-exported from levainStore); provide it so the

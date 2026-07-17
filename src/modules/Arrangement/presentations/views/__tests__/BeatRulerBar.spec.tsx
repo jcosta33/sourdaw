@@ -1,8 +1,7 @@
 import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { disableLooping } from '#/modules/Transport/useCases/setLooping';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import { disableLooping, seekPlayhead } from '#/modules/Transport/useCases';
 
 import { BeatRulerBar } from '../BeatRulerBar';
 
@@ -15,11 +14,9 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {},
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: {},
-}));
-
-vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
 }));
 
@@ -30,15 +27,10 @@ vi.mock('#/utils/DOM/AnimationScheduler', () => ({
     },
 }));
 
-vi.mock('#/modules/Transport/useCases/transportControls/seekPlayhead', () => ({
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     seekPlayhead: vi.fn(),
-}));
-
-vi.mock('#/modules/Transport/useCases/transportControls/setLoopRegion', () => ({
     setLoopRegion: vi.fn(),
-}));
-
-vi.mock('#/modules/Transport/useCases/setLooping', () => ({
     disableLooping: vi.fn(),
 }));
 

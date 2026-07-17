@@ -24,11 +24,11 @@ vi.mock('../../../useCases/renameTrack', () => ({
     renameTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/freezeTrack/unfreezeTrack', () => ({
+vi.mock('../../../useCases/freezeBounce/unfreezeTrack', () => ({
     unfreezeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
+vi.mock('../../../useCases/freezeBounce/freezeTrack', () => ({
     freezeTrack: vi.fn(),
 }));
 

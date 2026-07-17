@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { stopRecording } from '../stopRecording';
 
 import type { TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
-import type { TransportState } from '#/modules/Transport/stores/transportStore';
+import type { TransportState } from '#/modules/Transport/stores';
 import type { TrackState } from '../../../repositories/track/getTrackState';
 
 const mocks = vi.hoisted(() => ({

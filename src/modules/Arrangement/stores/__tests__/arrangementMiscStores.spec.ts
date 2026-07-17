@@ -6,7 +6,7 @@ import { markerStore } from '../markerStore';
 import { takeLaneStore } from '../takeLaneStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../vcaGroupStore';
 
-import type { MidiNote } from '#/modules/MIDI/models/MidiNote';
+import type { MidiNote } from '../../models/MidiNoteViewTypes';
 import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../models/Track';
 

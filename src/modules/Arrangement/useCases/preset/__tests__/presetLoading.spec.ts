@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
-import { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam';
+import { addDeviceToStrip, removeDeviceFromStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 import { type SoundPreset } from '../../../models/SoundPreset';
 import { type Track } from '../../../models/Track';
@@ -37,17 +35,10 @@ vi.mock('../../device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip', () => ({
-    addDeviceToStrip: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam', () => ({
-    updateDeviceParam: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip', () => ({
-    removeDeviceFromStrip: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal();
+    return { ...actual, addDeviceToStrip: vi.fn(), updateDeviceParam: vi.fn(), removeDeviceFromStrip: vi.fn() };
+});
 
 vi.mock('#/modules/Plugin/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
