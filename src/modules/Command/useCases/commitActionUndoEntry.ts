@@ -1,7 +1,9 @@
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type UndoSource } from '../models/UndoEntry';
-import { commitActionUndoEntry as commitActionUndoEntryToStore } from '../stores/commitActionUndoEntry';
+
+import { commitUndoEntry } from './commitUndoEntry';
+import { createUndoEntry } from './createUndoEntry';
 
 type CommitActionUndoEntryInput = {
     action: AppAction;
@@ -12,6 +14,20 @@ type CommitActionUndoEntryInput = {
     groupLabel?: string;
 };
 
-export function commitActionUndoEntry(input: CommitActionUndoEntryInput): void {
-    commitActionUndoEntryToStore(input);
+export function commitActionUndoEntry({
+    action,
+    inverseAction,
+    label,
+    source = 'manual',
+    groupId,
+    groupLabel,
+}: CommitActionUndoEntryInput): void {
+    const entry = createUndoEntry(label, action, inverseAction, source);
+
+    if (groupId) {
+        entry.groupId = groupId;
+        entry.groupLabel = groupLabel;
+    }
+
+    commitUndoEntry(entry);
 }
