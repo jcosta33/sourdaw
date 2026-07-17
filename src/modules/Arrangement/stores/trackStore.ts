@@ -181,7 +181,7 @@ function normalize_clip_knead_blob(value: unknown): ClipKneadBlob | null {
         return null;
     }
 
-    return {
+    const blob: ClipKneadBlob = {
         id: value.id,
         startTime: value.startTime,
         endTime: value.endTime,
@@ -189,6 +189,12 @@ function normalize_clip_knead_blob(value: unknown): ClipKneadBlob | null {
         pitchCurveCents: value.pitchCurveCents,
         voicedConfidence: value.voicedConfidence,
     };
+
+    if (is_finite_number(value.originalPitchCenterCents)) {
+        blob.originalPitchCenterCents = value.originalPitchCenterCents;
+    }
+
+    return blob;
 }
 
 function normalize_clip_knead_state(value: unknown): ClipKneadState | null {

@@ -390,6 +390,7 @@ export type ProjectClipKneadBlob = {
     startTime: number;
     endTime: number;
     pitchCenterCents: number;
+    originalPitchCenterCents?: number;
     pitchCurveCents: number[];
     voicedConfidence: number;
 };

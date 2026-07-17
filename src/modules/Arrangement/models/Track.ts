@@ -134,6 +134,7 @@ export type ClipKneadBlob = {
     startTime: number;
     endTime: number;
     pitchCenterCents: number;
+    originalPitchCenterCents?: number;
     pitchCurveCents: number[];
     voicedConfidence: number;
 };
