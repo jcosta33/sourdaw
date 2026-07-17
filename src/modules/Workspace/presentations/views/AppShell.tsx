@@ -31,10 +31,10 @@ import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding
 import { ExportDialog } from '#/modules/Project/presentations/views';
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
-import { ScoringPanel } from '#/modules/Scoring/presentations/views';
 import { SetlistPanel } from '#/modules/Setlist/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { LoopStationPanel } from '#/modules/Transport/presentations/views';
+import { TunerPanel } from '#/modules/Tuner/presentations/views';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
 import { clamp } from '#/utils/Math/clamp';
@@ -626,7 +626,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={closeActivePanel}
                             >
                                 <ErrorBoundary>
-                                    <ScoringPanel deviceId={scoringDeviceId} />
+                                    <TunerPanel deviceId={scoringDeviceId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}

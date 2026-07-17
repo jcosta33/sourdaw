@@ -1,5 +1,5 @@
 /**
- * Scoring tuner state store.
+ * Tuner state store.
  * Keyed by deviceId to support multiple simultaneous instances.
  *
  * Write operations are exposed through useCases/:
@@ -11,16 +11,16 @@
 
 import { createStore } from '#/infra/store/createStore';
 
-import { DEFAULT_TUNER_STATE, type DisplayMode, type TunerState } from '../models/ScoringState';
+import { DEFAULT_TUNER_STATE, type DisplayMode, type TunerState } from '../models/TunerState';
 
 // Re-exported here so existing importers of this store path keep resolving the
-// canonical definitions from ../models/ScoringState (no duplicate, no drift).
+// canonical definitions from ../models/TunerState (no duplicate, no drift).
 export { DEFAULT_TUNER_STATE };
 export type { DisplayMode, TunerState };
 
-type ScoringInstances = Record<string, TunerState>;
+type TunerInstances = Record<string, TunerState>;
 
-export const scoringStore = createStore<ScoringInstances>({ initialData: {} });
+export const tunerStore = createStore<TunerInstances>({ initialData: {} });
 
 // Stable fallback for a device with no entry yet. `useStoreSelector` caches
 // selections by `Object.is`; returning a fresh `{ ...DEFAULT_TUNER_STATE }` per
@@ -30,8 +30,8 @@ export const scoringStore = createStore<ScoringInstances>({ initialData: {} });
 // ever spread this value ({ ...existing, ... }), never mutate it in place.
 const FALLBACK_TUNER_STATE: TunerState = Object.freeze({ ...DEFAULT_TUNER_STATE });
 
-export function getScoringState(deviceId: string): TunerState {
-    return scoringStore.value?.[deviceId] ?? FALLBACK_TUNER_STATE;
+export function getTunerState(deviceId: string): TunerState {
+    return tunerStore.value?.[deviceId] ?? FALLBACK_TUNER_STATE;
 }
 
 /**
@@ -41,9 +41,9 @@ export function getScoringState(deviceId: string): TunerState {
  * so the `{ ...existing, ...patch }` preservation lives in exactly one place.
  */
 export function mergeDeviceState(deviceId: string, patch: Partial<TunerState>): void {
-    const instances = scoringStore.value ?? {};
-    const existing = getScoringState(deviceId);
-    scoringStore.set({ ...instances, [deviceId]: { ...existing, ...patch } });
+    const instances = tunerStore.value ?? {};
+    const existing = getTunerState(deviceId);
+    tunerStore.set({ ...instances, [deviceId]: { ...existing, ...patch } });
 }
 
 /**

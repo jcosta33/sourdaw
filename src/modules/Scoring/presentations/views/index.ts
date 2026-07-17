@@ -1,1 +1,0 @@
-export { ScoringPanel } from './ScoringPanel';

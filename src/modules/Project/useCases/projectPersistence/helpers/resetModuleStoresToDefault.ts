@@ -11,10 +11,10 @@ import { levainStore } from '#/modules/Levain/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
-import { scoringStore } from '#/modules/Scoring/stores';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
+import { tunerStore } from '#/modules/Tuner/stores';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 
@@ -41,7 +41,7 @@ export function resetModuleStoresToDefault(): void {
     grinderTelemetryStore.set({});
     bacteriaStore.set({});
     proofStore.set({});
-    scoringStore.set({});
+    tunerStore.set({});
     toasterStore.set({});
     levainStore.set({});
     // Grand Boule keeps a Map of per-device store instances (not a single

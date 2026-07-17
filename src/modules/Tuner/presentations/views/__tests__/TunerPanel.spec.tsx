@@ -3,13 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 
-import { getScoringState } from '../../../stores/scoringStore';
-import { ScoringPanel } from '../ScoringPanel';
+import { getTunerState } from '../../../stores/tunerStore';
+import { TunerPanel } from '../TunerPanel';
 
-// Shared sentinels — hoisted so both the scoringStore mock and the
+// Shared sentinels — hoisted so both the tunerStore mock and the
 // useStoreSelector mock close over the SAME store reference, letting the selector
 // mock branch on identity.
-const { SCORING_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(() => {
+const { TUNER_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(() => {
     const fixtureState: {
         noteName: string;
         octave: number;
@@ -30,9 +30,9 @@ const { SCORING_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(()
         frequency: 440,
     };
     return {
-        SCORING_STORE_SENTINEL: { name: 'scoringStore' },
+        TUNER_STORE_SENTINEL: { name: 'tunerStore' },
         fixtureState,
-        // Fixture record the scoringStore subscription resolves against. The
+        // Fixture record the tunerStore subscription resolves against. The
         // component selects `instances[deviceId]`, so the mock runs the real
         // selector against this record rather than returning a flat fixture.
         fixtureInstances: { 'device-123': fixtureState } as Record<string, typeof fixtureState>,
@@ -40,21 +40,21 @@ const { SCORING_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(()
 });
 
 // Mock the selector subscription. Branch on the store argument: only the
-// scoringStore sentinel resolves against `fixtureInstances`. A subscription to
+// tunerStore sentinel resolves against `fixtureInstances`. A subscription to
 // any other store is a test bug — surface it loudly instead of silently feeding
-// the scoring fixture (which would mask a wrong-store subscription).
+// the tuner fixture (which would mask a wrong-store subscription).
 vi.mock('#/infra/store/useStoreSelector', () => ({
     useStoreSelector: vi.fn((store: unknown, selector: (state: unknown) => unknown) => {
-        if (store !== SCORING_STORE_SENTINEL) {
+        if (store !== TUNER_STORE_SENTINEL) {
             throw new Error('useStoreSelector called with an unexpected store');
         }
         return selector(fixtureInstances);
     }),
 }));
 
-vi.mock('../../../stores/scoringStore', () => ({
-    scoringStore: SCORING_STORE_SENTINEL,
-    getScoringState: vi.fn((_deviceId: unknown) => ({ ...fixtureState })),
+vi.mock('../../../stores/tunerStore', () => ({
+    tunerStore: TUNER_STORE_SENTINEL,
+    getTunerState: vi.fn((_deviceId: unknown) => ({ ...fixtureState })),
 }));
 
 vi.mock('../../../useCases/setDisplayMode', () => ({
@@ -117,7 +117,7 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
     ),
 }));
 
-describe('ScoringPanel', () => {
+describe('TunerPanel', () => {
     const mockDeviceId = 'device-123';
 
     beforeEach(() => {
@@ -125,45 +125,45 @@ describe('ScoringPanel', () => {
     });
 
     it('should render without crashing', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText(/Scoring/i)).toBeInTheDocument();
     });
 
     it('should render display mode buttons', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Needle')).toBeInTheDocument();
         expect(screen.getByText('Strobe')).toBeInTheDocument();
         expect(screen.getByText('Poly')).toBeInTheDocument();
     });
 
     it('should render reference section with knob', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         // Get all "Reference" texts and check that at least one exists
         expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
         expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
     });
 
     it('should display current note when active', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('A')).toBeInTheDocument();
         expect(screen.getByText('4')).toBeInTheDocument();
     });
 
     it('should render metric tiles', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getAllByText('Cents').length).toBeGreaterThan(0);
         expect(screen.getByText('Pitch')).toBeInTheDocument();
         expect(screen.getByText('Conf')).toBeInTheDocument();
     });
 
     it('should display cents value', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         // We look for +0.0 or 0.0 or just 0
         expect(screen.getAllByText(/\+?0\.0/).length).toBeGreaterThan(0);
     });
 
     it('should display confidence value', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('95%')).toBeInTheDocument();
     });
 
@@ -172,7 +172,7 @@ describe('ScoringPanel', () => {
     it('clamps an above-range confidence to 100% on the Conf tile', () => {
         fixtureState.confidence = 1.2;
         try {
-            render(<ScoringPanel deviceId={mockDeviceId} />);
+            render(<TunerPanel deviceId={mockDeviceId} />);
             expect(screen.getByText('100%')).toBeInTheDocument();
             expect(screen.queryByText('120%')).not.toBeInTheDocument();
         } finally {
@@ -183,7 +183,7 @@ describe('ScoringPanel', () => {
     it('clamps a below-range confidence to 0% on the Conf tile', () => {
         fixtureState.confidence = -0.5;
         try {
-            render(<ScoringPanel deviceId={mockDeviceId} />);
+            render(<TunerPanel deviceId={mockDeviceId} />);
             expect(screen.getByText('0%')).toBeInTheDocument();
             expect(screen.queryByText('-50%')).not.toBeInTheDocument();
         } finally {
@@ -192,50 +192,50 @@ describe('ScoringPanel', () => {
     });
 
     it('should render section cards', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Display')).toBeInTheDocument();
         expect(screen.getAllByText(/Reference/i).length).toBeGreaterThan(0);
     });
 
     it('should render guide section', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Guide')).toBeInTheDocument();
         expect(screen.getByText('Tight zone')).toBeInTheDocument();
         expect(screen.getByText('Usable zone')).toBeInTheDocument();
     });
 
     it('should render quick read section', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
         expect(screen.getByText('Quick read')).toBeInTheDocument();
     });
 
     // Fix 1: subscribe to this device's instance only, not the whole record.
-    it('selects only this device instance from the scoring store', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+    it('selects only this device instance from the tuner store', () => {
+        render(<TunerPanel deviceId={mockDeviceId} />);
 
         const [storeArg, selector] = vi.mocked(useStoreSelector).mock.calls[0]!;
-        // The store identity is the scoringStore sentinel (Fix 6 branch guard would
+        // The store identity is the tunerStore sentinel (Fix 6 branch guard would
         // have thrown otherwise), and the selector narrows to instances[deviceId].
-        expect(storeArg).toBe(SCORING_STORE_SENTINEL);
+        expect(storeArg).toBe(TUNER_STORE_SENTINEL);
         expect(selector(fixtureInstances)).toBe(fixtureInstances[mockDeviceId]);
     });
 
-    // Fix 1 + Fix 6: an unknown device falls back through getScoringState rather than
+    // Fix 1 + Fix 6: an unknown device falls back through getTunerState rather than
     // re-rendering the whole panel set; the selector must not return another device.
-    it('falls back to getScoringState for a device absent from the record', () => {
-        render(<ScoringPanel deviceId="missing-device" />);
+    it('falls back to getTunerState for a device absent from the record', () => {
+        render(<TunerPanel deviceId="missing-device" />);
 
         const selector = vi.mocked(useStoreSelector).mock.calls[0]![1];
-        vi.mocked(getScoringState).mockClear();
+        vi.mocked(getTunerState).mockClear();
         const selected = selector(fixtureInstances);
 
-        expect(getScoringState).toHaveBeenCalledWith('missing-device');
+        expect(getTunerState).toHaveBeenCalledWith('missing-device');
         expect(selected).not.toBe(fixtureInstances[mockDeviceId]);
     });
 
     // Fix 4: the three mode buttons expose aria-pressed reflecting the active mode.
     it('marks the active mode button as pressed and the others as not', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
 
         // Fixture mode is 'needle'.
         expect(screen.getByRole('button', { name: 'Needle display mode' })).toHaveAttribute('aria-pressed', 'true');
@@ -245,7 +245,7 @@ describe('ScoringPanel', () => {
 
     // Fix 4: each tuner canvas is a labelled image for assistive tech.
     it('labels the active display canvas for assistive tech', () => {
-        render(<ScoringPanel deviceId={mockDeviceId} />);
+        render(<TunerPanel deviceId={mockDeviceId} />);
 
         // Fixture mode 'needle' renders the needle canvas plus the history graph.
         expect(screen.getByRole('img', { name: 'Needle tuner display' })).toBeInTheDocument();
@@ -262,14 +262,14 @@ describe('ScoringPanel', () => {
         try {
             // Poly mode: history graph only.
             fixtureState.mode = 'poly';
-            const poly = render(<ScoringPanel deviceId={mockDeviceId} />);
+            const poly = render(<TunerPanel deviceId={mockDeviceId} />);
             const polyRafCount = rafSpy.mock.calls.length;
             poly.unmount();
             rafSpy.mockClear();
 
             // Needle mode: history graph + the needle's own idle-draw loop.
             fixtureState.mode = 'needle';
-            render(<ScoringPanel deviceId={mockDeviceId} />);
+            render(<TunerPanel deviceId={mockDeviceId} />);
             const needleRafCount = rafSpy.mock.calls.length;
 
             expect(needleRafCount).toBeGreaterThan(polyRafCount);
@@ -284,7 +284,7 @@ describe('ScoringPanel', () => {
     it('scales the needle canvas backing buffer by devicePixelRatio', () => {
         vi.stubGlobal('devicePixelRatio', 2);
         try {
-            render(<ScoringPanel deviceId={mockDeviceId} />);
+            render(<TunerPanel deviceId={mockDeviceId} />);
             const canvas = screen.getByRole('img', { name: 'Needle tuner display' });
             // Logical 480x200 multiplied by dpr=2.
             expect(canvas).toHaveAttribute('width', '960');
@@ -298,7 +298,7 @@ describe('ScoringPanel', () => {
     it('announces the current read through a debounced live region', () => {
         vi.useFakeTimers();
         try {
-            render(<ScoringPanel deviceId={mockDeviceId} />);
+            render(<TunerPanel deviceId={mockDeviceId} />);
 
             const liveRegion = screen.getByRole('status');
             expect(liveRegion).toHaveAttribute('aria-live', 'polite');
