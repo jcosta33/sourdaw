@@ -6,7 +6,6 @@ export type { MidiMappingTargetType, MidiMapping, LearningTarget, MidiLearnState
 
 export { midiStore } from './midiStore';
 export { hardwareControllerStore } from './hardwareControllerStore';
-export { duplicateClipNotes } from './duplicateClipNotes';
 export type { MidiStoreState } from './midiStore';
 
 export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';

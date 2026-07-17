@@ -23,7 +23,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     duplicateClipAutomation: mocks.duplicateClipAutomation,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/useCases', () => ({
     duplicateClipNotes: mocks.duplicateClipNotes,
 }));
 
