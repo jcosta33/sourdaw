@@ -2552,12 +2552,12 @@ export default defineConfig(
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
             'sourdaw/no-foreign-store-write': 'warn',
-            'sourdaw/no-model-layer-upward-import': 'warn',
-            'sourdaw/no-multiple-function-exports': 'warn',
+            'sourdaw/no-model-layer-upward-import': 'error',
+            'sourdaw/no-multiple-function-exports': 'error',
             'sourdaw/no-namespace-import': 'error',
-            'sourdaw/no-nonmodule-private-module-import': 'warn',
+            'sourdaw/no-nonmodule-private-module-import': 'error',
             'sourdaw/no-repository-usecase-import': 'error',
-            'sourdaw/no-type-only-private-module-import': 'warn',
+            'sourdaw/no-type-only-private-module-import': 'error',
             'sourdaw/no-type-assertion-escape': 'error',
 
             // AGENTS.md L150: No single-letter variable names.

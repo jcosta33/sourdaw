@@ -2,7 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { ensureTrackStrips } from './ensureTrackStrips';
-export { setStopPlaybackCallback } from './playheadScheduler';
+export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 
 export { toggleRecord } from './loopStation/toggleRecord';
 export { triggerPad } from './loopStation/triggerPad';

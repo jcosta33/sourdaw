@@ -1,16 +1,14 @@
-import {
-    addMarkers,
-    addSections,
-    addSend,
-    attachSidechainCompressor,
-    createAudioTrack,
-    createBus,
-    createFolder,
-    createVca,
-    finalizeTemplate,
-    initProject,
-    setMasterChain,
-} from '../templateHelpers/builder';
+import { addMarkers } from '../templateHelpers/addMarkers';
+import { addSections } from '../templateHelpers/addSections';
+import { addSend } from '../templateHelpers/addSend';
+import { attachSidechainCompressor } from '../templateHelpers/attachSidechainCompressor';
+import { createAudioTrack } from '../templateHelpers/createAudioTrack';
+import { createBus } from '../templateHelpers/createBus';
+import { createFolder } from '../templateHelpers/createFolder';
+import { createVca } from '../templateHelpers/createVca';
+import { finalizeTemplate } from '../templateHelpers/finalizeTemplate';
+import { initProject } from '../templateHelpers/initProject';
+import { setMasterChain } from '../templateHelpers/setMasterChain';
 
 export async function createPodcastTemplate(): Promise<void> {
     const totalBeats = 64;

@@ -7,11 +7,11 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
-import { stopPlayheadScheduler } from '../../playheadScheduler';
+import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { stopPlayback } from '../stopPlayback';
 
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({

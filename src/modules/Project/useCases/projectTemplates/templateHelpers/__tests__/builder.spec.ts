@@ -46,7 +46,7 @@ vi.mock('#/modules/Workspace/stores', () => ({ preferencesStore: { value: {}, se
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: { value: null, set: vi.fn() } }));
 vi.mock('../../../demoProjects/demoUtils/syncArrangement', () => ({ syncArrangement: vi.fn() }));
 
-import { initProject } from '../builder';
+import { initProject } from '../initProject';
 
 describe('template builder', () => {
     it('initProject creates a project', () => {

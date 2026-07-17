@@ -1,18 +1,16 @@
-import {
-    addDeviceChain,
-    addMarkers,
-    addSections,
-    addSend,
-    attachSidechainCompressor,
-    createBus,
-    createFolder,
-    createInstrumentTrack,
-    createVca,
-    finalizeTemplate,
-    initProject,
-    setChordProgression,
-    setMasterChain,
-} from '../templateHelpers/builder';
+import { addDeviceChain } from '../templateHelpers/addDeviceChain';
+import { addMarkers } from '../templateHelpers/addMarkers';
+import { addSections } from '../templateHelpers/addSections';
+import { addSend } from '../templateHelpers/addSend';
+import { attachSidechainCompressor } from '../templateHelpers/attachSidechainCompressor';
+import { createBus } from '../templateHelpers/createBus';
+import { createFolder } from '../templateHelpers/createFolder';
+import { createInstrumentTrack } from '../templateHelpers/createInstrumentTrack';
+import { createVca } from '../templateHelpers/createVca';
+import { finalizeTemplate } from '../templateHelpers/finalizeTemplate';
+import { initProject } from '../templateHelpers/initProject';
+import { setChordProgression } from '../templateHelpers/setChordProgression';
+import { setMasterChain } from '../templateHelpers/setMasterChain';
 
 export async function createHipHopTrapTemplate(): Promise<void> {
     const totalBeats = 64;
