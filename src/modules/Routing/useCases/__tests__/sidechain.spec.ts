@@ -24,11 +24,10 @@ const mocks = vi.hoisted(() => ({
     }),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/wireSidechainRoute', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: mocks.wireSidechainRoute,
-}));
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/unwireSidechainRoute', () => ({
     unwireSidechainRoute: mocks.unwireSidechainRoute,
+    getEngineState: vi.fn(() => ({ isReady: false })),
 }));
 
 vi.mock('../../models/SidechainRoute', () => ({

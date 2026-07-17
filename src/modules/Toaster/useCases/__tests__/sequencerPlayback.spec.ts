@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess/getAudioTime';
+import { getAudioTime } from '#/modules/AudioEngine/useCases';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
@@ -10,7 +10,7 @@ import { stopSequencer } from '../stopSequencer';
 import { setPadEngineImmediate } from '../toasterParamBridge/setPadEngineImmediate';
 import { triggerToasterPad } from '../triggerPad';
 
-vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioTime', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioTime: vi.fn(() => 0),
 }));
 

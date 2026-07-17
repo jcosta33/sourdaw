@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 
-import { type Device, type Track, createTrack } from '#/modules/Arrangement/models/Track';
-
 import { createFindDeviceRef, encodeGlutenValue } from '../helpers';
 
-// Fix 5 — replace the `as never` fixtures with a real, typed Track factory.
-// `createTrack` produces a fully-typed Track; we attach the devices the test
-// needs without escaping the type system.
+import type { Device, Track } from '#/modules/Arrangement/stores';
+
+// Fix 5 — typed fixture: the Track/Device TYPES come from the compliant
+// Arrangement stores barrel (type-only, erased at runtime), so the factory
+// satisfies createFindDeviceRef's real GetAllTracksFn contract. Field values
+// are copied field-identical from Arrangement's TrackDummy.
 function trackWithDevices(id: string, deviceIds: string[]): Track {
-    const base = createTrack({ id, name: id, kind: 'audio' });
     const devices: Device[] = deviceIds.map((deviceId) => ({
         id: deviceId,
         name: deviceId,
@@ -16,7 +16,40 @@ function trackWithDevices(id: string, deviceIds: string[]): Track {
         bypassed: false,
         parameterValues: {},
     }));
-    return { ...base, devices };
+    return {
+        id,
+        name: id,
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices,
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
 }
 
 describe('glutenParamBridge helpers', () => {

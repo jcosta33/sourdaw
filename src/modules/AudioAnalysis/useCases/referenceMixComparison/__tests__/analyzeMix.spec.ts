@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('#/modules/Arrangement', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         value: {
             tracks: [

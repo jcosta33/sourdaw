@@ -248,22 +248,3 @@ vi.mock('#/components/ui/tooltip', () => ({
     TooltipContent: ({ children }: any) => children,
     TooltipProvider: ({ children }: any) => children,
 }));
-
-// Global mocks for core workspace hooks to avoid "cannot read property of undefined" in basic render tests
-vi.mock('#/modules/Workspace/presentations/hooks/useTracks', () => ({
-    useTracks: vi.fn(() => ({
-        tracks: [],
-        selectedTrackId: null,
-        buses: [],
-    })),
-}));
-
-vi.mock('#/modules/Workspace/presentations/hooks/useWorkspaceState', () => ({
-    useWorkspaceState: vi.fn(() => ({
-        mode: 'arrange',
-        channelStripWidth: 'normal',
-        isSidebarOpen: true,
-        isMixerOpen: true,
-        isInspectorOpen: false,
-    })),
-}));
