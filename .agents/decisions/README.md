@@ -24,6 +24,7 @@ ADR numbers 0001 and 0002 are reserved and must not be reused.
 | [0008](0008-recent-projects-load-backend.md)      | Recent-projects load uses flat-JSON snapshots (Option A)        |
 | [0009](0009-toaster-pattern-morph-determinism.md) | Toaster pattern-morph is deterministic at a 0.5 activation threshold |
 | [0010](0010-product-restraint-principles.md)      | Product restraint principles (candidate canon) — **status: proposed**, pending product-owner ratification |
+| [0011](0011-ddd-module-boundary-redraw.md)        | DDD module boundary redraw — decompose 7 god-modules into a 54 bounded-context set |
 
 Genuinely open decisions that are not yet ADRs live in the
 [open-decision docket](open-decision-docket.md).
