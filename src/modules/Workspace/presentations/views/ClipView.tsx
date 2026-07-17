@@ -122,7 +122,7 @@ export const ClipView = (): ReactElement => {
                 return <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />;
             } else {
                 if (selectedClip) {
-                    return <WaveformEditor clipId={selectedClip.id} />;
+                    return <WaveformEditor clipId={selectedClip.id} audioBufferId={selectedClip.audioBufferId} />;
                 } else {
                     return (
                         <div className="flex flex-1 p-4">
