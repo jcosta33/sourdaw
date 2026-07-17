@@ -1,4 +1,4 @@
-import { onboardingStore } from '../../stores/onboardingStore';
+import { onboardingStore } from '../stores/onboardingStore';
 
 export const regressOnboardingStep = (): void => {
     const current = onboardingStore.value;

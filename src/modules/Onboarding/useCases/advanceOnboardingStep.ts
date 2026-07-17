@@ -1,4 +1,4 @@
-import { onboardingStore } from '../../stores/onboardingStore';
+import { onboardingStore } from '../stores/onboardingStore';
 
 export type AdvanceOnboardingStepInput = {
     totalSteps: number;

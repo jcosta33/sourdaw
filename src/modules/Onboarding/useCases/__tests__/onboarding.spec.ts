@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { onboardingStore } from '../../../stores/onboardingStore';
+import { onboardingStore } from '../../stores/onboardingStore';
 import { advanceOnboardingStep } from '../advanceOnboardingStep';
 import { dismissOnboardingTour } from '../dismissOnboardingTour';
 import { isOnboardingCompleted } from '../isOnboardingCompleted';
