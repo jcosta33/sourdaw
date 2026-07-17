@@ -3,7 +3,7 @@ import { type AdjustmentEffectType } from '#/modules/Arrangement/stores';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
-import type { OfflineDeviceNode } from '../repositories/devices/types';
+import type { OfflineDeviceNode } from '../models/OfflineDeviceNode';
 
 export type AdjustmentBusDeps = {
     context: BaseAudioContext;

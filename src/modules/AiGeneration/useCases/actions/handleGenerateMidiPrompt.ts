@@ -1,5 +1,5 @@
 import { addClip, addTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { batchAddMidiNotes, getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -10,6 +10,8 @@ import { generateMidiViaLlm } from '../llmMidiGeneration';
 import { addTask } from './addTask';
 import { buildSeedNotesFromPrompt } from './buildSeedNotesFromPrompt';
 import { updateTask } from './updateTask';
+
+type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiAI>>['notes'][number];
 
 export async function handleGenerateMidiPrompt(prompt: string, numNotes: number = 32, creativity: number = 0.65) {
     const taskId = addTask({ type: 'midi-generation', status: 'processing', prompt });

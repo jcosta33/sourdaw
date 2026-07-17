@@ -1,9 +1,4 @@
-import {
-    buildDeviceChain,
-    getAudioContext,
-    getCachedAudioBuffer,
-    type DeviceNodeEntry,
-} from '#/modules/AudioEngine/useCases';
+import { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -11,6 +6,14 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type Track } from '../../models/Track';
 import { getUpstreamSubgraph } from '../../services/getUpstreamSubgraph';
 import { trackStore } from '../../stores/trackStore';
+
+// Local shape of the entries buildDeviceChain() returns, limited to the fields this
+// renderer reads. buildDeviceChain is an injected use case whose return type erases
+// to `any`, so the shape is restated here rather than derived.
+type DeviceNodeEntry = {
+    deviceId: string;
+    node: { inputNode: AudioNode };
+};
 
 const MIDI_FREQUENCIES: Record<number, number> = {};
 for (let n = 0; n < 128; n++) {

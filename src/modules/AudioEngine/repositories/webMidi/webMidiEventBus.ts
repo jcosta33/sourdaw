@@ -1,7 +1,15 @@
 import { Container } from '#/infra/di/Container';
 
-import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/Workspace/events';
-import type { YeastNotesOffPayload } from '#/modules/Yeast/events';
+// Structural copies of the Workspace/Yeast event payloads this bus relays.
+// Kept local so this repository does not import foreign event contracts
+// (repositories-no-business). The use case that binds the concrete bus
+// (setWebMidiRuntimeEventBus) supplies the real payload types, and its
+// setWebMidiEventBus() call structurally checks them against these shapes.
+type MidiNoteOnPayload = { deviceId?: string; midiNote: number; velocity: number };
+type MidiNoteOffPayload = { deviceId?: string; midiNote: number; releaseVelocity?: number };
+type MidiPedalCcPayload = { deviceId?: string; cc: number; value: number | boolean };
+type YeastNoteOffIdentity = { channel: number; note: number };
+type YeastNotesOffPayload = { trackId: string; noteOffs: YeastNoteOffIdentity[] };
 
 type WebMidiEvents = {
     'midi.noteOn': MidiNoteOnPayload;

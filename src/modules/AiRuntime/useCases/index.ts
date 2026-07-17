@@ -30,12 +30,6 @@ export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
 export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
-export type {
-    ProjectContext,
-    ProjectContextClip,
-    ProjectContextDevice,
-    ProjectContextTrack,
-} from './getProjectContext';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
@@ -46,7 +40,6 @@ export { initEngine } from './llmOrchestration/lifecycle/initEngine';
 export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
 
 export { notifyAiChange } from './notifyAiChange';
-export type { AiChangeNotification } from './notifyAiChange';
 
 export { parsePromptToActions } from './parsePromptToActions';
 
@@ -54,7 +47,6 @@ export { onPromptInjection } from './onPromptInjection';
 export { injectPromptCommand } from './promptInjection';
 
 export { runAiActionWithToast } from './runAiActionWithToast';
-export type { AiActionToastMessages } from './runAiActionWithToast';
 
 export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
