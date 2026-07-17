@@ -6,7 +6,9 @@ import { startAutomationRecording, stopAutomationRecording } from '#/modules/Aut
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
-import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
+import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
+import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';

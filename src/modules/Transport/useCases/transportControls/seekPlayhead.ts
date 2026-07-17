@@ -4,7 +4,8 @@ import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
+import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';

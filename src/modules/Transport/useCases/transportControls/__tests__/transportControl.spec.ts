@@ -28,9 +28,11 @@ vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
     playheadPositionRef: mocks.playheadPositionRef,
 }));
 
-vi.mock('#/modules/Transport/useCases/playheadScheduler', () => ({
-    stopPlayheadScheduler: mocks.stopPlayheadScheduler,
+vi.mock('#/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
+}));
+vi.mock('#/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler', () => ({
+    stopPlayheadScheduler: mocks.stopPlayheadScheduler,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({

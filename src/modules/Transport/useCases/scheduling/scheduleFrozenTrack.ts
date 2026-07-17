@@ -6,7 +6,7 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
-import { type SourceWithFade } from '../playheadScheduler';
+import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
 export function scheduleFrozenTrack(
     track: { id: string; freezeState: { status: string; frozenBufferId?: string }; clips: { startBeat: number }[] },

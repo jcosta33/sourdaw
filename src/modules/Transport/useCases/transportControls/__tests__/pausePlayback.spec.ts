@@ -6,7 +6,7 @@ import { yeastPanic } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { stopPlayheadScheduler } from '../../playheadScheduler';
+import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { pausePlayback } from '../pausePlayback';
 import { stopActiveRecording } from '../stopActiveRecording';
 
@@ -14,7 +14,7 @@ const loggerMock = vi.hoisted(() => ({
     error: vi.fn(),
 }));
 
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../stopActiveRecording', () => ({

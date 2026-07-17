@@ -8,7 +8,7 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
-import { startPlayheadScheduler } from '../../playheadScheduler';
+import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
@@ -23,7 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../../ensureTrackStrips', () => ({

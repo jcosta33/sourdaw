@@ -7,7 +7,8 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../../playheadScheduler';
+import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { seekPlayhead } from '../seekPlayhead';
 import { stopActiveRecording } from '../stopActiveRecording';
 
@@ -15,8 +16,10 @@ const loggerMock = vi.hoisted(() => ({
     error: vi.fn(),
 }));
 
-vi.mock('../../playheadScheduler', () => ({
+vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
+}));
+vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../stopActiveRecording', () => ({

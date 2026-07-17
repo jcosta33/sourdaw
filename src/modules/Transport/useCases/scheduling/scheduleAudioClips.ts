@@ -15,7 +15,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { type SourceWithFade } from '../playheadScheduler';
+import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool, sessionState } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';

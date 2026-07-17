@@ -10,97 +10,26 @@ import {
     scheduleAdjustmentLayers,
     cacheAudioBuffer,
 } from '#/modules/AudioEngine/useCases';
-import {
-    startAutomationRecording,
-    stopAutomationRecording,
-    applyModulation,
-    applyModulationToEngine,
-} from '#/modules/Automation/useCases';
+import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
 
-import { getTempoAtBeat } from '../models/TempoMap';
-import { updateTransportState } from '../repositories/transport/updateTransportState';
-import { playheadPositionRef } from '../stores/playheadPositionRef';
-import { tempoMapStore } from '../stores/tempoMapStore';
-import { transportStore } from '../stores/transportStore';
+import { getTempoAtBeat } from '../../models/TempoMap';
+import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { tempoMapStore } from '../../stores/tempoMapStore';
+import { transportStore } from '../../stores/transportStore';
+import { evaluateFollowActions } from '../evaluateFollowActions';
+import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
+import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
+import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
+import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
+import { scheduleMetronome } from '../scheduling/scheduleMetronome';
+import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
-import { evaluateFollowActions } from './evaluateFollowActions';
-import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
-import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
-import { disposeAudioClipScheduling } from './scheduling/disposeAudioClipScheduling';
-import { resetMetronomeBeat } from './scheduling/resetMetronomeBeat';
-import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
-import { scheduleMetronome } from './scheduling/scheduleMetronome';
-import { scheduleMidiNotes, type SchedulerCancellation } from './scheduling/scheduleMidiNotes';
-
-export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
-
-function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioContext): void {
-    const now = ctx.currentTime;
-    for (const src of sources as SourceWithFade[]) {
-        try {
-            if (src.fadeGainNode) {
-                src.fadeGainNode.gain.cancelScheduledValues(now);
-                src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, now);
-                src.fadeGainNode.gain.linearRampToValueAtTime(0, now + 0.005);
-                src.stop(now + 0.005);
-            } else {
-                src.stop(now + 0.005);
-            }
-        } catch {
-            /* already stopped */
-        }
-    }
-    sources.length = 0;
-}
-
-// §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
-// the active playback session lives behind one handle. Mutation is still
-// only done from within this file; the holder object prevents importers
-// from rebinding any of these via `export let`.
-const schedulerSession = {
-    worker: null as Worker | null,
-    lastTickTime: 0,
-    accumulatedPosition: 0,
-    lastScheduledBeat: -1,
-    scheduledAudioClips: new Set<string>(),
-    scheduledFrozenTracks: new Set<string>(),
-    activeAudioSources: [] as AudioBufferSourceNode[],
-    punchRecordingActive: false,
-    onStopRequested: null as (() => void) | null,
-    // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
-    // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
-    // (`scheduleGrainMs`, default 10ms), the next worker message would start a
-    // second `tick` while the first is still suspended, and both would mutate the
-    // shared session mutables (accumulatedPosition, lastScheduledBeat, the dedup
-    // Sets, playheadPositionRef) concurrently. The flag makes overlapping worker
-    // ticks no-op until the in-flight tick resolves.
-    tickInFlight: false,
-    // Every start/stop/dispose creates a new scheduler generation. A suspended
-    // async tick may still resume after its worker is terminated, so post-await
-    // work must prove it belongs to the live generation before it schedules.
-    generation: 0,
-    // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
-    // to either changes the beat→time alignment of already-scheduled clips, but
-    // the dedup Set would keep them suppressed; we detect the change and invalidate.
-    lastTempoMapChanges: null as unknown[] | null,
-    lastLoopSignature: '',
-};
+import { disposePlayheadScheduler } from './disposePlayheadScheduler';
+import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
-}
-
-/**
- * Wire the scheduler's follow-action stop path to the full `stopPlayback`
- * routine. Registered once from `src/app/bootstrap.ts` after all modules
- * have loaded, so the scheduler never needs a static or dynamic import of
- * `stopPlayback` (which would form a scheduler ↔ stopPlayback cycle).
- *
- * If the callback has not been registered yet (e.g. during tests that boot
- * the scheduler directly), the follow-action `shouldStop` branch is a no-op.
- */
-export function setStopPlaybackCallback(fn: () => void): void {
-    schedulerSession.onStopRequested = fn;
 }
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
@@ -367,7 +296,7 @@ export function startPlayheadScheduler(): void {
     }
 
     if (!schedulerSession.worker) {
-        schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {
+        schedulerSession.worker = new Worker(new URL('../../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
         schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
@@ -381,75 +310,14 @@ export function startPlayheadScheduler(): void {
     schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
 }
 
-export function stopPlayheadScheduler(): void {
-    schedulerSession.generation += 1;
-    stopAutomationRecording();
-    if (schedulerSession.worker) {
-        schedulerSession.worker.postMessage({ type: 'stop' });
-        schedulerSession.worker.terminate();
-        schedulerSession.worker = null;
-    }
-    if (schedulerSession.punchRecordingActive) {
-        Promise.resolve(stopAudioRecording()).catch((error: unknown) => {
-            logger.error(new Error('Scheduler recording teardown failed', { cause: error }));
-        });
-        stopRecording();
-        schedulerSession.punchRecordingActive = false;
-    }
-    schedulerSession.lastTickTime = 0;
-    schedulerSession.accumulatedPosition = 0;
-    schedulerSession.lastScheduledBeat = -1;
-    schedulerSession.tickInFlight = false;
-    resetMetronomeBeat(0);
-    schedulerSession.scheduledAudioClips.clear();
-    schedulerSession.scheduledFrozenTracks.clear();
-    const ctx = getAudioContext();
-    stopActiveSources(schedulerSession.activeAudioSources, ctx);
-    stopAllScheduled();
-}
-
-/**
- * Tear down all process-lifetime scheduler state. `schedulerSession` and
- * `sessionState.requestedAssets` (in scheduleAudioClips) plus the GainNode pool
- * are module-level holders that otherwise survive an HMR reload or a project
- * switch — the old `tick` worker keeps running against stale closures, the
- * dedup Sets keep clips suppressed, and the pool keeps GainNodes wired into a
- * discarded AudioContext alive. Disposing terminates the worker, stops active
- * sources, clears every dedup Set and the requested-asset set, drops the stop
- * callback, and resets the change-detection signatures so a fresh session
- * starts clean.
- */
-export function disposePlayheadScheduler(): void {
-    schedulerSession.generation += 1;
-    if (schedulerSession.worker) {
-        schedulerSession.worker.postMessage({ type: 'stop' });
-        schedulerSession.worker.terminate();
-        schedulerSession.worker = null;
-    }
-    try {
-        const ctx = getAudioContext();
-        stopActiveSources(schedulerSession.activeAudioSources, ctx);
-    } catch {
-        // AudioContext may already be gone on teardown; still drop the references.
-        schedulerSession.activeAudioSources.length = 0;
-    }
-    schedulerSession.lastTickTime = 0;
-    schedulerSession.accumulatedPosition = 0;
-    schedulerSession.lastScheduledBeat = -1;
-    schedulerSession.punchRecordingActive = false;
-    schedulerSession.tickInFlight = false;
-    schedulerSession.scheduledAudioClips.clear();
-    schedulerSession.scheduledFrozenTracks.clear();
-    schedulerSession.onStopRequested = null;
-    schedulerSession.lastTempoMapChanges = null;
-    schedulerSession.lastLoopSignature = '';
-    resetMetronomeBeat(0);
-    disposeAudioClipScheduling();
-}
-
 // Vite HMR: dispose all scheduler holders before this module is replaced so a
 // reload never leaves an orphaned worker ticking against stale closures or a
-// pool of GainNodes bound to a discarded AudioContext.
+// pool of GainNodes bound to a discarded AudioContext. Registered here — not in
+// disposePlayheadScheduler.ts — because this is the scheduler module in the
+// production import graph (via transportControls), so the hook actually runs;
+// editing any module this file imports (schedulerSession, the scheduling
+// helpers) invalidates this module and fires the hook, matching the coverage
+// the pre-split monolith had.
 import.meta.hot?.dispose(() => {
     disposePlayheadScheduler();
 });

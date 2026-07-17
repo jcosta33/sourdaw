@@ -30,7 +30,20 @@ vi.mock('#/modules/Transport/stores', () => {
 
 vi.mock('#/modules/Transport/useCases', () => transportMocks);
 
-vi.mock('../../templateHelpers/builder', () => builderMocks);
+vi.mock('../../templateHelpers/addDeviceChain', () => ({ addDeviceChain: builderMocks.addDeviceChain }));
+vi.mock('../../templateHelpers/addMarkers', () => ({ addMarkers: builderMocks.addMarkers }));
+vi.mock('../../templateHelpers/addSections', () => ({ addSections: builderMocks.addSections }));
+vi.mock('../../templateHelpers/addSend', () => ({ addSend: builderMocks.addSend }));
+vi.mock('../../templateHelpers/createBus', () => ({ createBus: builderMocks.createBus }));
+vi.mock('../../templateHelpers/createFolder', () => ({ createFolder: builderMocks.createFolder }));
+vi.mock('../../templateHelpers/createInstrumentTrack', () => ({
+    createInstrumentTrack: builderMocks.createInstrumentTrack,
+}));
+vi.mock('../../templateHelpers/createVca', () => ({ createVca: builderMocks.createVca }));
+vi.mock('../../templateHelpers/finalizeTemplate', () => ({ finalizeTemplate: builderMocks.finalizeTemplate }));
+vi.mock('../../templateHelpers/initProject', () => ({ initProject: builderMocks.initProject }));
+vi.mock('../../templateHelpers/setChordProgression', () => ({ setChordProgression: builderMocks.setChordProgression }));
+vi.mock('../../templateHelpers/setMasterChain', () => ({ setMasterChain: builderMocks.setMasterChain }));
 
 import { createCinematicTemplate } from '../cinematic';
 
