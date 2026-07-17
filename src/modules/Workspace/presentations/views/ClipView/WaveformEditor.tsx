@@ -52,18 +52,19 @@ type WaveformMenu = { x: number; y: number } | null;
 
 type WaveformEditorProps = {
     clipId: string;
+    audioBufferId?: string;
 };
 
 type DrawWaveformInput = {
     canvas: HTMLCanvasElement;
     container: HTMLDivElement;
-    clipId: string;
+    bufferId: string;
     zoom: number;
     warpState: WarpState;
     beatWidth: number;
 };
 
-const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }: DrawWaveformInput): void => {
+const drawWaveform = ({ canvas, container, bufferId, zoom, warpState, beatWidth }: DrawWaveformInput): void => {
     const canvasContext = canvas.getContext('2d');
     if (!canvasContext) {
         return;
@@ -88,7 +89,7 @@ const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }:
     canvasContext.lineTo(width, middleY);
     canvasContext.stroke();
 
-    const peaks = getCachedAudioBufferWaveformPeaks({ bufferId: clipId, numBins: Math.floor(width) });
+    const peaks = getCachedAudioBufferWaveformPeaks({ bufferId, numBins: Math.floor(width) });
 
     const hasRealData = peaks.some((value) => value > 0);
 
@@ -162,7 +163,7 @@ const drawWaveform = ({ canvas, container, clipId, zoom, warpState, beatWidth }:
     }
 };
 
-export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement => {
+export const WaveformEditor = ({ clipId, audioBufferId }: WaveformEditorProps): ReactElement => {
     // §195.3 — reactive subscription; component used to read trackStore.value
     // during render and show stale data after clip/track mutations.
     const trackState = useStore(trackStore, defaultTrackState);
@@ -219,14 +220,20 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
     const beatWidth = Math.max(1, 40 * zoom);
 
+    // Buffer-cache reads/writes (peaks, denoise, stem separation) key on the
+    // clip's audioBufferId — the cache key audio is stored under (`audio-<uuid>`),
+    // generated independently from the clip id (`clip-<uuid>`). clipId keys
+    // clip-model operations (normalize, reverse, warp, audio→MIDI).
+    const bufferId = audioBufferId ?? clipId;
+
     useEffect(() => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
             return;
         }
-        drawWaveform({ canvas, container, clipId, zoom, warpState, beatWidth });
-    }, [clipId, zoom, bufferVersion, warpState, beatWidth]);
+        drawWaveform({ canvas, container, bufferId, zoom, warpState, beatWidth });
+    }, [bufferId, zoom, bufferVersion, warpState, beatWidth]);
 
     useEffect(() => {
         const drawCurrentWaveform = (): void => {
@@ -235,7 +242,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             if (!canvas || !container) {
                 return;
             }
-            drawWaveform({ canvas, container, clipId, zoom, warpState, beatWidth });
+            drawWaveform({ canvas, container, bufferId, zoom, warpState, beatWidth });
         };
 
         const observer = new ResizeObserver(drawCurrentWaveform);
@@ -243,7 +250,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             observer.observe(containerRef.current);
         }
         return () => observer.disconnect();
-    }, [clipId, zoom, warpState, beatWidth]);
+    }, [bufferId, zoom, warpState, beatWidth]);
 
     const getCanvasX = (event: { clientX: number }): number => {
         const canvas = canvasRef.current;
@@ -363,11 +370,6 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         setWaveCtxMenu(null);
     };
 
-    const realClipId =
-        trackState.tracks
-            .flatMap((time) => time.clips)
-            .find((context) => context.audioBufferId === clipId || context.id === clipId)?.id ?? clipId;
-
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
             <DawControlStrip>
@@ -472,7 +474,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => normalizeClip(realClipId))}
+                        onClick={waveAct(() => normalizeClip(clipId))}
                     >
                         Normalize
                     </button>
@@ -480,7 +482,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         type="button"
                         className={cn(menuBtnClass, 'hover:bg-accent')}
                         role="menuitem"
-                        onClick={waveAct(() => reverseClip(realClipId))}
+                        onClick={waveAct(() => reverseClip(clipId))}
                     >
                         Reverse
                     </button>
@@ -497,7 +499,11 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             )}
                             role="menuitem"
                             onClick={waveAct(() => {
-                                void handleAiDenoiseClip(clipId);
+                                if (!audioBufferId) {
+                                    notifyUser('Denoise unavailable — clip has no audio buffer', 'error');
+                                    return;
+                                }
+                                void handleAiDenoiseClip(audioBufferId);
                             })}
                         >
                             <span>AI Denoise</span>
@@ -519,7 +525,11 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             )}
                             role="menuitem"
                             onClick={waveAct(() => {
-                                void handleStemSeparationPreview(clipId);
+                                if (!audioBufferId) {
+                                    notifyUser('Stem separation unavailable — clip has no audio buffer', 'error');
+                                    return;
+                                }
+                                void handleStemSeparationPreview(audioBufferId);
                             })}
                         >
                             <span>AI Stem Separation</span>

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { getWarpState } from '#/modules/Arrangement/stores';
 import {
     addManualWarpMarker,
@@ -370,5 +371,60 @@ describe('WaveformEditor', () => {
             beforeOriginalBeat: 0.5,
             beforeWarpedBeat: 1,
         });
+    });
+
+    it('should key waveform peaks on the clip audioBufferId, not the clip id', () => {
+        const canvasContext = {
+            scale: vi.fn(),
+            fillRect: vi.fn(),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            closePath: vi.fn(),
+            fill: vi.fn(),
+            setLineDash: vi.fn(),
+            fillText: vi.fn(),
+        };
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+            configurable: true,
+            value: vi.fn((contextId: string) => (contextId === '2d' ? canvasContext : null)),
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 127,
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+            configurable: true,
+            get: () => 48,
+        });
+
+        render(<WaveformEditor clipId="clip-uuid" audioBufferId="audio-uuid" />);
+
+        expect(vi.mocked(getCachedAudioBufferWaveformPeaks)).toHaveBeenCalledWith({
+            bufferId: 'audio-uuid',
+            numBins: 127,
+        });
+        expect(vi.mocked(getCachedAudioBufferWaveformPeaks)).not.toHaveBeenCalledWith(
+            expect.objectContaining({ bufferId: 'clip-uuid' })
+        );
+    });
+
+    it('should dispatch AI denoise on the clip audioBufferId, not the clip id', () => {
+        render(<WaveformEditor clipId="clip-uuid" audioBufferId="audio-uuid" />);
+
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Denoise/ }));
+
+        expect(vi.mocked(handleAiDenoiseClip)).toHaveBeenCalledWith('audio-uuid');
+    });
+
+    it('should keep clip-model context actions keyed on the clip id', () => {
+        render(<WaveformEditor clipId="clip-uuid" audioBufferId="audio-uuid" />);
+
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Normalize' }));
+
+        expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-uuid');
     });
 });
