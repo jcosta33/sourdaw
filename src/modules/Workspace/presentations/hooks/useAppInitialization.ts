@@ -11,13 +11,12 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { preferencesStore } from '../../stores/preferencesStore';
 
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
 const FIRST_LOAD_HINT_DELAY_MS = 3000;

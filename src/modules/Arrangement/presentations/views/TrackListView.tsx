@@ -25,8 +25,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
-import { preferencesStore, type Preferences } from '#/modules/Workspace/stores';
-import { defaultPreferences, setTrackHeight, setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
+import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
+import { setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';

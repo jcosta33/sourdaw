@@ -100,8 +100,7 @@ vi.mock('../../../useCases/trackViewActions/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/stores')>()),
+vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {},
 }));
 
@@ -119,6 +118,9 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+}));
+
+vi.mock('#/modules/Preferences/useCases', () => ({
     defaultPreferences: { trackHeight: 'normal' },
     setTrackHeight: vi.fn(),
 }));

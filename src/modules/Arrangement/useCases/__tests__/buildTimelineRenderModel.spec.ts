@@ -8,8 +8,9 @@ import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 
 import type { MidiStoreState } from '#/modules/MIDI/stores';
+import type { Preferences } from '#/modules/Preferences/stores';
 import type { TransportState } from '#/modules/Transport/stores';
-import type { Preferences, WorkspaceState } from '#/modules/Workspace/stores';
+import type { WorkspaceState } from '#/modules/Workspace/stores';
 import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
@@ -50,8 +51,11 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     return {
         ...actual,
         workspaceStore: workspaceStoreMock,
-        preferencesStore: preferencesStoreMock,
     };
+});
+vi.mock('#/modules/Preferences/stores', async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>();
+    return { ...actual, preferencesStore: preferencesStoreMock };
 });
 vi.mock('../../stores/clipDragPreviewRef', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();

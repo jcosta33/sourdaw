@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { midiStore } from '#/modules/MIDI/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
-import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
-import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
