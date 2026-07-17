@@ -665,17 +665,21 @@ module.exports = {
                 // '^react$|^react/' bare-specifier pattern never matched a
                 // resolved path, so this rule silently never fired.
                 //
-                // We deliberately match ONLY /react/index — NOT the jsx-runtime /
-                // jsx-dev-runtime entries. With tsconfig `"jsx": "react-jsx"` the
-                // TS compiler injects a synthetic `react/jsx-runtime` import into
-                // every compiled .ts/.tsx file (413 files here), whether or not it
-                // uses React. Including those tokens would flag pure non-React
-                // files (e.g. src/infra/errors/result.ts, src/utils/DOM/
-                // createRafBatcher.ts — both have zero import statements) as
-                // leaks. Matching react/index alone catches every genuine React
-                // import (205 files, all in presentation/shared-UI/binding infra)
-                // and ignores the compiler artifact, so this lands at error/0.
-                path: '/react/index',
+                // We match /react/index PLUS the automatic-runtime entries
+                // react/jsx-runtime and react/jsx-dev-runtime. With tsconfig
+                // `"jsx": "react-jsx"` the TS compiler injects a react/jsx-runtime
+                // import, but only into files that actually contain JSX. Under
+                // tsPreCompilationDeps: 'specify' (main options) the cruise reads
+                // that real TS program, so pure non-React files (e.g.
+                // src/infra/errors/result.ts, src/utils/DOM/createRafBatcher.ts)
+                // no longer carry a synthetic jsx-runtime edge. That closed the 2
+                // false positives that had blocked PR #339's two-pattern, so the
+                // rule now governs the runtime entries too and still lands at
+                // error/0: every genuine React consumer (including any explicit
+                // react/jsx-runtime import) lives in presentation/shared-UI/binding
+                // infra and is exempted via from.pathNot, while a runtime import
+                // from business/IO is now correctly flagged.
+                path: ['/react/index', 'react/jsx-(?:dev-)?runtime'],
                 dependencyTypes: ['npm'],
             },
         },
@@ -926,6 +930,14 @@ module.exports = {
         // React/react-dom/Tauri confinement rules silently never match the
         // pnpm-resolved package path. doNotFollow (below) still prevents traversal
         // *into* node_modules while keeping the from→package leaf edge visible.
+        // Emit type-only edges (import type / type-position references) into the
+        // main graph and tag them, matching .dependency-cruiser.types.cjs. Flipped
+        // from the previous default (transpile-only: type-only edges invisible to
+        // the main cruise). Under 'specify' the main cruise sees the same graph the
+        // types cruise does, so type-only boundary violations can no longer slip
+        // past the main contract set, and type-only consumers keep their importers
+        // from being miscounted as orphans.
+        tsPreCompilationDeps: 'specify',
         moduleSystems: ['cjs', 'es6'],
         enhancedResolveOptions: {
             exportsFields: ['exports'],
