@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ModelDownloadProgressPayload } from '../../events/ModelDownloadProgressEvent';
+import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
 import { downloadModel } from '../modelDownloadManager';
 
 // --- OPFS writable capture --------------------------------------------------

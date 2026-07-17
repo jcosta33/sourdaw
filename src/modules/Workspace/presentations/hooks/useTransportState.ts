@@ -7,8 +7,9 @@
  */
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState, type TransportState } from '#/modules/Transport/useCases';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 
+type TransportState = typeof defaultTransportState;
 export const useTransportState = (): TransportState => {
     return useStore(transportStore, defaultTransportState);
 };

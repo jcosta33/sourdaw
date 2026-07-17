@@ -11,7 +11,7 @@ import type {
     ToggleVoiceCommandPayload,
     VoidPayload,
     ZoomToSelectionPayload,
-} from '../events';
+} from '../events/WorkspaceEvents';
 
 type WorkspaceEvents = {
     'panel.showDevice': ShowDevicePanelGenericPayload;

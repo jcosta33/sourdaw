@@ -14,7 +14,6 @@ export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';
 export { mutateCrdtDoc } from './mutateCrdtDoc';
-export type { MutateCrdtDocInput } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
 export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
@@ -24,7 +23,6 @@ export { removeCrdtDoc } from './removeCrdtDoc';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
-export type { ReplaceCrdtDocInput } from './replaceCrdtDoc';
 export { preserveBranchStateForSession } from './preserveBranchStateForSession';
 export { replaceBranchState } from './replaceBranchState';
 export { restoreBranchStateAfterSession } from './restoreBranchStateAfterSession';

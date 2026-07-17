@@ -26,7 +26,6 @@ export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
 export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
-export type { Macro } from './macro/recording/stopMacroRecording';
 
 export { undo } from './undo';
 export { redo } from './redo';
