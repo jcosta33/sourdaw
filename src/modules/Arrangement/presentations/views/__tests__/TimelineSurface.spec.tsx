@@ -87,12 +87,15 @@ vi.mock('#/utils/DOM/AnimationScheduler', () => ({
     },
 }));
 
-vi.mock('../TimelineContextMenus', () => ({
+vi.mock('../ClipContextMenu', () => ({
     ClipContextMenu: ({ onClose }: any) => (
         <div data-testid="clip-menu">
             <button onClick={onClose}>Close</button>
         </div>
     ),
+}));
+
+vi.mock('../TimelineEmptyMenu', () => ({
     TimelineEmptyMenu: ({ onClose }: any) => (
         <div data-testid="empty-menu">
             <button onClick={onClose}>Close</button>
@@ -122,7 +125,8 @@ vi.mock('../../hooks/useTimelineInteractions', () => ({
     })),
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
+vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Workspace/stores')>()),
     workspaceStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
@@ -130,7 +134,8 @@ vi.mock('#/modules/Collaboration/presentations/views', () => ({
     PresenceOverlay: () => <div data-testid="presence-overlay">Presence</div>,
 }));
 
-vi.mock('#/modules/Automation/stores/automationStore', () => ({
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
     automationStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
@@ -142,19 +147,11 @@ vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: createReactiveStoreFixture({ initialValue: { lanes: [] } }),
 }));
 
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: createReactiveStoreFixture({ initialValue: { isPlaying: false } }),
-}));
-
-vi.mock('#/modules/Transport/stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
-}));
-
-vi.mock('#/modules/Transport/stores/tempoMapStore', () => ({
     tempoMapStore: createReactiveStoreFixture({ initialValue: {} }),
-}));
-
-vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
@@ -162,15 +159,10 @@ vi.mock('../../../stores/markerStore', () => ({
     markerStore: createReactiveStoreFixture({ initialValue: { markers: [] } }),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onScrollToPlayhead', () => ({
+vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
     onScrollToPlayhead: vi.fn(() => vi.fn()),
-}));
-
-vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToSelection', () => ({
     onZoomToSelection: vi.fn(() => vi.fn()),
-}));
-
-vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToFit', () => ({
     onZoomToFit: vi.fn(() => vi.fn()),
 }));
 

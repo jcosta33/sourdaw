@@ -6,16 +6,9 @@ import { getAudioDevices } from '#/modules/AudioEngine/useCases';
 import { setTrackInput } from '../../../../useCases/setTrackInput';
 import { InputSelector } from '../InputSelector';
 
-vi.mock('#/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioDevices: vi.fn(),
 }));
-
-vi.mock('#/modules/AudioEngine/useCases', async () => {
-    const { getAudioDevices } = await import('#/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices');
-    return {
-        getAudioDevices,
-    };
-});
 
 vi.mock('../../../../useCases/setTrackInput', () => ({
     setTrackInput: vi.fn(),

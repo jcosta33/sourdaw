@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack';
+import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
 
 import { type Track } from '../../../models/Track';
 import { selectTrack } from '../selectTrack';
 
-vi.mock('#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack', () => ({
-    setMidiInputTrack: vi.fn(),
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return { ...actual, setMidiInputTrack: vi.fn() };
+});
 
 const mockUpdateTrackState = vi.fn<(...args: unknown[]) => void>();
 vi.mock('../../../repositories/track/updateTrackState', () => ({
