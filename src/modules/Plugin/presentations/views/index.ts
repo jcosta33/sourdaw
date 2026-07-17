@@ -1,1 +1,0 @@
-export { ProofChamberPanel } from './ProofChamberPanel';
