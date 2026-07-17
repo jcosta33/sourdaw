@@ -182,7 +182,8 @@ function isKneadState(value: unknown): boolean {
                     keys: ['startTime', 'endTime', 'pitchCenterCents', 'voicedConfidence'],
                     type: 'number',
                 }) &&
-                hasOnlyNumbers(blob.pitchCurveCents)
+                hasOnlyNumbers(blob.pitchCurveCents) &&
+                hasOptionalType({ record: blob, keys: ['originalPitchCenterCents'], type: 'number' })
         ) &&
         hasType({ record: value, keys: ['retuneSpeedMs', 'humanizePercent'], type: 'number' }) &&
         typeof value.formantPreserve === 'boolean'
