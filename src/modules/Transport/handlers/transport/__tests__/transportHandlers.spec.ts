@@ -18,13 +18,10 @@ import { handleToggleMetronome } from '../handleToggleMetronome';
 import { handleTogglePlayback } from '../handleTogglePlayback';
 import { handleTogglePreRoll } from '../handleTogglePreRoll';
 import { handleTogglePunch } from '../handleTogglePunch';
-import { handleTogglePunchRecording } from '../handleTogglePunchRecording';
 import { handleToggleRecording } from '../handleToggleRecording';
 import { handleTriggerScene } from '../handleTriggerScene';
 
 const mocks = vi.hoisted(() => ({
-    notifyUser: vi.fn(),
-    togglePunchRecording: vi.fn(),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
     seekPlayhead: vi.fn(),
@@ -47,12 +44,8 @@ const mocks = vi.hoisted(() => ({
     triggerScene: vi.fn(),
 }));
 
-vi.mock('../../../useCases/punchRecording/togglePunchRecording', () => ({
-    togglePunchRecording: mocks.togglePunchRecording,
-}));
 vi.mock('../../../useCases/loopStation/toggleRecord', () => ({ toggleRecord: mocks.toggleRecord }));
 vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: mocks.triggerScene }));
-vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('../../../useCases/transportControls/togglePlayback', () => ({ togglePlayback: mocks.togglePlayback }));
 vi.mock('../../../useCases/transportControls/stopPlayback', () => ({ stopPlayback: mocks.stopPlayback }));
 vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: mocks.seekPlayhead }));
@@ -185,12 +178,6 @@ describe('Transport Handlers', () => {
     it('handleToggleRecording delegates to use case', () => {
         void handleToggleRecording.execute({ type: 'toggleRecording', payload: undefined });
         expect(mocks.toggleRecording).toHaveBeenCalled();
-    });
-
-    it('handleTogglePunchRecording delegates to use case and notifies the user', () => {
-        handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: undefined });
-        expect(mocks.togglePunchRecording).toHaveBeenCalledTimes(1);
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Punch recording toggled');
     });
 
     it('handleToggleLoopRecord delegates to use case with slot id', () => {

@@ -26,7 +26,6 @@ describe('getTransportHandlers', () => {
             'removeTimeSignatureChange',
             'togglePreRoll',
             'setPreRollBars',
-            'togglePunchRecording',
             'toggleLoopRecord',
             'triggerScene',
         ] as const) {

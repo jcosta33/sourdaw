@@ -10,8 +10,6 @@ export { triggerScene } from './loopStation/triggerScene';
 export { triggerSlot } from './loopStation/triggerSlot';
 export { stopAllSlots } from './loopStation/stopAllSlots';
 
-export { togglePunchRecording } from './punchRecording/togglePunchRecording';
-
 export { disableLooping } from './setLooping';
 
 export { setMasterGain } from './setMasterGain';
