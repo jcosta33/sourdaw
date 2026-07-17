@@ -1,13 +1,16 @@
-import type { Track, persistDeviceParam } from '#/modules/Arrangement/stores';
-import type { persistDevicePatch } from '#/modules/Arrangement/useCases';
-import type { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+import type { GetAllTracksFn } from '#/utils/createFindDeviceRef';
 
+// Dependency-injection contract for the Fermenter param bridge. The concrete
+// functions are supplied by the app composition root (see app/bootstrap.ts);
+// their signatures are declared structurally here so this module does not depend
+// on the Arrangement / AudioEngine barrels (which would close a value-graph
+// cycle back through Arrangement/useCases).
 export type FermenterDependencies = {
-    persistDeviceParam: typeof persistDeviceParam;
-    persistDevicePatch?: typeof persistDevicePatch;
-    updateDeviceParam: typeof updateDeviceParam;
-    updateDevicePatch?: typeof updateDevicePatch;
-    getAllTracks: () => Track[];
+    persistDeviceParam: (deviceId: string, paramId: string, value: number) => void;
+    persistDevicePatch?: (deviceId: string, patch: Record<string, unknown>) => void;
+    updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => void;
+    updateDevicePatch?: (trackId: string, deviceId: string, patch: Record<string, unknown>) => void;
+    getAllTracks: GetAllTracksFn;
 };
 
 export const fermenterDependenciesHolder: { current: FermenterDependencies | null } = {

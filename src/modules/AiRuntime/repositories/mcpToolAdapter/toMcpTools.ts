@@ -1,6 +1,31 @@
 import { DAW_TOOL_SCHEMAS } from '../../models/ToolDefinitions';
 
-import { type McpPropertySchema, type McpToolDefinition } from './helpers';
+export type McpPropertySchema = {
+    type: string;
+    description?: string;
+    enum?: string[];
+    items?: { type: string };
+    default?: unknown;
+};
+
+// ── MCP Types (subset used for tool definitions) ────────────────────────
+
+/**
+ * MCP Tool definition following the 2025-11-25 specification.
+ * @see https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+ */
+export type McpToolDefinition = {
+    /** Unique tool name (alphanumeric + underscore) */
+    name: string;
+    /** Human-readable description of what the tool does */
+    description: string;
+    /** JSON Schema describing the tool's input parameters */
+    inputSchema: {
+        type: 'object';
+        properties: Record<string, McpPropertySchema>;
+        required?: string[];
+    };
+};
 
 /**
  * Convert all DAW_TOOL_SCHEMAS to MCP-compatible tool definitions.

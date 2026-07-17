@@ -5,14 +5,9 @@
  * The `AiChangeToast` view subscribes to render ephemeral feedback.
  */
 
-import { aiChangeNotificationListeners } from './aiChangeNotificationState';
+import { type AiChangeNotification, aiChangeNotificationListeners } from './aiChangeNotificationState';
 
-export type AiChangeNotification = {
-    id: string;
-    summary: string;
-    details: string[];
-    timestamp: number;
-};
+export type { AiChangeNotification };
 
 /**
  * Monotonic counter combined with the timestamp so two notifications emitted
