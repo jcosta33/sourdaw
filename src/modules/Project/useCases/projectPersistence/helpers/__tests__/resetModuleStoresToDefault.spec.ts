@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { glutenMeterStore, updateGlutenMeters } from '#/modules/Gluten/stores';
 import { createGrandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 
 const mocks = vi.hoisted(() => ({
     resetArrangementStoresForProject: vi.fn(),
@@ -21,37 +21,39 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
 }));
 
-vi.mock('#/modules/Automation/stores/automationStore', () => ({
-    automationStore: { set: mocks.automationStoreSet },
-}));
+vi.mock('#/modules/Automation/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
+    return { ...actual, automationStore: { set: mocks.automationStoreSet } };
+});
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
-    midiStore: { set: mocks.midiStoreSet },
-}));
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    return { ...actual, midiStore: { set: mocks.midiStoreSet } };
+});
 
-vi.mock('#/modules/Routing/useCases/sidechain/setSidechainRoutes', () => ({
-    setSidechainRoutes: mocks.setSidechainRoutes,
-}));
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
+    return { ...actual, setSidechainRoutes: mocks.setSidechainRoutes };
+});
 
-vi.mock('#/modules/Grinder/stores/grinderStore', () => ({
-    grinderStore: { set: mocks.grinderStoreSet },
-}));
+vi.mock('#/modules/Grinder/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Grinder/stores')>();
+    return {
+        ...actual,
+        grinderStore: { set: mocks.grinderStoreSet },
+        grinderTelemetryStore: { set: mocks.grinderTelemetryStoreSet },
+    };
+});
 
-vi.mock('#/modules/Grinder/stores/grinderTelemetryStore', () => ({
-    grinderTelemetryStore: { set: mocks.grinderTelemetryStoreSet },
-}));
-
-vi.mock('#/modules/Transport/stores/transportStore', () => ({
-    transportStore: { set: mocks.transportStoreSet },
-}));
-
-vi.mock('#/modules/Transport/stores/tempoMapStore', () => ({
-    tempoMapStore: { set: mocks.tempoMapStoreSet },
-}));
-
-vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
-    timeSignatureMapStore: { set: mocks.timeSignatureMapStoreSet },
-}));
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
+    return {
+        ...actual,
+        transportStore: { set: mocks.transportStoreSet },
+        tempoMapStore: { set: mocks.tempoMapStoreSet },
+        timeSignatureMapStore: { set: mocks.timeSignatureMapStoreSet },
+    };
+});
 
 vi.mock('../../../../stores/arrangementStore', () => ({
     arrangementStore: { set: mocks.arrangementStoreSet },
