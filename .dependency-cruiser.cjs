@@ -749,7 +749,6 @@ module.exports = {
             comment: 'src/helpers/ must not become a shadow architecture layer for module-specific behavior.',
             from: {
                 path: '^src/helpers/',
-                pathNot: '^src/helpers/Store/Storage/AutomergeStorage\\.ts$',
             },
             to: {
                 path: '^src/modules/',
