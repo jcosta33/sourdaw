@@ -1,8 +1,8 @@
-import type { getAllTracks } from '#/modules/Arrangement/useCases';
-
 export type DeviceRef = { trackId: string; deviceId: string };
 
-export type GetAllTracksFn = typeof getAllTracks;
+type TrackLike = { id: string; devices: ReadonlyArray<{ id: string }> };
+
+export type GetAllTracksFn = () => ReadonlyArray<TrackLike>;
 
 export function createFindDeviceRef(getAllTracksFn: GetAllTracksFn) {
     return function findDeviceRef(deviceId: string): DeviceRef | null {

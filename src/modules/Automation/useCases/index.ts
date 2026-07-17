@@ -8,9 +8,7 @@ export { duplicateClipAutomationBatch } from './automation/duplicateClipAutomati
 export { deleteAutomationTimeRange } from './automation/deleteAutomationTimeRange';
 export { recordAutomationValue } from './automationRecording/recordAutomationValue';
 export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
-export type { AutomationRecordingDependencies } from './automationRecording/recordingDependencies';
 export { setModulationDependencies } from './modulation/modulationDependencies';
-export type { ModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationLanesForTrack } from './automation/removeAutomationLanesForTrack';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';

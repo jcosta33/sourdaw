@@ -1,6 +1,6 @@
 import { Container } from '#/infra/di/Container';
 
-import type { YeastNotesOffPayload } from '../events';
+import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 
 type YeastEvents = {
     'yeast.notesOff': YeastNotesOffPayload;

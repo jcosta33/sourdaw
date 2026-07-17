@@ -37,33 +37,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/arrangementEventBus.ts",
-    "to": "src/modules/Arrangement/events/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-internal-barrel-import-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/index.ts",
-    "to": "src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Arrangement/useCases/index.ts",
-    "to": "src/modules/Arrangement/useCases/resolveComping.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/AudioEngine/engine/AdjustmentBusNode.ts",
     "to": "src/modules/AudioEngine/repositories/devices/types.ts",
     "rule": {
@@ -190,33 +163,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Automation/useCases/index.ts",
-    "to": "src/modules/Automation/useCases/automationRecording/recordingDependencies.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Automation/useCases/index.ts",
-    "to": "src/modules/Automation/useCases/modulation/modulationDependencies.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/BrowserAi/repositories/modelDownloadManager.ts",
-    "to": "src/modules/BrowserAi/events/ModelDownloadProgressEvent.ts",
-    "rule": {
-      "severity": "error",
-      "name": "repositories-no-business-type-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/modules/Command/useCases/index.ts",
     "to": "src/modules/Command/useCases/executeAppAction.ts",
     "rule": {
@@ -226,98 +172,8 @@
   },
   {
     "type": "dependency",
-    "from": "src/modules/Command/useCases/index.ts",
-    "to": "src/modules/Command/useCases/macro/recording/stopMacroRecording.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/CrdtDocument/useCases/index.ts",
-    "to": "src/modules/CrdtDocument/useCases/mutateCrdtDoc.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/CrdtDocument/useCases/index.ts",
-    "to": "src/modules/CrdtDocument/useCases/replaceCrdtDoc.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/MIDI/useCases/index.ts",
-    "to": "src/modules/MIDI/useCases/arpeggiator.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/MIDI/useCases/index.ts",
-    "to": "src/modules/MIDI/useCases/midiLearn/midiLearnDependencies.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Transport/useCases/index.ts",
-    "to": "src/modules/Transport/useCases/transportQueries/helpers.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-usecase-type-exports-on-index"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Workspace/useCases/workspaceEventBus.ts",
-    "to": "src/modules/Workspace/events/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-internal-barrel-import-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/modules/Yeast/stores/yeastEventBus.ts",
-    "to": "src/modules/Yeast/events/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-internal-barrel-import-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/utils/createFindDeviceRef.ts",
-    "to": "src/modules/Arrangement/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "utils-no-module-imports-type-only"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/utils/createHandler.ts",
     "to": "src/modules/Command/useCases/index.ts",
-    "rule": {
-      "severity": "error",
-      "name": "utils-no-module-imports-type-only"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/utils/Notification/notificationEventBus.ts",
-    "to": "src/modules/Workspace/events/index.ts",
     "rule": {
       "severity": "error",
       "name": "utils-no-module-imports-type-only"

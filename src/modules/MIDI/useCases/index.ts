@@ -3,7 +3,6 @@
 
 // ── Arpeggiator ───────────────────────────────────────────────────────────────
 export { arpeggiate } from './arpeggiator';
-export type { ArpPattern, ArpRate } from './arpeggiator';
 
 export { stampChord } from './chordStamps/stampChord';
 export { removeNotesByIds } from './chordStamps/removeNotesByIds';
@@ -110,7 +109,6 @@ export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingF
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
 export { getMidiLearnHandlers } from './getMidiLearnHandlers';
 export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';
-export type { MidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────
 export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';

@@ -50,7 +50,6 @@ export { replaceClipAudioBuffer } from './replaceClipAudioBuffer';
 // ── Clip Editing ──────────────────────────────────────────────────────────────
 
 export { createAlternativeClips } from './clipEditing/createAlternativeClips';
-export type { VariationNote } from './clipEditing/createAlternativeClips';
 export { normalizeClip } from './clipEditing/normalizeClip';
 export { renameClip } from './clipEditing/renameClip';
 export { reverseClip } from './clipEditing/reverseClip';
@@ -96,7 +95,6 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
-export type { ResolvedClip } from './resolveComping';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 

@@ -10,7 +10,6 @@ import {
     getTrackStoreState as getTrackState,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
-import { type VariationNote } from '#/modules/Arrangement/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { getMidiStoreState as getMidiState, getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
 
@@ -19,6 +18,9 @@ import { readBalancedObject } from '../services/readBalancedObject';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
+
+// Consumer-local shape (model isolation) — field-identical to Arrangement's VariationNote.
+type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
 
 const VARIATIONS_SYSTEM_PROMPT =
     'You are a world-class generative MIDI AI. Generate musical variations as structured JSON only. No markdown, no explanation, no code blocks.';

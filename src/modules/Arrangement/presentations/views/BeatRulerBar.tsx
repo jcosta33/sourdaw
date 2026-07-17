@@ -2,7 +2,7 @@ import { useRef, useEffect, type MouseEvent } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
-import { type TransportState, seekPlayhead, setLoopRegion, disableLooping } from '#/modules/Transport/useCases';
+import { defaultTransportState, seekPlayhead, setLoopRegion, disableLooping } from '#/modules/Transport/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
@@ -38,29 +38,7 @@ export const BeatRulerBar = (): React.ReactElement => {
         pixelsPerBeat: 12,
         autoScrollEnabled: true,
     };
-    const defaultTransport: TransportState = {
-        isPlaying: false,
-        isRecording: false,
-        isLooping: false,
-        overdubEnabled: false,
-        metronomeEnabled: false,
-        metronomeVolume: 0.5,
-        tempo: 120,
-        timeSignatureNumerator: 4,
-        timeSignatureDenominator: 4,
-        playheadPosition: 0,
-        loopStart: 0,
-        loopEnd: 0,
-        scheduleGrainMs: 10,
-        punchInEnabled: false,
-        punchInBeat: 0,
-        punchOutBeat: 16,
-        countInEnabled: false,
-        countInBars: 1,
-        preRollEnabled: false,
-        preRollBars: 2,
-        masterGain: 80,
-    };
+    const defaultTransport = defaultTransportState;
     const viewState = useStore(timelineViewStore, defaultTimelineView);
     const transport = useStore(transportStore, defaultTransport);
 

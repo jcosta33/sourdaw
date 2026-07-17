@@ -14,7 +14,7 @@ import { unzip } from 'fflate';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgressEvent';
+import { type ModelDownloadProgressPayload } from '../models/ModelDownloadProgress';
 import { updateModelStatus } from '../stores/modelRegistryStore';
 
 import { createModelWritable } from './createModelWritable';
