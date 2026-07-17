@@ -12,7 +12,8 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-vi.mock('#/modules/Plugin/stores/pluginScanStore', () => ({
+vi.mock('#/modules/Plugin/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Plugin/stores')>()),
     pluginScanStore: {},
     defaultPluginScanState: {
         scannedPlugins: [],
