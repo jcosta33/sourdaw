@@ -463,6 +463,22 @@ module.exports = {
         },
 
         {
+            name: 'stores-no-same-module-usecase-import',
+            severity: 'error',
+            comment:
+                'Stores are the public read contract; they must not import their own module useCases/. ' +
+                'That inverts the declared dependency direction (presentations → useCases → repositories / ' +
+                'stores / services). Relocate orchestration into useCases/, or extract a pure predicate / type ' +
+                'into models/ so both layers can share it without a store → useCase edge.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'stores/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/useCases/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'models-are-pure',
             severity: 'error',
             comment:

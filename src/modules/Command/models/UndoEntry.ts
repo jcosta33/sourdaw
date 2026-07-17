@@ -24,3 +24,7 @@ export type CallbackUndoEntry = UndoEntryBase & {
 };
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;
+
+export function isActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
+    return entry.kind === 'action';
+}

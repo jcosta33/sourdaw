@@ -1,5 +1,7 @@
 import { type UndoSource } from '../models/UndoEntry';
-import { pushUndoEntry as pushUndoEntryToStore } from '../stores/pushUndoEntry';
+
+import { commitUndoEntry } from './commitUndoEntry';
+import { createCallbackUndoEntry } from './createCallbackUndoEntry';
 
 type PushUndoEntryOptions = {
     groupId?: string;
@@ -13,5 +15,16 @@ export function pushUndoEntry(
     redoFn: () => unknown,
     options?: PushUndoEntryOptions
 ): void {
-    pushUndoEntryToStore(label, undoFn, redoFn, options);
+    const entry = createCallbackUndoEntry({
+        label,
+        undo: undoFn,
+        redo: redoFn,
+        source: options?.source ?? 'manual',
+    });
+    if (options?.groupId) {
+        entry.groupId = options.groupId;
+        entry.groupLabel = options.groupLabel;
+    }
+
+    commitUndoEntry(entry);
 }
