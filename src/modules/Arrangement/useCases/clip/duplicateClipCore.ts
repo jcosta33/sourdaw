@@ -1,5 +1,5 @@
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-import { duplicateClipNotes } from '#/modules/MIDI/stores';
+import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';

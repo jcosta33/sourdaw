@@ -1,6 +1,5 @@
-import { createMidiNote } from '../models/MidiNote';
-
-import { midiStore } from './midiStore';
+import { createMidiNote } from '../../models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
 
 export function duplicateClipNotes(sourceClipId: string, destClipId: string): void {
     const state = midiStore.value;
