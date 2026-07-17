@@ -2,16 +2,50 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
 
 import { IOSection } from '../IOSection';
+
+import type { Track } from '../../../../models/TrackViewTypes';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
 
 describe('IOSection', () => {
-    const mockTrack = TrackDummy.create();
+    const mockTrack: Track = {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [],
+        sends: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        midiFx: [],
+    };
 
     beforeEach(() => {
         vi.clearAllMocks();

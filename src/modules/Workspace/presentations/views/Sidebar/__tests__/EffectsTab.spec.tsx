@@ -2,9 +2,21 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { PluginDummy } from '#/modules/Arrangement/__tests__/PluginDummy';
 
 import { EffectsTab } from '../EffectsTab';
+
+import type { PluginDescriptorView as PluginDescriptor } from '../../../../models/PluginDescriptorViewTypes';
+
+const createPlugin = (overrides?: Partial<PluginDescriptor>): PluginDescriptor => ({
+    id: 'builtin-reverb',
+    name: 'Reverb',
+    vendor: 'Sourdaw',
+    format: 'builtin',
+    category: 'effect',
+    parameters: [],
+    hasCustomUI: false,
+    ...overrides,
+});
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -12,8 +24,8 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 
 describe('EffectsTab', () => {
     const mockPlugins = [
-        PluginDummy.create({ id: 'reverb', name: 'Reverb', category: 'effect' }),
-        PluginDummy.create({ id: 'delay', name: 'Delay', category: 'effect' }),
+        createPlugin({ id: 'reverb', name: 'Reverb', category: 'effect' }),
+        createPlugin({ id: 'delay', name: 'Delay', category: 'effect' }),
     ];
 
     const defaultProps = {
