@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
+import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -27,7 +27,8 @@ function createDeferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-vi.mock('#/modules/Transport/useCases/transportControls/stopPlayback', () => ({
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     stopPlayback: vi.fn(),
 }));
 
@@ -55,7 +56,8 @@ vi.mock('../helpers/runProjectLoadTransaction', () => ({
     })),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addTrack: vi.fn(),
 }));
 
