@@ -1,16 +1,26 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
 }));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 import { selectClipWithFocus } from '../selectClipWithFocus';
 
 describe('selectClipWithFocus', () => {
-    it('is a function', () => {
-        expect(typeof selectClipWithFocus).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => selectClipWithFocus('clip-1')).not.toThrow();
+
+    it('makes the clip the sole focused selection', () => {
+        selectClipWithFocus('clip-1');
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({
+            selectedClipId: 'clip-1',
+            selectedClipIds: ['clip-1'],
+        });
     });
 });

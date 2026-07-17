@@ -35,4 +35,12 @@ describe('toggleTimeDisplayMode', () => {
 
         expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ timeDisplayMode: 'time' });
     });
+
+    it('should toggle time display back to musical', () => {
+        mocks.getWorkspaceState.mockReturnValue({ timeDisplayMode: 'time' } as WorkspaceState);
+
+        toggleTimeDisplayMode();
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ timeDisplayMode: 'musical' });
+    });
 });

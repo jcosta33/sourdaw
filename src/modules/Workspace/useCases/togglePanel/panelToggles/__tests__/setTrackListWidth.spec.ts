@@ -1,16 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
 }));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 import { setTrackListWidth } from '../setTrackListWidth';
 
 describe('setTrackListWidth', () => {
-    it('is a function', () => {
-        expect(typeof setTrackListWidth).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => setTrackListWidth(240)).not.toThrow();
+
+    it('writes the track-list width', () => {
+        setTrackListWidth(300);
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ trackListWidth: 300 });
     });
 });

@@ -1,16 +1,38 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: () => ({ sidebarOpen: false, mixerOpen: false }),
-}));
-vi.mock('../../../../repositories/updateWorkspaceState', () => ({ updateWorkspaceState: vi.fn() }));
+import { type WorkspaceState } from '../../../../models/WorkspaceState';
 import { setSnapValue } from '../setSnapValue';
 
+const mocks = vi.hoisted(() => ({
+    getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),
+    updateWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
+    getWorkspaceState: mocks.getWorkspaceState,
+}));
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
 describe('setSnapValue', () => {
-    it('is a function', () => {
-        expect(typeof setSnapValue).toBe('function');
+    beforeEach(() => {
+        vi.clearAllMocks();
     });
-    it('runs without crash', () => {
-        expect(() => setSnapValue(0.25)).not.toThrow();
+
+    it('does not update when workspace state is missing', () => {
+        mocks.getWorkspaceState.mockReturnValue(null);
+
+        setSnapValue(0.25);
+
+        expect(mocks.updateWorkspaceState).not.toHaveBeenCalled();
+    });
+
+    it('writes the snap value when workspace state exists', () => {
+        mocks.getWorkspaceState.mockReturnValue({});
+
+        setSnapValue(0.25);
+
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ snapValue: 0.25 });
     });
 });
