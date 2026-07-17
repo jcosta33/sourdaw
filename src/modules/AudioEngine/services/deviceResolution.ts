@@ -1,6 +1,6 @@
 import { getDrumKitByIndex } from '../models/FactoryDrumKits';
+import { type OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import { type DrumKit } from '../models/SynthModels';
-import { type OfflineDeviceNode } from '../repositories/devices/types';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
     const kitDevice = devices.find(

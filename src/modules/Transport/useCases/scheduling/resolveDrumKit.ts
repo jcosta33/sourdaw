@@ -2,7 +2,7 @@ import { getDrumKitByIndex } from '#/modules/AudioEngine/useCases';
 
 import { isDrumDevice } from './isDrumDevice';
 
-import type { SynthParams } from '#/modules/AudioEngine/useCases';
+type SynthParams = NonNullable<ReturnType<typeof getDrumKitByIndex>>['voices'][number]['params'];
 
 type DrumKit = {
     id: string;

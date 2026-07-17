@@ -2,10 +2,12 @@ import { type ReactElement, useState, useEffect } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import { getAudioDevices, type AudioDeviceInfo } from '#/modules/AudioEngine/useCases';
+import { getAudioDevices } from '#/modules/AudioEngine/useCases';
 
 import { setTrackInput } from '../../../useCases/setTrackInput';
 
+// Local field-identical copy of AudioEngine's private getAudioDevices() row shape.
+type AudioDeviceInfo = { id: string; label: string; kind: 'audioinput' | 'audiooutput' };
 type InputSelectorProps = {
     trackId: string;
     inputId: string | null;

@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import { type PitchContour } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
 
 type PitchEditSegment = {
@@ -9,21 +8,21 @@ type PitchEditSegment = {
     shift_semitones: number;
 };
 
-type CommitNativePitchEditInput = {
+type CommitNativePitchEditInput<TContour> = {
     inputAudioPath: string;
     outputAudioPath: string;
     segments: PitchEditSegment[];
-    contour: PitchContour;
+    contour: TContour;
 };
 
 type CommitNativePitchEditOutput = Promise<boolean>;
 
-export async function commitNativePitchEdit({
+export async function commitNativePitchEdit<TContour>({
     inputAudioPath,
     outputAudioPath,
     segments,
     contour,
-}: CommitNativePitchEditInput): CommitNativePitchEditOutput {
+}: CommitNativePitchEditInput<TContour>): CommitNativePitchEditOutput {
     if (!isTauri()) {
         return false;
     }

@@ -1,7 +1,5 @@
 export { detectTransients } from './elasticAudio/detectTransients';
-export type { TransientHit } from './elasticAudio/detectTransients';
 export { detectTransientsForClip } from './elasticAudio/detectTransientsForClip';
-export type { DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
 export { markElasticDetectionComplete } from './elasticAudio/markElasticDetectionComplete';
 export { selectElasticMarkers } from './elasticAudio/selectElasticMarkers';
 export { openElasticEditor } from './elasticAudio/openElasticEditor';
@@ -16,10 +14,8 @@ export { VUMeter } from './advancedMetering/vuMeter';
 
 export { PhaseCorrelationMeter } from './advancedMetering/phaseCorrelation';
 
-export type { AudioDeviceInfo } from './audioDeviceSelection/getAudioDevices';
 export { getAudioDevices } from './audioDeviceSelection/getAudioDevices';
 
-export type { SynthParams, MpeParams } from './audioEngineQueries/helpers';
 export { defaultSynthParams } from './audioEngineQueries/helpers';
 export { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 
@@ -51,7 +47,6 @@ export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
 export { buildDeviceChain } from './buildDeviceChain';
-export type { DeviceNodeEntry } from './buildDeviceChain';
 
 export { switchMonitor } from './controlRoom/switchMonitor';
 export { toggleDim } from './controlRoom/toggleDim';
@@ -108,12 +103,10 @@ export { getTrackLatency } from './latencyCompensation/compensation/getTrackLate
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 
-export type { MidiGenerationNote } from './nativeAiBridge/generateMidiAI';
 export { isTauri } from './nativeAiBridge/isTauri';
 export { generateMidiAI } from './nativeAiBridge/generateMidiAI';
 export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
 
-export type { OfflineRenderOptions } from './offlineRender/types';
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
@@ -152,4 +145,3 @@ export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { setMpeEnabled } from './webMidiInput/setMpeEnabled';
 export { resetMidiState } from './webMidiInput/resetMidiState';
 export { webMidiStore } from './webMidiInput/helpers';
-export type { MidiInputInfo } from './webMidiInput/helpers';

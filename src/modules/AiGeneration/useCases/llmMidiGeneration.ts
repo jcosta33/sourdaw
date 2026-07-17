@@ -7,10 +7,12 @@ import {
     resolveBackend,
     streamCloudChatCompletion,
 } from '#/modules/AiRuntime/useCases';
-import { type MidiGenerationNote } from '#/modules/AudioEngine/useCases';
+import { type generateMidiAI } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readBalancedObject } from '../services/readBalancedObject';
+
+type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiAI>>['notes'][number];
 
 // ── System prompt for music generation ──
 
