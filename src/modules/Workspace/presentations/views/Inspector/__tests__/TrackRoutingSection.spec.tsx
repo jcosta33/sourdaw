@@ -11,10 +11,14 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioGraphStore', () => ({
-    audioGraphStore: {},
-    defaultAudioGraphState: { routes: [] },
-}));
+vi.mock('#/modules/AudioEngine/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/stores')>();
+    return {
+        ...actual,
+        audioGraphStore: {},
+        defaultAudioGraphState: { routes: [] },
+    };
+});
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
     DawEmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,

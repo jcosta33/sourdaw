@@ -170,33 +170,19 @@ vi.mock('#/utils/UI/colorPresets', () => ({
     CLIP_COLOR_PRESETS: ['#ff0000', '#00ff00', '#0000ff', ''],
 }));
 
-vi.mock('#/modules/Arrangement/useCases/clipEditing/trimClipStart', () => ({
-    trimClipStart: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/trimClipEnd', () => ({
-    trimClipEnd: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/setClipFade', () => ({
-    setClipFade: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/setClipGain', () => ({
-    setClipGain: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/setClipColor', () => ({
-    setClipColor: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/renameClip', () => ({
-    renameClip: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/setClipFollowAction', () => ({
-    setClipFollowAction: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        trimClipStart: vi.fn(),
+        trimClipEnd: vi.fn(),
+        setClipFade: vi.fn(),
+        setClipGain: vi.fn(),
+        setClipColor: vi.fn(),
+        renameClip: vi.fn(),
+        setClipFollowAction: vi.fn(),
+    };
+});
 
 describe('ClipInspector', () => {
     const defaultProps = {

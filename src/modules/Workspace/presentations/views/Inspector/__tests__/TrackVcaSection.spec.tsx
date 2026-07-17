@@ -9,24 +9,19 @@ import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockAssignToVca = vi.fn<(...args: unknown[]) => void>();
-vi.mock('#/modules/Arrangement/useCases/vca/assignToVca', () => ({
-    assignToVca: (...args: unknown[]) => mockAssignToVca(...args),
-}));
-
 const mockRemoveFromVca = vi.fn<(...args: unknown[]) => void>();
-vi.mock('#/modules/Arrangement/useCases/vca/removeFromVca', () => ({
-    removeFromVca: (...args: unknown[]) => mockRemoveFromVca(...args),
-}));
-
 const mockGetVcaGroups = vi.fn<() => Array<{ id: string; name: string; trackIds: string[] }>>(() => []);
-vi.mock('#/modules/Arrangement/useCases/vca/getVcaGroups', () => ({
-    getVcaGroups: () => mockGetVcaGroups(),
-}));
-
 const mockCreateVcaGroup = vi.fn<(...args: unknown[]) => void>();
-vi.mock('#/modules/Arrangement/useCases/vca/createVcaGroup', () => ({
-    createVcaGroup: (...args: unknown[]) => mockCreateVcaGroup(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        assignToVca: (...args: unknown[]) => mockAssignToVca(...args),
+        removeFromVca: (...args: unknown[]) => mockRemoveFromVca(...args),
+        getVcaGroups: () => mockGetVcaGroups(),
+        createVcaGroup: (...args: unknown[]) => mockCreateVcaGroup(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
     DawCompactSelect: ({

@@ -8,18 +8,16 @@ import type { Track } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 const mockSetSend = vi.fn();
 
-vi.mock('#/modules/Arrangement/useCases/device/sendManagement/toggleSendPreFader', () => ({
-    toggleSendPreFader: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/device/sendManagement/setSend', () => ({
-    setSend: (...args: unknown[]) => mockSetSend(...args),
-}));
-
 const mockAddTrack = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
-    addTrack: (...args: unknown[]) => mockAddTrack(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        toggleSendPreFader: vi.fn(),
+        setSend: (...args: unknown[]) => mockSetSend(...args),
+        addTrack: (...args: unknown[]) => mockAddTrack(...args),
+    };
+});
 
 const mockUseTracks = vi.fn(() => ({ tracks: [] }));
 vi.mock('../../../hooks/useTracks', () => ({

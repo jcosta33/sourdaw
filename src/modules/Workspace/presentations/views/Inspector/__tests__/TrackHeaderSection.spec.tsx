@@ -7,38 +7,22 @@ import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockRenameTrack = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/renameTrack', () => ({
-    renameTrack: (...args: unknown[]) => mockRenameTrack(...args),
-}));
-
 const mockSetTrackColor = vi.fn();
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackNotes', () => ({
-    setTrackNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackPan', () => ({
-    setTrackPan: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackGain', () => ({
-    setTrackGain: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
-    setTrackColor: (...args: unknown[]) => mockSetTrackColor(...args),
-}));
-
 const mockFreezeTrack = vi.fn();
 const mockUnfreezeTrack = vi.fn();
-
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack', () => ({
-    unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
-    freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        renameTrack: (...args: unknown[]) => mockRenameTrack(...args),
+        setTrackNotes: vi.fn(),
+        setTrackPan: vi.fn(),
+        setTrackGain: vi.fn(),
+        setTrackColor: (...args: unknown[]) => mockSetTrackColor(...args),
+        unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
+        freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
+    };
+});
 
 vi.mock('#/components/daw/DawCompactInput', () => ({
     DawCompactInput: ({

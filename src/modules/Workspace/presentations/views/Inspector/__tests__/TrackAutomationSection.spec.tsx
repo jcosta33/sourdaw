@@ -7,32 +7,30 @@ import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockGetBuiltinPlugins = vi.fn(() => []);
-vi.mock('#/modules/Arrangement/useCases/getBuiltinPlugins', () => ({
-    getBuiltinPlugins: () => mockGetBuiltinPlugins(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getBuiltinPlugins: () => mockGetBuiltinPlugins(),
+    };
+});
 
 const mockAddAutomationLane = vi.fn();
-vi.mock('#/modules/Automation/useCases/automation/addAutomationLane', () => ({
-    addAutomationLane: (...args: unknown[]) => mockAddAutomationLane(...args),
-}));
-
 const mockToggleAutomationVisibility = vi.fn();
-vi.mock('#/modules/Automation/useCases/automation/toggleAutomationVisibility', () => ({
-    toggleAutomationVisibility: (...args: unknown[]) => mockToggleAutomationVisibility(...args),
-}));
-
 const mockRemoveAutomationLane = vi.fn();
-vi.mock('#/modules/Automation/useCases/automation/removeAutomationLane', () => ({
-    removeAutomationLane: (...args: unknown[]) => mockRemoveAutomationLane(...args),
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        ...actual,
+        addAutomationLane: (...args: unknown[]) => mockAddAutomationLane(...args),
+        toggleAutomationVisibility: (...args: unknown[]) => mockToggleAutomationVisibility(...args),
+        removeAutomationLane: (...args: unknown[]) => mockRemoveAutomationLane(...args),
+    };
+});
 
 const mockUseStore = vi.fn(() => ({ lanes: [] }));
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
-}));
-
-vi.mock('#/modules/Automation/useCases/automationStore', () => ({
-    automationStore: {},
 }));
 
 vi.mock('#/components/daw/DawEmptyState', () => ({

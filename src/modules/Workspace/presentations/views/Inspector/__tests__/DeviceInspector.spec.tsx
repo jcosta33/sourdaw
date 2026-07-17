@@ -6,13 +6,14 @@ import { DeviceInspector } from '../DeviceInspector';
 // Mock external dependencies
 vi.mock('../layouts', () => ({})); // Prevent OOM by not loading all layouts
 
-vi.mock('#/modules/Arrangement/useCases/getBuiltinPlugins', () => ({
-    getBuiltinPlugins: vi.fn(() => []),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/device/bypassDevice', () => ({
-    bypassDevice: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getBuiltinPlugins: vi.fn(() => []),
+        bypassDevice: vi.fn(),
+    };
+});
 
 vi.mock('../deviceLayoutRegistry', () => ({
     resolveDeviceLayout: vi.fn(() => null),
@@ -81,7 +82,7 @@ describe('DeviceInspector', () => {
     });
 
     it('should call bypassDevice when toggle is clicked', async () => {
-        const { bypassDevice } = await import('#/modules/Arrangement/useCases/device/bypassDevice');
+        const { bypassDevice } = await import('#/modules/Arrangement/useCases');
         render(<DeviceInspector device={mockDevice as any} trackId="track-1" onBack={mockOnBack} />);
         fireEvent.click(screen.getByTestId('mechanical-switch'));
         expect(bypassDevice).toHaveBeenCalled();

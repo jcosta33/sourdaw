@@ -8,19 +8,24 @@ import type { Device } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter', () => ({
-    setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
+    };
+});
 
 const mockAddAutomationLane = vi.fn();
-vi.mock('#/modules/Automation/useCases/automation/addAutomationLane', () => ({
-    addAutomationLane: (...args: unknown[]) => mockAddAutomationLane(...args),
-}));
-
 const mockRemoveAutomationLane = vi.fn();
-vi.mock('#/modules/Automation/useCases/automation/removeAutomationLane', () => ({
-    removeAutomationLane: (...args: unknown[]) => mockRemoveAutomationLane(...args),
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        ...actual,
+        addAutomationLane: (...args: unknown[]) => mockAddAutomationLane(...args),
+        removeAutomationLane: (...args: unknown[]) => mockRemoveAutomationLane(...args),
+    };
+});
 
 const mockUseStore = vi.fn((store: any, defaultState: any) => defaultState);
 const mockMidiLearnRotaryKnob = vi.hoisted(() => vi.fn());

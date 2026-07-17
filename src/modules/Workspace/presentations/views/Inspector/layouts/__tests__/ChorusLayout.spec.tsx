@@ -13,7 +13,7 @@ vi.mock('../../deviceLayoutRegistry', async () => {
     };
 });
 
-vi.mock('../../../components/ModulationLFO', () => ({
+vi.mock('../../../../components/ModulationLFO', () => ({
     ModulationLFO: () => <div data-testid="modulation-lfo">Modulation LFO</div>,
 }));
 
