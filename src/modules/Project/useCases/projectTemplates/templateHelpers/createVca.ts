@@ -1,5 +1,12 @@
 import type { Track } from '#/modules/Arrangement/stores';
-import type { VcaGroupHandle } from './builderTypes';
+
+// Owned here — `createVca` mints the handle; `commitVcaGroups` and
+// `finalizeTemplate` type-import it.
+export type VcaGroupHandle = {
+    id: string;
+    name: string;
+    memberTrackIds: string[];
+};
 
 type CreateVcaInput = {
     name: string;

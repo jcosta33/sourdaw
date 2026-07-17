@@ -1,5 +1,5 @@
 import type { Track } from '#/modules/Arrangement/stores';
-import type { Device } from './builderTypes';
+import type { Device } from './buildDevice';
 
 type AttachSidechainCompressorInput = {
     track: Track;

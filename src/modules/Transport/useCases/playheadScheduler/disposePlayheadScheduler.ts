@@ -15,6 +15,10 @@ import { schedulerSession, stopActiveSources } from './schedulerSession';
  * sources, clears every dedup Set and the requested-asset set, drops the stop
  * callback, and resets the change-detection signatures so a fresh session
  * starts clean.
+ *
+ * The Vite HMR dispose hook that invokes this lives in
+ * `startPlayheadScheduler.ts` — the scheduler module in the production import
+ * graph — so a hot reload of any scheduler module actually triggers teardown.
  */
 export function disposePlayheadScheduler(): void {
     schedulerSession.generation += 1;
@@ -43,10 +47,3 @@ export function disposePlayheadScheduler(): void {
     resetMetronomeBeat(0);
     disposeAudioClipScheduling();
 }
-
-// Vite HMR: dispose all scheduler holders before this module is replaced so a
-// reload never leaves an orphaned worker ticking against stale closures or a
-// pool of GainNodes bound to a discarded AudioContext.
-import.meta.hot?.dispose(() => {
-    disposePlayheadScheduler();
-});

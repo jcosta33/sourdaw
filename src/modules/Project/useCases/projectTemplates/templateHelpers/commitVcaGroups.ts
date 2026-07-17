@@ -1,7 +1,7 @@
 import { vcaGroupStore } from '#/modules/Arrangement/stores';
 
 import type { Track } from '#/modules/Arrangement/stores';
-import type { VcaGroupHandle } from './builderTypes';
+import type { VcaGroupHandle } from './createVca';
 
 export function commitVcaGroups(handles: VcaGroupHandle[], allTracks: Track[]): void {
     vcaGroupStore.set({

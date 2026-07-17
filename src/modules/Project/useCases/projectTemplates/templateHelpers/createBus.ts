@@ -3,7 +3,7 @@ import { createTrack } from '#/modules/Arrangement/useCases';
 import { buildDevice } from './buildDevice';
 
 import type { Track } from '#/modules/Arrangement/stores';
-import type { DeviceSpec } from './builderTypes';
+import type { DeviceSpec } from './buildDevice';
 
 type CreateBusInput = {
     name: string;

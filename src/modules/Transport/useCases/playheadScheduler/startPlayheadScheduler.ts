@@ -25,6 +25,7 @@ import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
+import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
@@ -308,3 +309,15 @@ export function startPlayheadScheduler(): void {
     }
     schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
 }
+
+// Vite HMR: dispose all scheduler holders before this module is replaced so a
+// reload never leaves an orphaned worker ticking against stale closures or a
+// pool of GainNodes bound to a discarded AudioContext. Registered here — not in
+// disposePlayheadScheduler.ts — because this is the scheduler module in the
+// production import graph (via transportControls), so the hook actually runs;
+// editing any module this file imports (schedulerSession, the scheduling
+// helpers) invalidates this module and fires the hook, matching the coverage
+// the pre-split monolith had.
+import.meta.hot?.dispose(() => {
+    disposePlayheadScheduler();
+});

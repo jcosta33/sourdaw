@@ -1,7 +1,7 @@
 import { buildDevice } from './buildDevice';
 
 import type { Track } from '#/modules/Arrangement/stores';
-import type { DeviceSpec } from './builderTypes';
+import type { DeviceSpec } from './buildDevice';
 
 type MasterPreset = 'pop' | 'hiphop' | 'edm' | 'rock' | 'lofi' | 'cinematic' | 'podcast' | 'songwriter' | 'ambient';
 

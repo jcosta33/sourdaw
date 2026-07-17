@@ -7,7 +7,7 @@ import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
 import { commitVcaGroups } from './commitVcaGroups';
 
 import type { Track } from '#/modules/Arrangement/stores';
-import type { VcaGroupHandle } from './builderTypes';
+import type { VcaGroupHandle } from './createVca';
 
 type FinalizeTemplateInput = {
     tracks: Track[];
