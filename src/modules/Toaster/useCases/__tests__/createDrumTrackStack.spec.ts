@@ -8,7 +8,7 @@ import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
 import { createDrumTrackStack } from '../createDrumTrackStack';
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         getTrackStoreState: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...actual,
         addDeviceToStrip: vi.fn(),
@@ -75,6 +75,9 @@ describe('createDrumTrackStack', () => {
         injectDependencies(createDrumTrackStack, { eventBus });
 
         const parentId = createDrumTrackStack();
+        if (parentId === null) {
+            throw new Error('createDrumTrackStack returned null despite a ready track store');
+        }
 
         // One parent + 16 children committed.
         const childIds = committed[0]!.tracks.filter((t) => t.parentId === parentId).map((t) => t.id);

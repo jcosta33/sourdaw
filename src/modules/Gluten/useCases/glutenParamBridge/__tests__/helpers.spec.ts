@@ -2,34 +2,54 @@ import { describe, it, expect } from 'vitest';
 
 import { createFindDeviceRef, encodeGlutenValue } from '../helpers';
 
-// Fix 5 — build tracks from a local, field-identical factory instead of
-// importing Arrangement's Track model across the module boundary. Tests use
-// contract barrels only; models stay private. `createFindDeviceRef` reads only
-// `track.id` and `track.devices[].id`, so these local shapes are faithful.
-type LocalDevice = {
-    id: string;
-    name: string;
-    type: string;
-    bypassed: boolean;
-    parameterValues: Record<string, number>;
-};
+import type { Device, Track } from '#/modules/Arrangement/stores';
 
-type LocalTrack = {
-    id: string;
-    name: string;
-    kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
-    devices: LocalDevice[];
-};
-
-function trackWithDevices(id: string, deviceIds: string[]): LocalTrack {
-    const devices: LocalDevice[] = deviceIds.map((deviceId) => ({
+// Fix 5 — typed fixture: the Track/Device TYPES come from the compliant
+// Arrangement stores barrel (type-only, erased at runtime), so the factory
+// satisfies createFindDeviceRef's real GetAllTracksFn contract. Field values
+// are copied field-identical from Arrangement's TrackDummy.
+function trackWithDevices(id: string, deviceIds: string[]): Track {
+    const devices: Device[] = deviceIds.map((deviceId) => ({
         id: deviceId,
         name: deviceId,
         type: 'gluten',
         bypassed: false,
         parameterValues: {},
     }));
-    return { id, name: id, kind: 'audio', devices };
+    return {
+        id,
+        name: id,
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices,
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
 }
 
 describe('glutenParamBridge helpers', () => {

@@ -6,14 +6,16 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
-    const actual = await importOriginal();
+    const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
     return {
         ...actual,
         resolveBackend: () => 'none',
         generateWebLlmCompletion: vi.fn(),
         generateNativeCompletion: vi.fn(),
         isNativeEngineReady: vi.fn(),
-        filterTemplates: vi.fn((pattern) => actual.filterTemplates(pattern)),
+        filterTemplates: vi.fn((pattern: Parameters<typeof actual.filterTemplates>[0]) =>
+            actual.filterTemplates(pattern)
+        ),
         PATTERN_TEMPLATES: [
             {
                 name: 'Basic Beat',
