@@ -8,7 +8,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { logger } from '#/infra/logger/appLogger';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
+import { generateMidiAI } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
@@ -26,6 +26,7 @@ import {
     applyGrooveToClip,
     restoreGrooveOriginals,
 } from '#/modules/MIDI/useCases';
+import { isTauri } from '#/utils/tauriRuntime';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';

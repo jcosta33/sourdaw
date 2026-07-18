@@ -28,9 +28,10 @@ import {
     addManualWarpMarker,
 } from '#/modules/Arrangement/useCases';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
-import { decodeAudioFile, getCachedAudioBufferWaveformPeaks, isTauri } from '#/modules/AudioEngine/useCases';
+import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
+import { isTauri } from '#/utils/tauriRuntime';
 import { menuBtnClass, menuSepClass } from '#/utils/UI/contextMenuStyles';
 import { resolveToken } from '#/utils/UI/resolveToken';
 

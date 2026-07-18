@@ -103,7 +103,7 @@ export { getTrackLatency } from './latencyCompensation/compensation/getTrackLate
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 
-export { isTauri } from './nativeAiBridge/isTauri';
+export { isTauri } from '#/utils/tauriRuntime';
 export { generateMidiAI } from './nativeAiBridge/generateMidiAI';
 export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
 
