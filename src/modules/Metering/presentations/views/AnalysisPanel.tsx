@@ -4,15 +4,14 @@ import { DawAnalysisCard } from '#/components/daw/DawAnalysisCard';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { ScrollArea } from '#/components/ui/scroll-area';
 
-import { SpatialPanner } from '../components/SpatialPanner';
-import { Wavetable3D } from '../components/Wavetable3D';
-
-import { Goniometer } from './Metering/Goniometer';
-import { LUFSMeter } from './Metering/LUFSMeter';
-import { Oscilloscope } from './Metering/Oscilloscope';
-import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
-import { Spectrogram } from './Metering/Spectrogram';
-import { SpectrumAnalyzer } from './Metering/SpectrumAnalyzer';
+import { Goniometer } from './Goniometer';
+import { LUFSMeter } from './LUFSMeter';
+import { Oscilloscope } from './Oscilloscope';
+import { PhaseCorrelationDisplay } from './PhaseCorrelationDisplay';
+import { SpatialPanner } from './SpatialPanner';
+import { Spectrogram } from './Spectrogram';
+import { SpectrumAnalyzer } from './SpectrumAnalyzer';
+import { Wavetable3D } from './Wavetable3D';
 
 /* ── Measured container ─────────────────────────────── */
 type MeasuredProps = {

@@ -22,35 +22,14 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
     ),
 }));
 
-vi.mock('../../Metering/LUFSMeter', () => ({
+vi.mock('#/modules/Metering/presentations/views', () => ({
     LUFSMeter: () => <div data-testid="lufs-meter">LUFS Meter</div>,
-}));
-
-vi.mock('../../Metering/PhaseCorrelationDisplay', () => ({
     PhaseCorrelationDisplay: () => <div data-testid="phase-correlation">Phase Correlation</div>,
-}));
-
-vi.mock('../../Metering/Oscilloscope', () => ({
     Oscilloscope: () => <div data-testid="oscilloscope">Oscilloscope</div>,
-}));
-
-vi.mock('../../Metering/SpectrumAnalyzer', () => ({
     SpectrumAnalyzer: () => <div data-testid="spectrum-analyzer">Spectrum Analyzer</div>,
-}));
-
-vi.mock('../../Metering/Spectrogram', () => ({
     Spectrogram: () => <div data-testid="spectrogram">Spectrogram</div>,
-}));
-
-vi.mock('../../Metering/Goniometer', () => ({
     Goniometer: () => <div data-testid="goniometer">Goniometer</div>,
-}));
-
-vi.mock('../../../components/SpatialPanner', () => ({
     SpatialPanner: () => <div data-testid="spatial-panner">Spatial Panner</div>,
-}));
-
-vi.mock('../../../components/Wavetable3D', () => ({
     Wavetable3D: () => <div data-testid="wavetable-3d">Wavetable 3D</div>,
 }));
 

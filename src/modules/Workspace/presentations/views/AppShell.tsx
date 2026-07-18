@@ -31,6 +31,7 @@ import { GlutenPanel } from '#/modules/Gluten/presentations/views';
 import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
+import { AnalysisPanel } from '#/modules/Metering/presentations/views';
 import { OnboardingTour } from '#/modules/Onboarding/presentations/views';
 import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
@@ -67,7 +68,6 @@ import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
-import { AnalysisPanel } from './AnalysisPanel';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { InspectorPanel } from './InspectorPanel';

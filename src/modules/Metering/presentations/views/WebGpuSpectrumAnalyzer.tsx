@@ -3,7 +3,7 @@ import { type ReactElement, useRef, useEffect } from 'react';
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
-import { createWebGpuSpectrumRenderer, type SpectrumRenderer } from '../../renderers/createWebGpuSpectrumRenderer';
+import { createWebGpuSpectrumRenderer, type SpectrumRenderer } from '../renderers/createWebGpuSpectrumRenderer';
 
 type WebGpuSpectrumAnalyzerProps = {
     trackId?: string;
