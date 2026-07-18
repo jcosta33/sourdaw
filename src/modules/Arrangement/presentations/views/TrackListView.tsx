@@ -27,7 +27,7 @@ import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
 import { preferencesStore, type Preferences } from '#/modules/Preferences/stores';
 import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCases';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';

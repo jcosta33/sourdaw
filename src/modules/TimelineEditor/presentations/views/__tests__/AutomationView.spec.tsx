@@ -24,7 +24,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     scrollTimelineViewportFromWheel: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleAutomationPanel: vi.fn(),
 }));
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { setSoloMode } from '#/modules/Workspace/useCases';
+import { setSoloMode } from '#/modules/WorkspaceShell/useCases';
 
 import { defaultPreferences, type Preferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
@@ -21,7 +21,7 @@ vi.mock('../../stores/preferencesStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setSoloMode: mocks.setSoloMode,
 }));
 

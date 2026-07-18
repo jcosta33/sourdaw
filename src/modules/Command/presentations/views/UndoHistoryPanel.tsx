@@ -10,8 +10,8 @@ import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeUndoHistory } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { closeUndoHistory } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';

@@ -36,7 +36,7 @@ import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
-import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/Workspace/useCases';
+import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

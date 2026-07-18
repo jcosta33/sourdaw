@@ -64,8 +64,8 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     getTransportState: vi.fn(() => ({ playheadPosition: 0 })),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
     selectClip: vi.fn(),
 }));
 

@@ -6,8 +6,8 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';

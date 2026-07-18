@@ -1,6 +1,6 @@
 import { setWebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
-import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/Workspace/events';
+import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/WorkspaceShell/events';
 import type { YeastNotesOffPayload } from '#/modules/Yeast/events';
 
 type WebMidiRuntimeEvents = {

@@ -3,7 +3,7 @@ import { type ReactElement } from 'react';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 
 import { type queryClient } from '#/app/queryClient';
-import { AppShell } from '#/modules/Workspace/presentations/views';
+import { AppShell } from '#/modules/WorkspaceShell/presentations/views';
 
 type AppRouterContext = {
     queryClient: typeof queryClient;

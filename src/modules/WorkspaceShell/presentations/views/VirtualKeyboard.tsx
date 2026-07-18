@@ -30,9 +30,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
-import { setVirtualKeyboardOctave, setVirtualKeyboardVelocity } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
+
+import { workspaceStore, defaultWorkspaceState } from '../../stores/workspaceStore';
+import { setVirtualKeyboardOctave } from '../../useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
+import { setVirtualKeyboardVelocity } from '../../useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 

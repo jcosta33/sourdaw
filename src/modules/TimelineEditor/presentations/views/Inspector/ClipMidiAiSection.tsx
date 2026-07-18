@@ -23,7 +23,7 @@ import {
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '#/modules/Transport/stores';
-import { openPreferencesDialog } from '#/modules/Workspace/useCases';
+import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../../models/TrackViewTypes';

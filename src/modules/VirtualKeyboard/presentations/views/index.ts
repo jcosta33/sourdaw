@@ -1,1 +1,0 @@
-export { VirtualKeyboard } from './VirtualKeyboard';

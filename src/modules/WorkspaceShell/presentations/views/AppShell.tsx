@@ -47,7 +47,6 @@ import { SetlistPanel } from '#/modules/Setlist/presentations/views';
 import { AutomationBottomPanel, ClipView, InspectorPanel } from '#/modules/TimelineEditor/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { TunerPanel } from '#/modules/Tuner/presentations/views';
-import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
 import { clamp } from '#/utils/Math/clamp';
 
@@ -88,6 +87,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { LaunchScreen } from './LaunchScreen';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
+import { VirtualKeyboard } from './VirtualKeyboard';
 
 // Device-panel emitters injected into the ContentBrowser Sidebar. The panel
 // system is owned by Workspace; the browser only triggers it, so these stable

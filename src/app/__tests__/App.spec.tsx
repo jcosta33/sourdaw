@@ -22,7 +22,7 @@ vi.mock('#/components/ui/tooltip', () => ({
     ),
 }));
 
-vi.mock('#/modules/Workspace/presentations/views', () => ({
+vi.mock('#/modules/WorkspaceShell/presentations/views', () => ({
     WorkspaceAppBoundary: ({ children }: { children: ReactNode }) => <div data-testid="error-boundary">{children}</div>,
     WorkspaceProjectLoadingFallback: () => <div data-testid="project-loading-fallback" />,
 }));

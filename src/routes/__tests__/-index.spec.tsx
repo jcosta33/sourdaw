@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { IndexPage } from '../index';
 
-vi.mock('#/modules/Workspace/presentations/views', () => ({
+vi.mock('#/modules/WorkspaceShell/presentations/views', () => ({
     WorkspaceRouteView: () => <div data-testid="workspace-route-view">Workspace Route View</div>,
 }));
 

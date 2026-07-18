@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
-import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
-import { toggleDualView } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { type WorkspaceState } from '#/modules/WorkspaceShell/models/WorkspaceState';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores/workspaceStore';
+import { toggleDualView } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles';
 
 const mocks = vi.hoisted(() => ({
     updateWorkspaceState: vi.fn<(...args: unknown[]) => void>(),

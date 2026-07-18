@@ -12,7 +12,7 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: mocks.useStore,
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeCollaborationPanel: mocks.closeCollaborationPanel,
 }));
 

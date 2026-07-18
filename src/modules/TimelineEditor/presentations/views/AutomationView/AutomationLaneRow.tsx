@@ -16,7 +16,7 @@ import {
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/Workspace/stores';
+import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';

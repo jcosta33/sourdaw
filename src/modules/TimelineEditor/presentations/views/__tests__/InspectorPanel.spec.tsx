@@ -40,7 +40,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: () => mockClearClipSelection(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleInspector: () => mockToggleInspector(),
 }));
 

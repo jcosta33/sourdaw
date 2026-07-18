@@ -116,8 +116,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     injectPromptCommand: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
 }));
 
 vi.mock('#/modules/Preferences/useCases', () => ({

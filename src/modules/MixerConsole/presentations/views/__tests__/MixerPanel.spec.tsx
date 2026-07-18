@@ -21,8 +21,8 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
 }));
 
 // Mock useCases
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
     cycleChannelStripWidth: vi.fn(),
 }));
 
@@ -64,7 +64,7 @@ describe('MixerPanel', () => {
         const widthButton = screen.getByLabelText(/Channel width:/);
         fireEvent.click(widthButton);
 
-        const { cycleChannelStripWidth } = await import('#/modules/Workspace/useCases');
+        const { cycleChannelStripWidth } = await import('#/modules/WorkspaceShell/useCases');
         expect(cycleChannelStripWidth).toHaveBeenCalled();
     });
 

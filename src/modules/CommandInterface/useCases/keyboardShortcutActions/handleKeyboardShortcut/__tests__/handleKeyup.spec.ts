@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { finishToolSwap } from '#/modules/Workspace/useCases';
+import { finishToolSwap } from '#/modules/WorkspaceShell/useCases';
 
 import { handleKeyup } from '../handleKeyup';
 
 const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     finishToolSwap: vi.fn(),
 }));
 

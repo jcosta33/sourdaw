@@ -9,7 +9,7 @@ import {
     getPlatformPlugins,
 } from '#/modules/Arrangement/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
-import { openInspector } from '#/modules/Workspace/useCases';
+import { openInspector } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../../models/TrackViewTypes';

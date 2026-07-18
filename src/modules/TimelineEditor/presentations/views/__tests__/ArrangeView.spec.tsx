@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setScrollX } from '#/modules/Arrangement/stores';
 import { addTrack, addClip, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { defaultWorkspaceState } from '#/modules/Workspace/stores';
+import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -67,7 +67,7 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
     })),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeScratchPad: vi.fn(),
     setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),

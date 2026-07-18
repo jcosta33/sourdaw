@@ -9,7 +9,7 @@ import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 

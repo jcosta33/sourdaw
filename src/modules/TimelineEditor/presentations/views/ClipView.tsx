@@ -8,7 +8,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { selectClip } from '#/modules/Arrangement/useCases';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
 import { useTracks } from '../hooks/useTracks';
 

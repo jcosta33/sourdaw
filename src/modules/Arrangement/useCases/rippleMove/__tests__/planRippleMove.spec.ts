@@ -4,7 +4,7 @@ import { createTrack, type Clip } from '../../../models/Track';
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { planRippleMove } from '../planRippleMove';
 
-import type { WorkspaceState } from '#/modules/Workspace/stores';
+import type { WorkspaceState } from '#/modules/WorkspaceShell/stores';
 
 const { workspaceStoreMock } = vi.hoisted(() => ({
     workspaceStoreMock: { value: null as Partial<WorkspaceState> | null },
@@ -14,7 +14,7 @@ vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: workspaceStoreMock,
 }));
 

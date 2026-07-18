@@ -1,4 +1,4 @@
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type Clip } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';

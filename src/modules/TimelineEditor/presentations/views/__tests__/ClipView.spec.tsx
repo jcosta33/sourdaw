@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 
 import { ClipView } from '../ClipView';
 
@@ -40,7 +40,7 @@ vi.mock('../../hooks/useTracks', () => ({
     useTracks: vi.fn(() => ({ tracks: [], selectedTrackId: null })),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 

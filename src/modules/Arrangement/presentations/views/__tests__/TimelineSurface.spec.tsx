@@ -125,8 +125,8 @@ vi.mock('../../hooks/useTimelineInteractions', () => ({
     })),
 }));
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/stores')>()),
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
     workspaceStore: createReactiveStoreFixture({ initialValue: {} }),
 }));
 
@@ -159,8 +159,8 @@ vi.mock('../../../stores/markerStore', () => ({
     markerStore: createReactiveStoreFixture({ initialValue: { markers: [] } }),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
     onScrollToPlayhead: vi.fn(() => vi.fn()),
     onZoomToSelection: vi.fn(() => vi.fn()),
     onZoomToFit: vi.fn(() => vi.fn()),

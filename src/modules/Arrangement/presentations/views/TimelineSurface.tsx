@@ -3,7 +3,7 @@ import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
-import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases';
+import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/WorkspaceShell/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';

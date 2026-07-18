@@ -37,8 +37,8 @@ vi.mock('#/modules/AiGeneration/stores', async (importOriginal) => ({
     aiStore: { name: 'aiStore' },
 }));
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/stores')>()),
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
     workspaceStore: { name: 'workspaceStore' },
 }));
 

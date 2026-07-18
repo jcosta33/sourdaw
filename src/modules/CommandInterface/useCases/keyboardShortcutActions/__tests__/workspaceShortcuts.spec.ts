@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { zoomToFit } from '../workspaceShortcuts/zoomToFit';
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     zoomToFit: vi.fn(),
 }));
 
@@ -12,7 +12,7 @@ describe('workspaceShortcuts', () => {
     });
 
     it('zoomToFit delegates to the injected implementation', async () => {
-        const { zoomToFit: zoomToFitImpl } = await import('#/modules/Workspace/useCases');
+        const { zoomToFit: zoomToFitImpl } = await import('#/modules/WorkspaceShell/useCases');
 
         zoomToFit();
 

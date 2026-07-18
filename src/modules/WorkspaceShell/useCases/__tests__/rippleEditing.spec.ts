@@ -39,7 +39,7 @@ describe('toggleRippleEditing', () => {
 describe('Initialization Regression', () => {
     it('can import Workspace through an Arrangement consumer without initialization failure', async () => {
         const arrangement = await import('#/modules/Arrangement/useCases');
-        const workspace = await import('#/modules/Workspace/useCases');
+        const workspace = await import('#/modules/WorkspaceShell/useCases');
         expect(arrangement).toBeDefined();
         expect(workspace).toBeDefined();
     }, 60000);

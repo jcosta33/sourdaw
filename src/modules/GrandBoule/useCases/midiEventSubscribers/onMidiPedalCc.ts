@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { type MidiPedalCcPayload } from '#/modules/Workspace/events';
+import { type MidiPedalCcPayload } from '#/modules/WorkspaceShell/events';
 
 import { GrandBouleEventBus } from '../grandBouleEventBus';
 

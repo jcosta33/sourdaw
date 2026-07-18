@@ -31,10 +31,10 @@ import { toggleUndoHistory } from '../panelToggles/toggleUndoHistory';
 import { toggleVirtualKeyboard } from '../panelToggles/toggleVirtualKeyboard';
 import { toggleWorkspaceMode } from '../panelToggles/toggleWorkspaceMode';
 
-vi.mock('#/modules/Workspace/repositories/getWorkspaceState', () => ({
+vi.mock('#/modules/WorkspaceShell/repositories/getWorkspaceState', () => ({
     getWorkspaceState: vi.fn(),
 }));
-vi.mock('#/modules/Workspace/repositories/updateWorkspaceState', () => ({
+vi.mock('#/modules/WorkspaceShell/repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: vi.fn(),
 }));
 

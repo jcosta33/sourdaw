@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     workspaceStoreValue: { value: null as { rippleEditing: boolean } | null },
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: {
         get value() {
             return mocks.workspaceStoreValue.value;

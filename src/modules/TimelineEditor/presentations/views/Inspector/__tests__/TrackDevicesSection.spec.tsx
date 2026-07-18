@@ -57,7 +57,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 });
 
 const mockShowDevicePanelForType = vi.fn<(deviceType: string, deviceId: string) => void>();
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     showDevicePanelForType: (deviceType: string, deviceId: string): void => {
         mockShowDevicePanelForType(deviceType, deviceId);
     },

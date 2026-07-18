@@ -11,7 +11,7 @@ vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: mocks.workspaceStore,
 }));
 

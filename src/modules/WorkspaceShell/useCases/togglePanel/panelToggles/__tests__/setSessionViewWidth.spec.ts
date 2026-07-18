@@ -11,7 +11,7 @@ vi.mock('../../../../repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: mocks.updateWorkspaceState,
 }));
 
-import { setSessionViewWidth } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+import { setSessionViewWidth } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles';
 
 describe('setSessionViewWidth', () => {
     it('should update sessionViewWidth', () => {

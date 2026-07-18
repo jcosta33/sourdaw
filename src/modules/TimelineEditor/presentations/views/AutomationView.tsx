@@ -8,7 +8,7 @@ import { useStore } from '#/infra/store/useStore';
 import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
 import { timelineViewStore } from '#/modules/Arrangement/stores';
 import { scrollTimelineViewportFromWheel } from '#/modules/Arrangement/useCases';
-import { toggleAutomationPanel } from '#/modules/Workspace/useCases';
+import { toggleAutomationPanel } from '#/modules/WorkspaceShell/useCases';
 
 import { useTracks } from '../hooks/useTracks';
 

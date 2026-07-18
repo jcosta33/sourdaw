@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeCommandPalette } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { closeCommandPalette } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { searchCommands, type CommandEntry } from './commandRegistry';

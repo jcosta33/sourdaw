@@ -20,7 +20,7 @@ import {
     type MidiNoteOnPayload,
     type MidiNoteOffPayload,
     type MidiPedalCcPayload,
-} from '#/modules/Workspace/events';
+} from '#/modules/WorkspaceShell/events';
 import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 
 export type AppEvents = {
