@@ -1,4 +1,4 @@
-import { compileFaustDSP, createFaustNode } from '#/modules/Plugin/useCases';
+import { compileFaustDSP, createFaustNode } from '#/modules/PluginHost/useCases';
 
 import { createFaustDevice } from '../../repositories/faustDeviceFactory';
 

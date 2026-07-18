@@ -19,8 +19,8 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Plugin/useCases')>();
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
         ...actual,
         registerBuiltinPlugins: mocks.registerPlugins,

@@ -48,8 +48,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Plugin/useCases')>();
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
     return {
         ...actual,
         openPluginGui: (instanceId: string): Promise<void> => mockOpenPluginGui(instanceId),
@@ -68,8 +68,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-vi.mock('#/modules/Plugin/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Plugin/stores')>();
+vi.mock('#/modules/PluginHost/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/stores')>();
     return {
         ...actual,
         pluginScanStore: {},

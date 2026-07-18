@@ -14,8 +14,8 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-vi.mock('#/modules/Plugin/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Plugin/stores')>()),
+vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/stores')>()),
     pluginScanStore: {},
     defaultPluginScanState: {
         scanPaths: [],
@@ -26,7 +26,7 @@ vi.mock('#/modules/Plugin/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     removeScanPath: vi.fn(),
     addScanPath: vi.fn(),
     startPluginScan: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { startPluginScan, addScanPath, removeScanPath } = await import('#/modules/Plugin/useCases');
+const { startPluginScan, addScanPath, removeScanPath } = await import('#/modules/PluginHost/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 describe('PluginScanSettings', () => {

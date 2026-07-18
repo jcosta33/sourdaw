@@ -1,4 +1,4 @@
-import { findPluginByName } from '#/modules/Plugin/useCases';
+import { findPluginByName } from '#/modules/PluginHost/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { addTrack } from '../../useCases/addTrack';

@@ -40,7 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     return { ...actual, addDeviceToStrip: vi.fn(), updateDeviceParam: vi.fn(), removeDeviceFromStrip: vi.fn() };
 });
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
     createFaustNode: mocks.createFaustNode,
     isFaustModule: mocks.isFaustModule,

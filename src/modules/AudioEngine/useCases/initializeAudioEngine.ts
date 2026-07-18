@@ -1,4 +1,4 @@
-import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin/useCases';
+import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 

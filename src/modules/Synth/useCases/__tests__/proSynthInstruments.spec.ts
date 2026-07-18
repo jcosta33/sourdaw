@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     registerFaustDSP: vi.fn(),
 }));
 
-import { registerFaustDSP } from '#/modules/Plugin/useCases';
+import { registerFaustDSP } from '#/modules/PluginHost/useCases';
 
 import { registerProSynthInstruments } from '../proSynthInstruments';
 

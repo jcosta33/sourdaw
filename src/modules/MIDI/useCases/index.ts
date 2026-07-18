@@ -119,3 +119,6 @@ export { webMidiStore } from './webMidiInput/helpers';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
+
+// ── MIDI Effect Plugins ───────────────────────────────────────────────────────
+export { MIDI_EFFECT_FACTORIES } from './midiEffectPlugins/registry';

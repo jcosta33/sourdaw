@@ -12,8 +12,8 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { addTrack, addExternalDevice } from '#/modules/Arrangement/useCases';
-import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/Plugin/stores';
-import { startPluginScan } from '#/modules/Plugin/useCases';
+import { pluginScanStore, defaultPluginScanState, type PluginScanState } from '#/modules/PluginHost/stores';
+import { startPluginScan } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 

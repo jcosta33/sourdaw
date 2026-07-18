@@ -8,7 +8,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { isFaustModule } from '#/modules/Plugin/useCases';
+import { isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';

@@ -81,12 +81,13 @@ import {
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
-import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
+import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import { markDirty, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
+import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
@@ -257,6 +258,7 @@ registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
+registerHandlerMap(getNodeViewHandlers());
 registerHandlerMap(getWebMidiInputHandlers());
 registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getControlRoomHandlers());

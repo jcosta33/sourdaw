@@ -5,7 +5,7 @@
  * NOTE: FM Synth and Rhodes are registered in faustEngine.ts — do NOT re-register here.
  */
 
-import { registerFaustDSP } from '#/modules/Plugin/useCases';
+import { registerFaustDSP } from '#/modules/PluginHost/useCases';
 
 import additiveSynthDsp from './dsp/additive-synth.dsp?raw';
 import morphingSynthDsp from './dsp/morphing-synth.dsp?raw';

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { processAudioIPC, setPluginParameter } from '#/modules/Plugin/useCases';
+import { processAudioIPC, setPluginParameter } from '#/modules/PluginHost/useCases';
 
 import { createNativePluginBridgeNode } from '../NativePluginBridgeNode';
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     processAudioIPC: vi.fn(),
     setPluginParameter: vi.fn(),
 }));
