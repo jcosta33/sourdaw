@@ -16,8 +16,7 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/MIDI/useCases', () => ({
     setMidiInputTrack: mocks.setMidiInputTrack,
 }));
 

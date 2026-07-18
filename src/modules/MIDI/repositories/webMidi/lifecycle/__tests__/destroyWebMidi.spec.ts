@@ -88,7 +88,7 @@ describe('destroyWebMidi', () => {
         webMidiRuntime.midiMessageListener = activeListener;
         getActiveInputMock.mockReturnValue(activeInput);
 
-        destroyWebMidi();
+        destroyWebMidi(() => undefined);
 
         expect(activeInput.removeEventListener).toHaveBeenCalledWith('midimessage', activeListener);
         expect(webMidiRuntime.midiMessageListener).toBeNull();

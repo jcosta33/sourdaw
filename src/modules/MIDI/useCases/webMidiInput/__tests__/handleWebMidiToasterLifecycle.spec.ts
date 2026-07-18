@@ -14,7 +14,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => targetTrackId.value,
 }));
 
-vi.mock('../../../repositories/createWebAudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         context: {
             currentTime: 2,
@@ -25,6 +25,8 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
         ensureTrackStrip,
         getTrackStrip,
     },
+    getCompensationDelay: () => 0,
+    getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');

@@ -6,19 +6,13 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fermenter_note_off, grand_boule_note_off, levain_note_off, get_track_strip } = vi.hoisted(() => ({
-    fermenter_note_off: vi.fn<(note: number) => void>(),
-    grand_boule_note_off: vi.fn<(note: number, sampleFrame?: number, releaseVelocity?: number) => void>(),
-    levain_note_off: vi.fn<(note: number) => void>(),
-    get_track_strip: vi.fn(),
-}));
+import { routeYeastNoteOffsForTargetTrack } from '../routeYeastNoteOff';
+import { routeYeastNoteOffToInstrument } from '../routeYeastNoteOffToInstrument';
 
-vi.mock('../../createWebAudioEngine', () => ({
-    audioEngine: { getTrackStrip: get_track_strip },
-}));
-
-const { routeYeastNoteOffsForTargetTrack } = await import('../routeYeastNoteOff');
-const { routeYeastNoteOffToInstrument } = await import('../routeYeastNoteOffToInstrument');
+const fermenter_note_off = vi.fn<(note: number) => void>();
+const grand_boule_note_off = vi.fn<(note: number, sampleFrame?: number, releaseVelocity?: number) => void>();
+const levain_note_off = vi.fn<(note: number) => void>();
+const get_track_strip = vi.fn();
 
 type InstrumentStrip = NonNullable<Parameters<typeof routeYeastNoteOffToInstrument>[1]>;
 type InstrumentDeviceNode = InstrumentStrip['deviceNodes'][number];
@@ -57,49 +51,15 @@ type GrandBouleControls = NonNullable<InstrumentDeviceNode['grandBouleControls']
 type LevainControls = NonNullable<InstrumentDeviceNode['levainControls']>;
 
 function create_fermenter_controls(overrides: Partial<FermenterControls> = {}): FermenterControls {
-    return {
-        ready: true,
-        noteOn: () => {},
-        noteOff: () => {},
-        allNotesOff: () => {},
-        setParam: () => {},
-        setBypass: () => {},
-        destroy: () => {},
-        ...overrides,
-    };
+    return { noteOff: () => {}, ...overrides };
 }
 
 function create_grand_boule_controls(overrides: Partial<GrandBouleControls> = {}): GrandBouleControls {
-    return {
-        ready: true,
-        noteOn: () => {},
-        noteOff: () => {},
-        setParam: () => {},
-        setSustain: () => {},
-        setUnaCorda: () => {},
-        setSostenuto: () => {},
-        noteOnMidi2: () => {},
-        setTemperament: () => {},
-        loadAttackClip: () => {},
-        allNotesOff: () => {},
-        setBypass: () => {},
-        destroy: () => {},
-        ...overrides,
-    };
+    return { noteOff: () => {}, ...overrides };
 }
 
 function create_levain_controls(overrides: Partial<LevainControls> = {}): LevainControls {
-    return {
-        ready: true,
-        noteOn: () => {},
-        noteOff: () => {},
-        allNotesOff: () => {},
-        handleCc: () => {},
-        setParam: () => {},
-        setBypass: () => {},
-        destroy: () => {},
-        ...overrides,
-    };
+    return { noteOff: () => {}, ...overrides };
 }
 
 beforeEach(() => {
@@ -121,6 +81,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
 
         routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
+            getTrackStrip: get_track_strip,
         });
 
         expect(get_track_strip).toHaveBeenCalledWith('track-a');
@@ -143,6 +104,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             ],
             {
                 emitGrandBouleEvent: noop_emit,
+                getTrackStrip: get_track_strip,
             }
         );
 
@@ -169,6 +131,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
             ],
             {
                 emitGrandBouleEvent: noop_emit,
+                getTrackStrip: get_track_strip,
             }
         );
 
@@ -187,6 +150,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
 
         routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 72 }], {
             emitGrandBouleEvent: emit_grand_boule_event,
+            getTrackStrip: get_track_strip,
         });
 
         expect(grand_boule_note_off).toHaveBeenCalledWith(72, undefined, 0);
@@ -204,6 +168,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
 
         routeYeastNoteOffsForTargetTrack(instrument_track, [{ channel: 0, note: 74 }], {
             emitGrandBouleEvent: noop_emit,
+            getTrackStrip: get_track_strip,
         });
 
         expect(levain_note_off).toHaveBeenCalledWith(74);
@@ -212,6 +177,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     it('should be a no-op when there is no target track', () => {
         routeYeastNoteOffsForTargetTrack(null, [{ channel: 0, note: 60 }], {
             emitGrandBouleEvent: noop_emit,
+            getTrackStrip: get_track_strip,
         });
 
         expect(get_track_strip).not.toHaveBeenCalled();
@@ -221,6 +187,7 @@ describe('routeYeastNoteOffsForTargetTrack', () => {
     it('should be a no-op for an empty off list', () => {
         routeYeastNoteOffsForTargetTrack(null, [], {
             emitGrandBouleEvent: noop_emit,
+            getTrackStrip: get_track_strip,
         });
         expect(get_track_strip).not.toHaveBeenCalled();
     });

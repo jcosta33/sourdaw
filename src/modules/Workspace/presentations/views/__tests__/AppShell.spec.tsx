@@ -12,7 +12,7 @@ import {
     type Track,
     type TrackStoreState,
 } from '#/modules/Arrangement/stores';
-import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
+import { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';

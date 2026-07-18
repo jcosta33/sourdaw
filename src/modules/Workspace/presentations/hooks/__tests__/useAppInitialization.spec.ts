@@ -23,10 +23,12 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     initializeAudioEngine: vi.fn().mockResolvedValue(undefined),
     getAudioContext: vi.fn(() => ({})),
-    initWebMidi: vi.fn().mockResolvedValue(undefined),
     setMasterGainValue: vi.fn(),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    initWebMidi: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ registerProModulationEffects: vi.fn() }));

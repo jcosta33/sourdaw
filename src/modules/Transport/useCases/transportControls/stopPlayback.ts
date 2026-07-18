@@ -1,4 +1,5 @@
-import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
+import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { resetMidiState } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';

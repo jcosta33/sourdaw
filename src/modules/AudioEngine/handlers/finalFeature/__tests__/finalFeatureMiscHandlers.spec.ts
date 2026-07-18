@@ -5,10 +5,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getLatencyReport } from '../../../useCases/latencyCompensation/compensation/getLatencyReport';
 import { setMasterGain } from '../../../useCases/setMasterGain';
-import { setMpeEnabled } from '../../../useCases/webMidiInput/setMpeEnabled';
 import { handleAddCvOutput } from '../handleAddCvOutput';
-import { handleDisableMpe } from '../handleDisableMpe';
-import { handleEnableMpe } from '../handleEnableMpe';
 import { handleGetLatencyReport } from '../handleGetLatencyReport';
 import { handleSetMasterGain } from '../handleSetMasterGain';
 
@@ -19,7 +16,6 @@ vi.mock('#/modules/Project/useCases', () => ({
 }));
 vi.mock('../../../useCases/latencyCompensation/compensation/getLatencyReport', () => ({ getLatencyReport: vi.fn() }));
 vi.mock('../../../useCases/setMasterGain', () => ({ setMasterGain: vi.fn() }));
-vi.mock('../../../useCases/webMidiInput/setMpeEnabled', () => ({ setMpeEnabled: vi.fn() }));
 
 describe('finalFeatureMiscHandlers', () => {
     beforeEach(() => {
@@ -29,18 +25,6 @@ describe('finalFeatureMiscHandlers', () => {
     it('handleAddCvOutput should delegate to addCvOutput', () => {
         void handleAddCvOutput.execute({ type: 'addCvOutput', payload: { name: 'Gate 1', channel: 0, type: 'gate' } });
         expect(addCvOutput).toHaveBeenCalledWith('Gate 1', 0, 'gate');
-    });
-
-    it('should enable MPE input handling', () => {
-        handleEnableMpe.execute({ type: 'enableMpe', payload: undefined });
-
-        expect(setMpeEnabled).toHaveBeenCalledWith(true);
-    });
-
-    it('should disable MPE input handling', () => {
-        handleDisableMpe.execute({ type: 'disableMpe', payload: undefined });
-
-        expect(setMpeEnabled).toHaveBeenCalledWith(false);
     });
 
     it('should notify with latency report details', () => {

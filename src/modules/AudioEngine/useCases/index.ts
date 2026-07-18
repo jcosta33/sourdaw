@@ -18,6 +18,7 @@ export { getAudioDevices } from './audioDeviceSelection/getAudioDevices';
 
 export { defaultSynthParams } from './audioEngineQueries/helpers';
 export { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
+export { getFactoryDrumKitByIndex } from './audioEngineQueries/getFactoryDrumKitByIndex';
 
 export { startAudioRecording } from './audioRecorder/startAudioRecording';
 export { startInputMonitoring } from './audioRecorder/startInputMonitoring';
@@ -123,16 +124,6 @@ export { setTrackMute } from './trackAudioControls/setTrackMute';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
 
-export { triggerLiveNoteOff } from './triggerLiveNoteOff';
-
 export { analyzePitchForClip } from './audioAnalysis/analyzePitchForClip';
 export { commitPitchEdit } from './audioAnalysis/commitPitchEdit';
 export { processPitchEditWasm } from './audioAnalysis/processPitchEditWasm';
-export { triggerLiveNoteOn } from './triggerLiveNoteOn';
-
-export { initWebMidi } from './webMidiInput/initWebMidi';
-export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
-export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
-export { setMpeEnabled } from './webMidiInput/setMpeEnabled';
-export { resetMidiState } from './webMidiInput/resetMidiState';
-export { webMidiStore } from './webMidiInput/helpers';

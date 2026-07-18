@@ -1,4 +1,4 @@
-import type { TrackChannelStrip } from '../../models/AudioEngineState';
+import type { WebMidiInstrumentStrip } from './engineStripAccess';
 
 export type WebMidiInstrumentTrack = Readonly<{
     id: string;
@@ -7,12 +7,6 @@ export type WebMidiInstrumentTrack = Readonly<{
         type: string;
     }>[];
 }>;
-
-type YeastInstrumentDeviceNode = Pick<
-    TrackChannelStrip['deviceNodes'][number],
-    'type' | 'fermenterControls' | 'grandBouleControls' | 'levainControls'
->;
-type YeastInstrumentStrip = { deviceNodes: YeastInstrumentDeviceNode[] };
 
 /**
  * Deliver one Note Off to whichever instrument device node the given track
@@ -27,7 +21,7 @@ type YeastInstrumentStrip = { deviceNodes: YeastInstrumentDeviceNode[] };
  */
 export function routeYeastNoteOffToInstrument(
     instrumentTrack: WebMidiInstrumentTrack,
-    strip: YeastInstrumentStrip | undefined,
+    strip: WebMidiInstrumentStrip | undefined,
     note: number,
     releaseVelocity: number,
     emitGrandBouleEvent: (deviceId: string, midiNote: number) => void

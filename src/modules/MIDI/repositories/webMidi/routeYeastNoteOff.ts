@@ -7,9 +7,9 @@
  * repository port is called.
  */
 
-import { audioEngine } from '../createWebAudioEngine';
-
 import { routeYeastNoteOffToInstrument, type WebMidiInstrumentTrack } from './routeYeastNoteOffToInstrument';
+
+import type { GetWebMidiTrackStrip } from './engineStripAccess';
 
 type RoutedYeastNoteOff = {
     channel: number;
@@ -26,12 +26,13 @@ export function routeYeastNoteOffsForTargetTrack(
     noteOffs: readonly RoutedYeastNoteOff[],
     deps: {
         emitGrandBouleEvent: (deviceId: string, midiNote: number) => void;
+        getTrackStrip: GetWebMidiTrackStrip;
     }
 ): void {
     if (noteOffs.length === 0 || !instrumentTrack) {
         return;
     }
-    const strip = audioEngine.getTrackStrip(instrumentTrack.id);
+    const strip = deps.getTrackStrip(instrumentTrack.id);
     const routedNotesByChannel = new Map<number, Set<number>>();
     for (const { channel, note } of noteOffs) {
         const routedNotes = routedNotesByChannel.get(channel) ?? new Set<number>();

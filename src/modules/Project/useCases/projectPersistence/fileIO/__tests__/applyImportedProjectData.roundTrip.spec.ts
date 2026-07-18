@@ -96,10 +96,13 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     importCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
-    resetMidiState,
     stopAllScheduled,
     stopAudioRecording,
 }));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return { ...actual, resetMidiState };
+});
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return { ...actual, stopRecording };

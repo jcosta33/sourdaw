@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
-import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';

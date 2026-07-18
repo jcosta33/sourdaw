@@ -4,12 +4,12 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     initializeAudioEngine,
     getAudioContext,
-    initWebMidi,
     setMasterGainValue,
     resumeEngine,
     requestMicPermission,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
+import { initWebMidi } from '#/modules/MIDI/useCases';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';

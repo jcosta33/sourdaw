@@ -14,7 +14,7 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
 }));
 
-vi.mock('../../../repositories/createWebAudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         context: {
             currentTime: 2,
@@ -24,6 +24,8 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
         },
         getTrackStrip: get_track_strip,
     },
+    getCompensationDelay: () => 0,
+    getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');

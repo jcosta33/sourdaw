@@ -108,3 +108,14 @@ export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
 
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';
+
+// ── WebMIDI Note Input ────────────────────────────────────────────────────────
+export { initWebMidi } from './webMidiInput/initWebMidi';
+export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
+export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
+export { selectMidiInput } from './webMidiInput/selectMidiInput';
+export { resetMidiState } from './webMidiInput/resetMidiState';
+export { webMidiStore } from './webMidiInput/helpers';
+export { triggerLiveNoteOn } from './triggerLiveNoteOn';
+export { triggerLiveNoteOff } from './triggerLiveNoteOff';
+export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
