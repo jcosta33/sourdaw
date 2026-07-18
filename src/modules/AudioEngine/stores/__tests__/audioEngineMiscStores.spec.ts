@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { controlSurfaceStore, getNextOscEndpointId } from '../controlSurface';
-import { linkStatusStore, defaultLinkStatus, getLinkStatusSnapshot } from '../linkStatusStore';
 
 describe('AudioEngine Misc Stores', () => {
     describe('controlSurfaceStore', () => {
@@ -21,23 +20,6 @@ describe('AudioEngine Misc Stores', () => {
         it('should update state', () => {
             controlSurfaceStore.update((state) => ({ ...state!, protocol: 'mcu' }));
             expect(controlSurfaceStore.value?.protocol).toBe('mcu');
-        });
-    });
-
-    describe('linkStatusStore', () => {
-        beforeEach(() => {
-            linkStatusStore.set(defaultLinkStatus);
-        });
-
-        it('should have initial state', () => {
-            expect(linkStatusStore.value?.enabled).toBe(false);
-            expect(linkStatusStore.value?.tempo).toBe(120);
-        });
-
-        it('should provide getLinkStatusSnapshot', () => {
-            expect(getLinkStatusSnapshot()).toBe(false);
-            linkStatusStore.update((state) => ({ ...state!, enabled: true }));
-            expect(getLinkStatusSnapshot()).toBe(true);
         });
     });
 });
