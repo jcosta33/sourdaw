@@ -74,16 +74,12 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setMarqueeSelection: vi.fn(),
 }));
 
-vi.mock('../../redo', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     redo: vi.fn(),
-}));
-
-vi.mock('../../undo', () => ({
     undo: vi.fn(),
-}));
-
-vi.mock('../../pushUndoEntry', () => ({
     pushUndoEntry: vi.fn(),
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('../../../stores/shortcutStore', () => ({
@@ -94,8 +90,6 @@ vi.mock('../../selectionHelpers/getAllClipIds', () => ({ getAllClipIds: vi.fn() 
 vi.mock('../../selectionHelpers/getLastClipEndBeat', () => ({ getLastClipEndBeat: vi.fn() }));
 vi.mock('../../selectionHelpers/goToNextMarker', () => ({ goToNextMarker: vi.fn() }));
 vi.mock('../../selectionHelpers/goToPreviousMarker', () => ({ goToPreviousMarker: vi.fn() }));
-
-vi.mock('../../executeAppAction', () => ({ executeAppAction: vi.fn() }));
 
 describe('handleKeyboardShortcut', () => {
     beforeEach(() => {

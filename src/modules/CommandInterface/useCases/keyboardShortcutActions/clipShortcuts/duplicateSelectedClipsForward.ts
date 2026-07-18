@@ -1,8 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, removeClip } from '#/modules/Arrangement/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-
-import { pushUndoEntry } from '../../pushUndoEntry';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).

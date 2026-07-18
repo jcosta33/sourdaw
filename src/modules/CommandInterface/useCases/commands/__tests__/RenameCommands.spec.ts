@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renameClip } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
-import { executeAppAction } from '../../executeAppAction';
 import { type CallableCommandEntry } from '../../searchCommandRegistry';
 import { clipCommands } from '../ClipCommands';
 import { trackCommands } from '../TrackCommands';
 
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
-vi.mock('../../executeAppAction', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: vi.fn(),
     removeTrack: vi.fn(),

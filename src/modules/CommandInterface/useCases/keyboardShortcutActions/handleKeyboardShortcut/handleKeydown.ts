@@ -14,6 +14,7 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
+import { CommandEventBus, executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
@@ -34,15 +35,10 @@ import {
 } from '#/modules/Workspace/useCases';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
-import { CommandEventBus } from '../../commandEventBus';
-import { executeAppAction } from '../../executeAppAction';
-import { pushUndoEntry } from '../../pushUndoEntry';
-import { redo } from '../../redo';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { getLastClipEndBeat } from '../../selectionHelpers/getLastClipEndBeat';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
-import { undo } from '../../undo';
 import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 

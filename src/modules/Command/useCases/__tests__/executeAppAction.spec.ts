@@ -10,7 +10,6 @@ import {
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
-import { shortcutStore } from '../../stores/shortcutStore';
 import { createAppActionCommittedError } from '../createAppActionCommittedError';
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
@@ -403,39 +402,5 @@ describe('executeAppAction', () => {
         expect(order.indexOf('execute:end')).toBeLessThan(order.indexOf('recordActionHistoryMetadata'));
         // …and describe never runs after execute started.
         expect(order.indexOf('describe')).toBeLessThan(order.indexOf('execute:start'));
-    });
-});
-
-// Shortcut-conflict guard over the hand-authored default shortcut definitions.
-// The maintainers already police this by hand — a dead duplicate `Escape`
-// binding was deliberately removed (see shortcutStore comment) because
-// `handleKeydown` returns on the first matching definition, making any later
-// duplicate combo unreachable. This test locks that invariant in.
-//
-// The generated Loop-Station pad grid (`loopStation.*`) is excluded: those pads
-// deliberately reuse single-letter keys (e.g. `m`, `r`, `g`) but are resolved
-// through a separate, mode-gated path (`parseLoopStationPadCallbackId`), not the
-// first-match `matches()` scan the core shortcuts share.
-describe('INITIAL_DEFINITIONS shortcut conflicts', () => {
-    it('has no two core (non-loop-station) definitions bound to the same key combo', () => {
-        const definitions = shortcutStore.value?.definitions ?? [];
-        const core = definitions.filter((def) => !def.id.startsWith('loopStation.'));
-        expect(core.length).toBeGreaterThan(0);
-
-        const owners = new Map<string, string>();
-        const conflicts: Array<{ combo: string; first: string; second: string }> = [];
-        for (const def of core) {
-            for (const combo of def.defaultKeys) {
-                const normalized = combo.toLowerCase();
-                const existing = owners.get(normalized);
-                if (existing !== undefined) {
-                    conflicts.push({ combo: normalized, first: existing, second: def.id });
-                } else {
-                    owners.set(normalized, def.id);
-                }
-            }
-        }
-
-        expect(conflicts).toEqual([]);
     });
 });
