@@ -31,7 +31,6 @@ export { readMidiFile } from './importMidiFile';
 export { formatChordName } from './formatChordName';
 
 // ── State Accessors ───────────────────────────────────────────────────────────
-export { getMidiLearnState } from './getMidiLearnState';
 export { getMidiStoreState } from './getMidiStoreState';
 export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
@@ -54,13 +53,6 @@ export { removePitchBend } from './midiEvent/removePitchBend';
 export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 export { setNotePitchBend } from './midiEvent/setNotePitchBend';
-
-export { startMidiLearn } from './midiLearn/startMidiLearn';
-export { stopMidiLearn } from './midiLearn/stopMidiLearn';
-export { completeMidiLearn } from './midiLearn/completeMidiLearn';
-export { clearAllMappings } from './midiLearn/clearAllMappings';
-export { handleMidiMessage } from './midiLearn/handleMidiMessage';
-export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';
@@ -107,18 +99,12 @@ export { setStepRecordBeat } from './stepRecording/setStepRecordBeat';
 export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingForClip';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
-export { getMidiLearnHandlers } from './getMidiLearnHandlers';
-export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────
 export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
 
 export { strumNotes } from './strumNotes/strumNotes';
 export { restoreStrumOriginals } from './strumNotes/restoreStrumOriginals';
-
-// ── Hardware ─────────────────────────────────────────────────────────────────
-export { exportHardwareMappings } from './hardware/exportHardwareMappings';
-export { importHardwareMappings } from './hardware/importHardwareMappings';
 
 // ── Chord Track Transposition ─────────────────────────────────────────────────
 export { transposeForChordTrack } from './transposeForChordTrack';

@@ -6,7 +6,7 @@ import { useStore } from '#/infra/store/useStore';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
-import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/MIDI/presentations/views';
+import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';

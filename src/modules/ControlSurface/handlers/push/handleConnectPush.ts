@@ -1,6 +1,7 @@
-import { connectPush } from '#/modules/Plugin/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { connectPush } from '../../useCases/pushIntegration/connectPush';
 
 export const handleConnectPush = createHandler<'connectPush'>({
     execute: (alpha) => {

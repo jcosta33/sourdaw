@@ -1,13 +1,10 @@
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import {
-    appendRecordedMidiNote,
     completeMidiLearn,
-    createMidiNote,
     getMidiLearnState,
     handleMidiMessage as applyMidiMappings,
-    stepRecordNoteOff,
-    stepRecordNoteOn,
-} from '#/modules/MIDI/useCases';
+} from '#/modules/ControlSurface/useCases';
+import { appendRecordedMidiNote, createMidiNote, stepRecordNoteOff, stepRecordNoteOn } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,

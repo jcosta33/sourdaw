@@ -7,7 +7,7 @@ import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { MidiLearnRotaryKnob } from '#/modules/MIDI/presentations/views';
+import { MidiLearnRotaryKnob } from '#/modules/ControlSurface/presentations/views';
 
 import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
 import {

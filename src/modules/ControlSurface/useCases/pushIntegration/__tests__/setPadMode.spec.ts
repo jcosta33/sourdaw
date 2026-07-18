@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { pushStore, PAD_MODE_COLORS } from '#/modules/Plugin/stores/push';
+import { pushStore, PAD_MODE_COLORS } from '../../../stores/push';
 
 import { setPadMode } from '../setPadMode';
 
