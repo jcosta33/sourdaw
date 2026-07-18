@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { setSoloMode } from '#/modules/Workspace/useCases';
+
 import { defaultPreferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { resetPreferences } from '../resetPreferences';
-import { setSoloMode } from '../togglePanel/panelToggles/setSoloMode';
 
 const mocks = vi.hoisted(() => ({
     preferencesStoreSet: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock('../../stores/preferencesStore', () => ({
     },
 }));
 
-vi.mock('../togglePanel/panelToggles/setSoloMode', () => ({
+vi.mock('#/modules/Workspace/useCases', () => ({
     setSoloMode: mocks.setSoloMode,
 }));
 

@@ -82,6 +82,8 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
             return mocks.workspaceStoreValue.value;
         },
     },
+}));
+vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: { value: {} },
 }));
 vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({

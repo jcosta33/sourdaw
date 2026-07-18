@@ -4,8 +4,9 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
-import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
+import { workspaceStore } from '#/modules/Workspace/stores';
 import {
     toggleClipInSelection,
     selectClipWithFocus,

@@ -37,11 +37,6 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
                 return mockWorkspaceValue.value;
             },
         },
-        preferencesStore: {
-            get value() {
-                return actual.preferencesStore?.value ?? {};
-            },
-        },
     };
 });
 

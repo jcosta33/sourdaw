@@ -1,5 +1,5 @@
-import { preferencesStore } from '#/modules/Workspace/stores';
-import { gridSnapBeats } from '#/modules/Workspace/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { gridSnapBeats } from '#/modules/Preferences/useCases';
 
 export function getGridSnap(): number {
     const prefs = preferencesStore.value;

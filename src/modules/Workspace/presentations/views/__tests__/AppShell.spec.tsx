@@ -54,8 +54,8 @@ vi.mock('../ClipView', () => ({
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
 }));
 
-vi.mock('../ShortcutsSection', () => ({
-    ShortcutsSection: () => <div data-testid="shortcuts-section">Shortcuts</div>,
+vi.mock('#/modules/Preferences/presentations/views', () => ({
+    PreferencesDialog: () => <div data-testid="preferences-dialog">Preferences</div>,
 }));
 
 vi.mock('#/modules/AudioEngine/presentations/views', () => ({

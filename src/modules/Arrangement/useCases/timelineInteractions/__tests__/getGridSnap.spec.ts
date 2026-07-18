@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { preferencesStore } from '#/modules/Workspace/stores';
-import { defaultPreferences } from '#/modules/Workspace/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 
 import { getGridSnap } from '../getGridSnap';
 

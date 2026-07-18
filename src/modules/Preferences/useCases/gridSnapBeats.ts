@@ -1,4 +1,4 @@
-import { type GridSnapOption } from '../../models/Preferences';
+import { type GridSnapOption } from '../models/Preferences';
 
 const GRID_SNAP_OPTIONS: ReadonlyArray<{ value: GridSnapOption; beats: number }> = [
     { value: 'bar', beats: 4 },

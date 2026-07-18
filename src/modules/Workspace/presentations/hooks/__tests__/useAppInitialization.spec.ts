@@ -51,9 +51,9 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), getTransportState: vi.fn(() => null) }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
-// Path resolves (from this __tests__ dir) to Workspace/stores/preferencesStore —
-// the exact module the hook imports, so the mock actually intercepts it.
-vi.mock('../../../stores/preferencesStore', () => ({
+// Mock the preferences store the hook imports from #/modules/Preferences/stores,
+// so the mock actually intercepts it.
+vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {
         get value(): Record<string, unknown> | null {
             return mockPreferencesValueHolder.current;
