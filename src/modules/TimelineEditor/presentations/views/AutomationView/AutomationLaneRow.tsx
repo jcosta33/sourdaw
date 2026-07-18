@@ -16,11 +16,10 @@ import {
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
+import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/Workspace/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
-import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
-import { workspaceStore } from '../../../stores/workspaceStore';
 import {
     onDrawMouseDown,
     onRubberBandStart,

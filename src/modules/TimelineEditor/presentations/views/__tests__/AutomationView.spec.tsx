@@ -24,6 +24,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     scrollTimelineViewportFromWheel: vi.fn(),
 }));
 
+vi.mock('#/modules/Workspace/useCases', () => ({
+    toggleAutomationPanel: vi.fn(),
+}));
+
 vi.mock('#/modules/Arrangement/presentations/views', () => ({
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
 }));

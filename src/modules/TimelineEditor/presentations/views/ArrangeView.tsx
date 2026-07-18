@@ -36,12 +36,10 @@ import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
+import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/Workspace/useCases';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { closeScratchPad } from '../../useCases/togglePanel/panelToggles/closeScratchPad';
-import { setSessionViewWidth } from '../../useCases/togglePanel/panelToggles/setSessionViewWidth';
-import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
 import { ResizeHandle } from '../components/ResizeHandle';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';

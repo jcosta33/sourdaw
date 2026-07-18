@@ -23,10 +23,10 @@ import {
 } from '#/modules/BrowserAi/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore } from '#/modules/Transport/stores';
+import { openPreferencesDialog } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../../models/TrackViewTypes';
-import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
 
 type RenderQuality = 'low' | 'standard' | 'high' | 'maximum';
 

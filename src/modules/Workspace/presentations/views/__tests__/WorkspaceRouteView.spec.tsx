@@ -9,11 +9,8 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
     useWorkspaceState: vi.fn(),
 }));
 
-vi.mock('../ArrangeView', () => ({
+vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
     ArrangeView: () => <div data-testid="arrange-view">Arrange View</div>,
-}));
-
-vi.mock('../AutomationView', () => ({
     AutomationView: () => <div data-testid="automation-view">Automation View</div>,
 }));
 

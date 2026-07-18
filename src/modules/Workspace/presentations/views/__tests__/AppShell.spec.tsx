@@ -56,7 +56,8 @@ vi.mock('#/modules/MixerConsole/presentations/views', () => ({
     MixerPanel: () => <div data-testid="mixer-panel">Mixer</div>,
 }));
 
-vi.mock('../ClipView', () => ({
+vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/TimelineEditor/presentations/views')>()),
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
 }));
 

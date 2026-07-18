@@ -2,8 +2,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { setWorkspaceMode } from '#/modules/Workspace/useCases';
 
-import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
 import { ClipView } from '../ClipView';
 
 vi.mock('#/components/ui/button', () => ({
@@ -40,7 +40,7 @@ vi.mock('../../hooks/useTracks', () => ({
     useTracks: vi.fn(() => ({ tracks: [], selectedTrackId: null })),
 }));
 
-vi.mock('../../../useCases/setWorkspaceMode', () => ({
+vi.mock('#/modules/Workspace/useCases', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
@@ -55,10 +55,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store, fallback) => fallback || store.value),
-}));
-
-vi.mock('../../../models/WorkspaceState', () => ({
-    defaultWorkspaceState: { selectedClipId: null },
 }));
 
 vi.mock('../ClipView/PianoRoll', () => ({

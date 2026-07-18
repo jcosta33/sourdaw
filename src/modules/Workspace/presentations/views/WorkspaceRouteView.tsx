@@ -1,9 +1,8 @@
 import { type ReactElement } from 'react';
 
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { ArrangeView, AutomationView } from '#/modules/TimelineEditor/presentations/views';
 
-import { ArrangeView } from './ArrangeView';
-import { AutomationView } from './AutomationView';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 export const WorkspaceRouteView = (): ReactElement => {
     const { mode } = useWorkspaceState();

@@ -8,6 +8,7 @@ export { setWorkspaceEventBus } from './workspaceEventBus';
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
 export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
+export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,9 @@ export { toggleVirtualKeyboard } from './togglePanel/panelToggles/toggleVirtualK
 export { toggleWorkspaceMode } from './togglePanel/panelToggles/toggleWorkspaceMode';
 export { openInspector } from './togglePanel/panelToggles/openInspector';
 export { cycleChannelStripWidth } from './togglePanel/panelToggles/cycleChannelStripWidth';
+export { closeScratchPad } from './togglePanel/panelToggles/closeScratchPad';
+export { setSessionViewWidth } from './togglePanel/panelToggles/setSessionViewWidth';
+export { setTrackListWidth } from './togglePanel/panelToggles/setTrackListWidth';
 
 export { zoomToFit } from './togglePanel/zoomOperations/zoomToFit';
 export { zoomToSelection } from './togglePanel/zoomOperations/zoomToSelection';

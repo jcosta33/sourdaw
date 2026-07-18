@@ -98,8 +98,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     scrollTimelineViewportHorizontallyFromWheel: mocks.scrollTimelineViewportHorizontallyFromWheel,
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
+vi.mock('#/modules/Workspace/stores', () => ({
     workspaceStore: mocks.workspaceStore,
+    defaultWorkspaceState: { trackListOpen: true, trackListWidth: 200 },
 }));
 
 vi.mock('../AutomationView/AutomationLaneRow', () => ({

@@ -4,10 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setScrollX } from '#/modules/Arrangement/stores';
 import { addTrack, addClip, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
-import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import { useTracks } from '../../hooks/useTracks';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { ArrangeView } from '../ArrangeView';
@@ -67,15 +67,13 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
     })),
 }));
 
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/closeScratchPad', () => ({
+vi.mock('#/modules/Workspace/useCases', () => ({
     closeScratchPad: vi.fn(),
-}));
-
-vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setTrackListWidth', () => ({
+    setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/presentations/components/ResizeHandle', () => ({
+vi.mock('../../components/ResizeHandle', () => ({
     ResizeHandle: ({
         direction,
         onResize: _onResize,

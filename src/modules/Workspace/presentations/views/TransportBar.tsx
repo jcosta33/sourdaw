@@ -6,6 +6,7 @@ import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/use
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
+import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
@@ -17,7 +18,6 @@ import { useUndoState } from '../hooks/useUndoState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { PromptBar } from './PromptBar';
-import { TempoEditor } from './TempoEditor';
 import { ToolSelector } from './ToolSelector';
 import { AutoScrollToggle } from './Transport/AutoScrollToggle';
 import { PanelToggles } from './Transport/PanelToggles';
