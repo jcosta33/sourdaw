@@ -12,9 +12,12 @@ const { audioBufferToWavMock, cacheAudioBufferMock, getCachedAudioBufferMock, se
     }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioBufferToWav: audioBufferToWavMock,
     cacheAudioBuffer: cacheAudioBufferMock,
     getCachedAudioBuffer: getCachedAudioBufferMock,
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    audioBufferToWav: audioBufferToWavMock,
 }));
 
 const create_test_audio_buffer = (): AudioBuffer => {

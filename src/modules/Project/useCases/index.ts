@@ -26,3 +26,5 @@ export { verifyAudioBufferReferences } from './projectPersistence/helpers/verify
 
 export { getRecentProjects } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
+
+export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

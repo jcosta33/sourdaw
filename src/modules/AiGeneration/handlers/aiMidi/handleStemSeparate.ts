@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack, getTrackStoreState, removeTrack } from '#/modules/Arrangement/useCases';
 import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferToWav, cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav } from '#/modules/AudioRendering/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

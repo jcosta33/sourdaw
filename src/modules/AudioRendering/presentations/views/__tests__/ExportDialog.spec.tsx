@@ -123,9 +123,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioBufferToFlac: vi.fn(),
-    audioBufferToMp3: vi.fn(),
-    audioBufferToWav: mocks.encodeWav,
     cancelExport: vi.fn(),
     exportStems: vi.fn(),
     getAudioContext: mocks.getAudioContext,
@@ -133,6 +130,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     isExportActive: mocks.isExportActive,
     renderOffline: mocks.renderOffline,
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
+}));
+
+vi.mock('../../../useCases/audioBufferToWav', () => ({
+    audioBufferToWav: mocks.encodeWav,
+}));
+
+vi.mock('../../../useCases/audioBufferToMp3', () => ({
+    audioBufferToMp3: vi.fn(),
+}));
+
+vi.mock('../../../useCases/audioBufferToFlac', () => ({
+    audioBufferToFlac: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -164,7 +173,7 @@ vi.mock('../../../useCases/renderToClip', () => ({
     renderToClip: vi.fn(),
 }));
 
-vi.mock('../../../useCases/isNativeProjectRuntimeAvailable', () => ({
+vi.mock('#/modules/Project/useCases', () => ({
     isNativeProjectRuntimeAvailable: vi.fn(() => true),
 }));
 

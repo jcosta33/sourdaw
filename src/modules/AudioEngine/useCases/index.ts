@@ -105,9 +105,7 @@ export { isExportActive } from './offlineRender/isExportActive';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
-export { audioBufferToWav } from './audioBufferToWav';
-export { audioBufferToMp3 } from './audioBufferToMp3';
-export { audioBufferToFlac } from './audioBufferToFlac';
+// Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
 export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';

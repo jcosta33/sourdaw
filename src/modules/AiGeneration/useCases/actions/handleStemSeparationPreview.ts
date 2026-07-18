@@ -1,6 +1,7 @@
 import { isAppError } from '#/infra/errors/isAppError';
 import { separateStems } from '#/modules/AudioAnalysis/useCases';
-import { audioBufferToWav, cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav } from '#/modules/AudioRendering/useCases';
 
 import { createAiGenerationError } from '../../errors/AiGenerationError';
 
