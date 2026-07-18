@@ -5,9 +5,9 @@
  * methods that forward via MessagePort. Caches WASM binary and worklet registration.
  */
 
-import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

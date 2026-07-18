@@ -7,11 +7,12 @@
  * Key difference: Gluten is an *effect* (1 input, 1 output), not an instrument.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
 

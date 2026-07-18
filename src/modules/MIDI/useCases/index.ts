@@ -115,7 +115,6 @@ export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEvent
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';
-export { webMidiStore } from './webMidiInput/helpers';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';

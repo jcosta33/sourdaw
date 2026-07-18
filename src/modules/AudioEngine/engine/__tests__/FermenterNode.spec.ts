@@ -12,7 +12,7 @@ describe('isFermenterDevice', () => {
 // Mock the worklet-init helpers so createFermenterNode resolves without a real
 // AudioContext / worklet module / WASM fetch. The ready handshake resolves
 // immediately so the factory completes.
-vi.mock('../workletInitShared', () => ({
+vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
     fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     createReadyHandshake: vi.fn(() => ({

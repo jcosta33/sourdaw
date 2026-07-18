@@ -9,3 +9,5 @@ export type { ChordTrackState } from './chordTrackStore';
 
 export { stepRecordStore, defaultStepRecordState } from './stepRecordStore';
 export type { StepRecordState } from './stepRecordStore';
+
+export { webMidiStore, defaultWebMidiState } from './webMidiStore';

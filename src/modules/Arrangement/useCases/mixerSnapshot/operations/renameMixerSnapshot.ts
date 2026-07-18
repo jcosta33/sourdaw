@@ -1,4 +1,4 @@
-import { mixerSnapshotStore } from './helpers';
+import { mixerSnapshotStore } from '../../../stores/mixerSnapshotStore';
 
 /**
  * Rename a mixer snapshot.

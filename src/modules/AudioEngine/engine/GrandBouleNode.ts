@@ -12,10 +12,11 @@
  * MIDI and control messages are routed to the Worker, not the worklet.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
+
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

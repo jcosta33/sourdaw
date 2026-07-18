@@ -5,11 +5,12 @@
  * provides setParam/setBypass via MessagePort.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, BACTERIA_IDX, BACTERIA_BAND_COUNT, type TelemetrySlot } from './telemetryAllocator';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 /** Linear amplitude → dB with a -100 dB floor (matches input/output dB range). */
 function linearToDb(linear: number): number {

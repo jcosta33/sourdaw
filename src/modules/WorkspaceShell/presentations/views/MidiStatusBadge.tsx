@@ -5,7 +5,7 @@ import { KeyboardMusic } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { webMidiStore } from '#/modules/MIDI/useCases';
+import { webMidiStore } from '#/modules/MIDI/stores';
 
 import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
 

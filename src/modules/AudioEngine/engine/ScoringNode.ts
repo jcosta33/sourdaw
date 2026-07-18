@@ -4,13 +4,13 @@
  * telemetry sent back via MessagePort.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 import { NOTE_NAMES } from '#/utils/noteNames';
 
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 

@@ -1,8 +1,7 @@
 import { type MixerChannelSnapshot } from '../../../models/MixerSnapshotTypes';
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { setTrackState } from '../../../repositories/track/setTrackState';
-
-import { mixerSnapshotStore } from './helpers';
+import { mixerSnapshotStore } from '../../../stores/mixerSnapshotStore';
 
 export function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] | null {
     const snaps = mixerSnapshotStore.value?.snapshots ?? [];

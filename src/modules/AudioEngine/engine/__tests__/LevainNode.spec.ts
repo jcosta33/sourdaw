@@ -14,7 +14,7 @@ describe('isLevainDevice', () => {
 // AudioContext / worklet module / WASM fetch. `onMessage` returns 'late' so a
 // post-ready `error` message is treated as a runtime fault (the branch under
 // test), and the ready handshake resolves immediately so the factory completes.
-vi.mock('../workletInitShared', () => ({
+vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
     fetchWasmBinary: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     createReadyHandshake: vi.fn(() => ({

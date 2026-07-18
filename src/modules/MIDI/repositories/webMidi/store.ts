@@ -1,27 +1,23 @@
 /**
- * Web MIDI store - wraps the internal state for React integration.
+ * Web MIDI store sync adapter.
+ *
+ * Keeps the public read-contract store (`stores/webMidiStore.ts`) in sync with
+ * this repository's internal mutable state. Importing this module registers the
+ * subscription as a side effect; it is loaded from the Web MIDI init path
+ * (`lifecycle/initWebMidi.ts`) so the subscription exists before the first
+ * `setState` input enumeration. Repository → same-module store is the sanctioned
+ * thin-adapter pattern (`repositories-no-business` exempts `stores/`).
  */
-import { createStore } from '#/infra/store/createStore';
-
-import { type WebMidiState } from '../../models/WebMidiTypes';
+import { webMidiStore } from '../../stores/webMidiStore';
 
 import { getState } from './getState';
 import { subscribe } from './subscribe';
 
-const defaultWebMidiState: WebMidiState = {
-    isSupported: false,
-    inputs: [],
-    selectedInputId: null,
-};
+// Seed the store with the repository's current internal state (support
+// detection + persisted input id computed in state.ts), then keep it in sync
+// with every subsequent internal state change.
+webMidiStore.set(getState());
 
-export const webMidiStore = createStore<WebMidiState>({
-    initialData: getState() ?? defaultWebMidiState,
-});
-
-// Sync internal state changes to the store
 subscribe(() => {
-    const current = getState();
-    if (current) {
-        webMidiStore.set(current);
-    }
+    webMidiStore.set(getState());
 });

@@ -4,9 +4,9 @@
  * Synchronizes with the kneadStore to receive per-clip pitch blobs and parameters.
  */
 
-import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
+import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from '#/infra/audioWorklet/workletInitShared';
 
-import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from './workletInitShared';
+import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
