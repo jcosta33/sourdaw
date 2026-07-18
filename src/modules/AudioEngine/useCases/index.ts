@@ -89,10 +89,6 @@ export { getTrackLatency } from './latencyCompensation/compensation/getTrackLate
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 
-export { isTauri } from '#/utils/tauriRuntime';
-export { generateMidiAI } from './nativeAiBridge/generateMidiAI';
-export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
-
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';
 export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';

@@ -1,7 +1,9 @@
 import { isAppError } from '#/infra/errors/isAppError';
-import { cacheAudioBuffer, denoiseAudio, getCachedAudioBuffer, isTauri } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { isTauri } from '#/utils/tauriRuntime';
 
 import { createAiGenerationError } from '../../errors/AiGenerationError';
+import { denoiseAudio } from '../nativeAiBridge/denoiseAudio';
 
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
