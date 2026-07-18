@@ -1,6 +1,6 @@
 import { automationStore } from '#/modules/Automation/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 
-import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 
 /** Automation commands — scale, invert, thin automation points. */

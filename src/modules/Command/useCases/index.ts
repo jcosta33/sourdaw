@@ -3,7 +3,7 @@
 
 export { describeAction } from './actionLabels';
 export { setActionHistoryMetadataPort } from './actionHistoryMetadataPort';
-export { setCommandEventBus } from './commandEventBus';
+export { CommandEventBus, setCommandEventBus } from './commandEventBus';
 export { createCallbackUndoEntry } from './createCallbackUndoEntry';
 export { createUndoEntry } from './createUndoEntry';
 
@@ -40,6 +40,8 @@ export { commitActionUndoEntry } from './commitActionUndoEntry';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
 // (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
 // pitch aggregate. See ADR 0011 Wave 3.
-
-export { setShortcutMapping } from './setShortcutMapping';
-export { resetShortcutMappings } from './resetShortcutMappings';
+// Command palette + keyboard-shortcut orchestration (`setShortcutMapping`,
+// `resetShortcutMappings`, the command registry, selection helpers and the
+// shortcut store) now live in CommandInterface/* — that module owns the
+// palette/shortcut interface and depends on this dispatch kernel. See ADR
+// 0011 Wave 3.

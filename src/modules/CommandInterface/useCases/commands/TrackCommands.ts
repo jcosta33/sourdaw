@@ -1,8 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { duplicateTrack, removeTrack } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { promptUser } from '#/utils/Notification/promptUser';
 
-import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
 

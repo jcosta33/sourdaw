@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     resetShortcutMappings: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/CommandInterface/useCases', () => ({
     setShortcutMapping: mocks.setShortcutMapping,
     resetShortcutMappings: mocks.resetShortcutMappings,
 }));
@@ -37,7 +37,7 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-vi.mock('#/modules/Command/stores', () => ({
+vi.mock('#/modules/CommandInterface/stores', () => ({
     shortcutStore: {
         name: 'shortcutStore',
         value: {

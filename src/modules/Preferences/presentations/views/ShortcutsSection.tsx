@@ -6,8 +6,8 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/Command/stores';
-import { resetShortcutMappings, setShortcutMapping } from '#/modules/Command/useCases';
+import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/CommandInterface/stores';
+import { resetShortcutMappings, setShortcutMapping } from '#/modules/CommandInterface/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
@@ -18,7 +18,7 @@ import { SectionTitle } from './preferencesShared';
 // `Workspace/models/Shortcuts.ts` store, which duplicated every binding
 // the Command shortcut engine already owned. Both stores fired on the
 // same keydown, leading to double-dispatched actions. The stores are
-// now unified under `Command/stores/shortcutStore` — this component is
+// now unified under `CommandInterface/stores/shortcutStore` — this component is
 // the editor for that single source of truth.
 
 const CATEGORY_ORDER: Record<ShortcutDefinition['category'], number> = {

@@ -4,11 +4,10 @@ import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCommandPalette } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
-
-import { executeAppAction } from '../../useCases/executeAppAction';
 
 import { searchCommands, type CommandEntry } from './commandRegistry';
 

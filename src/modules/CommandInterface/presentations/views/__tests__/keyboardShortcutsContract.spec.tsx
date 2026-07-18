@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { useGlobalKeyboardShortcuts } from '../keyboardShortcutsContract';
 
-import type { KeyDescriptor } from '#/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
+import type { KeyDescriptor } from '../../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 
 const mocks = vi.hoisted(() => ({
     handleKeydown: vi.fn<(desc: KeyDescriptor) => boolean>(() => false),

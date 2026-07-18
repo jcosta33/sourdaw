@@ -1,6 +1,6 @@
+import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 

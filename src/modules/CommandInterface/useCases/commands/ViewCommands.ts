@@ -1,4 +1,5 @@
 import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
@@ -10,7 +11,6 @@ import {
     toggleAutomationPanel,
 } from '#/modules/Workspace/useCases';
 
-import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 

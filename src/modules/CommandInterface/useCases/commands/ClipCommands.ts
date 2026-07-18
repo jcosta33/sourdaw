@@ -1,9 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { renameClip, splitClip } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { promptUser } from '#/utils/Notification/promptUser';
 
-import { executeAppAction } from '../executeAppAction';
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
 import { getSelectedClipIds } from '../selectionHelpers/getSelectedClipIds';
