@@ -35,7 +35,6 @@ import {
     getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
-    setWebMidiRuntimeEventBus,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -79,6 +78,8 @@ import {
     getChordTrackHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    setWebMidiRuntimeEventBus,
+    getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
 import { markDirty, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
@@ -256,6 +257,7 @@ registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
+registerHandlerMap(getWebMidiInputHandlers());
 registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getControlRoomHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());

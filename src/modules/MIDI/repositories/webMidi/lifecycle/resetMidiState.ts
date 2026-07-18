@@ -1,15 +1,16 @@
 import { MIDI_CC } from '../../../models/WebMidiTypes';
-import { audioEngine } from '../../createWebAudioEngine';
 import { getActiveInput } from '../getActiveInput';
 import { getMidiAccess } from '../getMidiAccess';
 import { releaseActiveToasterNote } from '../releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../state';
 
-export function resetMidiState(): void {
+import type { GetWebMidiTrackStrip } from '../engineStripAccess';
+
+export function resetMidiState(deps: { getCurrentTime: () => number; getTrackStrip: GetWebMidiTrackStrip }): void {
     for (const [, noteData] of activeNotes) {
-        releaseActiveToasterNote(noteData);
+        releaseActiveToasterNote(noteData, deps.getTrackStrip);
         if (noteData.osc) {
-            const now = audioEngine.context.currentTime;
+            const now = deps.getCurrentTime();
             if (noteData.osc._env) {
                 noteData.osc._env.gain.setTargetAtTime(0, now, 0.005);
             }

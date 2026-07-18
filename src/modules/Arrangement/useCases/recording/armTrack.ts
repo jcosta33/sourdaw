@@ -1,4 +1,4 @@
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
+import { setMidiInputTrack } from '#/modules/MIDI/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';

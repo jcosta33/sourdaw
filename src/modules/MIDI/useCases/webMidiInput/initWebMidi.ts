@@ -1,5 +1,6 @@
 import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { initWebMidi as initializeWebMidi } from '../../repositories/webMidi/lifecycle/initWebMidi';
 import { routeYeastNoteOffsForTargetTrack } from '../../repositories/webMidi/routeYeastNoteOff';
@@ -55,6 +56,7 @@ function subscribeToYeastNotesOff(): void {
                 emitGrandBouleEvent: (deviceId, midiNote) => {
                     void eventBus.emit('midi.noteOff', { deviceId, midiNote });
                 },
+                getTrackStrip: (trackId) => audioEngine.getTrackStrip(trackId),
             });
         }
     );

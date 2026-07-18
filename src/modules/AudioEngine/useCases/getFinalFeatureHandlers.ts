@@ -1,13 +1,11 @@
 import { handleAddCvOutput } from '../handlers/finalFeature/handleAddCvOutput';
 import { handleCloseElasticEditor } from '../handlers/finalFeature/handleCloseElasticEditor';
 import { handleDetectTransients } from '../handlers/finalFeature/handleDetectTransients';
-import { handleDisableMpe } from '../handlers/finalFeature/handleDisableMpe';
 import { handleElasticAddMarker } from '../handlers/finalFeature/handleElasticAddMarker';
 import { handleElasticRemoveMarker } from '../handlers/finalFeature/handleElasticRemoveMarker';
 import { handleElasticSetSensitivity } from '../handlers/finalFeature/handleElasticSetSensitivity';
 import { handleElasticSetTool } from '../handlers/finalFeature/handleElasticSetTool';
 import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleElasticToggleMarkerLock';
-import { handleEnableMpe } from '../handlers/finalFeature/handleEnableMpe';
 import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
@@ -21,13 +19,11 @@ export type FinalFeatureHandlersMap = {
     addCvOutput: typeof handleAddCvOutput;
     closeElasticEditor: typeof handleCloseElasticEditor;
     detectTransients: typeof handleDetectTransients;
-    disableMpe: typeof handleDisableMpe;
     elasticAddMarker: typeof handleElasticAddMarker;
     elasticRemoveMarker: typeof handleElasticRemoveMarker;
     elasticSetSensitivity: typeof handleElasticSetSensitivity;
     elasticSetTool: typeof handleElasticSetTool;
     elasticToggleMarkerLock: typeof handleElasticToggleMarkerLock;
-    enableMpe: typeof handleEnableMpe;
     enableWarping: typeof handleEnableWarping;
     getLatencyReport: typeof handleGetLatencyReport;
     openElasticEditor: typeof handleOpenElasticEditor;
@@ -57,8 +53,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,
-        enableMpe: handleEnableMpe,
-        disableMpe: handleDisableMpe,
         getLatencyReport: handleGetLatencyReport,
         setMasterGain: handleSetMasterGain,
     };

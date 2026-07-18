@@ -58,7 +58,7 @@ describe('webMidi state accessors', () => {
         midiLearn.active = true;
         midiLearn.callback = vi.fn();
 
-        resetMidiState();
+        resetMidiState({ getCurrentTime: () => 0, getTrackStrip: () => undefined });
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);

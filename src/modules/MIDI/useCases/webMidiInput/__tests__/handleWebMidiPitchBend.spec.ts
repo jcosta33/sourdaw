@@ -13,10 +13,12 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => target_track_id.value,
 }));
 
-vi.mock('../../../repositories/createWebAudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         context: { currentTime: 2 },
     },
+    getCompensationDelay: () => 0,
+    getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');

@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { createWebMidiNoteKey } from '../../models/WebMidiTypes';
-import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { routeYeastNoteOffToInstrument } from '../../repositories/webMidi/routeYeastNoteOffToInstrument';
@@ -115,7 +115,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
-        releaseActiveToasterNote(noteData);
+        releaseActiveToasterNote(noteData, (trackId) => audioEngine.getTrackStrip(trackId));
 
         if (noteData.grandBouleDeviceId) {
             const strip = audioEngine.getTrackStrip(instrumentTrackId);

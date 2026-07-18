@@ -12,12 +12,14 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => null,
 }));
 
-vi.mock('../../../repositories/createWebAudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         getTrackStrip: vi.fn(),
         setTrackGain: vi.fn(),
         setTrackPan: vi.fn(),
     },
+    getCompensationDelay: () => 0,
+    getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');

@@ -1,10 +1,10 @@
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { getCompensationDelay, getFactoryDrumKitByIndex } from '#/modules/AudioEngine/useCases';
 import {
     completeMidiLearn,
     getMidiLearnState,
     handleMidiMessage as applyMidiMappings,
 } from '#/modules/ControlSurface/useCases';
-import { appendRecordedMidiNote, createMidiNote, stepRecordNoteOff, stepRecordNoteOn } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
@@ -15,9 +15,11 @@ import {
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 
-import { getDrumKitByIndex } from '../../models/FactoryDrumKits';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
-import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+import { appendRecordedMidiNote } from '../appendRecordedMidiNote';
+import { createMidiNote } from '../createMidiNote';
+import { stepRecordNoteOff } from '../stepRecording/stepRecordNoteOff';
+import { stepRecordNoteOn } from '../stepRecording/stepRecordNoteOn';
 
 function getTrackStoreState(): TrackStoreState | null {
     return trackStore.value;
@@ -38,8 +40,8 @@ export const midiMessageHandlerDependencies = {
     completeMidiLearn,
     createMidiNote,
     eventBus: WebMidiEventBus,
-    getCompensationDelay,
-    getDrumKitByIndex,
+    getCompensationDelay: (trackId: string) => getCompensationDelay(trackId),
+    getDrumKitByIndex: (index: number) => getFactoryDrumKitByIndex(index),
     getDrumKitDefByIndex,
     getMidiLearnState,
     getSynthParamsForTrack,

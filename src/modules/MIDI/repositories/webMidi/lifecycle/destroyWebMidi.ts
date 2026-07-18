@@ -13,7 +13,9 @@ import { activeNotes, channelToNote, midiLearn } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 
-export function destroyWebMidi(): void {
+import type { GetWebMidiTrackStrip } from '../engineStripAccess';
+
+export function destroyWebMidi(getTrackStrip: GetWebMidiTrackStrip): void {
     detachActiveInput();
 
     if (getTauriMode()) {
@@ -27,7 +29,7 @@ export function destroyWebMidi(): void {
     }
 
     for (const noteData of activeNotes.values()) {
-        releaseActiveToasterNote(noteData);
+        releaseActiveToasterNote(noteData, getTrackStrip);
         if (noteData.osc) {
             try {
                 noteData.osc.stop();

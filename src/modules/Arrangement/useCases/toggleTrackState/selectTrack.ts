@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
+import { setMidiInputTrack } from '#/modules/MIDI/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrackState } from '../../repositories/track/updateTrackState';

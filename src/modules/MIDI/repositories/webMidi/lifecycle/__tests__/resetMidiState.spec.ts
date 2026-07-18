@@ -2,11 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebMidiNoteKey, type ActiveNoteData, type WebMidiNoteKey } from '../../../../models/WebMidiTypes';
 
-// resetMidiState reads the real `activeNotes`/`channelToNote` singletons and the
-// audioEngine context. Mock both: control the active-note map directly and skip
-// the hardware all-notes-off send (getMidiAccess/getActiveInput → null).
-// Mock specifiers resolve from this test file: `../state` is `../../state`,
-// `../../createWebAudioEngine` is `../../../createWebAudioEngine`.
+// resetMidiState reads the real `activeNotes`/`channelToNote` singletons and
+// receives engine access (`getCurrentTime` / `getTrackStrip`) injected via its
+// deps argument. Skip the hardware all-notes-off send (getMidiAccess /
+// getActiveInput → null); `../state` mock resolves as `../../state`.
 const { activeNotes, channelToNote, get_track_strip } = vi.hoisted(() => ({
     activeNotes: new Map<WebMidiNoteKey, ActiveNoteData>(),
     channelToNote: new Map<number, WebMidiNoteKey>(),
@@ -26,14 +25,9 @@ vi.mock('../../getActiveInput', () => ({
     getActiveInput: () => null,
 }));
 
-vi.mock('../../../createWebAudioEngine', () => ({
-    audioEngine: {
-        context: { currentTime: 5 },
-        getTrackStrip: get_track_strip,
-    },
-}));
-
 const { resetMidiState } = await import('../resetMidiState');
+
+const reset_deps = { getCurrentTime: () => 5, getTrackStrip: get_track_strip };
 
 function makeOscWithEnv() {
     const setTargetAtTime = vi.fn();
@@ -63,7 +57,7 @@ describe('resetMidiState — smooth release on active notes', () => {
             osc,
         });
 
-        resetMidiState();
+        resetMidiState(reset_deps);
 
         // The reset must ramp the envelope to 0 (smooth release) rather than
         // hard-cutting the oscillator. Before scheduleNote attached _env this
@@ -88,7 +82,7 @@ describe('resetMidiState — smooth release on active notes', () => {
         });
         channelToNote.set(0, key);
 
-        resetMidiState();
+        resetMidiState(reset_deps);
 
         expect(activeNotes.size).toBe(0);
         expect(channelToNote.size).toBe(0);
@@ -122,8 +116,8 @@ describe('resetMidiState — smooth release on active notes', () => {
             toasterRoute: { deviceId: 'toaster-b', pad: 3 },
         });
 
-        resetMidiState();
-        resetMidiState();
+        resetMidiState(reset_deps);
+        resetMidiState(reset_deps);
 
         expect(noteOffA).toHaveBeenCalledExactlyOnceWith(0);
         expect(noteOffB).toHaveBeenCalledExactlyOnceWith(3);

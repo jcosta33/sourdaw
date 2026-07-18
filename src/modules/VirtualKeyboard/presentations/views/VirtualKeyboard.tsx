@@ -29,7 +29,7 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
+import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { setVirtualKeyboardOctave, setVirtualKeyboardVelocity } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -45,7 +45,7 @@ const BLACK_KEY_H_RATIO = 0.62;
 
 /**
  * MIDI channel passed to the live-note use cases. 0 = omni: the AudioEngine routes the
- * note to the currently selected track (see AudioEngine/useCases/triggerLiveNoteOn.ts).
+ * note to the currently selected track (see MIDI/useCases/triggerLiveNoteOn.ts).
  */
 const OMNI_CHANNEL = 0;
 const LIVE_NOTE_FAILURE_MESSAGE = 'Note could not be played.';

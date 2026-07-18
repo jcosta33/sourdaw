@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/AudioEngine/useCases';
+import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/MIDI/useCases';
 import { setVirtualKeyboardOctave } from '#/modules/Workspace/useCases';
 
 import { VirtualKeyboard } from '../VirtualKeyboard';
@@ -24,7 +24,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 // Mock the SAME barrel module-ids the component imports from
-// (`#/modules/AudioEngine/useCases`, `#/modules/Workspace/useCases`) — not the deep
+// (`#/modules/MIDI/useCases`, `#/modules/Workspace/useCases`) — not the deep
 // per-file paths. A deep-path mock only intercepts the call when the barrel happens to
 // resolve through the mocked file at load time, which is order-dependent: a sibling spec
 // that evaluated the real barrel first leaves the re-export pointing at the real function
@@ -32,11 +32,11 @@ vi.mock('#/infra/logger/appLogger', () => ({
 // the interception independent of load order.
 //
 // The factory provides only the four exports the component consumes and does NOT spread
-// importOriginal: evaluating the real AudioEngine/Workspace barrels drags in the audio
+// importOriginal: evaluating the real MIDI/Workspace barrels drags in the audio
 // engine / WASM init, which never settles under jsdom and hangs the run. The component is
 // the only consumer of these barrels in this spec's module graph, so a minimal surface is
 // sufficient and keeps the test deterministic.
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', () => ({
     triggerLiveNoteOn: vi.fn(() => Promise.resolve()),
     triggerLiveNoteOff: vi.fn(() => Promise.resolve()),
 }));

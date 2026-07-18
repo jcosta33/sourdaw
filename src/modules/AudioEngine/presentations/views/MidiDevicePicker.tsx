@@ -9,10 +9,7 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-
-import { webMidiStore } from '../../useCases/webMidiInput/helpers';
-import { initWebMidi } from '../../useCases/webMidiInput/initWebMidi';
-import { selectMidiInput } from '../../useCases/webMidiInput/selectMidiInput';
+import { initWebMidi, selectMidiInput, webMidiStore } from '#/modules/MIDI/useCases';
 
 const defaultWebMidiState = {
     isSupported: false,

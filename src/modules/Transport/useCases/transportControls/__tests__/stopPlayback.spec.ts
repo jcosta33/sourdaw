@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { stopAllScheduled, resetMidiState } from '#/modules/AudioEngine/useCases';
+import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
@@ -18,6 +19,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
