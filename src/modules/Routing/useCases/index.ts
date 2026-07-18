@@ -9,3 +9,4 @@ export { getSidechainRoutesForTrack } from './sidechain/getSidechainRoutesForTra
 export { getAllSidechainRoutes } from './sidechain/getAllSidechainRoutes';
 export { setSidechainRoutes } from './sidechain/setSidechainRoutes';
 export { wireSidechainRoutes } from './sidechain/wireSidechainRoutes';
+export { toggleRoutingConnection } from './routingMatrix/toggleRoutingConnection';

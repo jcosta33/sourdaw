@@ -16,7 +16,7 @@ vi.mock('../../../components/Inspector/SurfaceCard', () => ({
     SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
-vi.mock('../../RoutingGraph', () => ({
+vi.mock('#/modules/Routing/presentations/views', () => ({
     RoutingGraph: () => <div data-testid="routing-graph">Routing Graph</div>,
 }));
 

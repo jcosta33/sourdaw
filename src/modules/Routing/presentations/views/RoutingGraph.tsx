@@ -5,10 +5,10 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { selectTrack } from '#/modules/Arrangement/useCases';
-import { defaultSidechainStoreState, sidechainStore } from '#/modules/Routing/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type Track } from '../../models/TrackViewTypes';
+import { defaultSidechainStoreState, sidechainStore } from '../../stores/sidechainStore';
 
 type RoutingTrackState = {
     tracks: Track[];
