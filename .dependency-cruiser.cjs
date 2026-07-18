@@ -672,6 +672,10 @@ module.exports = {
                     '^src/app/',
                     '^src/routes/',
                     '^src/infra/store/',
+                    // DialogService: confirm/prompt/notify React views + hooks,
+                    // relocated from Workspace presentation into the shared kernel
+                    // (ADR 0011 W6.1). React-binding UI infra, like infra/store above.
+                    '^src/infra/dialogService/',
                     '^src/utils/UI/',
                 ],
             },
@@ -712,6 +716,7 @@ module.exports = {
                     '^src/app/',
                     '^src/routes/',
                     '^src/infra/store/',
+                    '^src/infra/dialogService/',
                     '^src/utils/UI/',
                 ],
             },

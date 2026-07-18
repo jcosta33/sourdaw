@@ -3,7 +3,7 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 
-import { usePromptDialog } from '../hooks/usePromptDialog';
+import { usePromptDialog } from './usePromptDialog';
 
 /**
  * Async single-field text-prompt dialog. Subscribes to the `ui.prompt` event

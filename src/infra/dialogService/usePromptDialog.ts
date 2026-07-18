@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { type PromptPayload } from '../../events/WorkspaceEvents';
-import { onPrompt } from '../../useCases/onPrompt';
+import { type PromptPayload } from '#/utils/Notification/notificationEventBus';
+
+import { onPrompt } from './onPrompt';
 
 type UsePromptDialogOutput = {
     pending: PromptPayload | null;

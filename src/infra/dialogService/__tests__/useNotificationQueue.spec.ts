@@ -1,10 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { onNotification } from '../../../useCases/onNotification';
+import { onNotification } from '../onNotification';
 import { useNotificationQueue } from '../useNotificationQueue';
 
-vi.mock('../../../useCases/onNotification', () => ({
+vi.mock('../onNotification', () => ({
     onNotification: vi.fn(),
 }));
 

@@ -1,10 +1,7 @@
 import { inject } from '#/infra/di/inject';
+import { NotificationEventBus, type PromptPayload } from '#/utils/Notification/notificationEventBus';
 
-import { type PromptPayload } from '../events/WorkspaceEvents';
-
-import { WorkspaceEventBus } from './workspaceEventBus';
-
-export const onPrompt = inject({ eventBus: WorkspaceEventBus })(
+export const onPrompt = inject({ eventBus: NotificationEventBus })(
     ({ eventBus }) =>
         function onPrompt(handler: (payload: PromptPayload) => void): () => void {
             return eventBus.on('ui.prompt', handler);

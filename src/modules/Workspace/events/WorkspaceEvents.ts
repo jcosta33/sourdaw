@@ -7,48 +7,11 @@ export type ShowDevicePanelGenericPayload = { deviceType: string; deviceId: stri
 /** Payload for events that carry no data. */
 export type VoidPayload = undefined;
 
-/** Payload for the notification event. */
-export type NotifyPayload = { message: string; level: 'info' | 'success' | 'warning' | 'error' };
-
-/**
- * Payload for the async confirmation dialog event (§183.1 / §196.1).
- *
- * The event carries a correlation id and a resolver callback. The
- * `ConfirmDialog` component subscribes to this event, renders an
- * Ok/Cancel modal, and invokes `resolve(ok)` when the user chooses.
- * The caller awaits a Promise that wraps this round-trip, so the
- * audio thread is never blocked by a synchronous `window.confirm`.
- */
-export type ConfirmPayload = {
-    id: string;
-    message: string;
-    title?: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    variant?: 'default' | 'danger';
-    resolve: (ok: boolean) => void;
-};
-
-/**
- * Payload for the async text-prompt dialog event.
- *
- * Sibling of {@link ConfirmPayload}: carries a correlation id and a resolver
- * callback. The `PromptDialog` component subscribes to this event, renders a
- * themed single-field input modal, and invokes `resolve(value)` with the
- * trimmed text on submit or `null` on cancel/dismiss. The caller awaits a
- * Promise that wraps this round-trip, so `window.prompt` (which blocks the JS
- * event loop and is unavailable in some Tauri webviews) is never used.
- */
-export type PromptPayload = {
-    id: string;
-    message: string;
-    title?: string;
-    initialValue?: string;
-    placeholder?: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    resolve: (value: string | null) => void;
-};
+// The dialog-service payload contracts (ui.notify / ui.confirm / ui.prompt) now
+// live in #/utils/Notification/notificationEventBus alongside their producers,
+// after DialogService left this module for src/infra (ADR 0011 W6.1). The
+// WorkspaceEventBus map below still references them, so re-export here.
+export type { NotifyPayload, ConfirmPayload, PromptPayload } from '#/utils/Notification/notificationEventBus';
 
 /** Payload for the zoom-to-selection event. */
 export type ZoomToSelectionPayload = { startBeat: number; endBeat: number };

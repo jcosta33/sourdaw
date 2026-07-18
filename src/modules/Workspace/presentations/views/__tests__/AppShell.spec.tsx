@@ -134,6 +134,7 @@ const mockVoiceToggleEventBus = {
 
 const mockNotificationEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(() => () => {}),
 };
 
 const mockWebMidiEventBus = {

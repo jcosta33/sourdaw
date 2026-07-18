@@ -2,9 +2,9 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { type PromptPayload } from '#/utils/Notification/notificationEventBus';
 
-import { type PromptPayload } from '../../../events/WorkspaceEvents';
-import { onPrompt } from '../../../useCases/onPrompt';
+import { onPrompt } from '../onPrompt';
 import { PromptDialog } from '../PromptDialog';
 
 const promptHandlerRef: {

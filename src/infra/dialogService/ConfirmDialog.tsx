@@ -3,7 +3,7 @@ import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
-import { useConfirmationDialog } from '../hooks/useConfirmationDialog';
+import { useConfirmationDialog } from './useConfirmationDialog';
 
 /**
  * Async confirmation dialog. Subscribes to the \`ui.confirm\` event bus
