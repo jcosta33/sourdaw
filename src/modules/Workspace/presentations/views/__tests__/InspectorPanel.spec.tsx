@@ -26,8 +26,9 @@ vi.mock('../../hooks/useTracks', () => ({
     useTracks: () => mockUseTracks(),
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
-    workspaceStore: {},
+vi.mock('#/modules/Arrangement/stores', () => ({
+    clipSelectionStore: {},
+    defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
 }));
 
 vi.mock('#/modules/Workspace/models/WorkspaceState', () => ({
@@ -38,11 +39,8 @@ const mockToggleInspector = vi.fn();
 const mockClearClipSelection = vi.fn();
 const mockSelectClipWithFocus = vi.fn();
 
-vi.mock('../../../useCases/togglePanel/panelToggles/selectClipWithFocus', () => ({
+vi.mock('#/modules/Arrangement/useCases', () => ({
     selectClipWithFocus: (id: string) => mockSelectClipWithFocus(id),
-}));
-
-vi.mock('../../../useCases/togglePanel/panelToggles/clearClipSelection', () => ({
     clearClipSelection: () => mockClearClipSelection(),
 }));
 

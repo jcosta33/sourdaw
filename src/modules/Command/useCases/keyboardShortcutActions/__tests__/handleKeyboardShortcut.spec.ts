@@ -41,10 +41,7 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
 vi.mock('#/modules/Workspace/useCases', () => ({
     cycleAutomationVisibility: vi.fn(),
     toggleCommandPalette: vi.fn(),
-    selectAllClips: vi.fn(),
-    clearClipSelection: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
-    setMarqueeSelection: vi.fn(),
     setEditingTool: vi.fn(),
     startToolSwap: vi.fn(),
     finishToolSwap: vi.fn(),
@@ -59,6 +56,7 @@ vi.mock('#/modules/Workspace/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { selectedTrackId: null, tracks: [] } },
+    clipSelectionStore: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
     zoomTimeline: vi.fn(),
 }));
 
@@ -70,6 +68,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTimeRange: vi.fn(),
     removeClip: vi.fn(),
     addClip: vi.fn(),
+    clearClipSelection: vi.fn(),
+    selectAllClips: vi.fn(),
+    selectClipWithFocus: vi.fn(),
+    setMarqueeSelection: vi.fn(),
 }));
 
 vi.mock('../../redo', () => ({

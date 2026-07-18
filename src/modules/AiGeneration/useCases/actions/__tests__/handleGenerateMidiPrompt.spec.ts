@@ -68,6 +68,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         addClip: addClipMock,
         getTrackStoreState: getTrackStoreStateMock,
         setTrackStoreState: setTrackStoreStateMock,
+        selectClip: selectClipMock,
     };
 });
 
@@ -78,10 +79,6 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
         workspaceStore: workspaceStoreMock,
     };
 });
-
-vi.mock('#/modules/Workspace/useCases', () => ({
-    selectClip: selectClipMock,
-}));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
@@ -201,7 +198,7 @@ describe('handleGenerateMidiPrompt', () => {
         expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
     });
 
-    it('should delegate generated clip selection through the Workspace use case', async () => {
+    it('should delegate generated clip selection through the Arrangement use case', async () => {
         const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
         const trackOnlySnapshot = {
             tracks: [{ id: 'new-midi-track', kind: 'midi', clips: [] }],

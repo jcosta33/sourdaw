@@ -1,11 +1,9 @@
 import { useSyncExternalStore } from 'react';
 
-import { trackStore } from '#/modules/Arrangement/stores';
-
-import { workspaceStore } from '../../stores/workspaceStore';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 
 const subscribe = (cb: () => void): (() => void) => {
-    const unsub1 = workspaceStore.subscribe(cb);
+    const unsub1 = clipSelectionStore.subscribe(cb);
     const unsub2 = trackStore.subscribe(cb);
     return () => {
         unsub1();
@@ -14,7 +12,7 @@ const subscribe = (cb: () => void): (() => void) => {
 };
 
 const getSnapshot = (): string => {
-    const ids = workspaceStore.value?.selectedClipIds ?? [];
+    const ids = clipSelectionStore.value?.selectedClipIds ?? [];
     if (ids.length === 0) {
         return '';
     }
@@ -35,7 +33,7 @@ const getSnapshot = (): string => {
 
 /**
  * Derives a human-readable label for the current clip selection.
- * Subscribes to both workspaceStore and trackStore.
+ * Subscribes to both clipSelectionStore and trackStore.
  */
 export const useSelectionLabel = (): string => {
     return useSyncExternalStore(subscribe, getSnapshot);

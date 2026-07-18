@@ -7,10 +7,9 @@
  *
  * Selective state injection: only include domains relevant to the request.
  */
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { workspaceStore } from '#/modules/Workspace/stores';
 
 import {
     type LogicalClip,
@@ -37,7 +36,7 @@ type SerializeLogicalStateOutput = LogicalState;
 export function serializeLogicalState(options?: SerializeLogicalStateInput): SerializeLogicalStateOutput {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
-    const workspaceState = workspaceStore.value;
+    const selectionState = clipSelectionStore.value;
     const midiState = midiStore.value;
 
     const scopeSet = options?.scopeTrackIds ? new Set(options.scopeTrackIds) : null;
@@ -122,7 +121,7 @@ export function serializeLogicalState(options?: SerializeLogicalStateInput): Ser
         devices,
         selection: {
             track_ids: trackState?.selectedTrackId ? [trackState.selectedTrackId] : [],
-            clip_ids: [...(workspaceState?.selectedClipIds ?? [])],
+            clip_ids: [...(selectionState?.selectedClipIds ?? [])],
         },
     };
 }

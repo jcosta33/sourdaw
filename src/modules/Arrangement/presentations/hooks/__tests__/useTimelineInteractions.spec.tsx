@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
     hitTestClipEdge: vi.fn(),
     snapToGrid: vi.fn((buffer) => buffer),
     workspaceStoreValue: { value: { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' } },
+    clipSelectionStoreValue: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
+    setMarqueeSelection: vi.fn(),
     toggleClipInSelection: vi.fn(),
     selectClipWithFocus: vi.fn(),
     clearClipSelection: vi.fn(),
@@ -83,16 +85,18 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
         },
     },
 }));
+vi.mock('../../../stores/clipSelectionStore', () => ({
+    clipSelectionStore: {
+        get value() {
+            return mocks.clipSelectionStoreValue.value;
+        },
+    },
+}));
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: { value: {} },
 }));
 vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    toggleClipInSelection: mocks.toggleClipInSelection,
-    selectClipWithFocus: mocks.selectClipWithFocus,
-    clearClipSelection: mocks.clearClipSelection,
-    setClipSelection: mocks.setClipSelection,
-    selectClip: mocks.selectClip,
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
 vi.mock('../../../stores/trackStore', () => ({
@@ -101,6 +105,18 @@ vi.mock('../../../stores/trackStore', () => ({
             return mocks.trackStoreValue.value;
         },
     },
+}));
+vi.mock('../../../useCases/clipSelection/toggleClipInSelection', () => ({
+    toggleClipInSelection: mocks.toggleClipInSelection,
+}));
+vi.mock('../../../useCases/clipSelection/selectClipWithFocus', () => ({
+    selectClipWithFocus: mocks.selectClipWithFocus,
+}));
+vi.mock('../../../useCases/clipSelection/clearClipSelection', () => ({ clearClipSelection: mocks.clearClipSelection }));
+vi.mock('../../../useCases/clipSelection/setClipSelection', () => ({ setClipSelection: mocks.setClipSelection }));
+vi.mock('../../../useCases/clipSelection/selectClip', () => ({ selectClip: mocks.selectClip }));
+vi.mock('../../../useCases/clipSelection/setMarqueeSelection', () => ({
+    setMarqueeSelection: mocks.setMarqueeSelection,
 }));
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
@@ -172,6 +188,7 @@ describe('useTimelineInteractions', () => {
         mocks.trackStoreValue.value = { tracks: [] };
         mocks.midiStoreValue.value = { notesByClipId: {} };
         mocks.inlineMidiNotePreviewRef.current = null;
+        mocks.clipSelectionStoreValue.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
     });
 
     it('selects a clip on mouse down', () => {

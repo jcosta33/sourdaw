@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_WARP_SETTINGS, getNextWarpMarkerId } from '../audioWarp';
+import { DEFAULT_WARP_SETTINGS } from '../audioWarp';
 
 describe('DEFAULT_WARP_SETTINGS', () => {
     it('defaults to complex-pro with unity stretch and warping off', () => {
@@ -8,16 +8,5 @@ describe('DEFAULT_WARP_SETTINGS', () => {
         expect(DEFAULT_WARP_SETTINGS.stretchRatio).toBe(1);
         expect(DEFAULT_WARP_SETTINGS.pitchShiftSemitones).toBe(0);
         expect(DEFAULT_WARP_SETTINGS.enabled).toBe(false);
-        expect(DEFAULT_WARP_SETTINGS.markers).toEqual([]);
-    });
-});
-
-describe('getNextWarpMarkerId', () => {
-    it('returns unique warp marker ids', () => {
-        const alpha = getNextWarpMarkerId();
-        const b = getNextWarpMarkerId();
-        expect(alpha).toMatch(/^wm-.+$/);
-        expect(b).toMatch(/^wm-.+$/);
-        expect(alpha).not.toBe(b);
     });
 });

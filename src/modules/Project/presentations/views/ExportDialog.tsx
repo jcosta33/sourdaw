@@ -11,7 +11,12 @@ import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, defaultTrackState } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    defaultTrackState,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import {
     audioBufferToFlac as encodeFlac,
     audioBufferToMp3 as encodeMp3,
@@ -25,7 +30,6 @@ import {
     restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
@@ -83,7 +87,7 @@ const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
     const defaults = loadExportSettings();
     const transport = useStore(transportStore, defaultTransportState);
-    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const tracksState = useStore(trackStore, defaultTrackState);
     const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
@@ -101,7 +105,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const cancelledRef = useRef(false);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
-    const marqueeAvailable = workspace.marqueeSelection !== null;
+    const marqueeAvailable = clipSelection.marqueeSelection !== null;
     const audioTracks = tracksState.tracks.filter((t) => t.kind === 'audio');
 
     const resolveRange = (): { startBeat: number; durationBeats: number } => {
@@ -113,8 +117,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 durationBeats: Math.max(0.0001, transport.loopEnd - transport.loopStart),
             };
         }
-        if (range === 'marquee' && workspace.marqueeSelection) {
-            const sel = workspace.marqueeSelection;
+        if (range === 'marquee' && clipSelection.marqueeSelection) {
+            const sel = clipSelection.marqueeSelection;
             return {
                 startBeat: sel.startBeat,
                 durationBeats: Math.max(0.0001, sel.endBeat - sel.startBeat),
@@ -756,7 +760,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             <RangeRadio
                                 label={
                                     marqueeAvailable
-                                        ? `Marquee selection (${(workspace.marqueeSelection?.endBeat ?? 0) - (workspace.marqueeSelection?.startBeat ?? 0)} beats)`
+                                        ? `Marquee selection (${(clipSelection.marqueeSelection?.endBeat ?? 0) - (clipSelection.marqueeSelection?.startBeat ?? 0)} beats)`
                                         : 'Marquee selection (none)'
                                 }
                                 value="marquee"

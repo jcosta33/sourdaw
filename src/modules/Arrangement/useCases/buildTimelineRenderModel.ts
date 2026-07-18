@@ -4,11 +4,11 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
@@ -176,7 +176,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const viewState = timelineViewStore.value;
     const transportState = transportStore.value;
     const midiState = midiStore.value;
-    const ws = workspaceStore.value;
+    const ws = clipSelectionStore.value;
     const prefs = preferencesStore.value;
     const timeSigState = timeSignatureMapStore.value;
     const transportTempo = renderAffectingTransport(transportState);

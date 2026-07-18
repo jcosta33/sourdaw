@@ -6,7 +6,6 @@ import {
     type ChannelStripWidth,
     type TimeDisplayMode,
     type AutomationVisibility,
-    type MarqueeSelection,
 } from '../../models/WorkspaceState';
 
 export type {
@@ -16,7 +15,6 @@ export type {
     ChannelStripWidth,
     TimeDisplayMode,
     AutomationVisibility,
-    MarqueeSelection,
     EditingTool,
 };
 

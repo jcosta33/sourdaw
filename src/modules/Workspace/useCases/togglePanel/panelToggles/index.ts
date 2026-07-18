@@ -21,7 +21,6 @@
  */
 
 // ── Group 1: unconditional setters ──────────────────────────────────────
-export { clearClipSelection } from './clearClipSelection';
 export { closeBranchManager } from './closeBranchManager';
 export { closeCollaborationPanel } from './closeCollaborationPanel';
 export { closeCommandPalette } from './closeCommandPalette';
@@ -30,10 +29,6 @@ export { closeUndoHistory } from './closeUndoHistory';
 export { openInspector } from './openInspector';
 export { openMixer } from './openMixer';
 export { openVirtualKeyboard } from './openVirtualKeyboard';
-export { selectAllClips } from './selectAllClips';
-export { selectClip } from './selectClip';
-export { selectClipWithFocus } from './selectClipWithFocus';
-export { setClipSelection } from './setClipSelection';
 export { setSnapValue } from './setSnapValue';
 export { setSoloMode } from './setSoloMode';
 export { setTrackListWidth } from './setTrackListWidth';
@@ -59,4 +54,3 @@ export { toggleDualView } from './toggleDualView';
 export { cycleChannelStripWidth } from './cycleChannelStripWidth';
 export { toggleTimeDisplayMode } from './toggleTimeDisplayMode';
 export { toggleWorkspaceMode } from './toggleWorkspaceMode';
-export { toggleClipInSelection } from './toggleClipInSelection';

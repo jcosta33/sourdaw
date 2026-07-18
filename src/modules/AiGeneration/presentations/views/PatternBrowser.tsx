@@ -10,10 +10,9 @@ import { DawPickerCard } from '#/components/daw/DawPickerCard';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, selectClipWithFocus } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { selectClipWithFocus } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 

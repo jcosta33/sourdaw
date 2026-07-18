@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
 import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
 import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
-import { clearClipSelection } from '../panelToggles/clearClipSelection';
 import { closeBranchManager } from '../panelToggles/closeBranchManager';
 import { closeCollaborationPanel } from '../panelToggles/closeCollaborationPanel';
 import { closeCommandPalette } from '../panelToggles/closeCommandPalette';
@@ -13,10 +12,6 @@ import { cycleChannelStripWidth } from '../panelToggles/cycleChannelStripWidth';
 import { openInspector } from '../panelToggles/openInspector';
 import { openMixer } from '../panelToggles/openMixer';
 import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
-import { selectAllClips } from '../panelToggles/selectAllClips';
-import { selectClip } from '../panelToggles/selectClip';
-import { selectClipWithFocus } from '../panelToggles/selectClipWithFocus';
-import { setClipSelection } from '../panelToggles/setClipSelection';
 import { setSnapValue } from '../panelToggles/setSnapValue';
 import { setSoloMode } from '../panelToggles/setSoloMode';
 import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
@@ -25,7 +20,6 @@ import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVe
 import { toggleAutomationPanel } from '../panelToggles/toggleAutomationPanel';
 import { toggleBranchManager } from '../panelToggles/toggleBranchManager';
 import { toggleChatPanel } from '../panelToggles/toggleChatPanel';
-import { toggleClipInSelection } from '../panelToggles/toggleClipInSelection';
 import { toggleCollaborationPanel } from '../panelToggles/toggleCollaborationPanel';
 import { toggleCommandPalette } from '../panelToggles/toggleCommandPalette';
 import { toggleInspector } from '../panelToggles/toggleInspector';
@@ -68,36 +62,11 @@ describe('panelToggles', () => {
             ],
             ['closeUndoHistory', closeUndoHistory, () => closeUndoHistory(), { undoHistoryOpen: false }],
             ['closeCommandPalette', closeCommandPalette, () => closeCommandPalette(), { commandPaletteOpen: false }],
-            ['selectClip', selectClip, () => selectClip('clip-a'), { selectedClipId: 'clip-a' }],
-            [
-                'selectClipWithFocus',
-                selectClipWithFocus,
-                () => selectClipWithFocus('clip-b'),
-                { selectedClipId: 'clip-b', selectedClipIds: ['clip-b'] },
-            ],
-            [
-                'clearClipSelection',
-                clearClipSelection,
-                () => clearClipSelection(),
-                { selectedClipId: null, selectedClipIds: [] },
-            ],
             ['openMixer', openMixer, () => openMixer(), { mixerOpen: true }],
             ['openInspector', openInspector, () => openInspector(), { inspectorOpen: true }],
             ['setTrackListWidth', setTrackListWidth, () => setTrackListWidth(300), { trackListWidth: 300 }],
             ['closeScratchPad', closeScratchPad, () => closeScratchPad(), { scratchPadOpen: false }],
             ['closeBranchManager', closeBranchManager, () => closeBranchManager(), { branchManagerOpen: false }],
-            [
-                'setClipSelection',
-                setClipSelection,
-                () => setClipSelection(['c1', 'c2']),
-                { selectedClipId: 'c1', selectedClipIds: ['c1', 'c2'] },
-            ],
-            [
-                'selectAllClips',
-                selectAllClips,
-                () => selectAllClips(() => ['a', 'b']),
-                { selectedClipIds: ['a', 'b'], selectedClipId: null },
-            ],
         ])('should call updateWorkspaceState for %s', (_label, _subject, invoke, expected) => {
             vi.mocked(updateWorkspaceState).mockClear();
             invoke();
@@ -157,36 +126,6 @@ describe('panelToggles', () => {
             vi.mocked(updateWorkspaceState).mockClear();
             invoke();
             expect(updateWorkspaceState).toHaveBeenCalledWith(expected);
-        });
-
-        it('should add a clip id to selection when toggling a new clip in', () => {
-            vi.mocked(getWorkspaceState).mockReturnValue({
-                ...base(),
-                selectedClipIds: [],
-            });
-            vi.mocked(updateWorkspaceState).mockClear();
-
-            toggleClipInSelection('n1');
-
-            expect(updateWorkspaceState).toHaveBeenCalledWith({
-                selectedClipId: 'n1',
-                selectedClipIds: ['n1'],
-            });
-        });
-
-        it('should remove a clip id when toggling an already selected clip', () => {
-            vi.mocked(getWorkspaceState).mockReturnValue({
-                ...base(),
-                selectedClipIds: ['n1', 'n2'],
-            });
-            vi.mocked(updateWorkspaceState).mockClear();
-
-            toggleClipInSelection('n1');
-
-            expect(updateWorkspaceState).toHaveBeenCalledWith({
-                selectedClipId: 'n1',
-                selectedClipIds: ['n2'],
-            });
         });
     });
 });

@@ -10,7 +10,6 @@ import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { Preferences } from '#/modules/Preferences/stores';
 import type { TransportState } from '#/modules/Transport/stores';
-import type { WorkspaceState } from '#/modules/Workspace/stores';
 import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
@@ -19,14 +18,17 @@ const {
     transportStoreMock,
     timelineViewStoreMock,
     midiStoreMock,
-    workspaceStoreMock,
+    clipSelectionStoreMock,
     preferencesStoreMock,
 } = vi.hoisted(() => ({
     trackStoreMock: { value: null as TrackStoreState | null, set: vi.fn() },
     transportStoreMock: { value: null as Partial<TransportState> | null, set: vi.fn() },
     timelineViewStoreMock: { value: null as Partial<TimelineViewState> | null, set: vi.fn() },
     midiStoreMock: { value: null as MidiStoreState | null, set: vi.fn() },
-    workspaceStoreMock: { value: null as Partial<WorkspaceState> | null, set: vi.fn() },
+    clipSelectionStoreMock: {
+        value: null as { selectedClipId: string | null; selectedClipIds: string[] } | null,
+        set: vi.fn(),
+    },
     preferencesStoreMock: { value: null as Partial<Preferences> | null, set: vi.fn() },
 }));
 
@@ -46,11 +48,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return { ...actual, midiStore: midiStoreMock };
 });
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
+vi.mock('../../stores/clipSelectionStore', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,
-        workspaceStore: workspaceStoreMock,
+        clipSelectionStore: clipSelectionStoreMock,
     };
 });
 vi.mock('#/modules/Preferences/stores', async (importOriginal) => {
@@ -98,7 +100,7 @@ describe('buildTimelineRenderModel', () => {
         playheadPositionRef.current = 0;
         timelineViewStoreMock.value = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
         midiStoreMock.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
-        workspaceStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
+        clipSelectionStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
         preferencesStoreMock.value = { trackHeight: 'normal' };
         clipDragPreviewRef.current = null;
         activeRecordingRef.current = [];
@@ -135,7 +137,7 @@ describe('buildTimelineRenderModel', () => {
         };
         timelineViewStoreMock.value = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
         midiStoreMock.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
-        workspaceStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
+        clipSelectionStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
         preferencesStoreMock.value = { trackHeight: 'normal' };
         clipDragPreviewRef.current = null;
         activeRecordingRef.current = [];

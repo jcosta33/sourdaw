@@ -3,20 +3,17 @@ import { describe, it, expect, vi } from 'vitest';
 import { deselectAllClips } from '../deselectAllClips';
 
 const mocks = vi.hoisted(() => ({
-    updateWorkspaceState: vi.fn<typeof import('#/modules/Workspace/useCases').updateWorkspaceState>(),
+    clearClipSelection: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
-    updateWorkspaceState: mocks.updateWorkspaceState,
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    clearClipSelection: mocks.clearClipSelection,
 }));
 
 describe('deselectAllClips', () => {
-    it('clears selection in workspace state', () => {
+    it('delegates to the Arrangement clearClipSelection use case', () => {
         deselectAllClips();
-        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({
-            selectedClipIds: [],
-            selectedClipId: null,
-        });
+        expect(mocks.clearClipSelection).toHaveBeenCalledTimes(1);
     });
 });

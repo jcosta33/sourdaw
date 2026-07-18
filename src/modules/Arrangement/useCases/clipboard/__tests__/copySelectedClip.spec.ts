@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { copySelectedClip } from '../copySelectedClip';
 
 const mocks = vi.hoisted(() => ({
-    workspaceStore: {
+    clipSelectionStore: {
         value: null as {
             selectedClipId: string | null;
             selectedClipIds: string[];
@@ -13,8 +13,8 @@ const mocks = vi.hoisted(() => ({
     setClipClipboard: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: mocks.workspaceStore,
+vi.mock('../../../stores/clipSelectionStore', () => ({
+    clipSelectionStore: mocks.clipSelectionStore,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -32,7 +32,7 @@ vi.mock('../../../stores/clipboardStore', () => ({
 describe('copySelectedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.workspaceStore.value = null;
+        mocks.clipSelectionStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
@@ -43,7 +43,7 @@ describe('copySelectedClip', () => {
     });
 
     it('copies every selected clip from one track snapshot', () => {
-        mocks.workspaceStore.value = {
+        mocks.clipSelectionStore.value = {
             selectedClipId: 'clip-1',
             selectedClipIds: ['clip-1', 'clip-2'],
         };

@@ -44,12 +44,13 @@ vi.mock('../../../useCases/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
 }));
 
-vi.mock('../../../useCases/togglePanel/panelToggles/selectClip', () => ({
+vi.mock('#/modules/Arrangement/useCases', () => ({
     selectClip: vi.fn(),
 }));
 
-vi.mock('../../../stores/workspaceStore', () => ({
-    workspaceStore: { value: { selectedClipId: null } },
+vi.mock('#/modules/Arrangement/stores', () => ({
+    clipSelectionStore: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
+    defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
 }));
 
 vi.mock('#/infra/store/useStore', () => ({

@@ -7,12 +7,18 @@ const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: null } as any,
     transportStoreValue: { value: null } as any,
     workspaceStoreValue: { value: null } as any,
+    clipSelectionStoreValue: { value: null } as any,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
+        },
+    },
+    clipSelectionStore: {
+        get value() {
+            return mocks.clipSelectionStoreValue.value;
         },
     },
 }));
@@ -48,6 +54,7 @@ describe('getProjectContext', () => {
         mocks.midiStoreValue.value = null;
         mocks.transportStoreValue.value = null;
         mocks.workspaceStoreValue.value = null;
+        mocks.clipSelectionStoreValue.value = null;
     });
 
     it('returns context with default values when stores are empty', () => {
@@ -107,11 +114,11 @@ describe('getProjectContext', () => {
             playheadPosition: 16,
         };
 
-        mocks.workspaceStoreValue.value = {
+        mocks.clipSelectionStoreValue.value = {
             selectedClipId: 'c2',
             selectedClipIds: ['c2'],
-            mode: 'mix',
         };
+        mocks.workspaceStoreValue.value = { mode: 'mix' };
 
         const context = getProjectContext();
 

@@ -1,12 +1,12 @@
 import { midiStore } from '#/modules/MIDI/stores';
-import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
+import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 export function copySelectedClip(): void {
-    const workspace = workspaceStore.value;
+    const workspace = clipSelectionStore.value;
     if (!workspace) {
         return;
     }

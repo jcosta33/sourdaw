@@ -2,11 +2,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 
+import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { ClipContextMenu } from '../ClipContextMenu';
 
-// useStore reads via getSnapshot(); workspaceStore must reflect workspaceStore.set() in tests.
+// useStore reads via getSnapshot(); clipSelectionStore must reflect clipSelectionStore.set() in tests.
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((store: { getSnapshot?: () => unknown; value?: unknown }, defaultValue: unknown) => {
         const snap = typeof store.getSnapshot === 'function' ? store.getSnapshot() : store.value;
@@ -102,7 +102,7 @@ describe('ClipContextMenu', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        workspaceStore.set({ ...defaultWorkspaceState, selectedClipIds: [] });
+        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipIds: [] });
     });
 
     it('should render without crashing', () => {
@@ -117,8 +117,8 @@ describe('ClipContextMenu', () => {
     });
 
     it('should show multi-select info when multiple clips selected', () => {
-        workspaceStore.set({
-            ...defaultWorkspaceState,
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
             selectedClipIds: ['clip1', 'clip2', 'clip3'],
         });
 

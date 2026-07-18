@@ -6,11 +6,10 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
+import { selectClip } from '#/modules/Arrangement/useCases';
 
-import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { workspaceStore } from '../../stores/workspaceStore';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
-import { selectClip } from '../../useCases/togglePanel/panelToggles/selectClip';
 import { useTracks } from '../hooks/useTracks';
 
 import { ClipEditorTray } from './ClipEditorTray';
@@ -29,7 +28,7 @@ export const ClipView = (): ReactElement => {
     const automationScrollRef = useRef<HTMLDivElement>(null);
     const [audioEditMode, setAudioEditMode] = useState<'waveform' | 'pitch'>('waveform');
 
-    const wsState = useStore(workspaceStore, defaultWorkspaceState);
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
 
     if (!selectedTrack) {
         return (
@@ -51,11 +50,13 @@ export const ClipView = (): ReactElement => {
     }
 
     const selectedClip =
-        selectedTrack.clips.find((context) => context.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
+        selectedTrack.clips.find((context) => context.id === clipSelection.selectedClipId) ??
+        selectedTrack.clips[0] ??
+        null;
 
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
     const openedClipIds: string[] | undefined = (() => {
-        const ids = wsState?.selectedClipIds ?? [];
+        const ids = clipSelection.selectedClipIds;
         if (ids.length <= 1) {
             return undefined;
         }

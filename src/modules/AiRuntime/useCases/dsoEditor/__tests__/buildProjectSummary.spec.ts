@@ -15,6 +15,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreValue.value;
         },
     },
+    clipSelectionStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({

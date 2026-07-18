@@ -7,18 +7,11 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
-import {
-    toggleClipInSelection,
-    selectClipWithFocus,
-    clearClipSelection,
-    setClipSelection,
-    selectClip,
-    setWorkspaceMode,
-    setMarqueeSelection,
-} from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/Workspace/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
+import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
@@ -32,6 +25,12 @@ import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
+import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
+import { selectClip } from '../../useCases/clipSelection/selectClip';
+import { selectClipWithFocus } from '../../useCases/clipSelection/selectClipWithFocus';
+import { setClipSelection } from '../../useCases/clipSelection/setClipSelection';
+import { setMarqueeSelection } from '../../useCases/clipSelection/setMarqueeSelection';
+import { toggleClipInSelection } from '../../useCases/clipSelection/toggleClipInSelection';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
 import { rippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
@@ -273,7 +272,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         if (drag) {
             // Capture original positions for all selected clips so mousemove can
             // write preview positions without touching any store.
-            const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
+            const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
             const allIds = selectedIds.length > 1 && selectedIds.includes(drag.clipId) ? selectedIds : [drag.clipId];
             const state = trackStore.value;
             if (state) {
@@ -496,7 +495,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         );
 
         if (targetTrack) {
-            const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
+            const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
             const preview = clipDragPreviewRef.current;
             if (preview) {
                 const primaryOrig = preview.originals.get(dragState.clipId);

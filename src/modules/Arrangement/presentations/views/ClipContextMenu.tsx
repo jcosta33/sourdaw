@@ -9,12 +9,12 @@ import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
 import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
-import { selectClip, setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
+import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
@@ -30,6 +30,7 @@ import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { setClipColor } from '../../useCases/clipEditing/setClipColor';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
+import { selectClip } from '../../useCases/clipSelection/selectClip';
 import { exportMidiClip } from '../../useCases/exportMidiClip';
 import { stripSilence } from '../../useCases/stripSilence';
 
@@ -46,7 +47,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     useContextMenuDismiss(menuRef, onClose);
 
     const trackState = useStore(trackStore, defaultTrackState);
-    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
 
     const clip = trackState.tracks.flatMap((track) => track.clips).find((candidate) => candidate.id === clipId);
     const [isRenaming, setIsRenaming] = useState(false);
@@ -55,7 +56,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
     const isAudio = clip?.type === 'audio';
     const isLocked = clip?.locked ?? false;
     const isMuted = clip?.muted ?? false;
-    const selectedIds = workspaceState.selectedClipIds ?? [];
+    const selectedIds = clipSelection.selectedClipIds ?? [];
     const multiSelected = selectedIds.length > 1 && selectedIds.includes(clipId);
 
     const act = (fn: () => void) => () => {

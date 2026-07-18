@@ -12,9 +12,7 @@ describe('defaultWorkspaceState', () => {
         expect(defaultWorkspaceState.commandPaletteOpen).toBe(false);
     });
 
-    it('should clear selection and use musical time by default', () => {
-        expect(defaultWorkspaceState.selectedClipId).toBeNull();
-        expect(defaultWorkspaceState.selectedClipIds).toEqual([]);
+    it('should use musical time and single-instance solo by default', () => {
         expect(defaultWorkspaceState.timeDisplayMode).toBe('musical');
         expect(defaultWorkspaceState.soloMode).toBe('sip');
     });
