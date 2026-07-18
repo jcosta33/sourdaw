@@ -19,7 +19,7 @@ vi.mock('../../components/PresetBrowser', () => ({
     PresetBrowser: presetBrowserMock,
 }));
 
-vi.mock('#/modules/MIDI/presentations/views', () => ({
+vi.mock('#/modules/ControlSurface/presentations/views', () => ({
     MidiLearnRotaryKnob: midiLearnRotaryKnobMock,
 }));
 

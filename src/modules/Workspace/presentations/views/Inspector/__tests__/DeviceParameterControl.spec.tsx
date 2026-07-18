@@ -75,7 +75,7 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
     ),
 }));
 
-vi.mock('#/modules/MIDI/presentations/views', () => ({
+vi.mock('#/modules/ControlSurface/presentations/views', () => ({
     MidiLearnButton: () => <button data-testid="midi-learn-btn">Learn</button>,
     MidiLearnRotaryKnob: (props: { value: number; onChange: (value: number) => void; 'aria-label'?: string }) => {
         mockMidiLearnRotaryKnob(props);

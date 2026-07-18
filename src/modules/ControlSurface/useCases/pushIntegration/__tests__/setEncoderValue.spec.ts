@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { pushStore } from '#/modules/Plugin/stores/push';
-
+import { pushStore } from '../../../stores/push';
 import { setEncoderValue } from '../setEncoderValue';
 
 describe('setEncoderValue', () => {

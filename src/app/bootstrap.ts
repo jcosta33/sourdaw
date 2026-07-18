@@ -57,6 +57,7 @@ import {
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
 import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
+import { getControlSurfaceHandlers, setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     getDsoSnapshotHandlers,
@@ -77,9 +78,7 @@ import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/u
 import {
     getChordTrackHandlers,
     getMidiNoteTransformHandlers,
-    getMidiLearnHandlers,
     getPatternInstanceHandlers,
-    setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
 import { markDirty, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
@@ -244,7 +243,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
-registerHandlerMap(getMidiLearnHandlers());
+registerHandlerMap(getControlSurfaceHandlers());
 registerHandlerMap(getScratchPadHandlers());
 registerHandlerMap(getPatternInstanceHandlers());
 registerHandlerMap(getMacroHandlers());

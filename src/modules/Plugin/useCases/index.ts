@@ -28,10 +28,6 @@ export { removeScanPath } from './pluginScan/scanning/removeScanPath';
 
 export { registerProModulationEffects } from './proModulationEffects';
 
-export { connectPush } from './pushIntegration/connectPush';
-
-export { disconnectPush } from './pushIntegration/disconnectPush';
-
 export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
 
 export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';
