@@ -100,4 +100,20 @@ describe('clip selection use cases', () => {
 
         expect(clipSelectionStore.value?.marqueeSelection).toBeNull();
     });
+
+    it('toggleClipInSelection does not update when the selection state is missing', () => {
+        clipSelectionStore.set(null);
+
+        toggleClipInSelection('clip-1');
+
+        expect(clipSelectionStore.value).toBeNull();
+    });
+
+    it('setMarqueeSelection does not update when the selection state is missing', () => {
+        clipSelectionStore.set(null);
+
+        setMarqueeSelection({ startBeat: 0, endBeat: 2, trackIds: [] });
+
+        expect(clipSelectionStore.value).toBeNull();
+    });
 });

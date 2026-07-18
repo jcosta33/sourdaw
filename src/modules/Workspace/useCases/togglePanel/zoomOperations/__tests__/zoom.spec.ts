@@ -7,20 +7,23 @@ import { zoomToSelection } from '../zoomToSelection';
 
 const mocks = vi.hoisted(() => ({
     eventBus: { emit: vi.fn() },
-    getWorkspaceState: vi.fn(),
+    clipSelectionStoreValue: {
+        value: null as { selectedClipIds: string[]; selectedClipId: string | null } | null,
+    },
     trackStoreValue: {
         value: null as { tracks: { clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null,
     },
-}));
-
-vi.mock('../../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: mocks.getWorkspaceState,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
+        },
+    },
+    clipSelectionStore: {
+        get value() {
+            return mocks.clipSelectionStoreValue.value;
         },
     },
 }));
@@ -40,7 +43,7 @@ describe('Zoom Operations', () => {
 
     describe('zoomToSelection', () => {
         it('bails if no selection', () => {
-            mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: [], selectedClipId: null });
+            mocks.clipSelectionStoreValue.value = { selectedClipIds: [], selectedClipId: null };
             mocks.trackStoreValue.value = { tracks: [] };
 
             zoomToSelection();
@@ -49,7 +52,7 @@ describe('Zoom Operations', () => {
         });
 
         it('calculates bounds of selected clips and emits zoom.toSelection', () => {
-            mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: ['c1', 'c3'], selectedClipId: null });
+            mocks.clipSelectionStoreValue.value = { selectedClipIds: ['c1', 'c3'], selectedClipId: null };
             mocks.trackStoreValue.value = {
                 tracks: [
                     {
@@ -72,7 +75,7 @@ describe('Zoom Operations', () => {
         });
 
         it('uses single selectedClipId if selectedClipIds is empty', () => {
-            mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: [], selectedClipId: 'c1' });
+            mocks.clipSelectionStoreValue.value = { selectedClipIds: [], selectedClipId: 'c1' };
             mocks.trackStoreValue.value = {
                 tracks: [{ clips: [{ id: 'c1', startBeat: 10, endBeat: 20 }] }],
             };

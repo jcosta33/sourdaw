@@ -45,7 +45,7 @@ type TestTransportState = {
     loopEnd: number;
 };
 
-type TestWorkspaceState = {
+type TestClipSelectionState = {
     marqueeSelection: null;
 };
 
@@ -63,7 +63,7 @@ type ExportDialogMocks = {
     trackStore: TestStore<TestTrackStoreState>;
     transportStore: TestStore<TestTransportState>;
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
-    workspaceStore: TestStore<TestWorkspaceState>;
+    clipSelectionStore: TestStore<TestClipSelectionState>;
     writeNativeAudioMixdownFile: ReturnType<typeof vi.fn>;
 };
 
@@ -74,7 +74,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
     const transportStore: TestStore<TestTransportState> = {
         value: { loopStart: 0, loopEnd: 0 },
     };
-    const workspaceStore: TestStore<TestWorkspaceState> = {
+    const clipSelectionStore: TestStore<TestClipSelectionState> = {
         value: { marqueeSelection: null },
     };
 
@@ -92,7 +92,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         trackStore,
         transportStore,
         useStore: vi.fn((store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue),
-        workspaceStore,
+        clipSelectionStore,
         writeNativeAudioMixdownFile: vi.fn(),
     };
 });
@@ -118,6 +118,8 @@ vi.mock('#/infra/store/useStore', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
+    defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+    clipSelectionStore: mocks.clipSelectionStore,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -136,11 +138,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Transport/stores', () => ({
     defaultTransportState: { loopStart: 0, loopEnd: 0 },
     transportStore: mocks.transportStore,
-}));
-
-vi.mock('#/modules/Workspace/stores', () => ({
-    defaultWorkspaceState: { marqueeSelection: null },
-    workspaceStore: mocks.workspaceStore,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
