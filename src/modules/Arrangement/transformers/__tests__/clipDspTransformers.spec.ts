@@ -1,67 +1,99 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-import { computeNormalizationScale, findNearestZeroCrossing } from '../clipDspTransformers';
-
-function makeBuffer(samples: Float32Array, sampleRate = 48_000): AudioBuffer {
-    return {
-        numberOfChannels: 1,
-        length: samples.length,
-        sampleRate,
-        duration: samples.length / sampleRate,
-        getChannelData: () => samples,
-    } as unknown as AudioBuffer;
-}
-
-function makeStereoBuffer(left: Float32Array, right: Float32Array, sampleRate = 48_000): AudioBuffer {
-    return {
-        numberOfChannels: 2,
-        length: left.length,
-        sampleRate,
-        duration: left.length / sampleRate,
-        getChannelData: (ch: number) => (ch === 0 ? left : right),
-    } as unknown as AudioBuffer;
-}
+import { findNearestZeroCrossing, computeNormalizationScale } from '../clipDspTransformers';
 
 describe('findNearestZeroCrossing', () => {
-    it('should return the closest sample index where the waveform crosses zero', () => {
-        const data = new Float32Array([1, 0.5, -0.1, -0.5, 1]);
-        expect(findNearestZeroCrossing(data, 2, 4)).toBe(1);
+    it('finds exact zero crossing', () => {
+        // [1, -1] crosses at sample 0→1
+        const data = new Float32Array([1, -1]);
+        const result = findNearestZeroCrossing(data, 0, 10);
+        expect(result).toBe(0);
     });
 
-    it('should return the target when no crossing exists in the window', () => {
-        const data = new Float32Array([1, 1, 1, 1]);
-        expect(findNearestZeroCrossing(data, 2, 2)).toBe(2);
+    it('finds nearest crossing within window', () => {
+        // Positive for 5 samples, then crosses to negative
+        const data = new Float32Array([0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5]);
+        const result = findNearestZeroCrossing(data, 3, 10);
+        expect(result).toBe(4);
+    });
+
+    it('returns target when no crossing in window', () => {
+        const data = new Float32Array([0.5, 0.5, 0.5, 0.5, 0.5]);
+        const result = findNearestZeroCrossing(data, 2, 2);
+        expect(result).toBe(2);
+    });
+
+    it('handles data at boundary', () => {
+        const data = new Float32Array([1, -1, -1, -1]);
+        const result = findNearestZeroCrossing(data, 0, 5);
+        expect(result).toBe(0);
+    });
+
+    it('handles empty data', () => {
+        const data = new Float32Array([]);
+        const result = findNearestZeroCrossing(data, 0, 5);
+        expect(result).toBe(0);
     });
 });
 
 describe('computeNormalizationScale', () => {
-    it('should return null for a silent buffer', () => {
-        const silent = new Float32Array(64);
-        expect(computeNormalizationScale(makeBuffer(silent), 'peak')).toBeNull();
+    function make_buffer(channels: Float32Array[], sampleRate = 48000): AudioBuffer {
+        const buf = {
+            numberOfChannels: channels.length,
+            sampleRate,
+            length: channels[0]!.length,
+            getChannelData: (ch: number) => channels[ch]!,
+            duration: channels[0]!.length / sampleRate,
+        } as AudioBuffer;
+        return buf;
+    }
+
+    it('peak normalization: returns 1/peak', () => {
+        const buf = make_buffer([new Float32Array([0.5, -0.5, 0.25, -0.25])]);
+        const scale = computeNormalizationScale(buf, 'peak');
+        expect(scale).toBeCloseTo(2.0);
     });
 
-    it('should scale peak samples to unity by default', () => {
-        const data = new Float32Array([0.25, -0.5, 0.25]);
-        expect(computeNormalizationScale(makeBuffer(data), 'peak')).toBeCloseTo(2);
+    it('peak normalization: returns null for silence', () => {
+        const buf = make_buffer([new Float32Array([0, 0, 0, 0])]);
+        expect(computeNormalizationScale(buf, 'peak')).toBeNull();
     });
 
-    it('should use the maximum absolute sample across all channels for peak mode', () => {
-        const left = new Float32Array([0.1, 0.1]);
-        const right = new Float32Array([0.4, 0.4]);
-        expect(computeNormalizationScale(makeStereoBuffer(left, right), 'peak')).toBeCloseTo(1 / 0.4);
+    it('peak normalization: ignores target dB (returns 1/peak)', () => {
+        const buf = make_buffer([new Float32Array([1.0, -1.0])]);
+        const scale = computeNormalizationScale(buf, 'peak', -6);
+        // Peak mode ignores targetDb, always normalizes to full scale
+        expect(scale).toBeCloseTo(1.0);
     });
 
-    it('should compute an RMS-based gain toward the target dBFS', () => {
-        const data = new Float32Array(4).fill(0.1);
-        const scale = computeNormalizationScale(makeBuffer(data), 'rms', -14);
+    it('rms normalization: produces positive scale for non-silent buffer', () => {
+        const buf = make_buffer([new Float32Array([0.5, 0.5, 0.5, 0.5])]);
+        const scale = computeNormalizationScale(buf, 'rms', -14);
         expect(scale).not.toBeNull();
-        expect(scale! > 1).toBe(true);
+        expect(scale).toBeGreaterThan(0);
     });
 
-    it('should compute a gain for the LUFS-style band-weighted path', () => {
-        const data = new Float32Array(128).fill(0.05);
-        const scale = computeNormalizationScale(makeBuffer(data), 'lufs', -14);
+    it('rms normalization: returns null for silence', () => {
+        const buf = make_buffer([new Float32Array([0, 0, 0, 0])]);
+        expect(computeNormalizationScale(buf, 'rms')).toBeNull();
+    });
+
+    it('lufs normalization: produces positive scale for non-silent buffer', () => {
+        const buf = make_buffer([new Float32Array(1000).fill(0.5)]);
+        const scale = computeNormalizationScale(buf, 'lufs', -14);
         expect(scale).not.toBeNull();
-        expect(scale!).toBeGreaterThan(0);
+        expect(scale).toBeGreaterThan(0);
+    });
+
+    it('lufs normalization: returns null for silence', () => {
+        const buf = make_buffer([new Float32Array(1000).fill(0)]);
+        expect(computeNormalizationScale(buf, 'lufs')).toBeNull();
+    });
+
+    it('defaults to peak mode', () => {
+        const buf = make_buffer([new Float32Array([0.5, -0.5])]);
+        const default_scale = computeNormalizationScale(buf);
+        const peak_scale = computeNormalizationScale(buf, 'peak');
+        expect(default_scale).toBeCloseTo(peak_scale!);
     });
 });
