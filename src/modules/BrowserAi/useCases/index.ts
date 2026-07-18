@@ -8,3 +8,4 @@ export { renderKokoroTts } from './renderKokoroTts';
 export { renderDiffSingerPhrase } from './renderDiffSingerPhrase';
 export { cancelRender } from './cancelRender';
 export { detectCapabilities } from './detectCapabilities';
+export { getRaveHandlers } from './getRaveHandlers';

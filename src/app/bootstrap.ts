@@ -45,7 +45,7 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
-import { initBrowserAi } from '#/modules/BrowserAi/useCases';
+import { initBrowserAi, getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -254,6 +254,7 @@ registerHandlerMap(getSongStructureHandlers());
 registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
+registerHandlerMap(getRaveHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });

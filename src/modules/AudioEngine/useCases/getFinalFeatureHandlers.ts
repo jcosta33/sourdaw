@@ -12,12 +12,10 @@ import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleEl
 import { handleEnableMpe } from '../handlers/finalFeature/handleEnableMpe';
 import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
-import { handleLoadRaveModel } from '../handlers/finalFeature/handleLoadRaveModel';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
 import { handleQuantizeTransients } from '../handlers/finalFeature/handleQuantizeTransients';
 import { handleSetControlSurface } from '../handlers/finalFeature/handleSetControlSurface';
 import { handleSetMasterGain } from '../handlers/finalFeature/handleSetMasterGain';
-import { handleSetRaveBlend } from '../handlers/finalFeature/handleSetRaveBlend';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
 import { handleSwitchMonitor } from '../handlers/finalFeature/handleSwitchMonitor';
@@ -40,12 +38,10 @@ export type FinalFeatureHandlersMap = {
     enableMpe: typeof handleEnableMpe;
     enableWarping: typeof handleEnableWarping;
     getLatencyReport: typeof handleGetLatencyReport;
-    loadRaveModel: typeof handleLoadRaveModel;
     openElasticEditor: typeof handleOpenElasticEditor;
     quantizeTransients: typeof handleQuantizeTransients;
     setControlSurface: typeof handleSetControlSurface;
     setMasterGain: typeof handleSetMasterGain;
-    setRaveBlend: typeof handleSetRaveBlend;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
     switchMonitor: typeof handleSwitchMonitor;
@@ -73,8 +69,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         addCvOutput: handleAddCvOutput,
         connectPush: handleConnectPush,
         disconnectPush: handleDisconnectPush,
-        loadRaveModel: handleLoadRaveModel,
-        setRaveBlend: handleSetRaveBlend,
         enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,

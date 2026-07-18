@@ -5,14 +5,10 @@ import { connectPush, disconnectPush } from '#/modules/Plugin/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { setProtocol } from '../../../useCases/controlSurface/setProtocol';
-import { loadModel } from '../../../useCases/rave/loadModel';
-import { setTransferBlend } from '../../../useCases/rave/setTransferBlend';
 import { handleAddCvOutput } from '../handleAddCvOutput';
 import { handleConnectPush } from '../handleConnectPush';
 import { handleDisconnectPush } from '../handleDisconnectPush';
-import { handleLoadRaveModel } from '../handleLoadRaveModel';
 import { handleSetControlSurface } from '../handleSetControlSurface';
-import { handleSetRaveBlend } from '../handleSetRaveBlend';
 
 vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ connectPush: vi.fn(), disconnectPush: vi.fn() }));
@@ -20,9 +16,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/Project/useCases', () => ({
     exportDawProject: vi.fn(async () => ({ bytes: new Uint8Array([0]), fileName: 'demo.dawproject' })),
 }));
-vi.mock('../../../useCases/rave/loadModel', () => ({ loadModel: vi.fn() }));
 vi.mock('../../../useCases/controlSurface/setProtocol', () => ({ setProtocol: vi.fn() }));
-vi.mock('../../../useCases/rave/setTransferBlend', () => ({ setTransferBlend: vi.fn() }));
 
 describe('finalFeatureMiscHandlers', () => {
     beforeEach(() => {
@@ -45,19 +39,9 @@ describe('finalFeatureMiscHandlers', () => {
         expect(disconnectPush).toHaveBeenCalled();
     });
 
-    it('handleLoadRaveModel should delegate to loadModel', () => {
-        void handleLoadRaveModel.execute({ type: 'loadRaveModel', payload: { modelId: 'rave-1' } });
-        expect(loadModel).toHaveBeenCalledWith('rave-1');
-    });
-
     it('handleSetControlSurface should delegate to setProtocol and notify', () => {
         void handleSetControlSurface.execute({ type: 'setControlSurface', payload: { protocol: 'mcu' } });
         expect(setProtocol).toHaveBeenCalledWith('mcu');
         expect(notifyUser).toHaveBeenCalledWith('Control surface: mcu');
-    });
-
-    it('handleSetRaveBlend should delegate to setTransferBlend', () => {
-        void handleSetRaveBlend.execute({ type: 'setRaveBlend', payload: { blend: 0.5 } });
-        expect(setTransferBlend).toHaveBeenCalledWith(0.5);
     });
 });
