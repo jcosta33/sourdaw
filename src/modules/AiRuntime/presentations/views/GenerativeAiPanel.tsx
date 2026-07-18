@@ -11,6 +11,7 @@ import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
+import { PatternBrowser } from '#/modules/AiGeneration/presentations/views';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import {
     toggleAiPanel,
@@ -28,8 +29,6 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
-
-import { PatternBrowser } from './PatternBrowser';
 
 type GenerativePanelWorkspaceState = {
     selectedClipId: string | null;

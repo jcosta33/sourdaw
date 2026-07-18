@@ -30,8 +30,8 @@ import {
     type ScaleType,
     type GenerationParams,
 } from '../../models/MidiPatternType';
-import { filterTemplates } from '../../useCases/aiRuntimeQueries/filterTemplates';
-import { PATTERN_TEMPLATES } from '../../useCases/aiRuntimeQueries/PATTERN_TEMPLATES';
+import { filterTemplates } from '../../useCases/patternQueries/filterTemplates';
+import { PATTERN_TEMPLATES } from '../../useCases/patternQueries/PATTERN_TEMPLATES';
 
 type PatternTemplate = (typeof PATTERN_TEMPLATES)[number];
 

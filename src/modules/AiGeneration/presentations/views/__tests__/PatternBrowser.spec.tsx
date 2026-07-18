@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PatternBrowser } from '../PatternBrowser';
 
 // Mock external dependencies
-vi.mock('../../../useCases/aiRuntimeQueries/PATTERN_TEMPLATES', () => ({
+vi.mock('../../../useCases/patternQueries/PATTERN_TEMPLATES', () => ({
     PATTERN_TEMPLATES: [
         {
             id: 't1',
@@ -19,7 +19,7 @@ vi.mock('../../../useCases/aiRuntimeQueries/PATTERN_TEMPLATES', () => ({
     ],
 }));
 
-vi.mock('../../../useCases/aiRuntimeQueries/filterTemplates', () => ({
+vi.mock('../../../useCases/patternQueries/filterTemplates', () => ({
     filterTemplates: vi.fn(({ query, category }: { query?: string; category?: string }) => {
         const templates = [
             {

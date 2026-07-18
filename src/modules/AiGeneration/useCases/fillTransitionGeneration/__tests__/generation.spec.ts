@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 
-import { defaultMarkerStoreState, markerStore, type MarkerStoreState } from '../../../stores/markerStore';
+import { markerStore, type MarkerStoreState } from '#/modules/Arrangement/stores';
+
 import { detectTransitionPoints } from '../detectTransitionPoints';
 import { generateAllTransitionFills } from '../generateAllTransitionFills';
 import { generateDrumFill } from '../generateDrumFill';
@@ -9,7 +10,7 @@ import { generateSweepDown } from '../generateSweepDown';
 
 describe('generation', () => {
     afterEach(() => {
-        markerStore.set(structuredClone(defaultMarkerStoreState));
+        markerStore.set({ markers: [], sections: [] });
     });
 
     it('should generate a descending drum fill with tom notes and a crash ending', () => {

@@ -13,20 +13,29 @@ vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
         generateWebLlmCompletion: vi.fn(),
         generateNativeCompletion: vi.fn(),
         isNativeEngineReady: vi.fn(),
+    };
+});
+
+vi.mock('../patternQueries/filterTemplates', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../patternQueries/filterTemplates')>();
+    return {
         filterTemplates: vi.fn((pattern: Parameters<typeof actual.filterTemplates>[0]) =>
             actual.filterTemplates(pattern)
         ),
-        PATTERN_TEMPLATES: [
-            {
-                name: 'Basic Beat',
-                category: 'drum',
-                tags: ['ambient pad'],
-                resolution: 1,
-                generate: () => [{ pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }],
-            },
-        ],
     };
 });
+
+vi.mock('../patternQueries/PATTERN_TEMPLATES', () => ({
+    PATTERN_TEMPLATES: [
+        {
+            name: 'Basic Beat',
+            category: 'drum',
+            tags: ['ambient pad'],
+            resolution: 1,
+            generate: () => [{ pitch: 60, velocity: 100, startBeat: 0, durationBeats: 1 }],
+        },
+    ],
+}));
 
 const mockNotificationEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
