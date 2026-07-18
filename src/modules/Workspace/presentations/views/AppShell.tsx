@@ -33,6 +33,7 @@ import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { AnalysisPanel } from '#/modules/Metering/presentations/views';
+import { MixerPanel } from '#/modules/MixerConsole/presentations/views';
 import { OnboardingTour } from '#/modules/Onboarding/presentations/views';
 import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
@@ -87,7 +88,6 @@ import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { InspectorPanel } from './InspectorPanel';
 import { LaunchScreen } from './LaunchScreen';
-import { MixerPanel } from './MixerPanel';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
 

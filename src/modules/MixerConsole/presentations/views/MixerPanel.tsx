@@ -17,10 +17,9 @@ import {
     restoreMixerChannels,
 } from '#/modules/Arrangement/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { cycleChannelStripWidth } from '#/modules/Workspace/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
-import { type ChannelStripWidth } from '../../models/WorkspaceState';
-import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles/cycleChannelStripWidth';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
@@ -30,6 +29,7 @@ import { MixHealthDialog } from './Mixer/MixHealthDialog';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used by this view.
 type MixerSnapshot = { id: string; name: string };
+type ChannelStripWidth = 'narrow' | 'normal' | 'wide';
 
 type MixerPanelProps = {
     style?: CSSProperties;

@@ -34,6 +34,8 @@ export { toggleSidebar } from './togglePanel/panelToggles/toggleSidebar';
 export { toggleTrackList } from './togglePanel/panelToggles/toggleTrackList';
 export { toggleVirtualKeyboard } from './togglePanel/panelToggles/toggleVirtualKeyboard';
 export { toggleWorkspaceMode } from './togglePanel/panelToggles/toggleWorkspaceMode';
+export { openInspector } from './togglePanel/panelToggles/openInspector';
+export { cycleChannelStripWidth } from './togglePanel/panelToggles/cycleChannelStripWidth';
 
 export { zoomToFit } from './togglePanel/zoomOperations/zoomToFit';
 export { zoomToSelection } from './togglePanel/zoomOperations/zoomToSelection';

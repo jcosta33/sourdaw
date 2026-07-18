@@ -52,7 +52,7 @@ vi.mock('#/modules/ContentBrowser/presentations/views', () => ({
     Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
 }));
 
-vi.mock('../MixerPanel', () => ({
+vi.mock('#/modules/MixerConsole/presentations/views', () => ({
     MixerPanel: () => <div data-testid="mixer-panel">Mixer</div>,
 }));
 
