@@ -41,7 +41,7 @@ code: no (all dormant).
 
 | Subsystem | Module(s) | State today | Decision |
 |---|---|---|---|
-| **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module |
+| **Extension module** (whole) | Extension | Architecturally complete but **FROZEN** by its own store header (`stores/extension.ts:5-7`) until a Worker sandbox replaces the unsandboxed `new Function` eval; zero non-spec importers | Build the Worker/CSP sandbox + permission enforcement + barrels, or remove the module. **RESOLVED 2026-07-18 (#427): module deleted — user decision (unfreeze + delete), ADR-0011 W7.** |
 | **DDSP synthesis pipeline** | BrowserAi | TF.js worker is a stub returning `UNAVAILABLE` (`workers/tfjsInferenceWorker.ts:16,40`); PR #101 de-advertised the four DDSP instruments as unavailable instead of `ready`, but the synthesis pipeline itself remains unbuilt | Build the inference, or remove the pipeline |
 | **RAVE timbre-transfer** | AudioEngine | 9 `useCases/rave/*` dead (only `loadModel`/`setTransferBlend` wired); 4 currently flagged live as `no-orphans` warns | Wire the RAVE UI/flow, or remove the 9 use cases |
 | **WAM plugin host** | Plugin | `loadWAMPlugin` never called by any production JS (`useCases/wamPluginHost/hostOperations/loadWAMPlugin.ts`) | Build host load/query + UI, or remove the host surface |
@@ -844,7 +844,7 @@ code: no (all dormant).
   and are exposed through no module barrel. Options: wire a preset
   save/delete/import surface vs delete the repos. Blocks code: no. Source:
   `src/modules/ProofChamber/repositories/proofChamberPresets/` (saveUserPreset,
-  deleteUserPreset, importPresetJson, writeUserPresets).
+  deleteUserPreset, importPresetJson, writeUserPresets). **RESOLVED 2026-07-18 (#427): dead repos deleted (ADR-0011 W7).**
 
 ## Automation
 
