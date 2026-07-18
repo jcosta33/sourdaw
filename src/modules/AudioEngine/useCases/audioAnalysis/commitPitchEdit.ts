@@ -1,9 +1,9 @@
-import { type PitchContour } from '#/modules/Knead/stores';
-
 import { commitNativePitchEdit } from '../../repositories/audioAnalysis/commit-native-pitch-edit';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 
 import { processPitchEditWasm } from './processPitchEditWasm';
+
+import type { PitchContour } from './analyzePitchForClip';
 
 type PitchEditSegment = {
     start_time_ms: number;

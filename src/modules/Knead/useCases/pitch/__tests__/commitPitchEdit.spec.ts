@@ -4,16 +4,12 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { logger } from '#/infra/logger/appLogger';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
-import { undoStore } from '../../../stores/undo-store-facade';
-import { clearUndoHistory } from '../../clearUndoHistory';
-import { executeAppAction } from '../../executeAppAction';
 import { getPitchHandlers } from '../../getPitchHandlers';
-import { redo } from '../../redo';
-import { undo } from '../../undo';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
 
 vi.mock('#/infra/logger/appLogger', () => ({

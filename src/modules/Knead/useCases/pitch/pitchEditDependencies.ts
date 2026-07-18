@@ -1,4 +1,4 @@
-import { type PitchContour } from '#/modules/Knead/stores';
+import { type PitchContour } from '../../stores/kneadStore';
 
 type PitchEditSegment = {
     start_time_ms: number;

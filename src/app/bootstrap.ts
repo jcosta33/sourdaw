@@ -50,12 +50,10 @@ import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,
-    getPitchHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
     setActionHistoryMetadataPort,
     setCommandEventBus,
-    setPitchEditDependencies,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
@@ -72,6 +70,7 @@ import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fer
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
 import { setGrandBouleEventBus } from '#/modules/GrandBoule/useCases';
 import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
+import { getPitchHandlers, setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
