@@ -10,14 +10,14 @@ import { enableLink } from '../enableLink';
 import { getLinkStatus } from '../getLinkStatus';
 
 function setTauriAvailable(): void {
-    Object.defineProperty(window, '__TAURI__', {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
         configurable: true,
         value: {},
     });
 }
 
 function clearTauriAvailability(): void {
-    Reflect.deleteProperty(window, '__TAURI__');
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
 }
 
 describe('linkBridge repository', () => {

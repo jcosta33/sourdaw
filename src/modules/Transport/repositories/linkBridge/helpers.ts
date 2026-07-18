@@ -12,7 +12,3 @@ export type LinkStatus = {
     phase: number;
     num_peers: number;
 };
-
-export function isTauri(): boolean {
-    return typeof window !== 'undefined' && '__TAURI__' in window;
-}
