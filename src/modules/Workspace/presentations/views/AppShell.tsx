@@ -16,6 +16,7 @@ import {
 } from '#/modules/AiRuntime/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
 import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
+import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
@@ -31,7 +32,6 @@ import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding
 import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
-import { ExportDialog } from '#/modules/Project/presentations/views';
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { LoopStationPanel, SessionView } from '#/modules/SessionLauncher/presentations/views';

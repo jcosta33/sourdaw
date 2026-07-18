@@ -18,9 +18,6 @@ import {
     trackStore,
 } from '#/modules/Arrangement/stores';
 import {
-    audioBufferToFlac as encodeFlac,
-    audioBufferToMp3 as encodeMp3,
-    audioBufferToWav as encodeWav,
     cancelExport,
     exportStems,
     getAudioContext,
@@ -29,14 +26,17 @@ import {
     renderOffline,
     restoreCachedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
+import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { audioBufferToFlac as encodeFlac } from '../../useCases/audioBufferToFlac';
+import { audioBufferToMp3 as encodeMp3 } from '../../useCases/audioBufferToMp3';
+import { audioBufferToWav as encodeWav } from '../../useCases/audioBufferToWav';
 import { selectNativeAudioExportDirectory } from '../../useCases/audioExport/selectNativeAudioExportDirectory';
 import { selectNativeAudioExportFile } from '../../useCases/audioExport/selectNativeAudioExportFile';
 import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNativeAudioMixdownFile';
 import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
-import { isNativeProjectRuntimeAvailable } from '../../useCases/isNativeProjectRuntimeAvailable';
 import { renderToClip } from '../../useCases/renderToClip';
 
 import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';

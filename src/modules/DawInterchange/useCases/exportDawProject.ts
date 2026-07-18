@@ -1,4 +1,5 @@
-import { audioBufferToWav, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { audioBufferToWav } from '#/modules/AudioRendering/useCases';
 import { buildProjectData } from '#/modules/Project/useCases';
 
 import { buildDawProjectZip } from './buildDawProjectZip';

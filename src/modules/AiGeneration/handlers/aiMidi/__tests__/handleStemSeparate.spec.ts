@@ -36,9 +36,12 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioBufferToWav: mocks.audioBufferToWav,
     cacheAudioBuffer: mocks.cacheAudioBuffer,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    audioBufferToWav: mocks.audioBufferToWav,
 }));
 
 describe('handleStemSeparate', () => {

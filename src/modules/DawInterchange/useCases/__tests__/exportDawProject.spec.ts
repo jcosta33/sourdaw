@@ -51,8 +51,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioBufferToWav: mocks.audio_buffer_to_wav,
     getCachedAudioBuffer: mocks.get_cached_audio_buffer,
+}));
+
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    audioBufferToWav: mocks.audio_buffer_to_wav,
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
