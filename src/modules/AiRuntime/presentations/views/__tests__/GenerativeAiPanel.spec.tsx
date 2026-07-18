@@ -87,7 +87,7 @@ vi.mock('../../components/GenerativeParamGrids', () => ({
     ),
 }));
 
-vi.mock('../PatternBrowser', () => ({
+vi.mock('#/modules/AiGeneration/presentations/views', () => ({
     PatternBrowser: () => <div data-testid="pattern-browser">Pattern Browser</div>,
 }));
 

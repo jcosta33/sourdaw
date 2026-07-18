@@ -31,8 +31,6 @@ import { handleRemoveMarker } from '../handlers/marker/handleRemoveMarker';
 import { handleRemoveSection } from '../handlers/marker/handleRemoveSection';
 import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
-import { handleGenerateAllTransitions } from '../handlers/newFeature/handleGenerateAllTransitions';
-import { handleGenerateFill } from '../handlers/newFeature/handleGenerateFill';
 import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
 import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
@@ -167,8 +165,6 @@ export function getArrangementHandlers() {
         removeSend: handleRemoveSend,
         addSidechainRoute: handleAddSidechainRoute,
         removeSidechainRoute: handleRemoveSidechainRoute,
-        generateFill: handleGenerateFill,
-        generateAllTransitions: handleGenerateAllTransitions,
         searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
         createAdjustmentLayer: handleCreateAdjustmentLayer,

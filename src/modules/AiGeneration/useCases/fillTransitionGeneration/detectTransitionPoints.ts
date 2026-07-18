@@ -1,4 +1,4 @@
-import { markerStore } from '../../stores/markerStore';
+import { markerStore } from '#/modules/Arrangement/stores';
 
 type DetectTransitionPointsOutput = Array<{ beat: number; fromSection: string; toSection: string }>;
 

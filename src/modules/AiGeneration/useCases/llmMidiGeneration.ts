@@ -1,9 +1,7 @@
 import {
-    filterTemplates,
     generateNativeCompletion,
     generateWebLlmCompletion,
     isNativeEngineReady,
-    PATTERN_TEMPLATES,
     resolveBackend,
     streamCloudChatCompletion,
 } from '#/modules/AiRuntime/useCases';
@@ -11,6 +9,9 @@ import { type generateMidiAI } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readBalancedObject } from '../services/readBalancedObject';
+
+import { filterTemplates } from './patternQueries/filterTemplates';
+import { PATTERN_TEMPLATES } from './patternQueries/PATTERN_TEMPLATES';
 
 type MidiGenerationNote = Awaited<ReturnType<typeof generateMidiAI>>['notes'][number];
 

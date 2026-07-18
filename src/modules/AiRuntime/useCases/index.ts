@@ -22,8 +22,6 @@ export { isNativeEngineReady } from './aiRuntimeQueries/isNativeEngineReady';
 export { searchPresets } from './aiRuntimeQueries/searchPresets';
 export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
-export { PATTERN_TEMPLATES } from './aiRuntimeQueries/PATTERN_TEMPLATES';
-export { filterTemplates } from './aiRuntimeQueries/filterTemplates';
 
 export { configureCloudApi } from './cloudApiManagement/configureCloudApi';
 export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
