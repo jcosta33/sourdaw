@@ -14,7 +14,13 @@ premises were fully re-audited against `main` on 2026-07-16 after three
 review rounds — every item re-checked, drifted citations corrected, resolved
 premises dropped (123 bullets: 120 decision items + 3 investigation
 meta-items; the handler-contract item added by PR #351 was resolved
-2026-07-17 — neutral utils home, #335). Decisions already
+2026-07-17 — neutral utils home, #335). A 2026-07-18 ADR-0011 Wave 7 prep
+pass added 8 more decision items — worklet-support seam, webMidiStore /
+mixerSnapshotStore placement, AiGeneration scale-theory triplication,
+ProofChamber dead preset repos, Setlist handler-map spec gap, Workspace
+`scoring`→Tuner wire drift, ElasticAudio warp-algorithm surface — for a
+current 131 bullets: 128 decision items + 3 investigation meta-items.
+Decisions already
 made are **not** here — they are ADRs (0006
 contract-folder barrels, 0007 command relocation, 0008 recent-projects
 Option A, 0009 pattern-morph determinism).
@@ -94,12 +100,15 @@ code: no (all dormant).
   non-presentation file is invisible. Options: accept the documented tradeoff
   vs add a second pattern with an allowlist for the 413 compiler artifacts.
   Blocks code: no. Source: `.dependency-cruiser.cjs:668-677` (comment block).
-- **No rule catches a `stores/` file that is really a use case.** Live
-  instance: `duplicateClipNotes` reads/transforms/writes midiStore from
-  `stores/`. Options: design a structural rule (store files export only
-  store + selectors) vs one-off relocation of the known instance. Blocks
-  code: no. Source: `src/modules/MIDI/stores/duplicateClipNotes.ts:5`,
-  exported via `src/modules/MIDI/stores/index.ts`.
+- **No rule catches a `stores/` file that is really a use case.** The known
+  live instance — `duplicateClipNotes` reading/transforming/writing midiStore
+  from `stores/` — was since relocated to `useCases/midiNoteCrud/` and dropped
+  from the `stores/` barrel, resolving that concrete example; the general
+  question stands with no current instance. Options: design a structural rule
+  (store files export only store + selectors) vs case-by-case relocation.
+  Blocks code: no. Source:
+  `src/modules/MIDI/useCases/midiNoteCrud/duplicateClipNotes.ts` (relocated from
+  `stores/`).
 - **Close the main-cruise validator config gaps.** The main cruise
   (`.dependency-cruiser.cjs`) does not set `tsPreCompilationDeps`, so type-only
   imports are invisible to its rules — only the types
@@ -115,7 +124,7 @@ code: no (all dormant).
   cruise reports exactly 5 `no-orphans` warnings — 4 RAVE use cases
   (`src/modules/AudioEngine/useCases/rave/{timbreTransfer,interpolateLatent,encodeAudio,decodeLatent}.ts`,
   tracked by the `.agents/specs/rave-timbre-transfer/` draft) and
-  `src/modules/MIDI/workers/controllerScriptingWorker.ts` (already a docket
+  `src/modules/ControlSurface/workers/controllerScriptingWorker.ts` (already a docket
   trust-model item under MIDI). Wire or retire each; recorded here so the
   warn-backlog finding can be retired without losing the list. Blocks code: no.
   Source: `node scripts/check-dependency-boundaries.mjs` (main: 5 warnings).
@@ -138,7 +147,7 @@ code: no (all dormant).
   their state is lost on save/load. Options: wire them into Automerge vs
   declare them session-scoped. Blocks code: yes, for any setlist/loop/punch
   persistence work. Source: `src/modules/Transport/stores/transportStore.ts`,
-  `setlistStore.ts`, `loopStationStore.ts`, `punchRecordingStore.ts`.
+  `src/modules/Setlist/stores/setlistStore.ts`, `src/modules/SessionLauncher/stores/loopStationStore.ts`, `src/modules/PunchRecording/stores/punchRecordingStore.ts` (now separate modules).
 - **Canonical BPM bounds.** `setTempo` throws outside 20..300,
   `createTempoChange` clamps 20..999, `addTempoChange`'s update path applies no
   clamp. Options: one shared MIN/MAX constant vs per-path bounds by design.
@@ -155,22 +164,32 @@ code: no (all dormant).
   distinct features (auto-punch vs retroactive punch-from-capture, the latter
   still needing engine wiring) or should converge on one model. Blocks code:
   yes, for punch feature work. Source:
-  `src/modules/Transport/useCases/playheadScheduler.ts:281-323` (transportStore
-  punch), `useCases/punchRecording/startBackgroundCapture.ts` (state-only),
-  `presentations/views/PunchRecordingControls.tsx` (mounted at
+  `src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts` (transportStore
+  punch), `src/modules/PunchRecording/useCases/punchRecording/startBackgroundCapture.ts` (state-only),
+  `src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx` (mounted at
   `src/modules/Workspace/presentations/views/TransportBar.tsx:133`).
 - **Setlist–transport coordination contract.** `goToItem` only sets
   currentIndex and emits a programChange; no seek/tempo/timesig/project load;
   autoAdvance/countInBars/gapSeconds are read by nothing. Options: specify the
   live-set behavior vs park the feature. Blocks code: yes, for setlist work.
-  Source: `src/modules/Transport/useCases/setlist/goToItem.ts:11-31`.
+  Source: `src/modules/Setlist/useCases/setlist/goToItem.ts:11-31`.
 - **loopStation layers are placeholders** (no audio capture wired). Options:
   spec the looper capture path vs remove the placeholder records. Blocks code:
-  no. Source: `src/modules/Transport/useCases/loopStation/toggleRecord.ts`.
+  no. Source: `src/modules/SessionLauncher/useCases/loopStation/toggleRecord.ts`.
 - **detectProjectTempo is stub-grade** — it re-detects the input tempo (one
   synthetic onset per beat at project tempo). Options: real onset detection vs
   remove the affordance. Blocks code: no. Source:
   `src/modules/Transport/useCases/tempoMapping/operations/detectProjectTempo.ts`.
+- **Handler-map shape-spec convention: `getSetlistHandlers` has none.**
+  `getTransportHandlers` gained a map-shape spec (asserts every command handler
+  is present with an `execute`, and that the returned map is freshly built),
+  while the spun-out `Setlist` module's `getSetlistHandlers` never had one.
+  Options: adopt a convention that every `get<Module>Handlers` map carries a
+  shape spec (backfill Setlist first) vs treat coverage case-by-case. Blocks
+  code: no. Source: `src/modules/Setlist/useCases/getSetlistHandlers.ts` (no
+  `__tests__` spec),
+  `src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts`
+  (precedent).
 
 ## Command
 
@@ -190,16 +209,16 @@ code: no (all dormant).
   "editor-open" flag in the contract; confirm whether Mixer focus should
   swallow clip-delete at all. Blocks code: yes, for the Elastic double-fire
   fix. Source:
-  `src/modules/Command/presentations/views/keyboardShortcutsContract.ts`,
-  `src/modules/AudioEngine/presentations/views/ElasticEditorPanel.tsx:113-139`,
+  `src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts`,
+  `src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx:113-139`,
   `src/modules/Workspace/presentations/views/MixerPanel.tsx`.
 - **Themed rename-prompt mechanism (product/UI).** Palette track/clip rename
   still uses native `window.prompt`; no reusable themed string-prompt exists.
   Options: a generic `dialog.openTextPrompt` event + dialog component vs
   inline-rename surfaces (MacrosPanel pattern); fold trimmed/non-empty
   validation into whichever is chosen. Blocks code: yes, for rename UX work.
-  Source: `src/modules/Command/useCases/commands/TrackCommands.ts`,
-  `useCases/commands/ClipCommands.ts` (paths post-ADR-0007),
+  Source: `src/modules/CommandInterface/useCases/commands/TrackCommands.ts`,
+  `src/modules/CommandInterface/useCases/commands/ClipCommands.ts` (post-ADR-0007),
   `src/modules/Workspace/presentations/views/Sidebar/MacrosPanel.tsx`.
 - **No global `unhandledrejection` handler for `executeAppAction`.** Nothing in
   `src/` registers a `window.unhandledrejection` / `onunhandledrejection`
@@ -233,7 +252,7 @@ code: no (all dormant).
   `src/modules/MIDI/stores/chordTrackStore.ts`.
 - **setMidiLearnDependencies is module-mutable global state** (test/HMR
   isolation hazard). Options: DI seam vs accept the singleton. Blocks code:
-  no. Source: `src/modules/MIDI/useCases/midiLearn/midiLearnDependencies.ts`.
+  no. Source: `src/modules/ControlSurface/useCases/midiLearn/midiLearnDependencies.ts`.
 - **Should midiStore carry a schemaVersion/migration_version in the Automerge
   document?** Blocks code: yes, for the next MIDI schema migration. Source:
   `src/modules/MIDI/stores/midiStore.ts`,
@@ -251,7 +270,7 @@ code: no (all dormant).
   user-supplied JS in a Worker with no rate-limit or schema validation on
   posted setParam/sendMidi; intended scope (personal scripts vs shared
   marketplace) is undecided. Blocks code: yes, for shipping the scripting
-  surface. Source: `src/modules/MIDI/workers/controllerScriptingWorker.ts:14-29`.
+  surface. Source: `src/modules/ControlSurface/workers/controllerScriptingWorker.ts:14-29`.
 - **Ratchets / step-conditions**: undocumented pattern-logic gap (MidiNote has
   probability only). Options: add fields vs declare out of scope. Blocks code:
   no. Source: `src/modules/MIDI/models/MidiNote.ts`.
@@ -259,6 +278,16 @@ code: no (all dormant).
   pairing/ordering, edit invariants, behaviour-asserting tests) has no spec on
   disk. Options: write `SPEC-MIDI` vs fold into module docs. Blocks code: no.
   Source: provenance `INV-MIDI` (no code locus).
+- **webMidiStore placement: promote to `MIDI/stores` or keep the useCases
+  re-export?** The store is defined in the repository layer
+  (`repositories/webMidi/store.ts`) and surfaced through a use-case helper
+  re-export (`useCases/webMidiInput/helpers.ts` → `useCases/index.ts`), a
+  pre-existing pattern carried through the #413 ControlSurface split. Options:
+  promote it to a real `MIDI/stores/` public read contract vs keep the
+  repository store plus useCases re-export. Blocks code: no. Source:
+  `src/modules/MIDI/repositories/webMidi/store.ts`,
+  `src/modules/MIDI/useCases/webMidiInput/helpers.ts:9`,
+  `src/modules/MIDI/useCases/index.ts:118`.
 
 ## Grinder
 
@@ -294,12 +323,12 @@ code: no (all dormant).
   Options: adopt a real voltage model (volts, per-standard ranges) vs declare
   normalized [0,1] the contract and convert at the edge. Blocks code: yes, for
   any CV feature work. Source:
-  `src/modules/Synth/useCases/cvGate/cvOutputOperations/setCvValue.ts:11`,
-  `useCases/cvGate/cvConversion/midiNoteToCv.ts:16`.
+  `src/modules/CvGate/useCases/cvOutputOperations/setCvValue.ts:11`,
+  `src/modules/CvGate/useCases/cvConversion/midiNoteToCv.ts:16`.
 - **cvGate `triggerPulseMs`/`gateThreshold` are persisted but dead** — defined,
   validated, and stored with zero production consumers. Options: wire them
   into the gate path or delete the fields. Blocks code: no. Source:
-  `src/modules/Synth/stores/cvGate.ts:29-30,37-38,45`.
+  `src/modules/CvGate/stores/cvGate.ts:29-30,37-38,45`.
 
 ## CrdtDocument
 
@@ -325,8 +354,8 @@ code: no (all dormant).
   no Transport/engine call (store documents engine wiring as deferred).
   Options: wire clip launch to the engine vs hide the surface until then.
   Blocks code: yes, for session-view work. Source:
-  `src/modules/Workspace/presentations/views/SessionView.tsx:33-41`,
-  `stores/sessionLaunchStore.ts`.
+  `src/modules/SessionLauncher/presentations/views/SessionView.tsx:33-41`,
+  `src/modules/SessionLauncher/stores/sessionLaunchStore.ts`.
 - **Thread `audioBufferId` (not `clip.id`) through `WaveformEditor`.**
   `WaveformEditor` keys peaks, warp state, and AI-denoise on the `clipId` prop
   (`presentations/views/ClipView/WaveformEditor.tsx:91,500`), which `ClipView`
@@ -348,6 +377,17 @@ code: no (all dormant).
   Blocks code: no. Source:
   `src/modules/Workspace/useCases/automationSubLanes/`,
   `src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts:27`.
+- **Wire-format naming drift: Workspace persists `scoring*` for the Tuner
+  module.** After the Scoring→Tuner rename the module is `Tuner`, but Workspace
+  still names the persisted field `scoringHeight`, the device-panel discriminant
+  `kind: 'scoring'` / `scoringDeviceId`, and the event `panel.showScoring`,
+  while rendering `<TunerPanel/>`; the `scoring` wire tokens were kept for
+  persistence stability. Options: migrate the persisted/event tokens to `tuner*`
+  (needs a WorkspaceState migration) vs make `scoring` a permanent stable alias.
+  Blocks code: no. Source:
+  `src/modules/Workspace/models/WorkspaceState.ts:54,104`,
+  `src/modules/Workspace/presentations/hooks/useActiveDevicePanel.ts:43,85`,
+  `src/modules/Workspace/presentations/views/AppShell.tsx:216,629`.
 
 ## Collaboration
 
@@ -399,6 +439,13 @@ code: no (all dormant).
   `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:559-901`,
   `src/modules/Workspace/presentations/hooks/usePianoRollInteractions.ts`,
   `src/modules/Arrangement/useCases/timelineInteractions/commitInlineMidiNote{Create,Delete,Move}.ts`.
+- **mixerSnapshotStore placement: defined under `useCases/`, not `stores/`.**
+  `mixerSnapshotStore` is created in
+  `useCases/mixerSnapshot/operations/helpers.ts` rather than a `stores/` file;
+  ownership is correct (Arrangement) but placement is irregular against the
+  store-layer convention. Options: relocate to `Arrangement/stores/` vs accept
+  the useCases-local store. Blocks code: no. Source:
+  `src/modules/Arrangement/useCases/mixerSnapshot/operations/helpers.ts:9`.
 
 ## AudioEngine
 
@@ -433,6 +480,32 @@ code: no (all dormant).
   Options: accept timer scheduling for the target use cases vs build a
   look-ahead scheduler. Blocks code: no. Source:
   `src/modules/AudioEngine/repositories/faustDeviceFactory.ts:55-61,89`.
+- **Worklet-support shared infra: relocate to `src/infra` or keep
+  engine-private?** `engine/workletInitShared.ts` and the generated
+  `wasm/daw_dsp.js` bindings are private AudioEngine infra consumed by 11 device
+  nodes (GrandBoule, Gluten, Bacteria, Levain, Toaster, Scoring, Knead, Grinder,
+  Fermenter, ProofChamber, Proof) plus the grandBoule engine worker. The
+  repositories-no-business and cross-module-index-only walls block the next
+  DSP-node extractions (ElasticAudio PR #415 probe evidence) until this seam
+  becomes a shared surface. Options: relocate to `src/infra` / a shared
+  worklet-support module vs keep it engine-private. Blocks code: no, but gates
+  future device-node extractions. Source:
+  `src/modules/AudioEngine/engine/workletInitShared.ts`,
+  `src/modules/AudioEngine/wasm/daw_dsp.js`.
+
+## ElasticAudio
+
+- **Warp-algorithm selection is stored but drives no DSP.** The per-clip
+  `WarpAlgorithm` written by `setWarpAlgorithm` (via the `setWarpAlgorithm`
+  AppAction / `handleSetWarpAlgorithm`) lands in `audioWarpStore.clipSettings`
+  and is read only by the ElasticEditorPanel UI; no engine, worklet, scheduling,
+  or offline-render path reads it to select a stretch algorithm (the sole
+  cross-module consumer of `ElasticAudio/stores` is the write handler). The gap
+  moved intact into ElasticAudio in #415. Options: wire the algorithm through to
+  the time-stretch DSP vs remove the selectable-algorithm surface. Blocks code:
+  no. Source: `src/modules/ElasticAudio/stores/audioWarp.ts:22-30`,
+  `src/modules/ElasticAudio/useCases/audioWarping/setWarpAlgorithm.ts`,
+  `src/modules/AudioEngine/handlers/finalFeature/handleSetWarpAlgorithm.ts`.
 
 ## GrandBoule
 
@@ -564,19 +637,19 @@ code: no (all dormant).
   `src/modules/VirtualKeyboard/presentations/views/VirtualKeyboard.tsx:274,290`;
   no panic use case under `src/modules/AudioEngine/useCases/`.
 
-## Scoring
+## Tuner
 
 - **Non-atomic read-merge-write races** between updateTunerTelemetry and
   setA4Reference/setDisplayMode can lose a preference write. Options: keyed
   updates in the store vs accept the race. Blocks code: no. Source:
-  `src/modules/Scoring/stores/scoringStore.ts:55-59`,
+  `src/modules/Tuner/stores/tunerStore.ts:55-59`,
   `useCases/setA4Reference.ts`, `useCases/setDisplayMode.ts`.
 - **a4Reference bounds 400–490 exclude historical tunings** (392/415/466/500
   Hz). Options: widen bounds vs document the range. Blocks code: no. Source:
-  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:162-163`.
+  `src/modules/Tuner/presentations/views/TunerPanel.tsx:162-163`.
 - **Raw DisplayMode literal rendered to users** (lowercase `detail={mode}`),
   inconsistent with human labels elsewhere. Blocks code: no. Source:
-  `src/modules/Scoring/presentations/views/ScoringPanel.tsx:123,265`.
+  `src/modules/Tuner/presentations/views/TunerPanel.tsx:123,265`.
 
 ## AiRuntime
 
@@ -595,7 +668,7 @@ code: no (all dormant).
   query has zero non-test callers (referenced only by its own spec) — distinct
   from the plural `getMentorTips` handler, which *is* wired
   (`handlers/aiOrganization/handleGetMentorTips.ts`,
-  `src/modules/Command/useCases/commands/AiCommands.ts:203`). Wire the tip query
+  `src/modules/CommandInterface/useCases/commands/AiCommands.ts:203`). Wire the tip query
   into a surface or delete it. Blocks code: no. Source:
   `src/modules/AiRuntime/useCases/musicMentor/queries.ts:8`.
 
@@ -677,7 +750,7 @@ code: no (all dormant).
   (an LRU cap is now implemented in the store; the open call is which module
   owns the cache contract and whether SampleLibrary pushes or pulls). Blocks
   code: no. Source: `src/modules/AudioEngine/stores/audioBufferCache.ts:64-107`,
-  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:108`.
+  `src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts:108`.
 - **Where does the audio-decoding pipeline live** (browser OfflineAudioContext
   vs Tauri reads)? Still split: timeline drag-in decodes via the AudioEngine
   `decodeAudioFile` use case while sample preview decodes inline with
@@ -688,7 +761,7 @@ code: no (all dormant).
   first-launch cost is acceptable: factory samples are synthesized on the main
   thread during app initialization (now chunked with event-loop yields, but
   still startup work). Blocks code: no. Source:
-  `src/modules/SampleLibrary/useCases/factoryContent/seedFactoryLibrary.ts:101-108`,
+  `src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts:101-108`,
   `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:94`.
 
 ## SoundLibrary
@@ -719,6 +792,17 @@ code: no (all dormant).
   contract decision. Blocks code: no. Source:
   `src/modules/AiGeneration/handlers/aiMidi/handleStemSeparate.ts:95` (and
   sibling handlers).
+- **Scale-theory interval tables triplicated within AiGeneration.** Three
+  independent interval-table definitions coexist: `models/MidiPatternType.ts`
+  (`SCALE_INTERVALS`, consumed by `services/scaleTheory.ts`),
+  `useCases/generateMelody/algorithm.ts` (its own `SCALE_INTERVALS`), and
+  `useCases/generateChordProgression/algorithm.ts` (its own
+  `MAJOR_SCALE_INTERVALS` / `MINOR_SCALE_INTERVALS`) — the #395 move
+  consolidated none of them. Options: consolidate to one shared table vs accept
+  per-generator copies. Blocks code: no. Source:
+  `src/modules/AiGeneration/models/MidiPatternType.ts`,
+  `src/modules/AiGeneration/useCases/generateMelody/algorithm.ts:60`,
+  `src/modules/AiGeneration/useCases/generateChordProgression/algorithm.ts:54-55`.
 
 ## Proof
 
@@ -747,11 +831,20 @@ code: no (all dormant).
   no. Source: `src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts`,
   `useCases/proofParamBridge/setProofParam.ts`.
 - **Proof vs `Plugin/proofChamber` duplication (I-25).** Two live surfaces
-  model "the proof chamber" — `src/modules/Proof/` and
-  `src/modules/Plugin/useCases/proofChamber/`. Product decision on the owner;
+  model "the proof chamber" — `src/modules/Proof/` and the surface
+  historically at `src/modules/Plugin/useCases/proofChamber/`, since extracted
+  to the standalone `src/modules/ProofChamber/` module (Plugin-lane path left
+  as-is pending the in-flight PluginHost rename). Product decision on the owner;
   surface to the maintainer, do not delete code unilaterally. Blocks code: no.
   Migrated from ADR-0010 Open questions. Source: `src/modules/Proof/`,
-  `src/modules/Plugin/useCases/proofChamber/`.
+  `src/modules/ProofChamber/` (was `Plugin/useCases/proofChamber/`).
+- **ProofChamber user-preset repos are dead** — `saveUserPreset`,
+  `deleteUserPreset`, and `importPresetJson` (plus `writeUserPresets`) under
+  `ProofChamber/repositories/proofChamberPresets/` have zero production callers
+  and are exposed through no module barrel. Options: wire a preset
+  save/delete/import surface vs delete the repos. Blocks code: no. Source:
+  `src/modules/ProofChamber/repositories/proofChamberPresets/` (saveUserPreset,
+  deleteUserPreset, importPresetJson, writeUserPresets).
 
 ## Automation
 
@@ -788,7 +881,7 @@ code: no (all dormant).
   Options: honest narrow contract vs full param support. Blocks code: no.
   Source:
   `src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts:14-20`,
-  `src/modules/Command/models/AppAction.ts:314`.
+  `src/utils/handlerContract.ts` (the `AppAction` type; was `Command/models/AppAction.ts:314`).
 - **Mix analysis is synthetic, not measured** — is a real user reference-track
   buffer intended (no such API exists)? `analyzeMix` estimates a profile from
   track layout (kind/gain heuristics, default analysis values), yet two paths
