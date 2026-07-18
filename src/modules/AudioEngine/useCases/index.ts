@@ -87,9 +87,6 @@ export { setSend } from './engineAccess/setSend';
 export { removeSend } from './engineAccess/removeSend';
 export { wireSidechainRoute } from './engineAccess/wireSidechainRoute';
 export { unwireSidechainRoute } from './engineAccess/unwireSidechainRoute';
-export { enableLink } from './engineAccess/enableLink';
-export { disableLink } from './engineAccess/disableLink';
-
 export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';

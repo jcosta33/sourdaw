@@ -19,8 +19,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases';
-import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores';
-import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
+import { linkStatusStore, defaultLinkStatus } from '#/modules/Transport/stores';
+import { enableLink, disableLink } from '#/modules/Transport/useCases';
 
 import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
 import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
