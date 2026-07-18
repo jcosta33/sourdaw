@@ -28,7 +28,7 @@ function sanitizeForPath(value: string): string {
 }
 
 export async function exportDawProject(): ExportDawProjectOutput {
-    const built = await buildProjectData();
+    const built = await buildProjectData({ includeAudioBuffers: false });
     if (!built) {
         throw new Error('Cannot export DAWproject: project state is not fully loaded.');
     }

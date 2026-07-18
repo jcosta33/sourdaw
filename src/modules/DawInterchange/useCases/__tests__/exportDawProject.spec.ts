@@ -44,7 +44,7 @@ type BuildDawProjectZipInput = {
 const mocks = vi.hoisted(() => ({
     audio_buffer_to_wav: vi.fn<(buffer: AudioBuffer, bitDepth: 16 | 24 | 32) => Promise<ArrayBuffer>>(),
     build_daw_project_zip: vi.fn<(input: BuildDawProjectZipInput) => Uint8Array>(),
-    build_project_data: vi.fn<() => Promise<BuiltProjectData | null>>(),
+    build_project_data: vi.fn<(input?: { includeAudioBuffers?: boolean }) => Promise<BuiltProjectData | null>>(),
     get_cached_audio_buffer: vi.fn<(input: GetCachedAudioBufferInput) => AudioBuffer | null>(),
     serialize_metadata_xml: vi.fn<(input: SerializeMetadataXmlInput) => string>(),
     serialize_project_xml: vi.fn<(input: SerializeProjectXmlInput) => string>(),
@@ -134,6 +134,7 @@ describe('exportDawProject', () => {
         const result = await exportDawProject();
 
         expect(mocks.build_project_data).toHaveBeenCalledTimes(1);
+        expect(mocks.build_project_data).toHaveBeenCalledWith({ includeAudioBuffers: false });
         expect(mocks.get_cached_audio_buffer).toHaveBeenNthCalledWith(1, { bufferId: 'drum loop/1?' });
         expect(mocks.get_cached_audio_buffer).toHaveBeenNthCalledWith(2, { bufferId: 'missing:buffer' });
         expect(mocks.audio_buffer_to_wav).toHaveBeenCalledTimes(1);
