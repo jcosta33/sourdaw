@@ -25,7 +25,6 @@ const {
     selectClipMock,
     trackStateMock,
     midiStateMock,
-    workspaceStoreMock,
     generateMidiViaLlmMock,
 } = vi.hoisted(() => {
     const trackStateMock = {
@@ -46,7 +45,6 @@ const {
         selectClipMock: vi.fn(),
         trackStateMock,
         midiStateMock,
-        workspaceStoreMock: { value: { selectedClipId: null as string | null }, set: vi.fn() },
         generateMidiViaLlmMock: vi.fn().mockResolvedValue([]),
     };
 });
@@ -68,20 +66,9 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         addClip: addClipMock,
         getTrackStoreState: getTrackStoreStateMock,
         setTrackStoreState: setTrackStoreStateMock,
+        selectClip: selectClipMock,
     };
 });
-
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Workspace/stores')>();
-    return {
-        ...actual,
-        workspaceStore: workspaceStoreMock,
-    };
-});
-
-vi.mock('#/modules/Workspace/useCases', () => ({
-    selectClip: selectClipMock,
-}));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
@@ -126,7 +113,6 @@ describe('handleGenerateMidiPrompt', () => {
         vi.clearAllMocks();
         trackStateMock.value = { tracks: [], selectedTrackId: null };
         midiStateMock.value = {};
-        workspaceStoreMock.value = { selectedClipId: null };
         generateMidiViaLlmMock.mockResolvedValue([]);
     });
 
@@ -201,7 +187,7 @@ describe('handleGenerateMidiPrompt', () => {
         expect(setMidiStoreStateMock).toHaveBeenCalledWith(midiSnapshotAfter);
     });
 
-    it('should delegate generated clip selection through the Workspace use case', async () => {
+    it('should delegate generated clip selection through the Arrangement use case', async () => {
         const trackSnapshotBefore = { tracks: [], selectedTrackId: null };
         const trackOnlySnapshot = {
             tracks: [{ id: 'new-midi-track', kind: 'midi', clips: [] }],
@@ -255,7 +241,6 @@ describe('handleGenerateMidiPrompt', () => {
         expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
         expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'success' }));
         expect(selectClipMock).toHaveBeenCalledWith('generated-clip');
-        expect(workspaceStoreMock.set).not.toHaveBeenCalled();
 
         const undoEntryCall = pushUndoEntryMock.mock.calls[0];
         expect(undoEntryCall).toBeDefined();

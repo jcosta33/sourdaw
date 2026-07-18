@@ -35,6 +35,7 @@ const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { selectedTrackId: null, tracks: [] } },
+    clipSelectionStore: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
     zoomTimeline: vi.fn(),
 }));
 
@@ -46,6 +47,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTimeRange: vi.fn(),
     removeClip: vi.fn(),
     addClip: vi.fn(),
+    clearClipSelection: vi.fn(),
+    selectAllClips: vi.fn(),
+    selectClipWithFocus: vi.fn(),
+    setMarqueeSelection: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -65,14 +70,10 @@ vi.mock('#/modules/Workspace/stores', () => ({
 }));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
-    clearClipSelection: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
-    selectAllClips: vi.fn(),
-    selectClipWithFocus: vi.fn(),
     setEditingTool: vi.fn(),
-    setMarqueeSelection: vi.fn(),
     showAutomationPanel: vi.fn(),
     startToolSwap: vi.fn(),
     toggleCommandPalette: vi.fn(),

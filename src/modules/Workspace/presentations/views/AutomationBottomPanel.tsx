@@ -27,8 +27,6 @@ import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
 const SPARKLINE_HEIGHT = 24;
 
 type AutomationPanelWorkspaceState = {
-    selectedClipId: string | null;
-    selectedClipIds: string[];
     activeTool: EditingTool;
     snapValue: number;
     trackListWidth: number;

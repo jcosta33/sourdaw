@@ -21,10 +21,9 @@ import {
     cancelProcessingTask,
     removeTask,
 } from '#/modules/AiGeneration/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { workspaceStore } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
@@ -80,7 +79,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     // early exit, so toggling the panel changed the hook count between
     // renders and corrupted React's per-component hook state.
     const state = useStore<GenerativeAiState>(aiStore, { isPanelOpen: false, tasks: [] });
-    const workspaceState = useStore<GenerativePanelWorkspaceState | null>(workspaceStore, null);
+    const clipSelection = useStore<GenerativePanelWorkspaceState | null>(clipSelectionStore, null);
     const trackState = useStore<GenerativePanelTrackState | null>(trackStore, null);
     const [activeTab, setActiveTab] = useState<'audio' | 'midi' | 'stems'>('midi');
     const [midiSubTab, setMidiSubTab] = useState<'ai' | 'patterns'>('patterns');
@@ -154,7 +153,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     // Get selected audio clip for stem separation — reads the already-subscribed
     // store values (see the hook block at the top of the component).
-    const selectedClipId = workspaceState?.selectedClipId ?? null;
+    const selectedClipId = clipSelection?.selectedClipId ?? null;
     const tracks = trackState?.tracks ?? [];
     const selectedClip =
         tracks

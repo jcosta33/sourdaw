@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore, zoomTimeline } from '#/modules/Arrangement/stores';
 import {
     acceptGhostClip,
     dismissGhostClip,
@@ -9,19 +9,19 @@ import {
     duplicateTimeRange,
     removeClip,
     addClip,
+    clearClipSelection,
+    selectAllClips,
+    selectClipWithFocus,
+    setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
 import { loopStationStore } from '#/modules/Transport/stores';
 import { stopPlayback, seekPlayhead, setLoopRegion, stopAllSlots, triggerPad } from '#/modules/Transport/useCases';
-import { workspaceStore, type EditingTool } from '#/modules/Workspace/stores';
+import { type EditingTool } from '#/modules/Workspace/stores';
 import {
-    clearClipSelection,
     cycleAutomationVisibility,
     openExportDialog,
     openPreferencesDialog,
-    selectAllClips,
-    selectClipWithFocus,
     setEditingTool,
-    setMarqueeSelection,
     showAutomationPanel,
     startToolSwap,
     toggleCommandPalette,
@@ -88,7 +88,7 @@ function dispatchAiChord(key: string): boolean {
             void executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
             return true;
         case 'b': {
-            const selectedId = workspaceStore.value?.selectedClipId;
+            const selectedId = clipSelectionStore.value?.selectedClipId;
             if (!selectedId) {
                 return true;
             }
@@ -165,7 +165,7 @@ function matches(desc: KeyDescriptor, keys: string[]): boolean {
  * Returns `true` if the caller should call `preventDefault()`.
  */
 function getSelectedGhostClipId(): string | null {
-    const selectedId = workspaceStore.value?.selectedClipId;
+    const selectedId = clipSelectionStore.value?.selectedClipId;
     if (!selectedId) {
         return null;
     }
@@ -195,18 +195,18 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             // Handle dynamic payloads
             if (appAction.type === 'duplicateClip' && appAction.payload.clipId === 'selected') {
                 // R-B4: if marquee selection exists, duplicate the time range forward (Cmd+D)
-                const marq = workspaceStore.value?.marqueeSelection;
+                const marq = clipSelectionStore.value?.marqueeSelection;
                 if (marq && marq.endBeat > marq.startBeat) {
                     executeDuplicateTimeRange(marq.startBeat, marq.endBeat);
                     return true;
                 }
 
                 // R-B2: if multiple clips are selected, duplicate all forward by selection span
-                const selectedClipIds = workspaceStore.value?.selectedClipIds ?? [];
+                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 if (selectedClipIds.length > 1) {
                     duplicateSelectedClipsForward(selectedClipIds);
                 } else {
-                    const selectedClipId = workspaceStore.value?.selectedClipId;
+                    const selectedClipId = clipSelectionStore.value?.selectedClipId;
                     if (selectedClipId) {
                         void executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
                     }
@@ -214,7 +214,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 return true;
             }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
-                const selectedClipId = workspaceStore.value?.selectedClipId;
+                const selectedClipId = clipSelectionStore.value?.selectedClipId;
                 if (selectedClipId) {
                     void executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
@@ -233,7 +233,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         dismissGhostClip(ghostId);
                         return true;
                     }
-                    const ws = workspaceStore.value;
+                    const ws = clipSelectionStore.value;
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
                         clearClipSelection();
                         return false;
@@ -326,13 +326,13 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
 
                 case 'loopFromSelection': {
                     // R-B4: time (marquee) selection takes priority over clip selection
-                    const marq = workspaceStore.value?.marqueeSelection;
+                    const marq = clipSelectionStore.value?.marqueeSelection;
                     if (marq && marq.endBeat > marq.startBeat) {
                         setLoopRegion(marq.startBeat, marq.endBeat);
                         return true;
                     }
                     // R-B5: set transport loop region to the earliest start / latest end of selected clips
-                    const selectedIds = workspaceStore.value?.selectedClipIds ?? [];
+                    const selectedIds = clipSelectionStore.value?.selectedClipIds ?? [];
                     if (selectedIds.length > 0) {
                         const state = trackStore.value;
                         if (state) {
@@ -356,7 +356,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                         }
                     } else {
                         // Fallback: single selected clip
-                        const singleId = workspaceStore.value?.selectedClipId;
+                        const singleId = clipSelectionStore.value?.selectedClipId;
                         if (singleId) {
                             const state = trackStore.value;
                             if (state) {
@@ -374,7 +374,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 }
                 case 'deleteTimeRange': {
                     // R-B4: delete contents of time selection (marqueeSelection)
-                    const sel = workspaceStore.value?.marqueeSelection;
+                    const sel = clipSelectionStore.value?.marqueeSelection;
                     if (!sel) {
                         return false;
                     }
@@ -384,7 +384,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 }
                 case 'insertSilence': {
                     // R-B4: insert silence (gap) at the time selection range
-                    const sel = workspaceStore.value?.marqueeSelection;
+                    const sel = clipSelectionStore.value?.marqueeSelection;
                     if (!sel) {
                         return false;
                     }
@@ -401,7 +401,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 }
                 case 'duplicateTimeRange': {
                     // R-B4: duplicate the time selection range forward
-                    const sel = workspaceStore.value?.marqueeSelection;
+                    const sel = clipSelectionStore.value?.marqueeSelection;
                     if (!sel) {
                         return false;
                     }
@@ -424,7 +424,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (allGhosts.length === 0) {
                         return false;
                     }
-                    const currentId = workspaceStore.value?.selectedClipId;
+                    const currentId = clipSelectionStore.value?.selectedClipId;
                     const currentIdx = currentId ? allGhosts.indexOf(currentId) : -1;
                     const dir = action.id === 'cycleGhostClipNext' ? 1 : -1;
                     const nextIdx = (currentIdx + dir + allGhosts.length) % allGhosts.length;
@@ -460,7 +460,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
      * already excludes input targets before reaching this branch.
      */
     function deleteSelectionShortcut(): boolean {
-        const ws = workspaceStore.value;
+        const ws = clipSelectionStore.value;
         if (!ws) {
             return false;
         }

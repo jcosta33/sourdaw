@@ -16,11 +16,13 @@ import {
     initEngine,
     recordAiActionGroup,
 } from '#/modules/AiRuntime/useCases';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    defaultTrackState,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
-
-import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { workspaceStore } from '../../stores/workspaceStore';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 
@@ -116,13 +118,13 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const llmStatus = useStore(llmStatusStore, defaultLlmStatus);
     const trackState = useStore(trackStore, defaultTrackState);
-    const wsState = useStore(workspaceStore, defaultWorkspaceState);
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
 
     // ── Derive selection tags ───────────────────────────────────────────
     const selectionTags: SelectionTag[] = [];
     const selectedTrackId = trackState?.selectedTrackId;
-    const selectedClipId = wsState?.selectedClipId;
-    const selectedClipIds = wsState?.selectedClipIds ?? [];
+    const selectedClipId = clipSelection.selectedClipId;
+    const selectedClipIds = clipSelection.selectedClipIds;
 
     if (selectedTrackId) {
         const track = trackState?.tracks.find((time) => time.id === selectedTrackId);
@@ -199,7 +201,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             setFuzzyResults(results);
         }
         setSelectedIndex(-1);
-    }, [value, preview, isFocused, isProcessing, trackState, wsState]);
+    }, [value, preview, isFocused, isProcessing, trackState, clipSelection]);
 
     // ── Execute action group ────────────────────────────────────────────
     const executeWithGroup = async (actions: PromptAction[], prompt: string): Promise<void> => {

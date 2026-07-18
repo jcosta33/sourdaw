@@ -5,7 +5,13 @@ import { Container } from '#/infra/di/Container';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
-import { trackStore, type Clip, type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    trackStore,
+    type Clip,
+    type Track,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
 import { setWebMidiRuntimeEventBus } from '#/modules/AudioEngine/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -214,6 +220,7 @@ const createTrack = (clip: Clip): Track => ({
 let projectState: ProjectState;
 let alphaNoticeDismissed: boolean;
 let trackStoreState: TrackStoreState;
+let selectedClipIdState: string | null;
 
 describe('AppShell', () => {
     beforeEach(() => {
@@ -228,10 +235,14 @@ describe('AppShell', () => {
         projectState = createProjectState();
         alphaNoticeDismissed = true;
         trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+        selectedClipIdState = null;
         vi.mocked(useProjectState).mockImplementation(() => projectState);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === trackStore) {
                 return trackStoreState;
+            }
+            if (store === clipSelectionStore) {
+                return { selectedClipId: selectedClipIdState, selectedClipIds: [], marqueeSelection: null };
             }
             if (store === aiStore) {
                 return { tasks: [], isPanelOpen: false };
@@ -250,7 +261,6 @@ describe('AppShell', () => {
                 collaborationPanelOpen: false,
                 branchManagerOpen: false,
                 chatPanelOpen: false,
-                selectedClipId: null,
                 sidebarWidth: 200,
                 inspectorWidth: 200,
                 mixerHeight: 200,
@@ -334,7 +344,6 @@ describe('AppShell', () => {
                     collaborationPanelOpen: false,
                     branchManagerOpen: false,
                     chatPanelOpen: false,
-                    selectedClipId: null,
                     sidebarWidth: 200,
                     inspectorWidth: 200,
                     mixerHeight: 200,
@@ -372,12 +381,12 @@ describe('AppShell', () => {
         });
 
         it('should select the editor tab and open the dock when a clip is selected', () => {
+            selectedClipIdState = 'clip-1';
             vi.mocked(useWorkspaceState).mockReturnValue(
                 createWorkspaceState({
                     sidebarOpen: false,
                     inspectorOpen: false,
                     mixerOpen: false,
-                    selectedClipId: 'clip-1',
                 })
             );
 
@@ -390,7 +399,6 @@ describe('AppShell', () => {
                     sidebarOpen: false,
                     inspectorOpen: false,
                     mixerOpen: true,
-                    selectedClipId: 'clip-1',
                 })
             );
             rerender(<AppShell>Content</AppShell>);
@@ -400,6 +408,7 @@ describe('AppShell', () => {
         });
 
         it('should fall back to the editor tab when the active Elastic tab loses audio clip eligibility', () => {
+            selectedClipIdState = 'clip-1';
             trackStoreState = {
                 tracks: [createTrack(createClip('audio'))],
                 selectedTrackId: 'track-1',
@@ -410,7 +419,6 @@ describe('AppShell', () => {
                     sidebarOpen: false,
                     inspectorOpen: false,
                     mixerOpen: true,
-                    selectedClipId: 'clip-1',
                 })
             );
 
@@ -467,7 +475,6 @@ describe('AppShell', () => {
                     collaborationPanelOpen: true,
                     branchManagerOpen: false,
                     chatPanelOpen: false,
-                    selectedClipId: null,
                     sidebarWidth: 200,
                     inspectorWidth: 200,
                     mixerHeight: 200,

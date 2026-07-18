@@ -14,7 +14,7 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
 import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -140,7 +140,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         collaborationPanelOpen,
         branchManagerOpen,
         chatPanelOpen,
-        selectedClipId,
         sidebarWidth,
         inspectorWidth,
         mixerHeight,
@@ -162,6 +161,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         samplerHeight,
         grandBouleHeight,
     } = workspaceState;
+    const selectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
 
     const project = useProjectState();
     const prefs = useStore(preferencesStore, defaultPreferences);

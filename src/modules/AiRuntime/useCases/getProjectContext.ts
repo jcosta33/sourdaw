@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { workspaceStore } from '#/modules/Workspace/stores';
@@ -53,12 +53,14 @@ const contextCache: {
     track: unknown;
     transport: unknown;
     workspace: unknown;
+    selection: unknown;
     midi: unknown;
     context: ProjectContext | null;
 } = {
     track: null,
     transport: null,
     workspace: null,
+    selection: null,
     midi: null,
     context: null,
 };
@@ -67,6 +69,7 @@ export function getProjectContext(): ProjectContext {
     const trackState = trackStore.value;
     const transportState = transportStore.value;
     const workspaceState = workspaceStore.value;
+    const selectionState = clipSelectionStore.value;
     // Read once per call instead of once per clip (§92.1). For a 100-track
     // project at ~20 clips each that's 2000 store dereferences → 1.
     const midiState = midiStore.value;
@@ -77,14 +80,15 @@ export function getProjectContext(): ProjectContext {
         contextCache.track === trackState &&
         contextCache.transport === transportState &&
         contextCache.workspace === workspaceState &&
+        contextCache.selection === selectionState &&
         contextCache.midi === midiState
     ) {
         return contextCache.context;
     }
 
     const selectedTrackId = trackState?.selectedTrackId ?? null;
-    const selectedClipId = workspaceState?.selectedClipId ?? null;
-    const selectedClipIds = workspaceState?.selectedClipIds ?? [];
+    const selectedClipId = selectionState?.selectedClipId ?? null;
+    const selectedClipIds = selectionState?.selectedClipIds ?? [];
 
     const built: ProjectContext = {
         tempo: transportState?.tempo ?? 120,
@@ -124,6 +128,7 @@ export function getProjectContext(): ProjectContext {
     contextCache.track = trackState;
     contextCache.transport = transportState;
     contextCache.workspace = workspaceState;
+    contextCache.selection = selectionState;
     contextCache.midi = midiState;
     contextCache.context = built;
     return built;

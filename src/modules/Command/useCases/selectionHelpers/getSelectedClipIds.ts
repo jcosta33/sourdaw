@@ -1,7 +1,7 @@
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { clipSelectionStore } from '#/modules/Arrangement/stores';
 
 export function getSelectedClipIds(): string[] {
-    const ws = workspaceStore.value;
+    const ws = clipSelectionStore.value;
     if (!ws) {
         return [];
     }

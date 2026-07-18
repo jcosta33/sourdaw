@@ -17,16 +17,6 @@ export type WarpAlgorithm =
     | 'repitch' // Simple resampling (changes pitch)
     | 'slice'; // Beat-slice transient preservation
 
-export type WarpMarker = {
-    id: string;
-    /** Position in the source audio (seconds) */
-    sourceSec: number;
-    /** Target position in the warped output (beats) */
-    targetBeat: number;
-    /** Is this marker locked? */
-    locked: boolean;
-};
-
 export type WarpState = {
     /** Warp settings per clip ID */
     clipSettings: Map<string, ClipWarpSettings>;
@@ -46,8 +36,6 @@ export type ClipWarpSettings = {
     formantPreservation: number;
     /** Transient sensitivity (for slice/complex modes, 0-1) */
     transientSensitivity: number;
-    /** Warp markers for free-form warping */
-    markers: WarpMarker[];
     /** Whether warping is enabled for this clip */
     enabled: boolean;
 };
@@ -60,16 +48,11 @@ export const audioWarpStore = createStore<WarpState>({
     },
 });
 
-export function getNextWarpMarkerId(): string {
-    return `wm-${crypto.randomUUID()}`;
-}
-
 export const DEFAULT_WARP_SETTINGS: ClipWarpSettings = {
     algorithm: 'complex-pro',
     stretchRatio: 1.0,
     pitchShiftSemitones: 0,
     formantPreservation: 1.0,
     transientSensitivity: 0.5,
-    markers: [],
     enabled: false,
 };

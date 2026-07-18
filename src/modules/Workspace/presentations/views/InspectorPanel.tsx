@@ -8,11 +8,9 @@ import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
+import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
+import { clearClipSelection, selectClipWithFocus } from '#/modules/Arrangement/useCases';
 
-import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { workspaceStore } from '../../stores/workspaceStore';
-import { clearClipSelection } from '../../useCases/togglePanel/panelToggles/clearClipSelection';
-import { selectClipWithFocus } from '../../useCases/togglePanel/panelToggles/selectClipWithFocus';
 import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
 import { useTracks } from '../hooks/useTracks';
 
@@ -30,7 +28,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
 
     const selectedTrack =
         (selectedTrackId ? tracks.find((time) => time.id === selectedTrackId) : null) ?? masterTrack ?? null;
-    const wsSelectedClipId = useStore(workspaceStore, defaultWorkspaceState).selectedClipId;
+    const wsSelectedClipId = useStore(clipSelectionStore, defaultClipSelectionState).selectedClipId;
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
     const selectedClip = selectedTrack?.clips.find((context) => context.id === wsSelectedClipId) ?? null;

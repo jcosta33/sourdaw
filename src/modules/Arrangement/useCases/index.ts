@@ -86,6 +86,16 @@ export { cutSelectedClip } from './clipboard/cutSelectedClip';
 export { pasteClip } from './clipboard/pasteClip';
 export { pasteNotes } from './clipboard/pasteNotes';
 
+// ── Clip Selection ────────────────────────────────────────────────────────────
+
+export { selectClip } from './clipSelection/selectClip';
+export { selectClipWithFocus } from './clipSelection/selectClipWithFocus';
+export { setClipSelection } from './clipSelection/setClipSelection';
+export { toggleClipInSelection } from './clipSelection/toggleClipInSelection';
+export { selectAllClips } from './clipSelection/selectAllClips';
+export { clearClipSelection } from './clipSelection/clearClipSelection';
+export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
+
 // ── Comping ───────────────────────────────────────────────────────────────────
 
 export { addTake } from './comping/addTake';

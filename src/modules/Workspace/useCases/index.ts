@@ -13,27 +13,20 @@ export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
 
 export { finishToolSwap } from './finishToolSwap';
 export { setEditingTool } from './setEditingTool';
-export { setMarqueeSelection } from './setMarqueeSelection';
 export { startToolSwap } from './startToolSwap';
 
 // ── Workspace Mode ────────────────────────────────────────────────────────────
 
 export { setWorkspaceMode } from './setWorkspaceMode';
 
-export { clearClipSelection } from './togglePanel/panelToggles/clearClipSelection';
 export { closeCollaborationPanel } from './togglePanel/panelToggles/closeCollaborationPanel';
 export { closeCommandPalette } from './togglePanel/panelToggles/closeCommandPalette';
 export { closeUndoHistory } from './togglePanel/panelToggles/closeUndoHistory';
-export { selectAllClips } from './togglePanel/panelToggles/selectAllClips';
-export { selectClip } from './togglePanel/panelToggles/selectClip';
-export { selectClipWithFocus } from './togglePanel/panelToggles/selectClipWithFocus';
-export { setClipSelection } from './togglePanel/panelToggles/setClipSelection';
 export { setSoloMode } from './togglePanel/panelToggles/setSoloMode';
 export { setVirtualKeyboardOctave } from './togglePanel/panelToggles/setVirtualKeyboardOctave';
 export { setVirtualKeyboardVelocity } from './togglePanel/panelToggles/setVirtualKeyboardVelocity';
 export { toggleAutomationPanel } from './togglePanel/panelToggles/toggleAutomationPanel';
 export { toggleChatPanel } from './togglePanel/panelToggles/toggleChatPanel';
-export { toggleClipInSelection } from './togglePanel/panelToggles/toggleClipInSelection';
 export { toggleCommandPalette } from './togglePanel/panelToggles/toggleCommandPalette';
 export { toggleInspector } from './togglePanel/panelToggles/toggleInspector';
 export { toggleMixer } from './togglePanel/panelToggles/toggleMixer';

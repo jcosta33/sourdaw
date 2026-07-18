@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 
-import { defaultWorkspaceState } from '../../../models/WorkspaceState';
-import * as workspaceRepo from '../../../repositories/getWorkspaceState';
 import { cycleAutomationVisibility } from '../zoomOperations/cycleAutomationVisibility';
 import { onScrollToPlayhead } from '../zoomOperations/onScrollToPlayhead';
 import { onZoomToFit } from '../zoomOperations/onZoomToFit';
@@ -16,10 +14,13 @@ const mocks = vi.hoisted(() => ({
         emit: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
     },
-}));
-
-vi.mock('../../../repositories/getWorkspaceState', () => ({
-    getWorkspaceState: vi.fn(),
+    clipSelectionStore: {
+        value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } as {
+            selectedClipId: string | null;
+            selectedClipIds: string[];
+            marqueeSelection: null;
+        } | null,
+    },
 }));
 
 // We also need to mock trackStore because zoomToSelection uses it
@@ -27,13 +28,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         value: { tracks: [] },
     },
+    clipSelectionStore: mocks.clipSelectionStore,
 }));
 
 describe('zoomOperations', () => {
     beforeEach(() => {
         injectDependencies(zoomToFit, { eventBus: mocks.mockEventBus });
         vi.clearAllMocks();
-        vi.mocked(workspaceRepo.getWorkspaceState).mockReset();
+        mocks.clipSelectionStore.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
     });
 
     it('should emit zoom.toFit when zoomToFit is called', () => {
@@ -62,8 +64,8 @@ describe('zoomOperations', () => {
         expect(mocks.mockEventBus.on).toHaveBeenCalledWith('zoom.scrollToPlayhead', expect.any(Function));
     });
 
-    it('should not emit zoom.toSelection when workspace state is missing', () => {
-        vi.mocked(workspaceRepo.getWorkspaceState).mockReturnValue(null);
+    it('should not emit zoom.toSelection when the clip selection is null', () => {
+        mocks.clipSelectionStore.value = null;
 
         zoomToSelection();
 
@@ -71,11 +73,7 @@ describe('zoomOperations', () => {
     });
 
     it('should not emit zoom.toSelection when no clips are selected', () => {
-        vi.mocked(workspaceRepo.getWorkspaceState).mockReturnValue({
-            ...defaultWorkspaceState,
-            selectedClipIds: [],
-            selectedClipId: null,
-        });
+        mocks.clipSelectionStore.value = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
 
         zoomToSelection();
 

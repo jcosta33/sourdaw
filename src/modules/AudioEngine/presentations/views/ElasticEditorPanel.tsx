@@ -4,7 +4,13 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTrackState, trackStore, getWarpState } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    defaultTrackState,
+    trackStore,
+    getWarpState,
+} from '#/modules/Arrangement/stores';
 import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
@@ -77,6 +83,7 @@ const VIRTUALIZE_THRESHOLD = 200;
 export const ElasticEditorPanel = (): ReactElement => {
     const elasticState = useStore(elasticAudioStore, defaultElasticAudioState);
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const trackState = useStore(trackStore, defaultTrackState);
     const warpSnapshot = useStore(audioWarpStore, {
         clipSettings: new Map(),
@@ -84,7 +91,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         globalPitchShift: 0,
     });
 
-    const clipId = elasticState.openClipId ?? workspaceState.selectedClipId;
+    const clipId = elasticState.openClipId ?? clipSelection.selectedClipId;
     const clip = clipId === null ? null : findClip(trackState.tracks, clipId);
     const isAudioClip = clip !== null && clip.type === 'audio';
 

@@ -1,13 +1,12 @@
 import { inject } from '#/infra/di/inject';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 
-import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
 import { WorkspaceEventBus } from '../../workspaceEventBus';
 
 export const zoomToSelection = inject({ eventBus: WorkspaceEventBus })(
     ({ eventBus }) =>
         function zoomToSelection(): void {
-            const ws = getWorkspaceState();
+            const ws = clipSelectionStore.value;
             const state = trackStore.value;
             if (!ws || !state) {
                 return;

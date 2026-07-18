@@ -3,12 +3,12 @@ import { type ReactElement, useRef, useEffect, lazy, Suspense } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Preferences/useCases';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
+import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
@@ -31,8 +31,8 @@ export const TimelineSurface = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
 
-    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
-    const marqueeSelection = workspaceState.marqueeSelection;
+    const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
+    const marqueeSelection = clipSelection.marqueeSelection;
     const currentViewStore = useStore(timelineViewStore, {
         scrollX: 0,
         scrollY: 0,
@@ -260,7 +260,7 @@ export const TimelineSurface = (): ReactElement => {
         const unsubTransport = transportStore.subscribe(markDirty);
         const unsubView = timelineViewStore.subscribe(markDirty);
         const unsubTracks = trackStore.subscribe(markDirty);
-        const unsubWorkspace = workspaceStore.subscribe(markDirty);
+        const unsubWorkspace = clipSelectionStore.subscribe(markDirty);
         const unsubMarkers = markerStore.subscribe(markDirty);
         const unsubTempoMap = tempoMapStore.subscribe(markDirty);
         const unsubTimeSigMap = timeSignatureMapStore.subscribe(markDirty);

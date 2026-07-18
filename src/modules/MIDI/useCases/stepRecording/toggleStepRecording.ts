@@ -1,10 +1,10 @@
+import { clipSelectionStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { stepRecordStore, defaultStepRecordState } from '../../stores/stepRecordStore';
 
 export function toggleStepRecording(): void {
-    const ws = workspaceStore.value;
+    const ws = clipSelectionStore.value;
     const ts = transportStore.value;
     if (!ws || !ts) {
         return;

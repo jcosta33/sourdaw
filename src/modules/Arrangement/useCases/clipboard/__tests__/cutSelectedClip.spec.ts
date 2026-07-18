@@ -7,7 +7,7 @@ import { clipboardStore } from '../../../stores/clipboardStore';
 import { cutSelectedClip } from '../cutSelectedClip';
 
 const mocks = vi.hoisted(() => ({
-    workspaceStore: {
+    clipSelectionStore: {
         value: null as {
             selectedClipId: string | null;
             selectedClipIds: string[];
@@ -27,8 +27,8 @@ const mocks = vi.hoisted(() => ({
     activeRecordingRef: { current: [] as string[] },
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: mocks.workspaceStore,
+vi.mock('../../../stores/clipSelectionStore', () => ({
+    clipSelectionStore: mocks.clipSelectionStore,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -86,7 +86,7 @@ function createClip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'trackId' | 'ty
 describe('cutSelectedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.workspaceStore.value = null;
+        mocks.clipSelectionStore.value = null;
         mocks.midiStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
@@ -111,7 +111,7 @@ describe('cutSelectedClip', () => {
         };
         const midiNotes = [midiNote];
 
-        mocks.workspaceStore.value = {
+        mocks.clipSelectionStore.value = {
             selectedClipId: 'clip-midi',
             selectedClipIds: ['clip-midi', 'clip-audio'],
         };
