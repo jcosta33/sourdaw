@@ -1,6 +1,6 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { pickAndImportDawProject } from '../../useCases/dawProject/pickAndImportDawProject';
+import { pickAndImportDawProject } from '../useCases/pickAndImportDawProject';
 
 export const handleImportDawProject = createHandler<'importDawProject'>({
     execute: async () => {

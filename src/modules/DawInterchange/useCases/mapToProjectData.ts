@@ -1,3 +1,4 @@
+import { type DawProjectParseResult, type DawProjectParsedClip, type DawProjectParsedTrack } from './dawProjectTypes';
 import {
     type ProjectAutomation,
     type ProjectClip,
@@ -9,9 +10,7 @@ import {
     type ProjectMidiNote,
     type ProjectTrack,
     type ProjectTrackAlternative,
-} from '../../models/ProjectData';
-
-import { type DawProjectParseResult, type DawProjectParsedClip, type DawProjectParsedTrack } from './dawProjectTypes';
+} from './projectDataContract';
 
 export type MapToProjectDataInput = {
     parsed: DawProjectParseResult;

@@ -18,13 +18,12 @@ export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';
 
-export { importDawProject } from './dawProject/importDawProject';
-export { pickAndImportDawProject } from './dawProject/pickAndImportDawProject';
-export { exportDawProject } from './dawProject/exportDawProject';
+export { buildProjectData } from './projectPersistence/fileIO/buildProjectData'; // interchange contract (ADR 0011)
+export { applyImportedProjectData } from './projectPersistence/fileIO/applyImportedProjectData'; // interchange contract (ADR 0011)
+export { runProjectLoadTransaction } from './projectPersistence/helpers/runProjectLoadTransaction'; // interchange contract (ADR 0011)
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 export { getSongStructureHandlers } from './getSongStructureHandlers';
-export { getDawProjectHandlers } from './getDawProjectHandlers';
 
 export { getRecentProjects } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';

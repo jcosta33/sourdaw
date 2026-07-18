@@ -1,5 +1,5 @@
-import { saveDawProjectFileDialog } from '../../repositories/dawProject/saveDawProjectFileDialog';
-import { writeDawProjectFile } from '../../repositories/dawProject/writeDawProjectFile';
+import { saveDawProjectFileDialog } from '../repositories/saveDawProjectFileDialog';
+import { writeDawProjectFile } from '../repositories/writeDawProjectFile';
 
 type SaveDawProjectNativeFileInput = {
     bytes: Uint8Array;

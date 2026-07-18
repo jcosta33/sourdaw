@@ -1,4 +1,4 @@
-import { type ProjectClip, type ProjectData, type ProjectMidiNote, type ProjectTrack } from '../../models/ProjectData';
+import { type ProjectClip, type ProjectData, type ProjectMidiNote, type ProjectTrack } from './projectDataContract';
 
 export type SerializeProjectXmlInput = {
     project: ProjectData;

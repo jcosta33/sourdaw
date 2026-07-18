@@ -65,6 +65,7 @@ import {
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
+import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -83,7 +84,6 @@ import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
 import {
     markDirty,
     getSongStructureHandlers,
-    getDawProjectHandlers,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';

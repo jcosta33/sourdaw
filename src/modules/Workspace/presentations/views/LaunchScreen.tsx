@@ -19,13 +19,13 @@ import {
 } from 'lucide-react';
 
 import { executeAppAction } from '#/modules/Command/useCases';
+import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import {
     newProject,
     createFromTemplate,
     getTemplates,
     getRecentProjects,
     loadRecentProject,
-    pickAndImportDawProject,
 } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

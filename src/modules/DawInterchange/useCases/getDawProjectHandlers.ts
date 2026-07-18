@@ -1,7 +1,7 @@
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
-import { handleExportDawProject } from '../handlers/dawProject/handleExportDawProject';
-import { handleImportDawProject } from '../handlers/dawProject/handleImportDawProject';
+import { handleExportDawProject } from '../handlers/handleExportDawProject';
+import { handleImportDawProject } from '../handlers/handleImportDawProject';
 
 type DawProjectAppAction = Extract<AppAction, { type: 'importDawProject' | 'exportDawProject' }>;
 

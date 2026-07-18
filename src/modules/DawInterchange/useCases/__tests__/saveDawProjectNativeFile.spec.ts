@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { saveDawProjectFileDialog } from '../../../repositories/dawProject/saveDawProjectFileDialog';
-import { writeDawProjectFile } from '../../../repositories/dawProject/writeDawProjectFile';
+import { saveDawProjectFileDialog } from '../../repositories/saveDawProjectFileDialog';
+import { writeDawProjectFile } from '../../repositories/writeDawProjectFile';
 import { saveDawProjectNativeFile } from '../saveDawProjectNativeFile';
 
-vi.mock('../../../repositories/dawProject/saveDawProjectFileDialog', () => ({
+vi.mock('../../repositories/saveDawProjectFileDialog', () => ({
     saveDawProjectFileDialog: vi.fn(),
 }));
 
-vi.mock('../../../repositories/dawProject/writeDawProjectFile', () => ({
+vi.mock('../../repositories/writeDawProjectFile', () => ({
     writeDawProjectFile: vi.fn(),
 }));
 
